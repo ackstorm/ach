@@ -1,0 +1,51 @@
+# Minimal Dex configuration for local UAT — NOT for production.
+#
+# Production deployments use a Helm-rendered Dex (Phase 7 / DIST-04) or
+# an externally-managed Dex deployment. This file exists so engineers
+# can stand up Dex locally during Phase 3 development:
+#
+#   docker run --rm -p 5556:5556 \
+#     -v "$PWD/scripts/dex-config.yaml":/etc/dex/config.yaml:ro \
+#     ghcr.io/dexidp/dex:v2.41.1 dex serve /etc/dex/config.yaml
+#
+# (or via a kind/helm-deployed Dex per Phase 02.3's local UAT
+# decision — see [feedback_local_uat_kind_helm].)
+#
+# Phase 3 plan 03-11 D-04 / D-06: this config mirrors
+# scripts/litellm-config.yaml's shape — small YAML, version-pinned,
+# local UAT only. The static client secret below MUST NEVER be used
+# in production.
+
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: ach-platform-api
+    secret: dev-secret-not-for-prod
+    name: 'ACH Platform API (dev)'
+    redirectURIs:
+      - http://localhost:8080/platform/auth/sso/callback
+      - https://localhost:8080/platform/auth/sso/callback
+
+connectors:
+  - type: mockCallback
+    id: mock
+    name: Example
+
+# Notes:
+#
+#   - The mockCallback connector returns a static user
+#     (kilgore@kilgore.trout) for tests; production would use OIDC /
+#     LDAP / SAML to a real IdP.
+#   - storage.type=memory means every Dex restart wipes the issued-token
+#     state. Acceptable for local UAT only.
+#   - The static-client `secret` value above is in plain text — do NOT
+#     copy this file into a production deployment manifest.
