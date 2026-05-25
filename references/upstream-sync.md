@@ -48,3 +48,13 @@ Gate 13 (govulncheck) / Gate 15 (SPDX) all PASS on bare scaffolding.
 | `scripts/pre-push-check.sh` (gate 3 comment) | same | Re-worded the 2MB threshold rationale — removed mention of `spec/litellm_api.json` (alitellm-only file we don't bundle); kept the 2MB threshold as future-proofing. |
 | `scripts/pre-push-check.sh` (gate 14 restore) | same | **Real bug**: alitellm uses `SAVED=$(cat go.mod)` + `printf '%s' "$SAVED" > go.mod` to snapshot and restore on tidy drift. Both `$(cat)` and `printf '%s'` strip trailing newlines, so the restore silently corrupts `go.mod` and the next pre-push run sees a phantom `No newline at end of file` diff. ACH fix: snapshot via `cp` into a `mktemp -d` (cleaned via `trap EXIT`), restore via `cp` — byte-for-byte identical. Sync-back PR target. |
 | `scripts/pre-push-check.sh` (gate 11 self-match) | same | **Real bug (low)**: gate 11 (urgent TODO markers) `git grep`s the whole tree, which matches the gate script's own descriptive comments naming `DO-NOT-COMMIT` literal. ACH fix: exclude `scripts/pre-push-check.sh` from gate 11 via `':!scripts/pre-push-check.sh'`. Sync-back PR target. |
+
+## 2026-05-25 (Task 5.1) — CRD scaffold side effects
+
+Ran `kubebuilder create api` for 6 CRDs (Environment, Plugin, PluginMarketplace,
+Artifact, Prompt, BackendIdentityPolicy). Side effects worth flagging upstream.
+
+| ach file | alitellm file | Follow-up |
+|---|---|---|
+| `go.mod` (`golang.org/x/net v0.55.0`) | `go.mod` (likely lower) | **Security**: kubebuilder v4.4.0 pulls `controller-runtime v0.24.1` → `golang.org/x/net v0.49.0`, which has open HIGH advisories `GO-2026-5026` + `GO-2026-4918`. Bumped to `v0.55.0` (above both fix versions). Alitellm should run `go get golang.org/x/net@v0.55.0` to clear the same advisories. Sync-back PR target. |
+| (kubebuilder v4 quirk) | n/a | `kubebuilder create api` requires `cmd/main.go` to exist at repo root or it refuses to run (cmd-plugin assertion). ACH's single-binary cobra layout puts the entrypoint at `cmd/ach/main.go` instead. Workaround: temporarily stub `cmd/main.go` while running `create api`, then delete. Document for future API additions. Not alitellm-relevant (alitellm uses cmd/main.go canonical layout). |
