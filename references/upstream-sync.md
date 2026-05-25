@@ -76,3 +76,11 @@ target is ach-old, NOT alitellm.
 | `config/e2e/kustomization.yaml` images block | same | **Adapted**: ach-old retags `ach-operator → ach-operator:e2e`. Changed to `ghcr.io/ackstorm/ach → ghcr.io/ackstorm/ach:e2e` for single-binary alignment. |
 | `config/storage/operator_cache_pvc.yaml` | same (copied as-is) | Cache PVC `ach-operator-cache` is RWO and meant to be mounted by both the operator container and the co-located content-service container in `config/manager/manager.yaml`. Until manager.yaml is ported, this PVC is unused. Intentionally NOT wired into `config/default` resources for the same reason. |
 | `config/secrets/credential_hash_pepper_secret.yaml` | same | Ships `REPLACE-ME-WITH-RANDOM-32-BYTES-FROM-OPENSSL-RAND-BASE64-32`. ach-old comment says the operator binary refuses to start when this placeholder is present (`strings.HasPrefix(pepper, "REPLACE-ME-WITH-RANDOM-")`). Same contract carries forward to ACH single-binary `operator` subcommand. Not a bug — intentional fail-closed. |
+
+## 2026-05-25 (Task 9.1) — Envtest runner
+
+Ported `scripts/run-envtest-packages.sh` verbatim from alitellm with sed renames.
+Adjusted Makefile envtest-race / envtest-fast / unit targets to drop the
+`./internal/toolhive/...` package (ach has no toolhive integration; only
+`./internal/controller/...`). Single-package envtest-fast run on the
+auto-generated `internal/controller/ach/suite_test.go` PASS (~6s).

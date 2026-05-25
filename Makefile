@@ -82,10 +82,10 @@ test: test-all ## Backward-compat alias for `make test-all` (unit + envtest-run)
 .PHONY: unit
 unit: fmt vet ## Phase 1 — pure-logic tests, no envtest, no cluster. ~10s warm.
 	# `go test` defaults to -p=GOMAXPROCS across packages (speedup-ideas §5 confirmed).
-	# Exclusions: internal/controller (envtest), internal/toolhive (envtest),
-	# test/e2e (cluster). Anything else is pure-logic.
+	# Exclusions: internal/controller (envtest), test/e2e (cluster).
+	# Anything else is pure-logic.
 	go test -v -race -shuffle=on -count=1 \
-		$$(go list ./... | grep -v -E "/internal/(controller|toolhive)|/test/e2e") \
+		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e") \
 		-coverprofile cover-unit.out
 
 .PHONY: envtest-run
@@ -97,7 +97,7 @@ envtest-race: manifests generate fmt vet setup-envtest ## Phase 2 — controller
 	@# plus slow tests; failed packages dump their captured logs.
 	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
-	scripts/run-envtest-packages.sh --race --timeout 15m --coverprofile cover-envtest.out -- ./internal/controller/... ./internal/toolhive/...
+	scripts/run-envtest-packages.sh --race --timeout 15m --coverprofile cover-envtest.out -- ./internal/controller/...
 
 .PHONY: envtest-fast
 envtest-fast: setup-envtest ## Phase 2 — controller envtest WITHOUT -race. Dev inner loop (~3m, ~3x faster than envtest-race). Not a CI gate.
@@ -105,7 +105,7 @@ envtest-fast: setup-envtest ## Phase 2 — controller envtest WITHOUT -race. Dev
 	@# plus slow tests; failed packages dump their captured logs.
 	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
-	scripts/run-envtest-packages.sh --timeout 10m -- ./internal/controller/... ./internal/toolhive/...
+	scripts/run-envtest-packages.sh --timeout 10m -- ./internal/controller/...
 
 .PHONY: test-all
 test-all: unit envtest-run ## All non-cluster tests (unit + envtest-run).
