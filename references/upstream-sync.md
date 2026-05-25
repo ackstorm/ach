@@ -140,3 +140,13 @@ sufficient (the toggles + args live in values.yaml; rendering uses only the
 | `config/manager/manager.yaml` (command/args) | n/a (kubebuilder default) | Adapted to single-binary cobra: `command: [/manager]` → `command: [/ach]`, prepended `operator` to `args`. The Dockerfile ENTRYPOINT already produces `/ach`; this aligns the kustomize source with the actual binary path. |
 | `deploy/helm/ach/values.yaml` | `deploy/helm/alitellm-operator/values.yaml` | Rewritten: dropped `safetyRelistInterval` (alitellm-specific knob, has no ACH analog); added `operator`, `platformApi`, `forwarder`, `contentService`, `migrate` per-mode blocks with `{enabled, replicas, resources, args}` shape; added `postgres.external` + `redis.external` flags; kept `installCRDs`, `image`, `watchNamespace`, `toolhive`, `metrics.serviceMonitor`, `extraEnv` from alitellm verbatim. |
 | `deploy/helm/ach/Chart.yaml` | same | Reset version `0.4.7` → `0.0.1` and description from "LiteLLM operator …" to "ACH — Agent Configuration Hub. Kubernetes operator + platform API + forwarder + content service for declarative agent configuration management." |
+
+## 2026-05-25 (Task 11.2) — deploy/kustomize snapshot
+
+Ported `deploy/kustomize/` + `scripts/render-deploy-kustomize-rbac.sh` from
+alitellm with sed renames. Bumped image newTag to `v0.0.1`.
+
+| ach file | alitellm file | Fix / Adaptation |
+|---|---|---|
+| `config/rbac/toolhive_clusterrole.yaml` | same | **Added new file**: ACH's RBAC dir didn't carry the ToolHive ClusterRole. The render script's `RBAC_SOURCES` list expects it (operator-runtime subset). Ported alitellm's content with SA name rewrite (`alitellm-operator` → `ach`) and ClusterRole/ClusterRoleBinding rename (`alitellm-operator-toolhive-reader` → `ach-toolhive-reader`). |
+| `deploy/kustomize/kustomization.yaml` | same | Image newTag `v0.4.7` → `v0.0.1` to match Chart.yaml baseline. |

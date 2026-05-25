@@ -1,0 +1,241 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# GENERATED FILE — do not edit by hand.
+# Source: scripts/render-deploy-kustomize-rbac.sh
+# Regenerate: make deploy-kustomize-sync
+# Drift gate: make deploy-kustomize-sync-check
+#
+# This bundle aggregates the operator-runtime + metrics-auth RBAC files
+# from config/rbac/ into a single multi-document YAML that
+# deploy/kustomize/kustomization.yaml references directly. See the
+# generator script for the rationale and inclusion criteria.
+
+---
+# Source: config/rbac/service_account.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: controller-manager
+  namespace: system
+
+---
+# Source: config/rbac/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ach-manager-role
+rules:
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts
+  - backendidentitypolicies
+  - environments
+  - pluginmarketplaces
+  - plugins
+  - prompts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts/finalizers
+  - backendidentitypolicies/finalizers
+  - environments/finalizers
+  - pluginmarketplaces/finalizers
+  - plugins/finalizers
+  - prompts/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts/status
+  - backendidentitypolicies/status
+  - environments/status
+  - pluginmarketplaces/status
+  - plugins/status
+  - prompts/status
+  verbs:
+  - get
+  - patch
+  - update
+
+---
+# Source: config/rbac/role_binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: manager-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: system
+
+---
+# Source: config/rbac/leader_election_role.yaml
+# permissions to do leader election.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: leader-election-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+
+---
+# Source: config/rbac/leader_election_role_binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: leader-election-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: system
+
+---
+# Source: config/rbac/toolhive_clusterrole.yaml
+# ToolHive cluster-scoped read RBAC.
+#
+# Grants the operator's ServiceAccount read access to ToolHive's
+# `toolhive.stacklok.dev/v1beta1` MCPServer + VirtualMCPServer custom
+# resources at cluster scope. The cluster-scope grant is intentional:
+# discovery CRs may select ToolHive objects from ANY namespace, and the
+# spec's dotted-naming guarantee requires cross-namespace observability.
+#
+# This file ships UNCONDITIONALLY: deployments that never instantiate
+# a MCPServer-discovery CR still carry the unused permission. Blast
+# radius is low — ToolHive objects do not carry secret material
+# (status.url is the only sensitive field, and it is published by the
+# ToolHive deployment by design).
+#
+# The ClusterRoleBinding subject `name` MUST match the actual operator
+# ServiceAccount name. ACH's SA is named explicitly `ach` in
+# config/rbac/service_account.yaml; this binding references it by the
+# same literal.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ach-toolhive-reader
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: rbac
+rules:
+- apiGroups:
+  - toolhive.stacklok.dev
+  resources:
+  - mcpservers
+  - virtualmcpservers
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ach-toolhive-reader
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ach-toolhive-reader
+subjects:
+- kind: ServiceAccount
+  name: ach
+  # Namespace gets resolved by kustomize at the overlay layer.
+  namespace: system
+
+---
+# Source: config/rbac/metrics_auth_role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+
+---
+# Source: config/rbac/metrics_auth_role_binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: system
