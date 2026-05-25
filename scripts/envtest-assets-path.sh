@@ -10,7 +10,8 @@
 # controller-runtime — the asset version may change.
 set -euo pipefail
 
-LOCALBIN="${LOCALBIN:-$(pwd)/bin}"
+SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCALBIN="${LOCALBIN:-$SCRIPTDIR/bin}"
 ENVTEST="$LOCALBIN/setup-envtest"
 K8S_VERSION="${ENVTEST_K8S_VERSION:-1.31.0}"
 
