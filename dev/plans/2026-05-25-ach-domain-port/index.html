@@ -1,0 +1,2267 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/plans/2026-05-25-ach-domain-port/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>ACH Domain Port from ach-old — Implementation Plan - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ach-domain-port-from-ach-old-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ACH Domain Port from ach-old — Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pre-flight-do-once-before-phase-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight (do once before Phase 1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-api-types-foundation-no-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — API Types (foundation; no logic)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1 — API Types (foundation; no logic)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-11-add-7th-crd-scaffold-litellmconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.1: Add 7th CRD scaffold — LiteLLMConnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-12-port-external_ref_typesgo-shared-base-for-4-crds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.2: Port external_ref_types.go (shared base for 4 CRDs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-13-port-environment_typesgo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.3: Port environment_types.go
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-14-18-port-remaining-6-type-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.4-1.8: Port remaining 6 type files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-110-update-helm-chart-crd-sources-from-regenerated-crds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.10: Update Helm chart crd-sources/ from regenerated CRDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-db-schema-migrations-db-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — DB schema (migrations + db package)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 — DB schema (migrations + db package)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-21-port-dbmigrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.1: Port db/migrations/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-22-port-internaldb-package-22-files-1k-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.2: Port internal/db/ package (22 files, ~1k lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-23-wire-ach-migrate-cobra-subcommand-to-golang-migrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.3: Wire ach migrate cobra subcommand to golang-migrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-tier-1-leaf-packages-no-internal-deps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Tier-1 leaf packages (no internal/ deps)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3 — Tier-1 leaf packages (no internal/ deps)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-31-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.1: audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-32-cachefs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.2: cachefs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-33-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.3: config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-34-credhash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.4: credhash
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-35-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.5: keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-36-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.6: sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-37-run-phase-3-smoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.7: Run Phase 3 smoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-tier-2-packages-light-coupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Tier-2 packages (light coupling)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 — Tier-2 packages (light coupling)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-41-litellm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.1: litellm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-42-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.2: connection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-43-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.3: snapshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-44-keystore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.4: keystore
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-45-phase-4-smoke-build-unit-envtest-pre-push-no-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.5: Phase 4 smoke (build + unit + envtest + pre-push). No commit.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-tier-3-packages-orphan-platformapi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Tier-3 packages (orphan, platformapi)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5 — Tier-3 packages (orphan, platformapi)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-51-orphan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.1: orphan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-52-platformapi-port-whole-subtree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.2: platformapi (port whole subtree)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-53-phase-5-smoke-no-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.3: Phase 5 smoke. No commit.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-controllers-real-reconciler-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — Controllers (real reconciler logic)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6 — Controllers (real reconciler logic)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-61-shared-external_ref-refresh-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.1: Shared external_ref refresh logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-62-environment-controller-largest-dep-on-litellm-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.2: Environment controller (largest dep on litellm + snapshot)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-63-68-port-remaining-controllers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.3-6.8: Port remaining controllers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-69-port-controller-suite_testgo-sidecar-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.9: Port controller suite_test.go + sidecar tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-cobra-subcommand-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Cobra subcommand wiring
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 7 — Cobra subcommand wiring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-71-operator-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.1: operator subcommand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-72-platform-api-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.2: platform-api subcommand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-73-forwarder-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.3: forwarder subcommand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-74-content-service-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.4: content-service subcommand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-75-ach-cli-surface-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.5: ach CLI surface (deferred)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-76-final-binary-smoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.6: Final binary smoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-integration-tests-e2e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Integration tests + e2e
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 8 — Integration tests + e2e">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-81-port-teste2e-phase-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.1: Port test/e2e/ phase invariants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-82-integration-tests-via-testcontainers-go" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.2: Integration tests via testcontainers-go
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-83-run-full-test-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.3: Run full test suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-9-manifests-helm-rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 — Manifests + Helm + RBAC
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 9 — Manifests + Helm + RBAC">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-91-update-kustomize-manager-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.1: Update kustomize manager Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-92-port-rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.2: Port RBAC
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-93-helm-multi-component-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.3: Helm multi-component templates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-94-helm-install-end-to-end-in-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.4: Helm install end-to-end in kind
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-10-final-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 10 — Final verification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 10 — Final verification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-101-full-pre-merge-smoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10.1: Full pre-merge smoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-102-update-changelogmd-and-bump-for-v020" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10.2: Update CHANGELOG.md and bump for v0.2.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-103-open-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10.3: Open PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-references-and-risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-references and risks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cross-references and risks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upstream-syncmd-adds-during-this-port" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upstream-sync.md adds during this port
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known risks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#estimated-effort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Estimated effort
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred / out-of-scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-level-commit-count-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase-level commit count target
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ach-domain-port-from-ach-old-implementation-plan">ACH Domain Port from ach-old — Implementation Plan<a class="headerlink" href="#ach-domain-port-from-ach-old-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For Claude:</strong> REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.</p>
+</blockquote>
+<p><strong>Goal:</strong> Lift business logic (real CRD fields, reconcilers, services, REST endpoints, DB schema) from <code>/home/jcm/Projects/ach-old/</code> into the current <code>/home/jcm/Projects/ach/</code> bootstrap shell, preserving single-binary cobra layout.</p>
+<p><strong>Architecture:</strong> ach-old ships 6 separate binaries (operator, platform-api, forwarder, content-service, ach CLI, migrate). ach is a single binary <code>ach</code> with cobra subcommands. So each ach-old <code>cmd/&lt;service&gt;/main.go</code> body becomes the <code>RunE</code> of the corresponding cobra subcommand at <code>cmd/ach/cmd/&lt;service&gt;.go</code>. All <code>internal/</code> packages port verbatim into matching paths under ach. CRD types port to <code>api/ach/v1alpha1/</code>, controllers to <code>internal/controller/ach/</code>. DB schema migrations port to <code>db/migrations/</code>.</p>
+<p><strong>Tech Stack</strong> (no new tech beyond what's already wired):
+- Existing: kubebuilder v4, controller-runtime v0.24.1, Ginkgo v2 (envtest+e2e), cobra, Go 1.26
+- Newly introduced by port: chi/v5 router, jackc/pgx/v5, redis/go-redis/v9, golang-migrate/migrate/v4, coreos/go-oidc/v3, oauth2, oklog/ulid/v2, miniredis/v2 (test), testcontainers-go (integration test)
+- Source SDKs: aws-sdk-go-v2, cloud.google.com/go/storage, go-github/v62, gitlab.com/gitlab-org/api/client-go
+- Auth: HMAC-SHA256 pepper (DB-09), JWT/EdDSA, OIDC + OAuth2 (Dex)</p>
+<p><strong>Source paths (read-only):</strong>
+- <code>/home/jcm/Projects/ach-old/</code> — domain code source
+- <code>/home/jcm/Projects/ach/references/upstream-sync.md</code> — bootstrap-time adaptations to mind</p>
+<p><strong>Working directory:</strong> <code>/home/jcm/Projects/ach/</code> (currently on <code>main</code> at <code>bc55335 chore(release): v0.1.0</code>; PR #1 open for hardening fixes — merge before starting this plan).</p>
+<p><strong>Branch policy:</strong> entire port on branch <code>feat/domain-port</code>. Single PR to main when all phases complete. Atomic commits per task.</p>
+<hr />
+<h2 id="pre-flight-do-once-before-phase-1">Pre-flight (do once before Phase 1)<a class="headerlink" href="#pre-flight-do-once-before-phase-1" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>/home/jcm/Projects/ach
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>checkout<span class="w"> </span>main
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>git<span class="w"> </span>pull
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>feat/domain-port
+</code></pre></div>
+<p>Confirm PR #1 (hardening) has merged before starting. If not, rebase on top once merged.</p>
+<hr />
+<h2 id="phase-1-api-types-foundation-no-logic">Phase 1 — API Types (foundation; no logic)<a class="headerlink" href="#phase-1-api-types-foundation-no-logic" title="Permanent link">&para;</a></h2>
+<p>Goal: replace placeholder Spec/Status with ach-old's real types. After this phase, <code>make manifests generate build</code> PASS but reconcilers are still stubs.</p>
+<h3 id="task-11-add-7th-crd-scaffold-litellmconnection">Task 1.1: Add 7th CRD scaffold — LiteLLMConnection<a class="headerlink" href="#task-11-add-7th-crd-scaffold-litellmconnection" title="Permanent link">&para;</a></h3>
+<p>ach-old has 7 CRDs; bootstrap scaffolded 6. Add the missing one.</p>
+<p><strong>Files:</strong>
+- Stub <code>cmd/main.go</code> (temporary, deleted post-scaffold per <a href="../../references/upstream-sync.md">bootstrap T5.1 workaround</a>)
+- <code>api/ach/v1alpha1/litellmconnection_types.go</code> (auto-gen)
+- <code>internal/controller/ach/litellmconnection_controller.go</code> (auto-gen)
+- <code>config/crd/bases/ach.ackstorm.ai_litellmconnections.yaml</code> (auto-gen)
+- <code>config/samples/ach_v1alpha1_litellmconnection.yaml</code> (auto-gen + edit)</p>
+<p><strong>Steps:</strong></p>
+<ol>
+<li>
+<p>Stub <code>cmd/main.go</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/cmd/operator/main.go<span class="w"> </span>/tmp/main-stub.go
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mv<span class="w"> </span>/tmp/main-stub.go<span class="w"> </span>cmd/main.go
+</code></pre></div></p>
+</li>
+<li>
+<p>Run kubebuilder:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./scripts/dev.sh<span class="w"> </span>kubebuilder<span class="w"> </span>create<span class="w"> </span>api<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--group<span class="w"> </span>ach<span class="w"> </span>--version<span class="w"> </span>v1alpha1<span class="w"> </span>--kind<span class="w"> </span>LiteLLMConnection<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--resource<span class="w"> </span>--controller<span class="w"> </span>--force
+</code></pre></div></p>
+</li>
+<li>
+<p>Delete temp stub: <code>git rm cmd/main.go</code></p>
+</li>
+<li>
+<p><code>./scripts/dev.sh make manifests generate</code></p>
+</li>
+<li>
+<p>Edit sample to remove TODO(user) placeholder, replace with <code>spec: {}</code>.</p>
+</li>
+<li>
+<p><code>./scripts/dev.sh make build</code> → PASS</p>
+</li>
+<li>
+<p>Commit: <code>feat(api): scaffold 7th CRD — LiteLLMConnection</code></p>
+</li>
+</ol>
+<h3 id="task-12-port-external_ref_typesgo-shared-base-for-4-crds">Task 1.2: Port external_ref_types.go (shared base for 4 CRDs)<a class="headerlink" href="#task-12-port-external_ref_typesgo-shared-base-for-4-crds" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>api/ach/v1alpha1/external_ref_types.go</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/api/ach/v1alpha1/external_ref_types.go<span class="w"> </span>api/ach/v1alpha1/external_ref_types.go
+</code></pre></div>
+<p>Verify: no edits needed (file is self-contained — RefreshBlock, SourceAuthSecretRef, GitHubSource, GitLabSource, BitbucketSource, S3Source, GCSSource, HTTPSource, ExternalRefStatus). Confirm SPDX header present (alitellm-style); add if missing.</p>
+<p><code>./scripts/dev.sh make manifests generate build</code> → PASS.</p>
+<p>Commit: <code>feat(api): shared ExternalRef types (Refresh, Auth, 6 source kinds)</code></p>
+<h3 id="task-13-port-environment_typesgo">Task 1.3: Port environment_types.go<a class="headerlink" href="#task-13-port-environment_typesgo" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Replace: <code>api/ach/v1alpha1/environment_types.go</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/api/ach/v1alpha1/environment_types.go<span class="w"> </span>api/ach/v1alpha1/environment_types.go
+</code></pre></div>
+<p>Verify SPDX header. Generated <code>zz_generated.deepcopy.go</code> will be regenerated by <code>make generate</code>.</p>
+<p><code>./scripts/dev.sh make manifests generate build</code> → PASS. Commit: <code>feat(api): Environment types — Runtime/Context blocks + AuthorizedTeams</code>.</p>
+<h3 id="task-14-18-port-remaining-6-type-files">Task 1.4-1.8: Port remaining 6 type files<a class="headerlink" href="#task-14-18-port-remaining-6-type-files" title="Permanent link">&para;</a></h3>
+<p>Repeat T1.3 pattern for each:
+- 1.4: <code>plugin_types.go</code>
+- 1.5: <code>pluginmarketplace_types.go</code>
+- 1.6: <code>artifact_types.go</code>
+- 1.7: <code>prompt_types.go</code>
+- 1.8: <code>backendidentitypolicy_types.go</code>
+- 1.9: <code>litellmconnection_types.go</code></p>
+<p>Each task = single cp + <code>make manifests generate build</code> + commit <code>feat(api): &lt;Kind&gt; types</code>.</p>
+<p>After Task 1.9: <code>make manifests generate build</code> PASS, <code>make pre-push</code> GREEN, all 7 CRDs have real Spec/Status. Reconcilers still stub.</p>
+<h3 id="task-110-update-helm-chart-crd-sources-from-regenerated-crds">Task 1.10: Update Helm chart <code>crd-sources/</code> from regenerated CRDs<a class="headerlink" href="#task-110-update-helm-chart-crd-sources-from-regenerated-crds" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>cp<span class="w"> </span>-f<span class="w"> </span>config/crd/bases/*.yaml<span class="w"> </span>deploy/helm/ach/crd-sources/
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>helm-sync
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>lint<span class="w"> </span>deploy/helm/ach
+</code></pre></div>
+<p>Commit: <code>chore(helm): sync CRDs after type port</code></p>
+<hr />
+<h2 id="phase-2-db-schema-migrations-db-package">Phase 2 — DB schema (migrations + db package)<a class="headerlink" href="#phase-2-db-schema-migrations-db-package" title="Permanent link">&para;</a></h2>
+<p>Goal: port Postgres schema + CRUD package. Required by everything else.</p>
+<h3 id="task-21-port-dbmigrations">Task 2.1: Port db/migrations/<a class="headerlink" href="#task-21-port-dbmigrations" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>db/migrations/000001_init.up.sql</code> + <code>.down.sql</code>
+- Create: <code>db/migrations/000002_phase2.up.sql</code> + <code>.down.sql</code>
+- Create: <code>db/migrations/000003_litellm_token.up.sql</code> + <code>.down.sql</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>db/migrations
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/db/migrations/*.sql<span class="w"> </span>db/migrations/
+</code></pre></div>
+<p>Commit: <code>feat(db): port 3 schema migrations (personal/environment keys, marketplace, litellm users)</code></p>
+<h3 id="task-22-port-internaldb-package-22-files-1k-lines">Task 2.2: Port internal/db/ package (22 files, ~1k lines)<a class="headerlink" href="#task-22-port-internaldb-package-22-files-1k-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>internal/db/</code> (whole dir)</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/db<span class="w"> </span>internal/db
+</code></pre></div>
+<p>Add dep:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>get<span class="w"> </span>github.com/jackc/pgx/v5
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>mod<span class="w"> </span>tidy
+</code></pre></div></p>
+<p>Verify: <code>./scripts/dev.sh go build ./internal/db/...</code> PASS.</p>
+<p>Commit: <code>feat(db): port internal/db (pgx CRUD: keys, external_refs, marketplace_plugins)</code></p>
+<h3 id="task-23-wire-ach-migrate-cobra-subcommand-to-golang-migrate">Task 2.3: Wire <code>ach migrate</code> cobra subcommand to golang-migrate<a class="headerlink" href="#task-23-wire-ach-migrate-cobra-subcommand-to-golang-migrate" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>cmd/ach/cmd/migrate.go</code>
+- Modify: <code>go.mod</code> (add golang-migrate)</p>
+<p>Port the body of <code>/home/jcm/Projects/ach-old/cmd/migrate/main.go</code> into the <code>RunE</code> of <code>migrateCmd</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>get<span class="w"> </span>github.com/golang-migrate/migrate/v4
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>mod<span class="w"> </span>tidy
+</code></pre></div>
+<p>Sketch — <code>cmd/ach/cmd/migrate.go</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">package</span><span class="w"> </span><span class="nx">cmd</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="s">&quot;fmt&quot;</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span><span class="s">&quot;os&quot;</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="s">&quot;github.com/golang-migrate/migrate/v4&quot;</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="nx">_</span><span class="w"> </span><span class="s">&quot;github.com/golang-migrate/migrate/v4/database/postgres&quot;</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">    </span><span class="nx">_</span><span class="w"> </span><span class="s">&quot;github.com/golang-migrate/migrate/v4/source/file&quot;</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="s">&quot;github.com/spf13/cobra&quot;</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="p">)</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="kd">var</span><span class="w"> </span><span class="nx">migrateCmd</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">cobra</span><span class="p">.</span><span class="nx">Command</span><span class="p">{</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="nx">Use</span><span class="p">:</span><span class="w">   </span><span class="s">&quot;migrate&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">    </span><span class="nx">Short</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run database migrations&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nx">RunE</span><span class="p">:</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">cmd</span><span class="w"> </span><span class="o">*</span><span class="nx">cobra</span><span class="p">.</span><span class="nx">Command</span><span class="p">,</span><span class="w"> </span><span class="nx">args</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">        </span><span class="nx">dsn</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">os</span><span class="p">.</span><span class="nx">Getenv</span><span class="p">(</span><span class="s">&quot;ACH_POSTGRES_URL&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">dsn</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;ACH_POSTGRES_URL required&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">        </span><span class="nx">m</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">migrate</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="s">&quot;file://db/migrations&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">dsn</span><span class="p">)</span>
+<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nx">err</span>
+<a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">m</span><span class="p">.</span><span class="nx">Up</span><span class="p">();</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">migrate</span><span class="p">.</span><span class="nx">ErrNoChange</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nx">err</span>
+<a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="w">        </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;migrations applied&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a><span class="p">}</span>
+<a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a>
+<a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a><span class="kd">func</span><span class="w"> </span><span class="nx">init</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a><span class="w">    </span><span class="nx">rootCmd</span><span class="p">.</span><span class="nx">AddCommand</span><span class="p">(</span><span class="nx">migrateCmd</span><span class="p">)</span>
+<a id="__codelineno-10-36" name="__codelineno-10-36" href="#__codelineno-10-36"></a><span class="p">}</span>
+</code></pre></div></p>
+<p>Smoke: <code>./bin/ach migrate</code> without DSN should error cleanly; with DSN against a running Postgres, schema lands.</p>
+<p>Test integration (defer to Phase 8 integration test).</p>
+<p>Commit: <code>feat(cmd): ach migrate wired to golang-migrate</code></p>
+<hr />
+<h2 id="phase-3-tier-1-leaf-packages-no-internal-deps">Phase 3 — Tier-1 leaf packages (no internal/ deps)<a class="headerlink" href="#phase-3-tier-1-leaf-packages-no-internal-deps" title="Permanent link">&para;</a></h2>
+<p>Each task = <code>cp -r /home/jcm/Projects/ach-old/internal/&lt;pkg&gt; internal/&lt;pkg&gt;</code> + add any module deps + verify <code>go build</code> + commit.</p>
+<h3 id="task-31-audit">Task 3.1: audit<a class="headerlink" href="#task-31-audit" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/audit<span class="w"> </span>internal/audit
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/audit/...
+</code></pre></div>
+Commit: <code>feat(audit): structured logging (BLK-02)</code></p>
+<h3 id="task-32-cachefs">Task 3.2: cachefs<a class="headerlink" href="#task-32-cachefs" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/cachefs<span class="w"> </span>internal/cachefs
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/cachefs/...
+</code></pre></div>
+Commit: <code>feat(cachefs): PVC layout + stale sweep (D-13)</code></p>
+<h3 id="task-33-config">Task 3.3: config<a class="headerlink" href="#task-33-config" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/config<span class="w"> </span>internal/config
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/config/...
+</code></pre></div>
+Commit: <code>feat(config): env-var parsing helpers</code></p>
+<h3 id="task-34-credhash">Task 3.4: credhash<a class="headerlink" href="#task-34-credhash" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/credhash<span class="w"> </span>internal/credhash
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/credhash/...
+</code></pre></div>
+Commit: <code>feat(credhash): HMAC-SHA-256 with pepper (DB-09)</code></p>
+<h3 id="task-35-keys">Task 3.5: keys<a class="headerlink" href="#task-35-keys" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/keys<span class="w"> </span>internal/keys
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/keys/...
+</code></pre></div>
+Commit: <code>feat(keys): bearer format validation (pk_/ek_ prefix)</code></p>
+<h3 id="task-36-sources">Task 3.6: sources<a class="headerlink" href="#task-36-sources" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/sources<span class="w"> </span>internal/sources
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>get<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span>github.com/aws/aws-sdk-go-v2/config<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span>github.com/aws/aws-sdk-go-v2/service/s3<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span>cloud.google.com/go/storage<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">  </span>github.com/google/go-github/v62<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span>gitlab.com/gitlab-org/api/client-go
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>mod<span class="w"> </span>tidy
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/sources/...
+</code></pre></div>
+Commit: <code>feat(sources): upstream fetchers (GitHub, GitLab, Bitbucket, S3, GCS, HTTP)</code></p>
+<h3 id="task-37-run-phase-3-smoke">Task 3.7: Run Phase 3 smoke<a class="headerlink" href="#task-37-run-phase-3-smoke" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-fast
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>make<span class="w"> </span>pre-push
+</code></pre></div>
+<p>All PASS. No commit (verification only).</p>
+<hr />
+<h2 id="phase-4-tier-2-packages-light-coupling">Phase 4 — Tier-2 packages (light coupling)<a class="headerlink" href="#phase-4-tier-2-packages-light-coupling" title="Permanent link">&para;</a></h2>
+<h3 id="task-41-litellm">Task 4.1: litellm<a class="headerlink" href="#task-41-litellm" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/litellm<span class="w"> </span>internal/litellm
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/litellm/...
+</code></pre></div>
+Commit: <code>feat(litellm): REST client (users, teams, agents, models, keygen, mcp)</code></p>
+<h3 id="task-42-connection">Task 4.2: connection<a class="headerlink" href="#task-42-connection" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/connection<span class="w"> </span>internal/connection
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/connection/...
+</code></pre></div>
+Commit: <code>feat(connection): HTTP client + retry/backoff</code></p>
+<h3 id="task-43-snapshot">Task 4.3: snapshot<a class="headerlink" href="#task-43-snapshot" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/snapshot<span class="w"> </span>internal/snapshot
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/snapshot/...
+</code></pre></div>
+Commit: <code>feat(snapshot): in-memory LiteLLM state cache</code></p>
+<h3 id="task-44-keystore">Task 4.4: keystore<a class="headerlink" href="#task-44-keystore" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/keystore<span class="w"> </span>internal/keystore
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/keystore/...
+</code></pre></div>
+Commit: <code>feat(keystore): key lookup + salted hash compare (DB-03)</code></p>
+<h3 id="task-45-phase-4-smoke-build-unit-envtest-pre-push-no-commit">Task 4.5: Phase 4 smoke (build + unit + envtest + pre-push). No commit.<a class="headerlink" href="#task-45-phase-4-smoke-build-unit-envtest-pre-push-no-commit" title="Permanent link">&para;</a></h3>
+<hr />
+<h2 id="phase-5-tier-3-packages-orphan-platformapi">Phase 5 — Tier-3 packages (orphan, platformapi)<a class="headerlink" href="#phase-5-tier-3-packages-orphan-platformapi" title="Permanent link">&para;</a></h2>
+<h3 id="task-51-orphan">Task 5.1: orphan<a class="headerlink" href="#task-51-orphan" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/orphan<span class="w"> </span>internal/orphan
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/orphan/...
+</code></pre></div>
+Commit: <code>feat(orphan): background drain of ek_/pk_ rows</code></p>
+<h3 id="task-52-platformapi-port-whole-subtree">Task 5.2: platformapi (port whole subtree)<a class="headerlink" href="#task-52-platformapi-port-whole-subtree" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>cp<span class="w"> </span>-r<span class="w"> </span>/home/jcm/Projects/ach-old/internal/platformapi<span class="w"> </span>internal/platformapi
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>get<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span>github.com/go-chi/chi/v5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span>github.com/coreos/go-oidc/v3/oidc<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span>golang.org/x/oauth2<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span>github.com/redis/go-redis/v9<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="w">  </span>github.com/oklog/ulid/v2
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>mod<span class="w"> </span>tidy
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/platformapi/...
+</code></pre></div>
+<p>42 files / 9 subpackages (admin, auth, environments, envkeys, hydrate, middleware, render, store, teams). Verify each subpackage compiles individually:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="k">for</span><span class="w"> </span>sub<span class="w"> </span><span class="k">in</span><span class="w"> </span>admin<span class="w"> </span>auth<span class="w"> </span>environments<span class="w"> </span>envkeys<span class="w"> </span>hydrate<span class="w"> </span>middleware<span class="w"> </span>render<span class="w"> </span>store<span class="w"> </span>teams<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/platformapi/<span class="nv">$sub</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="k">done</span>
+</code></pre></div></p>
+<p>Commit: <code>feat(platformapi): port 9 subpackages (chi router, OIDC/OAuth2, REST surface)</code></p>
+<h3 id="task-53-phase-5-smoke-no-commit">Task 5.3: Phase 5 smoke. No commit.<a class="headerlink" href="#task-53-phase-5-smoke-no-commit" title="Permanent link">&para;</a></h3>
+<hr />
+<h2 id="phase-6-controllers-real-reconciler-logic">Phase 6 — Controllers (real reconciler logic)<a class="headerlink" href="#phase-6-controllers-real-reconciler-logic" title="Permanent link">&para;</a></h2>
+<p>Order matters: shared external_ref refresh first, then individual controllers.</p>
+<h3 id="task-61-shared-external_ref-refresh-logic">Task 6.1: Shared external_ref refresh logic<a class="headerlink" href="#task-61-shared-external_ref-refresh-logic" title="Permanent link">&para;</a></h3>
+<p>ach-old has <code>internal/controller/external_ref_refresh.go</code> (~472L). Check if it's part of <code>/internal/controller/</code> root or per-package.</p>
+<p><strong>Files:</strong>
+- Inspect: <code>/home/jcm/Projects/ach-old/internal/controller/</code> for shared files
+- Port to: <code>internal/controller/ach/external_ref_refresh.go</code> (and any test sidecar)</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>ls<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/*.go<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>_controller.go<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>suite_test
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/external_ref_refresh.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="w">   </span>internal/controller/ach/external_ref_refresh.go
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="c1"># Also any helpers like external_ref_helpers.go, refresh_state.go etc.</span>
+</code></pre></div>
+<p>Verify: <code>./scripts/dev.sh go build ./internal/controller/ach/...</code> PASS.</p>
+<p>Commit: <code>feat(controller): shared external_ref refresh loop</code></p>
+<h3 id="task-62-environment-controller-largest-dep-on-litellm-snapshot">Task 6.2: Environment controller (largest dep on litellm + snapshot)<a class="headerlink" href="#task-62-environment-controller-largest-dep-on-litellm-snapshot" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Replace: <code>internal/controller/ach/environment_controller.go</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/environment_controller.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">   </span>internal/controller/ach/environment_controller.go
+</code></pre></div>
+<p>Verify: build PASS, envtest-fast on the package PASS:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span>Environment
+</code></pre></div></p>
+<p>Commit: <code>feat(controller): Environment — AuthorizedTeams validation + drain</code></p>
+<h3 id="task-63-68-port-remaining-controllers">Task 6.3-6.8: Port remaining controllers<a class="headerlink" href="#task-63-68-port-remaining-controllers" title="Permanent link">&para;</a></h3>
+<p>Each task = single cp + envtest-pkg run + commit:
+- 6.3: <code>pluginmarketplace_controller.go</code> (largest — UPSERT marketplace_plugins, regex filter validation)
+- 6.4: <code>plugin_controller.go</code>
+- 6.5: <code>artifact_controller.go</code>
+- 6.6: <code>prompt_controller.go</code>
+- 6.7: <code>backendidentitypolicy_controller.go</code> (alphabetical conflict detection)
+- 6.8: <code>litellmconnection_controller.go</code> (endpoint reachability + pepper env fetch)</p>
+<p>After 6.8: all 7 reconcilers carry real logic. <code>make envtest-fast</code> may still pass with 0 tests but the controller package compiles + the embedded <code>_controller_test.go</code> (per-kind kubebuilder scaffold) should pass.</p>
+<h3 id="task-69-port-controller-suite_testgo-sidecar-tests">Task 6.9: Port controller suite_test.go + sidecar tests<a class="headerlink" href="#task-69-port-controller-suite_testgo-sidecar-tests" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/suite_test.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="w">   </span>internal/controller/ach/suite_test.go
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="c1"># Plus sidecar tests:</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/external_ref_refresh_test.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="w">   </span>internal/controller/ach/external_ref_refresh_test.go
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/internal/controller/pluginmarketplace_envtest_test.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="w">   </span>internal/controller/ach/pluginmarketplace_envtest_test.go
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="c1"># CEL admission, finalizer tests, etc.</span>
+</code></pre></div>
+<p>Inspect ach-old's <code>internal/controller/</code> directory listing — port any other <code>*_test.go</code> files.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-fast
+</code></pre></div>
+<p>Expect: real envtest with Ginkgo specs running (not zero). PASS.</p>
+<p>Commit: <code>test(controller): port envtest suite + Ginkgo specs (CEL, finalizers, refresh)</code></p>
+<hr />
+<h2 id="phase-7-cobra-subcommand-wiring">Phase 7 — Cobra subcommand wiring<a class="headerlink" href="#phase-7-cobra-subcommand-wiring" title="Permanent link">&para;</a></h2>
+<p>Replace stub <code>RunE</code> in each subcommand with body from corresponding ach-old <code>cmd/&lt;svc&gt;/main.go</code>. Each ach-old <code>main()</code> becomes a <code>RunE</code>. controller-runtime manager init, chi router setup, etc. move into the subcommand.</p>
+<h3 id="task-71-operator-subcommand">Task 7.1: operator subcommand<a class="headerlink" href="#task-71-operator-subcommand" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong>
+- Modify: <code>cmd/ach/cmd/operator.go</code></p>
+<p>Port body of <code>/home/jcm/Projects/ach-old/cmd/operator/main.go</code> (~499L). Pattern:
+- Original <code>func main() { ... }</code> body lifts wholesale into <code>RunE: func(cmd *cobra.Command, args []string) error { ... return nil }</code>
+- Replace <code>os.Exit(1)</code> paths with <code>return fmt.Errorf(...)</code>
+- Imports move to top of operator.go
+- Flag/env parsing: cobra subcommand can read env directly (existing pattern in ach-old), no flag changes needed
+- Manager <code>signals.SetupSignalHandler()</code> wiring stays as-is</p>
+<p>Verify: <code>./bin/ach operator --help</code> shows operator-mode help; <code>./bin/ach operator</code> against a kind cluster boots manager + registers reconcilers. (Full integration deferred to Phase 9 e2e.)</p>
+<p>Commit: <code>feat(cmd): wire ach operator to controller-runtime manager</code></p>
+<h3 id="task-72-platform-api-subcommand">Task 7.2: platform-api subcommand<a class="headerlink" href="#task-72-platform-api-subcommand" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong>
+- Modify: <code>cmd/ach/cmd/platform_api.go</code></p>
+<p>Port body of <code>/home/jcm/Projects/ach-old/cmd/platform-api/main.go</code> (~410L). chi router + http.Server + DB pool + Redis client + OIDC verifier + LiteLLM client.</p>
+<p>Smoke: <code>./bin/ach platform-api --help</code> shows help; with required env vars boots http listener.</p>
+<p>Commit: <code>feat(cmd): wire ach platform-api to chi server</code></p>
+<h3 id="task-73-forwarder-subcommand">Task 7.3: forwarder subcommand<a class="headerlink" href="#task-73-forwarder-subcommand" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong>
+- Modify: <code>cmd/ach/cmd/forwarder.go</code></p>
+<p>Port body of <code>/home/jcm/Projects/ach-old/cmd/forwarder/main.go</code> (~76L). HTTP proxy to /mcp/<name> and /a2a/<name>.</p>
+<p>Commit: <code>feat(cmd): wire ach forwarder to MCP/A2A proxy</code></p>
+<h3 id="task-74-content-service-subcommand">Task 7.4: content-service subcommand<a class="headerlink" href="#task-74-content-service-subcommand" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong>
+- Modify: <code>cmd/ach/cmd/content_service.go</code></p>
+<p>Port body of <code>/home/jcm/Projects/ach-old/cmd/content-service/main.go</code> (~84L). Cached tarball + marketplace JSON server.</p>
+<p>Commit: <code>feat(cmd): wire ach content-service to cachefs reader</code></p>
+<h3 id="task-75-ach-cli-surface-deferred">Task 7.5: ach CLI surface (deferred)<a class="headerlink" href="#task-75-ach-cli-surface-deferred" title="Permanent link">&para;</a></h3>
+<p><code>ach</code> bare invocation. ach-old has <code>cmd/ach/main.go</code> (~43L) — described as "stub/legacy" in inventory. If empty, leave current cobra root help as-is. If non-empty, port to a new cobra subcommand <code>hydrate</code> or similar.</p>
+<p>Inspect first:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>wc<span class="w"> </span>-l<span class="w"> </span>/home/jcm/Projects/ach-old/cmd/ach/main.go
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>head<span class="w"> </span>-40<span class="w"> </span>/home/jcm/Projects/ach-old/cmd/ach/main.go
+</code></pre></div></p>
+<p>If non-trivial, add a <code>hydrate</code> subcommand or replace root <code>RunE</code>. Otherwise no-op for this plan.</p>
+<p>Commit (only if changes): <code>feat(cmd): ach CLI hydrate surface</code></p>
+<h3 id="task-76-final-binary-smoke">Task 7.6: Final binary smoke<a class="headerlink" href="#task-76-final-binary-smoke" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>./bin/ach<span class="w"> </span>--version
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>./bin/ach<span class="w"> </span>--help<span class="w">                    </span><span class="c1"># 5 subcommands listed</span>
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>./bin/ach<span class="w"> </span>operator<span class="w"> </span>--help
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>./bin/ach<span class="w"> </span>platform-api<span class="w"> </span>--help
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a>./bin/ach<span class="w"> </span>forwarder<span class="w"> </span>--help
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a>./bin/ach<span class="w"> </span>content-service<span class="w"> </span>--help
+<a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a>./bin/ach<span class="w"> </span>migrate<span class="w"> </span>--help
+</code></pre></div>
+<p>No commit.</p>
+<hr />
+<h2 id="phase-8-integration-tests-e2e">Phase 8 — Integration tests + e2e<a class="headerlink" href="#phase-8-integration-tests-e2e" title="Permanent link">&para;</a></h2>
+<h3 id="task-81-port-teste2e-phase-invariants">Task 8.1: Port test/e2e/ phase invariants<a class="headerlink" href="#task-81-port-teste2e-phase-invariants" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> lift ach-old's e2e Ginkgo phase tests.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c1"># Inspect ach-old e2e:</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>ls<span class="w"> </span>/home/jcm/Projects/ach-old/test/e2e/
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="c1"># Port each phase test file:</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>phase1_invariants_test.go<span class="w"> </span>phase2_invariants_test.go<span class="w"> </span>phase2_sc5_orphan_test.go<span class="w"> </span>phase3_helpers_test.go<span class="w"> </span>phase3_invariants_test.go<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="w">  </span>cp<span class="w"> </span>/home/jcm/Projects/ach-old/test/e2e/<span class="nv">$f</span><span class="w"> </span>test/e2e/<span class="nv">$f</span>
+<a id="__codelineno-32-7" name="__codelineno-32-7" href="#__codelineno-32-7"></a><span class="k">done</span>
+</code></pre></div>
+<p>The bootstrap-time suite_test.go (from alitellm pattern) may need merging with ach-old's e2e_suite_test.go. Inspect both, prefer ach-old's setup (more developed, phase-aware) but ensure namespace + image references match ach single-binary layout.</p>
+<p>Build check: <code>./scripts/dev.sh go build -tags=e2e ./test/e2e/...</code> PASS.</p>
+<p>Commit: <code>test(e2e): port phase 1/2/3 invariants from ach-old</code></p>
+<h3 id="task-82-integration-tests-via-testcontainers-go">Task 8.2: Integration tests via testcontainers-go<a class="headerlink" href="#task-82-integration-tests-via-testcontainers-go" title="Permanent link">&para;</a></h3>
+<p>ach-old uses <code>testcontainers-go</code> for Postgres integration tests with build tag <code>integration</code>. Search:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>find<span class="w"> </span>/home/jcm/Projects/ach-old<span class="w"> </span>-name<span class="w"> </span><span class="s1">&#39;*_test.go&#39;</span><span class="w"> </span>-exec<span class="w"> </span>grep<span class="w"> </span>-l<span class="w"> </span><span class="s1">&#39;//go:build integration&#39;</span><span class="w"> </span><span class="o">{}</span><span class="w"> </span><span class="se">\;</span>
+</code></pre></div></p>
+<p>Port each found file maintaining its build tag. Add target:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>grep<span class="w"> </span><span class="s1">&#39;test-integration&#39;</span><span class="w"> </span>Makefile<span class="w">  </span><span class="c1"># confirm target exists (alitellm port should have it)</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>test-integration<span class="w">  </span><span class="c1"># PASS</span>
+</code></pre></div></p>
+<p>Commit: <code>test(integration): port testcontainers-go DB + Redis tests</code></p>
+<h3 id="task-83-run-full-test-suite">Task 8.3: Run full test suite<a class="headerlink" href="#task-83-run-full-test-suite" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-run<span class="w">    </span><span class="c1"># with -race</span>
+<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>test-integration
+<a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a>make<span class="w"> </span>pre-push
+</code></pre></div>
+<p>All PASS. No commit.</p>
+<hr />
+<h2 id="phase-9-manifests-helm-rbac">Phase 9 — Manifests + Helm + RBAC<a class="headerlink" href="#phase-9-manifests-helm-rbac" title="Permanent link">&para;</a></h2>
+<h3 id="task-91-update-kustomize-manager-deployment">Task 9.1: Update kustomize manager Deployment<a class="headerlink" href="#task-91-update-kustomize-manager-deployment" title="Permanent link">&para;</a></h3>
+<p>Port ach-old's <code>config/manager/manager.yaml</code> (2-container Pod: operator + content-service co-located with shared RWO cache PVC). Already flagged in <code>references/upstream-sync.md</code> (Task 6.1) as deferred.</p>
+<p><strong>Files:</strong>
+- Replace: <code>config/manager/manager.yaml</code>
+- Possibly: <code>config/manager/kustomization.yaml</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/config/manager/manager.yaml<span class="w"> </span>config/manager/manager.yaml
+</code></pre></div>
+<p><strong>Adapt for single-binary</strong>: ach-old's manager Pod has 2 containers with images <code>ach-operator:latest</code> and <code>ach-content-service:latest</code>. Rewrite to:
+- Container <code>manager</code>: <code>image: ghcr.io/ackstorm/ach:v0.x.y</code>, <code>args: ["operator"]</code>
+- Container <code>content-service</code>: <code>image: ghcr.io/ackstorm/ach:v0.x.y</code>, <code>args: ["content-service"]</code>
+- Shared <code>ach-operator-cache</code> PVC mount, <code>strategy: Recreate</code> for RWO</p>
+<p>Verify: <code>./scripts/dev.sh kustomize build config/default &gt; /dev/null</code> PASS.</p>
+<p>Commit: <code>feat(manifests): manager Pod with operator + content-service co-located (single-binary)</code></p>
+<h3 id="task-92-port-rbac">Task 9.2: Port RBAC<a class="headerlink" href="#task-92-port-rbac" title="Permanent link">&para;</a></h3>
+<p>ach-old has rich RBAC for the operator (CRD watches + ConfigMap/Secret reads + LiteLLM proxy). Port:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>cp<span class="w"> </span>/home/jcm/Projects/ach-old/config/rbac/role.yaml<span class="w"> </span>config/rbac/role.yaml
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="c1"># Plus any per-Kind editor/viewer roles ach-old has beyond defaults</span>
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>ls<span class="w"> </span>/home/jcm/Projects/ach-old/config/rbac/
+</code></pre></div>
+<p>Verify: <code>./scripts/dev.sh kustomize build config/default | grep -A50 'kind: ClusterRole'</code> looks sane.</p>
+<p>Commit: <code>feat(rbac): port full operator role (CRD + ConfigMap + Secret + LiteLLM)</code></p>
+<h3 id="task-93-helm-multi-component-templates">Task 9.3: Helm multi-component templates<a class="headerlink" href="#task-93-helm-multi-component-templates" title="Permanent link">&para;</a></h3>
+<p>This is TODO item 3 from <code>/home/jcm/Projects/ach/TODO.md</code> — partial overlap with this plan. Author per-mode Deployments using <code>values.yaml</code>'s existing toggles:</p>
+<p><strong>Files:</strong>
+- Create: <code>deploy/helm/ach/templates/operator-deployment.yaml</code>
+- Create: <code>deploy/helm/ach/templates/platform-api-deployment.yaml</code>
+- Create: <code>deploy/helm/ach/templates/forwarder-deployment.yaml</code>
+- Create: <code>deploy/helm/ach/templates/content-service-deployment.yaml</code>
+- Create: <code>deploy/helm/ach/templates/migrate-job.yaml</code>
+- Modify: <code>deploy/helm/ach/templates/_helpers.tpl</code>
+- Possibly remove: <code>deploy/helm/ach/templates/install.yaml</code> (monolith from alitellm)</p>
+<p>Pattern: each Deployment references <code>{{ .Values.image.repo }}:{{ .Values.image.tag }}</code> with <code>args: {{ .Values.&lt;mode&gt;.args | toYaml }}</code>, gated by <code>{{- if .Values.&lt;mode&gt;.enabled }}</code>.</p>
+<p>Verify: <code>helm template deploy/helm/ach --set operator.enabled=true --set platformApi.enabled=true | grep -c 'kind: Deployment'</code> ≥ 2.</p>
+<p><code>helm lint deploy/helm/ach</code> PASS.</p>
+<p>Commit: <code>feat(helm): per-mode Deployments + migrate Job (consume values.yaml toggles)</code></p>
+<h3 id="task-94-helm-install-end-to-end-in-kind">Task 9.4: Helm install end-to-end in kind<a class="headerlink" href="#task-94-helm-install-end-to-end-in-kind" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w">                            </span><span class="c1"># postgres + valkey + dex + litellm hydrated</span>
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>install<span class="w"> </span>ach<span class="w"> </span>deploy/helm/ach<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a><span class="w">  </span>--namespace<span class="w"> </span>ach-system<span class="w"> </span>--create-namespace
+<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w">             </span><span class="c1"># 4 Deployments + 1 Job</span>
+<a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>logs<span class="w"> </span>deploy/ach-operator<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="p">|</span><span class="w"> </span>head
+</code></pre></div>
+<p>If failures, diagnose. Add fixes to <code>references/upstream-sync.md</code> if alitellm-relevant.</p>
+<p>Commit (only if Helm template fixes needed): <code>fix(helm): &lt;specifics&gt;</code></p>
+<hr />
+<h2 id="phase-10-final-verification">Phase 10 — Final verification<a class="headerlink" href="#phase-10-final-verification" title="Permanent link">&para;</a></h2>
+<h3 id="task-101-full-pre-merge-smoke">Task 10.1: Full pre-merge smoke<a class="headerlink" href="#task-101-full-pre-merge-smoke" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span><span class="nb">help</span><span class="w">                                  </span><span class="c1"># ≥60 targets</span>
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>manifests<span class="w"> </span>generate<span class="w"> </span>fmt<span class="w"> </span>vet<span class="w">            </span><span class="c1"># exit 0</span>
+<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build<span class="w">                                 </span><span class="c1"># bin/ach</span>
+<a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a>./bin/ach<span class="w"> </span>--version
+<a id="__codelineno-39-5" name="__codelineno-39-5" href="#__codelineno-39-5"></a>./bin/ach<span class="w"> </span>operator<span class="w"> </span>--help<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./bin/ach<span class="w"> </span>platform-api<span class="w"> </span>--help<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-39-6" name="__codelineno-39-6" href="#__codelineno-39-6"></a><span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span>./bin/ach<span class="w"> </span>forwarder<span class="w"> </span>--help<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./bin/ach<span class="w"> </span>content-service<span class="w"> </span>--help<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-39-7" name="__codelineno-39-7" href="#__codelineno-39-7"></a><span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span>./bin/ach<span class="w"> </span>migrate<span class="w"> </span>--help
+<a id="__codelineno-39-8" name="__codelineno-39-8" href="#__codelineno-39-8"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit<span class="w">                                  </span><span class="c1"># PASS, non-zero tests now</span>
+<a id="__codelineno-39-9" name="__codelineno-39-9" href="#__codelineno-39-9"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-fast<span class="w">                          </span><span class="c1"># PASS, real specs</span>
+<a id="__codelineno-39-10" name="__codelineno-39-10" href="#__codelineno-39-10"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-run<span class="w">                           </span><span class="c1"># PASS, with -race</span>
+<a id="__codelineno-39-11" name="__codelineno-39-11" href="#__codelineno-39-11"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>test-integration<span class="w">                      </span><span class="c1"># PASS, testcontainers</span>
+<a id="__codelineno-39-12" name="__codelineno-39-12" href="#__codelineno-39-12"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint<span class="w">                                  </span><span class="c1"># exit 0</span>
+<a id="__codelineno-39-13" name="__codelineno-39-13" href="#__codelineno-39-13"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>samples-audit<span class="w">                         </span><span class="c1"># PASS</span>
+<a id="__codelineno-39-14" name="__codelineno-39-14" href="#__codelineno-39-14"></a>make<span class="w"> </span>pre-push<span class="w">                                               </span><span class="c1"># Failures: 0</span>
+<a id="__codelineno-39-15" name="__codelineno-39-15" href="#__codelineno-39-15"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>helm-sync-check<span class="w">                       </span><span class="c1"># PASS</span>
+<a id="__codelineno-39-16" name="__codelineno-39-16" href="#__codelineno-39-16"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>deploy-kustomize-sync-check<span class="w">           </span><span class="c1"># PASS</span>
+<a id="__codelineno-39-17" name="__codelineno-39-17" href="#__codelineno-39-17"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>lint<span class="w"> </span>deploy/helm/ach<span class="w">                  </span><span class="c1"># PASS</span>
+<a id="__codelineno-39-18" name="__codelineno-39-18" href="#__codelineno-39-18"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>docs-build<span class="w">                            </span><span class="c1"># site/ produced</span>
+<a id="__codelineno-39-19" name="__codelineno-39-19" href="#__codelineno-39-19"></a>docker<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">VERSION</span><span class="o">=</span>domain<span class="w"> </span>-t<span class="w"> </span>ghcr.io/ackstorm/ach:domain<span class="w"> </span>.
+<a id="__codelineno-39-20" name="__codelineno-39-20" href="#__codelineno-39-20"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>ghcr.io/ackstorm/ach:domain<span class="w"> </span>--version
+<a id="__codelineno-39-21" name="__codelineno-39-21" href="#__codelineno-39-21"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up
+<a id="__codelineno-39-22" name="__codelineno-39-22" href="#__codelineno-39-22"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>install<span class="w"> </span>ach<span class="w"> </span>deploy/helm/ach<span class="w"> </span>--namespace<span class="w"> </span>ach-system<span class="w"> </span>--create-namespace
+<a id="__codelineno-39-23" name="__codelineno-39-23" href="#__codelineno-39-23"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>e2e-full<span class="w">                              </span><span class="c1"># phase 1/2/3 invariants PASS</span>
+<a id="__codelineno-39-24" name="__codelineno-39-24" href="#__codelineno-39-24"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-down
+</code></pre></div>
+<p>All PASS. No commit.</p>
+<h3 id="task-102-update-changelogmd-and-bump-for-v020">Task 10.2: Update CHANGELOG.md and bump for v0.2.0<a class="headerlink" href="#task-102-update-changelogmd-and-bump-for-v020" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="gu">## [0.2.0] - 2026-MM-DD</span>
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>
+<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a><span class="gu">### Added</span>
+<a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a><span class="k">-</span><span class="w"> </span>Real CRD types for Environment, Plugin, PluginMarketplace, Artifact, Prompt, BackendIdentityPolicy, LiteLLMConnection (ported from ach-old)
+<a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a><span class="k">-</span><span class="w"> </span>Reconciler logic for all 7 CRDs
+<a id="__codelineno-40-6" name="__codelineno-40-6" href="#__codelineno-40-6"></a><span class="k">-</span><span class="w"> </span>Platform REST API (chi, OIDC/OAuth2 Dex auth, 9 subroutes)
+<a id="__codelineno-40-7" name="__codelineno-40-7" href="#__codelineno-40-7"></a><span class="k">-</span><span class="w"> </span>MCP/A2A forwarder
+<a id="__codelineno-40-8" name="__codelineno-40-8" href="#__codelineno-40-8"></a><span class="k">-</span><span class="w"> </span>Content service (cached artifact streaming)
+<a id="__codelineno-40-9" name="__codelineno-40-9" href="#__codelineno-40-9"></a><span class="k">-</span><span class="w"> </span>DB migrations (3 files: personal/environment keys, marketplace plugins, litellm users)
+<a id="__codelineno-40-10" name="__codelineno-40-10" href="#__codelineno-40-10"></a><span class="k">-</span><span class="w"> </span>E2E phase invariants (phase 1/2/3)
+<a id="__codelineno-40-11" name="__codelineno-40-11" href="#__codelineno-40-11"></a><span class="k">-</span><span class="w"> </span>Integration tests (testcontainers-go)
+<a id="__codelineno-40-12" name="__codelineno-40-12" href="#__codelineno-40-12"></a><span class="k">-</span><span class="w"> </span>Multi-component Helm templates (per-mode Deployments + migrate Job)
+</code></pre></div>
+<p>Commit: <code>docs: CHANGELOG for v0.2.0 (domain port from ach-old)</code></p>
+<h3 id="task-103-open-pr">Task 10.3: Open PR<a class="headerlink" href="#task-103-open-pr" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>feat/domain-port
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="w">  </span>--title<span class="w"> </span><span class="s2">&quot;feat: domain port from ach-old (v0.2.0 prep)&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a><span class="w">  </span>--body<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>cat<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<a id="__codelineno-41-5" name="__codelineno-41-5" href="#__codelineno-41-5"></a><span class="s">## Summary</span>
+<a id="__codelineno-41-6" name="__codelineno-41-6" href="#__codelineno-41-6"></a>
+<a id="__codelineno-41-7" name="__codelineno-41-7" href="#__codelineno-41-7"></a><span class="s">Ports business logic from ach-old into bootstrap shell. Closes TODO items 2 (domain port) and 3 (multi-component Helm) from TODO.md.</span>
+<a id="__codelineno-41-8" name="__codelineno-41-8" href="#__codelineno-41-8"></a>
+<a id="__codelineno-41-9" name="__codelineno-41-9" href="#__codelineno-41-9"></a><span class="s">## What changed</span>
+<a id="__codelineno-41-10" name="__codelineno-41-10" href="#__codelineno-41-10"></a>
+<a id="__codelineno-41-11" name="__codelineno-41-11" href="#__codelineno-41-11"></a><span class="s">- 7 CRD types now carry real Spec/Status (was: placeholder \`Foo string\`)</span>
+<a id="__codelineno-41-12" name="__codelineno-41-12" href="#__codelineno-41-12"></a><span class="s">- 7 reconcilers carry real logic (was: empty stubs)</span>
+<a id="__codelineno-41-13" name="__codelineno-41-13" href="#__codelineno-41-13"></a><span class="s">- 14 internal/ packages ported (audit, cachefs, config, connection, controller helpers, credhash, db, keys, keystore, litellm, orphan, platformapi, snapshot, sources)</span>
+<a id="__codelineno-41-14" name="__codelineno-41-14" href="#__codelineno-41-14"></a><span class="s">- 5 cobra subcommands now boot real services (was: print stubs)</span>
+<a id="__codelineno-41-15" name="__codelineno-41-15" href="#__codelineno-41-15"></a><span class="s">- 3 DB migrations + db package</span>
+<a id="__codelineno-41-16" name="__codelineno-41-16" href="#__codelineno-41-16"></a><span class="s">- E2E phase invariants ported (Ginkgo)</span>
+<a id="__codelineno-41-17" name="__codelineno-41-17" href="#__codelineno-41-17"></a><span class="s">- Integration tests (testcontainers-go)</span>
+<a id="__codelineno-41-18" name="__codelineno-41-18" href="#__codelineno-41-18"></a><span class="s">- Multi-component Helm templates (per-mode Deployments + migrate Job)</span>
+<a id="__codelineno-41-19" name="__codelineno-41-19" href="#__codelineno-41-19"></a>
+<a id="__codelineno-41-20" name="__codelineno-41-20" href="#__codelineno-41-20"></a><span class="s">## Test plan</span>
+<a id="__codelineno-41-21" name="__codelineno-41-21" href="#__codelineno-41-21"></a>
+<a id="__codelineno-41-22" name="__codelineno-41-22" href="#__codelineno-41-22"></a><span class="s">- [x] make unit / envtest-fast / envtest-run / test-integration / e2e-full PASS</span>
+<a id="__codelineno-41-23" name="__codelineno-41-23" href="#__codelineno-41-23"></a><span class="s">- [x] make pre-push GREEN</span>
+<a id="__codelineno-41-24" name="__codelineno-41-24" href="#__codelineno-41-24"></a><span class="s">- [x] make cluster-up + helm install + e2e PASS</span>
+<a id="__codelineno-41-25" name="__codelineno-41-25" href="#__codelineno-41-25"></a><span class="s">- [x] All 5 cobra subcommands boot and serve real workloads</span>
+<a id="__codelineno-41-26" name="__codelineno-41-26" href="#__codelineno-41-26"></a><span class="s">- [x] CHANGELOG bumped</span>
+<a id="__codelineno-41-27" name="__codelineno-41-27" href="#__codelineno-41-27"></a>
+<a id="__codelineno-41-28" name="__codelineno-41-28" href="#__codelineno-41-28"></a><span class="s">## Files</span>
+<a id="__codelineno-41-29" name="__codelineno-41-29" href="#__codelineno-41-29"></a>
+<a id="__codelineno-41-30" name="__codelineno-41-30" href="#__codelineno-41-30"></a><span class="s">- 7 \`api/ach/v1alpha1/*_types.go\` (replaced)</span>
+<a id="__codelineno-41-31" name="__codelineno-41-31" href="#__codelineno-41-31"></a><span class="s">- 1 new \`api/ach/v1alpha1/external_ref_types.go\`</span>
+<a id="__codelineno-41-32" name="__codelineno-41-32" href="#__codelineno-41-32"></a><span class="s">- 7 \`internal/controller/ach/*_controller.go\` (replaced)</span>
+<a id="__codelineno-41-33" name="__codelineno-41-33" href="#__codelineno-41-33"></a><span class="s">- 14 new \`internal/&lt;pkg&gt;/\` directories</span>
+<a id="__codelineno-41-34" name="__codelineno-41-34" href="#__codelineno-41-34"></a><span class="s">- 5 \`cmd/ach/cmd/*.go\` (wired)</span>
+<a id="__codelineno-41-35" name="__codelineno-41-35" href="#__codelineno-41-35"></a><span class="s">- 3 \`db/migrations/*.sql\`</span>
+<a id="__codelineno-41-36" name="__codelineno-41-36" href="#__codelineno-41-36"></a><span class="s">- 6 \`test/e2e/*_test.go\` (Ginkgo specs)</span>
+<a id="__codelineno-41-37" name="__codelineno-41-37" href="#__codelineno-41-37"></a><span class="s">- 5 new \`deploy/helm/ach/templates/*-deployment.yaml\` / migrate-job.yaml</span>
+<a id="__codelineno-41-38" name="__codelineno-41-38" href="#__codelineno-41-38"></a><span class="s">- Misc \`config/\`, \`go.mod\`, \`CHANGELOG.md\`, \`references/upstream-sync.md\` updates</span>
+<a id="__codelineno-41-39" name="__codelineno-41-39" href="#__codelineno-41-39"></a>
+<a id="__codelineno-41-40" name="__codelineno-41-40" href="#__codelineno-41-40"></a><span class="s">🤖 Generated with [Claude Code](https://claude.com/claude-code)</span>
+<a id="__codelineno-41-41" name="__codelineno-41-41" href="#__codelineno-41-41"></a><span class="s">EOF</span>
+<a id="__codelineno-41-42" name="__codelineno-41-42" href="#__codelineno-41-42"></a><span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>After merge → tag v0.2.0 via release pipeline (<code>chore(release): v0.2.0</code> commit on main).</p>
+<hr />
+<h2 id="cross-references-and-risks">Cross-references and risks<a class="headerlink" href="#cross-references-and-risks" title="Permanent link">&para;</a></h2>
+<h3 id="upstream-syncmd-adds-during-this-port">upstream-sync.md adds during this port<a class="headerlink" href="#upstream-syncmd-adds-during-this-port" title="Permanent link">&para;</a></h3>
+<p>If any inherited bug from ach-old surfaces, log in <code>references/upstream-sync.md</code> under <code>## ach-old issues</code> section (separate from alitellm sync targets). Existing ach-old log entries (Task 6.1):
+- <code>config/manager/manager.yaml</code> 2-container Pod port — handled in Task 9.1
+- e2e Patch 1 silent no-op — should resolve automatically once manager.yaml is ported (Task 9.1)
+- namePrefix doubling — may need decision in Task 9.1 (drop <code>namePrefix: ach-</code> from <code>config/default/kustomization.yaml</code> OR rename source manifests)
+- storage PVC unbound — should resolve once manager.yaml lands (Task 9.1)</p>
+<h3 id="known-risks">Known risks<a class="headerlink" href="#known-risks" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>chi router + OIDC auth coupling</strong>: platformapi subpackages compose via <code>Deps</code> struct. Single Task 5.2 may be too coarse — if compilation fails, split per-subpackage.</li>
+<li><strong>kustomize namePrefix collision</strong>: <code>ach-</code> prefix from bootstrap <code>config/default/kustomization.yaml</code> may double-prefix ach-old-named manifests. Decide: drop <code>namePrefix</code> OR rename source manifests. See <code>references/upstream-sync.md</code> row 74.</li>
+<li><strong>Single-binary cobra vs multi-image expectations</strong>: ach-old's e2e tests may reference image tags like <code>ghcr.io/ackstorm/ach-operator</code>. Search-replace to <code>ghcr.io/ackstorm/ach:v0.x.y</code> with appropriate <code>args:</code>.</li>
+<li><strong>DB migrations + envtest</strong>: envtest doesn't bring up Postgres. Controllers that touch DB must mock or skip DB-bound spec branches under envtest. ach-old likely already handles this — preserve patterns.</li>
+<li><strong>Bitnami image pruning</strong> (TODO-1 1a): already patched on <code>fix/post-bootstrap-hardening</code> branch (PR #1). Confirm merged before starting this plan or rebase to pick up the fix.</li>
+</ol>
+<h3 id="estimated-effort">Estimated effort<a class="headerlink" href="#estimated-effort" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Phase 1 (API types): ~30 min</li>
+<li>Phase 2 (DB): ~20 min</li>
+<li>Phase 3 (tier-1): ~30 min</li>
+<li>Phase 4 (tier-2): ~30 min</li>
+<li>Phase 5 (tier-3): ~45 min (platformapi is large; may split)</li>
+<li>Phase 6 (controllers): ~60 min</li>
+<li>Phase 7 (cobra wiring): ~45 min</li>
+<li>Phase 8 (tests): ~45 min (e2e + integration)</li>
+<li>Phase 9 (manifests + helm): ~30 min</li>
+<li>Phase 10 (verify + PR): ~15 min</li>
+</ul>
+<p>Total: ~5-6 hours wall-clock (similar to bootstrap), single working session if focused, faster with parallel agent dispatch.</p>
+<h3 id="deferred-out-of-scope">Deferred / out-of-scope<a class="headerlink" href="#deferred-out-of-scope" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>goreleaser dockers_v2 migration</strong> (cosmetic deprecation warning)</li>
+<li><strong>Sync-back PR to alitellm</strong> (already staged at <code>/home/jcm/Projects/alitellm-operator/SYNC-FROM-ACH/</code>, user can run separately)</li>
+<li><strong>Real first prod release validation</strong> — <code>v0.2.0</code> will exercise it</li>
+<li><strong>Bitnami mirror to GHCR</strong> (defer until pruning hits us again)</li>
+<li><strong>Domain feature additions</strong> beyond what ach-old already has — pure port, no new features</li>
+</ul>
+<hr />
+<h2 id="phase-level-commit-count-target">Phase-level commit count target<a class="headerlink" href="#phase-level-commit-count-target" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Phase 1: 10 commits (1.1-1.10)</li>
+<li>Phase 2: 3 commits</li>
+<li>Phase 3: 7 commits (3.1-3.6 + smoke)</li>
+<li>Phase 4: 5 commits</li>
+<li>Phase 5: 3 commits</li>
+<li>Phase 6: 9 commits (6.1-6.9)</li>
+<li>Phase 7: 5-6 commits</li>
+<li>Phase 8: 3 commits</li>
+<li>Phase 9: 4 commits</li>
+<li>Phase 10: 1-2 commits</li>
+</ul>
+<p>Total: ~50-55 commits on <code>feat/domain-port</code> branch.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
