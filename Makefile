@@ -170,13 +170,13 @@ FUZZ_TIME_LONG  ?= 10m
 
 .PHONY: fuzz-short
 fuzz-short: ## Phase 4 — Go fuzz targets with 60s budget per target (CI cadence).
-	go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_SHORT) ./internal/substitution/...
-	go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_SHORT) ./internal/normalize/...
+	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_SHORT) ./internal/substitution/...; else echo "fuzz-short: skip — ./internal/substitution absent (domain port pending)"; fi
+	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_SHORT) ./internal/normalize/...;    else echo "fuzz-short: skip — ./internal/normalize absent (domain port pending)";    fi
 
 .PHONY: fuzz-long
 fuzz-long: ## Go fuzz targets with 10-minute budget per target (nightly cadence).
-	go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG) ./internal/substitution/...
-	go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG) ./internal/normalize/...
+	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "fuzz-long: skip — ./internal/substitution absent (domain port pending)";  fi
+	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "fuzz-long: skip — ./internal/normalize absent (domain port pending)";     fi
 
 .PHONY: security
 security: lint ## Phase 4 — in-container security umbrella: gosec (via lint) + govulncheck (acknowledged-list aware) + fuzz-short. Target <=6min warm. Runs inside devtools (./scripts/dev.sh make security).
