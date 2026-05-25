@@ -137,8 +137,13 @@ hydrate_all() {
   hydrate_toolhive
 }
 
-print_status() {
-  # All probes are informational — never fail the status command.
+print_status() (
+  # Subshell scope so `set +e` does not leak to the calling shell. Bash
+  # function bodies share the caller's shell options; `return 0` only
+  # masks the function's exit status, it does NOT restore errexit. After
+  # `cmd_status` runs, the rest of cluster.sh (and any caller that sources
+  # it) would inherit the relaxed errexit. Subshell form `(...)` scopes
+  # the option change automatically — set +e dies with the subshell.
   set +e
   echo "== kind clusters =="
   kind get clusters
@@ -157,8 +162,7 @@ print_status() {
   echo
   echo "== litellm-system pods =="
   kubectl -n litellm-system get pods 2>/dev/null
-  return 0
-}
+)
 
 case "${1:-}" in
   up|hydrate|down|keep|status) "cmd_${1}" ;;
