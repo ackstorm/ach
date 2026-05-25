@@ -68,6 +68,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     -e GOMODCACHE=/workspace/.gocache/gopath/pkg/mod \
     -e ENVTEST_BIN_DIR=/workspace/.gocache/envtest \
     -e KUBECONFIG=/workspace/.gocache/kube/config \
+    -e HOST_PWD="${WORKSPACE}" \
     -w /workspace \
     "${IMAGE}" \
     "$@"
