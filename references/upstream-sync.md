@@ -171,3 +171,12 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 | `MAINTAINERS.md` | n/a | Single maintainer entry (jcm). |
 | `ROADMAP.md` | `ach-old/.planning/ROADMAP.md` | Copied verbatim from ach-old plan numbering. **Doc-polish TODO**: trim ach-old plan-numbering / phase content to focus on user-visible roadmap items; the current copy still references internal plan IDs (e.g. "Phase 1: Foundation"), which are not meaningful to external readers. |
 
+## 2026-05-25 (TODO item 1 — post-bootstrap hardening, branch `fix/post-bootstrap-hardening`)
+
+| ach file | alitellm file | Fix / Sync-back |
+|---|---|---|
+| `scripts/cluster.sh` (hydrate_postgres, hydrate_valkey, hydrate_litellm) | n/a — alitellm cluster.sh does NOT install bitnami postgres/valkey/litellm | Bitnami pruned `docker.io/bitnami/*` pinned tags in 2025; moved snapshots to `docker.io/bitnamilegacy/*`. Override `global.imageRegistry` + each sub-image's `repository` to redirect, and set `global.security.allowInsecureImages=true` to bypass the chart's hard-coded "approved containers" guard. **No alitellm sync needed** — alitellm doesn't hydrate these. If alitellm later adds postgres/valkey/litellm helm hydration, apply the same workaround. |
+| `scripts/cluster.sh` (hydrate_dex) | n/a — alitellm doesn't install dex | The dexidp helm chart expects raw Dex YAML under a top-level `config:` key in values.yaml. The script was passing `scripts/dex-config.yaml` (raw Dex YAML) as `--values` directly, producing an "invalid Config: no issuer specified" CrashLoopBackOff. Wrap the file in-place at install time so `scripts/dex-config.yaml` can stay docker-run-compatible. No alitellm sync. |
+| `scripts/dev.sh` + `docs/Makefile` | `scripts/dev.sh` + `docs/Makefile` (same paths) | `./scripts/dev.sh make docs-build` silently produced empty `site/` because the inner `docker run -v $(abspath docs/..):/docs` resolved `$(abspath)` to `/workspace` (cwd inside devtools) but used the host docker socket. Export `HOST_PWD=$WORKSPACE` from dev.sh; honor it in `docs/Makefile` via `DOCS_HOST_ROOT ?= $(if $(HOST_PWD),$(HOST_PWD),$(abspath ...))`. **Sync-back PR target** — see `SYNC-FROM-ACH/05-docs-build-nested-mount.md` in alitellm. |
+| `.golangci.yml` | n/a — cosmetic only | Annotated exclude-rules with single-line justifications, dropped redundant `lll` entry from the SA1019 rule. No behavior change. No alitellm sync. |
+
