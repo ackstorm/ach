@@ -1,0 +1,207 @@
+version: 2
+
+project_name: ach
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: ach
+    main: ./cmd/ach
+    binary: ach
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/ackstorm/ach/cmd/ach/cmd.Version={{.Version}}
+
+archives:
+  - id: binaries
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+    ids:
+      - ach
+  - id: source
+    name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+    meta: true
+    files:
+      - .gitignore
+      - go.mod
+      - go.sum
+      - cmd/
+      - api/
+      - internal/
+      - config/
+      - docs/
+      - test/
+      - Makefile
+      - Dockerfile
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - SECURITY.md
+      - MAINTAINERS.md
+      - PROJECT
+      - ROADMAP.md
+
+dockers:
+  - id: ach-amd64
+    ids: [ach]
+    image_templates:
+      - "ghcr.io/ackstorm/ach:{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Pre-release build"
+  - id: ach-arm64
+    ids: [ach]
+    image_templates:
+      - "ghcr.io/ackstorm/ach:{{ .Version }}-arm64"
+      - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Pre-release build"
+
+docker_manifests:
+  - name_template: "ghcr.io/ackstorm/ach:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/ackstorm/ach:{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease"
+    image_templates:
+      - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-amd64"
+      - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-arm64"
+
+checksum:
+  name_template: 'checksums.txt'
+
+sboms:
+  - id: ach
+    cmd: cyclonedx-gomod
+    args: ["app", "-main", "cmd/ach", "-licenses", "-json", "-output", "$document", "."]
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_sbom.cyclonedx.json"
+    artifacts: source
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - '^chore(\([[:word:]]+\))?:'
+      - "^ci:"
+      - "^Automated update to"
+      - "^Merge pull request #"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    name: "{{ .ProjectName }}"
+  draft: false
+  prerelease: true
+  name_template: "{{.ProjectName}} {{.Version}}"
+  header: |
+    ## ach {{.Version}} (Pre-release)
+
+    **This is a pre-release version and may contain unstable features.**
+
+    This pre-release is intended for testing and feedback collection.
+
+    ### Container Images
+
+    - `ghcr.io/ackstorm/ach:{{ .Version }}`
+    - `ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease`
+
+    ### Installation
+
+    #### Using Helm (Recommended)
+
+    ```bash
+    helm install ach oci://ghcr.io/ackstorm/charts/ach --version {{ .Version }}
+    ```
+
+    #### Using kubectl
+
+    ```bash
+    kubectl apply -k https://github.com/ackstorm/ach/config/crd?ref={{ .Tag }}
+    kubectl apply -k https://github.com/ackstorm/ach/config/default?ref={{ .Tag }}
+    ```
+
+    ### What's New in this Pre-release:
+  footer: |
+    ---
+    Test in non-production environments. Report issues at https://github.com/ackstorm/ach/issues
+    Documentation: https://ackstorm.github.io/ach
+    For stable releases, see https://github.com/ackstorm/ach/releases?q=tag%3Av
+
+signs:
+  - id: checksums
+    cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+    artifacts: checksum
+    output: true
+
+docker_signs:
+  - id: images
+    cmd: cosign
+    args:
+      - sign
+      - --yes
+      - ${artifact}
+    artifacts: all
+    output: true

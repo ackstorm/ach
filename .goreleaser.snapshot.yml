@@ -1,0 +1,100 @@
+version: 2
+
+project_name: ach
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: ach
+    main: ./cmd/ach
+    binary: ach
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/ackstorm/ach/cmd/ach/cmd.Version={{.Version}}
+
+archives:
+  - id: binaries
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+    ids:
+      - ach
+
+dockers:
+  - id: ach-amd64
+    ids: [ach]
+    image_templates:
+      - "ghcr.io/ackstorm/ach:main-amd64"
+      - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Snapshot build from main branch"
+  - id: ach-arm64
+    ids: [ach]
+    image_templates:
+      - "ghcr.io/ackstorm/ach:main-arm64"
+      - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Snapshot build from main branch"
+
+docker_manifests:
+  - name_template: "ghcr.io/ackstorm/ach:main"
+    image_templates:
+      - "ghcr.io/ackstorm/ach:main-amd64"
+      - "ghcr.io/ackstorm/ach:main-arm64"
+  - name_template: "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}"
+    image_templates:
+      - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-amd64"
+      - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-arm64"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  disable: true
+
+# Disable GitHub releases for snapshots (only build and push images)
+release:
+  disable: true
+
+# Use snapshot versioning
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
