@@ -1,11 +1,47 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/name: ach
-    app.kubernetes.io/managed-by: kustomize
-  name: manager-role
+  name: ach-manager-role
 rules:
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts
+  - backendidentitypolicies
+  - environments
+  - pluginmarketplaces
+  - plugins
+  - prompts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts/finalizers
+  - backendidentitypolicies/finalizers
+  - environments/finalizers
+  - pluginmarketplaces/finalizers
+  - plugins/finalizers
+  - prompts/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - artifacts/status
+  - backendidentitypolicies/status
+  - environments/status
+  - pluginmarketplaces/status
+  - plugins/status
+  - prompts/status
+  verbs:
+  - get
+  - patch
+  - update

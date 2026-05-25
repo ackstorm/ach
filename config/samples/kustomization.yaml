@@ -1,0 +1,9 @@
+## Append samples of your project ##
+resources:
+- ach_v1alpha1_environment.yaml
+- ach_v1alpha1_plugin.yaml
+- ach_v1alpha1_pluginmarketplace.yaml
+- ach_v1alpha1_artifact.yaml
+- ach_v1alpha1_prompt.yaml
+- ach_v1alpha1_backendidentitypolicy.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

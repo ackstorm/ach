@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+// PluginSpec defines the desired state of Plugin.
+type PluginSpec struct {
+	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+
+	// Foo is an example field of Plugin. Edit plugin_types.go to remove/update
+	Foo string `json:"foo,omitempty"`
+}
+
+// PluginStatus defines the observed state of Plugin.
+type PluginStatus struct {
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+// Plugin is the Schema for the plugins API.
+type Plugin struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   PluginSpec   `json:"spec,omitempty"`
+	Status PluginStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// PluginList contains a list of Plugin.
+type PluginList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Plugin `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&Plugin{}, &PluginList{})
+}

@@ -8,4 +8,59 @@ layout:
 multigroup: true
 projectName: ach
 repo: github.com/ackstorm/ach
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: Environment
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: Plugin
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: PluginMarketplace
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: Artifact
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: Prompt
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ackstorm.ai
+  group: ach
+  kind: BackendIdentityPolicy
+  path: github.com/ackstorm/ach/api/ach/v1alpha1
+  version: v1alpha1
 version: "3"

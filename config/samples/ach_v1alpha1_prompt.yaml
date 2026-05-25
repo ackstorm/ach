@@ -1,0 +1,9 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: prompt-sample
+spec:
+  # TODO(user): Add fields here

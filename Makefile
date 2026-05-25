@@ -234,11 +234,11 @@ release: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, 
 
 .PHONY: build
 build: manifests generate fmt vet ## Build ach binary.
-	go build -o bin/ach cmd/main.go
+	go build -trimpath -o bin/ach ./cmd/ach
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	go run ./cmd/ach
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
