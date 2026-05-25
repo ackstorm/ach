@@ -279,7 +279,10 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	# Use controller:latest as the placeholder for kustomize-to-helm.sh to substitute
+	# into {{ .Values.image.repo }}:{{ .Values.image.tag }}. The actual image is set
+	# at runtime by Helm values, not at kustomize build time.
+	cd config/manager && $(KUSTOMIZE) edit set image controller=controller:latest
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment

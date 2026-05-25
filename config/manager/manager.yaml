@@ -59,8 +59,9 @@ spec:
           type: RuntimeDefault
       containers:
       - command:
-        - /manager
+        - /ach
         args:
+          - operator
           - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest

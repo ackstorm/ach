@@ -113,3 +113,30 @@ Verified: `make cluster-up` (empty cluster) → `make cluster-status` →
 `make cluster-down` round trip PASS. Full hydration execution (postgres,
 valkey, dex, litellm, toolhive helm installs) deferred to Phase 16 final
 verification — hydrate_* functions are syntactically valid (`bash -n` PASS).
+
+## 2026-05-25 (Task 11.1) — Helm chart port
+
+Ported `deploy/helm/alitellm-operator/` → `deploy/helm/ach/` with sed renames.
+Updated `Chart.yaml` version to `0.0.1` (ach baseline). Rewrote `values.yaml`
+for the single-binary multi-component design: one `image:` reference plus
+per-mode toggles (`operator`, `platformApi`, `forwarder`, `contentService`,
+`migrate`), each carrying `args:` to select the cobra subcommand. External
+postgres + redis assumed (`{postgres,redis}.external: true`). Templates
+(`crds.yaml`, `install.yaml`, `NOTES.txt`) ported as-is from alitellm.
+Ported `scripts/kustomize-to-helm.sh` + `scripts/helm-inject-crd-annotation.py`
+with sed renames.
+
+**Single-image kustomize layout — per-mode Deployments not yet rendered**:
+the current install.yaml template carries the legacy single-Deployment shape
+(one `manager` container). Per-mode Deployment generation (one Deployment per
+toggle in values.yaml, each with `args: ["<mode>"]`) is deferred to a follow-up
+helm template authoring pass. For v0.0.1 baseline the operator-only shape is
+sufficient (the toggles + args live in values.yaml; rendering uses only the
+`operator` mode until templates are extended).
+
+| ach file | alitellm file | Fix / Adaptation |
+|---|---|---|
+| `Makefile` (build-installer) | same | Adapted: ach's `IMG ?= ghcr.io/ackstorm/ach:$(VERSION)` produced `ghcr.io/ackstorm/ach:dev` after `kustomize edit set image controller=${IMG}`, which broke the `kustomize-to-helm.sh` substitution (script expects `controller:latest` placeholder). Pinned `controller=controller:latest` inside the build-installer recipe — the real image is now picked at Helm render time via `{{ .Values.image.repo }}:{{ .Values.image.tag }}`, not at kustomize build time. |
+| `config/manager/manager.yaml` (command/args) | n/a (kubebuilder default) | Adapted to single-binary cobra: `command: [/manager]` → `command: [/ach]`, prepended `operator` to `args`. The Dockerfile ENTRYPOINT already produces `/ach`; this aligns the kustomize source with the actual binary path. |
+| `deploy/helm/ach/values.yaml` | `deploy/helm/alitellm-operator/values.yaml` | Rewritten: dropped `safetyRelistInterval` (alitellm-specific knob, has no ACH analog); added `operator`, `platformApi`, `forwarder`, `contentService`, `migrate` per-mode blocks with `{enabled, replicas, resources, args}` shape; added `postgres.external` + `redis.external` flags; kept `installCRDs`, `image`, `watchNamespace`, `toolhive`, `metrics.serviceMonitor`, `extraEnv` from alitellm verbatim. |
+| `deploy/helm/ach/Chart.yaml` | same | Reset version `0.4.7` → `0.0.1` and description from "LiteLLM operator …" to "ACH — Agent Configuration Hub. Kubernetes operator + platform API + forwarder + content service for declarative agent configuration management." |

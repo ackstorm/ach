@@ -1,0 +1,87 @@
+# deploy/helm/ach/values.yaml
+#
+# Single-binary, multi-component design. One image (ghcr.io/ackstorm/ach)
+# carries operator, platform-api, forwarder, content-service, migrate modes
+# selected by `args:` on each Deployment. Per-mode toggles allow installs to
+# enable only the components they need (operator-only baseline, full hub, etc).
+#
+# CRDs are installed by default (helm.sh/resource-policy: keep). External
+# Postgres and Redis are assumed — embedded subcharts are out of scope for
+# the v0.0.1 baseline; use bitnami/postgresql + bitnami/valkey alongside.
+
+# installCRDs: when true (default), the chart ships every CRD in
+# crd-sources/ as a managed Helm resource. `helm upgrade` then upgrades
+# CRDs the same way it upgrades every other resource. Each CRD carries
+# `helm.sh/resource-policy: keep` so `helm uninstall` preserves them
+# (and the user's CRs) intact. Set false when CRDs are managed out-of-band
+# (Flux/ArgoCD Kustomization, kubectl apply in CD).
+installCRDs: true
+
+# image: the single ach binary, with per-mode args on each Deployment.
+image:
+  repo: ghcr.io/ackstorm/ach
+  tag: v0.0.1
+  pullPolicy: IfNotPresent
+
+# watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
+# Maps to WATCH_NAMESPACE env var on operator Deployment.
+watchNamespace: ""
+
+# operator: reconciles ACH CRDs (AgentDefinition, AgentSession, etc).
+operator:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["operator"]
+
+# platformApi: HTTP API surface for agent registry, config serving.
+platformApi:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["platform-api"]
+
+# forwarder: bridges in-cluster MCP servers and external clients.
+forwarder:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["forwarder"]
+
+# contentService: serves agent-rendered content (assets, snapshots).
+contentService:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["content-service"]
+
+# migrate: pre-install Job that runs schema migrations against Postgres.
+migrate:
+  enabled: true
+  args: ["migrate"]
+
+# postgres: assumed external. Set external=false to add embedded subchart
+# (not implemented in v0.0.1).
+postgres:
+  external: true
+
+# redis: assumed external. Same caveat as postgres.
+redis:
+  external: true
+
+# toolhive: enabled=true (default) includes the ClusterRole + ClusterRoleBinding
+# that grants the operator read access to ToolHive MCPServer + VirtualMCPServer
+# objects. Set false on clusters without ToolHive.
+toolhive:
+  enabled: true
+
+# metrics.serviceMonitor: enabled=false (default), do not render
+# prometheus-operator ServiceMonitor CR. Set true when prometheus-operator
+# is installed in the cluster.
+metrics:
+  serviceMonitor:
+    enabled: false
+
+# extraEnv: list of additional env vars to inject into every component's
+# main container. Each item is {name, value}.
+extraEnv: []
