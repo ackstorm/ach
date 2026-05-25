@@ -1,0 +1,9 @@
+ACH — Agent Configuration Hub
+Copyright (c) 2026 ACKstorm
+
+This product includes software developed by ACKstorm
+(https://github.com/ackstorm).
+
+Scaffolding patterns (CI workflows, release pipeline, mkdocs structure,
+goreleaser configuration, kustomize→helm sync) were adapted from the
+alitellm-operator project (Apache-2.0).
