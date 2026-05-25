@@ -150,3 +150,24 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 |---|---|---|
 | `config/rbac/toolhive_clusterrole.yaml` | same | **Added new file**: ACH's RBAC dir didn't carry the ToolHive ClusterRole. The render script's `RBAC_SOURCES` list expects it (operator-runtime subset). Ported alitellm's content with SA name rewrite (`alitellm-operator` → `ach`) and ClusterRole/ClusterRoleBinding rename (`alitellm-operator-toolhive-reader` → `ach-toolhive-reader`). |
 | `deploy/kustomize/kustomization.yaml` | same | Image newTag `v0.4.7` → `v0.0.1` to match Chart.yaml baseline. |
+
+## 2026-05-25 (Phase 14 — release tooling)
+
+| ach file | alitellm file | Fix / Adaptation |
+|---|---|---|
+| `.goreleaser.yml`, `.goreleaser.prerelease.yml`, `.goreleaser.snapshot.yml` | same | **Rewritten for single-binary**: alitellm carried a single `manager` build pointing at `./cmd/main.go` producing `alitellm-operator`. ach builds `./cmd/ach` → `ach`. Added `darwin` to `goos:` so the CLI ships for macOS too (alitellm was Linux-only because it's a server). Switched ldflag from `-X github.com/ackstorm/alitellm-operator/internal/identity.Version=...` to `-X github.com/ackstorm/ach/cmd/ach/cmd.Version=...` to match the actual `Version` symbol in `cmd/ach/cmd/root.go`. Dropped `-X main.{version,commit,date,buildType}` because the ach root.go does not consume them. Dockers/manifests rewritten to `ghcr.io/ackstorm/ach:<version>` (no `{{ .Env.GITHUB_REPOSITORY_OWNER }}` indirection — owner is fixed) and `--build-arg=VERSION=...` added since the goreleaser Dockerfile now COPYs the prebuilt binary (the build-arg is consumed for label injection only). |
+| `Dockerfile.goreleaser` | same | Renamed `alitellm-operator` → `ach`; ENTRYPOINT `/ach`. |
+| `.github/workflows/release.yml` | same | Sed rename `alitellm-operator` → `ach`. Paths in the bot-bump step (`deploy/helm/ach/{Chart,values}.yaml`, kustomize files) now match ach's structure verbatim (no further adaptation needed — kubebuilder-default layout). |
+| `.github/workflows/nightly.yml` | same | Sed rename `alitellm-operator` → `ach`. |
+| `Makefile` (`bump` target) | n/a | Already present in ach (added during Phase 11). Confirmed matches release.yml expectations. |
+
+## 2026-05-25 (Phase 15 — project docs)
+
+| ach file | alitellm file | Fix / Adaptation |
+|---|---|---|
+| `README.md` | n/a | Replaced kubebuilder stub with concise ach intro + quick-link table. |
+| `CHANGELOG.md` | n/a | Bootstrap entry for v0.0.1 scaffolding. |
+| `SECURITY.md`, `CONTRIBUTING.md`, `PUBLISH.md`, `CLAUDE.md` | same | Sed rename `alitellm-operator` → `ach`. CLAUDE.md adapted to ach domain (waiters expanded to include `wait-postgres`, `wait-redis`, `wait-dex`, `wait-platform-api`, `wait-forwarder`, `wait-content-service`; single-binary `ach <mode>` invocation pattern noted). |
+| `MAINTAINERS.md` | n/a | Single maintainer entry (jcm). |
+| `ROADMAP.md` | `ach-old/.planning/ROADMAP.md` | Copied verbatim from ach-old plan numbering. **Doc-polish TODO**: trim ach-old plan-numbering / phase content to focus on user-visible roadmap items; the current copy still references internal plan IDs (e.g. "Phase 1: Foundation"), which are not meaningful to external readers. |
+
