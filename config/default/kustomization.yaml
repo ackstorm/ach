@@ -18,6 +18,14 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+- ../deployments
+# NOTE: ../secrets ../dev-postgres ../e2e ../storage are env-specific and
+# intentionally NOT wired in the default overlay:
+#   - secrets/     -> ships REPLACE-ME-* placeholders; consumers fill in
+#   - dev-postgres/ -> emptyDir Postgres for kind only, never production
+#   - e2e/         -> test-only composition (config/default + config/dev-postgres)
+#   - storage/     -> co-located cache PVC; ties to a future content-service
+#                     container in config/manager — wired when that lands.
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- ../webhook

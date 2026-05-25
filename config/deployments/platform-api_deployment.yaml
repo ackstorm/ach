@@ -1,0 +1,94 @@
+# Phase 1 — Platform API Deployment (D-03, D-15).
+#
+# Phase 1 ships the binary as a healthz-only stub (Plan 06 cmd/platform-api).
+# Phase 3 promotes it to the real REST surface (pk_/ek_ issuance, hydrate,
+# admin endpoints). The Helm chart in Phase 7 reuses this manifest unchanged.
+#
+# Own Pod (not co-located with the operator) so default port :8081 is free.
+# No shared RWO PVC → RollingUpdate is the default and is safe.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-platform-api
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: platform-api
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 1                              # Phase 1 baseline; Phase 3+ may scale
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: platform-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ach
+        app.kubernetes.io/component: platform-api
+    spec:
+      serviceAccountName: ach-platform-api  # Plan 09 ServiceAccount (read + force-refresh patch carve-out)
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: platform-api
+          # ACH single-binary: `ach` + cobra subcommand `platform-api`.
+          # Dockerfile ENTRYPOINT is /ach; `command:` is intentionally NOT
+          # set so the entrypoint runs unchanged with the args below.
+          image: ghcr.io/ackstorm/ach:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - platform-api
+          ports:
+            - name: healthz
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # D-09: pepper mount even in Phase 1 (D-15 single-source-of-truth).
+            # The Phase 1 stub does NOT read this; Phase 3 will hash pk_/ek_.
+            - name: ACH_CREDENTIAL_HASH_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: ach-credential-hash-pepper
+                  key: pepper
+            - name: ACH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ach-db-url
+                  key: url
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PLATFORM_API_HEALTH_BIND_ADDRESS
+              value: ":8081"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

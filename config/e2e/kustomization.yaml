@@ -1,0 +1,71 @@
+# Phase 02.1 — Kustomize overlay for the kind e2e harness.
+#
+# Composes config/default + config/dev-postgres; retags the operator image
+# to ach-operator:e2e; adds LiteLLMConnection/default and JSON6902-patches:
+#   (a) ACH_ORPHAN_CLEANUP_INTERVAL on the operator Deployment;
+#   (b) the ach-db-url Secret URL host to
+#       `ach-postgres.ach-system.svc.cluster.local` — the Phase 1 placeholder
+#       had `.system.` literal which does NOT get rewritten by the kustomize
+#       namespace transform because Secret stringData is opaque.
+#
+# DEV-ONLY. The string `sk-test-master-key` below matches
+# test/e2e/values/litellm.values.yaml and is not a production secret.
+# Production Helm chart (Phase 7) MUST NOT reference this overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Do NOT set `namespace:` — config/default already sets it to ach-system.
+# A nested declaration would override / concatenate unpredictably.
+
+resources:
+  - ../default
+  - ../dev-postgres
+  - litellm_connection.yaml
+
+images:
+  # ACH single-binary: retag the canonical ach image for the e2e cluster.
+  # The kind harness loads `ghcr.io/ackstorm/ach:e2e` from the local docker
+  # daemon (per scripts/e2e-build.sh — Task 8.x), so the manager + future
+  # platform-api + forwarder Pods all pin to the same locally-built tag.
+  - name: ghcr.io/ackstorm/ach
+    newName: ghcr.io/ackstorm/ach
+    newTag: e2e
+
+patches:
+  # Patch 1: operator Deployment — inject Phase 2 env vars on manager container (index 0).
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: ach-operator
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ACH_ORPHAN_CLEANUP_INTERVAL
+          value: "5m"
+
+  # Patch 2: ach-db-url Secret — replace stringData.url with the
+  # dev-postgres-reachable DNS name (ach-postgres.ach-system.svc.cluster.local).
+  - target:
+      version: v1
+      kind: Secret
+      name: ach-db-url
+    patch: |-
+      - op: replace
+        path: /stringData/url
+        value: "postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach?sslmode=disable"
+
+  # Patch 3: ach-credential-hash-pepper Secret — replace placeholder so the
+  # operator's pepperenv.MustParse check (cmd/operator/main.go:139) does
+  # not exit non-zero. Phase 1 ships a "REPLACE-ME-WITH-RANDOM-..." value
+  # and Plan 06 wired a runtime refusal; the e2e overlay supplies a real
+  # (non-secret, e2e-only) 32-byte base64 value so the operator boots.
+  - target:
+      version: v1
+      kind: Secret
+      name: ach-credential-hash-pepper
+    patch: |-
+      - op: replace
+        path: /stringData/pepper
+        value: "e2e-fixture-pepper-not-a-real-secret-32B="

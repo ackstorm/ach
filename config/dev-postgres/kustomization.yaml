@@ -1,0 +1,20 @@
+# Phase 02.1 — Opt-in development Postgres component for kind e2e.
+#
+# NOT included in config/default — included only by config/e2e overlay.
+# Production deployments MUST use an external managed Postgres; this
+# component ships a single-replica emptyDir-backed Postgres Pod that loses
+# all data when the kind cluster is destroyed (the intended behavior for
+# ephemeral per-e2e-run clusters).
+#
+# Composed by: config/e2e/kustomization.yaml (resources: [../default, ../dev-postgres]).
+# Sets `namespace: ach-system` directly because kustomize only applies the
+# config/default namespace transform to config/default's own resources; the
+# dev-postgres resources need their own transform to land in ach-system.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ach-system
+
+resources:
+  - postgres_deployment.yaml
+  - postgres_service.yaml

@@ -1,0 +1,90 @@
+# Phase 1 — Forwarder Deployment (D-03, D-15).
+#
+# Phase 1 ships the binary as a healthz-only stub (Plan 06 cmd/forwarder).
+# Phase 4 promotes it to the real model/MCP/A2A forwarding surface with
+# EdDSA JWT signing per Hub §5.1 / §15.4.
+#
+# Forwarder Phase 1 does NOT need ACH_DB_URL — it consults Redis + Postgres
+# in Phase 4. The Phase 1 manifest omits the DB Secret reference so the
+# stub Pod can start even without the DB Secret present.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-forwarder
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 1                              # Phase 1 baseline; Phase 4+ may scale
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: forwarder
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ach
+        app.kubernetes.io/component: forwarder
+    spec:
+      serviceAccountName: ach-forwarder    # Plan 09 ServiceAccount (read Environment + BackendIdentityPolicy)
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: forwarder
+          # ACH single-binary: `ach` + cobra subcommand `forwarder`.
+          # Dockerfile ENTRYPOINT is /ach; `command:` is intentionally NOT
+          # set so the entrypoint runs unchanged with the args below.
+          image: ghcr.io/ackstorm/ach:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - forwarder
+          ports:
+            - name: healthz
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # D-09: pepper mount even in Phase 1 (D-15 single-source-of-truth).
+            # Phase 4+ will hash ek_ on the request path to find the row.
+            - name: ACH_CREDENTIAL_HASH_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: ach-credential-hash-pepper
+                  key: pepper
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: FORWARDER_HEALTH_BIND_ADDRESS
+              value: ":8081"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
