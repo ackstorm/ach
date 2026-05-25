@@ -233,8 +233,12 @@ release: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, 
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build ach binary.
-	go build -trimpath -o bin/ach ./cmd/ach
+build: manifests generate fmt vet ## Build single ach binary
+	go build \
+	  -trimpath \
+	  -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" \
+	  -o bin/ach \
+	  ./cmd/ach
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
