@@ -34,3 +34,15 @@ Ported `.golangci.yml` verbatim from alitellm (50+ linters, gosec HIGH).
 | ach file | alitellm file | Fix |
 |---|---|---|
 | `test/e2e/e2e_test.go` (kubebuilder scaffold) | n/a — alitellm doesn't carry this scaffold | Added `#nosec G101` directive with justification on `tokenRequestRawString` — gosec G101 false positive (it's a TokenRequest API JSON template, not a credential). If alitellm re-introduces kubebuilder e2e scaffold, same fix applies. |
+
+## 2026-05-25 (Task 4.3) — Pre-push gate pipeline
+
+Ported `scripts/pre-push-check.sh` (15-gate pipeline), `scripts/install-hooks.sh`,
+`scripts/govulncheck-gate.sh`, and `references/security/govulncheck-acknowledged.md`
+verbatim from alitellm with sed renames (`alitellm-operator` → `ach`,
+`litellm-devtools` → `ach-devtools`). Gate 1 (gitleaks) / Gate 2 (trufflehog) /
+Gate 13 (govulncheck) / Gate 15 (SPDX) all PASS on bare scaffolding.
+
+| ach file | alitellm file | Fix |
+|---|---|---|
+| `scripts/pre-push-check.sh` (gate 3 comment) | same | Re-worded the 2MB threshold rationale — removed mention of `spec/litellm_api.json` (alitellm-only file we don't bundle); kept the 2MB threshold as future-proofing. |
