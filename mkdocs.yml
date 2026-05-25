@@ -1,0 +1,70 @@
+site_name: ACH — Agent Configuration Hub
+site_description: Kubernetes control plane for managing AI agent configurations declaratively
+site_url: https://ackstorm.github.io/ach/
+repo_url: https://github.com/ackstorm/ach
+repo_name: ackstorm/ach
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - User Guide:
+      - Overview: user-guide/index.md
+  - Developer Guide:
+      - Architecture: developer-guide/architecture.md
+      - Development: developer-guide/development.md
+      - Release process: developer-guide/release-process.md
+  - API Reference:
+      - ach.ackstorm.ai: api-reference/ach.ackstorm.ai.md
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ackstorm/ach 
+  
+# Mike versioning
+  version:
+    provider: mike
+    default: latest
+    alias: true
