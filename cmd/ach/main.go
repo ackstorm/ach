@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 package main
 
-import "fmt"
+import (
+	"os"
+
+	"github.com/ackstorm/ach/cmd/ach/cmd"
+)
 
 func main() {
-	fmt.Println("ach: not yet implemented")
+	if err := cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
