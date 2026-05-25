@@ -45,7 +45,7 @@ docs-serve: gen-crd-ref-docs install-mkdocs
 	docker run --rm -it -p 8000:8000 -v $(DOCS_DIR)/..:/docs squidfunk/mkdocs-material:latest serve -a 0.0.0.0:8000
 .PHONY: docs-build
 docs-build: gen-crd-ref-docs
-	docker run --rm -it -v $(DOCS_DIR)/..:/docs squidfunk/mkdocs-material:latest build 
+	docker run --rm -v $(abspath $(DOCS_DIR)/..):/docs squidfunk/mkdocs-material:latest build
 
 .PHONY: docs-build-local
 docs-build-local: gen-crd-ref-docs install-mkdocs

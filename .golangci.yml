@@ -17,6 +17,11 @@ issues:
     - path: "api/*"
       linters:
         - lll
+        - staticcheck
+      text: "SA1019.*scheme.Builder"
+    - path: "api/*"
+      linters:
+        - lll
     - path: "internal/*"
       linters:
         - dupl
