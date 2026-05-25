@@ -26,3 +26,11 @@ multi-mode service model. Added 6 new waiter targets: `wait-postgres`,
 |---|---|---|
 | `Makefile` (lines 53–57) | `Makefile` (lines 47–51) | Comment about `verification/` references "Phase 0 spike (plan 01-01)" — that's alitellm's plan numbering. Re-word for ACH context in a later doc-pass; harmless build-wise. |
 | `Makefile` (`wait-litellm`, `pf-litellm`, `logs-litellm`) | same | Refer to upstream BerriAI LiteLLM Deployment in `litellm-system` namespace. Correct for ACH (which also installs litellm-helm), but may want renames to `wait-litellm-upstream` for clarity in a later pass. |
+
+## 2026-05-25 (Task 4.1) — golangci config
+
+Ported `.golangci.yml` verbatim from alitellm (50+ linters, gosec HIGH).
+
+| ach file | alitellm file | Fix |
+|---|---|---|
+| `test/e2e/e2e_test.go` (kubebuilder scaffold) | n/a — alitellm doesn't carry this scaffold | Added `#nosec G101` directive with justification on `tokenRequestRawString` — gosec G101 false positive (it's a TokenRequest API JSON template, not a credential). If alitellm re-introduces kubebuilder e2e scaffold, same fix applies. |
