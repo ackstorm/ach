@@ -14,14 +14,22 @@ issues:
   # restore some of the defaults
   # (fill in the rest as needed)
   exclude-rules:
+    # SA1019 scheme.Builder is deprecated in upstream sigs.k8s.io/runtime
+    # but kubebuilder's `init` scaffold still emits it in
+    # api/<group>/<version>/groupversion_info.go. There is no
+    # non-deprecated replacement in controller-runtime v0.24.x. Revisit
+    # when controller-runtime ships a migration target.
     - path: "api/*"
       linters:
-        - lll
         - staticcheck
       text: "SA1019.*scheme.Builder"
+    # Long-line allowance for kubebuilder marker comments (verbose by
+    # design, e.g. // +kubebuilder:rbac:groups=...;verbs=get;list;watch;...).
     - path: "api/*"
       linters:
         - lll
+    # Reconciler scaffolds carry boilerplate that trips dupl + lll until
+    # the bodies are filled in (TODO.md item 2 — domain port from ach-old).
     - path: "internal/*"
       linters:
         - dupl
