@@ -84,3 +84,14 @@ Adjusted Makefile envtest-race / envtest-fast / unit targets to drop the
 `./internal/toolhive/...` package (ach has no toolhive integration; only
 `./internal/controller/...`). Single-package envtest-fast run on the
 auto-generated `internal/controller/ach/suite_test.go` PASS (~6s).
+
+## 2026-05-25 (Task 9.2) — e2e suite scaffold
+
+Replaced kubebuilder's e2e scaffold (`test/e2e/e2e_suite_test.go`,
+`test/e2e/e2e_test.go`, `test/utils/utils.go`) with alitellm's pattern
+(`test/e2e/suite_test.go`, `test/e2e/utils/{forensics,secret_cr}.go`).
+Rewrote `forensics.go` for ACH context: operator deploy name `ach-operator`
+in namespace `ach-system`, CRs list updated to ACH kinds
+(environments, plugins, pluginmarketplaces, artifacts, prompts,
+backendidentitypolicies), prefix `e2e-` instead of `tier2-`. All files
+gated with `//go:build e2e`. `go build -tags=e2e ./test/e2e/...` PASS.
