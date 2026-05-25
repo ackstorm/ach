@@ -20,7 +20,7 @@ installCRDs: true
 # image: the single ach binary, with per-mode args on each Deployment.
 image:
   repo: ghcr.io/ackstorm/ach
-  tag: v0.0.1
+  tag: v0.1.0
   pullPolicy: IfNotPresent
 
 # watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
