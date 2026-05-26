@@ -33,6 +33,15 @@ DEX_CHART_VERSION="${DEX_CHART_VERSION:-0.19.1}"
 BITNAMI_IMAGE_REGISTRY="${BITNAMI_IMAGE_REGISTRY:-docker.io}"
 BITNAMI_IMAGE_REPO_PREFIX="${BITNAMI_IMAGE_REPO_PREFIX:-bitnamilegacy}"
 
+# ach image coordinates used by hydrate_ach. CI builds the image with
+# `make docker-build IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
+# local developers can override either piece. The default tag `e2e` is
+# deliberately not `latest` so a stale cached `latest` cannot mask a
+# missing freshly-built image.
+ACH_IMAGE_REPO="${ACH_IMAGE_REPO:-ghcr.io/ackstorm/ach}"
+ACH_IMAGE_TAG="${ACH_IMAGE_TAG:-e2e}"
+ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
+
 usage() {
   cat <<'USAGE' >&2
 scripts/cluster.sh — e2e cluster lifecycle.
@@ -187,12 +196,88 @@ hydrate_toolhive() {
     }
 }
 
+hydrate_ach() {
+  echo "[cluster.sh] hydrating ach (image: ${ACH_IMAGE})..."
+
+  # Load the ach image into kind from local docker if present. CI builds
+  # the image just before invoking `cluster.sh up`; local developers run
+  # `make docker-build IMG=${ACH_IMAGE}` first. Skip kind load when the
+  # image is not in local docker — Helm will fall back to imagePullPolicy
+  # (works for already-pushed registry images, fails otherwise).
+  if docker image inspect "${ACH_IMAGE}" >/dev/null 2>&1; then
+    echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
+    kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
+  else
+    echo "[cluster.sh] WARN: ${ACH_IMAGE} not in local docker daemon — relying on imagePullPolicy" >&2
+  fi
+
+  # Required Secrets. Plain --from-literal because dev/e2e accepts dev
+  # values; production deployments mount their own Secrets (the chart
+  # references them by name only). Idempotent via dry-run-pipe-apply.
+  kubectl -n ach-system create secret generic ach-credential-hash-pepper \
+    --from-literal=pepper="dev-pepper-32-bytes-minimum-for-hmac-do-not-reuse" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n ach-system create secret generic ach-db-url \
+    --from-literal=url="postgres://postgres:achdev@postgres-postgresql.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Compose a values overlay for helm install. extraEnv injects the
+  # platform-api / operator runtime env-var surface in one place; the
+  # chart's per-mode Deployments fan it into every container.
+  local tmpvals; tmpvals="$(mktemp)"
+  trap 'rm -f "${tmpvals}"' RETURN
+  cat > "${tmpvals}" <<EOF
+image:
+  repo: ${ACH_IMAGE_REPO}
+  tag: ${ACH_IMAGE_TAG}
+  pullPolicy: IfNotPresent
+extraEnv:
+  - name: ACH_DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: ach-db-url
+        key: url
+  - name: ACH_CREDENTIAL_HASH_PEPPER
+    valueFrom:
+      secretKeyRef:
+        name: ach-credential-hash-pepper
+        key: pepper
+  - name: ACH_BASE_URL
+    value: "https://ach.local.test"
+  - name: ACH_LITELLM_BASE_URL
+    value: "http://litellm.litellm-system.svc.cluster.local:4000"
+  - name: ACH_LITELLM_MASTER_KEY
+    value: "sk-1234"
+  - name: ACH_DEX_ISSUER_URL
+    value: "http://dex.dex-system.svc.cluster.local:5556"
+  - name: ACH_DEX_CLIENT_ID
+    value: "ach-platform-api"
+  - name: ACH_DEX_CLIENT_SECRET
+    value: "dev-dex-client-secret"
+  - name: ACH_DEX_REDIRECT_URL
+    value: "https://ach.local.test/login/callback"
+  - name: ACH_REDIS_ADDR
+    value: "valkey-primary.ach-system.svc.cluster.local:6379"
+EOF
+
+  helm upgrade --install ach deploy/helm/ach \
+    --namespace ach-system \
+    --values "${tmpvals}" \
+    --wait --timeout 5m || {
+      echo "[cluster.sh] ach helm install failed — dumping pods for forensics:" >&2
+      kubectl -n ach-system get pods >&2 || true
+      kubectl -n ach-system describe pods >&2 || true
+      return 1
+    }
+}
+
 hydrate_all() {
   hydrate_postgres
   hydrate_valkey
   hydrate_dex
   hydrate_litellm
   hydrate_toolhive
+  hydrate_ach
 }
 
 print_status() (
