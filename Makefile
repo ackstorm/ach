@@ -567,13 +567,18 @@ mock-mode: ## flip a mock auth mode (usage: make mock-mode INSTANCE=openai-mock 
 	bash scripts/mock-set-mode.sh $(INSTANCE) $(MODE)
 
 .PHONY: e2e e2e-focus
-e2e:        ## Phase 3 — run full e2e suite against running cluster
-	go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
+e2e:        ## Phase 3 — run full e2e suite against running cluster (assumes cluster-up already invoked).
+	# E2E_SKIP_SETUP=1 hands cluster lifecycle to scripts/cluster.sh; without
+	# it, test/e2e/e2e_suite_test.go's TestMain calls setupCluster() which
+	# tries `kind load docker-image ach-operator:latest` — a per-binary
+	# image name from ach-old that does not exist under the single-binary
+	# `ach` layout. cluster-up handles the actual image load.
+	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
 
 e2e-focus:  ## Phase 3 — run a single Ginkgo It (usage: make e2e-focus FOCUS='registers via POST /model/new')
 	# `-args` is required: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	go test -tags=e2e -v -count=1 -timeout 5m ./test/e2e/... -args -ginkgo.focus="$(FOCUS)"
+	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m ./test/e2e/... -args -ginkgo.focus="$(FOCUS)"
 
 .PHONY: e2e-full e2e-keep
 e2e-full: ## Phase 3 — cluster-up → e2e → cluster-down (trap-guaranteed teardown)
