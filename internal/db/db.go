@@ -95,7 +95,7 @@ func Migrate(url string, migrationsPath string) error {
 	if err != nil {
 		return fmt.Errorf("db: construct migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("db: apply migrations: %w", err)
 	}
