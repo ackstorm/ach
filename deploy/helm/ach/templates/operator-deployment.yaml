@@ -9,6 +9,21 @@ metadata:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: operator
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ach-operator-cache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.operator.cacheSize | default "10Gi" }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,6 +54,10 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: ach-operator-cache
       containers:
         - name: manager
           image: {{ include "ach.image" . }}
@@ -54,9 +73,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: ACH_CACHE_ROOT
+              value: /var/cache/ach
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ach
           livenessProbe:
             httpGet:
               path: /healthz
