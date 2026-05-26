@@ -122,6 +122,10 @@ envtest-pkg: setup-envtest ## Phase 2 — run envtest for one package. Usage: ma
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		script -q /dev/null -c "go test -v -count=1 -timeout $(or $(TIMEOUT),10m) $(if $(FOCUS),-run $(FOCUS),) $(PKG)"
 
+.PHONY: test-integration
+test-integration: ## Integration tests (build tag: integration). Requires Docker (testcontainers-go pulls real Postgres).
+	go test -tags=integration -count=1 -timeout=15m ./...
+
 .PHONY: smoke-idempotency
 smoke-idempotency: manifests generate fmt vet setup-envtest ## Run the accelerated AC-R1 idempotency smoke (10s window, 1s safety re-list).
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 60s -run TestIdempotencyNoMutationSteadyState ./internal/controller/...
