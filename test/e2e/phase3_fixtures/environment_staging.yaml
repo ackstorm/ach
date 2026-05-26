@@ -1,0 +1,31 @@
+# Phase 3 e2e fixture — staging Environment CR.
+#
+# Plan 03-12. The second environment used by SC#2 (wrong_environment
+# branch — an ek_ bound to e2e-env-prod calling hydrate with
+# {"environment":"e2e-env-staging"} must surface 403 wrong_environment)
+# and SC#3 (404 environment_not_found check when the e2e-env-staging
+# Environment is intentionally absent — set by deleting this CR before
+# the not-found probe).
+#
+# Differs from prod in: distinct context list (so the hydrate response
+# wire shape is per-Environment-distinct), authorized to a "staging"
+# Team alias the SSO user is NOT in (so SC#2 unauthorized_team path
+# can be probed against this CR with a non-default Team caller).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: e2e-env-staging
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - staging
+    - default
+  runtime:
+    models:
+      - gpt-4o-mini
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

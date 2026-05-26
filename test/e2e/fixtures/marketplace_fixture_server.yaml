@@ -1,0 +1,157 @@
+# Phase 02.1 e2e fixture-server — nginx Pod that serves marketplace.json +
+# small tarballs over plain HTTP inside the kind cluster.
+#
+# Apply order: ConfigMap → Deployment → Service.
+#
+# The Deployment runs an initContainer (busybox) that:
+#   1. Copies marketplace.json from the ConfigMap into the emptyDir html vol.
+#   2. Generates four .tar.gz files using `dd` (deterministic content):
+#        - shared-plugin-name.tar.gz       (~1 KiB)
+#        - marketplace-only-plugin.tar.gz  (~1 KiB)
+#        - sc1-plugin.tar.gz               (~1 KiB)
+#        - sc4-too-large.tar.gz            (~2 MiB — exceeds the 1 MiB cap
+#                                           the SC4 test patches onto the
+#                                           operator Deployment env)
+#   3. Hands off to nginx which serves the emptyDir at port 80.
+#
+# DEV-ONLY; the fixture-server is applied per-subtest in
+# test/e2e/phase2_invariants_test.go and torn down via t.Cleanup. Never
+# reference from config/default or any production overlay.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-fixture-data
+  namespace: ach-system
+  labels:
+    app: marketplace-fixture
+data:
+  marketplace.json: |
+    {
+      "name": "e2e-test-marketplace",
+      "owner": {
+        "name": "ach-e2e",
+        "url": "http://marketplace-fixture.ach-system.svc.cluster.local/"
+      },
+      "plugins": [
+        {
+          "name": "shared-plugin-name",
+          "description": "SC2/SC3 fixture",
+          "source": {
+            "type": "http",
+            "http": {
+              "url": "http://marketplace-fixture.ach-system.svc.cluster.local/shared-plugin-name.tar.gz"
+            }
+          }
+        },
+        {
+          "name": "marketplace-only-plugin",
+          "description": "SC2 fixture",
+          "source": {
+            "type": "http",
+            "http": {
+              "url": "http://marketplace-fixture.ach-system.svc.cluster.local/marketplace-only-plugin.tar.gz"
+            }
+          }
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketplace-fixture
+  namespace: ach-system
+  labels:
+    app: marketplace-fixture
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: marketplace-fixture
+  template:
+    metadata:
+      labels:
+        app: marketplace-fixture
+    spec:
+      volumes:
+        - name: html
+          emptyDir: {}
+        - name: catalog
+          configMap:
+            name: marketplace-fixture-data
+      initContainers:
+        - name: setup
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              cp /catalog/marketplace.json /html/marketplace.json
+              # 1 KiB stubs — the ACH operator does not validate body content,
+              # only byte length against ACH_PLUGIN_MAX_SIZE_MIB. We use plain
+              # bytes (not real tarballs) so SC1/SC2/SC3 succeed via the
+              # size-cap-passing path.
+              dd if=/dev/zero of=/html/shared-plugin-name.tar.gz       bs=1024 count=1
+              dd if=/dev/zero of=/html/marketplace-only-plugin.tar.gz  bs=1024 count=1
+              dd if=/dev/zero of=/html/sc1-plugin.tar.gz               bs=1024 count=1
+              # 2 MiB — exceeds the SC4-patched 1 MiB cap; the operator
+              # io.LimitReader trips at Cap+1 bytes and the staging file
+              # is unlinked before rename(2), so no oversized bytes ever
+              # reach the PVC.
+              dd if=/dev/zero of=/html/sc4-too-large.tar.gz            bs=1024 count=2048
+              ls -lh /html
+          volumeMounts:
+            - name: html
+              mountPath: /html
+            - name: catalog
+              mountPath: /catalog
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+          readinessProbe:
+            httpGet:
+              path: /marketplace.json
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /marketplace.json
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketplace-fixture
+  namespace: ach-system
+  labels:
+    app: marketplace-fixture
+spec:
+  type: ClusterIP
+  selector:
+    app: marketplace-fixture
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

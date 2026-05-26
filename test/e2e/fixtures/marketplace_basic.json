@@ -1,0 +1,29 @@
+{
+  "name": "e2e-test-marketplace",
+  "owner": {
+    "name": "ach-e2e",
+    "url": "http://marketplace-fixture.ach-system.svc.cluster.local/"
+  },
+  "plugins": [
+    {
+      "name": "shared-plugin-name",
+      "description": "SC2/SC3 fixture — the plugin name that alpha-mkt + beta-mkt both claim; SC3 alphabetical tiebreak gives this entry to alpha-mkt and flips beta-mkt to Synced=False reason=NameConflict.",
+      "source": {
+        "type": "http",
+        "http": {
+          "url": "http://marketplace-fixture.ach-system.svc.cluster.local/shared-plugin-name.tar.gz"
+        }
+      }
+    },
+    {
+      "name": "marketplace-only-plugin",
+      "description": "SC2 fixture — appears only in marketplace_basic.json; both alpha-mkt and beta-mkt see it but it has no conflict; both marketplaces would publish it independently (file at marketplace/<mkt-name>/plugin/marketplace-only-plugin.tar.gz).",
+      "source": {
+        "type": "http",
+        "http": {
+          "url": "http://marketplace-fixture.ach-system.svc.cluster.local/marketplace-only-plugin.tar.gz"
+        }
+      }
+    }
+  ]
+}
