@@ -1352,3 +1352,8 @@ func TestMountRegistersFourRoutes(t *testing.T) {
 		}
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

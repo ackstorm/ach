@@ -564,3 +564,8 @@ func TestListInvalidCursor(t *testing.T) {
 		t.Fatalf("base64 contract round-trip failed: %q vs 42", got)
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

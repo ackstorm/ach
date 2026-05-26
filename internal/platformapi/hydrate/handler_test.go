@@ -575,3 +575,8 @@ func TestAdminPkSkipsTeamCheck(t *testing.T) {
 		t.Fatalf("status: got %d body=%s", rec.Code, body)
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

@@ -167,3 +167,8 @@ func TestLookupCallerTeamsUncachedByDesign(t *testing.T) {
 		t.Fatalf("expected 2 UserInfoByEmail calls (uncached), got %d", got)
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

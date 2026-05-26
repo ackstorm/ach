@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -484,6 +485,23 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 //     other than "not found")
 //   - audit.OutcomeInternalError (genuinely unexpected)
 func provisionUser(ctx context.Context, deps Deps, email string) (string, error) {
+	// Resolve the LiteLLM-side team_id for the "default" alias up front.
+	// LiteLLM team_id is a UUID auto-assigned at team creation; ACH must
+	// look it up by alias rather than hard-coding the literal string
+	// "default" (which only happens to work when the deployer pre-seeds
+	// LiteLLM with team_id="default", a brittle setup quirk).
+	defaultTeams, ltErr := deps.LiteLLM.ListTeamsByAlias(ctx, "default")
+	if ltErr != nil {
+		return "", &provisionErr{kind: provisionKindLitellm, err: ltErr}
+	}
+	if len(defaultTeams) == 0 {
+		return "", &provisionErr{
+			kind: provisionKindDefaultTeamMissing,
+			err:  errors.New("LiteLLM has no team with alias 'default'"),
+		}
+	}
+	defaultTeamID := defaultTeams[0].TeamID
+
 	user, err := deps.LiteLLM.UserInfoByEmail(ctx, email)
 	if err != nil {
 		// 404 → first-time SSO path.
@@ -495,10 +513,18 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 			if createErr != nil {
 				return "", &provisionErr{kind: provisionKindLitellm, err: createErr}
 			}
-			// TeamMemberAdd: D-04 step 5 mandates this; missing default
-			// Team is the deployer-misconfig fail-loud per Hub §17 / API-02.
-			if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, "default", created.UserID, "user"); tmaErr != nil {
-				return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
+			// TeamMemberAdd: D-04 step 5 mandates this. LiteLLM v1.83
+			// already enrolls the user in `teams:[…]` during UserNew, so
+			// this call typically hits a 400 "already added" — swallow
+			// that case (desired state). Other errors (genuine
+			// team-missing, transport) still surface as
+			// default_team_missing per Hub §17 / API-02.
+			if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, created.UserID, "user"); tmaErr != nil {
+				if !isDuplicateAddErr(tmaErr) {
+					return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
+				}
+				deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
+					"user_id", created.UserID, "branch", "first-time")
 			}
 			return created.UserID, nil
 		}
@@ -507,17 +533,34 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 	}
 
 	// Existing-user branch. Per BLK-05 sub-point 3 + D-25, ALWAYS call
-	// TeamMemberAdd to be idempotent — duplicate-add 4xx is swallowed.
-	// Phase 3 cannot reliably distinguish duplicate-add from team-not-found
-	// without parsing the LiteLLM error body; the safest default for
-	// preserving the API-02 invariant is fail-loud on any error from the
-	// existing-user TeamMemberAdd.
-	if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, "default", user.UserID, "user"); tmaErr != nil {
-		deps.Logger.Warn("sso.callback: TeamMemberAdd on existing-user path failed",
-			"err", tmaErr, "user_id", user.UserID)
-		return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
+	// TeamMemberAdd to be idempotent against out-of-band team-membership
+	// revocation. Duplicate-add 4xx is the steady-state expected
+	// outcome — swallow it. Any other error surfaces as
+	// default_team_missing.
+	if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, user.UserID, "user"); tmaErr != nil {
+		if !isDuplicateAddErr(tmaErr) {
+			deps.Logger.Warn("sso.callback: TeamMemberAdd on existing-user path failed",
+				"err", tmaErr, "user_id", user.UserID)
+			return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
+		}
+		deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
+			"user_id", user.UserID, "branch", "existing-user")
 	}
 	return user.UserID, nil
+}
+
+// isDuplicateAddErr reports whether err signals LiteLLM's "user already
+// on this team" 4xx response. LiteLLM's makeRequest 4xx wrapper formats
+// the error string as `litellm: ... status: 400 ... body: ... already
+// ...`; the substring check is robust across LiteLLM error-envelope
+// shapes.
+func isDuplicateAddErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "already") &&
+		(strings.Contains(s, "400") || strings.Contains(s, "Bad Request"))
 }
 
 // isLiteLLMNotFound reports whether err signals a LiteLLM 404 response.

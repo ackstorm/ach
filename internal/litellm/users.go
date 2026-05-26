@@ -58,11 +58,70 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 	if err != nil {
 		return nil, err
 	}
-	var out UserInfo
-	if err := json.Unmarshal(raw, &out); err != nil {
+	// LiteLLM v1.83 /user/info response top-level `teams` is []object
+	// (each entry carries team_id + team_alias + …), not []string.
+	// Direct json.Unmarshal into UserInfo blows up with "cannot
+	// unmarshal object into Go struct field UserInfo.teams of type
+	// string" — the SSO provisionUser path mistakes that for a
+	// transport error and surfaces `litellm_unreachable`. Decode into
+	// an envelope that pulls team UUIDs out of teams[*].team_id (the
+	// shape downstream platformapi/teams/lookup.go consumes).
+	var env struct {
+		UserID    string `json:"user_id"`
+		UserEmail string `json:"user_email"`
+		Teams     []struct {
+			TeamID    string `json:"team_id"`
+			TeamAlias string `json:"team_alias"`
+		} `json:"teams,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil, fmt.Errorf("litellm: decode GET /user/info: %w", err)
 	}
-	return &out, nil
+	// LiteLLM v1.83 does NOT return 404 for unknown user_email. It
+	// returns 200 with the admin placeholder user_id="default_user_id"
+	// and a null user_email. Worse, /user/info also returns the
+	// placeholder for EXISTING users whose email LiteLLM has on file
+	// (the lookup-by-email path is broken upstream). Before giving
+	// up and declaring "not found", fall back to /user/list which
+	// DOES filter by user_email correctly.
+	if env.UserID == "default_user_id" && env.UserEmail == "" {
+		listPath := "/user/list?user_email=" + url.QueryEscape(email)
+		listRaw, listErr := c.makeRequest(ctx, "GET", listPath, nil)
+		if listErr != nil {
+			return nil, listErr
+		}
+		var listEnv struct {
+			Users []struct {
+				UserID    string   `json:"user_id"`
+				UserEmail string   `json:"user_email"`
+				Teams     []string `json:"teams,omitempty"`
+			} `json:"users"`
+		}
+		if err := json.Unmarshal(listRaw, &listEnv); err != nil {
+			return nil, fmt.Errorf("litellm: decode GET /user/list: %w", err)
+		}
+		for _, u := range listEnv.Users {
+			if u.UserEmail == email {
+				return &UserInfo{
+					UserID:    u.UserID,
+					UserEmail: u.UserEmail,
+					Teams:     u.Teams,
+				}, nil
+			}
+		}
+		return nil, ErrNotFound
+	}
+	out := &UserInfo{
+		UserID:    env.UserID,
+		UserEmail: env.UserEmail,
+		Teams:     make([]string, 0, len(env.Teams)),
+	}
+	for _, t := range env.Teams {
+		if t.TeamID != "" {
+			out.Teams = append(out.Teams, t.TeamID)
+		}
+	}
+	return out, nil
 }
 
 // TeamMemberAdd issues POST /team/member_add with a nested {"member": {...}}

@@ -19,7 +19,7 @@ distinct bugs that cascade. All three must be fixed for `examples/
 hydrate-demo.sh` to produce the `hydrate.json` artifact without
 hacks.
 
-### A.1 — `UserInfo.Teams` decode fails against LiteLLM 1.83 `/user/info`
+### A.1 — `UserInfo.Teams` decode fails against LiteLLM 1.83 `/user/info` — **DONE**
 
 - **Severity**: HIGH (every first-time SSO attempt fails).
 - **Where**: `internal/litellm/users.go` `UserInfoByEmail` +
@@ -42,7 +42,7 @@ hacks.
   `client_test.go` fixtures to use the real LiteLLM 1.83 response
   body.
 
-### A.2 — `/user/info` returns 200 placeholder for unknown emails
+### A.2 — `/user/info` returns 200 placeholder for unknown emails — **DONE**
 
 - **Severity**: HIGH (interacts with A.1 — once that is fixed, this
   one becomes the next failure mode).
@@ -65,7 +65,7 @@ hacks.
   `ErrNotFound`. Document the LiteLLM 1.83 quirk in the helper's
   doc comment. Add a unit test exercising the placeholder.
 
-### A.3 — Duplicate-add 4xx from `/team/member_add` is fail-loud
+### A.3 — Duplicate-add 4xx from `/team/member_add` is fail-loud — **DONE**
 
 - **Severity**: MEDIUM (interacts with A.1 + A.2 — symptom shows up
   once the first two are fixed).
@@ -89,7 +89,59 @@ hacks.
   team-not-found errors still surface as
   `default_team_missing`.
 
-### A.4 — `TeamMemberAdd` is called with `team_id="default"` literal
+### A.6 — `/key/generate` rejects ACH's `pk_` prefix (LiteLLM enforces `sk-`)
+
+- **Severity**: HIGH (last blocker on the SSO → pk_ → hydrate path).
+- **Where**: `internal/platformapi/auth/sso.go` step 6b — the
+  `deps.LiteLLM.KeyGenerate(...)` call that supplies `Key:
+  plaintext`. Also `internal/litellm/client.go` doc comment on
+  `KeyGenerate` claims "LiteLLM stores ACH's prefix verbatim" —
+  that claim is false for LiteLLM v1.83.10.
+- **Symptom**: Manual probe response:
+  `Invalid key format. LiteLLM Virtual Key must start with 'sk-'.
+  Received: pk_t****1234`. SSO callback surfaces
+  `litellm_unreachable` with message `litellm key/generate
+  unreachable`.
+- **Root cause**: LiteLLM v1.83 enforces a `sk-` prefix on
+  virtual-key plaintexts and 400-rejects anything else. ACH's
+  Phase 3 D-13 design (bearer plaintext stored verbatim across both
+  ACH's Postgres and LiteLLM's KV) is incompatible with that
+  upstream invariant.
+- **Fix sketch** (design decision needed — STOP):
+  Option A: drop `req.Key` from KeyGenerate; let LiteLLM
+  auto-generate an opaque `sk-…` token; store ACH's `pk_…` plaintext
+  in Postgres only; the forwarder translates `pk_…` →
+  `sk-…` (via the persisted token mapping) before calling
+  LiteLLM. Cleanest separation but requires the forwarder to do the
+  swap on every request.
+  Option B: prefix-swap the bearer at KeyGenerate time —
+  `req.Key = "sk-" + strings.TrimPrefix(plaintext, "pk_")` — and
+  reverse-map on inbound. Keeps Postgres + LiteLLM in lockstep on a
+  single plaintext value but exposes ACH's internal `pk_` naming
+  through the LiteLLM admin UI.
+  This is the last A-series blocker — once decided + implemented,
+  `examples/hydrate-demo.sh` should produce
+  `examples/hydrate.json` end-to-end.
+
+### A.5 — `/user/info` returns placeholder even for EXISTING users — **DONE**
+
+- **Severity**: HIGH (interacts with A.2 — second-run SSO fails 409
+  on UserNew because the user actually does exist).
+- **Where**: `internal/litellm/users.go` `UserInfoByEmail`.
+- **Symptom**: After A.2 routes the placeholder to ErrNotFound, the
+  first-time branch calls UserNew which returns 409 because the user
+  already exists from a prior SSO attempt. provisionUser surfaces
+  `litellm_unreachable`.
+- **Root cause**: LiteLLM v1.83 `/user/info?user_email=…` returns
+  the `default_user_id` admin placeholder both for unknown emails
+  AND for known-but-existing users — the email-keyed lookup is
+  broken upstream. `/user/list?user_email=…` does work and returns
+  the actual user row.
+- **Fix**: In `UserInfoByEmail`'s placeholder branch, fall back to
+  `/user/list?user_email=…` and return the first matching entry
+  before declaring `ErrNotFound`.
+
+### A.4 — `TeamMemberAdd` is called with `team_id="default"` literal — **DONE**
 
 - **Severity**: MEDIUM (works only because we manually pre-seed
   LiteLLM with a team whose `team_id="default"` literal — see

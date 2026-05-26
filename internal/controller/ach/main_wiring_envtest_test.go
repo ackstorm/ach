@@ -511,3 +511,8 @@ func TestMainWiring_MustEnvDurationAtLeast_Floor(t *testing.T) {
 		t.Errorf("err = %q; want substring 'below minimum'", err.Error())
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *wiringFakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

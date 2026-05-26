@@ -567,6 +567,8 @@ type callRecord struct {
 	lastKeyGenerateKey    string
 	lastKeyGenerateUser   string
 	lastKeyGenerateBudget *float64
+	listTeamsCalls        int
+	lastListTeamsAlias    string
 }
 
 // fakeLiteLLM is the test client implementing litellm.Client. Per-method
@@ -582,6 +584,7 @@ type fakeLiteLLM struct {
 	teamMemberAddError   func(teamID, userID, role string) error
 	keyGenerateBehaviour func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error)
 	revokeKeyError       func(keyID string) error
+	listTeamsBehaviour   func(alias string) ([]litellm.TeamListEntry, error)
 }
 
 func newFakeLiteLLM() *fakeLiteLLM {
@@ -602,7 +605,20 @@ func newFakeLiteLLM() *fakeLiteLLM {
 			}, nil
 		},
 		revokeKeyError: func(string) error { return nil },
+		listTeamsBehaviour: func(string) ([]litellm.TeamListEntry, error) {
+			// Match production LiteLLM: alias "default" resolves to a UUID
+			// team_id. Tests asserting on team_id should override this.
+			return []litellm.TeamListEntry{
+				{TeamID: "team-uuid-default", TeamAlias: "default"},
+			}, nil
+		},
 	}
+}
+
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, alias string) ([]litellm.TeamListEntry, error) {
+	f.rec.listTeamsCalls++
+	f.rec.lastListTeamsAlias = alias
+	return f.listTeamsBehaviour(alias)
 }
 
 // Unused-method shims to satisfy the wider litellm.Client interface.
@@ -951,14 +967,168 @@ func TestCallbackHandler_ExistingUserTeamMemberAddIdempotent(t *testing.T) {
 	if flm.rec.teamMemberAddCalls != 1 {
 		t.Errorf("TeamMemberAdd calls: got %d, want 1", flm.rec.teamMemberAddCalls)
 	}
-	if flm.rec.lastTeamMemberAddTeam != "default" {
-		t.Errorf("TeamMemberAdd team_id: got %q, want default", flm.rec.lastTeamMemberAddTeam)
+	// Post FIX01 §A.4: provisionUser resolves the team_id by alias via
+	// ListTeamsByAlias before calling TeamMemberAdd. The default fake
+	// returns {TeamID:"team-uuid-default", TeamAlias:"default"}.
+	if flm.rec.lastTeamMemberAddTeam != "team-uuid-default" {
+		t.Errorf("TeamMemberAdd team_id: got %q, want team-uuid-default (resolved by alias)",
+			flm.rec.lastTeamMemberAddTeam)
 	}
 	if flm.rec.lastTeamMemberAddUser != "litellm-carol" {
 		t.Errorf("TeamMemberAdd user_id: got %q, want litellm-carol", flm.rec.lastTeamMemberAddUser)
 	}
 	if flm.rec.lastTeamMemberAddRole != "user" {
 		t.Errorf("TeamMemberAdd role: got %q, want user", flm.rec.lastTeamMemberAddRole)
+	}
+}
+
+// TestCallbackHandler_DuplicateTeamMemberAddSwallowed — FIX01 §A.3.
+// LiteLLM v1.83 UserNew(teams:[…]) auto-enrolls the user, then the
+// explicit TeamMemberAdd in provisionUser hits a 400 "already added".
+// provisionUser MUST swallow that case and proceed to KeyGenerate.
+// Same swallow applies to the existing-user branch on subsequent
+// SSO attempts (idempotency under out-of-band team-membership state).
+func TestCallbackHandler_DuplicateTeamMemberAddSwallowed(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		userBeh func(email string) (*litellm.UserInfo, error)
+	}{
+		{
+			name: "first-time-branch",
+			userBeh: func(string) (*litellm.UserInfo, error) {
+				return nil, litellm.ErrNotFound
+			},
+		},
+		{
+			name: "existing-user-branch",
+			userBeh: func(email string) (*litellm.UserInfo, error) {
+				return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email}, nil
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fix := newRealOIDC(t, "ach")
+			defer fix.Close()
+			fix.idEmail = "dup@example.com"
+
+			flm := newFakeLiteLLM()
+			flm.userInfoBehaviour = tc.userBeh
+			// LiteLLM returns the canonical "already added" 4xx body.
+			flm.teamMemberAddError = func(string, string, string) error {
+				return errors.New("litellm: status: 400 body: user already in team")
+			}
+			dbRec := newDBInsertRecord()
+
+			ctc := &callbackTestCase{
+				stateCookie: "state-dup",
+				urlState:    "state-dup",
+				urlCode:     "code-dup",
+				oidcFix:     fix,
+				litellm:     flm,
+				dbInsert:    dbRec,
+				pepper:      []byte("pepper-dup-32-bytes-aaaaaaaaaa"),
+			}
+			w := runCallback(t, ctc)
+			resp := w.Result()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status: got %d, want 200 (duplicate-add must be swallowed); body=%s",
+					resp.StatusCode, string(body))
+			}
+			if flm.rec.keyGenerateCalls != 1 {
+				t.Errorf("KeyGenerate calls: got %d, want 1 (handler must proceed past duplicate-add)",
+					flm.rec.keyGenerateCalls)
+			}
+			if dbRec.calls != 1 {
+				t.Errorf("DB insert calls: got %d, want 1", dbRec.calls)
+			}
+		})
+	}
+}
+
+// TestCallbackHandler_TeamIDResolvedByAlias — FIX01 §A.4.
+// provisionUser MUST call ListTeamsByAlias("default") and use the
+// resolved team_id UUID for the subsequent TeamMemberAdd. The literal
+// "default" string is NOT a valid team_id under LiteLLM's UUID-based
+// team identity scheme.
+func TestCallbackHandler_TeamIDResolvedByAlias(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alias@example.com"
+
+	flm := newFakeLiteLLM()
+	// Override the default fake to return a specific UUID for "default".
+	flm.listTeamsBehaviour = func(alias string) ([]litellm.TeamListEntry, error) {
+		if alias != "default" {
+			t.Errorf("ListTeamsByAlias: got alias %q, want default", alias)
+		}
+		return []litellm.TeamListEntry{
+			{TeamID: "9f4a2c01-aaaa-bbbb-cccc-deadbeef1234", TeamAlias: "default"},
+		}, nil
+	}
+	dbRec := newDBInsertRecord()
+
+	tc := &callbackTestCase{
+		stateCookie: "state-alias",
+		urlState:    "state-alias",
+		urlCode:     "code-alias",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("pepper-alias-32-bytes-aaaaaaaa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 200; body=%s", w.Result().StatusCode, string(body))
+	}
+	if flm.rec.listTeamsCalls != 1 {
+		t.Errorf("ListTeamsByAlias calls: got %d, want 1", flm.rec.listTeamsCalls)
+	}
+	if flm.rec.lastListTeamsAlias != "default" {
+		t.Errorf("ListTeamsByAlias alias: got %q, want default", flm.rec.lastListTeamsAlias)
+	}
+	if flm.rec.lastTeamMemberAddTeam != "9f4a2c01-aaaa-bbbb-cccc-deadbeef1234" {
+		t.Errorf("TeamMemberAdd team_id: got %q, want resolved UUID",
+			flm.rec.lastTeamMemberAddTeam)
+	}
+}
+
+// TestCallbackHandler_DefaultTeamAliasNotInLiteLLM — FIX01 §A.4 hard-fail
+// path. When ListTeamsByAlias returns zero entries, provisionUser MUST
+// surface default_team_missing (deployer misconfig per Hub §17 / API-02).
+func TestCallbackHandler_DefaultTeamAliasNotInLiteLLM(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "noteam@example.com"
+
+	flm := newFakeLiteLLM()
+	flm.listTeamsBehaviour = func(string) ([]litellm.TeamListEntry, error) {
+		return []litellm.TeamListEntry{}, nil
+	}
+	dbRec := newDBInsertRecord()
+
+	tc := &callbackTestCase{
+		stateCookie: "state-noteam",
+		urlState:    "state-noteam",
+		urlCode:     "code-noteam",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("pepper-noteam-32-bytes-aaaaaaa"),
+	}
+	w := runCallback(t, tc)
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, want 500 (no default team); body=%s",
+			resp.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), audit.OutcomeDefaultTeamMissing) {
+		t.Errorf("body missing %s code; body=%s", audit.OutcomeDefaultTeamMissing, string(body))
+	}
+	if dbRec.calls != 0 {
+		t.Errorf("DB insert MUST NOT run on default_team_missing; got %d calls", dbRec.calls)
 	}
 }
 

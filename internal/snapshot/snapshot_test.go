@@ -369,3 +369,8 @@ func TestSnapshotter_StartRespectsCtxCancel(t *testing.T) {
 		t.Errorf("ListModels call count = %d; want >= 2 (initial + ≥1 ticker fire)", got)
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

@@ -481,3 +481,8 @@ var _ = readErrCode
 var _ = (*recordingRedis)(nil)
 var _ = (*fakeLitellm)(nil)
 var _ = (*recorderOrder)(nil)
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLitellm) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

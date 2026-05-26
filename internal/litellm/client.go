@@ -108,6 +108,12 @@ type Client interface {
 	// The error propagates verbatim with no special-case wrapping here.
 	TeamMemberAdd(ctx context.Context, teamID, userID, role string) error
 
+	// ListTeamsByAlias issues GET /v2/team/list?team_alias=<alias>
+	// and returns the matching team entries. Used by the SSO handler
+	// (Plan 03-07) to resolve the LiteLLM-assigned team_id UUID from
+	// the well-known alias "default" before the TeamMemberAdd call.
+	ListTeamsByAlias(ctx context.Context, alias string) ([]TeamListEntry, error)
+
 	// KeyGenerate issues POST /key/generate. ACH supplies the bearer
 	// plaintext via req.Key (Phase 3 D-13); LiteLLM stores ACH's prefix
 	// verbatim and returns its INTERNAL opaque hex `token` in the

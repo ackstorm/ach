@@ -126,4 +126,12 @@ func (c *Client) KeyGenerate(ctx context.Context, req *litellm.KeyGenerateReques
 	return client.KeyGenerate(ctx, req)
 }
 
+func (c *Client) ListTeamsByAlias(ctx context.Context, alias string) ([]litellm.TeamListEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.ListTeamsByAlias(ctx, alias)
+}
+
 var _ litellm.Client = (*Client)(nil)

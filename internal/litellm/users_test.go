@@ -80,7 +80,14 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","teams":["default","ops"]}`))
+		// LiteLLM v1.83 /user/info top-level `teams` is an array of
+		// team objects (each with team_id + team_alias), NOT strings.
+		// The test fixture mirrors the real wire shape so the envelope
+		// decode added for FIX01 §A.1 stays honest.
+		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","teams":[` +
+			`{"team_id":"default","team_alias":"default"},` +
+			`{"team_id":"ops","team_alias":"ops"}` +
+			`]}`))
 	}))
 	defer srv.Close()
 
@@ -96,7 +103,7 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 		t.Errorf("UserInfoByEmail: want {u-1, a@b.c}, got %+v", got)
 	}
 	if len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "ops" {
-		t.Errorf("UserInfoByEmail: want Teams=[default ops], got %+v", got.Teams)
+		t.Errorf("UserInfoByEmail: want Teams=[default ops] (team_id flattened), got %+v", got.Teams)
 	}
 	if len(captured) != 1 || captured[0].Method != "GET" {
 		t.Fatalf("wire method: want GET, got %+v", captured)
@@ -107,6 +114,67 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(captured[0].Path, "user_email=a%40b.c") {
 		t.Errorf("path must url-escape email (@ → %%40), got %q", captured[0].Path)
+	}
+}
+
+// TestUserInfoByEmailLiteLLM183Placeholder — FIX01 §A.2.
+// LiteLLM v1.83 returns user_id="default_user_id" with null user_email
+// when the requested email is not on file (no 404). UserInfoByEmail
+// must fall back to /user/list and return ErrNotFound if that's also
+// empty.
+func TestUserInfoByEmailLiteLLM183Placeholder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			_, _ = w.Write([]byte(`{"users":[]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "missing@example.com")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got err=%v result=%+v", err, got)
+	}
+	if got != nil {
+		t.Errorf("want nil *UserInfo, got %+v", got)
+	}
+}
+
+// TestUserInfoByEmailLiteLLM183Fallback — FIX01 §A.5.
+// /user/info returns the placeholder even for EXISTING users (the
+// upstream email-keyed lookup is broken). UserInfoByEmail must fall
+// back to /user/list and surface the real user_id from there.
+func TestUserInfoByEmailLiteLLM183Fallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			// Placeholder catch-all (LiteLLM 1.83 quirk).
+			_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			// The user DOES exist — /user/list returns the real row.
+			_, _ = w.Write([]byte(`{"users":[{"user_id":"u-real","user_email":"existing@example.com","teams":["default"]}]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "existing@example.com")
+	if err != nil {
+		t.Fatalf("UserInfoByEmail with /user/list fallback: %v", err)
+	}
+	if got == nil || got.UserID != "u-real" || got.UserEmail != "existing@example.com" {
+		t.Errorf("want {u-real, existing@example.com}, got %+v", got)
 	}
 }
 

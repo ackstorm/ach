@@ -475,3 +475,8 @@ func TestRunnable_StartRespectsCtxCancel(t *testing.T) {
 		t.Error("Start did not return within 1s of ctx cancellation")
 	}
 }
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}

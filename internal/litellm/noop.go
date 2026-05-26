@@ -127,6 +127,14 @@ func (c *NoopClient) KeyGenerate(_ context.Context, req *KeyGenerateRequest) (*K
 	}, nil
 }
 
+// ListTeamsByAlias returns an empty slice — the noop client has no
+// team state. Production SSO callers must run against a RESTClient
+// against a real LiteLLM with the "default" Team pre-provisioned.
+func (c *NoopClient) ListTeamsByAlias(_ context.Context, alias string) ([]TeamListEntry, error) {
+	c.Log.Info("stub: would list LiteLLM teams by alias", "alias", alias)
+	return nil, nil
+}
+
 // Compile-time interface satisfaction. If a future edit to the Client
 // interface adds or changes a method, the build breaks here until
 // NoopClient catches up — matching the sister project's discipline
