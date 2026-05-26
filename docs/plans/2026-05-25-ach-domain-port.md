@@ -44,7 +44,7 @@ Goal: replace placeholder Spec/Status with ach-old's real types. After this phas
 ach-old has 7 CRDs; bootstrap scaffolded 6. Add the missing one.
 
 **Files:**
-- Stub `cmd/main.go` (temporary, deleted post-scaffold per [bootstrap T5.1 workaround](../../references/upstream-sync.md))
+- Stub `cmd/main.go` (temporary, deleted post-scaffold per `references/upstream-sync.md` bootstrap T5.1 workaround)
 - `api/ach/v1alpha1/litellmconnection_types.go` (auto-gen)
 - `internal/controller/ach/litellmconnection_controller.go` (auto-gen)
 - `config/crd/bases/ach.ackstorm.ai_litellmconnections.yaml` (auto-gen)

@@ -8,6 +8,7 @@ resources:
 - bases/ach.ackstorm.ai_artifacts.yaml
 - bases/ach.ackstorm.ai_prompts.yaml
 - bases/ach.ackstorm.ai_backendidentitypolicies.yaml
+- bases/ach.ackstorm.ai_litellmconnections.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

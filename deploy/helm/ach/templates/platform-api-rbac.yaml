@@ -1,0 +1,54 @@
+{{- if .Values.platformApi.enabled }}
+---
+# ClusterRole — platform-api informer cache watches the 6 read-side ACH
+# CRDs and Secrets (Dex client-secret hot-reload, D-04/D-06). The Secrets
+# rule is the direct fix for the controller-runtime reflector
+# "cannot list resource secrets" error on Pod start. MULTI-02 carve-out:
+# patch ONLY on the four external-reference kinds (used for the
+# ach.ackstorm.ai/force-refresh annotation per Hub §15.5). NO patch on
+# environments or backendidentitypolicies (operator owns those status
+# writes).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-platform-api
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - environments
+  - plugins
+  - pluginmarketplaces
+  - artifacts
+  - prompts
+  - backendidentitypolicies
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - plugins
+  - prompts
+  - artifacts
+  - pluginmarketplaces
+  verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-platform-api
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-platform-api
+subjects:
+- kind: ServiceAccount
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+{{- end }}

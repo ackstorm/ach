@@ -1,0 +1,94 @@
+# LiteLLM hub configuration for the ach e2e cluster.
+#
+# Used by:  scripts/cluster.sh hydrate_litellm
+# Chart:    oci://docker.litellm.ai/berriai/litellm-helm  (upstream, OCI, BETA)
+# Image:    v1.83.10-stable (matches sister alitellm-operator's
+#           auto-memory litellm_version_target.md — the same upstream tag
+#           ach's internal/litellm REST client was validated against).
+#
+# WARNING: the upstream litellm-helm chart is in BETA. When bumping
+# `chartVersion`, re-run `make e2e-full` and inspect any failed scenarios
+# for schema drift.
+#
+# NOTE on image.tag override: the chart's default image.tag tracks chart
+# appVersion. Recent appVersions (e.g. main-1.86.1) do not have a
+# corresponding tag published under ghcr.io/berriai/litellm-database,
+# producing ImagePullBackOff. The override below pins to the last
+# known-good tag matching the operator's binary target; do NOT drop it
+# on chart bumps unless you have validated the new appVersion exists
+# under both `litellm` and `litellm-database` variants.
+#
+# Apply changes:  scripts/cluster.sh hydrate
+
+chartVersion: 1.84.0
+
+image:
+  repository: ghcr.io/berriai/litellm-database
+  tag: v1.83.10-stable
+  # Override chart default `Always`: cluster.sh pre-pulls + kind-loads
+  # this image into the node before `helm install`. With `Always`,
+  # kubelet round-trips ghcr.io on every Pod start (and every
+  # migrations Job retry on backoff) — a flaky pull stalls the PreSync
+  # Job and leaves the DB schema unmigrated. IfNotPresent + pre-load
+  # eliminates the round-trip entirely.
+  pullPolicy: IfNotPresent
+
+db:
+  deployStandalone: true
+  database: litellm
+  username: litellm
+  password: litellm
+
+# Bitnami postgresql subchart override (mirrors top-level
+# hydrate_postgres public.ecr.aws redirect). Bitnami pruned pinned
+# image tags from docker.io/bitnami/* in 2025; the AWS-hosted mirror
+# at public.ecr.aws/bitnami/* still serves them.
+# `allowInsecureImages: true` is required because the ECR mirror
+# does not carry the upstream Bitnami signature chain.
+postgresql:
+  global:
+    imageRegistry: public.ecr.aws
+    security:
+      allowInsecureImages: true
+  auth:
+    username: litellm
+    password: litellm
+    database: litellm
+
+# Bitnami redis subchart override (same workaround).
+redis:
+  global:
+    imageRegistry: public.ecr.aws
+    security:
+      allowInsecureImages: true
+
+# Chart key is `masterkey` (lowercase, no camelCase). When this value is
+# mistyped the chart silently auto-generates a random one and produces
+# misleading 401 errors on /health probes. Must match the
+# ACH_LITELLM_MASTER_KEY value set in cluster.sh hydrate_ach.
+masterkey: sk-test-master-key
+
+envVars:
+  LITELLM_LOG: ERROR
+  # MCP server_name sanitization (FIX2.txt HIGH-1, 2026-05-22): pin the
+  # separator the upstream LiteLLM v1.83.x validator uses so internal/
+  # litellm's mcp.go server_name rewriter and the upstream agree.
+  MCP_TOOL_PREFIX_SEPARATOR: "."
+  # PreSync migration Job handles schema; runtime container must NOT
+  # re-run them on every Pod start.
+  DISABLE_SCHEMA_UPDATE: "true"
+  # Required for POST /model/new — without it, LiteLLM returns 500 from
+  # add_new_model.
+  STORE_MODEL_IN_DB: "True"
+  # Force prisma migration check to exit non-zero when Postgres isn't
+  # ready, so the K8s Job backoff retries until the StatefulSet is up
+  # (vs LiteLLM's internal "continuing startup" exit 0 silently bailing).
+  ENFORCE_PRISMA_MIGRATION_CHECK: "true"
+
+# resources: deliberately unset. LiteLLM 1.83 is heavy (Python + Prisma
+# + many provider SDKs); fixed limits keep tripping OOMKilled on kind.
+# Test env, not capacity-constrained — let kubelet best-effort schedule.
+
+service:
+  type: ClusterIP
+  port: 4000

@@ -20,5 +20,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /out/ach /ach
+# Bake the SQL migrations into the image at /db/migrations so the
+# `ach migrate` subcommand (Plan 08 init container) finds them at the
+# default ACH_MIGRATIONS_PATH without needing a configmap mount.
+COPY db/migrations /db/migrations
 USER 65532:65532
 ENTRYPOINT ["/ach"]

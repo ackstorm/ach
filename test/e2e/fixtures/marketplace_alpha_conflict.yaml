@@ -1,0 +1,23 @@
+# Phase 02.1 e2e fixture — PluginMarketplace CR for SC3_AlphabeticalConflict.
+#
+# alpha-mkt is the alphabetical winner (CR.Name "alpha-mkt" < "beta-mkt");
+# it should keep Synced=True after both alpha-mkt + beta-mkt are applied
+# (beta-mkt loses via SourceReachable=False reason=NameConflict).
+#
+# Schema validated against api/ach/v1alpha1/pluginmarketplace_types.go.
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: alpha-mkt
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+    ach.ackstorm.ai/e2e: phase2-sc3
+spec:
+  type: http
+  http:
+    url: http://marketplace-fixture.ach-system.svc.cluster.local/marketplace.json
+  refresh:
+    maxStaleness: 1h

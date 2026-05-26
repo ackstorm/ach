@@ -1,0 +1,34 @@
+# Phase 3 e2e fixture — production Environment CR.
+#
+# Plan 03-12. Used by SC#2 (hydrate), SC#3 (env-keys create), SC#5
+# (admin force-refresh). The Operator (Phase 02) reconciles authorized
+# Teams + LiteLLM access groups; phase3_invariants_test.go waits for
+# AccessGroupSynced=True via the kubectl jsonpath poller.
+#
+# authorizedTeams uses the "default" alias mocked in
+# scripts/dex-config.yaml (kilgore@kilgore.trout) — the SSO user is
+# auto-added to the default Team in §8.2 step 5, so the §8.2 step 4
+# team-intersection check passes deterministically.
+#
+# Runtime + context blocks are intentionally non-empty so the §15.2
+# hydrate response carries representative items (the operator
+# eventually reconciles them into the LiteLLM access group); SC#2
+# asserts at least one Plugin or Prompt entry in the response.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: e2e-env-prod
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - gpt-4o-mini
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts:
+      - e2e-prompt-prod
+    plugins: []
+    artifacts: []

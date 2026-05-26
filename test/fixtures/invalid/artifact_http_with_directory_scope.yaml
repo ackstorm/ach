@@ -1,0 +1,22 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Artifact.type=http requires scope=object (CRD-05 / Plan 02 Task 2)
+# Expected error substring: "scope=object"
+#
+# This manifest sets type=http with scope=directory. The Artifact CEL rule
+#   self.spec.type != 'http' || self.spec.scope == 'object'
+# rejects this combination with:
+#   "Artifact.type=http requires scope=object; directory scope is not
+#    permitted for http (CRD-05)"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Artifact
+metadata:
+  name: invalid-http-directory
+  namespace: ach-system
+spec:
+  type: http
+  scope: directory
+  http:
+    url: https://example.com/artifacts/customer-kb/
+  refresh:
+    interval: 1h
+    maxStaleness: 12h

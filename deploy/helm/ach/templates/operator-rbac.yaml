@@ -1,0 +1,106 @@
+{{- if .Values.operator.enabled }}
+---
+# ClusterRole — operator informer cache watches CRD instances and Secrets
+# across the cluster (or watch-namespace subset). The Secrets rule is the
+# direct fix for the "cannot list resource secrets" error from
+# controller-runtime's reflector. Cluster-scope is the minimal grant
+# kubebuilder convention prescribes for multi-tenant CRD reconcilers;
+# tighten to a namespaced Role + RoleBinding only if the deployment
+# topology is single-namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-operator
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts
+  - backendidentitypolicies
+  - environments
+  - litellmconnections
+  - pluginmarketplaces
+  - plugins
+  - prompts
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts/finalizers
+  - backendidentitypolicies/finalizers
+  - environments/finalizers
+  - litellmconnections/finalizers
+  - pluginmarketplaces/finalizers
+  - plugins/finalizers
+  - prompts/finalizers
+  verbs: ["update"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts/status
+  - backendidentitypolicies/status
+  - environments/status
+  - litellmconnections/status
+  - pluginmarketplaces/status
+  - plugins/status
+  - prompts/status
+  verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-operator
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-operator
+subjects:
+- kind: ServiceAccount
+  name: ach-operator
+  namespace: {{ .Release.Namespace }}
+---
+# Leader-election: controller-runtime acquires a Lease in the operator's
+# own namespace. Namespaced Role + RoleBinding is the tighter binding for
+# this; cluster-scope is not required here.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-operator-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-operator-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-operator-leader-election
+subjects:
+- kind: ServiceAccount
+  name: ach-operator
+  namespace: {{ .Release.Namespace }}
+{{- end }}

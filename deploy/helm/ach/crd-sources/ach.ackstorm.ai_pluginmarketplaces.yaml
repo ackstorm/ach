@@ -15,10 +15,21 @@ spec:
     singular: pluginmarketplace
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Synced')].status
+      name: Synced
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PluginMarketplace is the Schema for the pluginmarketplaces API.
+        description: PluginMarketplace is the Schema for the pluginmarketplaces API
+          (Hub §12).
         properties:
           apiVersion:
             description: |-
@@ -38,17 +49,568 @@ spec:
           metadata:
             type: object
           spec:
-            description: PluginMarketplaceSpec defines the desired state of PluginMarketplace.
+            description: |-
+              PluginMarketplaceSpec defines the desired state of PluginMarketplace (Hub §12).
+
+              The marketplace file itself is fetched via the chosen source type
+              (§12.1). Per-source defaults: github/gitlab/bitbucket default
+              path=.claude-plugin/marketplace.json. s3/gcs/http require explicit
+              key/object/url pointing at the marketplace file.
+
+              CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+              CRD-04: spec.refresh.maxStaleness is REQUIRED.
             properties:
-              foo:
-                description: Foo is an example field of PluginMarketplace. Edit pluginmarketplace_types.go
-                  to remove/update
+              bitbucket:
+                description: Bitbucket source. Required when spec.type == "bitbucket".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef points at the Bitbucket app-password / access-token
+                      Secret. Optional — when omitted, the fetcher issues anonymous
+                      Bitbucket Cloud REST calls. Most Bitbucket Cloud endpoints require
+                      auth even for public repos, so anonymous fetches typically fail
+                      with ErrUnauthorized at runtime; the option exists for consistency
+                      with the github/gitlab sources and for self-hosted Bitbucket Server
+                      instances that permit anonymous access.
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  path:
+                    description: Path within the repo.
+                    type: string
+                  ref:
+                    description: Ref is a branch or tag name.
+                    minLength: 1
+                    type: string
+                  repo:
+                    description: Repo within the workspace.
+                    minLength: 1
+                    type: string
+                  workspace:
+                    description: Workspace name on Bitbucket.
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                - repo
+                - workspace
+                type: object
+              filters:
+                description: Filters narrows the upstream catalog (Hub §12). Optional.
+                properties:
+                  exclude:
+                    description: |-
+                      Exclude is a list of anchored RE2 patterns dropped from the catalog
+                      after Include is applied.
+                    items:
+                      type: string
+                    type: array
+                  include:
+                    description: |-
+                      Include is a list of anchored RE2 patterns that narrow the catalog.
+                      When omitted or empty, all upstream names pass through.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              gcs:
+                description: GCS source. Required when spec.type == "gcs".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef points at the Secret carrying a service-account JSON
+                      blob (data key named via .key).
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  bucket:
+                    description: Bucket name.
+                    minLength: 1
+                    type: string
+                  object:
+                    description: Object name (single object) or prefix (directory
+                      scope).
+                    minLength: 1
+                    type: string
+                required:
+                - authSecretRef
+                - bucket
+                - object
+                type: object
+              github:
+                description: GitHub source. Required when spec.type == "github".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef points at the GitHub PAT Secret. Optional —
+                      when omitted, the fetcher issues anonymous (unauthenticated) GitHub
+                      API calls, which work against public repos at the upstream's
+                      anonymous rate-limit ceiling (60 req/hour per IP for github.com).
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  path:
+                    description: |-
+                      Path within the repo. Per-kind defaults apply (e.g. Plugin defaults
+                      to repo root; PluginMarketplace defaults to .claude-plugin/marketplace.json).
+                    type: string
+                  ref:
+                    description: |-
+                      Ref is a branch or tag name. No immutable commit refs in v1alpha1
+                      (CRD-04, Hub §10).
+                    minLength: 1
+                    type: string
+                  repo:
+                    description: Repo is the "<owner>/<name>" GitHub identifier.
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                - repo
+                type: object
+              gitlab:
+                description: GitLab source. Required when spec.type == "gitlab".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef points at the GitLab PAT / deploy-token Secret.
+                      Optional — when omitted, the fetcher issues anonymous GitLab API
+                      calls. Public projects on gitlab.com return commit metadata + the
+                      repository archive to anonymous callers; private projects return
+                      401/404.
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  host:
+                    description: Host of the GitLab instance. Defaults to gitlab.com
+                      when empty.
+                    type: string
+                  path:
+                    description: Path within the project repo.
+                    type: string
+                  project:
+                    description: Project is the "<namespace>/<project>" GitLab identifier.
+                    minLength: 1
+                    type: string
+                  ref:
+                    description: Ref is a branch or tag name.
+                    minLength: 1
+                    type: string
+                required:
+                - project
+                - ref
+                type: object
+              http:
+                description: HTTP source. Required when spec.type == "http".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef optionally attaches an authentication header
+                      (e.g. Authorization: Bearer ...). The data key named via
+                      .headerValueKey supplies the header value at request time.
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  url:
+                    description: URL of the upstream resource. Accepts http:// or
+                      https://.
+                    minLength: 1
+                    type: string
+                required:
+                - url
+                type: object
+              refresh:
+                description: Refresh declares poll cadence and staleness bound (CRD-04).
+                properties:
+                  interval:
+                    description: |-
+                      Interval is how often the ACH Operator polls the upstream source.
+                      Optional; when unset, the Operator uses an implementation default.
+                      Format matches Kubernetes Duration (e.g. "15m", "1h", "30s").
+                    type: string
+                  maxStaleness:
+                    description: |-
+                      MaxStaleness bounds the age of a served cached snapshot. When
+                      now - lastSuccessfulRefresh > maxStaleness, Content Service
+                      returns 503 stale_cache_expired for the affected content
+                      (§10). REQUIRED per CRD-04 — admission rejects a resource that
+                      omits this field.
+                    type: string
+                required:
+                - maxStaleness
+                type: object
+              s3:
+                description: S3 source. Required when spec.type == "s3".
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef points at the Secret carrying access-key-id and
+                      secret-access-key (data keys named via accessKeyIdKey /
+                      secretAccessKeyKey).
+                    properties:
+                      accessKeyIdKey:
+                        description: |-
+                          AccessKeyIDKey is the data-key holding the AWS access-key-id
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                      headerName:
+                        description: |-
+                          HeaderName is the HTTP header name to attach for http sources
+                          (e.g. "Authorization").
+                        minLength: 1
+                        type: string
+                      headerValueKey:
+                        description: |-
+                          HeaderValueKey is the data-key holding the value for HeaderName
+                          (http source only).
+                        minLength: 1
+                        type: string
+                      key:
+                        description: |-
+                          Key inside the Secret data map carrying the token / PAT / access key.
+                          Used by github, gitlab, bitbucket source types.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Kubernetes Secret in the CR's namespace.
+                        minLength: 1
+                        type: string
+                      secretAccessKeyKey:
+                        description: |-
+                          SecretAccessKeyKey is the data-key holding the AWS secret-access-key
+                          (S3 source only).
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  bucket:
+                    description: Bucket name.
+                    minLength: 1
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint for S3-compatible storage. Optional; defaults to AWS S3
+                      when empty.
+                    type: string
+                  key:
+                    description: Key is the object key (single object) or prefix (directory
+                      scope).
+                    minLength: 1
+                    type: string
+                  region:
+                    description: Region of the bucket.
+                    minLength: 1
+                    type: string
+                required:
+                - authSecretRef
+                - bucket
+                - key
+                - region
+                type: object
+              type:
+                description: Type names the upstream source kind for the marketplace
+                  file.
+                enum:
+                - github
+                - gitlab
+                - bitbucket
+                - s3
+                - gcs
+                - http
                 type: string
+            required:
+            - refresh
+            - type
             type: object
           status:
-            description: PluginMarketplaceStatus defines the observed state of PluginMarketplace.
+            description: |-
+              PluginMarketplaceStatus defines the observed state of PluginMarketplace.
+
+              In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
+              Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
+              InvalidConfig, UnsupportedPluginSource. Phase 1 ships the field
+              surface; Phase 2 fills the reconciler logic.
+            properties:
+              conditions:
+                description: |-
+                  Conditions exposes SourceReachable (and, for PluginMarketplace,
+                  Synced) per §6.6.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastSuccessfulRefresh:
+                description: |-
+                  LastSuccessfulRefresh is the wall-clock time of the most recent
+                  successful upstream fetch + atomic publish (§10.3 step 5).
+                format: date-time
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the metadata.generation of the CR the
+                  reconciler most recently processed.
+                format: int64
+                type: integer
+              storageLocation:
+                description: |-
+                  StorageLocation is the cached filesystem path the Content Service
+                  serves from after the last successful refresh (§10.3). Empty until
+                  the first successful refresh.
+                type: string
+              upstreamRev:
+                description: |-
+                  UpstreamRev is the per-source revision identifier the most recent
+                  successful refresh recorded — for git sources this is the resolved
+                  commit SHA; for S3 it is the object ETag; for GCS the object
+                  generation; for HTTP a composite of ETag and Last-Modified
+                  separated by a literal pipe. The Phase 2 reconciler reads this
+                  value to pass as PriorRev on the next fetch for conditional-GET /
+                  not-modified detection. Empty before the first successful refresh.
+                type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: PluginMarketplace.spec.refresh.maxStaleness is REQUIRED (CRD-04)
+          rule: has(self.spec.refresh) && has(self.spec.refresh.maxStaleness)
+        - message: PluginMarketplace.spec.refresh.interval must be <= refresh.maxStaleness
+            (CRD-03)
+          rule: '!has(self.spec.refresh.interval) || duration(self.spec.refresh.interval)
+            <= duration(self.spec.refresh.maxStaleness)'
+        - message: PluginMarketplace.spec must include the subobject matching spec.type
+            (CRD-03)
+          rule: (self.spec.type == 'github' && has(self.spec.github)) || (self.spec.type
+            == 'gitlab' && has(self.spec.gitlab)) || (self.spec.type == 'bitbucket'
+            && has(self.spec.bitbucket)) || (self.spec.type == 's3' && has(self.spec.s3))
+            || (self.spec.type == 'gcs' && has(self.spec.gcs)) || (self.spec.type
+            == 'http' && has(self.spec.http))
     served: true
     storage: true
     subresources:

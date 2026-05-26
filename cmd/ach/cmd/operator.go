@@ -1,21 +1,384 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// `ach operator` is the ACH Hub Operator entrypoint (D-03). It wires every
+// Phase 1 piece — env-var validation (D-08, D-09), PVC layout bootstrap
+// (D-13), Postgres connection pool, LiteLLM client built from
+// LiteLLMConnection (D-11), all reconcilers, namespace-scoped informer
+// cache (MULTI-01), health probes — and blocks on manager.Start until
+// SIGINT/SIGTERM. Body lifted from ach-old/cmd/operator/main.go and
+// adapted to a cobra RunE for the single-binary layout.
+
 package cmd
 
 import (
+	"context"
+	"crypto/tls"
+	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	// to ensure that exec-entrypoint and run can make use of them.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/cachefs"
+	"github.com/ackstorm/ach/internal/config"
+	"github.com/ackstorm/ach/internal/connection"
+	achcontroller "github.com/ackstorm/ach/internal/controller/ach"
+	"github.com/ackstorm/ach/internal/credhash/pepperenv"
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/orphan"
+	"github.com/ackstorm/ach/internal/snapshot"
+	// +kubebuilder:scaffold:imports
 )
+
+var (
+	operatorScheme   = runtime.NewScheme()
+	operatorSetupLog = ctrl.Log.WithName("setup")
+)
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(operatorScheme))
+	utilruntime.Must(achv1alpha1.AddToScheme(operatorScheme))
+	// +kubebuilder:scaffold:scheme
+
+	rootCmd.AddCommand(operatorCmd)
+}
 
 var operatorCmd = &cobra.Command{
 	Use:   "operator",
 	Short: "Run the ACH Kubernetes operator (controller-runtime manager)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("ach operator: not yet implemented")
-		return nil
-	},
+	Long: `Boot the controller-runtime manager that reconciles every ACH CRD
+(Environment, Plugin, PluginMarketplace, Artifact, Prompt,
+BackendIdentityPolicy, LiteLLMConnection) within the namespace named by
+ACH_NAMESPACE. Health probes at :8081; metrics at the configured address.`,
+	RunE: runOperator,
 }
 
-func init() {
-	rootCmd.AddCommand(operatorCmd)
+// nolint:gocyclo
+func runOperator(_ *cobra.Command, _ []string) error {
+	var metricsAddr string
+	var metricsCertPath, metricsCertName, metricsCertKey string
+	var webhookCertPath, webhookCertName, webhookCertKey string
+	var enableLeaderElection bool
+	var probeAddr string
+	var secureMetrics bool
+	var enableHTTP2 bool
+	var tlsOpts []func(*tls.Config)
+	flag.StringVar(&metricsAddr, "metrics-bind-address",
+		config.EnvOr("METRICS_BIND_ADDRESS", "0"),
+		"The address the metrics endpoint binds to. "+
+			"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address",
+		config.EnvOr("PROBE_BIND_ADDRESS", ":8081"),
+		"The address the probe endpoint binds to.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect",
+		config.EnvBool("LEADER_ELECT", false),
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
+		"The directory that contains the metrics server certificate.")
+	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.BoolVar(&enableHTTP2, "enable-http2", false,
+		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
+	flag.Parse()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// ─── Multi-tenancy: namespace-scoped informer cache (MULTI-01) ───
+	watchNS := config.EnvOr("ACH_NAMESPACE", "ach-system")
+
+	// ─── D-09: credential-hash pepper fail-fast ───
+	pepper, err := pepperenv.Load()
+	if err != nil {
+		return fmt.Errorf("credential-hash pepper invalid (D-09 / Hub §16.1): %w", err)
+	}
+	_ = pepper
+
+	// ─── D-08: ACH_DB_URL fail-fast ───
+	dbURL, err := config.MustEnvNonEmpty("ACH_DB_URL")
+	if err != nil {
+		return fmt.Errorf("ACH_DB_URL is required (D-08): %w", err)
+	}
+
+	// ─── OP-09 forward-compat: ACH_PLUGIN_MAX_SIZE_MIB ───
+	pluginMaxSizeMiB, err := config.MustEnvIntPositive("ACH_PLUGIN_MAX_SIZE_MIB", 50)
+	if err != nil {
+		return fmt.Errorf("ACH_PLUGIN_MAX_SIZE_MIB must be a positive integer (OP-09 / Hub §11): %w", err)
+	}
+	operatorSetupLog.Info("plugin size limit configured", "ACH_PLUGIN_MAX_SIZE_MIB", pluginMaxSizeMiB)
+
+	// ─── Phase 2: ACH_ORPHAN_CLEANUP_INTERVAL (OP-15 / D-15) ───
+	orphanInterval, err := config.MustEnvDurationAtLeast("ACH_ORPHAN_CLEANUP_INTERVAL", time.Hour, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("ACH_ORPHAN_CLEANUP_INTERVAL invalid (OP-15 / D-15): %w", err)
+	}
+	operatorSetupLog.Info("orphan-cleanup interval configured", "interval", orphanInterval)
+
+	// ─── Postgres connection pool ───
+	dbCtx, dbCancel := context.WithCancel(context.Background())
+	defer dbCancel()
+	dbPool, err := db.Open(dbCtx, dbURL)
+	if err != nil {
+		return fmt.Errorf("unable to open Postgres pool: %w", err)
+	}
+	defer dbPool.Close()
+	operatorSetupLog.Info("Postgres pool opened", "maxConns", 10)
+
+	// ─── D-13: PVC layout bootstrap ───
+	cacheRoot := config.EnvOr("ACH_CACHE_ROOT", "/var/cache/ach")
+	if err := cachefs.EnsureLayout(cacheRoot); err != nil {
+		return fmt.Errorf("cache layout init failed (D-13 / OP-10) cacheRoot=%s: %w", cacheRoot, err)
+	}
+	operatorSetupLog.Info("PVC cache layout ready", "cacheRoot", cacheRoot)
+
+	// ─── OP-11: empty-PVC recovery ───
+	cacheWasEmpty, err := cachefs.IsEmpty(cacheRoot)
+	if err != nil {
+		return fmt.Errorf("cachefs.IsEmpty failed (OP-11) cacheRoot=%s: %w", cacheRoot, err)
+	}
+	if cacheWasEmpty {
+		if err := db.ResetExternalRefRefreshOnEmptyCache(context.Background(), dbPool); err != nil {
+			return fmt.Errorf("ResetExternalRefRefreshOnEmptyCache failed (OP-11): %w", err)
+		}
+		if err := db.ResetMarketplacePluginsRefreshOnEmptyCache(context.Background(), dbPool); err != nil {
+			return fmt.Errorf("ResetMarketplacePluginsRefreshOnEmptyCache failed (OP-11): %w", err)
+		}
+		operatorSetupLog.Info("PVC was empty on startup — external_refs + marketplace_plugins last_successful_refresh reset (OP-11)")
+	}
+
+	// ─── Phase 2: LiteLLMConnection-backed client ───
+	connCache := connection.NewCache()
+	realLiteLLM := connection.NewClient(connCache)
+
+	// ─── Phase 2: audit logger (D-17) ───
+	auditLog := audit.NewLogger(os.Stdout)
+
+	disableHTTP2 := func(c *tls.Config) {
+		operatorSetupLog.Info("disabling http/2")
+		c.NextProtos = []string{"http/1.1"}
+	}
+
+	if !enableHTTP2 {
+		tlsOpts = append(tlsOpts, disableHTTP2)
+	}
+
+	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
+	webhookTLSOpts := tlsOpts
+
+	if len(webhookCertPath) > 0 {
+		operatorSetupLog.Info("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+
+		var err error
+		webhookCertWatcher, err = certwatcher.New(
+			filepath.Join(webhookCertPath, webhookCertName),
+			filepath.Join(webhookCertPath, webhookCertKey),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to initialize webhook certificate watcher: %w", err)
+		}
+
+		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
+			config.GetCertificate = webhookCertWatcher.GetCertificate
+		})
+	}
+
+	webhookServer := webhook.NewServer(webhook.Options{
+		TLSOpts: webhookTLSOpts,
+	})
+
+	metricsServerOptions := metricsserver.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		TLSOpts:       tlsOpts,
+	}
+
+	if secureMetrics {
+		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+
+	if len(metricsCertPath) > 0 {
+		operatorSetupLog.Info("Initializing metrics certificate watcher using provided certificates",
+			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
+
+		var err error
+		metricsCertWatcher, err = certwatcher.New(
+			filepath.Join(metricsCertPath, metricsCertName),
+			filepath.Join(metricsCertPath, metricsCertKey),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to initialize metrics certificate watcher: %w", err)
+		}
+
+		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
+			config.GetCertificate = metricsCertWatcher.GetCertificate
+		})
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:  operatorScheme,
+		Metrics: metricsServerOptions,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				watchNS: {},
+			},
+		},
+		WebhookServer:           webhookServer,
+		HealthProbeBindAddress:  probeAddr,
+		LeaderElection:          enableLeaderElection,
+		LeaderElectionID:        "c86cb6c7.ackstorm.ai",
+		LeaderElectionNamespace: watchNS,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to start manager: %w", err)
+	}
+
+	// ─── Phase 2: pre-warm corev1.Secret informer (D-11) ───
+	if _, err := mgr.GetCache().GetInformer(context.Background(), &corev1.Secret{}); err != nil {
+		return fmt.Errorf("unable to install Secret informer pre-warm: %w", err)
+	}
+
+	if err = (&achcontroller.LiteLLMConnectionReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Cache:     connCache,
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("controller").WithName("LiteLLMConnection"),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller LiteLLMConnection: %w", err)
+	}
+
+	snapshotter := snapshot.NewSnapshotter(realLiteLLM, ctrl.Log.WithName("litellm-snapshot"))
+	if err := mgr.Add(snapshotter); err != nil {
+		return fmt.Errorf("unable to add LiteLLM snapshot Runnable: %w", err)
+	}
+
+	orphanRunnable := orphan.NewRunnable(realLiteLLM, dbPool, auditLog, orphanInterval,
+		ctrl.Log.WithName("orphan-cleanup"))
+	if err := mgr.Add(orphanRunnable); err != nil {
+		return fmt.Errorf("unable to add orphan-cleanup Runnable: %w", err)
+	}
+
+	if err = (&achcontroller.EnvironmentReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		LiteLLM:     realLiteLLM,
+		Namespace:   watchNS,
+		Log:         ctrl.Log.WithName("controller").WithName("Environment"),
+		DB:          dbPool,
+		Snapshotter: snapshotter,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Environment: %w", err)
+	}
+	if err = (&achcontroller.PluginReconciler{
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Namespace:        watchNS,
+		Log:              ctrl.Log.WithName("controller").WithName("Plugin"),
+		CacheRoot:        cacheRoot,
+		DB:               dbPool,
+		PluginMaxSizeMiB: pluginMaxSizeMiB,
+		Fetchers:         nil,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Plugin: %w", err)
+	}
+	if err = (&achcontroller.PluginMarketplaceReconciler{
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Namespace:        watchNS,
+		Log:              ctrl.Log.WithName("controller").WithName("PluginMarketplace"),
+		CacheRoot:        cacheRoot,
+		DB:               dbPool,
+		PluginMaxSizeMiB: pluginMaxSizeMiB,
+		Fetchers:         nil,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller PluginMarketplace: %w", err)
+	}
+	if err = (&achcontroller.ArtifactReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("controller").WithName("Artifact"),
+		CacheRoot: cacheRoot,
+		DB:        dbPool,
+		Fetchers:  nil,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Artifact: %w", err)
+	}
+	if err = (&achcontroller.PromptReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("controller").WithName("Prompt"),
+		CacheRoot: cacheRoot,
+		DB:        dbPool,
+		Fetchers:  nil,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Prompt: %w", err)
+	}
+	if err = (&achcontroller.BackendIdentityPolicyReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("controller").WithName("BackendIdentityPolicy"),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
+	}
+	// +kubebuilder:scaffold:builder
+
+	if metricsCertWatcher != nil {
+		operatorSetupLog.Info("Adding metrics certificate watcher to manager")
+		if err := mgr.Add(metricsCertWatcher); err != nil {
+			return fmt.Errorf("unable to add metrics certificate watcher to manager: %w", err)
+		}
+	}
+
+	if webhookCertWatcher != nil {
+		operatorSetupLog.Info("Adding webhook certificate watcher to manager")
+		if err := mgr.Add(webhookCertWatcher); err != nil {
+			return fmt.Errorf("unable to add webhook certificate watcher to manager: %w", err)
+		}
+	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up health check: %w", err)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
+
+	operatorSetupLog.Info("starting manager", "watchNS", watchNS)
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		return fmt.Errorf("problem running manager: %w", err)
+	}
+	return nil
 }

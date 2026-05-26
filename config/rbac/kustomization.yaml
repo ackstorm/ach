@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the {{ .ProjectName }} itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- ach_litellmconnection_admin_role.yaml
+- ach_litellmconnection_editor_role.yaml
+- ach_litellmconnection_viewer_role.yaml
 - ach_backendidentitypolicy_admin_role.yaml
 - ach_backendidentitypolicy_editor_role.yaml
 - ach_backendidentitypolicy_viewer_role.yaml
@@ -40,4 +43,23 @@ resources:
 - ach_environment_admin_role.yaml
 - ach_environment_editor_role.yaml
 - ach_environment_viewer_role.yaml
+
+# Per-binary RBAC (operator, platform-api, forwarder, content-service).
+# Each binary gets its own ServiceAccount + Role + RoleBinding sized for
+# the cobra subcommand it runs. The kubebuilder ClusterRole at role.yaml
+# is the manager's overarching RBAC; these namespaced Roles bound to
+# per-binary SAs provide the principle-of-least-privilege guard rails
+# the per-mode Deployments rely on (Helm templates land in Task 9.3).
+- operator_role.yaml
+- operator_role_binding.yaml
+- operator_service_account.yaml
+- platformapi_role.yaml
+- platformapi_role_binding.yaml
+- platformapi_service_account.yaml
+- forwarder_role.yaml
+- forwarder_role_binding.yaml
+- forwarder_service_account.yaml
+- contentservice_role.yaml
+- contentservice_role_binding.yaml
+- contentservice_service_account.yaml
 

@@ -4,6 +4,16 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: plugin-sample
+  name: example-plugin
   namespace: ach-system
-spec: {}
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach-example-plugin
+    ref: main
+    authSecretRef:
+      name: github-readonly
+      key: access-key
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

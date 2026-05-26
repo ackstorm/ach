@@ -1,0 +1,43 @@
+# ach itself — installed last by scripts/cluster.sh hydrate_ach against
+# the in-cluster postgres / valkey / dex / litellm services hydrated
+# earlier in the same `cluster.sh up` invocation.
+#
+# Used by:  scripts/cluster.sh hydrate_ach
+# Chart:    deploy/helm/ach  (in-tree)
+#
+# Image coordinates:
+#   The image.repo + image.tag are NOT pinned here because hydrate_ach
+#   overrides them via --set (ACH_IMAGE_REPO + ACH_IMAGE_TAG env vars
+#   are the canonical source — CI sets them when it builds the image
+#   immediately before `cluster.sh up`).
+
+extraEnv:
+  - name: ACH_DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: ach-db-url
+        key: url
+  - name: ACH_CREDENTIAL_HASH_PEPPER
+    valueFrom:
+      secretKeyRef:
+        name: ach-credential-hash-pepper
+        key: pepper
+  - name: ACH_BASE_URL
+    value: "https://ach.local.test"
+  - name: ACH_LITELLM_BASE_URL
+    value: "http://litellm.litellm-system.svc.cluster.local:4000"
+  - name: ACH_LITELLM_MASTER_KEY
+    value: "sk-test-master-key"
+  # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
+  # injects into scripts/dex-config.yaml (in-cluster URL, not the
+  # localhost one Dex ships with for the docker-run UAT path).
+  - name: ACH_DEX_ISSUER_URL
+    value: "http://dex.dex-system.svc.cluster.local:5556/dex"
+  - name: ACH_DEX_CLIENT_ID
+    value: "ach-platform-api"
+  - name: ACH_DEX_CLIENT_SECRET
+    value: "dev-dex-client-secret"
+  - name: ACH_DEX_REDIRECT_URL
+    value: "https://ach.local.test/login/callback"
+  - name: ACH_REDIS_ADDR
+    value: "valkey-primary.ach-system.svc.cluster.local:6379"

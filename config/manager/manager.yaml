@@ -7,93 +7,225 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
+# Phase 1 — Operator + Content Service Pod (Hub §5.1 / D-07 / D-09 / D-13 / OP-05).
+#
+# This Deployment owns the ACH Operator AND the Content Service binary inside a
+# single Pod, sharing one ReadWriteOnce PVC mounted at /var/cache/ach. Both
+# containers run the same `ach` single-binary image and select their service
+# via the cobra subcommand passed as `args` ("operator" / "content-service").
+#
+# Phase 1 SC #2 (`kubectl describe pod` shows two ready containers + one PVC)
+# is reachable from this manifest plus the PVC manifest in config/storage/.
+#
+# A migrate-up init container runs first (D-07/D-08) using the same `ach`
+# image with `args: ["migrate"]`. internal/db.Migrate reads ACH_DB_URL +
+# ACH_MIGRATIONS_PATH from the environment; failure leaves the Pod in
+# Init:Error rather than silently skipping.
+#
+# `ACH_CREDENTIAL_HASH_PEPPER` is sourced exclusively via
+# `valueFrom.secretKeyRef`; no literal `value:` for this variable appears
+# anywhere in this manifest (Plan 11 e2e test asserts this).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
+  name: ach-operator
   namespace: system
   labels:
-    control-plane: controller-manager
     app.kubernetes.io/name: ach
+    app.kubernetes.io/component: operator
     app.kubernetes.io/managed-by: kustomize
+    control-plane: controller-manager
 spec:
+  replicas: 1                              # OP-05: single replica (RWO PVC)
+  # OP-05: strategy Recreate (single-replica, RWO PVC requires this — a
+  # RollingUpdate would deadlock since the new Pod cannot mount the volume
+  # while the old Pod still holds the RWO claim).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      control-plane: controller-manager
       app.kubernetes.io/name: ach
-  replicas: 1
+      app.kubernetes.io/component: operator
+      control-plane: controller-manager
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: controller-manager
         app.kubernetes.io/name: ach
+        app.kubernetes.io/component: operator
+        control-plane: controller-manager
     spec:
-      # TODO(user): Uncomment the following code to configure the nodeAffinity expression
-      # according to the platforms which are supported by your solution.
-      # It is considered best practice to support multiple architectures. You can
-      # build your manager image using the makefile target docker-buildx.
-      # affinity:
-      #   nodeAffinity:
-      #     requiredDuringSchedulingIgnoredDuringExecution:
-      #       nodeSelectorTerms:
-      #         - matchExpressions:
-      #           - key: kubernetes.io/arch
-      #             operator: In
-      #             values:
-      #               - amd64
-      #               - arm64
-      #               - ppc64le
-      #               - s390x
-      #           - key: kubernetes.io/os
-      #             operator: In
-      #             values:
-      #               - linux
+      serviceAccountName: ach-operator
+      terminationGracePeriodSeconds: 10
+      # PodSecurityStandards/restricted compliance (T-08-03).
       securityContext:
-        # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
-        # This ensures that deployments meet the highest security requirements for Kubernetes.
-        # For more details, see: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      # SC #2: two containers, one PVC.
+      # OP-10 / D-13: /var/cache/ach mount; cachefs.EnsureLayout creates the
+      # subdirs.
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: ach-operator-cache
+      # D-07: migrate init container — same `ach` image, `migrate` subcommand.
+      # internal/db.Migrate reads ACH_DB_URL + ACH_MIGRATIONS_PATH from the
+      # environment; ACH_MIGRATIONS_PATH defaults to /db/migrations baked into
+      # the image (Dockerfile COPYs db/migrations there).
+      # D-08: failed migration → exit non-zero → Pod stays in Init:Error.
+      initContainers:
+        - name: migrations
+          image: ghcr.io/ackstorm/ach:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - migrate
+          env:
+            - name: ACH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ach-db-url
+                  key: url
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
       containers:
-      - command:
-        - /ach
-        args:
-          - operator
-          - --leader-elect
-          - --health-probe-bind-address=:8081
-        image: controller:latest
-        name: manager
-        ports: []
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - "ALL"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
-        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-        resources:
-          limits:
-            cpu: 500m
-            memory: 128Mi
-          requests:
-            cpu: 10m
-            memory: 64Mi
-        volumeMounts: []
-      volumes: []
-      serviceAccountName: controller-manager
-      terminationGracePeriodSeconds: 10
+        # ---- Container 1 of 2: Operator (controller-runtime manager) ----
+        - name: manager
+          image: ghcr.io/ackstorm/ach:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - operator
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=:8080
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: healthz
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # D-09: HMAC pepper sourced from Secret/ach-credential-hash-pepper.
+            # No literal `value:` — Plan 11 e2e asserts this constraint.
+            - name: ACH_CREDENTIAL_HASH_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: ach-credential-hash-pepper
+                  key: pepper
+            # D-08: ACH_DB_URL from Secret (init container shares this Secret).
+            - name: ACH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ach-db-url
+                  key: url
+            # MULTI-01: namespace-scoped informer cache via downward API.
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # D-13 / OP-10: cache layout root.
+            - name: ACH_CACHE_ROOT
+              value: /var/cache/ach
+            # OP-09: Phase 1 wires + validates the knob.
+            - name: ACH_PLUGIN_MAX_SIZE_MIB
+              value: "50"
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ach
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+        # ---- Container 2 of 2: Content Service (same `ach` image, content-service subcommand) ----
+        # SC #2 requires this container to be a real, healthy long-running
+        # process so `kubectl describe pod` reports two ready containers.
+        # Real streaming surface lands in Phase 5; Phase 1 stub binds /healthz.
+        - name: content-service
+          image: ghcr.io/ackstorm/ach:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - content-service
+          ports:
+            - name: healthz
+              containerPort: 8082
+              protocol: TCP
+          env:
+            - name: ACH_CREDENTIAL_HASH_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: ach-credential-hash-pepper
+                  key: pepper
+            - name: ACH_CACHE_ROOT
+              value: /var/cache/ach
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Stub binds :8082 to avoid collision with the manager container's
+            # :8081 inside the same Pod.
+            - name: CONTENT_SERVICE_HEALTH_BIND_ADDRESS
+              value: ":8082"
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ach    # shared RWO PVC with the manager container
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

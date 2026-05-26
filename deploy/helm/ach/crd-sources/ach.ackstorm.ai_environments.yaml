@@ -12,13 +12,33 @@ spec:
     kind: Environment
     listKind: EnvironmentList
     plural: environments
+    shortNames:
+    - env
     singular: environment
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='AccessGroupSynced')].status
+      name: AccessGroupSynced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Available')].status
+      name: Available
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Environment is the Schema for the environments API.
+        description: |-
+          Environment is the Schema for the environments API (Hub §6).
+
+          An Environment is the ACH product boundary: a bundle of runtime
+          (models, mcpServers, a2aAgents) and context (prompts, plugins,
+          artifacts) capabilities exposed to authorized Teams. The ACH
+          Operator reconciles spec.runtime into a LiteLLM access group of
+          the same name (§6.2). The CEL XValidation rules above enforce
+          CRD-02 at admission.
         properties:
           apiVersion:
             description: |-
@@ -38,17 +58,179 @@ spec:
           metadata:
             type: object
           spec:
-            description: EnvironmentSpec defines the desired state of Environment.
+            description: EnvironmentSpec defines the desired state of Environment
+              (CRD-02, Hub §6).
             properties:
-              foo:
-                description: Foo is an example field of Environment. Edit environment_types.go
-                  to remove/update
-                type: string
+              authorizedTeams:
+                description: |-
+                  AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment
+                  is unusable when no entry resolves to an existing LiteLLM Team;
+                  admission requires at least one entry per Hub §6 (informational —
+                  reconcile-time existence is verified per §6.4).
+                items:
+                  type: string
+                minItems: 1
+                type: array
+              context:
+                description: |-
+                  Context is the content-resource bundle served by Content Service
+                  (§10, §15.6). Always present per CRD-02.
+                properties:
+                  artifacts:
+                    default: []
+                    description: Artifacts lists referenced Artifact names.
+                    items:
+                      type: string
+                    type: array
+                  plugins:
+                    default: []
+                    description: Plugins lists referenced Plugin (or marketplace plugin)
+                      names.
+                    items:
+                      type: string
+                    type: array
+                  prompts:
+                    default: []
+                    description: Prompts lists referenced Prompt names.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              runtime:
+                description: |-
+                  Runtime is the execution-resource bundle projected into the LiteLLM
+                  access group (§6.2). Always present per CRD-02.
+                properties:
+                  a2aAgents:
+                    default: []
+                    description: A2AAgents lists LiteLLM A2A agent names (agent_name).
+                    items:
+                      type: string
+                    type: array
+                  mcpServers:
+                    default: []
+                    description: MCPServers lists LiteLLM MCP server names (server_name).
+                    items:
+                      type: string
+                    type: array
+                  models:
+                    default: []
+                    description: Models lists LiteLLM model names (model_name) included
+                      in this Environment.
+                    items:
+                      type: string
+                    type: array
+                type: object
+            required:
+            - authorizedTeams
+            - context
+            - runtime
             type: object
           status:
-            description: EnvironmentStatus defines the observed state of Environment.
+            description: EnvironmentStatus defines the observed state of Environment
+              (Hub §6.4, §6.6).
+            properties:
+              conditions:
+                description: |-
+                  Conditions carries Environment condition types per §6.6 closed set:
+                  Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              litellmAccessGroup:
+                description: |-
+                  LitellmAccessGroup is the synced LiteLLM access group name (§6.4).
+                  Echoed for operator visibility; equals metadata.name when set.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the metadata.generation of the CR the reconciler
+                  most recently processed.
+                format: int64
+                type: integer
+              unresolvedRuntime:
+                description: |-
+                  UnresolvedRuntime lists runtime references not currently registered in
+                  LiteLLM. Surfaced for `kubectl describe environment` per §6.4. The
+                  field contract belongs here from Phase 1; the reconciler in Phase 2
+                  rewrites it on every reconcile.
+                properties:
+                  a2aAgents:
+                    default: []
+                    items:
+                      type: string
+                    type: array
+                  mcpServers:
+                    default: []
+                    items:
+                      type: string
+                    type: array
+                  models:
+                    default: []
+                    items:
+                      type: string
+                    type: array
+                type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: Environment.spec must declare both runtime and context blocks (CRD-02)
+          rule: has(self.spec.runtime) && has(self.spec.context)
+        - message: Environment.spec.authorizedTeams must contain at least one team
+            (Hub §6)
+          rule: size(self.spec.authorizedTeams) >= 1
     served: true
     storage: true
     subresources:

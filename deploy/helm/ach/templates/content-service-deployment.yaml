@@ -1,0 +1,27 @@
+{{- if .Values.contentService.enabled }}
+---
+# Content-service is co-located with the operator in the same Pod
+# (operator-deployment.yaml ships the second container) because the
+# shared cache PVC is RWO. This file only exposes the cs-http port via
+# a Service whose selector points at the operator Pod labels. The
+# ServiceAccount + Deployment that lived here previously were removed
+# in the co-location refactor — both containers in the operator Pod
+# share the ach-operator SA, which already has a strict superset of
+# the read-only ACH-CRD verbs content-service needs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-content-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: content-service
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: operator
+  ports:
+    - name: http
+      port: 8082
+      targetPort: cs-http
+{{- end }}
