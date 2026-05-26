@@ -25,11 +25,19 @@ func TestLiteLLMConnectionProbeReady(t *testing.T) {
 	connCache.Rebuild(connection.Snapshot{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/models" {
+		switch r.URL.Path {
+		case "/models":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/v2/team/list":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[]`))
+		case "/team/new":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"team_id":"default","team_alias":"default"}`))
+		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer srv.Close()
 
