@@ -1,0 +1,152 @@
+{{- if .Values.testMocks.enabled }}
+# Phase 4 e2e mocks: LiteLLM-shaped chat completion mock + MCP echo
+# backend. Only rendered when .Values.testMocks.enabled=true (default
+# false). Engineer toggles via `--set testMocks.enabled=true` for
+# `make e2e-keep`. NEVER enable in production.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mock-litellm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-litellm
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-litellm
+  template:
+    metadata:
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mock-litellm
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock
+          image: {{ .Values.testMocks.image.repo }}:{{ .Values.testMocks.image.tag }}
+          imagePullPolicy: {{ .Values.testMocks.image.pullPolicy | default "IfNotPresent" }}
+          args: ["litellm"]
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mock-litellm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-litellm
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-litellm
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mock-mcp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-mcp
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-mcp
+  template:
+    metadata:
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mock-mcp
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock
+          image: {{ .Values.testMocks.image.repo }}:{{ .Values.testMocks.image.tag }}
+          imagePullPolicy: {{ .Values.testMocks.image.pullPolicy | default "IfNotPresent" }}
+          args: ["mcp"]
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mock-mcp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-mcp
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+{{- end }}

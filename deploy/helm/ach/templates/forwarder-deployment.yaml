@@ -35,14 +35,16 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      volumes:
-        # D-Discretion: mount the JWT signing-keys Secret as a volume at
-        # /etc/ach/jwt rather than envFrom so the raw seed bytes never
-        # transit the env var surface (process listing leaks).
-        - name: jwt-keys
-          secret:
-            secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
-            optional: false
+      # W1 (REVIEW): the JWT signing-keys Secret is loaded via the K8s
+      # API client + controller-runtime informer (see
+      # cmd/ach/cmd/forwarder.go buildForwarderDeps), NOT via files on
+      # disk. A previous iteration mounted the Secret at /etc/ach/jwt as
+      # a defense-in-depth existence check, but it was dead weight: the
+      # loader never read those files, so an edit at the projected
+      # volume layer would not have triggered a Reload. The API client
+      # path is the single data plane; the RBAC carve-out
+      # (resourceNames: ["ach-jwt-signing-keys"]) keeps the SC#4
+      # contract intact without the file mount.
       containers:
         - name: forwarder
           image: {{ include "ach.image" . }}
@@ -87,10 +89,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources: {{ toYaml .Values.forwarder.resources | nindent 12 }}
-          volumeMounts:
-            - name: jwt-keys
-              mountPath: /etc/ach/jwt
-              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

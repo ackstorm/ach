@@ -110,6 +110,29 @@ func MustEnvIntPositive(key string, fallback int) (int, error) {
 	return n, nil
 }
 
+// EnvIntNonNeg parses a non-negative integer (zero allowed) from the
+// named environment variable. Returns fallback when the variable is
+// unset/empty; returns an error when the value parses to a negative
+// number or a non-numeric string.
+//
+// The contract differs from MustEnvIntPositive in that 0 is a valid
+// value, not an error. Used for env vars whose 0 is a legitimate
+// default — e.g. ACH_REDIS_DB=0 selects the default Redis logical
+// database (rejecting 0 as invalid would force every Forwarder
+// deployment that uses the default DB to omit the env var entirely
+// just to dodge the contract mismatch).
+func EnvIntNonNeg(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, errors.New("config: " + key + " must be a non-negative integer")
+	}
+	return n, nil
+}
+
 // MustEnvDurationAtLeast parses key as a Go time.Duration string (e.g.
 // "1h", "15m", "30s"). Behavior:
 //

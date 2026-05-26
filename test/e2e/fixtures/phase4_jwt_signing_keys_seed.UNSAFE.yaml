@@ -1,0 +1,51 @@
+# Phase 4 e2e fixture: deterministic ach-jwt-signing-keys Secret.
+#
+# The 32-byte seed and the kid value are FIXED so SC#4 JWKS assertion
+# can verify a known kid and base64url(x) pub-key roundtrip across runs.
+#
+# !! DANGER — KNOWN-PLAINTEXT JWT SIGNING SEED !! ===========================
+# The 32-byte seed below is `0x42 * 32`. Anyone who has ever read this
+# file can forge ACH JWTs against any deployment running it. This file
+# carries `.UNSAFE.yaml` in its name + a machine-readable
+# `ach.ackstorm.ai/unsafe-test-fixture: "true"` annotation so an
+# admission webhook OR `kubectl-grep`-style preflight can reject it on
+# any cluster that lacks the `ach.ackstorm.ai/test-cluster: "true"`
+# Namespace label. The fixture targets the `default` namespace because
+# `make e2e-*` provisions a throwaway kind cluster whose `default`
+# namespace carries that label; on any real cluster the apply MUST
+# fail.
+#
+# Engineer applies this BEFORE `make e2e-focus FOCUS=phase4`:
+#   kubectl -n default apply -f test/e2e/fixtures/phase4_jwt_signing_keys_seed.UNSAFE.yaml
+#
+# CI guard recommendation: a pre-push / pre-merge check that this
+# filename never appears as an argument to `helm install` or
+# `kubectl apply` in any release-path workflow.
+# ===========================================================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ach-jwt-signing-keys
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+    test.ach.ackstorm.ai/phase: "4"
+    # W6 (REVIEW): machine-readable guard. Admission policies + audit
+    # tools can match on this label to refuse the apply outside of the
+    # e2e harness. Removing this label silently is the only attack path
+    # that bypasses the marker — and that itself trips file-rename
+    # detection (the .UNSAFE.yaml suffix lives on the path, not in the
+    # manifest body).
+    test.ach.ackstorm.ai/known-plaintext-seed: "true"
+  annotations:
+    ach.ackstorm.ai/unsafe-test-fixture: "true"
+    ach.ackstorm.ai/seed-warning: "32 bytes of 0x42 — JWTs signed with this seed are publicly forgeable; never apply outside a throwaway e2e cluster"
+type: Opaque
+stringData:
+  current.kid: phase4-test-current-001
+data:
+  # 32-byte all-0x42 seed (base64-encoded by K8s). The deterministic
+  # value lets SC#4 assert a known JWKS x field across runs.
+  current.seed: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=

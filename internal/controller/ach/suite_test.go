@@ -45,6 +45,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/connection"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/snapshot"
 )
 
 // WatchNamespace is the namespace the test manager watches (MULTI-01).
@@ -56,14 +57,15 @@ const WatchNamespace = "ach-system"
 // (cel_admission_test.go, <kind>_finalizer_test.go). TestMain populates;
 // each Test* function reads.
 var (
-	testEnv        *envtest.Environment
-	cfg            *rest.Config
-	k8sClient      client.Client
-	mgrCtx         context.Context
-	mgrCancel      context.CancelFunc
-	testCacheRoot  string
-	litellmCounter *atomic.Int64
-	connCache      *connection.Cache
+	testEnv         *envtest.Environment
+	cfg             *rest.Config
+	k8sClient       client.Client
+	mgrCtx          context.Context
+	mgrCancel       context.CancelFunc
+	testCacheRoot   string
+	litellmCounter  *atomic.Int64
+	connCache       *connection.Cache
+	accessGroupFake *accessGroupFakeImpl
 )
 
 // countingNoopClient wraps litellm.NoopClient and bumps an atomic counter
@@ -73,7 +75,8 @@ var (
 // the assertion-relevant action.
 type countingNoopClient struct {
 	*litellm.NoopClient
-	counter *atomic.Int64
+	counter     *atomic.Int64
+	accessGroup *accessGroupFakeImpl
 }
 
 // DeleteAccessGroup increments the counter and delegates to the embedded
@@ -88,6 +91,20 @@ func (c *countingNoopClient) DeleteAccessGroup(ctx context.Context, name string)
 func (c *countingNoopClient) DeleteTag(ctx context.Context, name string) error {
 	c.counter.Add(1)
 	return c.NoopClient.DeleteTag(ctx, name)
+}
+
+// §7 routing: forward access-group calls to the per-suite fake so tests
+// can assert call counts + inject errors.
+func (c *countingNoopClient) CreateAccessGroup(ctx context.Context, name string, modelNames []string) error {
+	return c.accessGroup.CreateAccessGroup(ctx, name, modelNames)
+}
+
+func (c *countingNoopClient) BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error {
+	return c.accessGroup.BindTeamToAccessGroup(ctx, accessGroup, teamID)
+}
+
+func (c *countingNoopClient) ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error) {
+	return c.accessGroup.ListAccessGroupBindings(ctx, accessGroup)
 }
 
 // Compile-time interface assertion — if litellm.Client grows a method, the
@@ -179,11 +196,16 @@ func setupAndRun(m *testing.M) int {
 		}
 	}
 
-	// Counting LiteLLM fake for §6.5 finalizer assertions.
+	// Counting LiteLLM fake for §6.5 finalizer assertions + §7
+	// AccessGroup tally fake. countingNoopClient embeds the same
+	// NoopClient instance the accessGroupFake wraps, so non-§7 calls
+	// resolve through one chain while §7 calls flow through the fake.
 	litellmCounter = &atomic.Int64{}
+	accessGroupFake = newAccessGroupFake()
 	llm := &countingNoopClient{
-		NoopClient: litellm.NewNoopClient(logr.Discard()),
-		counter:    litellmCounter,
+		NoopClient:  accessGroupFake.NoopClient,
+		counter:     litellmCounter,
+		accessGroup: accessGroupFake,
 	}
 
 	// Manager with WatchNamespace-scoped informer cache (MULTI-01) —
@@ -224,12 +246,19 @@ func setupAndRun(m *testing.M) int {
 	// Register all domain reconcilers — the finalizer tests exercise each
 	// one's add-then-remove cycle; the CEL admission test exercises CRD
 	// validation BEFORE any reconciler runs.
+	// §7: Snapshotter wired so the steady-state branch runs instead of
+	// the back-compat Unknown-placeholder shortcut. Synchronous refresh
+	// here avoids spawning the ticker goroutine in envtest.
+	envSnapshotter := snapshot.NewSnapshotter(llm, logr.Discard())
+	envSnapshotter.RefreshForTest(context.Background())
+
 	if err := (&EnvironmentReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		LiteLLM:   llm,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		LiteLLM:     llm,
+		Namespace:   WatchNamespace,
+		Log:         logr.Discard(),
+		Snapshotter: envSnapshotter,
 		// DB nil — drainEkRows trivially exits with slog.Info per Plan 05.
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Environment): %v\n", err)

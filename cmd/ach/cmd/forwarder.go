@@ -32,6 +32,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -81,6 +82,7 @@ type forwarderConfig struct {
 	DBURL            string
 	Pepper           []byte
 	LiteLLMBaseURL   string
+	LiteLLMUpstream  *url.URL // W2 (REVIEW): pre-parsed once in validate, reused by build
 	LiteLLMSharedKey string
 	RedisAddr        string
 	RedisPassword    string
@@ -122,6 +124,9 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("ACH_LITELLM_BASE_URL must use http:// or https:// (got %q)", u.Scheme)
 	}
+	// W2 (REVIEW): retain the parsed URL so buildForwarderDeps does not
+	// re-parse — single source of truth for scheme + host semantics.
+	cfg.LiteLLMUpstream = u
 
 	if cfg.LiteLLMSharedKey, err = config.MustEnvNonEmpty("ACH_LITELLM_SHARED_KEY"); err != nil {
 		return nil, err
@@ -132,7 +137,13 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	}
 	cfg.RedisPassword = os.Getenv("ACH_REDIS_PASSWORD")
 	cfg.RedisTLS = config.EnvBool("ACH_REDIS_TLS", false)
-	cfg.RedisDB, _ = config.MustEnvIntPositive("ACH_REDIS_DB", 0)
+	// W3 (REVIEW): ACH_REDIS_DB=0 is the default Redis logical DB and a
+	// legitimate value; MustEnvIntPositive rejects 0 by contract, so use
+	// EnvIntNonNeg here and surface the parse error instead of dropping
+	// it on the floor.
+	if cfg.RedisDB, err = config.EnvIntNonNeg("ACH_REDIS_DB", 0); err != nil {
+		return nil, err
+	}
 
 	if cfg.Namespace, err = config.MustEnvNonEmpty("POD_NAMESPACE"); err != nil {
 		return nil, err
@@ -197,6 +208,17 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			DefaultNamespaces: map[string]cache.Config{
 				cfg.Namespace: {},
 			},
+			// C1 (REVIEW): the forwarder's Role grants secrets verbs
+			// only with resourceNames: ["ach-jwt-signing-keys"]. K8s
+			// RBAC honors resourceNames on list/watch ONLY when the
+			// request carries fieldSelector=metadata.name=<name> —
+			// without this selector the informer's bare LIST is 403'd
+			// by the apiserver and the pod never reaches Ready.
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Secret{}: {
+					Field: fields.OneTermEqualSelector("metadata.name", cfg.JWTSecretName),
+				},
+			},
 		},
 	})
 	if err != nil {
@@ -242,14 +264,15 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 
-	// Direct API-server fetch (cache may not be synced yet at boot).
-	apiClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: forwarderScheme})
-	if err != nil {
-		return out, fmt.Errorf("client.New (api-server): %w", err)
-	}
+	// W9 (REVIEW): the cached client requires mgr.Start() to populate,
+	// and LoadOnce runs before manager start. controller-runtime exposes
+	// mgr.GetAPIReader() exactly for this pre-cache scenario — an
+	// uncached reader sharing the manager's rest.Config. Previously this
+	// path called ctrl.GetConfigOrDie() a second time + client.New,
+	// duplicating the in-cluster config lookup.
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.JWTSecretName}
-	if err := apiClient.Get(ctx, key, secret); err != nil {
+	if err := mgr.GetAPIReader().Get(ctx, key, secret); err != nil {
 		return out, fmt.Errorf("get Secret %s/%s: %w", cfg.Namespace, cfg.JWTSecretName, err)
 	}
 	if err := out.loader.LoadOnce(secret); err != nil {
@@ -283,11 +306,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		return out, fmt.Errorf("secret informer AddEventHandler: %w", err)
 	}
 
-	upstream, err := url.Parse(cfg.LiteLLMBaseURL)
-	if err != nil {
-		return out, fmt.Errorf("url.Parse LiteLLM upstream: %w", err)
-	}
-
 	out.server = forwarder.Deps{
 		Pool:             pool,
 		Redis:            out.redis,
@@ -300,7 +318,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  upstream,
+		LiteLLMUpstream:  cfg.LiteLLMUpstream, // W2 (REVIEW): pre-parsed in validate
 		LiteLLMSharedKey: cfg.LiteLLMSharedKey,
 	}
 	return out, nil

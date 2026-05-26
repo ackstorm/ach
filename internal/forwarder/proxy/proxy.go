@@ -68,11 +68,24 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// URL.Host — never leak client-supplied Host to LiteLLM.
 			req.Host = ""
 
+			// W4 (REVIEW): KeyContext is gated by Authn middleware on all
+			// production routes, but if a future test or refactor reaches
+			// Director without Authn, falling through with an empty token
+			// would write "x-litellm-key-id: " to the upstream. Defensive
+			// pattern: only invoke StripAndRewrite with a non-empty token,
+			// and otherwise strip + ensure the header is gone afterwards
+			// (X-Litellm-* prefix strip already covers any inherited
+			// value from the client).
 			litellmToken := ""
 			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMToken != nil {
 				litellmToken = *kc.LiteLLMToken
 			}
 			headers.StripAndRewrite(req.Header, deps.LiteLLMSharedKey, litellmToken)
+			if litellmToken == "" {
+				// StripAndRewrite Set'd an empty value — re-strip so the
+				// upstream never sees a misleading "x-litellm-key-id: ".
+				req.Header.Del("X-Litellm-Key-Id")
+			}
 
 			// JWT write LAST — strip just cleared any client Authorization.
 			if token, present := jwtFromCtx(req.Context()); present {

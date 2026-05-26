@@ -142,4 +142,28 @@ func (c *Client) EnsureDefaultTeam(ctx context.Context) error {
 	return client.EnsureDefaultTeam(ctx)
 }
 
+func (c *Client) CreateAccessGroup(ctx context.Context, name string, modelNames []string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.CreateAccessGroup(ctx, name, modelNames)
+}
+
+func (c *Client) BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.BindTeamToAccessGroup(ctx, accessGroup, teamID)
+}
+
+func (c *Client) ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.ListAccessGroupBindings(ctx, accessGroup)
+}
+
 var _ litellm.Client = (*Client)(nil)

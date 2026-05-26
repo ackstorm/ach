@@ -50,6 +50,27 @@ if [[ "${ACH_DEVTOOLS_REBUILD:-0}" = "1" ]] || \
     docker build -t "${IMAGE}" -f "${WORKSPACE}/Dockerfile.devtools" "${WORKSPACE}"
 fi
 
+# Worktree gitdir mount (#3097): when WORKSPACE is a git worktree, its
+# `.git` is a FILE (`gitdir: /path/to/main/.git/worktrees/agent-XXX`),
+# not a directory. The referenced gitdir lives OUTSIDE the worktree, so
+# without a second mount any `git` invocation inside the container
+# fatals with "not a git repository". Detect the worktree case and also
+# bind-mount the main repo's `.git/` dir at the SAME absolute path the
+# `.git` file points at — that path is what `git rev-parse` follows.
+WORKTREE_GIT_MOUNT=()
+if [[ -f "${WORKSPACE}/.git" ]]; then
+    # `.git` is a file → worktree. Resolve the main repo's .git/ dir.
+    GITDIR_PATH="$(awk '/^gitdir: /{print $2; exit}' "${WORKSPACE}/.git")"
+    if [[ -n "${GITDIR_PATH}" ]]; then
+        # GITDIR_PATH looks like /home/.../ach/.git/worktrees/agent-XXX
+        # The main .git is the parent of the `worktrees` dir.
+        MAIN_GIT_DIR="$(dirname "$(dirname "${GITDIR_PATH}")")"
+        if [[ -d "${MAIN_GIT_DIR}" ]]; then
+            WORKTREE_GIT_MOUNT=(-v "${MAIN_GIT_DIR}:${MAIN_GIT_DIR}:ro")
+        fi
+    fi
+fi
+
 # Default command: drop into bash if no args.
 if [[ $# -eq 0 ]]; then
     set -- bash
@@ -61,6 +82,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     --add-host=host.docker.internal:host-gateway \
     --network=host \
     -v "${WORKSPACE}:/workspace" \
+    "${WORKTREE_GIT_MOUNT[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e HOME=/workspace/.gocache \
     -e GOPATH=/workspace/.gocache/gopath \

@@ -1529,3 +1529,10 @@ func headersToLines(h http.Header) []string {
 	}
 	return out
 }
+
+// §7 stubs — interface satisfaction only.
+func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ string, _ []string) error { return nil }
+func (f *fakeLiteLLM) BindTeamToAccessGroup(_ context.Context, _, _ string) error      { return nil }
+func (f *fakeLiteLLM) ListAccessGroupBindings(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}

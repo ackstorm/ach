@@ -239,19 +239,20 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		ObservedGeneration: env.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
-	// Placeholder: TODO §7 owns the real reconciliation logic. Use
-	// SetStatusCondition so an existing True/False set by a future §7
-	// implementation is NOT overwritten here — apimeta's logic preserves
-	// the existing entry when (Type, Status, Reason) match.
-	if !hasCondition(env.Status.Conditions, "AccessGroupSynced") {
-		apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
-			Type:               "AccessGroupSynced",
-			Status:             metav1.ConditionUnknown,
-			Reason:             "Initializing",
-			Message:            "operator-side access-group binding not yet implemented (see TODO §7)",
-			ObservedGeneration: env.Generation,
-			LastTransitionTime: metav1.Now(),
-		})
+	// §7: real AccessGroupSynced reconciliation. The helper owns the
+	// closed-set Type/Reason mapping per Hub §6.6 and returns the
+	// metav1.Condition to publish.
+	agCond := r.reconcileAccessGroup(ctx, &env)
+	// Surface snapshot-stale prefix so operators see when the binding
+	// decision was made against cached LiteLLM data (Hub §6.4 / D-14).
+	if snap.Stale && agCond.Status == metav1.ConditionTrue {
+		agCond.Message = "snapshot stale (LiteLLM unreachable); " + agCond.Message
+	}
+	apimeta.SetStatusCondition(&env.Status.Conditions, agCond)
+	// Echo the synced access group name (CRD-02 status field). Only set
+	// when AccessGroupSynced is True so a stale Status doesn't lie.
+	if agCond.Status == metav1.ConditionTrue {
+		env.Status.LitellmAccessGroup = env.Name
 	}
 	// Placeholder: TODO §9 owns the composite rollup.
 	if !hasCondition(env.Status.Conditions, "Available") {
@@ -273,6 +274,107 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// on snapshot drift even when no spec change triggers an event-
 	// driven reconcile.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// reconcileAccessGroup is the §7 implementation step: ensure the LiteLLM
+// access group <env.Name> exists AND every spec.authorizedTeams[i] team
+// is bound to it. Returns the metav1.Condition that the caller should
+// publish on env.Status.Conditions.
+//
+// Wire steps (Hub §6.4 / TODO §7):
+//
+//  1. CreateAccessGroup(env.Name, nil). ErrAlreadyExists swallowed as
+//     idempotent success.
+//  2. ListAccessGroupBindings(env.Name) — drift baseline. Failure is
+//     non-fatal (fall back to empty current set; binds are idempotent).
+//  3. For each team in env.Spec.AuthorizedTeams: skip if already in
+//     CURRENT set; otherwise BindTeamToAccessGroup(env.Name, team).
+//     Collect failures into a partial-bind set.
+//  4. Orphan detection: log (do not auto-remove) bindings present in
+//     CURRENT but absent from spec.authorizedTeams. Auto-removal is
+//     §10 / TODO §10 scope.
+//  5. Closed-set condition emit:
+//     - True/Synced on full success
+//     - False/PartialBind on any bind failure (offending teams listed)
+//     - False/AccessGroupCreateFailed on create error (other than
+//     ErrAlreadyExists)
+func (r *EnvironmentReconciler) reconcileAccessGroup(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+) metav1.Condition {
+	logger := log.FromContext(ctx).WithValues("environment", env.Name)
+
+	// Step 1: ensure the access group exists.
+	if err := r.LiteLLM.CreateAccessGroup(ctx, env.Name, nil); err != nil && !errors.Is(err, litellm.ErrAlreadyExists) {
+		logger.Error(err, "CreateAccessGroup failed")
+		return metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionFalse,
+			Reason:             "AccessGroupCreateFailed",
+			Message:            fmt.Sprintf("LiteLLM CreateAccessGroup(%s) failed: %v", env.Name, err),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+
+	// Step 2: discover CURRENT bindings (drift baseline).
+	current, err := r.LiteLLM.ListAccessGroupBindings(ctx, env.Name)
+	if err != nil {
+		logger.Info("ListAccessGroupBindings failed; proceeding without drift baseline", "err", err)
+		current = nil
+	}
+	currentSet := make(map[string]struct{}, len(current))
+	for _, t := range current {
+		currentSet[t] = struct{}{}
+	}
+
+	// Step 3: bind every spec.authorizedTeams[i]. Skip teams already
+	// observed in the CURRENT set.
+	var failed []string
+	var lastErr error
+	for _, team := range env.Spec.AuthorizedTeams {
+		if _, ok := currentSet[team]; ok {
+			continue
+		}
+		if berr := r.LiteLLM.BindTeamToAccessGroup(ctx, env.Name, team); berr != nil {
+			logger.Error(berr, "BindTeamToAccessGroup failed", "team", team)
+			failed = append(failed, team)
+			lastErr = berr
+			continue
+		}
+	}
+
+	// Step 4: orphan detection (log only).
+	specSet := make(map[string]struct{}, len(env.Spec.AuthorizedTeams))
+	for _, t := range env.Spec.AuthorizedTeams {
+		specSet[t] = struct{}{}
+	}
+	for _, t := range current {
+		if _, ok := specSet[t]; !ok {
+			logger.Info("orphan team binding detected (not auto-removed; see TODO §10)",
+				"env", env.Name, "team", t)
+		}
+	}
+
+	// Step 5: closed-set condition emit.
+	if len(failed) > 0 {
+		return metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionFalse,
+			Reason:             "PartialBind",
+			Message:            fmt.Sprintf("LiteLLM BindTeamToAccessGroup failed for %d team(s): %v (last err: %v)", len(failed), failed, lastErr),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+	return metav1.Condition{
+		Type:               "AccessGroupSynced",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Synced",
+		Message:            fmt.Sprintf("LiteLLM access group %q bound to %d team(s)", env.Name, len(env.Spec.AuthorizedTeams)),
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	}
 }
 
 // hasCondition reports whether conds carries an entry of the given type.

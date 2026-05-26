@@ -151,6 +151,14 @@ func (s *Snapshotter) Start(ctx context.Context) error {
 //     is published so cold-start callers don't oscillate between "zero
 //     value" and "stale-empty" semantics.
 //
+// RefreshForTest invokes refresh synchronously. Exposed for envtest
+// suites that need a populated snapshot before manager.Start without
+// running the ticker loop. NOT for production callers — production
+// invokes Start() which owns the ticker.
+func (s *Snapshotter) RefreshForTest(ctx context.Context) {
+	s.refresh(ctx)
+}
+
 // refresh is invoked only from Start's single-writer goroutine, so no
 // internal lock is required against itself. The atomic.Pointer.Store
 // guarantees publication-safety against concurrent Snapshot() readers.

@@ -47,7 +47,7 @@ Tracker for non-blocking work after bootstrap release `v0.1.0`. Each item is sel
 
 ## 5. PluginMarketplace schema mismatch — re-model to upstream
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-marketplace-real-schema.md](docs/plans/2026-05-26-marketplace-real-schema.md) (19 tasks across 7 phases; new internal/sources/git/ fetcher, parser re-model, audit hardening, hydrate-demo wire-in)
+> **Status:** ✅ DONE — PR #5 (`d09d076`). 3 Kinds (git-subdir/url/local-path) shipped. KNOWN limitation: real upstream has 5 Kinds (adds github + npm + metadata.pluginRoot); github/npm entries resolve to Kind="" → ReasonUnsupportedPluginSource per-entry. Defer 5-Kind expansion to follow-up. KNOWN test gap: TestPMR_Stage2_* envtest race — pre-existing on clean branch, not introduced by §5.
 
 **Status**: discovered during end-to-end demo (2026-05-26). Partial work in tree (see "Current state" below). Do NOT patch with a tolerance shim — re-model to the real upstream schema in one pass.
 
@@ -244,7 +244,7 @@ Half-day to one day, depending on whether the git-remote fetcher needs its own i
 
 ## 6. BackendIdentityPolicy — Forwarder read-path resolves duplicates
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-bip-forwarder-read-path.md](docs/plans/2026-05-26-bip-forwarder-read-path.md) (16 tasks: 7 Layer A independent + 6 Layer B blocks on §2 + 3 docs scrubs)
+> **Status:** ✅ DONE — Layer A shipped via §4-04 `internal/forwarder/bip/` (RegisterIndex + alpha-LAST ResolveWinner). Layer B shipped via §4-08 (proxy/handlers.go calls bip.ResolveWinner; cobra wires bip.RegisterIndex). Doc scrubs shipped via §4-05 (PR `9641a9d`, `ab90f34`).
 
 **Design decision (2026-05-26)**: the operator stays dumb on BIP duplicates. There is NO DuplicateTarget reconciler, NO Synced status churn, NO shadow flip. Multiple CRs targeting the same `(target.kind, target.name)` are allowed by design.
 
@@ -272,7 +272,7 @@ Rationale: operators wanting different precedence rename their CRs (`zz-` suffix
 
 ## 7. Environment.AccessGroupSynced never reaches True — BLOCKS EnvKey lifecycle
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-accessgroup-reconciler.md](docs/plans/2026-05-26-environment-accessgroup-reconciler.md) (9 tasks + pre-flight; TDD-first with httptest fake LiteLLM; surfaced 3 ach-old findings: F1 wrong DeleteAccessGroup URL, F2 ach-old has same bug — no verbatim port, F3 binding via team.models prefix not member_add)
+> **Status:** ✅ DONE (acab41e + 597a0de + 6f60ef1) — Environment reconciler now emits AccessGroupSynced True/False per Hub §6.6 closed-set; 5 envtests green; plan at [docs/plans/2026-05-26-environment-accessgroup-reconciler.md](docs/plans/2026-05-26-environment-accessgroup-reconciler.md). E2E `POST /platform/env-keys` validation deferred to §16 UAT.
 
 **Severity**: HIGH (every `POST /platform/env-keys` returns 503 `not_ready`).
 
