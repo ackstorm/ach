@@ -1,0 +1,371 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package snapshot
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/go-logr/logr"
+
+	"github.com/ackstorm/ach/internal/litellm"
+)
+
+// fakeLiteLLM is a minimal Client implementation used by Snapshotter
+// unit tests. Fields are read on every list call; tests mutate them
+// between refreshes to drive the stale-preservation / partial-error
+// branches. modelsErr/mcpsErr/agentsErr override the success-path
+// return when non-nil — they take precedence over the slice fields.
+//
+// callCount tracks per-call invocations so the ctx-cancel test can
+// assert that the ticker fired at least once after Start.
+type fakeLiteLLM struct {
+	mu         sync.Mutex
+	models     []litellm.ModelInfoResponse
+	mcps       []litellm.MCPServerEntry
+	agents     []litellm.AgentEntry
+	modelsErr  error
+	mcpsErr    error
+	agentsErr  error
+	modelCalls atomic.Int64
+}
+
+func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error         { return nil }
+
+func (f *fakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.modelCalls.Add(1)
+	return f.models, f.modelsErr
+}
+func (f *fakeLiteLLM) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.mcps, f.mcpsErr
+}
+func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agents, f.agentsErr
+}
+func (f *fakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) RevokeKey(_ context.Context, _ string) error { return nil }
+
+// Phase 3 Plan 03-01 — interface widened. Snapshotter does not invoke
+// these methods; stub them to satisfy the litellm.Client interface.
+func (f *fakeLiteLLM) UserNew(_ context.Context, _ *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, _ string) (*litellm.UserInfo, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	return nil, nil
+}
+
+// setErr atomically mutates all three error returns to the same value.
+// Used by tests that want to drive every list call into the unreachable
+// branch simultaneously.
+func (f *fakeLiteLLM) setErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.modelsErr = err
+	f.mcpsErr = err
+	f.agentsErr = err
+}
+
+// TestSnapshotter_ColdStart_ReturnsEmpty asserts that calling Snapshot()
+// before Start has populated anything returns the zero value with all
+// maps nil and Stale=false. The EnvironmentReconciler treats this as
+// "every spec entry unresolved" — the correct first-reconcile behavior.
+func TestSnapshotter_ColdStart_ReturnsEmpty(t *testing.T) {
+	s := NewSnapshotter(&fakeLiteLLM{}, logr.Discard())
+	snap := s.Snapshot()
+	if snap.Models != nil {
+		t.Errorf("cold start: Models = %v; want nil", snap.Models)
+	}
+	if snap.MCPServers != nil {
+		t.Errorf("cold start: MCPServers = %v; want nil", snap.MCPServers)
+	}
+	if snap.A2AAgents != nil {
+		t.Errorf("cold start: A2AAgents = %v; want nil", snap.A2AAgents)
+	}
+	if snap.Stale {
+		t.Error("cold start: Stale = true; want false (cold start is distinct from stale)")
+	}
+	if !snap.RefreshedAt.IsZero() {
+		t.Errorf("cold start: RefreshedAt = %v; want zero", snap.RefreshedAt)
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 0 {
+		t.Errorf("cold start: LiteLLMUnreachableCount = %d; want 0", got)
+	}
+}
+
+// TestSnapshotter_FirstRefreshSuccess covers the steady-state success
+// path: every list call returns data, the snapshot is published with
+// Stale=false, RefreshedAt is non-zero, and the unreachable counter
+// stays at 0.
+func TestSnapshotter_FirstRefreshSuccess(t *testing.T) {
+	fake := &fakeLiteLLM{
+		models: []litellm.ModelInfoResponse{
+			{ModelName: "claude-sonnet-4-5"},
+			{ModelName: "gpt-5"},
+		},
+		mcps: []litellm.MCPServerEntry{
+			{ServerName: "filesystem"},
+		},
+		agents: []litellm.AgentEntry{
+			{AgentName: "researcher"},
+		},
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	before := time.Now()
+	s.refresh(context.Background())
+	snap := s.Snapshot()
+
+	if got := len(snap.Models); got != 2 {
+		t.Fatalf("Models length = %d; want 2", got)
+	}
+	if _, ok := snap.Models["claude-sonnet-4-5"]; !ok {
+		t.Error("Models missing claude-sonnet-4-5")
+	}
+	if _, ok := snap.Models["gpt-5"]; !ok {
+		t.Error("Models missing gpt-5")
+	}
+	if got := len(snap.MCPServers); got != 1 {
+		t.Errorf("MCPServers length = %d; want 1", got)
+	}
+	if _, ok := snap.MCPServers["filesystem"]; !ok {
+		t.Error("MCPServers missing filesystem")
+	}
+	if got := len(snap.A2AAgents); got != 1 {
+		t.Errorf("A2AAgents length = %d; want 1", got)
+	}
+	if _, ok := snap.A2AAgents["researcher"]; !ok {
+		t.Error("A2AAgents missing researcher")
+	}
+	if snap.Stale {
+		t.Error("Stale = true after successful refresh; want false")
+	}
+	if snap.RefreshedAt.Before(before) {
+		t.Errorf("RefreshedAt = %v; want >= %v", snap.RefreshedAt, before)
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 0 {
+		t.Errorf("LiteLLMUnreachableCount = %d after successful refresh; want 0", got)
+	}
+}
+
+// TestSnapshotter_FirstRefreshLiteLLMUnreachable covers the D-14
+// initial-failure branch: the first ever refresh errors, no prior
+// snapshot exists, so an EMPTY Stale snapshot is published. The
+// unreachable counter increments to 1.
+func TestSnapshotter_FirstRefreshLiteLLMUnreachable(t *testing.T) {
+	fake := &fakeLiteLLM{}
+	fake.setErr(errors.New("network: dial tcp: connection refused"))
+	s := NewSnapshotter(fake, logr.Discard())
+	s.refresh(context.Background())
+	snap := s.Snapshot()
+
+	if !snap.Stale {
+		t.Error("first-refresh failure: Stale = false; want true")
+	}
+	if len(snap.Models) != 0 {
+		t.Errorf("first-refresh failure: Models length = %d; want 0", len(snap.Models))
+	}
+	if len(snap.MCPServers) != 0 {
+		t.Errorf("first-refresh failure: MCPServers length = %d; want 0", len(snap.MCPServers))
+	}
+	if len(snap.A2AAgents) != 0 {
+		t.Errorf("first-refresh failure: A2AAgents length = %d; want 0", len(snap.A2AAgents))
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 1 {
+		t.Errorf("LiteLLMUnreachableCount = %d after first-refresh failure; want 1", got)
+	}
+}
+
+// TestSnapshotter_RefreshAfterPriorSuccess_LiteLLMUnreachable covers
+// D-14's load-bearing branch: a successful refresh has populated the
+// snapshot; the NEXT refresh fails; the prior maps are PRESERVED with
+// Stale=true flipped. The counter increments to 1.
+func TestSnapshotter_RefreshAfterPriorSuccess_LiteLLMUnreachable(t *testing.T) {
+	fake := &fakeLiteLLM{
+		models: []litellm.ModelInfoResponse{
+			{ModelName: "m1"},
+			{ModelName: "m2"},
+		},
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	s.refresh(context.Background())
+
+	// First snapshot should have the two models, not stale.
+	first := s.Snapshot()
+	if len(first.Models) != 2 || first.Stale {
+		t.Fatalf("setup: first snapshot Models=%d, Stale=%v; want 2, false",
+			len(first.Models), first.Stale)
+	}
+	priorRefreshAt := first.RefreshedAt
+
+	// Mutate fake to fail and refresh again.
+	fake.setErr(errors.New("upstream 503"))
+	s.refresh(context.Background())
+
+	second := s.Snapshot()
+	if !second.Stale {
+		t.Error("second refresh after failure: Stale = false; want true")
+	}
+	if len(second.Models) != 2 {
+		t.Fatalf("second refresh: Models length = %d; want 2 (prior preserved)", len(second.Models))
+	}
+	if _, ok := second.Models["m1"]; !ok {
+		t.Error("second refresh: m1 missing from preserved snapshot")
+	}
+	if _, ok := second.Models["m2"]; !ok {
+		t.Error("second refresh: m2 missing from preserved snapshot")
+	}
+	if !second.RefreshedAt.Equal(priorRefreshAt) {
+		t.Errorf("second refresh: RefreshedAt mutated to %v; want preserved %v",
+			second.RefreshedAt, priorRefreshAt)
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 1 {
+		t.Errorf("LiteLLMUnreachableCount = %d after one failed refresh; want 1", got)
+	}
+}
+
+// TestSnapshotter_ErrNotFoundIsEmptyNotError covers the D-13 /
+// Plan 02-01 contract: ErrNotFound from any of the three list calls
+// is downgraded to an empty slice. The snapshot is fresh (not stale)
+// and the counter does NOT increment.
+func TestSnapshotter_ErrNotFoundIsEmptyNotError(t *testing.T) {
+	fake := &fakeLiteLLM{
+		modelsErr: litellm.ErrNotFound,
+		// mcps / agents return (nil, nil) — the empty-set success path.
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	s.refresh(context.Background())
+	snap := s.Snapshot()
+
+	if snap.Stale {
+		t.Error("ErrNotFound triggered Stale=true; want false (ErrNotFound is not an error)")
+	}
+	if len(snap.Models) != 0 {
+		t.Errorf("Models length = %d; want 0 (ErrNotFound downgrade)", len(snap.Models))
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 0 {
+		t.Errorf("LiteLLMUnreachableCount = %d after ErrNotFound-only refresh; want 0", got)
+	}
+}
+
+// TestSnapshotter_PartialError_OneOfThreeFails asserts D-14's
+// atomic-shape rule: if any of the three list calls fails with a
+// non-ErrNotFound error, the entire tick is treated as a refresh
+// failure. We do NOT merge partial results into the snapshot.
+func TestSnapshotter_PartialError_OneOfThreeFails(t *testing.T) {
+	fake := &fakeLiteLLM{
+		models: []litellm.ModelInfoResponse{{ModelName: "m1"}},
+		// mcps succeeds with empty.
+		mcpsErr: errors.New("mcp upstream 500"),
+		// agents succeeds with empty.
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	s.refresh(context.Background())
+	snap := s.Snapshot()
+
+	if !snap.Stale {
+		t.Error("partial error: Stale = false; want true (any-failure rule)")
+	}
+	if got := s.LiteLLMUnreachableCount(); got != 1 {
+		t.Errorf("LiteLLMUnreachableCount = %d after partial-error refresh; want 1", got)
+	}
+}
+
+// TestSnapshotter_ConcurrentReads exercises the atomic.Pointer
+// publication-safety contract under -race: 100 reader goroutines call
+// Snapshot() in a tight loop while 1 writer goroutine repeatedly
+// invokes refresh. No data race, no panic, and every read returns a
+// consistent snapshot (either prior or new — never torn).
+func TestSnapshotter_ConcurrentReads(t *testing.T) {
+	fake := &fakeLiteLLM{
+		models: []litellm.ModelInfoResponse{
+			{ModelName: "m1"},
+			{ModelName: "m2"},
+		},
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	s.refresh(context.Background())
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					snap := s.Snapshot()
+					// Either nil (impossible after the initial refresh
+					// above) or a population consistent with the writer's
+					// successive refreshes — never a torn map.
+					if snap.Models != nil && len(snap.Models) != 2 {
+						t.Errorf("torn read: Models length = %d", len(snap.Models))
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// Single writer drives 100 refreshes back-to-back.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.refresh(context.Background())
+		}
+		close(stop)
+	}()
+
+	wg.Wait()
+}
+
+// TestSnapshotter_StartRespectsCtxCancel asserts the manager.Runnable
+// lifecycle contract: Start returns nil when ctx is canceled, and at
+// least the initial refresh (plus typically a ticker fire) has run.
+func TestSnapshotter_StartRespectsCtxCancel(t *testing.T) {
+	fake := &fakeLiteLLM{}
+	s := NewSnapshotter(fake, logr.Discard())
+	s.interval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start(ctx) }()
+
+	// Sleep long enough for the initial refresh + at least 1 ticker fire.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("Start returned %v; want nil on ctx cancel", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Start did not return within 1s of ctx cancel")
+	}
+
+	// Initial refresh + ≥1 ticker fire = ≥2 ListModels calls.
+	if got := fake.modelCalls.Load(); got < 2 {
+		t.Errorf("ListModels call count = %d; want >= 2 (initial + ≥1 ticker fire)", got)
+	}
+}
