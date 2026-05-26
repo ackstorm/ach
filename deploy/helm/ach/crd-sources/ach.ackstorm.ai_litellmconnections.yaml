@@ -5,30 +5,24 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
     controller-gen.kubebuilder.io/version: v0.17.0
-  name: backendidentitypolicies.ach.ackstorm.ai
+  name: litellmconnections.ach.ackstorm.ai
 spec:
   group: ach.ackstorm.ai
   names:
-    kind: BackendIdentityPolicy
-    listKind: BackendIdentityPolicyList
-    plural: backendidentitypolicies
+    kind: LiteLLMConnection
+    listKind: LiteLLMConnectionList
+    plural: litellmconnections
     shortNames:
-    - bip
-    singular: backendidentitypolicy
+    - llmconn
+    singular: litellmconnection
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.target.kind
-      name: Target-Kind
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
       type: string
-    - jsonPath: .spec.target.name
-      name: Target-Name
-      type: string
-    - jsonPath: .spec.forwardIdentityJWT
-      name: ForwardJWT
-      type: boolean
-    - jsonPath: .status.conditions[?(@.type=='Synced')].status
-      name: Synced
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -37,8 +31,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          BackendIdentityPolicy is the Schema for the backendidentitypolicies API
-          (Hub §9.3, CRD-08).
+          LiteLLMConnection is the singleton connection definition used by the ACH
+          operator. v1alpha1 admits only LiteLLMConnection/default per namespace.
         properties:
           apiVersion:
             description: |-
@@ -58,68 +52,39 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              BackendIdentityPolicySpec defines the desired state of BackendIdentityPolicy
-              (Hub §9.3, CRD-08).
-
-              The CR is the OPT-IN switch for attaching the ACH-signed JWT to forwarded
-              /mcp/<name> or /a2a/<name> requests. Without a matching CR, the Forwarder
-              strips the client Authorization header and writes none of its own.
-
-              CRD-08: forwardIdentityJWT is REQUIRED — no Go zero-value default,
-              no kubebuilder default. The explicit false form is a documentation aid;
-              admission rejects a CR omitting the field via the resource-root CEL rule
-              on the type below.
+            description: LiteLLMConnectionSpec defines the desired LiteLLM endpoint
+              consumed by ACH.
             properties:
-              forwardIdentityJWT:
+              endpoint:
+                description: Endpoint is the base URL of the LiteLLM instance.
+                minLength: 1
+                type: string
+              masterKeySecretRef:
                 description: |-
-                  ForwardIdentityJWT, when true, instructs the Forwarder to sign and
-                  attach the §9.1 ACH JWT to forwarded requests for this target. When
-                  false, the Forwarder forwards without an Authorization header (an
-                  explicit no-JWT declaration; operationally indistinguishable from no
-                  CR at all).
-
-                  REQUIRED per CRD-08. There is no default. Admission rejects a CR
-                  that omits the field.
-                type: boolean
-              target:
-                description: Target identifies the backend route this policy controls.
+                  MasterKeySecretRef points to the Secret key that carries the LiteLLM
+                  master key. The Secret must live in the same namespace as the CR.
                 properties:
-                  kind:
-                    description: Kind is the routed backend type. CEL-enforced enum.
-                    enum:
-                    - MCPServer
-                    - A2AAgent
+                  key:
+                    description: Key is the data key inside the Secret.
+                    minLength: 1
                     type: string
                   name:
-                    description: |-
-                      Name is the bare route segment the Forwarder sees as <name> in
-                      /mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules
-                      (≤253 chars, [a-z0-9]([-a-z0-9.]*[a-z0-9])?). Pattern enforced
-                      per CRD-08 / Hub §9.3.
-                    maxLength: 253
+                    description: Name is the Kubernetes Secret name.
                     minLength: 1
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                 required:
-                - kind
+                - key
                 - name
                 type: object
             required:
-            - forwardIdentityJWT
-            - target
+            - endpoint
+            - masterKeySecretRef
             type: object
           status:
-            description: |-
-              BackendIdentityPolicyStatus defines the observed state of
-              BackendIdentityPolicy. Phase 1 ships the field surface; Phase 4 fills in
-              the DuplicateTarget reconciler (§9.3, §6.6).
+            description: LiteLLMConnectionStatus defines the observed LiteLLM connection
+              state.
             properties:
               conditions:
-                description: |-
-                  Conditions exposes the single Synced condition (§6.6) with reason
-                  DuplicateTarget when shadowed by an alphabetically lower-named CR
-                  targeting the same (kind, name).
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -176,17 +141,13 @@ spec:
                   type: object
                 type: array
               observedGeneration:
-                description: |-
-                  ObservedGeneration is the metadata.generation of the CR the reconciler
-                  most recently processed.
                 format: int64
                 type: integer
             type: object
         type: object
         x-kubernetes-validations:
-        - message: BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with
-            no default (CRD-08)
-          rule: has(self.spec.forwardIdentityJWT)
+        - message: LiteLLMConnection name must be 'default'
+          rule: self.metadata.name == 'default'
     served: true
     storage: true
     subresources:
