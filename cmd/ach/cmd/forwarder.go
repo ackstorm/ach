@@ -137,7 +137,13 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	}
 	cfg.RedisPassword = os.Getenv("ACH_REDIS_PASSWORD")
 	cfg.RedisTLS = config.EnvBool("ACH_REDIS_TLS", false)
-	cfg.RedisDB, _ = config.MustEnvIntPositive("ACH_REDIS_DB", 0)
+	// W3 (REVIEW): ACH_REDIS_DB=0 is the default Redis logical DB and a
+	// legitimate value; MustEnvIntPositive rejects 0 by contract, so use
+	// EnvIntNonNeg here and surface the parse error instead of dropping
+	// it on the floor.
+	if cfg.RedisDB, err = config.EnvIntNonNeg("ACH_REDIS_DB", 0); err != nil {
+		return nil, err
+	}
 
 	if cfg.Namespace, err = config.MustEnvNonEmpty("POD_NAMESPACE"); err != nil {
 		return nil, err

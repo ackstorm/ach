@@ -191,3 +191,56 @@ func TestMustEnvDurationAtLeast(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvIntNonNegDefault(t *testing.T) {
+	t.Setenv(envKey, "")
+	got, err := config.EnvIntNonNeg(envKey, 7)
+	if err != nil {
+		t.Fatalf("EnvIntNonNeg unset: unexpected error %v", err)
+	}
+	if got != 7 {
+		t.Fatalf("EnvIntNonNeg unset: want fallback 7, got %d", got)
+	}
+}
+
+func TestEnvIntNonNegZeroAllowed(t *testing.T) {
+	// W3 (REVIEW): 0 is a legitimate value (Redis default DB).
+	t.Setenv(envKey, "0")
+	got, err := config.EnvIntNonNeg(envKey, 7)
+	if err != nil {
+		t.Fatalf("EnvIntNonNeg zero: unexpected error %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("EnvIntNonNeg zero: want 0, got %d", got)
+	}
+}
+
+func TestEnvIntNonNegPositive(t *testing.T) {
+	t.Setenv(envKey, "12")
+	got, err := config.EnvIntNonNeg(envKey, 0)
+	if err != nil {
+		t.Fatalf("EnvIntNonNeg positive: unexpected error %v", err)
+	}
+	if got != 12 {
+		t.Fatalf("EnvIntNonNeg positive: want 12, got %d", got)
+	}
+}
+
+func TestEnvIntNonNegNegativeErrors(t *testing.T) {
+	t.Setenv(envKey, "-1")
+	_, err := config.EnvIntNonNeg(envKey, 0)
+	if err == nil {
+		t.Fatalf("EnvIntNonNeg negative: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), envKey) {
+		t.Fatalf("EnvIntNonNeg negative: error %q must contain key %q", err.Error(), envKey)
+	}
+}
+
+func TestEnvIntNonNegNonNumericErrors(t *testing.T) {
+	t.Setenv(envKey, "abc")
+	_, err := config.EnvIntNonNeg(envKey, 0)
+	if err == nil {
+		t.Fatalf("EnvIntNonNeg non-numeric: want error, got nil")
+	}
+}
