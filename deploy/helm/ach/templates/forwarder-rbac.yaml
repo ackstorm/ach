@@ -1,0 +1,36 @@
+{{- if .Values.forwarder.enabled }}
+---
+# Forwarder reads ONLY environments + backendidentitypolicies. External-
+# reference kinds (plugins/prompts/artifacts/pluginmarketplaces) are
+# served from the PVC cache, not the K8s API (T-09-02 mitigation), so
+# they are deliberately excluded.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-forwarder
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+rules:
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - environments
+  - backendidentitypolicies
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-forwarder
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-forwarder
+subjects:
+- kind: ServiceAccount
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+{{- end }}

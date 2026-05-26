@@ -9,6 +9,24 @@ metadata:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: platform-api
 ---
+# Admin allowlist (one email per line, # for comments). Empty by default
+# — populate via .Values.platformApi.admins to enable admin endpoints
+# (otherwise platform-api logs "parsed to zero admins" and returns 403
+# not_admin from every admin route, which is the safe default-deny).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ach-platform-api-admins
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+data:
+  admins.txt: |
+    {{- range .Values.platformApi.admins | default list }}
+    {{ . }}
+    {{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,6 +53,10 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - name: admins
+          configMap:
+            name: ach-platform-api-admins
       containers:
         - name: platform-api
           image: {{ include "ach.image" . }}
@@ -52,6 +74,10 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           resources: {{ toYaml .Values.platformApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: admins
+              mountPath: /etc/ach/admins
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

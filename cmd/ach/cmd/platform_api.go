@@ -34,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -274,6 +275,13 @@ func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bin
 
 func runPlatformAPI(_ *cobra.Command, _ []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Install a controller-runtime logger before any client-go cache or
+	// reflector is constructed. Without this, the reflector's first
+	// ListAndWatchWithContext call hits an unset delegating sink and the
+	// runtime prints a "log.SetLogger(...) was never called" stack dump
+	// to stderr on every Pod start.
+	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 
 	cfg, err := validatePlatformAPIConfig()
 	if err != nil {

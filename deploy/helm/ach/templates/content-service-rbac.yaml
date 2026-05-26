@@ -1,0 +1,38 @@
+{{- if .Values.contentService.enabled }}
+---
+# Content-service reads environments (authorizedTeams scope check) +
+# the four external-reference kinds (PVC cache path lookup by name).
+# backendidentitypolicies is forwarder-only and intentionally excluded.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-content-service
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: content-service
+rules:
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - environments
+  - plugins
+  - prompts
+  - artifacts
+  - pluginmarketplaces
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-content-service
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: content-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-content-service
+subjects:
+- kind: ServiceAccount
+  name: ach-content-service
+  namespace: {{ .Release.Namespace }}
+{{- end }}
