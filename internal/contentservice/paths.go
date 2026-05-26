@@ -31,17 +31,17 @@ func ResolvePath(cacheRoot, kind, name string) ([]string, error) {
 		return nil, err
 	}
 	switch kind {
-	case "prompt":
-		return []string{filepath.Join(cacheRoot, "prompt", name)}, nil
-	case "plugin":
-		return []string{filepath.Join(cacheRoot, "plugin", name+".tar.gz")}, nil
-	case "artifact":
+	case kindPrompt:
+		return []string{filepath.Join(cacheRoot, kindPrompt, name)}, nil
+	case kindPlugin:
+		return []string{filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix)}, nil
+	case kindArtifact:
 		// Try .tar.gz first (scope=directory is the more common
 		// case for the v1alpha1 examples corpus); fall through to
 		// bare name (scope=object) if the gzip variant is absent.
 		return []string{
-			filepath.Join(cacheRoot, "artifact", name+".tar.gz"),
-			filepath.Join(cacheRoot, "artifact", name),
+			filepath.Join(cacheRoot, kindArtifact, name+gzipSuffix),
+			filepath.Join(cacheRoot, kindArtifact, name),
 		}, nil
 	}
 	return nil, ErrInvalidKind
