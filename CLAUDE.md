@@ -133,7 +133,7 @@ ach/
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
-| CI workflows (ci, docs, release, ...)  | `references/docs/workflow.md` (matrix + rationale); `.github/workflows/*.yml` is authoritative |
+| CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |
 | Pre-push gate logic                    | `scripts/pre-push-check.sh` (gate list)  |
 | Publication / first-push procedure     | `PUBLISH.md`                             |
@@ -154,8 +154,16 @@ ach/
 E2E runs once per change: on the PR. Post-merge skips it (already
 green on the PR ref). Docs-only commits (paths-ignore: `**/*.md`,
 `docs/**`, `.planning/**`, `references/**`, `FIX*.txt`, `LICENSE`,
-`NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml` entirely. Detail
-and tradeoffs: `references/docs/workflow.md`.
+`NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml` entirely.
+
+**Why ach keeps push CI on main** (vs sister project alitellm-operator,
+which is PR-only): GitHub branch protection on a private repo requires
+a paid plan (Pro/Team/Enterprise) or making the repo public. Until
+either condition is met, main can in principle accept direct pushes,
+so post-merge CI on push:main is the defensive gate that catches a
+direct push that bypassed PR review. Once protection is enabled, this
+workflow can be trimmed to PR-only the same way alitellm-operator's
+ci.yml is.
 
 ## Toolchain — host has NO Go (always Docker)
 
@@ -174,7 +182,16 @@ invocation goes through the devtools container via `./scripts/dev.sh`.
   preserves host UID:GID, persists Go module + build caches under
   `.gocache/`, resolves `KUBEBUILDER_ASSETS`.
 - Image: `ach-devtools:latest` (built from `Dockerfile.devtools` on
-  first use; force rebuild with `ACH_DEVTOOLS_REBUILD=1`).
+  first use locally; force rebuild with `ACH_DEVTOOLS_REBUILD=1`).
+- CI consumes a pre-baked image from GHCR
+  (`ghcr.io/<owner>/ach-devtools:<hash>`, where hash =
+  `sha256(Dockerfile.devtools)[:12]`). `.github/workflows/devtools-image.yml`
+  builds + pushes when `Dockerfile.devtools` changes;
+  `.github/actions/setup-devtools` pulls in each CI job (~30s warm /
+  2-3min cold saved per job × 5 jobs = ~10min/PR). On miss (first push,
+  PR that changes Dockerfile.devtools racing the image workflow, GHCR
+  unavailable), the composite action falls back to a local build —
+  slower but always correct.
 - Versions are pinned in `Dockerfile.devtools` and `go.mod` — when in
   doubt, those files are authoritative.
 
@@ -184,23 +201,27 @@ Targets that only call `kubectl`/`docker`/`helm`/`kind`/bash run on host
 
 ## Test phases
 
-| Phase            | Command                              | When                                  |
-|------------------|--------------------------------------|---------------------------------------|
-| `make unit`      | pure-logic, ~5s warm                 | every iteration                       |
-| `make envtest-run` | controller-runtime envtest (race), ~7m | before commit on controller changes |
-| `make envtest-fast` | envtest without -race, ~3m        | dev inner loop                        |
-| `make e2e-full`  | kind + Helm + Ginkgo, ~6m            | final gate before commit              |
-| `make security`  | gosec + govulncheck + fuzz-short, ≤6m | in-container; before commit          |
-| `make pre-push`  | gitleaks + trufflehog + 13 gates     | host-only; before push                |
+| Phase              | Command                                | When                                  |
+|--------------------|----------------------------------------|---------------------------------------|
+| `make unit`        | pure-logic, ~5s warm                   | every iteration                       |
+| `make lint-changed`| golangci-lint scoped to touched pkgs   | every iteration                       |
+| `make lint`        | golangci-lint full sweep               | before commit (pre-commit hook)       |
+| `make envtest-run` | controller-runtime envtest (race), ~7m | before commit on controller changes   |
+| `make envtest-fast`| envtest without -race, ~3m             | dev inner loop                        |
+| `make e2e-full`    | kind + Helm + Ginkgo, ~6m              | final gate before commit              |
+| `make security`    | gosec + govulncheck + fuzz-short, ≤6m  | in-container; before commit           |
+| `make pre-commit`  | lint-changed + unit                    | host-only; runs on every `git commit` once `make hooks` installed |
+| `make pre-push`    | gitleaks + trufflehog + 15 gates (incl. full lint + unit) | host-only; before push |
 
 Umbrella targets:
 - `make test-all` = `unit` + `envtest-run`
 - `make verify` = `./scripts/dev.sh make security` + `make pre-push`
-- `make hooks` installs `.git/hooks/pre-push -> scripts/pre-push-check.sh`
+- `make hooks` installs `.git/hooks/pre-commit -> scripts/pre-commit-check.sh`
+  AND `.git/hooks/pre-push -> scripts/pre-push-check.sh`
 
 `make pre-push` is host-only — it spawns gitleaks/trufflehog containers
 on host docker. Do NOT call it via `./scripts/dev.sh` (would nest docker
-mounts that don't resolve).
+mounts that don't resolve). The same applies to `make pre-commit`.
 
 Inner-loop iteration helpers:
 - `make unit-pkg PKG=./internal/<service>/...`
@@ -309,12 +330,22 @@ pushed as `ghcr.io/ackstorm/ach:main` +
 - `id-token: write` in the workflow (already set).
 - cosign on PATH (release.yml installs via `sigstore/cosign-installer`).
 
-## Publication — pre-push gates are non-negotiable
+## Publication — pre-commit and pre-push gates are non-negotiable
 
-Public remote: `git@github.com:ackstorm/ach.git`. Before
-any `git push`, run `make pre-push` (or rely on the installed hook).
+Remote: `git@github.com:ackstorm/ach.git`. The local gate strategy
+splits across two hook stages so the cost of "oops, CI failed lint"
+is paid locally before the commit even lands:
 
-Hard gates (15) — failure blocks push:
+- `pre-commit` (`make pre-commit`) — fast: `make lint-changed`
+  (golangci-lint scoped to touched packages) + `make unit`. Runs on
+  every `git commit` once `make hooks` is installed. Bypass with
+  `--no-verify` only for justified WIP commits; the full lint sweep
+  still fires on push.
+- `pre-push` (`make pre-push`) — full: 17-gate publication check
+  (lint + unit live INSIDE the 17 as defensive gates 16+17 so the
+  push is still safe even if pre-commit was bypassed).
+
+Hard gates (17) — failure blocks push:
 - gitleaks + trufflehog (scope: `origin/main..HEAD`; full history on
   first push). Allowlist: `.gitleaks.toml`.
 - Large files >2 MB
@@ -327,9 +358,12 @@ Hard gates (15) — failure blocks push:
 - `go mod tidy` drift
 - Per-file SPDX license header
   (`// SPDX-License-Identifier: Apache-2.0`)
+- golangci-lint full sweep (`make lint` inside devtools container)
+- `make unit` (pure-logic regression — `./scripts/dev.sh make unit`)
 
 If a gate fails, fix the root cause — never `--no-verify` or otherwise
-bypass.
+bypass. Note: `--no-verify` skips ONLY the local hook; it does not
+exempt CI, which reruns the same gates.
 
 ## Waiting for state — use blessed make targets
 
