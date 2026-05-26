@@ -264,14 +264,15 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 
-	// Direct API-server fetch (cache may not be synced yet at boot).
-	apiClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: forwarderScheme})
-	if err != nil {
-		return out, fmt.Errorf("client.New (api-server): %w", err)
-	}
+	// W9 (REVIEW): the cached client requires mgr.Start() to populate,
+	// and LoadOnce runs before manager start. controller-runtime exposes
+	// mgr.GetAPIReader() exactly for this pre-cache scenario — an
+	// uncached reader sharing the manager's rest.Config. Previously this
+	// path called ctrl.GetConfigOrDie() a second time + client.New,
+	// duplicating the in-cluster config lookup.
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.JWTSecretName}
-	if err := apiClient.Get(ctx, key, secret); err != nil {
+	if err := mgr.GetAPIReader().Get(ctx, key, secret); err != nil {
 		return out, fmt.Errorf("get Secret %s/%s: %w", cfg.Namespace, cfg.JWTSecretName, err)
 	}
 	if err := out.loader.LoadOnce(secret); err != nil {
