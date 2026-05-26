@@ -18,17 +18,23 @@ import (
 )
 
 // BackendIdentityPolicyReconciler reconciles a BackendIdentityPolicy
-// object. Phase 1 scope is the CRD-06 finalizer add/remove only —
+// object. Scope is the CRD-06 finalizer add/remove only —
 // BackendIdentityPolicy has no PVC-cached form (no Source*, no
 // upstream content; the resource is consumed at runtime by the
 // Forwarder from the informer cache, not via a streamed file). The
-// finalizer exists for consistency with the other six kinds and so
-// Phase 4 can layer real Synced=DuplicateTarget reconciliation on
-// top without a CRD migration.
+// finalizer exists for consistency with the other six kinds.
+//
+// DESIGN DECISION (TODO.md §6, feedback_bip_no_shadow_logic.md, 2026-05-26):
+// the Operator stays dumb on BIP duplicates. No Synced=DuplicateTarget
+// reason is ever emitted; no shadow flip; no Operator-side resolution of
+// (spec.target.kind, spec.target.name) duplicates. The Forwarder resolves
+// duplicates at READ time by selecting the alphabetically-LAST
+// metadata.name as the winner. Operators flip precedence by renaming
+// CRs (e.g. a "zz-" prefix). See internal/forwarder/bip/index.go
+// for the read-side resolver.
 //
 // CacheRoot is intentionally absent from the struct: this reconciler
-// has no filesystem cleanup body. Plan 06's main.go will inject the
-// other fields only.
+// has no filesystem cleanup body.
 type BackendIdentityPolicyReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
@@ -40,11 +46,13 @@ type BackendIdentityPolicyReconciler struct {
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=backendidentitypolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=backendidentitypolicies/finalizers,verbs=update
 
-// Reconcile implements the Phase 1 BackendIdentityPolicy lifecycle —
-// finalizer add/remove only, no file cleanup. No status write either:
-// the §6.6 BackendIdentityPolicy-specific Synced=DuplicateTarget
-// reason is a Phase 4 reconciliation outcome (OP-14/OP-16); writing a
-// stub reason here would conflict with the CRD-07 closed set.
+// Reconcile implements the BackendIdentityPolicy lifecycle — finalizer
+// add/remove only, no file cleanup, no status write. Per TODO.md §6 +
+// OP-16, the Operator emits NO Synced reason for this kind: duplicates
+// coexist and the Forwarder (internal/forwarder/bip) resolves
+// alphabetically-LAST at read time. CRD-07's closed condition set for
+// BIP is intentionally minimal — no "Initializing" reason, no
+// "DuplicateTarget" reason, no churn.
 func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("backendidentitypolicy", req.NamespacedName)
 
@@ -58,9 +66,9 @@ func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctr
 
 	if !cr.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&cr, backendIdentityPolicyFinalizer) {
-			// No PVC file to clean. Phase 4 may need to invalidate a
-			// Forwarder cache entry here; Phase 1 just removes the
-			// finalizer so K8s deletion can complete.
+			// No PVC file to clean. The Forwarder reads BIP spec via
+			// informer cache (no Forwarder-side cache to invalidate;
+			// controller-runtime handles eviction on delete).
 			controllerutil.RemoveFinalizer(&cr, backendIdentityPolicyFinalizer)
 			if err := r.Update(ctx, &cr); err != nil {
 				return ctrl.Result{}, err
@@ -78,9 +86,9 @@ func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, nil
 	}
 
-	// Steady state — no status write in Phase 1 (Synced=DuplicateTarget
-	// is Phase 4's owner; CRD-07 doesn't admit an "Initializing" reason
-	// for this kind).
+	// Steady state — no status write. Operator emits no Synced reason
+	// for BackendIdentityPolicy (TODO.md §6 + OP-16); the Forwarder
+	// resolves duplicates at READ time.
 	return ctrl.Result{}, nil
 }
 
