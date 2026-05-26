@@ -114,6 +114,7 @@ func (f *wiringFakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) err
 func (f *wiringFakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 	return nil, nil
 }
+func (f *wiringFakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
 // Compile-time interface assertion — guards against litellm.Client
 // growing a method without this fake catching up.

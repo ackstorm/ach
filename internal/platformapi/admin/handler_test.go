@@ -486,3 +486,6 @@ var _ = (*recorderOrder)(nil)
 func (f *fakeLitellm) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
 }
+
+// EnsureDefaultTeam is a no-op shim — Client interface compliance.
+func (f *fakeLitellm) EnsureDefaultTeam(_ context.Context) error { return nil }

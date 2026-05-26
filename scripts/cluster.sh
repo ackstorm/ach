@@ -282,6 +282,11 @@ hydrate_fixtures() {
   #     litellm-rest client to the in-cluster LiteLLM Service. Without
   #     it, every Environment finalizer drain stalls on
   #     "§6.5 step 2 DeleteAccessGroup: litellm connection not ready".
+  #
+  # The LiteLLM `default` Team is NOT seeded here. The operator's
+  # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a
+  # successful probe (idempotent — list-first, create-on-empty). That
+  # way production deployments converge without cluster.sh / hand-curl.
   echo "[cluster.sh] seeding e2e fixtures (litellm-master-key + LiteLLMConnection)..."
   kubectl -n ach-system create secret generic litellm-master-key \
     --from-literal=masterKey="sk-test-master-key" \

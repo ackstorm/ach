@@ -45,15 +45,23 @@ kubectl -n litellm-system port-forward svc/litellm 4001:4000 >/dev/null 2>&1 &
 LITELLM_PF=$!
 trap 'kill ${LITELLM_PF} 2>/dev/null || true; rm -f "${COOKIE_JAR}"' EXIT
 sleep 2
-# LiteLLM auto-assigns team_id as a UUID. ACH's SSO path currently
-# hard-codes team_id="default" (FIX01 §A.4) — once that's fixed the
-# UUID assignment here is what production deployments will see.
-curl -sS -X POST "http://localhost:4001/team/new" \
-  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"team_alias":"default","members_with_roles":[]}' \
-  | head -c 500
-echo
+# LiteLLM v1.83 allows duplicate team_alias entries with fresh UUID
+# team_ids. Avoid accumulating N+1 teams across runs: list first, only
+# POST /team/new on empty result. ACH's provisionUser tolerates multiple
+# teams via ListTeamsByAlias ordering, but the canonical UAT path is
+# deterministic.
+EXISTING="$(curl -sS "http://localhost:4001/team/list?team_alias=default" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" | jq -r '.[0].team_id // empty')"
+if [ -n "${EXISTING}" ]; then
+  echo "[hydrate-demo]   team default already present (team_id=${EXISTING}); skipping create"
+else
+  curl -sS -X POST "http://localhost:4001/team/new" \
+    -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"team_alias":"default","members_with_roles":[]}' \
+    | head -c 500
+  echo
+fi
 kill ${LITELLM_PF} 2>/dev/null || true
 
 echo "[hydrate-demo] 2. kubectl apply -f examples/*.yaml..."

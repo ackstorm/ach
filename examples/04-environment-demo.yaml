@@ -9,10 +9,18 @@
 # scripts/cluster.sh hydrate_litellm + scripts/cluster.sh
 # hydrate_fixtures + the SSO provisionUser flow).
 #
-# runtime.* is intentionally empty: this demo does not register any
-# Models / MCPServers / A2AAgents in LiteLLM. The /platform/hydrate
-# response still emits the runtime block with three empty arrays per
-# the Hub §15.1 "both blocks always present" invariant.
+# runtime.* references real LiteLLM-side resources by name. The
+# operator's Snapshotter polls LiteLLM (/models, /v1/mcp/server,
+# /v1/agents) every 5 min; ExecutionResourcesResolved=True requires
+# every name here to be present in the most-recent snapshot. Missing
+# names show up in status.unresolvedRuntime and flip the condition to
+# False reason=ResourceUnresolved (Hub §6.6) until LiteLLM catches up.
+#
+# To wire these end-to-end you also need the LiteLLM side declared
+# (model rows for the two LLMs, MCPServer rows for vmcp-dev/vmcp-aws,
+# AgentEntry for test-noop-agent). Declare those via Model/MCPServer/
+# A2AAgent CRs OR via the LiteLLM admin UI; this Environment CR just
+# OPTS IN to them.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: Environment
 metadata:
@@ -22,9 +30,14 @@ spec:
   authorizedTeams:
     - default
   runtime:
-    models: []
-    mcpServers: []
-    a2aAgents: []
+    models:
+      - gemini.gemini-flash-latest
+      - openai.gpt-5-mini
+    mcpServers:
+      - vmcp-dev
+      - vmcp-aws
+    a2aAgents:
+      - test-noop-agent
   context:
     prompts:
       - claude-code-system-prompt

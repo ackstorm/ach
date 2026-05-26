@@ -218,21 +218,73 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	// Patch the unresolved field on env.Status; writeStatus issues a
-	// single r.Status().Update so the conditions slice and the
-	// UnresolvedRuntime field land in one PUT.
+	// Patch the unresolved field on env.Status, then emit all three §6.6
+	// conditions in memory and issue a SINGLE Status().Update so the
+	// conditions slice + the UnresolvedRuntime field land atomically.
+	//
+	// ExecutionResourcesResolved is the only condition this reconciler
+	// computes today. AccessGroupSynced and Available are written as
+	// placeholder Unknown values so the kubebuilder printcolumns surface
+	// SOMETHING (operators reading `kubectl get environment` see
+	// "Unknown" instead of an empty cell). When TODO §7 lands, the
+	// access-group binding step overrides AccessGroupSynced to True /
+	// False with the real reason. When TODO §9 lands, the composite
+	// rollup overrides Available.
 	env.Status.UnresolvedRuntime = &unresolved
-	if err := r.writeStatus(
-		ctx, &env,
-		"ExecutionResourcesResolved", condStatus, reason, message,
-	); err != nil {
-		logger.Error(err, "status update failed", "type", "ExecutionResourcesResolved")
+	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+		Type:               "ExecutionResourcesResolved",
+		Status:             condStatus,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	// Placeholder: TODO §7 owns the real reconciliation logic. Use
+	// SetStatusCondition so an existing True/False set by a future §7
+	// implementation is NOT overwritten here — apimeta's logic preserves
+	// the existing entry when (Type, Status, Reason) match.
+	if !hasCondition(env.Status.Conditions, "AccessGroupSynced") {
+		apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionUnknown,
+			Reason:             "Initializing",
+			Message:            "operator-side access-group binding not yet implemented (see TODO §7)",
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+	// Placeholder: TODO §9 owns the composite rollup.
+	if !hasCondition(env.Status.Conditions, "Available") {
+		apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+			Type:               "Available",
+			Status:             metav1.ConditionUnknown,
+			Reason:             "PendingSubConditions",
+			Message:            "composite Ready rollup not yet implemented (see TODO §9)",
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+	env.Status.ObservedGeneration = env.Generation
+	if err := r.Status().Update(ctx, &env); err != nil {
+		logger.Error(err, "status update failed")
 	}
 
 	// D-08: Hub §6.4 requeue cadence — keeps Environments converging
 	// on snapshot drift even when no spec change triggers an event-
 	// driven reconcile.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// hasCondition reports whether conds carries an entry of the given type.
+// Used to gate placeholder writes so future reconcilers (TODO §7/§9) that
+// emit a real True/False are not clobbered by the Unknown placeholder.
+func hasCondition(conds []metav1.Condition, t string) bool {
+	for _, c := range conds {
+		if c.Type == t {
+			return true
+		}
+	}
+	return false
 }
 
 // drainEkRows implements §6.5 step 4 with the W3-concrete revision:

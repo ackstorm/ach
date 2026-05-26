@@ -58,8 +58,16 @@ type BackendIdentityPolicySpec struct {
 }
 
 // BackendIdentityPolicyStatus defines the observed state of
-// BackendIdentityPolicy. Phase 1 ships the field surface; Phase 4 fills in
-// the DuplicateTarget reconciler (§9.3, §6.6).
+// BackendIdentityPolicy.
+//
+// Deliberate scope: the reconciler does NOT perform DuplicateTarget
+// shadow resolution. Multiple CRs targeting the same (kind, name) are
+// allowed; the Forwarder's runtime read path resolves the duplicate
+// deterministically by sorting matching CRs by metadata.name ASC and
+// using the LAST entry's forwardIdentityJWT value. Operators wanting
+// different precedence rename their CRs. This is intentional —
+// operator stays dumb, user owns the CR set, no Synced=DuplicateTarget
+// condition is written.
 type BackendIdentityPolicyStatus struct {
 	// ObservedGeneration is the metadata.generation of the CR the reconciler
 	// most recently processed.
@@ -67,9 +75,10 @@ type BackendIdentityPolicyStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// Conditions exposes the single Synced condition (§6.6) with reason
-	// DuplicateTarget when shadowed by an alphabetically lower-named CR
-	// targeting the same (kind, name).
+	// Conditions is reserved for future per-CR status surfaces. It is
+	// NOT populated today — duplicate targets are resolved by the
+	// Forwarder at read time (alphabetically-LAST CR wins) without any
+	// operator-side status churn.
 	//
 	// +optional
 	// +patchMergeKey=type

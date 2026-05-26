@@ -382,6 +382,12 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			MaxBudget:    nil,
 			AccessGroups: []string{env.Name},
 			Tags:         []string{env.Name},
+			Metadata: map[string]string{
+				"ach_key_id":      keyID,
+				"ach_key_type":    "ek",
+				"ach_owner_email": keyCtx.OwnerEmail,
+				"ach_environment": env.Name,
+			},
 		})
 		if err != nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{

@@ -9,6 +9,37 @@ import (
 	"net/url"
 )
 
+// defaultTeamAlias is the canonical LiteLLM team alias every SSO-
+// provisioned user is enrolled into. The literal "default" is the
+// production value today; TODO §15 tracks making this configurable
+// per-deployment (so a deployer can pick "engineering", "tenant-a",
+// etc.). Both EnsureDefaultTeam and the SSO handler reference this
+// constant so they stay in lockstep.
+const defaultTeamAlias = "default"
+
+// EnsureDefaultTeam guarantees LiteLLM has at least one Team with
+// alias=defaultTeamAlias. Idempotent — list-first via
+// ListTeamsByAlias, only POST /team/new on empty. Called by the
+// LiteLLMConnection reconciler after a successful probe so the
+// operator-side bootstrap converges without deployer intervention.
+//
+// Returns nil if the team already exists OR was just created. Returns
+// wrapped error on LiteLLM unreachable / 5xx / unauthorized — caller
+// logs and continues.
+func (c *RESTClient) EnsureDefaultTeam(ctx context.Context) error {
+	existing, err := c.ListTeamsByAlias(ctx, defaultTeamAlias)
+	if err != nil {
+		return fmt.Errorf("ensure default team: list by alias %q: %w", defaultTeamAlias, err)
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	if _, err := c.CreateTeam(ctx, &NewTeamRequest{TeamAlias: defaultTeamAlias}); err != nil {
+		return fmt.Errorf("ensure default team: create %q: %w", defaultTeamAlias, err)
+	}
+	return nil
+}
+
 // CreateTeam issues POST /team/new.
 func (c *RESTClient) CreateTeam(ctx context.Context, req *NewTeamRequest) (*TeamListEntry, error) {
 	raw, err := c.makeRequest(ctx, "POST", "/team/new", req)

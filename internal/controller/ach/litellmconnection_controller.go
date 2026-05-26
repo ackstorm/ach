@@ -155,6 +155,18 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		Generation: conn.Generation,
 	})
 
+	// Operator-side bootstrap: guarantee LiteLLM has the canonical
+	// `default` team before any SSO callback fires. Idempotent —
+	// list-first, create only on empty. Failure is logged + tolerated;
+	// the next reconcile (5 minutes) retries. We deliberately do not
+	// fail the reconcile on this: the LiteLLMConnection itself is
+	// Synced=True (probe succeeded); only the team-seed side effect
+	// failed, which a transient LiteLLM hiccup might cause.
+	if err := client.EnsureDefaultTeam(ctx); err != nil {
+		r.Log.Info("EnsureDefaultTeam failed; will retry on next reconcile",
+			"err", err.Error())
+	}
+
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 

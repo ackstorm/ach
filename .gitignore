@@ -43,3 +43,7 @@ cover*.out
 testbin/
 dist/
 site/
+
+# Planning corpus (local-only, never committed)
+.planning/
+spec/

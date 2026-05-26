@@ -16,3 +16,11 @@ rules:
   - environments
   - backendidentitypolicies
   verbs: ["get", "list", "watch"]
+# Phase 4 D-22 + FWD-09 SC#4: read ONLY ach-jwt-signing-keys Secret.
+# resourceNames carve-out enforces "only the Forwarder ServiceAccount
+# can read the signing material". Namespace-scoped (Role, not
+# ClusterRole) per MULTI-01.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["ach-jwt-signing-keys"]
+  verbs: ["get", "list", "watch"]

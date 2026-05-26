@@ -621,6 +621,8 @@ func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, alias string) ([]litel
 	return f.listTeamsBehaviour(alias)
 }
 
+func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
+
 // Unused-method shims to satisfy the wider litellm.Client interface.
 func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
 func (f *fakeLiteLLM) DeleteTag(context.Context, string) error         { return nil }
@@ -1016,9 +1018,13 @@ func TestCallbackHandler_DuplicateTeamMemberAddSwallowed(t *testing.T) {
 
 			flm := newFakeLiteLLM()
 			flm.userInfoBehaviour = tc.userBeh
-			// LiteLLM returns the canonical "already added" 4xx body.
+			// LiteLLM 1.83 returns 400 on duplicate-add and the
+			// restclient.go 4xx wrapper drops the response body, so
+			// the error string only carries path + status (no
+			// "already" substring). isDuplicateAddErr matches on
+			// (path + 400) instead. Format mirrors restclient.go:152.
 			flm.teamMemberAddError = func(string, string, string) error {
-				return errors.New("litellm: status: 400 body: user already in team")
+				return errors.New("litellm: 400 on POST /team/member_add (code=400)")
 			}
 			dbRec := newDBInsertRecord()
 

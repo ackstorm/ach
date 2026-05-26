@@ -1,0 +1,30 @@
+# Phase 4 e2e fixture: deterministic ach-jwt-signing-keys Secret.
+#
+# The 32-byte seed and the kid value are FIXED so SC#4 JWKS assertion
+# can verify a known kid and base64url(x) pub-key roundtrip across runs.
+#
+# DANGER: this file MUST never be applied to a non-test cluster. The
+# seed is widely known. The Helm install for e2e uses
+# `forwarder.jwtSecretName: ach-jwt-signing-keys` and this manifest
+# seeds it pre-Deployment-Ready so the SecretLoader.LoadOnce contract
+# can refuse-to-start when the fixture is missing.
+#
+# Engineer applies this BEFORE `make e2e-focus FOCUS=phase4`:
+#   kubectl -n default apply -f test/e2e/fixtures/phase4_jwt_signing_keys_seed.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ach-jwt-signing-keys
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+    test.ach.ackstorm.ai/phase: "4"
+type: Opaque
+stringData:
+  current.kid: phase4-test-current-001
+data:
+  # 32-byte all-0x42 seed (base64-encoded by K8s). The deterministic
+  # value lets SC#4 assert a known JWKS x field across runs.
+  current.seed: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=

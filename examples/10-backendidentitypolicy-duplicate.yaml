@@ -1,0 +1,31 @@
+# BackendIdentityPolicy — second CR on the same (kind, name) target.
+#
+# ACH does NOT do operator-side conflict resolution on BIPs (no
+# DuplicateTarget reconciler, no shadow flip, no Synced status
+# churn). Both CRs are stored, both pass admission, both keep their
+# finalizer. The Forwarder resolves the duplicate at READ time:
+# list all BIPs matching (kind=MCPServer, name=context7), sort by
+# metadata.name ASC, take the LAST one.
+#
+# bip-context7-jwt-on  vs  zz-bip-context7-jwt-off:
+#   "bip-..." < "zz-..."  →  zz-bip-context7-jwt-off WINS at runtime
+#                            (Forwarder mints no JWT for /mcp/context7)
+#
+# Operators wanting the opposite outcome rename one of the CRs so the
+# alphabetical order changes. No babysitting on the operator side.
+#
+# Demo expectation (both Synced columns stay empty — by design):
+#   kubectl get bip -n ach-system
+#   NAME                       TARGET-KIND   TARGET-NAME   FORWARDJWT   SYNCED
+#   bip-context7-jwt-on        MCPServer     context7      true         (empty)
+#   zz-bip-context7-jwt-off    MCPServer     context7      false        (empty)
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: zz-bip-context7-jwt-off
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: context7
+  forwardIdentityJWT: false

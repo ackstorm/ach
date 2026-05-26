@@ -19,6 +19,7 @@ package ach
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
+	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
 )
 
 // ensureSecret creates a Secret in WatchNamespace; AlreadyExists is OK so
@@ -156,31 +158,135 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 	return b
 }
 
-// mkGithubPlugin builds one valid github-source plugin entry for the
-// marketplace fixture. Repo names are derived from `name` so each entry
-// dispatches to a distinct Stage-2 fetcher key.
-func mkGithubPlugin(name string) ClaudeCodeMarketplacePlugin {
+// mkGitSubdirPlugin builds a Claude Code real-schema git-subdir entry.
+// The SHA is a stable 40-hex test value derived from name so each
+// entry dispatches to a distinct fake-git-fetcher key.
+func mkGitSubdirPlugin(name string) ClaudeCodeMarketplacePlugin {
 	return ClaudeCodeMarketplacePlugin{
 		Name: name,
 		Source: ClaudeCodeMarketplaceSource{
-			Type: "github",
-			GitHub: &achv1alpha1.GitHubSource{
-				Repo: "test/" + name,
-				Ref:  "main",
-				AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
-					Name: "mkt-secret",
-					Key:  "token",
-				},
-			},
+			Kind: "git-subdir",
+			URL:  "https://example.invalid/test/" + name + ".git",
+			Path: "plugins/" + name,
+			Ref:  "main",
+			SHA:  shaForName(name),
 		},
 	}
 }
 
-func mkNpmPlugin(name string) ClaudeCodeMarketplacePlugin {
+// mkURLPlugin builds a Claude Code real-schema 'url' entry (whole repo).
+//
+//nolint:unused // kept for future tests that exercise the url Kind path.
+func mkURLPlugin(name string) ClaudeCodeMarketplacePlugin {
+	return ClaudeCodeMarketplacePlugin{
+		Name: name,
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: "url",
+			URL:  "https://example.invalid/test/" + name + ".git",
+			Ref:  "main",
+			SHA:  shaForName(name),
+		},
+	}
+}
+
+// mkLocalPathPlugin builds a Claude Code real-schema local-path entry
+// pointing at a subdirectory of the marketplace's own repo.
+//
+//nolint:unused // landed alongside mkURLPlugin; consumed by §5 follow-ups.
+func mkLocalPathPlugin(name string) ClaudeCodeMarketplacePlugin {
+	return ClaudeCodeMarketplacePlugin{
+		Name: name,
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: "local-path",
+			Path: "plugins/" + name,
+		},
+	}
+}
+
+// mkUnsupportedPlugin emits an entry whose UnmarshalJSON would resolve
+// to Kind="" (e.g. an upstream npm-shaped object). Used by tests that
+// exercise the per-entry ReasonUnsupportedPluginSource path.
+func mkUnsupportedPlugin(name string) ClaudeCodeMarketplacePlugin {
 	return ClaudeCodeMarketplacePlugin{
 		Name:   name,
-		Source: ClaudeCodeMarketplaceSource{Type: "npm"},
+		Source: ClaudeCodeMarketplaceSource{Kind: ""},
 	}
+}
+
+// shaForName produces a deterministic 40-hex SHA from a test name so
+// fixtures can pin known shas.
+func shaForName(name string) string {
+	h := sha1.Sum([]byte(name))
+	return fmt.Sprintf("%x", h[:])
+}
+
+// ─── Fake git fetcher registry (Stage-2 INNER fetch) ──────────────────
+
+// fakeGitFetcher is the envtest equivalent of keyedFakeFetcher for the
+// new git-only Stage-2 dispatch path.
+type fakeGitFetcher struct {
+	body string
+	rev  string
+	err  error
+}
+
+func (f *fakeGitFetcher) Fetch(_ context.Context, _ sourcesgit.Request) (*sourcesgit.Result, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &sourcesgit.Result{
+		Body:        io.NopCloser(strings.NewReader(f.body)),
+		UpstreamRev: f.rev,
+	}, nil
+}
+
+// gitFetcherRegistry routes per-SHA Stage-2 fetches in envtest. Use
+// withFakeGitFetcher to install one for the duration of a test.
+type gitFetcherRegistry struct {
+	mu       sync.Mutex
+	fetchers map[string]*fakeGitFetcher
+}
+
+func newGitFetcherRegistry() *gitFetcherRegistry {
+	return &gitFetcherRegistry{fetchers: map[string]*fakeGitFetcher{}}
+}
+
+func (g *gitFetcherRegistry) register(sha string, f *fakeGitFetcher) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.fetchers[sha] = f
+}
+
+func (g *gitFetcherRegistry) lookup(spec sourcesgit.Spec) gitFetcher {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if f, ok := g.fetchers[spec.SHA]; ok {
+		return f
+	}
+	return &fakeGitFetcher{err: fmt.Errorf("test: no fake registered for SHA %q", spec.SHA)}
+}
+
+// withFakeGitFetcher overrides the package-level newGitFetcherFn and
+// newResolveHeadSHAFn for the duration of the test. Returns a
+// *gitFetcherRegistry whose register method registers a per-entry fake
+// by SHA. local-path tests can register at the stable test-only SHA
+// "ffffffffffffffffffffffffffffffffffffffff" (the resolver stub).
+func withFakeGitFetcher(t *testing.T) *gitFetcherRegistry {
+	t.Helper()
+	reg := newGitFetcherRegistry()
+	orig := newGitFetcherFn
+	newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
+		return reg.lookup(spec)
+	}
+	origResolve := newResolveHeadSHAFn
+	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string) (string, error) {
+		return "ffffffffffffffffffffffffffffffffffffffff", nil
+	}
+	t.Cleanup(func() {
+		newGitFetcherFn = orig
+		newResolveHeadSHAFn = origResolve
+	})
+	return reg
 }
 
 // pmrCR builds a PluginMarketplace CR pointing at a fake "github"
@@ -351,7 +457,7 @@ func TestPMR_Stage1_IncludeMatchesZero(t *testing.T) {
 
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGithubPlugin("alpha"), mkGithubPlugin("beta")},
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -382,7 +488,7 @@ func TestPMR_Stage1_InvalidRegex(t *testing.T) {
 
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGithubPlugin("alpha")},
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -414,14 +520,15 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name: "m",
 		Plugins: []ClaudeCodeMarketplacePlugin{
-			mkGithubPlugin("alpha"), mkGithubPlugin("beta"), mkGithubPlugin("charlie"),
+			mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta"), mkGitSubdirPlugin("charlie"),
 		},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
-	factory.register("github:test/alpha@main", &keyedFakeFetcher{body: []byte("alpha-body"), upstreamRev: "sha-a"})
-	factory.register("github:test/beta@main", &keyedFakeFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
-	factory.register("github:test/charlie@main", &keyedFakeFetcher{body: []byte("charlie-body"), upstreamRev: "sha-c"})
+	gitReg := withFakeGitFetcher(t)
+	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: "alpha-body", rev: shaForName("alpha")})
+	gitReg.register(shaForName("beta"), &fakeGitFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
+	gitReg.register(shaForName("charlie"), &fakeGitFetcher{body: "charlie-body", rev: shaForName("charlie")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -468,11 +575,12 @@ func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {
 
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGithubPlugin("alpha"), mkNpmPlugin("evil")},
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkUnsupportedPlugin("evil")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
-	factory.register("github:test/alpha@main", &keyedFakeFetcher{body: []byte("alpha-body"), upstreamRev: "sha-a"})
+	gitReg := withFakeGitFetcher(t)
+	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: "alpha-body", rev: shaForName("alpha")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -501,16 +609,17 @@ func TestPMR_Stage2_Truncation(t *testing.T) {
 	// 8 plugins, 7 fail (all with ErrUnreachable), 1 succeeds.
 	plugins := []ClaudeCodeMarketplacePlugin{}
 	for _, n := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "good"} {
-		plugins = append(plugins, mkGithubPlugin(n))
+		plugins = append(plugins, mkGitSubdirPlugin(n))
 	}
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{Name: "m", Plugins: plugins})
 
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
+	gitReg := withFakeGitFetcher(t)
 	for _, n := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7"} {
-		factory.register("github:test/"+n+"@main", &keyedFakeFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
+		gitReg.register(shaForName(n), &fakeGitFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
 	}
-	factory.register("github:test/good@main", &keyedFakeFetcher{body: []byte("good"), upstreamRev: "sha-g"})
+	gitReg.register(shaForName("good"), &fakeGitFetcher{body: "good", rev: shaForName("good")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -548,11 +657,12 @@ func TestPMR_Stage2_PluginTooLarge(t *testing.T) {
 
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGithubPlugin("big")},
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("big")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
-	factory.register("github:test/big@main", &keyedFakeFetcher{body: bytes.Repeat([]byte("x"), 1<<21 /* 2 MiB */), upstreamRev: "sha-big"})
+	gitReg := withFakeGitFetcher(t)
+	gitReg.register(shaForName("big"), &fakeGitFetcher{body: strings.Repeat("x", 1<<21 /* 2 MiB */), rev: shaForName("big")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:           k8sClient,
@@ -647,7 +757,7 @@ func TestPMR_PluginCRDBeatsMarketplace(t *testing.T) {
 	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
 		Name: "m",
 		Plugins: []ClaudeCodeMarketplacePlugin{
-			mkGithubPlugin(pluginCRName),
+			mkGitSubdirPlugin(pluginCRName),
 		},
 	})
 	factory := newMarketplaceFakeFactory()

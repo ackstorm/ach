@@ -33,10 +33,17 @@ type MarketplaceFilters struct {
 
 // PluginMarketplaceSpec defines the desired state of PluginMarketplace (Hub §12).
 //
-// The marketplace file itself is fetched via the chosen source type
-// (§12.1). Per-source defaults: github/gitlab/bitbucket default
-// path=.claude-plugin/marketplace.json. s3/gcs/http require explicit
-// key/object/url pointing at the marketplace file.
+// The marketplace file is fetched via the chosen source type (§12.1).
+// Body handling depends on the type:
+//
+//   - github / gitlab / bitbucket: the fetcher returns the full repo
+//     tarball (Hub §10.1, Path-subset extraction deferred to v1beta1).
+//     Stage-1 walks the tarball and extracts the first regular file
+//     whose path ends with `/.claude-plugin/marketplace.json`. spec.<type>.path
+//     is IGNORED for marketplaces (the file location is conventional).
+//   - s3 / gcs / http: spec.<type>.key/object/url MUST point at the
+//     marketplace.json body directly; the fetcher returns that body
+//     verbatim with no extraction.
 //
 // CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
 // CRD-04: spec.refresh.maxStaleness is REQUIRED.

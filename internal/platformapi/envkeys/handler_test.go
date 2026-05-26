@@ -1357,3 +1357,6 @@ func TestMountRegistersFourRoutes(t *testing.T) {
 func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
 }
+
+// EnsureDefaultTeam is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
