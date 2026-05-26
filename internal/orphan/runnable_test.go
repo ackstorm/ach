@@ -1,0 +1,477 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Unit tests for internal/orphan/runnable.go.
+//
+// DB calls are stubbed by overriding the Runnable.ListUsers and
+// Runnable.ListKeyIDs function-typed fields — no real Postgres
+// dependency. LiteLLM is stubbed by the local fakeLiteLLM (same
+// shape as snapshot/snapshot_test.go's fake; one *RevokeKey* counter
+// added). The audit logger is wired to a bytes.Buffer so tests can
+// assert the exact emitted JSON shape per D-18.
+
+package orphan
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/litellm"
+)
+
+// fakeLiteLLM is a minimal litellm.Client implementation. Fields are
+// read on every call; tests mutate them between calls (no other
+// goroutine reads them) to drive each branch.
+type fakeLiteLLM struct {
+	mu sync.Mutex
+	// userKeysByUser is the per-user keylist returned from ListUserKeys.
+	userKeysByUser map[string][]litellm.UserKeyInfo
+	// listErr (if non-nil) is returned from EVERY ListUserKeys call,
+	// overriding userKeysByUser.
+	listErr error
+	// revokeErr (if non-nil) is returned from EVERY RevokeKey call.
+	revokeErr error
+	// listCalls counts ListUserKeys invocations across users.
+	listCalls atomic.Int64
+	// revokedKeys is appended-to on every RevokeKey call (the keyID arg).
+	revokedKeys []string
+}
+
+func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error         { return nil }
+func (f *fakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
+	return nil, nil
+}
+
+func (f *fakeLiteLLM) ListUserKeys(_ context.Context, userID string) ([]litellm.UserKeyInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listCalls.Add(1)
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.userKeysByUser[userID], nil
+}
+
+func (f *fakeLiteLLM) RevokeKey(_ context.Context, keyID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.revokedKeys = append(f.revokedKeys, keyID)
+	if f.revokeErr != nil {
+		return f.revokeErr
+	}
+	return nil
+}
+
+// Phase 3 Plan 03-01 — interface widened. The orphan runnable does not
+// invoke these methods; stub them to satisfy the litellm.Client interface.
+func (f *fakeLiteLLM) UserNew(_ context.Context, _ *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+	return nil, nil
+}
+
+func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, _ string) (*litellm.UserInfo, error) {
+	return nil, nil
+}
+
+func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	return nil, nil
+}
+
+// newTestRunnable returns a Runnable with the LiteLLM client wired
+// (default test seam returns no users / no keys) plus the audit
+// buffer the caller asserts against. The DB pool is nil — TickOnce
+// only forwards it to the function-typed test seams, which ignore it.
+func newTestRunnable(t *testing.T, fake *fakeLiteLLM) (*Runnable, *bytes.Buffer) {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	r := &Runnable{
+		Client:     fake,
+		DB:         (*pgxpool.Pool)(nil),
+		Audit:      audit.NewLogger(buf),
+		Interval:   10 * time.Minute,
+		Log:        logr.Discard(),
+		ListUsers:  func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
+		ListKeyIDs: func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
+	}
+	return r, buf
+}
+
+// auditLines splits the audit buffer into one JSON object per non-empty line.
+func auditLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	out := []map[string]any{}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("audit line not JSON: %q (err=%v)", line, err)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// assertNoForbiddenAttrs is the CR-03 / IN-06 enforcement: every audit
+// event emitted by the orphan-cleanup Runnable — success OR failure path
+// — MUST NOT carry any plaintext / body / alias / error-text attribute.
+// audit/doc.go forbids these per the no-scrubbing contract.
+//
+// Apply to every line you assert against, regardless of which outcome
+// branch produced it.
+func assertNoForbiddenAttrs(t *testing.T, line map[string]any) {
+	t.Helper()
+	for _, forbidden := range []string{"key_alias", "credential_hash", "bearer", "body", "header", "err"} {
+		if v, present := line[forbidden]; present {
+			t.Errorf("forbidden key %q present in audit event; value=%v", forbidden, v)
+		}
+	}
+}
+
+// TestRunnable_TickOnce_EmptyUsers asserts that an empty ACH-managed user
+// set is a no-op: no LiteLLM calls, no audit events. This is the Phase 2
+// steady-state per the plan's `<objective>`.
+func TestRunnable_TickOnce_EmptyUsers(t *testing.T) {
+	fake := &fakeLiteLLM{}
+	r, buf := newTestRunnable(t, fake)
+
+	r.TickOnce(context.Background())
+
+	if got := fake.listCalls.Load(); got != 0 {
+		t.Errorf("ListUserKeys called %d times on empty user set; want 0", got)
+	}
+	if got := buf.Len(); got != 0 {
+		t.Errorf("audit buffer non-empty on empty user set: %d bytes (%q)", got, buf.String())
+	}
+}
+
+// TestRunnable_TickOnce_OneOrphan asserts: one user, one key, key is
+// orphan (>10min old, not in ACH active set) → exactly one RevokeKey
+// call + one audit event with outcome=success.
+func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-orphan",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+				KeyAlias:  "should-not-leak-into-audit",
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := fake.revokedKeys; len(got) != 1 || got[0] != "sk-orphan" {
+		t.Fatalf("revokedKeys = %v; want [sk-orphan]", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["msg"]; got != "operator.orphan-cleanup" {
+		t.Errorf("msg = %v; want operator.orphan-cleanup", got)
+	}
+	if got := lines[0]["target.name"]; got != "sk-orphan" {
+		t.Errorf("target.name = %v; want sk-orphan", got)
+	}
+	if got := lines[0]["outcome"]; got != OutcomeRevoked {
+		t.Errorf("outcome = %v; want %q", got, OutcomeRevoked)
+	}
+	if _, present := lines[0]["key_alias"]; present {
+		t.Errorf("key_alias leaked into audit event (operational log only): %v", lines[0]["key_alias"])
+	}
+}
+
+// TestRunnable_TickOnce_SkipTooNew: a single key that is <10min old must
+// be skipped (no revoke, no audit event) per the OrphanAgeFloor race
+// defender. This is the load-bearing race-defender test (Hub §18.4).
+func TestRunnable_TickOnce_SkipTooNew(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-too-new",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-5 * time.Minute),
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times for too-new key; want 0", got)
+	}
+	if got := buf.Len(); got != 0 {
+		t.Errorf("audit buffer non-empty for too-new key: %q", buf.String())
+	}
+}
+
+// TestRunnable_TickOnce_SkipNonOrphan: a key whose key_id is in the active
+// ACH set must be skipped — it is not orphan, it is currently tracked.
+func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-active",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"sk-active"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times on non-orphan key; want 0", got)
+	}
+	if got := buf.Len(); got != 0 {
+		t.Errorf("audit buffer non-empty for non-orphan key: %q", buf.String())
+	}
+}
+
+// TestRunnable_TickOnce_LiteLLMUnreachable: ListUserKeys errors on the
+// FIRST user → the tick aborts cleanly with exactly one audit event
+// (outcome=litellm_unreachable, target.kind=tick).
+func TestRunnable_TickOnce_LiteLLMUnreachable(t *testing.T) {
+	fake := &fakeLiteLLM{
+		listErr: errors.New("network: dial tcp: connection refused"),
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times on unreachable upstream; want 0", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["outcome"]; got != OutcomeLiteLLMUnreachable {
+		t.Errorf("outcome = %v; want %q", got, OutcomeLiteLLMUnreachable)
+	}
+	if got := lines[0]["target.kind"]; got != "tick" {
+		t.Errorf("target.kind = %v; want tick (the abort event characterizes the whole tick)", got)
+	}
+	if got := lines[0]["user_id"]; got != "u1" {
+		t.Errorf("user_id = %v; want u1 (the user whose ListUserKeys failed)", got)
+	}
+	// CR-03: failure-path audit events MUST NOT carry err / bearer /
+	// body etc. — the audit handler does not scrub, so raw error text
+	// is forbidden by audit/doc.go.
+	assertNoForbiddenAttrs(t, lines[0])
+}
+
+// TestRunnable_TickOnce_RevokeFailureContinues: two orphan keys for one
+// user; RevokeKey returns an error on EVERY call → TWO audit events
+// (both outcome=revoke_failed); the tick does NOT abort.
+func TestRunnable_TickOnce_RevokeFailureContinues(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				{Token: "sk-rf-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute)},
+				{Token: "sk-rf-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute)},
+			},
+		},
+		revokeErr: errors.New("litellm: revoke 503"),
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	// Both revokes were attempted.
+	if got := len(fake.revokedKeys); got != 2 {
+		t.Errorf("RevokeKey attempt count = %d; want 2 (revoke failures must NOT abort the tick)", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 2 {
+		t.Fatalf("audit lines = %d; want 2: %s", len(lines), buf.String())
+	}
+	for i, l := range lines {
+		if got := l["outcome"]; got != OutcomeRevokeFailed {
+			t.Errorf("line %d outcome = %v; want %q", i, got, OutcomeRevokeFailed)
+		}
+		if got := l["target.kind"]; got != "litellm_key" {
+			t.Errorf("line %d target.kind = %v; want litellm_key", i, got)
+		}
+		// CR-03: failure-path audit events MUST NOT carry err / bearer /
+		// body etc. — see assertNoForbiddenAttrs rationale.
+		assertNoForbiddenAttrs(t, l)
+	}
+}
+
+// TestRunnable_TickOnce_MultipleUsers_OneFailsListUserKeys: ListUserKeys
+// errors on the first user enumerated → the tick aborts at that user;
+// subsequent users in the userIDs slice are NOT processed (Hub §18.4
+// abort-on-unreachable). Asserts exactly one ListUserKeys call.
+func TestRunnable_TickOnce_MultipleUsers_OneFailsListUserKeys(t *testing.T) {
+	fake := &fakeLiteLLM{
+		listErr: errors.New("network: connection refused"),
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1", "u2"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := fake.listCalls.Load(); got != 1 {
+		t.Errorf("ListUserKeys called %d times; want 1 (abort after first failure)", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["user_id"]; got != "u1" {
+		t.Errorf("user_id on abort = %v; want u1", got)
+	}
+	if got := lines[0]["outcome"]; got != OutcomeLiteLLMUnreachable {
+		t.Errorf("outcome = %v; want %q", got, OutcomeLiteLLMUnreachable)
+	}
+	// CR-03: failure-path audit events MUST NOT carry err / bearer /
+	// body etc.
+	assertNoForbiddenAttrs(t, lines[0])
+}
+
+// TestRunnable_AuditEventShape verifies the success-path audit event
+// against the exact D-18 shape: required keys present, no extra
+// top-level keys carry plaintext or body content.
+func TestRunnable_AuditEventShape(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"user-abc": {{
+				Token:     "sk-shape",
+				UserID:    "user-abc",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+				KeyAlias:  "alias-must-not-be-in-audit",
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"user-abc"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	l := lines[0]
+
+	// Required D-18 + Plan 02-04 fields.
+	wantAudit := true
+	if got := l["audit"]; got != wantAudit {
+		t.Errorf("audit attr = %v (%T); want true (audit.NewLogger contract)", got, got)
+	}
+	if got := l["msg"]; got != "operator.orphan-cleanup" {
+		t.Errorf("msg = %v; want operator.orphan-cleanup", got)
+	}
+	if got := l["target.kind"]; got != "litellm_key" {
+		t.Errorf("target.kind = %v; want litellm_key", got)
+	}
+	if got := l["target.name"]; got != "sk-shape" {
+		t.Errorf("target.name = %v; want sk-shape", got)
+	}
+	if got := l["outcome"]; got != OutcomeRevoked {
+		t.Errorf("outcome = %v; want %q", got, OutcomeRevoked)
+	}
+	if got := l["user_id"]; got != "user-abc" {
+		t.Errorf("user_id = %v; want user-abc", got)
+	}
+
+	// Forbidden keys (no plaintext / body / alias leakage).
+	for _, forbidden := range []string{"key_alias", "credential_hash", "bearer", "body", "header", "err"} {
+		if _, present := l[forbidden]; present {
+			t.Errorf("forbidden key %q present in audit event; value=%v", forbidden, l[forbidden])
+		}
+	}
+
+	// Top-level key set: only the documented ones should be present.
+	// slog always includes "time" and "level" at the top — accept those.
+	allowed := map[string]struct{}{
+		"time": {}, "level": {}, "msg": {},
+		"audit":       {},
+		"target.kind": {}, "target.name": {},
+		"outcome": {}, "user_id": {},
+	}
+	for k := range l {
+		if _, ok := allowed[k]; !ok {
+			t.Errorf("unexpected top-level key %q in audit event (value=%v)", k, l[k])
+		}
+	}
+}
+
+// TestRunnable_StartRespectsCtxCancel verifies the manager.Runnable
+// lifecycle: a Start goroutine running on a short interval returns
+// nil within a short window after ctx cancellation. Asserts the loop
+// never deadlocks on shutdown.
+func TestRunnable_StartRespectsCtxCancel(t *testing.T) {
+	fake := &fakeLiteLLM{}
+	r, _ := newTestRunnable(t, fake)
+	r.Interval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- r.Start(ctx) }()
+
+	// Let at least one tick fire.
+	time.Sleep(30 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Start returned %v; want nil on ctx cancellation", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("Start did not return within 1s of ctx cancellation")
+	}
+}
