@@ -1,0 +1,25 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Plugin.spec.refresh.maxStaleness REQUIRED (CRD-04 / Plan 02 Task 2)
+# Expected error substring: "maxStaleness"
+#
+# This manifest declares spec.refresh.interval but omits maxStaleness.
+# RefreshBlock.MaxStaleness carries +kubebuilder:validation:Required, and
+# Plugin's resource-root CEL also asserts:
+#   has(self.spec.refresh) && has(self.spec.refresh.maxStaleness)
+# Admission rejects with:
+#   "Plugin.spec.refresh.maxStaleness is REQUIRED (CRD-04)"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: invalid-no-staleness
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach-example-plugin
+    ref: main
+    authSecretRef:
+      name: github-readonly
+      key: access-key
+  refresh:
+    interval: 1h

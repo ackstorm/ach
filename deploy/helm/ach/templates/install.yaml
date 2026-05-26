@@ -339,6 +339,14 @@ metadata:
   name: ach-ach-manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - ach.ackstorm.ai
   resources:
   - artifacts

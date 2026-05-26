@@ -4,6 +4,10 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: backendidentitypolicy-sample
+  name: example-bip
   namespace: ach-system
-spec: {}
+spec:
+  target:
+    kind: MCPServer
+    name: example-mcp
+  forwardIdentityJWT: false

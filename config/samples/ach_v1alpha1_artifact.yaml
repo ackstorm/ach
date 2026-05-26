@@ -4,6 +4,19 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: artifact-sample
+  name: example-artifact
   namespace: ach-system
-spec: {}
+spec:
+  type: s3
+  scope: directory
+  s3:
+    bucket: ach-example-bucket
+    key: artifacts/customer-kb/
+    region: us-east-1
+    authSecretRef:
+      name: ach-example-s3
+      accessKeyIdKey: accessKeyId
+      secretAccessKeyKey: secretAccessKey
+  refresh:
+    interval: 1h
+    maxStaleness: 12h

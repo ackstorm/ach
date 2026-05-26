@@ -4,6 +4,16 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: pluginmarketplace-sample
+  name: example-marketplace
   namespace: ach-system
-spec: {}
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach-marketplace
+    ref: main
+    authSecretRef:
+      name: github-readonly
+      key: access-key
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

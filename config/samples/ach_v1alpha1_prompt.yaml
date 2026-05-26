@@ -4,6 +4,18 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: prompt-sample
+  name: example-prompt
   namespace: ach-system
-spec: {}
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach-prompts
+    path: prompts/code-reviewer.md
+    ref: main
+    authSecretRef:
+      name: github-readonly
+      key: access-key
+  refresh:
+    interval: 15m
+    maxStaleness: 24h
+  contentType: text/markdown

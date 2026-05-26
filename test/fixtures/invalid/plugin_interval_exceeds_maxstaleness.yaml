@@ -1,0 +1,23 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Plugin.spec.refresh.interval <= refresh.maxStaleness (CRD-03 / Plan 02 Task 2)
+# Expected error substring: "interval"
+#
+# This manifest sets interval=48h, maxStaleness=24h. The cross-field CEL rule
+# enforces the converse and rejects with:
+#   "Plugin.spec.refresh.interval must be <= refresh.maxStaleness (CRD-03)"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: invalid-interval-exceeds
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach-example-plugin
+    ref: main
+    authSecretRef:
+      name: github-readonly
+      key: access-key
+  refresh:
+    interval: 48h
+    maxStaleness: 24h

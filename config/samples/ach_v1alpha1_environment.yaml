@@ -4,6 +4,16 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/managed-by: kustomize
-  name: environment-sample
+  name: example
   namespace: ach-system
-spec: {}
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []
