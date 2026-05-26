@@ -82,6 +82,7 @@ type forwarderConfig struct {
 	DBURL            string
 	Pepper           []byte
 	LiteLLMBaseURL   string
+	LiteLLMUpstream  *url.URL // W2 (REVIEW): pre-parsed once in validate, reused by build
 	LiteLLMSharedKey string
 	RedisAddr        string
 	RedisPassword    string
@@ -123,6 +124,9 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("ACH_LITELLM_BASE_URL must use http:// or https:// (got %q)", u.Scheme)
 	}
+	// W2 (REVIEW): retain the parsed URL so buildForwarderDeps does not
+	// re-parse — single source of truth for scheme + host semantics.
+	cfg.LiteLLMUpstream = u
 
 	if cfg.LiteLLMSharedKey, err = config.MustEnvNonEmpty("ACH_LITELLM_SHARED_KEY"); err != nil {
 		return nil, err
@@ -295,11 +299,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		return out, fmt.Errorf("secret informer AddEventHandler: %w", err)
 	}
 
-	upstream, err := url.Parse(cfg.LiteLLMBaseURL)
-	if err != nil {
-		return out, fmt.Errorf("url.Parse LiteLLM upstream: %w", err)
-	}
-
 	out.server = forwarder.Deps{
 		Pool:             pool,
 		Redis:            out.redis,
@@ -312,7 +311,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  upstream,
+		LiteLLMUpstream:  cfg.LiteLLMUpstream, // W2 (REVIEW): pre-parsed in validate
 		LiteLLMSharedKey: cfg.LiteLLMSharedKey,
 	}
 	return out, nil
