@@ -1,0 +1,17 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ach-platform-api-role-binding
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: platform-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ach-platform-api-role
+subjects:
+- kind: ServiceAccount
+  name: ach-platform-api
+  namespace: system
