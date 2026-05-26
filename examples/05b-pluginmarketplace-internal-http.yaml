@@ -1,0 +1,33 @@
+# Internal-schema PluginMarketplace fixture — exercises the Stage-1
+# happy path against a hand-rolled marketplace.json that matches OUR
+# (currently fictional, pre-TODO §5 re-model) wire format. Useful for
+# end-to-end verification of:
+#   - Stage-1 fetch via http source
+#   - parser acceptance of our six-source-discriminator schema
+#   - Stage-2 per-entry materialization
+#   - DB UPSERT into marketplace_plugins
+#
+# Fixture body lives in ConfigMap mkt-test-fixture in ach-system,
+# served by Deployment/Service mkt-test-server (nginx:alpine) on
+# port 80. Apply that stack BEFORE applying this CR:
+#
+#   kubectl -n ach-system create configmap mkt-test-fixture \
+#       --from-file=marketplace.json=.gocache/uat/marketplace.json
+#   kubectl apply -f .gocache/uat/mkt-server.yaml
+#
+# NOT meant for production. Delete after UAT:
+#   kubectl -n ach-system delete pluginmarketplace internal-test
+#   kubectl -n ach-system delete -f .gocache/uat/mkt-server.yaml
+#   kubectl -n ach-system delete configmap mkt-test-fixture
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: internal-test
+  namespace: ach-system
+spec:
+  type: http
+  refresh:
+    interval: 1h
+    maxStaleness: 6h
+  http:
+    url: http://mkt-test-server.ach-system.svc.cluster.local/marketplace.json

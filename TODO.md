@@ -342,6 +342,156 @@ Rationale: operators wanting different precedence rename their CRs (`zz-` suffix
 
 ---
 
+## 7. Environment.AccessGroupSynced never reaches True — BLOCKS EnvKey lifecycle
+
+**Severity**: HIGH (every `POST /platform/env-keys` returns 503 `not_ready`).
+
+**Surface**: `POST /platform/env-keys`, `POST /platform/admin/keys/revoke`, `GET /platform/env-keys` against a freshly-created Environment CR.
+
+**Symptom**:
+
+```bash
+curl -X POST http://localhost:8080/platform/env-keys \
+  -H "x-ach-key: $PK" -H "Content-Type: application/json" \
+  -d '{"environment":"demo","name":"my-worker"}'
+# → {"error":{"code":"not_ready","message":"environment access group not yet synced"}}
+```
+
+**Where it fails**:
+- `internal/platformapi/envkeys/handler.go:237` — `deps.Store.EnvironmentAccessGroupSynced(ctx, env)` returns false
+- `internal/platformapi/store/store.go:115-128` — reads `AccessGroupSynced` from `Environment.status.conditions`; missing → false
+- `internal/controller/ach/environment_controller.go:154-235` — Snapshotter-wired path ONLY emits `ExecutionResourcesResolved`; never writes `AccessGroupSynced`
+
+The unit-test back-compat branch at `environment_controller.go:162-170` emits `AccessGroupSynced=Unknown reason=Initializing` only when `Snapshotter == nil`. Production starts with the Snapshotter wired and never advances past that condition.
+
+**Fix sketch**: the steady-state reconcile should:
+
+1. `r.LiteLLM.CreateAccessGroup(ctx, env.Name)` — idempotent, LiteLLM returns 200 on existing.
+2. For each `team_id` in `spec.authorizedTeams`, `r.LiteLLM.BindTeamToAccessGroup(ctx, env.Name, team_id)`.
+3. On full success: `AccessGroupSynced=True reason=Synced`.
+4. On partial failure: `AccessGroupSynced=False reason=PartialBind` with offending team listed.
+5. Drift detection on snapshot ticks: list current bindings; reconcile against `authorizedTeams`.
+
+**Domain-port reference**: ach-old has the full implementation at `/home/jcm/Projects/ach-old/internal/controller/environment_controller.go` (Hub §6.4 Snapshotter path). Port verbatim — same TODO §2 work, just this slice.
+
+**Acceptance**:
+- `kubectl get environment demo -o jsonpath='{.status.conditions[?(@.type=="AccessGroupSynced")].status}'` returns `True` within 30s of CR apply.
+- `POST /platform/env-keys` with a valid pk_ returns 200 + `ek_<plaintext>` body.
+- `GET /platform/env-keys` lists the minted ek_ with `environment=demo` field.
+
+---
+
+## 8. Content Service `/content/{kind}/{name}` routes are unimplemented — BLOCKS artifact download
+
+**Severity**: HIGH (every URL in `hydrate.json::context.*[].downloadUrl` is a dangling pointer today).
+
+**Surface**: `GET /content/prompt/...`, `/content/plugin/...`, `/content/artifact/...` on the `ach-content-service` Service (port 8082).
+
+**Symptom**: every artifact-download path returns 404. `/healthz` returns 200, so the container is alive — but only the health endpoint is registered.
+
+**Where**: `cmd/ach/cmd/content_service.go:30-45` — explicitly documented as the "Phase 1 stub" with the real sendfile(2)-backed surface deferred to "Phase 5". The mux registers `/healthz` and nothing else.
+
+**Domain-port reference**: ach-old has `internal/contentservice/handler.go` (sendfile-backed file streaming under `/var/cache/ach/{prompt,plugin,artifact,marketplace}/<name>.{md,tar.gz}` with scope-aware auth). Lift into a new `internal/contentservice/` package + wire into `runContentService` in place of the stub mux. Co-locates naturally with the operator Pod (shared RWO PVC).
+
+**Hub §15.2 contract** (re-read before porting):
+- `Content-Type`: respects `Prompt.spec.contentType` for prompts (default `text/markdown`); `application/gzip` for plugin/artifact/marketplace tarballs.
+- Auth: anonymous OK in v1alpha1 (the hydrate response embeds signed-URL semantics in v1beta1; today the URLs are unsigned and the operator assumes the consumer already authenticated via pk_ on /platform/hydrate).
+- Range requests: SHOULD support; sendfile passes through.
+- Cache-Control: `public, max-age=300`.
+
+**Acceptance**:
+- `curl http://localhost:8082/content/prompt/claude-code-system-prompt` returns the raw markdown body with `Content-Type: text/markdown`
+- `curl http://localhost:8082/content/plugin/caveman` returns the `.tar.gz` with `Content-Type: application/gzip`
+- 404 only when the file is absent from the cache PVC
+- Existing `examples/hydrate-demo.sh` shows non-zero `size_download` against each URL
+
+---
+
+## 9. Environment `Ready` composite condition missing
+
+**Severity**: LOW (cosmetic — `kubectl wait` works on the sub-conditions).
+
+**Where**: `internal/controller/ach/environment_controller.go`, `api/ach/v1alpha1/environment_types.go`.
+
+**Symptom**: `kubectl wait --for=condition=Ready environment/demo` times out — no controller writes that condition.
+
+**Root cause**: Hub §6.6 documents `Available`, `ContentReady`, `ExecutionResourcesResolved`, `AccessGroupSynced` as the closed set. There's no `Ready` rollup combining them.
+
+**Fix sketch**: after each `SetStatusCondition` call, evaluate the sub-conditions and emit `Ready=True` iff all required sub-conditions are True. Verify the Hub-spec acceptance rule before deciding which sub-conditions are mandatory vs. optional for `Ready`.
+
+**Depends on**: TODO §7 (AccessGroupSynced needs to be written first; otherwise Ready would never roll up True).
+
+---
+
+## 10. CLI commands missing — `ach login`, `ach hydrate`, `ach env`, `ach whoami`
+
+**Severity**: MEDIUM (every demo runs through `examples/hydrate-demo.sh` which is the stand-in for the missing CLI).
+
+**Where**:
+- `cmd/ach/cmd/login.go` — not present
+- `cmd/ach/cmd/hydrate.go` — not present
+- `cmd/ach/cmd/env.go` — env-keys CRUD subcommands not present
+- `cmd/ach/cmd/whoami.go` — not present
+
+**Scope**: ROADMAP Phase 6+7. Subcommands wire into the existing cobra root in `cmd/ach/cmd/root.go` alongside operator/platform-api/forwarder/content-service/migrate.
+
+**Reference**: ach-old has `cmd/ach/cmd/*.go` with the full CLI. Port verbatim into the single-binary layout (this repo's pattern).
+
+**Acceptance**: `examples/hydrate-demo.sh` collapses to `ach login --sso && ach hydrate --environment demo > hydrate.json`. The shell script is deleted; the new flow becomes the e2e test fixture.
+
+---
+
+## 11. LiteLLM `/key/generate` `metadata` field not populated
+
+**Severity**: LOW (enhancement; not a blocker).
+
+**Where**: `internal/platformapi/auth/sso.go` step 6b, `internal/platformapi/envkeys/handler.go` env-keys create, `internal/litellm/types.go` `KeyGenerateRequest`.
+
+**Symptom**: LiteLLM admin UI + audit logs carry no ACH-side identifier for ACH-minted virtual keys. Orphan-cleanup reconciler must match by `user_id` + creation-time only — fragile.
+
+**Fix sketch**: LiteLLM `/key/generate` accepts a free-form `metadata` JSON field. Populate it with:
+
+```json
+{
+  "ach_key_id":      "pkid_01HW...",
+  "ach_key_type":    "pk",
+  "ach_owner_email": "kilgore@kilgore.trout",
+  "ach_environment": "demo"
+}
+```
+
+Add `Metadata map[string]string \`json:"metadata,omitempty"\`` field to `KeyGenerateRequest`. Populate at both call sites (sso provisioning + envkeys create). The orphan-cleanup reconciler then reads this back via `/key/list` to validate ACH ↔ LiteLLM mapping deterministically.
+
+---
+
+## 12. LiteLLM `default` team accumulation across hydrate-demo runs
+
+**Severity**: LOW (UAT-only ops nuisance; not user-visible at runtime).
+
+**Where**: `examples/hydrate-demo.sh` step 1 (LiteLLM team seed).
+
+**Symptom**: After several hydrate-demo invocations, `POST /team/list` returns N+1 teams with `team_alias="default"`. LiteLLM allows duplicates by alias (auto-assigns a fresh UUID `team_id` per `POST /team/new`).
+
+**Fix sketch**:
+- `examples/hydrate-demo.sh` step 1: `GET /team/list?team_alias=default` first; only `POST /team/new` if empty.
+- Optionally: `provisionUser` in `internal/platformapi/auth/sso.go` sorts the `ListTeamsByAlias` result by `created_at` ASC and takes `Teams[0]` so the OLDEST team is the canonical one — deterministic across LiteLLM restarts and avoids accidental pinning to the most-recent UUID.
+
+**Cleanup**: one-shot `POST /team/delete` loop for all but one team with alias=default before each hydrate-demo invocation, OR teach step 1 to be idempotent (preferred).
+
+---
+
+## 13. CLAUDE.md `examples/` reference is now accurate but should be confirmed
+
+**Severity**: LOW (docs hygiene).
+
+**Where**: `CLAUDE.md` "Repository layout" section.
+
+**Note**: `examples/` now exists (1-litellmconnection, 4-environment, 5/5b-pluginmarketplace, 6-plugin, 7-prompt, 8-artifact, 9-bip-on, 10-bip-duplicate, hydrate-demo.sh, hydrate.json, README.md). CLAUDE.md already lists it. Verify the line still matches after TODO §5 (marketplace re-model) lands — that work will rewrite example 5 + may add new example files.
+
+Also: re-audit CLAUDE.md's "MANDATORY Reading Table" once examples/README.md becomes the canonical demo entry point — may warrant a row.
+
+---
+
 ## Cross-cutting tech debt (deferred)
 
 - **Goreleaser `dockers_v2` migration** — current configs emit deprecation warnings; future maintenance task
