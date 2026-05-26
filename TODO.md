@@ -121,6 +121,227 @@ See `/home/jcm/Projects/alitellm-operator/SYNC-FROM-ACH/README.md` for the agent
 
 ---
 
+## 5. PluginMarketplace schema mismatch — re-model to upstream
+
+**Status**: discovered during end-to-end demo (2026-05-26). Partial work in tree (see "Current state" below). Do NOT patch with a tolerance shim — re-model to the real upstream schema in one pass.
+
+### The problem
+
+Our `PluginMarketplace` CRD reconciler parses a `marketplace.json` document that we modeled with our own internal schema. The real upstream schema (used by `anthropics/claude-plugins-official`, the canonical Claude Code marketplace) is materially different. We discovered three layered bugs while running `examples/hydrate-demo.sh` against the live cluster:
+
+1. **F.1 — outer-fetch shape mismatch**
+   GitHub/GitLab/Bitbucket fetchers return the WHOLE repo tarball (Path-subset extraction is deferred to v1beta1 per `internal/sources/github/fetcher.go:18-20`). The Plugin reconciler ships that tarball as `plugin/<name>.tar.gz`. The PluginMarketplace reconciler used to feed the tarball bytes directly to `json.Unmarshal` → `invalid character '\x1f'` (gzip magic). Examples/05 worked around this by using `type: http` against `raw.githubusercontent.com`, which dodges GitHub auth + the tarball wrapper.
+
+2. **F.2a — string-vs-object union**
+   The real schema allows `"source": "./plugins/agent-sdk-dev"` (bare string for local-subdir) AND `"source": {...}` (object form). Our parser's `ClaudeCodeMarketplacePlugin.Source` field is a struct, so the bare-string case fails outright with `cannot unmarshal string into Go struct field`.
+
+3. **F.2b — wrong discriminator + wrong enum**
+   Real object form uses `source.source` as the discriminator (not `source.type`), with values `git-subdir` and `url`. Each entry also carries `url`, `path`, `ref`, `sha` fields pointing at an arbitrary external git repo (NOT the marketplace's own repo). Our parser models a closed enum `{github, gitlab, bitbucket, s3, gcs, http, npm}` with nested subobjects matching our internal `achv1alpha1.*Source` types. Real upstream entries trigger our parser's `default:` case at `internal/controller/ach/marketplace_parse.go:159` → aborts the whole marketplace.
+
+### Real upstream schema (verbatim sample)
+
+Fetch sample: `https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json`
+
+```json
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-plugins-official",
+  "owner": {"name": "Anthropic", "email": "support@anthropic.com"},
+  "plugins": [
+    {
+      "name": "42crunch-api-security-testing",
+      "description": "...",
+      "author": {"name": "42Crunch"},
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/42Crunch-AI/claude-plugins.git",
+        "path": "plugins/api-security-testing",
+        "ref": "v1.5.5",
+        "sha": "a175b24f7b34852b70c78c21545cce8037eb3112"
+      },
+      "homepage": "https://42crunch.com"
+    },
+    {
+      "name": "agent-sdk-dev",
+      "description": "...",
+      "source": "./plugins/agent-sdk-dev",
+      "category": "development"
+    },
+    {
+      "name": "aikido",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
+        "sha": "79ac524f87c9faa9a356ff3d495b8a5b77e01bbd"
+      }
+    }
+  ]
+}
+```
+
+Key facts:
+- `source` is a union: object OR string
+- Object form: `source.source` ∈ `{git-subdir, url}` (NOT our `type` enum)
+- `git-subdir`: clone the repo, materialize ONLY the subtree at `path`
+- `url`: clone the repo, materialize the WHOLE tree
+- `sha` is authoritative for conditional-fetch (PriorRev comparison)
+- `ref` is the human-readable branch/tag, used for the initial clone
+- Plugin entries point at ARBITRARY external git repos (any host with a git remote — not just GitHub)
+
+### Mental model (confirmed with user)
+
+A `Plugin` CR is a unitary fetch — one source, one tarball output. A `PluginMarketplace` CR is a CATALOG of plugin pointers — the outer fetch reads the catalog file, then EACH entry triggers a SEPARATE per-entry fetch against potentially a different upstream repo. Marketplace plugins are usually external; the marketplace's own repo typically does NOT host the plugin bodies.
+
+### Why patch (A) was rejected
+
+A pure tolerance shim (custom `UnmarshalJSON` on `ClaudeCodeMarketplaceSource` to accept both forms, route unknown discriminators to a sentinel) would let the parser stop crashing on the real schema, but every entry would resolve to `ReasonUnsupportedPluginSource`. The demo would project zero plugins forever until B lands anyway. Two passes of churn for one functional result. User directive (2026-05-26): "do things right, not patch."
+
+### Plan B — full re-model
+
+Single-pass refactor. Files touched (~8):
+
+**Parser + types** — `internal/controller/ach/marketplace_parse.go`
+- Replace `ClaudeCodeMarketplaceSource` struct with a normalized form:
+  ```go
+  type ClaudeCodeMarketplaceSource struct {
+      // Wire-form discriminator. After UnmarshalJSON:
+      //   "git-subdir" → URL + Path + Ref + SHA populated
+      //   "url"        → URL + Ref + SHA populated, Path == ""
+      //   "local-path" → Path populated (bare-string form, relative to marketplace repo)
+      Kind string
+
+      URL  string // git remote, e.g. https://github.com/foo/bar.git
+      Path string // subdirectory inside the repo (or local-path body)
+      Ref  string // branch/tag — initial clone target
+      SHA  string // pinned commit — authoritative for conditional-fetch
+  }
+  ```
+- Add `UnmarshalJSON` that handles three cases: bare string → `Kind=local-path`, object with `source.source=="git-subdir"`, object with `source.source=="url"`. Anything else → `Kind=""` and parser flips per-entry to `ReasonUnsupportedPluginSource`.
+- DROP our six-source-discriminator inner enum + `npm` carve-out (legacy fiction).
+- DNS-1123 name validation stays.
+- KEEP outer-tarball extraction (`marketplace_extract.go`, already in tree).
+
+**Stage-2 dispatch** — `internal/controller/ach/pluginmarketplace_controller.go`
+- `materializeMarketplacePlugin` calls a new `gitClone(url, ref, sha)` helper instead of dispatching via our `registry.For`.
+- Per-entry SHA used as `PriorRev` — `git fetch origin <sha>` short-circuits when local already at `<sha>`.
+- Subtree extraction: for `git-subdir`, post-clone, tar only `path/...`; for `url`, tar the whole worktree minus `.git/`.
+- For `local-path` (bare-string form): clone the MARKETPLACE's own repo (we already have its `spec.<type>` source), tar the subtree at `path` relative to repo root.
+
+**New fetcher package** — `internal/sources/git/`
+- Generic git-remote clone. Does NOT use GitHub API (works for self-hosted gitea, gitlab, any git remote with anonymous-or-token auth).
+- `git clone --depth=1 --branch=<ref> <url> <dst>` then `git -C <dst> fetch --depth=1 origin <sha>` + `git -C <dst> checkout <sha>`.
+- Auth: `https://<token>:x-oauth-basic@host/...` URL rewrite when token supplied; `~/.netrc` ALSO works.
+- Output: streaming tar.gz of the worktree (or subtree).
+- Security: clone into ephemeral dir under `${CacheRoot}/.tmp/git-<random>`; bounded clone size cap; never follow `--recurse-submodules` (submodule URLs are upstream-controlled, T-02-06-x parity).
+- Tests: fixture remote via `git init --bare` in a tmpdir.
+
+**Spec changes** — none. `PluginMarketplaceSpec` still references the catalog's OWN location via our 6-source-type discriminator (`github`/`gitlab`/`bitbucket`/`s3`/`gcs`/`http`). The new git fetcher is INNER-ONLY (per-entry materialization).
+
+**Registry** — `internal/sources/registry/registry.go`: register the new git fetcher under `Type: "git"` so the inner dispatch can use the same factory pattern. The OUTER catalog fetch keeps using the existing github/gitlab/bitbucket/etc. dispatch.
+
+**Envtests** — `internal/controller/ach/pluginmarketplace_envtest_test.go`
+- Rewrite `mkGithubPlugin` / `mkNpmPlugin` test helpers to produce real-schema entries (object form with `source.source=="url"` / `source.source=="git-subdir"`).
+- Drop the npm-specific test; replace with `local-path` and `unsupported-discriminator` cases.
+- Marketplace conflict tests stay mostly untouched (operate on plugin NAMES, not source shape).
+
+**Marketplace parse tests** — `internal/controller/ach/marketplace_parse_test.go`
+- Re-author fixtures using real-upstream JSON shape.
+- Add fixtures from `anthropics/claude-plugins-official` (a trimmed snapshot, NOT the full 200+ entries — keep ~5 representative).
+
+**Documentation**
+- `api/ach/v1alpha1/pluginmarketplace_types.go` — update doc comment to describe the inner schema.
+- `CLAUDE.md` "Repository-specific patterns" — add a note clarifying inner-vs-outer fetch.
+- Delete F.1 + F.2 from `FIX01.md` (resolved by this work).
+
+**Examples**
+- `examples/05-pluginmarketplace-anthropic.yaml`: rewrite from `type: http` to `type: github` with `repo: anthropics/claude-plugins-official`, `ref: main`. Drop the raw.githubusercontent.com URL hack. `filters.include: ["^code-.*"]` stays.
+- `examples/hydrate-demo.sh`: should "just work" after re-model — the apply list already references 05.
+- `examples/README.md`: refresh the "What's here" table description for 05.
+
+### Codex parser audit findings (fold into this refactor)
+
+Codex CLI ran `gsd-reviewer`-style audit on `marketplace_parse.go` (2026-05-26). Findings to address while re-modeling:
+
+- HIGH: `:128` plugin name echoed in errors → truncate at 64 chars
+- HIGH: `:159` `source.type` echoed unbounded → truncate
+- HIGH: `conditions.go:128` `status.message` has no 253-char cap → truncate at write
+- MED: `:122` `plugins[]` count unbounded → enforce max (suggested: 5000)
+- MED: `:117` duplicate JSON keys accepted → not fixable with stdlib (note in code comment, don't block)
+- MED: `:117` no streaming → stdlib `json.Decoder` could stream but the body is already capped at 5 MiB by `marketplaceJSONMaxBytes`; keep as-is
+- MED: `:90` regex misses 63-char per-label cap → split labels and check len
+- MED: `pluginmarketplace_controller.go:198` `LimitReader` truncates silently at 5 MiB → detect overflow by attempting one extra read after LimitReader EOF, return ErrUpstreamInvalid if body exceeded
+- LOW: `:117` unknown JSON fields accepted → KEEP (Anthropic schema has `$schema`, `author`, `category`, `homepage` we don't model; strict mode would reject forward-compat fields)
+- LOW: missing test fixtures for `duplicate-key`, `64-char-label`, `oversized plugins[]` → add
+
+### Current state (partial work in tree)
+
+The following files were touched on branch `fix/post-bootstrap-hardening` BEFORE deciding to do B:
+
+- `internal/controller/ach/marketplace_extract.go` (NEW) — gzip+tar walker that extracts `*/.claude-plugin/marketplace.json` from a repo tarball. Correct + needed regardless of A/B. Keep.
+- `internal/controller/ach/pluginmarketplace_controller.go` — body-reshape branch added: git-tarball source types call `extractMarketplaceJSON` before parse, s3/gcs/http stay as direct body read. Correct + needed. Keep.
+- `api/ach/v1alpha1/pluginmarketplace_types.go` — CRD doc comment updated to describe tarball-extraction behavior. Correct. Keep.
+
+These three changes are NOT yet committed. They are necessary precursors to B (the outer fetch path must extract the JSON from the tarball regardless of the inner-entry schema). Either commit them as a small "outer-fetch extraction" prep commit, or fold into the B branch.
+
+### Acceptance criteria
+
+1. `./scripts/dev.sh make unit` PASS
+2. `./scripts/dev.sh make envtest-fast` PASS with re-authored fixtures
+3. `examples/hydrate-demo.sh` end-to-end against live cluster:
+   - PluginMarketplace `anthropic-official` reaches `Synced=True`
+   - At least one inner plugin (e.g. one matching `^code-.*`) is materialized as a `marketplace_plugins` row with a real `storage_location` tarball on the operator cache PVC
+   - hydrate.json contains the marketplace-sourced plugin in `context.plugins[]` alongside the standalone `caveman` Plugin
+4. Adversarial cases handled gracefully:
+   - Inner entry pointing at a non-existent repo → per-entry `ReasonNotFound`, marketplace stays `Synced=True` with `status.message` listing the failure
+   - Inner entry with malformed `source.url` → per-entry `ReasonUnsupportedPluginSource`
+   - Inner entry with bare-string `source` ("local-path") that escapes the marketplace repo root (`../../etc/passwd`) → REJECTED at parse time
+5. `examples/05-pluginmarketplace-anthropic.yaml` uses `type: github` (the natural mirror of `examples/06-plugin-caveman.yaml`)
+
+### Effort estimate
+
+Half-day to one day, depending on whether the git-remote fetcher needs its own integration tests (likely yes — adversarial submodule URLs, large clone sizes, auth modes).
+
+### Order of work
+
+1. Commit current in-tree extractor + doc updates as `feat(marketplace): extract marketplace.json from repo tarball` (the outer-fetch fix).
+2. Branch `feat/marketplace-real-schema`.
+3. Re-model `ClaudeCodeMarketplaceSource` + `UnmarshalJSON`. Parser audit hardening (the HIGH/MED findings above).
+4. New `internal/sources/git/` fetcher + tests.
+5. Re-wire `materializeMarketplacePlugin` to dispatch to the git fetcher with per-entry URL/SHA.
+6. Rewrite envtest fixtures.
+7. Update example 05 + README.
+8. Run `make envtest-fast` + `examples/hydrate-demo.sh` end-to-end.
+9. Squash + open PR.
+
+---
+
+## 6. BackendIdentityPolicy — Forwarder read-path resolves duplicates
+
+**Design decision (2026-05-26)**: the operator stays dumb on BIP duplicates. There is NO DuplicateTarget reconciler, NO Synced status churn, NO shadow flip. Multiple CRs targeting the same `(target.kind, target.name)` are allowed by design.
+
+The Forwarder (when ported from ach-old / wired into `cmd/ach/cmd/forwarder.go`) MUST resolve duplicates at READ time:
+
+1. List all `BackendIdentityPolicy` CRs in its watched namespace via the informer cache.
+2. Filter to entries where `spec.target.kind` and `spec.target.name` both match the incoming `/mcp/<name>` or `/a2a/<name>` route segment.
+3. Sort matching CRs by `metadata.name` ASCENDING.
+4. Take `Items[len-1]` (alphabetically LAST). Honor its `spec.forwardIdentityJWT`. Mint + attach §9.1 JWT iff `true`.
+5. If zero matches: no JWT attached (Forwarder strips client `Authorization`).
+
+Rationale: operators wanting different precedence rename their CRs (`zz-` suffix flips the winner). No babysitting on the operator side. Memory: `feedback_bip_no_shadow_logic.md`.
+
+**Cleanup on domain port (TODO §2)**:
+- SKIP ach-old's BIP DuplicateTarget reconciler when porting.
+- Scrub stale "DuplicateTarget" / "shadow" language from any spec doc, planning corpus, or referenced Hub §9.3 text.
+- `examples/09-backendidentitypolicy-context7.yaml` + `examples/10-backendidentitypolicy-duplicate.yaml` already in tree as the exemplar pair.
+
+**Acceptance**:
+- Forwarder route dispatcher uses the alphabetically-LAST CR
+- `kubectl get bip` on a duplicate pair shows both CRs with empty Synced column (no `DuplicateTarget` reason emitted)
+- Integration test: two BIPs on same target, opposite `forwardIdentityJWT`; Forwarder behavior tracks the LAST CR's value when one is renamed
+
+---
+
 ## Cross-cutting tech debt (deferred)
 
 - **Goreleaser `dockers_v2` migration** — current configs emit deprecation warnings; future maintenance task

@@ -52,7 +52,7 @@ func extractMarketplaceJSON(r io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marketplace tarball: gzip header: %v: %w", err, sources.ErrUpstreamInvalid)
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 	scanned := 0
