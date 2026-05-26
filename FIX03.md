@@ -76,6 +76,32 @@ Orphan-cleanup reconciler reads back via `/key/list` to validate ACH ↔ LiteLLM
 
 ---
 
+## J.6 — Environment printcolumns show empty cells for AccessGroupSynced + Available
+
+**Status**: DONE.
+
+**Where**: `internal/controller/ach/environment_controller.go` steady-state reconcile.
+
+**Symptom**: `kubectl get environment` shows:
+
+```
+NAME   ACCESSGROUPSYNCED   AVAILABLE   AGE
+demo                                   8m40s
+```
+
+Empty cells — the reconciler never emits those condition types (TODO §7 + §9 work pending). The printcolumn directives reference condition types that don't exist in the conditions slice yet.
+
+**Fix**: emit placeholder `Unknown` conditions on every reconcile:
+
+- `AccessGroupSynced=Unknown reason=Initializing message="operator-side access-group binding not yet implemented (see TODO §7)"`
+- `Available=Unknown reason=PendingSubConditions message="composite Ready rollup not yet implemented (see TODO §9)"`
+
+Gated by a `hasCondition` check so a future TODO §7/§9 implementation that writes a real `True` / `False` is NOT clobbered by this placeholder code on subsequent reconciles. Refactored the steady-state Update to a single `Status().Update` call carrying all three conditions atomically (was 1 call before; the 2 placeholders piggyback for free).
+
+**Result**: `kubectl get environment demo` now shows `Unknown` in both columns until the real reconcilers land. Operators get K8s-idiomatic visibility instead of misleading empty cells.
+
+---
+
 ## J.3 — CLAUDE.md `examples/` reference audit
 
 **Status**: DONE.
