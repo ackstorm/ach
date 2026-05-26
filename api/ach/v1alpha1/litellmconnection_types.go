@@ -2,32 +2,59 @@
 
 package v1alpha1
 
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// LiteLLMConnectionSpec defines the desired state of LiteLLMConnection.
+// LiteLLMConnectionSpec defines the desired LiteLLM endpoint consumed by ACH.
 type LiteLLMConnectionSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Endpoint is the base URL of the LiteLLM instance.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Endpoint string `json:"endpoint"`
 
-	// Foo is an example field of LiteLLMConnection. Edit litellmconnection_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// MasterKeySecretRef points to the Secret key that carries the LiteLLM
+	// master key. The Secret must live in the same namespace as the CR.
+	//
+	// +kubebuilder:validation:Required
+	MasterKeySecretRef SecretKeyRef `json:"masterKeySecretRef"`
 }
 
-// LiteLLMConnectionStatus defines the observed state of LiteLLMConnection.
+// SecretKeyRef identifies a key in a same-namespace Secret.
+type SecretKeyRef struct {
+	// Name is the Kubernetes Secret name.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Key is the data key inside the Secret.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
+}
+
+// LiteLLMConnectionStatus defines the observed LiteLLM connection state.
 type LiteLLMConnectionStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,shortName=llmconn
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="LiteLLMConnection name must be 'default'"
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].reason"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// LiteLLMConnection is the Schema for the litellmconnections API.
+// LiteLLMConnection is the singleton connection definition used by the ACH
+// operator. v1alpha1 admits only LiteLLMConnection/default per namespace.
 type LiteLLMConnection struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
