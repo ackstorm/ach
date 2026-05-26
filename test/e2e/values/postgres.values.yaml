@@ -1,0 +1,26 @@
+# Top-level Postgres for ach state (operator + platform-api).
+#
+# Used by:  scripts/cluster.sh hydrate_postgres
+# Chart:    oci://registry-1.docker.io/bitnamicharts/postgresql
+#
+# Bitnami pruned pinned image tags from docker.io/bitnami/* in 2025. We
+# redirect to public.ecr.aws/bitnami/* (AWS-hosted Bitnami mirror) which
+# still serves the chart-referenced tags. Sister alitellm-operator uses
+# the same mirror. `allowInsecureImages: true` disables the chart's
+# "approved containers" guard (the ECR mirror lacks the upstream
+# signature chain).
+
+chartVersion: 15.5.38
+
+auth:
+  postgresPassword: achdev
+  database: ach
+
+primary:
+  persistence:
+    size: 1Gi
+
+global:
+  imageRegistry: public.ecr.aws
+  security:
+    allowInsecureImages: true

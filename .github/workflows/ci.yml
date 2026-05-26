@@ -200,13 +200,10 @@ jobs:
       #   make e2e         → 'needs: cluster-up succeeded'
       #   forensics        → 'if: failure()' before cluster-down
       #   cluster-down     → 'if: always()' (trap equivalent)
-      # Build the ach image first so scripts/cluster.sh's hydrate_ach can
-      # `kind load docker-image` it before `helm install ach`. The tag `e2e`
-      # matches scripts/cluster.sh's ACH_IMAGE_TAG default.
-      - name: Build ach image
-        run: make docker-build IMG=ghcr.io/ackstorm/ach:e2e
-
       - name: Cluster up + hydrate (same as make cluster-up)
+        # scripts/cluster.sh hydrate_ach calls `make docker-build IMG=...`
+        # internally (idempotent, sister-project pattern) — no separate
+        # build step required here.
         run: ./scripts/dev.sh make cluster-up
 
       - name: Run E2E suite (same as make e2e)

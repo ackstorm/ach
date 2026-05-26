@@ -19,19 +19,27 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 
 # Pinned chart versions — bump deliberately. (Phase 11+ will move these to
 # test/e2e/values/*.values.yaml + CHART_PINS.md once that infra exists.)
-POSTGRES_CHART_VERSION="${POSTGRES_CHART_VERSION:-15.5.38}"
-VALKEY_CHART_VERSION="${VALKEY_CHART_VERSION:-2.4.1}"
-DEX_CHART_VERSION="${DEX_CHART_VERSION:-0.19.1}"
+# Per-component values files live under test/e2e/values/ — single source
+# of truth for chartVersion + image tag + chart config consumed by every
+# hydrate_* function. Mirrors sister alitellm-operator's
+# test/e2e/values/ layout. cluster.sh ONLY reads from these files;
+# changing a chart version or an image pin is a YAML edit, not a script
+# edit.
+VALUES_DIR="${VALUES_DIR:-test/e2e/values}"
+
+# Read the `chartVersion:` line from a values file. Used by hydrate_*
+# functions so the chart-version pin and the chart-values themselves
+# live in one file. Helm tolerates the unknown top-level key.
+chart_version_of() {
+  awk '/^chartVersion:/ {print $2; exit}' "$1"
+}
 
 # Bitnami pruned all pinned image tags from docker.io/bitnami/* in 2025 and
-# moved the snapshots to docker.io/bitnamilegacy/* (newer Bitnami charts pin
-# tag: latest, a moving target). We keep our pinned chart versions for
-# reproducibility but redirect the image registry to bitnamilegacy/* which
-# still serves the exact tags the charts reference. If bitnamilegacy is also
-# pruned in the future, switch to upstream postgres:16-alpine + valkey/valkey
-# (TODO: mirror to ghcr.io/ackstorm/mirror/* — see TODO.md item 1a option c).
-BITNAMI_IMAGE_REGISTRY="${BITNAMI_IMAGE_REGISTRY:-docker.io}"
-BITNAMI_IMAGE_REPO_PREFIX="${BITNAMI_IMAGE_REPO_PREFIX:-bitnamilegacy}"
+# moved the snapshots to docker.io/bitnamilegacy/*. The bitnamilegacy/* repo
+# overrides are inlined in test/e2e/values/{postgres,valkey,litellm}.values.yaml
+# (single source of truth — no env-var indirection from cluster.sh). If
+# bitnamilegacy is also pruned, switch to upstream postgres:16-alpine +
+# valkey/valkey (TODO.md item 1a option c) or mirror to ghcr.io/ackstorm/mirror/*.
 
 # ach image coordinates used by hydrate_ach. CI builds the image with
 # `make docker-build IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
@@ -82,63 +90,50 @@ create_namespaces() {
 }
 
 hydrate_postgres() {
-  echo "[cluster.sh] installing postgres @ ${POSTGRES_CHART_VERSION}..."
-  # Override each sub-image's repository to redirect bitnami/* → bitnamilegacy/*
-  # (see BITNAMI_IMAGE_REPO_PREFIX comment above). global.imageRegistry on its
-  # own is insufficient — the bitnamilegacy snapshots live under a sibling
-  # repo path, not a sibling registry. global.security.allowInsecureImages
-  # disables the chart's hard-coded "approved containers" guard that aborts
-  # the install when image repositories differ from the bundled defaults.
+  local version; version="$(chart_version_of "${VALUES_DIR}/postgres.values.yaml")"
+  echo "[cluster.sh] installing postgres chart ${version}..."
   helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
-    --version "${POSTGRES_CHART_VERSION}" \
+    --version "${version}" \
     --namespace ach-system \
-    --set auth.postgresPassword=achdev \
-    --set auth.database=ach \
-    --set primary.persistence.size=1Gi \
-    --set "global.imageRegistry=${BITNAMI_IMAGE_REGISTRY}" \
-    --set "global.security.allowInsecureImages=true" \
-    --set "image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/postgresql" \
-    --set "volumePermissions.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/os-shell" \
-    --set "metrics.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/postgres-exporter" \
+    --values "${VALUES_DIR}/postgres.values.yaml" \
     --wait --timeout 5m
 }
 
 hydrate_valkey() {
-  echo "[cluster.sh] installing valkey @ ${VALKEY_CHART_VERSION}..."
-  # Same Bitnami pruning workaround as postgres — see hydrate_postgres comment.
+  local version; version="$(chart_version_of "${VALUES_DIR}/valkey.values.yaml")"
+  echo "[cluster.sh] installing valkey chart ${version}..."
   helm upgrade --install valkey oci://registry-1.docker.io/bitnamicharts/valkey \
-    --version "${VALKEY_CHART_VERSION}" \
+    --version "${version}" \
     --namespace ach-system \
-    --set auth.enabled=false \
-    --set primary.persistence.size=1Gi \
-    --set "global.imageRegistry=${BITNAMI_IMAGE_REGISTRY}" \
-    --set "global.security.allowInsecureImages=true" \
-    --set "image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/valkey" \
-    --set "sentinel.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/valkey-sentinel" \
-    --set "metrics.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/redis-exporter" \
-    --set "volumePermissions.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/os-shell" \
-    --set "kubectl.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/kubectl" \
+    --values "${VALUES_DIR}/valkey.values.yaml" \
     --wait --timeout 5m
 }
 
 hydrate_dex() {
-  echo "[cluster.sh] installing dex @ ${DEX_CHART_VERSION}..."
-  # Dex chart is hosted on the dexidp helm repo. Add repo idempotently.
+  local version; version="$(chart_version_of "${VALUES_DIR}/dex.values.yaml")"
+  echo "[cluster.sh] installing dex chart ${version}..."
   helm repo add dex https://charts.dexidp.io >/dev/null 2>&1 || true
   helm repo update dex >/dev/null
-  # The dex chart expects raw Dex YAML under a top-level `config:` key in
-  # values.yaml (see https://github.com/dexidp/helm-charts). Our
-  # scripts/dex-config.yaml stays as standalone raw Dex YAML so engineers
-  # can also stand it up with `docker run dex serve /etc/dex/config.yaml`
-  # (see the comment block at the top of that file). Wrap it for helm here.
-  local tmpvals
-  tmpvals="$(mktemp)"
+  # The dex chart expects raw Dex YAML under a top-level `config:` key.
+  # scripts/dex-config.yaml ships with `issuer: http://localhost:5556/dex`
+  # for the `docker run` local UAT path documented in its header. For
+  # in-cluster Dex, the issuer MUST be the cluster-internal URL the
+  # platform-api uses so OIDC discovery's issuer-claim match succeeds
+  # (oidc.NewProvider verifies the issuer claim against the URL used to
+  # fetch /.well-known/openid-configuration). Sed-rewrite the issuer line
+  # at install time so the canonical config stays docker-run-compatible,
+  # then concat with the per-component values file so the chartVersion
+  # pin still lives in YAML.
+  local tmpvals; tmpvals="$(mktemp)"
   {
+    cat "${VALUES_DIR}/dex.values.yaml"
+    echo ""
     echo "config:"
-    sed -e 's/^/  /' scripts/dex-config.yaml
+    sed -e 's|^issuer: http://localhost:5556/dex|issuer: http://dex.dex-system.svc.cluster.local:5556/dex|' \
+        -e 's/^/  /' scripts/dex-config.yaml
   } > "${tmpvals}"
   helm upgrade --install dex dex/dex \
-    --version "${DEX_CHART_VERSION}" \
+    --version "${version}" \
     --namespace dex-system \
     --values "${tmpvals}" \
     --wait --timeout 3m
@@ -146,70 +141,91 @@ hydrate_dex() {
 }
 
 hydrate_litellm() {
-  echo "[cluster.sh] installing upstream litellm (latest pinned chart)..."
-  # Pull the litellm-helm OCI chart into a tmpdir and install. No values
-  # file yet — uses chart defaults. Phase 11+ will wire test/e2e/values/.
-  #
-  # LiteLLM bundles bitnami/postgresql + bitnami/redis as subcharts; both
-  # hit the same docker.io/bitnami/* pruning that broke our top-level
-  # postgres/valkey installs (see hydrate_postgres). Override each
-  # subchart's image.repository the same way using the chart-prefix
-  # syntax `postgresql.<key>` / `redis.<key>`.
+  # Read chartVersion + image tag from the values file (single source of
+  # truth — mirrors sister alitellm-operator/scripts/cluster.sh).
+  local version image_tag image
+  version="$(awk '/^chartVersion:/ {print $2; exit}' "${VALUES_DIR}/litellm.values.yaml")"
+  image_tag="$(awk '/^[[:space:]]*tag:/ {gsub(/[[:space:]]+#.*/,""); print $2; exit}' "${VALUES_DIR}/litellm.values.yaml")"
+  image="ghcr.io/berriai/litellm-database:${image_tag}"
+
+  echo "[cluster.sh] installing litellm chart ${version} (image: ${image})..."
+
+  # Pre-pull + kind load (sister pattern) — eliminates the ghcr.io
+  # round-trip kubelet would otherwise do on every Pod start, including
+  # every migrations Job backoff retry. Combined with
+  # image.pullPolicy=IfNotPresent in the values file, the chart's
+  # PreSync hook reaches the locally-resident image immediately.
+  echo "[cluster.sh] pre-pulling ${image} on host..."
+  docker pull "${image}"
+  echo "[cluster.sh] kind-loading ${image} into ${CLUSTER_NAME}..."
+  kind load docker-image "${image}" --name "${CLUSTER_NAME}"
+
   local tmpdir; tmpdir="$(mktemp -d)"
   trap 'rm -rf "${tmpdir}"' EXIT
-  ( cd "${tmpdir}" && helm pull oci://docker.litellm.ai/berriai/litellm-helm --untar )
+  ( cd "${tmpdir}" && helm pull oci://docker.litellm.ai/berriai/litellm-helm --version "${version}" --untar )
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
-    --set masterkey=sk-1234 \
-    --set "global.imageRegistry=${BITNAMI_IMAGE_REGISTRY}" \
-    --set "global.security.allowInsecureImages=true" \
-    --set "postgresql.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/postgresql" \
-    --set "postgresql.volumePermissions.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/os-shell" \
-    --set "postgresql.metrics.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/postgres-exporter" \
-    --set "redis.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/redis" \
-    --set "redis.sentinel.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/redis-sentinel" \
-    --set "redis.metrics.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/redis-exporter" \
-    --set "redis.volumePermissions.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/os-shell" \
-    --set "redis.kubectl.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/kubectl" \
-    --set "redis.sysctl.image.repository=${BITNAMI_IMAGE_REPO_PREFIX}/os-shell" \
-    --wait --timeout 4m || {
-      echo "[cluster.sh] WARN: litellm helm install failed — continuing (see Phase 11+ for full hydration)" >&2
-    }
+    --values "${VALUES_DIR}/litellm.values.yaml" \
+    --wait --timeout 5m
+
+  # helm --wait covers Deployment readiness + PreSync hook completion,
+  # but a Job stuck in ImagePullBackOff can let helm time out silently
+  # while the chart reports STATUS=deployed. Re-verify the migrations
+  # Job explicitly so a regression fails loud here (vs producing 500s
+  # in the e2e suite minutes later).
+  kubectl -n litellm-system wait --for=condition=complete \
+    job/litellm-migrations --timeout=180s
+
   rm -rf "${tmpdir}"
   trap - EXIT
 }
 
 hydrate_toolhive() {
-  echo "[cluster.sh] installing toolhive-operator-crds..."
+  # ToolHive CRDs and operator are on independent version streams (0.0.x
+  # vs 0.5.x) — both pins live in test/e2e/values/toolhive.values.yaml.
+  local crds_version operator_version
+  crds_version="$(awk '/^crdsChartVersion:/ {print $2}' "${VALUES_DIR}/toolhive.values.yaml")"
+  operator_version="$(awk '/^operatorChartVersion:/ {print $2}' "${VALUES_DIR}/toolhive.values.yaml")"
+
+  echo "[cluster.sh] installing toolhive-operator-crds @ ${crds_version}..."
   helm upgrade --install toolhive-operator-crds \
     oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds \
-    --wait --timeout 60s || {
-      echo "[cluster.sh] WARN: toolhive CRDs install failed — continuing" >&2
-    }
+    --version "${crds_version}" \
+    --wait --timeout 60s
 
-  echo "[cluster.sh] installing toolhive-operator..."
+  echo "[cluster.sh] installing toolhive-operator @ ${operator_version}..."
   helm upgrade --install toolhive-operator \
     oci://ghcr.io/stacklok/toolhive/toolhive-operator \
+    --version "${operator_version}" \
     --namespace toolhive-system \
-    --wait --timeout 90s || {
-      echo "[cluster.sh] WARN: toolhive operator install failed — continuing" >&2
-    }
+    --wait --timeout 90s
+
+  # Step 2.5 — add v1beta1 versions to ToolHive CRDs (not yet in
+  # published charts). The OCI chart above ships only v1alpha1. This
+  # fixture (vendored from stacklok/toolhive v0.28.0 @ 748a64228710...)
+  # adds v1beta1 served=true, storage=false to MCPServer + VirtualMCPServer
+  # so dual-vintage informers can register against both. v1alpha1 stays
+  # storage=true (preserved). kubectl apply replaces the OCI chart's CRD
+  # with the multi-version fixture; safe in ephemeral kind. Idempotent.
+  echo "[cluster.sh] adding v1beta1 CRD versions (toolhive dual-vintage fixture)..."
+  kubectl apply --server-side --force-conflicts \
+    --field-manager=ach-cluster-bootstrap \
+    -f test/e2e/fixtures/toolhive-v1beta1-crds.yaml
+  echo "[cluster.sh] toolhive CRD versions after fixture: $(kubectl get crd mcpservers.toolhive.stacklok.dev -o jsonpath='{.spec.versions[*].name}' 2>/dev/null || echo 'crd-not-found')"
 }
 
 hydrate_ach() {
   echo "[cluster.sh] hydrating ach (image: ${ACH_IMAGE})..."
 
-  # Load the ach image into kind from local docker if present. CI builds
-  # the image just before invoking `cluster.sh up`; local developers run
-  # `make docker-build IMG=${ACH_IMAGE}` first. Skip kind load when the
-  # image is not in local docker — Helm will fall back to imagePullPolicy
-  # (works for already-pushed registry images, fails otherwise).
-  if docker image inspect "${ACH_IMAGE}" >/dev/null 2>&1; then
-    echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
-    kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
-  else
-    echo "[cluster.sh] WARN: ${ACH_IMAGE} not in local docker daemon — relying on imagePullPolicy" >&2
-  fi
+  # Build + kind-load the ach image (sister alitellm-operator pattern).
+  # `make docker-build` is idempotent — Docker layer cache makes repeat
+  # runs cheap. Inlining the build here removes the implicit ordering
+  # requirement that callers (local dev, CI workflow) must remember to
+  # run `make docker-build` first.
+  echo "[cluster.sh] building ${ACH_IMAGE}..."
+  make docker-build IMG="${ACH_IMAGE}"
+  echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
+  kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
 
   # Required Secrets. Plain --from-literal because dev/e2e accepts dev
   # values; production deployments mount their own Secrets (the chart
@@ -221,54 +237,24 @@ hydrate_ach() {
     --from-literal=url="postgres://postgres:achdev@postgres-postgresql.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  # Compose a values overlay for helm install. extraEnv injects the
-  # platform-api / operator runtime env-var surface in one place; the
-  # chart's per-mode Deployments fan it into every container.
-  local tmpvals; tmpvals="$(mktemp)"
-  trap 'rm -f "${tmpvals}"' RETURN
-  cat > "${tmpvals}" <<EOF
-image:
-  repo: ${ACH_IMAGE_REPO}
-  tag: ${ACH_IMAGE_TAG}
-  pullPolicy: IfNotPresent
-extraEnv:
-  - name: ACH_DB_URL
-    valueFrom:
-      secretKeyRef:
-        name: ach-db-url
-        key: url
-  - name: ACH_CREDENTIAL_HASH_PEPPER
-    valueFrom:
-      secretKeyRef:
-        name: ach-credential-hash-pepper
-        key: pepper
-  - name: ACH_BASE_URL
-    value: "https://ach.local.test"
-  - name: ACH_LITELLM_BASE_URL
-    value: "http://litellm.litellm-system.svc.cluster.local:4000"
-  - name: ACH_LITELLM_MASTER_KEY
-    value: "sk-1234"
-  - name: ACH_DEX_ISSUER_URL
-    value: "http://dex.dex-system.svc.cluster.local:5556"
-  - name: ACH_DEX_CLIENT_ID
-    value: "ach-platform-api"
-  - name: ACH_DEX_CLIENT_SECRET
-    value: "dev-dex-client-secret"
-  - name: ACH_DEX_REDIRECT_URL
-    value: "https://ach.local.test/login/callback"
-  - name: ACH_REDIS_ADDR
-    value: "valkey-primary.ach-system.svc.cluster.local:6379"
-EOF
-
+  # extraEnv + chart config live in test/e2e/values/ach.values.yaml.
+  # Image coordinates come from the ACH_IMAGE_REPO / ACH_IMAGE_TAG env
+  # vars (CI sets them before invoking cluster.sh; default to dev tag
+  # `e2e`) so the same chart can target prod registries too.
+  local helm_rc=0
   helm upgrade --install ach deploy/helm/ach \
     --namespace ach-system \
-    --values "${tmpvals}" \
-    --wait --timeout 5m || {
-      echo "[cluster.sh] ach helm install failed — dumping pods for forensics:" >&2
-      kubectl -n ach-system get pods >&2 || true
-      kubectl -n ach-system describe pods >&2 || true
-      return 1
-    }
+    --values "${VALUES_DIR}/ach.values.yaml" \
+    --set "image.repo=${ACH_IMAGE_REPO}" \
+    --set "image.tag=${ACH_IMAGE_TAG}" \
+    --set "image.pullPolicy=IfNotPresent" \
+    --wait --timeout 5m || helm_rc=$?
+  if [ "${helm_rc}" -ne 0 ]; then
+    echo "[cluster.sh] ach helm install failed (rc=${helm_rc}) — dumping pods for forensics:" >&2
+    kubectl -n ach-system get pods >&2 || true
+    kubectl -n ach-system describe pods >&2 || true
+    return "${helm_rc}"
+  fi
 }
 
 hydrate_all() {
