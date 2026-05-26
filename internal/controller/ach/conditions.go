@@ -106,6 +106,29 @@ const (
 	// Synced condition stays True if Stage-1 succeeded; the rejected
 	// entry is recorded in status.message via the partial-failure path.
 	ReasonUnsupportedPluginSource = "UnsupportedPluginSource"
+
+	// ─── Hub §6.6 closed-set reasons for the Environment.Available
+	// rollup (TODO §9). The Environment reconciler is the only writer.
+	// ───────────────────────────────────────────────────────────────
+
+	// ReasonAllSubConditionsTrue is the terminal positive outcome for
+	// the Environment.Available rollup — every required sub-condition
+	// (AccessGroupSynced, ExecutionResourcesResolved) is True. Mirrors
+	// the §16 acceptance YAML shape (TODO.md:505) verbatim so the
+	// validation gate compares against a stable string.
+	ReasonAllSubConditionsTrue = "AllSubConditionsTrue"
+
+	// ReasonSubConditionsNotReady is the degraded outcome — at least
+	// one required sub-condition is False. message includes the failing
+	// sub-condition names so operators reading `kubectl describe
+	// environment` can pivot without re-querying.
+	ReasonSubConditionsNotReady = "SubConditionsNotReady"
+
+	// ReasonPendingSubConditions is the in-flight outcome — at least
+	// one required sub-condition is Unknown and none are False.
+	// Pre-§7 this is the steady-state because AccessGroupSynced is the
+	// J.6 placeholder Unknown.
+	ReasonPendingSubConditions = "PendingSubConditions"
 )
 
 // setExternalRefCondition writes a Hub §6.6 condition into a status
