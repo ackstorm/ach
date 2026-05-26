@@ -35,31 +35,62 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        # D-Discretion: mount the JWT signing-keys Secret as a volume at
+        # /etc/ach/jwt rather than envFrom so the raw seed bytes never
+        # transit the env var surface (process listing leaks).
+        - name: jwt-keys
+          secret:
+            secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
+            optional: false
       containers:
         - name: forwarder
           image: {{ include "ach.image" . }}
           imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
           args: {{ toYaml .Values.forwarder.args | nindent 12 }}
           ports:
+            # D-03 dual-port topology.
+            - name: traffic
+              containerPort: 8080
             - name: healthz
               containerPort: 8081
           env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ACH_FORWARDER_BIND_ADDRESS
+              value: ":8080"
+            - name: FORWARDER_HEALTH_BIND_ADDRESS
+              value: ":8081"
+            - name: ACH_JWT_SECRET_NAME
+              value: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
+            {{- with .Values.forwarder.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
             httpGet:
-              path: /healthz
-              port: 8081
+              path: /livez
+              port: healthz
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
+            # /readyz gates on mgr cache sync AND signer.Loaded() so
+            # backends never see a Forwarder that races a Sign call to
+            # an empty signer.
             httpGet:
-              path: /healthz
-              port: 8081
+              path: /readyz
+              port: healthz
             initialDelaySeconds: 5
             periodSeconds: 10
           resources: {{ toYaml .Values.forwarder.resources | nindent 12 }}
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/ach/jwt
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -67,4 +98,24 @@ spec:
             capabilities:
               drop:
                 - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+  ports:
+    - name: traffic
+      port: 80
+      targetPort: 8080
+    - name: healthz
+      port: 8081
+      targetPort: 8081
 {{- end }}

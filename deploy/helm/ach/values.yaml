@@ -42,11 +42,23 @@ platformApi:
   args: ["platform-api"]
 
 # forwarder: bridges in-cluster MCP servers and external clients.
+# §5.1 reverse-proxy plane + §9 JWT trust path. Boots two listeners:
+# traffic :8080 (D-04 WriteTimeout=0 for SSE) and health :8081.
 forwarder:
   enabled: true
   replicas: 1
   resources: {}
   args: ["forwarder"]
+  # jwtSecretName names the Secret holding current/next Ed25519 signing
+  # material per D-10 (data keys: current.kid, current.seed, next.kid?,
+  # next.seed?). Operator MUST create this Secret before forwarder boots
+  # — refuse-to-start contract per FWD-09.
+  jwtSecretName: ach-jwt-signing-keys
+  # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
+  # ACH_LITELLM_BASE_URL, ACH_LITELLM_SHARED_KEY, ACH_REDIS_ADDR,
+  # ACH_REDIS_PASSWORD via valueFrom, ACH_CREDENTIAL_HASH_PEPPER via
+  # valueFrom). Required env vars not defaulted by the binary itself.
+  extraEnv: []
 
 # contentService: serves agent-rendered content (assets, snapshots).
 contentService:

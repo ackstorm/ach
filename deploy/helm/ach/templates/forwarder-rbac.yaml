@@ -1,13 +1,16 @@
 {{- if .Values.forwarder.enabled }}
 ---
-# Forwarder reads ONLY environments + backendidentitypolicies. External-
-# reference kinds (plugins/prompts/artifacts/pluginmarketplaces) are
-# served from the PVC cache, not the K8s API (T-09-02 mitigation), so
-# they are deliberately excluded.
+# Forwarder reads ONLY environments + backendidentitypolicies + the
+# ach-jwt-signing-keys Secret (resourceNames carve-out per D-22).
+# External-reference kinds (plugins/prompts/artifacts/pluginmarketplaces)
+# are served from the PVC cache (T-09-02 mitigation), so they are
+# deliberately excluded. Namespace-scoped Role (not ClusterRole) per
+# MULTI-01 — multi-tenant deployments isolate per-namespace.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: {{ .Release.Name }}-forwarder
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: forwarder
@@ -17,17 +20,22 @@ rules:
   - environments
   - backendidentitypolicies
   verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["{{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: {{ .Release.Name }}-forwarder
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: forwarder
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ .Release.Name }}-forwarder
 subjects:
 - kind: ServiceAccount
