@@ -1,10 +1,4 @@
-// Copyright 2026 ACKstorm
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//	http://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 // Package github is the GitHub source fetcher (Hub §10.1). It is the
 // canonical reference shape that the other five per-source-type

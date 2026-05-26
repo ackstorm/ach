@@ -1,15 +1,4 @@
-// Copyright 2026 ACKstorm
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//	http://www.apache.org/licenses/LICENSE-2.0
-//
-// The type names parallel bbdsoftware/litellm-operator's. Per NOTICE this
-// derivation is attributed to bbdsoftware under Apache-2.0. The shapes
-// themselves are re-derived from spec/litellm_api.json (LiteLLM 1.83.10
-// OpenAPI document — see Phase 1 plan 01-01 spike verification).
+// SPDX-License-Identifier: Apache-2.0
 
 package litellm
 
