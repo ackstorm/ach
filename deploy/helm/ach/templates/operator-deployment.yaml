@@ -101,4 +101,56 @@ spec:
             capabilities:
               drop:
                 - ALL
+        {{- if .Values.contentService.enabled }}
+        # Content-service co-located in the same Pod as the operator
+        # (Phase 1 SC#2 invariant per ROADMAP). Both containers share
+        # the RWO ach-operator-cache PVC: the operator writes via
+        # cachefs.PublishExternal (atomic rename) and the content-
+        # service reads-only via sendfile(2). RWO mandates single-Pod
+        # mounters, hence co-location. If the storage class is upgraded
+        # to RWX (EFS/NFS/CephFS) this Pod can later be split.
+        - name: content-service
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.contentService.args | nindent 12 }}
+          ports:
+            - name: cs-http
+              containerPort: 8082
+          env:
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ACH_CACHE_ROOT
+              value: /var/cache/ach
+            - name: CONTENT_SERVICE_HEALTH_BIND_ADDRESS
+              value: ":8082"
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ach
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.contentService.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+        {{- end }}
 {{- end }}
