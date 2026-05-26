@@ -11,14 +11,33 @@ spec:
     kind: BackendIdentityPolicy
     listKind: BackendIdentityPolicyList
     plural: backendidentitypolicies
+    shortNames:
+    - bip
     singular: backendidentitypolicy
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.target.kind
+      name: Target-Kind
+      type: string
+    - jsonPath: .spec.target.name
+      name: Target-Name
+      type: string
+    - jsonPath: .spec.forwardIdentityJWT
+      name: ForwardJWT
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=='Synced')].status
+      name: Synced
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: BackendIdentityPolicy is the Schema for the backendidentitypolicies
-          API.
+        description: |-
+          BackendIdentityPolicy is the Schema for the backendidentitypolicies API
+          (Hub §9.3, CRD-08).
         properties:
           apiVersion:
             description: |-
@@ -38,18 +57,135 @@ spec:
           metadata:
             type: object
           spec:
-            description: BackendIdentityPolicySpec defines the desired state of BackendIdentityPolicy.
+            description: |-
+              BackendIdentityPolicySpec defines the desired state of BackendIdentityPolicy
+              (Hub §9.3, CRD-08).
+
+              The CR is the OPT-IN switch for attaching the ACH-signed JWT to forwarded
+              /mcp/<name> or /a2a/<name> requests. Without a matching CR, the Forwarder
+              strips the client Authorization header and writes none of its own.
+
+              CRD-08: forwardIdentityJWT is REQUIRED — no Go zero-value default,
+              no kubebuilder default. The explicit false form is a documentation aid;
+              admission rejects a CR omitting the field via the resource-root CEL rule
+              on the type below.
             properties:
-              foo:
-                description: Foo is an example field of BackendIdentityPolicy. Edit
-                  backendidentitypolicy_types.go to remove/update
-                type: string
+              forwardIdentityJWT:
+                description: |-
+                  ForwardIdentityJWT, when true, instructs the Forwarder to sign and
+                  attach the §9.1 ACH JWT to forwarded requests for this target. When
+                  false, the Forwarder forwards without an Authorization header (an
+                  explicit no-JWT declaration; operationally indistinguishable from no
+                  CR at all).
+
+                  REQUIRED per CRD-08. There is no default. Admission rejects a CR
+                  that omits the field.
+                type: boolean
+              target:
+                description: Target identifies the backend route this policy controls.
+                properties:
+                  kind:
+                    description: Kind is the routed backend type. CEL-enforced enum.
+                    enum:
+                    - MCPServer
+                    - A2AAgent
+                    type: string
+                  name:
+                    description: |-
+                      Name is the bare route segment the Forwarder sees as <name> in
+                      /mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules
+                      (≤253 chars, [a-z0-9]([-a-z0-9.]*[a-z0-9])?). Pattern enforced
+                      per CRD-08 / Hub §9.3.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+            required:
+            - forwardIdentityJWT
+            - target
             type: object
           status:
-            description: BackendIdentityPolicyStatus defines the observed state of
-              BackendIdentityPolicy.
+            description: |-
+              BackendIdentityPolicyStatus defines the observed state of
+              BackendIdentityPolicy. Phase 1 ships the field surface; Phase 4 fills in
+              the DuplicateTarget reconciler (§9.3, §6.6).
+            properties:
+              conditions:
+                description: |-
+                  Conditions exposes the single Synced condition (§6.6) with reason
+                  DuplicateTarget when shadowed by an alphabetically lower-named CR
+                  targeting the same (kind, name).
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the metadata.generation of the CR the reconciler
+                  most recently processed.
+                format: int64
+                type: integer
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with
+            no default (CRD-08)
+          rule: has(self.spec.forwardIdentityJWT)
     served: true
     storage: true
     subresources:
