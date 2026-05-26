@@ -22,6 +22,7 @@ spec:
   context:
     prompts:
       - demo-prompt
+      - claude-code-system-prompt
     plugins:
       - demo-plugin
       - caveman

@@ -1,0 +1,23 @@
+# Prompt — pulls the leaked Claude Code system prompt from
+# asgeirtj/system_prompts_leaks. Demonstrates a Prompt CR pointing at
+# a third-party repo (no GitHub PAT needed — public repo) and at a
+# nested file path.
+#
+# The Content Service serves the file at
+# https://<hub>/content/prompt/claude-code-system-prompt with the
+# spec.contentType below as the response Content-Type.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: claude-code-system-prompt
+  namespace: ach-system
+spec:
+  type: github
+  contentType: text/markdown
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: asgeirtj/system_prompts_leaks
+    ref: main
+    path: Anthropic/claude-code.md

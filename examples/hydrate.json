@@ -12,6 +12,11 @@
         "name": "demo-prompt",
         "id": "demo-prompt",
         "downloadUrl": "https://ach.local.test/content/prompt/demo-prompt"
+      },
+      {
+        "name": "claude-code-system-prompt",
+        "id": "claude-code-system-prompt",
+        "downloadUrl": "https://ach.local.test/content/prompt/claude-code-system-prompt"
       }
     ],
     "plugins": [
