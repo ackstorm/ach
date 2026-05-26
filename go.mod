@@ -14,6 +14,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
 	github.com/aws/smithy-go v1.25.1
+	github.com/coreos/go-oidc/v3 v3.18.0
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-logr/logr v1.4.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-github/v62 v62.0.0
@@ -26,6 +28,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	gitlab.com/gitlab-org/api/client-go v1.46.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/api v0.274.0
 	k8s.io/api v0.36.1
@@ -160,7 +163,6 @@ require (
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
