@@ -160,12 +160,25 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// mgr.Add(snapshotter); production reconciles always take the full
 	// branch below.
 	if r.Snapshotter == nil {
-		if err := r.writeStatus(
-			ctx, &env,
-			"AccessGroupSynced", metav1.ConditionUnknown, "Initializing",
-			"snapshotter not wired (unit-test mode)",
-		); err != nil {
-			logger.Error(err, "status update failed", "type", "AccessGroupSynced")
+		// Phase 1 unit-test back-compat: emit AccessGroupSynced=Unknown
+		// (J.6 placeholder), then run the §9 rollup over the resulting
+		// conditions slice so envtest assertions on Available are
+		// stable even without a wired Snapshotter.
+		apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionUnknown,
+			Reason:             ReasonInitializing,
+			Message:            "snapshotter not wired (unit-test mode)",
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+		available := computeAvailable(env.Status.Conditions)
+		available.ObservedGeneration = env.Generation
+		available.LastTransitionTime = metav1.Now()
+		apimeta.SetStatusCondition(&env.Status.Conditions, available)
+		env.Status.ObservedGeneration = env.Generation
+		if err := r.Status().Update(ctx, &env); err != nil {
+			logger.Error(err, "status update failed")
 		}
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
@@ -254,17 +267,16 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if agCond.Status == metav1.ConditionTrue {
 		env.Status.LitellmAccessGroup = env.Name
 	}
-	// Placeholder: TODO §9 owns the composite rollup.
-	if !hasCondition(env.Status.Conditions, "Available") {
-		apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
-			Type:               "Available",
-			Status:             metav1.ConditionUnknown,
-			Reason:             "PendingSubConditions",
-			Message:            "composite Ready rollup not yet implemented (see TODO §9)",
-			ObservedGeneration: env.Generation,
-			LastTransitionTime: metav1.Now(),
-		})
-	}
+	// §9: composite Available rollup. Called AFTER the two writes above
+	// (ExecutionResourcesResolved + the AccessGroupSynced reconciler) so
+	// the helper reads the freshly-set sub-conditions. The previous J.6
+	// placeholder Unknown is now superseded — apimeta.SetStatusCondition
+	// replaces the in-memory entry regardless of prior status/reason
+	// because the reason changes between calls.
+	available := computeAvailable(env.Status.Conditions)
+	available.ObservedGeneration = env.Generation
+	available.LastTransitionTime = metav1.Now()
+	apimeta.SetStatusCondition(&env.Status.Conditions, available)
 	env.Status.ObservedGeneration = env.Generation
 	if err := r.Status().Update(ctx, &env); err != nil {
 		logger.Error(err, "status update failed")
@@ -375,18 +387,6 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 		ObservedGeneration: env.Generation,
 		LastTransitionTime: metav1.Now(),
 	}
-}
-
-// hasCondition reports whether conds carries an entry of the given type.
-// Used to gate placeholder writes so future reconcilers (TODO §7/§9) that
-// emit a real True/False are not clobbered by the Unknown placeholder.
-func hasCondition(conds []metav1.Condition, t string) bool {
-	for _, c := range conds {
-		if c.Type == t {
-			return true
-		}
-	}
-	return false
 }
 
 // requiredAvailableSubConditions is the closed set of condition types whose
@@ -561,40 +561,6 @@ func classifyDrainErr(label string, err error) error {
 	// Wrap so the operator log carries the label and the underlying
 	// error string; controller-runtime still requeues.
 	return fmt.Errorf("%s: %w", label, err)
-}
-
-// writeStatus is the idempotent status-condition helper (sister pattern
-// at ach_litellm/internal/controller/litellmconnection_controller.go
-// lines 387-413). apimeta.SetStatusCondition handles last-transition-time
-// preservation when the condition is unchanged. ObservedGeneration is
-// always bumped to env.Generation so consumers can detect "the
-// reconciler has seen this revision."
-//
-// CRD-07 closed sets (§6.6): the Type must be one of Available,
-// ContentReady, ExecutionResourcesResolved, AccessGroupSynced; reason
-// must be drawn from the matching column. Phase 1 emitted
-// AccessGroupSynced=Unknown reason="Initializing"; Phase 2 / OP-13
-// (Plan 02-07) emits ExecutionResourcesResolved with reason ∈
-// {"Resolved", "ResourceUnresolved"}. The Phase 1 stub is retained
-// only as a back-compat branch when r.Snapshotter is nil (unit tests).
-func (r *EnvironmentReconciler) writeStatus(
-	ctx context.Context,
-	env *achv1alpha1.Environment,
-	condType string,
-	status metav1.ConditionStatus,
-	reason, message string,
-) error {
-	cond := metav1.Condition{
-		Type:               condType,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		ObservedGeneration: env.Generation,
-		LastTransitionTime: metav1.Now(),
-	}
-	apimeta.SetStatusCondition(&env.Status.Conditions, cond)
-	env.Status.ObservedGeneration = env.Generation
-	return r.Status().Update(ctx, env)
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
