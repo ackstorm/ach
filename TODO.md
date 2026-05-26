@@ -341,7 +341,7 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 
 ## 9. Environment `Ready` composite condition missing
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-ready-composite.md](docs/plans/2026-05-26-environment-ready-composite.md) (8 tasks; composite is `Available` not `Ready` per Hub §6.6; blocked on §7)
+> **Status:** ✅ DONE (9148202 + e6837c5 + f2c98d4 + 828a61c + 27276a3 + 88efeb4) — Environment reconciler now emits `Available` composite rollup per Hub §6.6 closed-set; `computeAvailable` helper drives precedence (False > Unknown/missing > True); envtest covers the True path end-to-end; plan at [docs/plans/2026-05-26-environment-ready-composite.md](docs/plans/2026-05-26-environment-ready-composite.md). E2E gated behind `ACH_E2E_PHASE9=1` pending §16 LiteLLM seed.
 
 **Severity**: LOW (cosmetic — `kubectl wait` works on the sub-conditions).
 
