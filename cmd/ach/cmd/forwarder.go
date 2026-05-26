@@ -32,6 +32,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -196,6 +197,17 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
 				cfg.Namespace: {},
+			},
+			// C1 (REVIEW): the forwarder's Role grants secrets verbs
+			// only with resourceNames: ["ach-jwt-signing-keys"]. K8s
+			// RBAC honors resourceNames on list/watch ONLY when the
+			// request carries fieldSelector=metadata.name=<name> —
+			// without this selector the informer's bare LIST is 403'd
+			// by the apiserver and the pod never reaches Ready.
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Secret{}: {
+					Field: fields.OneTermEqualSelector("metadata.name", cfg.JWTSecretName),
+				},
 			},
 		},
 	})
