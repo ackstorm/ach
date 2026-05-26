@@ -144,6 +144,29 @@ func (c *NoopClient) EnsureDefaultTeam(_ context.Context) error {
 	return nil
 }
 
+// CreateAccessGroup is the §7 LiteLLM call. NoopClient logs and returns
+// nil — unit tests against NoopClient observe a no-op success and the
+// reconciler proceeds as if LiteLLM accepted the create.
+func (c *NoopClient) CreateAccessGroup(_ context.Context, name string, modelNames []string) error {
+	c.Log.Info("stub: would create LiteLLM access group", "name", name, "modelNames", modelNames)
+	return nil
+}
+
+// BindTeamToAccessGroup is the §7 LiteLLM call. NoopClient logs and
+// returns nil.
+func (c *NoopClient) BindTeamToAccessGroup(_ context.Context, accessGroup, teamID string) error {
+	c.Log.Info("stub: would bind team to LiteLLM access group", "accessGroup", accessGroup, "teamID", teamID)
+	return nil
+}
+
+// ListAccessGroupBindings is the §7 LiteLLM call. NoopClient returns
+// (nil, nil) — no bindings reported. The reconciler treats this as
+// "no orphans to clean up, no pre-existing bindings to preserve".
+func (c *NoopClient) ListAccessGroupBindings(_ context.Context, accessGroup string) ([]string, error) {
+	c.Log.Info("stub: would list LiteLLM access group bindings", "accessGroup", accessGroup)
+	return nil, nil
+}
+
 // Compile-time interface satisfaction. If a future edit to the Client
 // interface adds or changes a method, the build breaks here until
 // NoopClient catches up — matching the sister project's discipline

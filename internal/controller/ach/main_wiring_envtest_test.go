@@ -517,3 +517,12 @@ func TestMainWiring_MustEnvDurationAtLeast_Floor(t *testing.T) {
 func (f *wiringFakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
 }
+
+// §7 stubs — interface satisfaction only.
+func (f *wiringFakeLiteLLM) CreateAccessGroup(_ context.Context, _ string, _ []string) error {
+	return nil
+}
+func (f *wiringFakeLiteLLM) BindTeamToAccessGroup(_ context.Context, _, _ string) error { return nil }
+func (f *wiringFakeLiteLLM) ListAccessGroupBindings(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}

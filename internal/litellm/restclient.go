@@ -149,7 +149,7 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 		if code == "" {
 			code = fmt.Sprintf("%d", resp.StatusCode)
 		}
-		return nil, fmt.Errorf("litellm: %d on %s %s (code=%s)", resp.StatusCode, method, path, code)
+		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody}
 	default:
 		// 5xx and anything else — transient. processLitellmError used
 		// only for the code field (NEVER the message — §9.1).
@@ -157,7 +157,7 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 		if code == "" {
 			code = fmt.Sprintf("%d", resp.StatusCode)
 		}
-		return nil, fmt.Errorf("litellm: %d on %s %s (code=%s, transient)", resp.StatusCode, method, path, code)
+		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody, Transient: true}
 	}
 }
 

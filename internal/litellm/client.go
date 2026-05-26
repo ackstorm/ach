@@ -137,6 +137,31 @@ type Client interface {
 	// omitempty so nil pointer drops the field from the wire payload.
 	KeyGenerate(ctx context.Context, req *KeyGenerateRequest) (*KeyGenerateResponse, error)
 
+	// Phase 4 (TODO §7) — Environment AccessGroupSynced reconciler.
+
+	// CreateAccessGroup issues POST /access_group/new. Idempotent at the
+	// caller layer: LiteLLM returns 400 "already exists" for a duplicate;
+	// the RESTClient implementation classifies that response as success
+	// (errors.Is(err, ErrAlreadyExists)). Empty modelNames is the §7
+	// first-create shape (Environment.spec.runtime.models is empty
+	// initially; §2's ExecutionResourcesResolved reconciler grows the
+	// access group's model_names list separately).
+	CreateAccessGroup(ctx context.Context, name string, modelNames []string) error
+
+	// BindTeamToAccessGroup grants the named team access to the named
+	// access group by appending "access_group/<name>" to the team's
+	// `models` array via POST /team/update. The implementation fetches
+	// the team first (preserving existing models[] entries) and MUST be
+	// idempotent — re-binding an already-bound team is a no-op.
+	BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error
+
+	// ListAccessGroupBindings returns the set of team_ids currently
+	// bound to the named access group (teams whose .models array
+	// contains "access_group/<name>"). Used by the §7 reconciler's
+	// drift-detection pass. Returns nil slice + nil error when no team
+	// is bound.
+	ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error)
+
 	// EnsureDefaultTeam is the operator-side bootstrap call that
 	// guarantees LiteLLM has at least one Team with alias=default
 	// before any SSO callback fires. Idempotent: list by alias first,

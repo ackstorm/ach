@@ -15,6 +15,36 @@ import (
 // with empty data" from "HTTP error".
 var ErrNotFound = errors.New("litellm: not found")
 
+// ErrAlreadyExists is returned by Create-shaped methods when the upstream
+// LiteLLM reports the entity is already registered (typical signal:
+// 400 Bad Request with body containing "already exists"). Callers MAY
+// treat this as success when their operation is idempotent.
+var ErrAlreadyExists = errors.New("litellm: already exists")
+
+// APIError is the typed error returned by makeRequest for 4xx (non-401)
+// and 5xx responses. Exposes the response Body so callers that need to
+// peek at the LiteLLM error message (e.g. CreateAccessGroup detecting
+// "already exists") can do so via errors.As. The Error() string keeps
+// the legacy "litellm: <status> on <method> <path> (code=<code>)" format
+// for back-compat with string-matching callers (auth/sso.go).
+type APIError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Code       string
+	Body       []byte
+	Transient  bool
+}
+
+// Error implements the error interface. Body content intentionally
+// excluded per §9.1 (no body content in error strings).
+func (e *APIError) Error() string {
+	if e.Transient {
+		return fmt.Sprintf("litellm: %d on %s %s (code=%s, transient)", e.StatusCode, e.Method, e.Path, e.Code)
+	}
+	return fmt.Sprintf("litellm: %d on %s %s (code=%s)", e.StatusCode, e.Method, e.Path, e.Code)
+}
+
 // Auth401Error is the typed error returned by Client.makeRequest when
 // LiteLLM responds with HTTP 401. The reconciler's §7.7 fast-path uses
 // errors.As(err, &auth401) to detect it and trigger cache-invalidate +

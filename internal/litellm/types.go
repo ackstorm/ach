@@ -313,6 +313,37 @@ type UserInfo struct {
 	Teams     []string `json:"teams,omitempty"`
 }
 
+// NewAccessGroupRequest is the POST /access_group/new request body
+// (LiteLLM v1.82.6 — schema NewModelGroupRequest). ACH passes
+// model_names=[] on first-create because Environment.spec.runtime.models
+// is empty by default; the Snapshotter-based model-binding flow lives in
+// the §2 domain-port plan (ExecutionResourcesResolved condition) and
+// updates the access-group's model_names list independently of §7.
+type NewAccessGroupRequest struct {
+	AccessGroup string   `json:"access_group"`
+	ModelNames  []string `json:"model_names,omitempty"`
+	ModelIDs    []string `json:"model_ids,omitempty"`
+}
+
+// AccessGroupInfo is the GET /access_group/{access_group}/info response
+// envelope. Only fields ACH actually reads are explicit; bound teams
+// live elsewhere (LiteLLM stores team→access-group binding on the team
+// row's `models` array, NOT on the access-group row), so ACH derives
+// "bound teams" by listing teams whose models include
+// "access_group/<env.Name>" (see ListAccessGroupBindings semantics below).
+type AccessGroupInfo struct {
+	AccessGroup string   `json:"access_group"`
+	ModelNames  []string `json:"model_names,omitempty"`
+	ModelIDs    []string `json:"model_ids,omitempty"`
+}
+
+// TeamAccessGroupPrefix is the magic prefix LiteLLM uses in a team's
+// `models` list to grant the team access to a named access group. The
+// reconciler's BindTeamToAccessGroup helper computes
+// TeamAccessGroupPrefix + envName as the entry to append; drift
+// detection scans existing team.models for the same prefix.
+const TeamAccessGroupPrefix = "access_group/"
+
 // TeamMember is the inner object on POST /team/member_add. LiteLLM uses
 // a nested {"member": {...}} shape (NOT a top-level user_id field) so
 // the wire payload mirrors this struct.

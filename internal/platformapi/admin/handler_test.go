@@ -489,3 +489,10 @@ func (f *fakeLitellm) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.T
 
 // EnsureDefaultTeam is a no-op shim — Client interface compliance.
 func (f *fakeLitellm) EnsureDefaultTeam(_ context.Context) error { return nil }
+
+// §7 stubs — interface satisfaction only.
+func (f *fakeLitellm) CreateAccessGroup(_ context.Context, _ string, _ []string) error { return nil }
+func (f *fakeLitellm) BindTeamToAccessGroup(_ context.Context, _, _ string) error      { return nil }
+func (f *fakeLitellm) ListAccessGroupBindings(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
