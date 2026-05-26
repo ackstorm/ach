@@ -520,6 +520,23 @@ WHY IT FAILS: Sibling repos with similar layouts (e.g. `ach-old/`,
 `alitellm-operator/`) live next to this one. Relative-path edits to the
 wrong tree leave this repo unchanged while appearing to "succeed."
 
+### ❌ `downloadUrl` from /platform/hydrate returns 404
+```bash
+curl https://ach.local.test/content/prompt/foo
+# HTTP 404 (or no handler registered at all → chi 404)
+```
+✅ Confirm content-service is on the build that includes
+`internal/contentservice` routes (not the Phase 1 stub):
+```bash
+kubectl -n ach-system exec deploy/ach-content-service \
+  -c content-service -- ach content-service --help \
+  | grep -q "/content/{prompt,plugin,artifact}"
+```
+WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
+`/healthz`-only stub. The Service is healthy, the Pod is Ready, the
+hydrate URLs look right — and every GET 404s because the route doesn't
+exist. Fix is a rolling image update; no data migration.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that

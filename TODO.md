@@ -313,7 +313,7 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 
 ## 8. Content Service `/content/{kind}/{name}` routes are unimplemented — BLOCKS artifact download
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-content-service-routes.md](docs/plans/2026-05-26-content-service-routes.md) (18 tasks across 7 phases; uses http.ServeContent for free sendfile(2); §2 dependency forked with seed-content-cache.sh fallback)
+> **Status:** ✅ DONE (40a37aa + dc9320c + 166ef6c + f4261ed + e936df5) — internal/contentservice package serves /content/{prompt,plugin,artifact}/{name} via http.ServeContent (sendfile-backed on Linux), with per-kind Content-Type policy, Range support, Cache-Control public max-age=300, and cached-client-backed Prompt content-type lookup. Cobra subcommand now boots a controller-runtime manager scoped to ACH_NAMESPACE purely for its informer cache. T13-T14 cluster e2e deferred — run `make cluster-up && make operator-redeploy` then exercise the routes via port-forward to validate against real fixtures; v1alpha1 anonymous routes ship, Phase 5 layers `pk_`/`ek_` + scope auth on top.
 
 **Severity**: HIGH (every URL in `hydrate.json::context.*[].downloadUrl` is a dangling pointer today).
 

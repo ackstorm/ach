@@ -234,7 +234,9 @@ Plans:
   4. Staleness check returns `503 stale_cache_expired` when `now - last_successful_refresh > max_staleness` for the underlying `external_refs` or `marketplace_plugins` row; an in-flight Content Service read against an old inode finishes successfully even when the Operator atomically publishes a new revision mid-request.
   5. `GET /metrics` on each of Platform API, Forwarder, Content Service, Operator returns the full §18.5 metric set: `forwarder_requests_total{route, key_type, outcome}`, `forwarder_jwt_signed_total{kind}`, `forwarder_jwt_suppressed_total{kind, reason}`, `content_service_requests_total{kind, outcome}`, `content_service_bytes_served_total{kind}`, `litellm_unreachable_total{caller}` (one counter spanning all four callers with no body/status/audit asymmetry), with no per-request labels (no `request_id`, no `owner_email`).
 
-**Plans**: TBD
+**Plans**:
+- `docs/plans/2026-05-26-content-service-routes.md` — v1alpha1 anonymous routes (Hub §15.2 minimal contract per TODO §8). Phase 5 will layer `pk_`/`ek_` auth, environment scoping, marketplace resolution, staleness checks, and the §18.5 metric set on top.
+
 **UI hint**: no
 
 ### Phase 6: CLI Foundation
