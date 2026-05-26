@@ -195,9 +195,22 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	defer fetchResult.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(fetchResult.Body, marketplaceJSONMaxBytes))
-	if err != nil {
-		return r.markSyncedFalse(ctx, &cr, ReasonUnreachable, "stage-1: marketplace.json read: "+err.Error(), requeue, err)
+	// Body reshape: git-tarball source types (github/gitlab/bitbucket)
+	// return the full repo archive — extract `<root>/.claude-plugin/
+	// marketplace.json` before parsing. s3/gcs/http return the
+	// marketplace.json bytes directly.
+	var body []byte
+	if isTarballSourceType(spec.Type) {
+		body, err = extractMarketplaceJSON(io.LimitReader(fetchResult.Body, marketplaceJSONMaxBytes))
+		if err != nil {
+			reason, _ := classifyFetchError(err, spec.Refresh, time.Time{})
+			return r.markSyncedFalse(ctx, &cr, reason, "stage-1 extract: "+err.Error(), requeue, err)
+		}
+	} else {
+		body, err = io.ReadAll(io.LimitReader(fetchResult.Body, marketplaceJSONMaxBytes))
+		if err != nil {
+			return r.markSyncedFalse(ctx, &cr, ReasonUnreachable, "stage-1: marketplace.json read: "+err.Error(), requeue, err)
+		}
 	}
 
 	mkt, err := parseClaudeCodeMarketplace(body)
