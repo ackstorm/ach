@@ -389,6 +389,78 @@ func hasCondition(conds []metav1.Condition, t string) bool {
 	return false
 }
 
+// requiredAvailableSubConditions is the closed set of condition types whose
+// status drives the Environment.Available rollup. Per TODO §9 and TODO §16
+// the contract is: Available=True IFF every required sub-condition is True.
+// ContentReady is intentionally OMITTED — Hub §6.6 lists it in the closed
+// set but no reconciler writes it in Phase 2; including it would pin the
+// rollup at Unknown indefinitely. When a future plan wires ContentReady,
+// add it to this slice in one line.
+var requiredAvailableSubConditions = []string{
+	"AccessGroupSynced",
+	"ExecutionResourcesResolved",
+}
+
+// computeAvailable is the pure §9 rollup. Given the current conditions
+// slice, return the Available condition the reconciler should write back.
+// The helper is independent of env.Generation (the caller stamps that)
+// and of LastTransitionTime (apimeta.SetStatusCondition preserves it
+// when the (Type, Status, Reason) tuple is unchanged).
+//
+// Precedence:
+//
+//  1. Any REQUIRED sub-condition False → Available=False reason=SubConditionsNotReady
+//  2. Else any REQUIRED sub-condition Unknown or absent → Available=Unknown reason=PendingSubConditions
+//  3. All REQUIRED sub-conditions True → Available=True reason=AllSubConditionsTrue
+//
+// The pre-existing "Available" entry in conds (if any) is ignored — the
+// helper recomputes from scratch every call, so a stale prior write does
+// not influence the new outcome.
+func computeAvailable(conds []metav1.Condition) metav1.Condition {
+	// Build a quick lookup so we walk conds once.
+	byType := make(map[string]metav1.ConditionStatus, len(conds))
+	for _, c := range conds {
+		byType[c.Type] = c.Status
+	}
+
+	var falseTypes, unknownOrMissing []string
+	for _, t := range requiredAvailableSubConditions {
+		switch byType[t] {
+		case metav1.ConditionTrue:
+			// happy path — accumulates implicitly
+		case metav1.ConditionFalse:
+			falseTypes = append(falseTypes, t)
+		default:
+			// metav1.ConditionUnknown OR map zero-value (missing entirely).
+			unknownOrMissing = append(unknownOrMissing, t)
+		}
+	}
+
+	switch {
+	case len(falseTypes) > 0:
+		return metav1.Condition{
+			Type:    "Available",
+			Status:  metav1.ConditionFalse,
+			Reason:  ReasonSubConditionsNotReady,
+			Message: fmt.Sprintf("sub-conditions False: %v", falseTypes),
+		}
+	case len(unknownOrMissing) > 0:
+		return metav1.Condition{
+			Type:    "Available",
+			Status:  metav1.ConditionUnknown,
+			Reason:  ReasonPendingSubConditions,
+			Message: fmt.Sprintf("sub-conditions Unknown or not yet written: %v", unknownOrMissing),
+		}
+	default:
+		return metav1.Condition{
+			Type:    "Available",
+			Status:  metav1.ConditionTrue,
+			Reason:  ReasonAllSubConditionsTrue,
+			Message: fmt.Sprintf("all required sub-conditions True: %v", requiredAvailableSubConditions),
+		}
+	}
+}
+
 // drainEkRows implements §6.5 step 4 with the W3-concrete revision:
 // bounded loop (cap 10), 100ms inter-iteration sleep, transient-DB-error
 // awareness via pgconn error class inspection, cap-exhausted slog.Warn
