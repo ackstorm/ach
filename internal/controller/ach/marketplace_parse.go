@@ -1,197 +1,260 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Plan 02-06 Task 1: Claude Code marketplace.json wire-format types,
-// parser, and per-entry SourceSpec builder for the PluginMarketplace
-// Stage-1 / Stage-2 lifecycle.
+// Claude Code marketplace.json wire-format types + parser. The schema
+// is the upstream Claude Code real schema (TODO §5):
 //
-// Marketplace schema is the Claude Code format mirrored VERBATIM (Hub
-// §12.1) — ACH does not extend or redefine it. parseClaudeCodeMarketplace
-// performs minimal defensive validation:
-//   - reject non-JSON bodies via json.Unmarshal (wrapped ErrUpstreamInvalid)
-//   - reject empty plugins[] (a well-formed marketplace declares at least
-//     one plugin)
-//   - per-plugin discriminator check: the matching source subobject MUST
-//     be non-nil; unknown source.type → wrapped ErrUpstreamInvalid
-//   - DNS-1123-subdomain validation on plugin.Name (T-02-06-01 mitigation:
-//     adversarial plugin names like ../../etc/passwd are rejected before
-//     they reach computeFinalPath)
-//   - npm is KEPT in the parse output; Stage-2 surfaces
-//     UnsupportedPluginSource per-entry via the errUnsupportedPluginSource
-//     sentinel that marketplacePluginToSourceSpec returns.
+//   plugins[].source can be either a bare string (local-path) or an
+//   object with a "source" discriminator that is either "git-subdir"
+//   or "url". Any other shape (unknown discriminator, malformed JSON)
+//   resolves to Kind="" so the per-entry Stage-2 path can surface
+//   ReasonUnsupportedPluginSource without aborting the whole catalog.
+//
+// Per-entry dispatch + fetch lives in marketplace_dispatch.go.
 
 package ach
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
 )
 
 // ClaudeCodeMarketplace is the parsed top-level marketplace.json (Hub
-// §12.1). owner is preserved for parity with the wire format but is not
-// inspected by the Stage-1 / Stage-2 reconciler.
+// §12.1 + Claude Code upstream schema). owner is preserved verbatim
+// for parity with the wire format but is not inspected by Stage-1 /
+// Stage-2.
 type ClaudeCodeMarketplace struct {
 	Name    string                        `json:"name"`
 	Owner   ClaudeCodeMarketplaceOwner    `json:"owner"`
 	Plugins []ClaudeCodeMarketplacePlugin `json:"plugins"`
 }
 
-// ClaudeCodeMarketplaceOwner mirrors the Claude Code owner block.
+// ClaudeCodeMarketplaceOwner mirrors the upstream owner block.
+// Email is a real upstream field (anthropics/claude-plugins-official
+// emits "email" — was "url" in the placeholder schema; both are kept
+// for backward-compat with older fixtures).
 type ClaudeCodeMarketplaceOwner struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
-// ClaudeCodeMarketplacePlugin is one entry under plugins[]. The Source
-// discriminator drives Stage-2 fetcher dispatch via
-// marketplacePluginToSourceSpec.
+// ClaudeCodeMarketplacePlugin is one entry under plugins[]. Source is
+// a discriminated union — see ClaudeCodeMarketplaceSource.
+//
+// Upstream schema also allows description, version, author, category,
+// homepage, license — accepted but not modeled (forward-compat).
 type ClaudeCodeMarketplacePlugin struct {
 	Name        string                      `json:"name"`
-	Description string                      `json:"description"`
+	Description string                      `json:"description,omitempty"`
 	Source      ClaudeCodeMarketplaceSource `json:"source"`
 	Version     string                      `json:"version,omitempty"`
 }
 
-// ClaudeCodeMarketplaceSource embeds the six source-type subobject
-// pointers that map cleanly into the existing achv1alpha1.*Source types
-// the rest of ACH already uses (no duplication of wire types). The npm
-// subobject is NOT included — Type=="npm" is REJECTED at conversion time
-// by marketplacePluginToSourceSpec, but the parser tolerates the entry
-// so Stage-2 can flip its per-plugin status via the partial-failure path
-// without aborting the entire marketplace refresh.
+// ClaudeCodeMarketplaceSource is the normalized per-entry source. The
+// wire format is heterogeneous:
+//
+//   - bare string:        "source": "./relative/path"
+//     → Kind="local-path", Path="./relative/path"
+//   - object git-subdir:  "source": {"source":"git-subdir","url":"...","path":"...","ref":"v1","sha":"<40hex>"}
+//     → Kind="git-subdir", URL/Path/Ref/SHA populated
+//   - object url:         "source": {"source":"url","url":"...","sha":"<40hex>"}
+//     → Kind="url", URL/SHA populated (whole-repo, no Path)
+//
+// Any other shape (object with unknown source.source, malformed JSON
+// for the source field) → Kind="" so Stage-2 surfaces
+// ReasonUnsupportedPluginSource per-entry.
 type ClaudeCodeMarketplaceSource struct {
-	Type      string                       `json:"type"`
-	GitHub    *achv1alpha1.GitHubSource    `json:"github,omitempty"`
-	GitLab    *achv1alpha1.GitLabSource    `json:"gitlab,omitempty"`
-	Bitbucket *achv1alpha1.BitbucketSource `json:"bitbucket,omitempty"`
-	S3        *achv1alpha1.S3Source        `json:"s3,omitempty"`
-	GCS       *achv1alpha1.GCSSource       `json:"gcs,omitempty"`
-	HTTP      *achv1alpha1.HTTPSource      `json:"http,omitempty"`
+	Kind string // "git-subdir" | "url" | "local-path" | "" (unsupported)
+	URL  string
+	Path string
+	Ref  string
+	SHA  string
 }
 
-// errUnsupportedPluginSource is the typed sentinel
-// marketplacePluginToSourceSpec returns when source.type == "npm" (the
-// only wire-format type ACH v1alpha1 declines to materialize). Stage-2
-// in pluginmarketplace_controller.go checks errors.Is(err,
-// errUnsupportedPluginSource) BEFORE classifyFetchError so the result
-// maps to ReasonUnsupportedPluginSource (a marketplace-only reason not
-// in the SourceReachable enum).
-var errUnsupportedPluginSource = errors.New("unsupported plugin source (e.g. npm)")
+// UnmarshalJSON implements the string-or-object union. Never returns an
+// error: malformed shapes resolve to Kind="" so the per-entry path can
+// flip UnsupportedPluginSource via the parser's discriminator check.
+// The reason: a single bad entry must not abort the whole marketplace.
+func (s *ClaudeCodeMarketplaceSource) UnmarshalJSON(data []byte) error {
+	// Bare string form.
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		s.Kind = "local-path"
+		s.Path = str
+		return nil
+	}
+	// Object form.
+	var obj struct {
+		Source string `json:"source"`
+		URL    string `json:"url"`
+		Path   string `json:"path"`
+		Ref    string `json:"ref"`
+		SHA    string `json:"sha"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		// Neither string nor object — leave Kind="" so the per-entry
+		// path surfaces UnsupportedPluginSource.
+		return nil
+	}
+	switch obj.Source {
+	case "git-subdir", "url":
+		s.Kind = obj.Source
+	default:
+		// Unknown discriminator — Kind="" → per-entry unsupported.
+		return nil
+	}
+	s.URL = obj.URL
+	s.Path = obj.Path
+	s.Ref = obj.Ref
+	s.SHA = obj.SHA
+	return nil
+}
 
 // dns1123SubdomainRe validates a plugin name as a DNS-1123 subdomain (RFC
 // 1123): lowercase ASCII + digits + '-' + '.', start and end with
 // alphanumeric. This excludes '/', '..', leading '.', non-printable
 // chars, and control sequences — the T-02-06-01 mitigation surface.
-// 63-char limit also enforced by the regex (CRD-08 parity).
 var dns1123SubdomainRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 
 // dns1123MaxLen is the standard DNS-1123 subdomain length cap.
 const dns1123MaxLen = 253
 
+// marketplaceMaxPluginsPerCatalog bounds the number of plugins[] entries
+// a single marketplace.json may declare. 5000 is generous: Anthropic's
+// catalog currently has ~250 entries; the bound exists only to stop a
+// pathological 10M-entry marketplace from making Stage-1 unresponsive.
+const marketplaceMaxPluginsPerCatalog = 5000
+
 // parseClaudeCodeMarketplace unmarshals the upstream marketplace.json
-// body and performs Stage-1 validation. Every error wraps
-// sources.ErrUpstreamInvalid so the caller's classifyFetchError maps to
-// ReasonUpstreamInvalid uniformly.
+// (Claude Code real schema) and performs Stage-1 validation. Every
+// failure wraps sources.ErrUpstreamInvalid so the caller's
+// classifyFetchError maps to ReasonUpstreamInvalid uniformly.
 //
 // Per-plugin validation rules:
 //
-//  1. discriminator: source.type MUST be one of the closed enum
-//     {"github","gitlab","bitbucket","s3","gcs","http","npm"}; unknown
-//     values → ErrUpstreamInvalid with the plugin name + bad type.
-//  2. subobject presence: for github/gitlab/bitbucket/s3/gcs/http, the
-//     matching subobject pointer MUST be non-nil. (npm has no subobject
-//     in our parser type — see comment above.)
-//  3. plugin.Name MUST match DNS-1123 subdomain rules — T-02-06-01
-//     adversarial-name mitigation. This also bounds the per-entry name
-//     length to 253 chars (computeFinalPath safety + status.message
-//     T-02-06-08 mitigation).
+//  1. plugin.Name MUST match DNS-1123 subdomain rules — adversarial
+//     names like ../etc/passwd are rejected before they reach
+//     materializeMarketplacePlugin (T-02-06-01 mitigation, preserved
+//     from the placeholder parser).
+//  2. plugin.Source.Kind MUST be one of {"git-subdir","url","local-path"}
+//     OR empty (empty signals the per-entry UnsupportedPluginSource
+//     branch in Stage-2 — kept so a single bad entry never aborts the
+//     whole marketplace).
+//  3. For Kind=="git-subdir" / "url": URL and SHA MUST be non-empty.
+//     For Kind=="local-path": Path MUST be non-empty AND MUST NOT
+//     escape the marketplace repo root (no leading "/", no "..")
+//     — defense-in-depth path-traversal gate even though Stage-2
+//     uses the path purely as a tar subtree filter.
 //
-// An empty plugins[] array is treated as ErrUpstreamInvalid — a marketplace
-// without plugins is not legitimate steady-state for our purposes.
+// Per-entry validation surface bounds (audit findings folded in):
+//   - plugin.Name truncated to dns1123MaxLen (already enforced by the
+//     regex which caps at 253 chars; per-label 63-char cap enforced by
+//     a separate check because the regex misses it).
+//   - plugins[] length capped at marketplaceMaxPluginsPerCatalog.
+//
+// An empty plugins[] is treated as ErrUpstreamInvalid — a marketplace
+// that ships no plugins is not legitimate steady-state.
 func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 	var mkt ClaudeCodeMarketplace
 	if err := json.Unmarshal(body, &mkt); err != nil {
-		// Don't echo the upstream body in the wrapped error (T-02-06-03);
-		// json.Unmarshal's own err string is short and bounded.
 		return nil, fmt.Errorf("marketplace.json: %v: %w", err, sources.ErrUpstreamInvalid)
 	}
 	if len(mkt.Plugins) == 0 {
 		return nil, fmt.Errorf("marketplace.json: zero plugins declared: %w", sources.ErrUpstreamInvalid)
 	}
+	if len(mkt.Plugins) > marketplaceMaxPluginsPerCatalog {
+		return nil, fmt.Errorf("marketplace.json: %d plugins exceeds cap %d: %w",
+			len(mkt.Plugins), marketplaceMaxPluginsPerCatalog, sources.ErrUpstreamInvalid)
+	}
 	for i := range mkt.Plugins {
 		p := &mkt.Plugins[i]
-		if len(p.Name) == 0 || len(p.Name) > dns1123MaxLen || !dns1123SubdomainRe.MatchString(p.Name) {
-			return nil, fmt.Errorf("marketplace.json: plugin[%d].name %q: not a DNS-1123 subdomain: %w", i, p.Name, sources.ErrUpstreamInvalid)
+		// (1) name validation — bounded length + DNS-1123 + per-label.
+		if err := validatePluginName(p.Name); err != nil {
+			return nil, fmt.Errorf("marketplace.json: plugin[%d].name %q: %v: %w",
+				i, truncateErrField(p.Name), err, sources.ErrUpstreamInvalid)
 		}
-		switch p.Source.Type {
-		case "github":
-			if p.Source.GitHub == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=github but source.github missing: %w", p.Name, sources.ErrUpstreamInvalid)
+		// (2)+(3) per-Kind validation.
+		switch p.Source.Kind {
+		case "git-subdir":
+			if p.Source.URL == "" || p.Source.SHA == "" || p.Source.Path == "" {
+				return nil, fmt.Errorf("marketplace.json: plugin %q: git-subdir requires url+path+sha: %w",
+					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
 			}
-		case "gitlab":
-			if p.Source.GitLab == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=gitlab but source.gitlab missing: %w", p.Name, sources.ErrUpstreamInvalid)
+		case "url":
+			if p.Source.URL == "" || p.Source.SHA == "" {
+				return nil, fmt.Errorf("marketplace.json: plugin %q: url requires url+sha: %w",
+					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
 			}
-		case "bitbucket":
-			if p.Source.Bitbucket == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=bitbucket but source.bitbucket missing: %w", p.Name, sources.ErrUpstreamInvalid)
+		case "local-path":
+			if p.Source.Path == "" {
+				return nil, fmt.Errorf("marketplace.json: plugin %q: local-path requires path: %w",
+					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
 			}
-		case "s3":
-			if p.Source.S3 == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=s3 but source.s3 missing: %w", p.Name, sources.ErrUpstreamInvalid)
+			if err := validateLocalPath(p.Source.Path); err != nil {
+				return nil, fmt.Errorf("marketplace.json: plugin %q: local-path %q: %v: %w",
+					truncateErrField(p.Name), truncateErrField(p.Source.Path), err, sources.ErrUpstreamInvalid)
 			}
-		case "gcs":
-			if p.Source.GCS == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=gcs but source.gcs missing: %w", p.Name, sources.ErrUpstreamInvalid)
-			}
-		case "http":
-			if p.Source.HTTP == nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: source.type=http but source.http missing: %w", p.Name, sources.ErrUpstreamInvalid)
-			}
-		case "npm":
-			// Kept; Stage-2 flips per-entry to UnsupportedPluginSource via
-			// marketplacePluginToSourceSpec returning errUnsupportedPluginSource.
+		case "":
+			// Tolerated — Stage-2 emits ReasonUnsupportedPluginSource.
 		default:
-			return nil, fmt.Errorf("marketplace.json: plugin %q: unknown source.type=%q: %w", p.Name, p.Source.Type, sources.ErrUpstreamInvalid)
+			// Should be unreachable (UnmarshalJSON resolves unknowns to "")
+			// but defensive: tolerate the same way the empty case does.
 		}
 	}
 	return &mkt, nil
 }
 
-// marketplacePluginToSourceSpec converts one parsed plugin entry into a
-// sources.SourceSpec the Stage-2 fetcher dispatch can consume. For
-// source.type == "npm" returns (zero-SourceSpec, errUnsupportedPluginSource)
-// — the caller MUST check errors.Is(err, errUnsupportedPluginSource)
-// BEFORE classifyFetchError so the result maps to
-// ReasonUnsupportedPluginSource (marketplace-only reason).
-//
-// All other types are mechanically converted; parseClaudeCodeMarketplace
-// has already enforced that the matching subobject pointer is non-nil so
-// the registry.For dispatcher won't nil-dereference.
-func marketplacePluginToSourceSpec(p ClaudeCodeMarketplacePlugin) (sources.SourceSpec, error) {
-	switch p.Source.Type {
-	case "github":
-		return sources.SourceSpec{Type: "github", GitHub: p.Source.GitHub}, nil
-	case "gitlab":
-		return sources.SourceSpec{Type: "gitlab", GitLab: p.Source.GitLab}, nil
-	case "bitbucket":
-		return sources.SourceSpec{Type: "bitbucket", Bitbucket: p.Source.Bitbucket}, nil
-	case "s3":
-		return sources.SourceSpec{Type: "s3", S3: p.Source.S3}, nil
-	case "gcs":
-		return sources.SourceSpec{Type: "gcs", GCS: p.Source.GCS}, nil
-	case "http":
-		return sources.SourceSpec{Type: "http", HTTP: p.Source.HTTP}, nil
-	case "npm":
-		return sources.SourceSpec{}, errUnsupportedPluginSource
-	default:
-		// Unreachable in practice: parseClaudeCodeMarketplace already
-		// rejected unknown types. Defensive return so a future bypass of
-		// the parser surfaces as a typed error instead of a panic.
-		return sources.SourceSpec{}, fmt.Errorf("plugin %q: unknown source.type=%q: %w", p.Name, p.Source.Type, sources.ErrUpstreamInvalid)
+// truncateErrFieldMax bounds the length of upstream-supplied values
+// (plugin name, path string, source-type echo) embedded in error
+// messages — k8s status.message is capped at ~4096 chars and individual
+// condition messages are far smaller in practice.
+const truncateErrFieldMax = 64
+
+// truncateErrField returns at most truncateErrFieldMax bytes of s.
+func truncateErrField(s string) string {
+	if len(s) <= truncateErrFieldMax {
+		return s
 	}
+	return s[:truncateErrFieldMax] + "…"
+}
+
+// validatePluginName enforces RFC 1123 subdomain rules plus the per-label
+// 63-char cap that the dns1123SubdomainRe regex misses.
+func validatePluginName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("empty")
+	}
+	if len(name) > dns1123MaxLen {
+		return fmt.Errorf("length %d exceeds %d", len(name), dns1123MaxLen)
+	}
+	if !dns1123SubdomainRe.MatchString(name) {
+		return fmt.Errorf("not a DNS-1123 subdomain")
+	}
+	// Per-label 63-char cap (RFC 1123 §2.1).
+	for _, label := range strings.Split(name, ".") {
+		if len(label) > 63 {
+			return fmt.Errorf("label %q exceeds 63 chars", label)
+		}
+	}
+	return nil
+}
+
+// validateLocalPath rejects path traversal and absolute paths for the
+// local-path Kind. Cleaning is intentionally NOT applied — we want to
+// flag the raw upstream string, not silently rewrite it.
+func validateLocalPath(p string) error {
+	if strings.HasPrefix(p, "/") {
+		return fmt.Errorf("must be relative")
+	}
+	// Reject any segment that is "..", regardless of position.
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return fmt.Errorf("contains '..' segment")
+		}
+	}
+	return nil
 }

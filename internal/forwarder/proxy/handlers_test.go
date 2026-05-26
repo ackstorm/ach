@@ -439,9 +439,9 @@ func TestHandlerMCP_SigningFailure(t *testing.T) {
 // classifyPrecheckErr sanity table.
 func TestClassifyPrecheckErr(t *testing.T) {
 	tests := []struct {
-		err           error
-		wantStatus    int
-		wantCode      string
+		err        error
+		wantStatus int
+		wantCode   string
 	}{
 		{precheck.ErrUnauthorizedResource, http.StatusForbidden, "unauthorized_resource"},
 		{precheck.ErrUnauthorizedTeam, http.StatusForbidden, "unauthorized_team"},

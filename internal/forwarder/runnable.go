@@ -33,7 +33,7 @@ func (r *Runnable) Start(ctx context.Context) error {
 	traffic := &http.Server{
 		Addr:              r.TrafficAddr,
 		Handler:           r.TrafficHandler,
-		ReadHeaderTimeout: 5 * time.Second,  // gosec G112
+		ReadHeaderTimeout: 5 * time.Second, // gosec G112
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      0, // D-04: SSE streaming pass-through
 		IdleTimeout:       120 * time.Second,

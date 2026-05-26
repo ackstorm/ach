@@ -244,9 +244,9 @@ func TestStreaming_PassThrough(t *testing.T) {
 // PR1-extra: keyTypeFor maps BearerPrefix to Hub §18.5 short labels.
 func TestKeyTypeFor(t *testing.T) {
 	tests := []struct {
-		name    string
-		ctx     context.Context
-		want    string
+		name string
+		ctx  context.Context
+		want string
 	}{
 		{"none", context.Background(), "none"},
 		{"pk", ctxWithKeyAndJWT(middleware.KeyContext{KeyType: keys.PrefixPk}, ""), "pk"},

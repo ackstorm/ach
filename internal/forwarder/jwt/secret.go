@@ -15,7 +15,7 @@ import (
 // name; deployments override the namespace via the cobra forwarder
 // flag set but RARELY override the name (the per-tenant isolation
 // already comes from the namespace).
-const SecretName = "ach-jwt-signing-keys"
+const SecretName = "ach-jwt-signing-keys" //nolint:gosec // G101 false positive: name of a k8s Secret, not a credential value
 
 // Data-key layout per CONTEXT D-10. The K8s wire format base64-decodes
 // values into raw bytes; what we receive in secret.Data is already the

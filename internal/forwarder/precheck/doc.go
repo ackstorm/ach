@@ -8,12 +8,12 @@
 // Two key types are handled distinctly:
 //
 //   - ek_  O(1) cached read of the bound Environment; <name> MUST appear
-//          in spec.runtime.{mcpServers|a2aAgents}. Terminating envs fail
-//          closed (D-15 pre-decision: narrow error surface).
+//     in spec.runtime.{mcpServers|a2aAgents}. Terminating envs fail
+//     closed (D-15 pre-decision: narrow error surface).
 //   - pk_  caller's LiteLLM teams (via keystore.TeamsResolver) MUST
-//          intersect non-empty with AuthorizedTeams of at least one
-//          Environment whose runtime list contains <name>. LiteLLM
-//          unreachable maps to ErrLiteLLMUnreachable (Forwarder → 503).
+//     intersect non-empty with AuthorizedTeams of at least one
+//     Environment whose runtime list contains <name>. LiteLLM
+//     unreachable maps to ErrLiteLLMUnreachable (Forwarder → 503).
 //
 // precheck reads env.Spec only — never env.Status — and never signs a
 // JWT or invokes LiteLLM directly. The caller (Plan 04-07 handlers) is

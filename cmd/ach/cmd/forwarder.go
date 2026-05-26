@@ -248,7 +248,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		return out, fmt.Errorf("client.New (api-server): %w", err)
 	}
 	secret := &corev1.Secret{}
-	if err := apiClient.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.JWTSecretName}, secret); err != nil {
+	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.JWTSecretName}
+	if err := apiClient.Get(ctx, key, secret); err != nil {
 		return out, fmt.Errorf("get Secret %s/%s: %w", cfg.Namespace, cfg.JWTSecretName, err)
 	}
 	if err := out.loader.LoadOnce(secret); err != nil {

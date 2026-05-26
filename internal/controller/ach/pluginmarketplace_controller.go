@@ -276,15 +276,11 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			continue
 		}
 		entry := filtered[i]
-		pluginSourceSpec, srcErr := marketplacePluginToSourceSpec(entry)
-		if errors.Is(srcErr, errUnsupportedPluginSource) {
+		// Per-entry Kind="" → unsupported source wire-format shape (e.g.
+		// an old npm-shaped entry). Short-circuit before the fetcher so
+		// no live git remote is touched.
+		if entry.Source.Kind == "" {
 			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUnsupportedPluginSource})
-			continue
-		}
-		if srcErr != nil {
-			// Unknown source.type (defensive — parseClaudeCodeMarketplace
-			// already rejects these, so this branch is effectively dead).
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
 			continue
 		}
 		// Per-plugin auth Secret: marketplace plugin entries do NOT carry
@@ -292,7 +288,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// auth Secret (which may be nil for anonymous-HTTPS marketplaces).
 		// This is acceptable because the entries fetched are typically
 		// hosted by the same identity that hosts the marketplace.json.
-		perr := r.materializeMarketplacePlugin(ctx, &cr, entry, pluginSourceSpec, marketplaceSecret, factory)
+		perr := r.materializeMarketplacePlugin(ctx, &cr, entry, marketplaceSecret)
 		if perr != nil {
 			reason, _ := classifyFetchErrorMarketplace(perr, spec.Refresh, time.Time{})
 			failures = append(failures, pluginFailure{name: entry.Name, reason: reason})
@@ -401,37 +397,14 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	ctx context.Context,
 	mp *achv1alpha1.PluginMarketplace,
 	entry ClaudeCodeMarketplacePlugin,
-	pluginSourceSpec sources.SourceSpec,
 	secret *corev1.Secret,
-	factory FetcherFactory,
 ) error {
-	// ─── 1: dispatch ───
-	if factory == nil {
-		factory = registry.For
-	}
-	pluginFetcher, err := factory(pluginSourceSpec)
+	// ─── 1+2: dispatch + fetch via internal/sources/git ───
+	body, upstreamRev, err := dispatchMarketplacePlugin(ctx, mp, entry, secret, r.CacheRoot)
 	if err != nil {
 		return err
 	}
-
-	// ─── 2: fetch ───
-	fr, err := pluginFetcher.Fetch(ctx, sources.FetchRequest{
-		Spec:     pluginSourceSpec,
-		Secret:   secret,
-		PriorRev: "", // Phase 2 does not maintain per-plugin PriorRev for marketplace plugins
-	})
-	if err != nil {
-		return err
-	}
-	if fr.NotModified {
-		// Defensive: with PriorRev="" the fetcher should never return
-		// NotModified, but accept gracefully.
-		return nil
-	}
-	if fr.Body == nil {
-		return fmt.Errorf("plugin %q: fetcher returned nil body: %w", entry.Name, sources.ErrUpstreamInvalid)
-	}
-	defer fr.Body.Close()
+	defer body.Close()
 
 	// ─── 3: ensure the per-marketplace plugin dir exists ───
 	finalDir := filepath.Join(r.CacheRoot, "marketplace", mp.Name, "plugin")
@@ -458,10 +431,10 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	var n int64
 	var copyErr error
 	if capBytes > 0 {
-		limited := io.LimitReader(fr.Body, capBytes+1)
+		limited := io.LimitReader(body, capBytes+1)
 		n, copyErr = io.Copy(tmpFile, limited)
 	} else {
-		n, copyErr = io.Copy(tmpFile, fr.Body)
+		n, copyErr = io.Copy(tmpFile, body)
 	}
 	if copyErr != nil {
 		_ = os.Remove(stagingPath)
@@ -497,7 +470,7 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 			MarketplaceName:       mp.Name,
 			Name:                  entry.Name,
 			StorageLocation:       finalPath,
-			UpstreamRev:           fr.UpstreamRev,
+			UpstreamRev:           upstreamRev,
 			LastSuccessfulRefresh: now,
 			NextRefreshAt:         next,
 			MaxStalenessSeconds:   int64(mp.Spec.Refresh.MaxStaleness.Duration.Seconds()),
@@ -521,9 +494,10 @@ func classifyFetchErrorMarketplace(err error, refresh achv1alpha1.RefreshBlock, 
 	if err == nil {
 		return ReasonSynced, ""
 	}
-	if errors.Is(err, errUnsupportedPluginSource) {
-		return ReasonUnsupportedPluginSource, err.Error()
-	}
+	// errUnsupportedPluginSource is now intercepted in the Reconcile body
+	// before dispatchMarketplacePlugin runs — the explicit Kind=="" gate
+	// short-circuits there. This function still handles all other
+	// sources.Err* sentinels via classifyFetchError.
 	return classifyFetchError(err, refresh, lastRefresh)
 }
 

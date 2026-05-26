@@ -136,22 +136,32 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 	}
 }
 
+// Precheck outcome / envelope-code constants per Hub §15.5.
+const (
+	outcomeUnauthorizedResource = "unauthorized_resource"
+	outcomeUnauthorizedTeam     = "unauthorized_team"
+	outcomeLitellmUnreachable   = "litellm_unreachable"
+	outcomeInvalidKeyType       = "invalid_key_type"
+	outcomeEnvironmentNotFound  = "environment_not_found"
+	outcomeInternalError        = "internal_error"
+)
+
 // classifyPrecheckErr maps typed sentinels to outcome + HTTP status +
 // envelope code per Hub §15.5.
 func classifyPrecheckErr(err error) (outcome string, status int, code string) {
 	switch {
 	case errors.Is(err, precheck.ErrUnauthorizedResource):
-		return "unauthorized_resource", http.StatusForbidden, "unauthorized_resource"
+		return outcomeUnauthorizedResource, http.StatusForbidden, outcomeUnauthorizedResource
 	case errors.Is(err, precheck.ErrUnauthorizedTeam):
-		return "unauthorized_team", http.StatusForbidden, "unauthorized_team"
+		return outcomeUnauthorizedTeam, http.StatusForbidden, outcomeUnauthorizedTeam
 	case errors.Is(err, precheck.ErrLiteLLMUnreachable):
-		return "litellm_unreachable", http.StatusServiceUnavailable, "litellm_unreachable"
+		return outcomeLitellmUnreachable, http.StatusServiceUnavailable, outcomeLitellmUnreachable
 	case errors.Is(err, precheck.ErrInvalidKeyType):
-		return "invalid_key_type", http.StatusUnauthorized, "invalid_key_type"
+		return outcomeInvalidKeyType, http.StatusUnauthorized, outcomeInvalidKeyType
 	case errors.Is(err, precheck.ErrEnvironmentNotFound):
-		return "environment_not_found", http.StatusNotFound, "environment_not_found"
+		return outcomeEnvironmentNotFound, http.StatusNotFound, outcomeEnvironmentNotFound
 	}
-	return "internal_error", http.StatusInternalServerError, "internal_error"
+	return outcomeInternalError, http.StatusInternalServerError, outcomeInternalError
 }
 
 // codeMessage returns the stable human-readable message per Hub §15.5
