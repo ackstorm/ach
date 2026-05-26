@@ -10,9 +10,15 @@
 package ach
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
 
 // TestAvailableReasonConstantsExist is a compile-time check that the three
@@ -184,4 +190,73 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// TestEnvironmentAvailableConditionEmitted verifies that a real
+// Reconcile cycle against envtest writes an Available condition into
+// env.Status.Conditions, with the rollup outcome the steady-state
+// branch produces today.
+//
+// The suite wires a real Snapshotter (suite_test.go:252) AND the
+// accessGroupFake (which BindTeam succeeds by default), so the
+// steady-state branch runs end-to-end: ExecutionResourcesResolved=True
+// (empty runtime → no unresolved names), AccessGroupSynced=True
+// (fake create + bind succeed), and computeAvailable rolls up to
+// Available=True reason=AllSubConditionsTrue.
+//
+// This proves Task 4's wiring landed AND that §7's True-path writer
+// composes correctly with the §9 rollup. If the assertion ever flips
+// back to Unknown, either §7's writer regressed or the rollup contract
+// changed — both cases warrant investigation.
+func TestEnvironmentAvailableConditionEmitted(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-available",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         achv1alpha1.RuntimeBlock{},
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	// Poll for the Available condition to appear AND reach True. The
+	// reconciler emits all three sub-conditions + Available in a single
+	// Status().Update, so they land atomically — informer cache settles
+	// within ~250ms.
+	var final *metav1.Condition
+	ok := Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		avail := apimeta.FindStatusCondition(got.Status.Conditions, "Available")
+		if avail == nil {
+			return false
+		}
+		final = avail
+		return avail.Status == metav1.ConditionTrue
+	}, 15*time.Second, 250*time.Millisecond)
+
+	if !ok {
+		if final == nil {
+			t.Fatalf("Available condition never written within 15s")
+		}
+		t.Fatalf("Available condition never reached True within 15s: status=%s reason=%s message=%q",
+			final.Status, final.Reason, final.Message)
+	}
+	if final.Reason != ReasonAllSubConditionsTrue {
+		t.Errorf("Available.Reason = %q; want %q (message=%q)",
+			final.Reason, ReasonAllSubConditionsTrue, final.Message)
+	}
+	t.Logf("OK: Available=%s reason=%s message=%q",
+		final.Status, final.Reason, final.Message)
 }
