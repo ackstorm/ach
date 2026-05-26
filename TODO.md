@@ -272,7 +272,7 @@ Rationale: operators wanting different precedence rename their CRs (`zz-` suffix
 
 ## 7. Environment.AccessGroupSynced never reaches True — BLOCKS EnvKey lifecycle
 
-> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-accessgroup-reconciler.md](docs/plans/2026-05-26-environment-accessgroup-reconciler.md) (9 tasks + pre-flight; TDD-first with httptest fake LiteLLM; surfaced 3 ach-old findings: F1 wrong DeleteAccessGroup URL, F2 ach-old has same bug — no verbatim port, F3 binding via team.models prefix not member_add)
+> **Status:** ✅ DONE (acab41e + 597a0de + 6f60ef1) — Environment reconciler now emits AccessGroupSynced True/False per Hub §6.6 closed-set; 5 envtests green; plan at [docs/plans/2026-05-26-environment-accessgroup-reconciler.md](docs/plans/2026-05-26-environment-accessgroup-reconciler.md). E2E `POST /platform/env-keys` validation deferred to §16 UAT.
 
 **Severity**: HIGH (every `POST /platform/env-keys` returns 503 `not_ready`).
 
