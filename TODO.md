@@ -525,6 +525,51 @@ Partially covered by phase3 today. Extend to cover:
 
 ---
 
+## 16. Validation gate after §7 + §9 — Environment Available=True end-to-end
+
+**Severity**: MEDIUM (acceptance test for the domain-port work, not a code task itself).
+
+**Trigger**: run AFTER both §7 (AccessGroupSynced reconciler) AND §9 (Available composite rollup) have landed.
+
+**Why this lives here**: when §7 + §9 are in place, `Environment/demo` should converge to `Available=True` IFF (a) AccessGroupSynced=True and (b) ExecutionResourcesResolved=True. (b) requires LiteLLM to have real rows for the 5 names in `examples/04-environment-demo.yaml::spec.runtime` — `gemini.gemini-flash-latest`, `openai.gpt-5-mini`, `vmcp-dev`, `vmcp-aws`, `test-noop-agent`. Today (2026-05-26) LiteLLM has only 2 sample models (`gpt-3.5-turbo`, `fake-openai-endpoint`) and zero MCP / zero agents — so the example is a deliberate "unresolved" UAT fixture.
+
+**Validation procedure** (once §7 + §9 land):
+
+1. Bring up the cluster (`make cluster-up`) — operator auto-bootstraps the LiteLLM default team (J.5).
+2. Apply `examples/04-environment-demo.yaml` — exercises §7's access-group binding path. Expect `AccessGroupSynced=True` within 30s.
+3. Seed the 5 LiteLLM resources via the admin API:
+   ```bash
+   # 2 models
+   curl -X POST http://localhost:4001/model/new -H "Authorization: Bearer sk-test-master-key" \
+     -d '{"model_name":"gemini.gemini-flash-latest","litellm_params":{"model":"gemini/gemini-flash-latest"}}'
+   curl -X POST http://localhost:4001/model/new -H "Authorization: Bearer sk-test-master-key" \
+     -d '{"model_name":"openai.gpt-5-mini","litellm_params":{"model":"openai/gpt-5-mini"}}'
+   # 2 mcp servers
+   curl -X POST http://localhost:4001/v1/mcp/server -H "Authorization: Bearer sk-test-master-key" \
+     -d '{"server_name":"vmcp-dev","url":"http://localhost:9100/mcp","transport":"sse"}'
+   curl -X POST http://localhost:4001/v1/mcp/server -H "Authorization: Bearer sk-test-master-key" \
+     -d '{"server_name":"vmcp-aws","url":"http://localhost:9101/mcp","transport":"sse"}'
+   # 1 a2a agent
+   curl -X POST http://localhost:4001/v1/agents -H "Authorization: Bearer sk-test-master-key" \
+     -d '{"agent_name":"test-noop-agent","url":"http://localhost:9200/a2a"}'
+   ```
+4. Wait one Snapshotter tick (≤5 min) or force one via the touch annotation.
+5. Expect:
+   ```yaml
+   status:
+     conditions:
+       - type: ExecutionResourcesResolved, status: True,  reason: Resolved
+       - type: AccessGroupSynced,           status: True,  reason: Synced
+       - type: Available,                   status: True,  reason: AllSubConditionsTrue
+     unresolvedRuntime:
+       models: [], mcpServers: [], a2aAgents: []
+   ```
+6. Promote into `test/e2e/phase4_environment_available_test.go` (cross-references TODO §11): drive the same flow under Ginkgo, assert the three True conditions, use a httptest fake LiteLLM to register the 5 names without a real LLM provider.
+
+**Cleanup**: tear down via `kubectl delete environment demo` — §6.5 drain exercises `DeleteAccessGroup` + `DeleteTag` (already wired).
+
+---
+
 ## Cross-cutting tech debt (deferred)
 
 - **Goreleaser `dockers_v2` migration** — current configs emit deprecation warnings; future maintenance task
