@@ -114,11 +114,27 @@ type Client interface {
 	// the well-known alias "default" before the TeamMemberAdd call.
 	ListTeamsByAlias(ctx context.Context, alias string) ([]TeamListEntry, error)
 
-	// KeyGenerate issues POST /key/generate. ACH supplies the bearer
-	// plaintext via req.Key (Phase 3 D-13); LiteLLM stores ACH's prefix
-	// verbatim and returns its INTERNAL opaque hex `token` in the
-	// response. KEY-10 enforced at the type level: MaxBudget is *float64
-	// with omitempty so nil pointer drops the field from the wire payload.
+	// KeyGenerate issues POST /key/generate.
+	//
+	// ACH does NOT control or persist the LiteLLM virtual-key plaintext
+	// material (FIX01 §A.6 — supersedes the obsolete D-13 design where
+	// ACH supplied req.Key). LiteLLM v1.83 enforces an `sk-` prefix on
+	// virtual keys; ACH callers leave req.Key empty so LiteLLM mints
+	// its own plaintext, and ACH stores only the opaque keyResp.Token
+	// — the stable LiteLLM-side identifier used for revoke + forwarder
+	// attribution.
+	//
+	// Response semantics:
+	//   - KeyGenerateResponse.Key   plaintext `sk-…`, one-time, MUST
+	//                               NOT be persisted by ACH. Returned
+	//                               here only because LiteLLM emits
+	//                               it; callers discard it.
+	//   - KeyGenerateResponse.Token opaque LiteLLM token id, STORE
+	//                               THIS as `litellm_token` for revoke
+	//                               + orphan-cleanup attribution.
+	//
+	// KEY-10 enforced at the type level: MaxBudget is *float64 with
+	// omitempty so nil pointer drops the field from the wire payload.
 	KeyGenerate(ctx context.Context, req *KeyGenerateRequest) (*KeyGenerateResponse, error)
 }
 

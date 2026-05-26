@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "v1alpha1",
+  "environment": "demo",
+  "runtime": {
+    "models": [],
+    "mcpServers": [],
+    "a2aAgents": []
+  },
+  "context": {
+    "prompts": [
+      {
+        "name": "demo-prompt",
+        "id": "demo-prompt",
+        "downloadUrl": "https://ach.local.test/content/prompt/demo-prompt"
+      }
+    ],
+    "plugins": [
+      {
+        "name": "demo-plugin",
+        "id": "demo-plugin",
+        "downloadUrl": "https://ach.local.test/content/plugin/demo-plugin"
+      }
+    ],
+    "artifacts": []
+  }
+}

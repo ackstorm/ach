@@ -370,12 +370,15 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// LiteLLM KeyGenerate (D-12 step 6) — caller-supplied Key per
-		// D-13; AccessGroups=[<environment>]; Tags=[<environment>] per
-		// §6.3 ek_ Environment tag; MaxBudget=nil per KEY-10.
+		// LiteLLM KeyGenerate (D-12 step 6). FIX01 §A.6: do NOT supply
+		// req.Key — LiteLLM owns its virtual-key plaintext format
+		// (sk-…) and ACH never persists or forwards it. ACH stores
+		// only the opaque keyResp.Token used for revoke + forwarder
+		// attribution. AccessGroups=[<environment>] +
+		// Tags=[<environment>] per §6.3 ek_ Environment tag;
+		// MaxBudget=nil per KEY-10.
 		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 			UserID:       userInfo.UserID,
-			Key:          plaintext,
 			MaxBudget:    nil,
 			AccessGroups: []string{env.Name},
 			Tags:         []string{env.Name},

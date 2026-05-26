@@ -358,13 +358,16 @@ type KeyGenerateRequest struct {
 
 // KeyGenerateResponse is the POST /key/generate response.
 //
-// Key echoes the caller-supplied plaintext (Phase 3 D-13). Token is
-// LiteLLM's INTERNAL opaque hex token id — distinct from Key. Phase 3
-// stores Token in personal_keys.litellm_token / environment_keys.litellm_token
-// (Phase 02.2 D-01) so the orphan-cleanup loop (D-16) and revocation
-// flows (D-14 / D-15) have a stable cross-reference to the LiteLLM row.
+// FIX01 §A.6 contract: ACH does NOT supply or persist the LiteLLM
+// plaintext. LiteLLM mints `Key` (sk-…) and returns it ONCE in this
+// response; ACH callers discard it. Only `Token` — the stable opaque
+// LiteLLM identifier — is persisted (personal_keys.litellm_token /
+// environment_keys.litellm_token), and only it is used for revoke +
+// orphan-cleanup attribution.
 type KeyGenerateResponse struct {
-	Key       string `json:"key"`
+	// Key — plaintext virtual key (sk-…). ONE-TIME, DO NOT STORE.
+	Key string `json:"key"`
+	// Token — opaque LiteLLM identifier. STORE THIS.
 	Token     string `json:"token"`
 	UserID    string `json:"user_id,omitempty"`
 	KeyAlias  string `json:"key_alias,omitempty"`

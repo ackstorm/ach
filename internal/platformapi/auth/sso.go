@@ -394,12 +394,17 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Step 6b: LiteLLM key registration. ACH supplies the bearer
-		// plaintext via Key (D-13); KEY-10 invariant — MaxBudget: nil.
+		// Step 6b: LiteLLM key registration. ACH does NOT supply
+		// req.Key — LiteLLM owns its own virtual-key plaintext format
+		// (sk-…) and ACH never persists or forwards it (FIX01 §A.6
+		// decision; supersedes the obsolete D-13 "shared plaintext"
+		// design). ACH stores only the opaque keyResp.Token, which is
+		// the stable LiteLLM-side identifier used for revoke +
+		// forwarder attribution. KEY-10 invariant preserved:
+		// MaxBudget remains nil.
 		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 			UserID:    userID,
-			Key:       plaintext,
-			MaxBudget: nil, // KEY-10 — ACH NEVER sets max_budget
+			MaxBudget: nil,
 		})
 		if err != nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{

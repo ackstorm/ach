@@ -89,7 +89,37 @@ hacks.
   team-not-found errors still surface as
   `default_team_missing`.
 
-### A.6 — `/key/generate` rejects ACH's `pk_` prefix (LiteLLM enforces `sk-`)
+### A.7 — Populate LiteLLM `/key/generate` `metadata` for cross-ref observability
+
+- **Severity**: LOW (enhancement; not a blocker).
+- **Where**: `internal/platformapi/auth/sso.go` step 6b,
+  `internal/platformapi/envkeys/handler.go` /env-keys create,
+  `internal/litellm/types.go` `KeyGenerateRequest`.
+- **Symptom**: LiteLLM admin UI + audit logs carry no ACH-side
+  identifier for the virtual keys ACH mints; orphan-cleanup
+  reconciler must match by `user_id` + creation-time only.
+- **Fix sketch**: LiteLLM `/key/generate` accepts a free-form
+  `metadata` JSON field on the request (per the LiteLLM OpenAPI
+  spec). Populate it with the ACH key id + key type + (for ek_)
+  the environment, so every LiteLLM-side row carries a deterministic
+  back-reference to its ACH-side parent row:
+  ```json
+  {
+    "user_id": "...",
+    "metadata": {
+      "ach_key_id":      "pkid_01HW...",
+      "ach_key_type":    "pk",
+      "ach_owner_email": "kilgore@kilgore.trout",
+      "ach_environment": "demo"
+    }
+  }
+  ```
+  Add a `Metadata map[string]string \`json:"metadata,omitempty"\``
+  field on `KeyGenerateRequest`; populate at both call sites; orphan-
+  cleanup reconciler reads this back via `/key/list` to validate the
+  ACH ↔ LiteLLM mapping.
+
+### A.6 — `/key/generate` rejects ACH's `pk_` prefix (LiteLLM enforces `sk-`) — **DONE**
 
 - **Severity**: HIGH (last blocker on the SSO → pk_ → hydrate path).
 - **Where**: `internal/platformapi/auth/sso.go` step 6b — the
@@ -119,9 +149,16 @@ hacks.
   reverse-map on inbound. Keeps Postgres + LiteLLM in lockstep on a
   single plaintext value but exposes ACH's internal `pk_` naming
   through the LiteLLM admin UI.
-  This is the last A-series blocker — once decided + implemented,
-  `examples/hydrate-demo.sh` should produce
-  `examples/hydrate.json` end-to-end.
+  **Decision (applied)**: Option C-derived — ACH does NOT control
+  LiteLLM virtual-key plaintext. KeyGenerate request omits the `Key`
+  field entirely; LiteLLM mints its own `sk-…`; ACH stores only the
+  opaque `keyResp.Token` it already persisted as `litellm_token`.
+  KeyGenerateResponse.Key is documented as one-time-do-not-store.
+  Forwarder will read `litellm_token` from Postgres / Redis cache and
+  forward via `x-litellm-key-id` (Phase 4 work — Forwarder is a stub
+  today). DB schema unchanged (column already existed). Verified
+  end-to-end against the live e2e cluster:
+  `examples/hydrate.json` produced + checked in.
 
 ### A.5 — `/user/info` returns placeholder even for EXISTING users — **DONE**
 

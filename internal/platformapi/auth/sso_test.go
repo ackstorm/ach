@@ -829,8 +829,11 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	if flm.rec.lastKeyGenerateBudget != nil {
 		t.Errorf("KeyGenerate.MaxBudget: got non-nil %v, want nil (KEY-10)", *flm.rec.lastKeyGenerateBudget)
 	}
-	if flm.rec.lastKeyGenerateKey != got.Plaintext {
-		t.Errorf("KeyGenerate.Key: got %q, want %q (D-13 echo)", flm.rec.lastKeyGenerateKey, got.Plaintext)
+	// FIX01 §A.6: ACH does NOT supply req.Key (LiteLLM mints its own
+	// sk-… plaintext). The legacy D-13 echo assertion is obsolete.
+	if flm.rec.lastKeyGenerateKey != "" {
+		t.Errorf("KeyGenerate.Key: got %q, want empty (FIX01 §A.6: ACH never supplies LiteLLM virtual-key plaintext)",
+			flm.rec.lastKeyGenerateKey)
 	}
 
 	// DB INSERT row.
