@@ -229,13 +229,13 @@ func testPhase3SC3EnvKeysCreate(t *testing.T) {
 		`SELECT litellm_token FROM environment_keys WHERE status='active' AND litellm_token IS NOT NULL` +
 		`) AS u`
 	out, err := runCmd("kubectl", "exec", "-n", namespace,
-		"deploy/ach-postgres", "--",
-		"psql", "-U", "ach", "-d", "ach", "-t", "-A", "-c", sqlText,
+		"sts/ach-postgres", "--",
+		"sh", "-c", "PGPASSWORD=ach psql -U ach -d ach -t -A -c \""+sqlText+"\"",
 	)
 	if err != nil {
 		t.Skipf(
 			"SC#3 D-02 closure: cannot reach ach-postgres for direct DB inspection "+
-				"(deploy/ach-postgres absent? config/e2e overlay not applied?): %v\n%s",
+				"(sts/ach-postgres absent? config/e2e overlay not applied?): %v\n%s",
 			err, out)
 		return
 	}
@@ -306,12 +306,12 @@ func testPhase3SC4AsymmetricRevocation(t *testing.T) {
 	// the DB-first pk_ branch and LiteLLM-first ek_ branch with
 	// recording wrappers).
 	out, err := runCmd("kubectl", "exec", "-n", namespace,
-		"deploy/ach-postgres", "--",
-		"psql", "-U", "ach", "-d", "ach", "-t", "-A", "-c",
-		"SELECT count(*) FROM personal_keys WHERE status='revoked';",
+		"sts/ach-postgres", "--",
+		"sh", "-c", "PGPASSWORD=ach psql -U ach -d ach -t -A -c "+
+			"\"SELECT count(*) FROM personal_keys WHERE status='revoked';\"",
 	)
 	if err != nil {
-		t.Skipf("SC#4: cannot inspect personal_keys (deploy/ach-postgres absent?): %v\n%s", err, out)
+		t.Skipf("SC#4: cannot inspect personal_keys (sts/ach-postgres absent?): %v\n%s", err, out)
 		return
 	}
 	t.Logf("SC#4 asymmetric revocation: revoked personal_keys row count = %s. "+

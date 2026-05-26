@@ -73,13 +73,24 @@ cmd_status()  { print_status; }
 create_cluster() {
   if kind get clusters | grep -qx "${CLUSTER_NAME}"; then
     echo "[cluster.sh] kind cluster '${CLUSTER_NAME}' already exists — skipping create"
-    return 0
+  else
+    echo "[cluster.sh] creating kind cluster '${CLUSTER_NAME}'..."
+    kind create cluster \
+      --name "${CLUSTER_NAME}" \
+      --config "${KIND_CONFIG}" \
+      --wait 60s
   fi
-  echo "[cluster.sh] creating kind cluster '${CLUSTER_NAME}'..."
-  kind create cluster \
-    --name "${CLUSTER_NAME}" \
-    --config "${KIND_CONFIG}" \
-    --wait 60s
+  # Sync the devtools-container kubeconfig at .gocache/kube/config from
+  # the freshly-bound kind API server port. kind writes the host's
+  # ~/.kube/config on cluster create but does NOT touch our container-
+  # mounted copy. Every cluster-down/up rolls the random host port,
+  # so stale state in .gocache/kube/config silently breaks any
+  # `./scripts/dev.sh kubectl ...` call (connect: connection refused
+  # on the previous random port). Sync once here keeps both surfaces
+  # in lock-step.
+  local kube_dir="${GOCACHE_KUBE_DIR:-.gocache/kube}"
+  mkdir -p "${kube_dir}"
+  kind get kubeconfig --name "${CLUSTER_NAME}" > "${kube_dir}/config"
 }
 
 create_namespaces() {
@@ -92,7 +103,11 @@ create_namespaces() {
 hydrate_postgres() {
   local version; version="$(chart_version_of "${VALUES_DIR}/postgres.values.yaml")"
   echo "[cluster.sh] installing postgres chart ${version}..."
-  helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
+  # Helm release name `ach-postgres` matches postgres.values.yaml's
+  # fullnameOverride so every k8s object the chart renders carries that
+  # exact name (no `-postgresql` suffix). e2e tests look up
+  # svc/ach-postgres and sts/ach-postgres directly.
+  helm upgrade --install ach-postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
     --version "${version}" \
     --namespace ach-system \
     --values "${VALUES_DIR}/postgres.values.yaml" \
@@ -234,7 +249,7 @@ hydrate_ach() {
     --from-literal=pepper="dev-pepper-32-bytes-minimum-for-hmac-do-not-reuse" \
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n ach-system create secret generic ach-db-url \
-    --from-literal=url="postgres://postgres:achdev@postgres-postgresql.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
+    --from-literal=url="postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   # extraEnv + chart config live in test/e2e/values/ach.values.yaml.
@@ -257,6 +272,23 @@ hydrate_ach() {
   fi
 }
 
+hydrate_fixtures() {
+  # Seed cluster-scoped CRs the e2e suite needs to assert ACH end-to-end:
+  #   - litellm-master-key Secret: the LiteLLMConnection operator uses
+  #     to authenticate against the LiteLLM upstream during reconcile +
+  #     §6.5 finalizer drain. Value must match LiteLLM chart's
+  #     `masterkey` (test/e2e/values/litellm.values.yaml).
+  #   - LiteLLMConnection/default: the CR that wires the operator's
+  #     litellm-rest client to the in-cluster LiteLLM Service. Without
+  #     it, every Environment finalizer drain stalls on
+  #     "§6.5 step 2 DeleteAccessGroup: litellm connection not ready".
+  echo "[cluster.sh] seeding e2e fixtures (litellm-master-key + LiteLLMConnection)..."
+  kubectl -n ach-system create secret generic litellm-master-key \
+    --from-literal=masterKey="sk-test-master-key" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f config/samples/ach_v1alpha1_litellmconnection.yaml
+}
+
 hydrate_all() {
   hydrate_postgres
   hydrate_valkey
@@ -264,6 +296,7 @@ hydrate_all() {
   hydrate_litellm
   hydrate_toolhive
   hydrate_ach
+  hydrate_fixtures
 }
 
 print_status() (

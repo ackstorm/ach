@@ -12,9 +12,23 @@
 
 chartVersion: 15.5.38
 
+# fullnameOverride pins every chart-rendered name (primary Service,
+# StatefulSet, headless Service) to `ach-postgres` so e2e tests can
+# reach `svc/ach-postgres` and `sts/ach-postgres` without per-release
+# name munging. Without this, the primary Service would be
+# `<release-name>-postgresql` (e.g. postgres-postgresql) and every
+# kubectl/DSN reference would have to chase the chart's prefix scheme.
+fullnameOverride: ach-postgres
+
 auth:
-  postgresPassword: achdev
+  # Non-admin app user expected by e2e tests + the ACH_DB_URL secret
+  # cluster.sh writes (phase2_sc5_orphan_test.go uses ach/ach against
+  # `ach` database). postgresPassword is the superuser fallback —
+  # untouched in normal app flows but required by Bitnami chart schema.
+  username: ach
+  password: ach
   database: ach
+  postgresPassword: achdev
 
 primary:
   persistence:

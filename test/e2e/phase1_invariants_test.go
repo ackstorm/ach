@@ -12,7 +12,6 @@
 package e2e
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -91,15 +90,13 @@ func testSC2PodTopology(t *testing.T) {
 // The valid sample applied in SC#1 may still be present; if it was
 // cleaned up we recreate it here, then delete with --wait.
 //
-// Phase 02.1 originally skipped under E2E_SKIP_SETUP because the overlay
-// pointed at an unreachable LiteLLM. The canonical cluster now installs a real
-// LiteLLM service; scripts/cluster.sh sets E2E_ALLOW_FINALIZER_DRAIN=1 so this
-// invariant runs in the full e2e path.
+// Historical note: a previous lightweight e2e profile shipped no
+// LiteLLM, which made the §6.5 drain hang on revoke calls. That
+// profile no longer exists — scripts/cluster.sh always hydrates a
+// real LiteLLM. The legacy E2E_ALLOW_FINALIZER_DRAIN opt-in guard
+// was removed here; the test now runs unconditionally and fails
+// loud if LiteLLM is missing.
 func testSC3EnvironmentDrain(t *testing.T) {
-	if os.Getenv("E2E_SKIP_SETUP") == "1" && os.Getenv("E2E_ALLOW_FINALIZER_DRAIN") != "1" {
-		t.Skip("SC#3: Environment finalizer drain requires reachable LiteLLM")
-	}
-
 	// Ensure the example Environment exists. apply is idempotent.
 	if out, err := runCmd("kubectl", "apply", "-f",
 		"../../config/samples/ach_v1alpha1_environment.yaml",
@@ -136,7 +133,7 @@ func testSC4PostgresPepperOutsideDB(t *testing.T) {
 
 	// 2. \dt — list tables. Expect the four ACH tables.
 	out, err := runCmd("kubectl", "exec", "-n", namespace, pod, "--",
-		"psql", "-U", "ach", "-d", "ach", "-c", "\\dt",
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -c "\dt"`,
 	)
 	if err != nil {
 		t.Fatalf("SC#4 \\dt: %v\n%s", err, out)
@@ -151,10 +148,11 @@ func testSC4PostgresPepperOutsideDB(t *testing.T) {
 
 	// 3. No plaintext column anywhere on the credential tables.
 	out, err = runCmd("kubectl", "exec", "-n", namespace, pod, "--",
-		"psql", "-U", "ach", "-d", "ach", "-tA", "-c",
-		"SELECT count(*) FROM information_schema.columns "+
+		"sh", "-c",
+		"PGPASSWORD=ach psql -U ach -d ach -tA -c \""+
+			"SELECT count(*) FROM information_schema.columns "+
 			"WHERE table_name IN ('personal_keys','environment_keys') "+
-			"AND column_name LIKE '%plaintext%'",
+			"AND column_name LIKE '%plaintext%'\"",
 	)
 	if err != nil {
 		t.Fatalf("SC#4 plaintext probe: %v\n%s", err, out)
@@ -247,9 +245,15 @@ func testSC5RBACMatrix(t *testing.T) {
 		// Forwarder SA: read-only on Environment + BackendIdentityPolicy.
 		{"forwarder cannot create environments", "create", "environments.ach.ackstorm.ai", "ach-forwarder", "no"},
 		{"forwarder can get environments", "get", "environments.ach.ackstorm.ai", "ach-forwarder", "yes"},
-		// Content Service SA: read-only on multiple kinds.
-		{"content-service cannot create plugins", "create", "plugins.ach.ackstorm.ai", "ach-content-service", "no"},
-		{"content-service can list plugins", "list", "plugins.ach.ackstorm.ai", "ach-content-service", "yes"},
+		// Content-service: co-located in the operator Pod (Phase 9 Helm
+		// chart refactor — shared RWO cache PVC mandates single Pod).
+		// Both containers run under the ach-operator SA; the dedicated
+		// ach-content-service SA was retired. The runtime permission
+		// surface for the content-service container is therefore the
+		// operator's superset (already asserted by the "operator can …"
+		// rows above). When/if the storage class moves to RWX and the
+		// container splits back into its own Pod with its own SA, re-add
+		// dedicated content-service rows here.
 	}
 
 	for _, tc := range cases {

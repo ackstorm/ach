@@ -357,7 +357,11 @@ func phase3StartPortForward(t *testing.T) func() {
 	cmd := exec.Command("kubectl", "port-forward",
 		"-n", namespace,
 		"svc/ach-platform-api",
-		"8080:8080",
+		// Service exposes port 80 → targetPort 8080 (Phase 9 Helm chart
+		// convention; ach-old used 8080:8080 directly on the Service).
+		// The local port stays 8080 so phase3PlatformAPIBaseURL's
+		// http://localhost:8080 default keeps working.
+		"8080:80",
 	)
 	if err := cmd.Start(); err != nil {
 		t.Skipf("phase3StartPortForward: cannot start kubectl port-forward (service absent?): %v", err)
