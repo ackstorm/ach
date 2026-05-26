@@ -1,0 +1,8 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: LiteLLMConnection
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: litellmconnection-sample
+spec: {}

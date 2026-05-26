@@ -10,6 +10,7 @@ rules:
   - artifacts
   - backendidentitypolicies
   - environments
+  - litellmconnections
   - pluginmarketplaces
   - plugins
   - prompts
@@ -27,6 +28,7 @@ rules:
   - artifacts/finalizers
   - backendidentitypolicies/finalizers
   - environments/finalizers
+  - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
   - prompts/finalizers
@@ -38,6 +40,7 @@ rules:
   - artifacts/status
   - backendidentitypolicies/status
   - environments/status
+  - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
   - prompts/status
