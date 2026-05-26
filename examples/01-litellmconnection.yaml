@@ -1,0 +1,18 @@
+# LiteLLMConnection — operator's wire to the LiteLLM upstream.
+#
+# Already seeded by scripts/cluster.sh hydrate_fixtures; included here
+# for explicitness and so `kubectl apply -f examples/` is a complete
+# one-shot bootstrap from a clean cluster.
+#
+# masterKeySecretRef.key MUST match the `masterkey` value in
+# test/e2e/values/litellm.values.yaml.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: LiteLLMConnection
+metadata:
+  name: default
+  namespace: ach-system
+spec:
+  endpoint: http://litellm.litellm-system.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: masterKey

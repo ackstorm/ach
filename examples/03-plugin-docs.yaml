@@ -1,0 +1,21 @@
+# Plugin — pulls a directory tree from a public GitHub repo, packages
+# it as a .tar.gz under the operator's cache PVC, and serves it via the
+# Content Service. Demonstrates the directory-bundle external-reference
+# path (size-capped per the plugin reconciler).
+#
+# Uses the ach repo's own docs/ tree as a stand-in payload — public,
+# small, real. Replace with your own repo for production.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: demo-plugin
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 1h
+    maxStaleness: 24h
+  github:
+    repo: ackstorm/ach
+    ref: main
+    path: docs

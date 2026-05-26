@@ -1,0 +1,27 @@
+# Environment — the projection unit a user hydrates against.
+# References the demo Prompt + Plugin above + the "default" LiteLLM
+# Team (created via scripts/seed-default-team.sh, called from
+# examples/hydrate-demo.sh).
+#
+# runtime.* is intentionally empty: no Models / MCPServers / A2AAgents
+# registered in LiteLLM in this demo. The /platform/hydrate response
+# still emits runtime: {models: [], mcpServers: [], a2aAgents: []}
+# per the schema invariant — both blocks ALWAYS present (Hub §15.1).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: demo
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts:
+      - demo-prompt
+    plugins:
+      - demo-plugin
+    artifacts: []

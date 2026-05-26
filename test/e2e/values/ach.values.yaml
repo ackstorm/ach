@@ -36,8 +36,16 @@ extraEnv:
   - name: ACH_DEX_CLIENT_ID
     value: "ach-platform-api"
   - name: ACH_DEX_CLIENT_SECRET
-    value: "dev-dex-client-secret"
+    # Must match the `secret:` value in scripts/dex-config.yaml's
+    # staticClient for the ach-platform-api OAuth client. Plaintext
+    # dev value — production reads from a Secret.
+    value: "dev-secret-not-for-prod"
   - name: ACH_DEX_REDIRECT_URL
-    value: "https://ach.local.test/login/callback"
+    # Must match a redirectURI registered in scripts/dex-config.yaml's
+    # staticClient. examples/hydrate-demo.sh drives the SSO flow over a
+    # kubectl port-forward to localhost:8080, so we use the same URL
+    # Dex has on file. In a real deployment this would be the public
+    # platform-api callback URL behind ingress.
+    value: "http://localhost:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
