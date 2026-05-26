@@ -199,6 +199,65 @@ hacks.
 
 ---
 
+## F. PluginMarketplace upstream-compat gaps
+
+Discovered while wiring `examples/05-pluginmarketplace-anthropic.yaml`
+against the real `anthropics/claude-plugins-official` catalogue. Both
+issues block any non-trivial public-catalogue ingestion today.
+
+### F.1 — GitHub source returns a tarball; marketplace controller treats it as raw JSON
+
+- **Severity**: HIGH (any `PluginMarketplace` with `spec.type=github`
+  fails Stage-1 parse).
+- **Where**: `internal/sources/github/fetcher.go` (returns tarball
+  stream verbatim — `spec.Path` extraction is "deferred to v1beta1"
+  per the package doc) +
+  `internal/controller/ach/pluginmarketplace_controller.go` (Stage-1
+  reads the fetcher Body directly into `parseClaudeCodeMarketplace`).
+- **Symptom**:
+  `stage-1 parse: marketplace.json: invalid character '\x1f' looking
+  for beginning of value: sources: upstream invalid` — 0x1F is the
+  gzip magic of the tarball.
+- **Fix sketch**: Either (a) extend the GitHub fetcher to honor
+  `spec.Path` for single-file fetches via the Contents API
+  (raw.githubusercontent.com), or (b) teach the marketplace controller
+  to extract the requested path from the tarball before JSON-parsing.
+  (a) is the v1beta1 design intent; (b) is cheaper but reverses the
+  semantics of github-fetcher's "always tarball" contract.
+- **Workaround in the example**: switch to `spec.type=http` and a
+  `raw.githubusercontent.com/...` URL — `examples/05-pluginmarketplace-
+  anthropic.yaml` ships that path.
+
+### F.2 — Marketplace schema rejects `source: string` (relative-path form)
+
+- **Severity**: HIGH (the upstream Anthropic catalogue uses the string
+  form for in-repo plugins — about a quarter of the entries today).
+- **Where**: `internal/controller/ach/pluginmarketplace_controller.go`
+  `ClaudeCodeMarketplacePlugin.Source` field; type
+  `ClaudeCodeMarketplaceSource`.
+- **Symptom**:
+  `json: cannot unmarshal string into Go struct field
+  ClaudeCodeMarketplacePlugin.plugins.source of type
+  ach.ClaudeCodeMarketplaceSource`.
+- **Root cause**: The upstream schema (`anthropic.com/claude-code/
+  marketplace.schema.json`) emits `source` as a union — either
+  an OBJECT (git-subdir / etc., as ACH already handles):
+  ```json
+  "source": {"source": "git-subdir", "url": "...", "path": "...",
+             "ref": "...", "sha": "..."}
+  ```
+  OR a STRING (relative path inside the marketplace repo):
+  ```json
+  "source": "./plugins/agent-sdk-dev"
+  ```
+  ACH only handles the object branch.
+- **Fix sketch**: Custom `UnmarshalJSON` on the `Source` field that
+  detects the leading byte (`"` → string, `{` → object) and routes to
+  the right shape. The string-form means "fetch from the marketplace
+  repo at this subdirectory" — should resolve into a synthetic
+  `ClaudeCodeMarketplaceSource{Source: "marketplace-local", Path:
+  trimRel(value)}` so Stage-2 publishing knows where to look.
+
 ## B. Helm chart values had stale Dex coordinates
 
 These are configuration-only and have been fixed in
