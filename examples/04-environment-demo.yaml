@@ -24,4 +24,5 @@ spec:
       - demo-prompt
     plugins:
       - demo-plugin
+      - caveman
     artifacts: []

@@ -19,6 +19,11 @@
         "name": "demo-plugin",
         "id": "demo-plugin",
         "downloadUrl": "https://ach.local.test/content/plugin/demo-plugin"
+      },
+      {
+        "name": "caveman",
+        "id": "caveman",
+        "downloadUrl": "https://ach.local.test/content/plugin/caveman"
       }
     ],
     "artifacts": []
