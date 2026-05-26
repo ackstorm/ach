@@ -5,4 +5,31 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- Real CRD types for Environment, Plugin, PluginMarketplace, Artifact, Prompt, BackendIdentityPolicy, LiteLLMConnection (ported from ach-old; placeholder `Foo string` Spec/Status replaced with real fields).
+- Shared `ExternalRef` types (RefreshBlock, SourceAuthSecretRef, 6 source kinds: GitHub, GitLab, Bitbucket, S3, GCS, HTTP).
+- Reconciler logic for all 7 CRDs with shared external_ref refresh loop, alphabetical conflict detection (PluginMarketplace + BackendIdentityPolicy), AuthorizedTeams enforcement (Environment), endpoint reachability + pepper Secret probe (LiteLLMConnection).
+- Platform REST API (chi router, Dex SSO + OAuth2 PKCE, OIDC verifier, Redis-cached keystore resolver) across 9 subpackages (admin, auth, environments, envkeys, hydrate, middleware, render, store, teams).
+- MCP/A2A forwarder (Phase 1 stub with /healthz; real proxy lands later).
+- Content service (Phase 1 stub with /healthz; sendfile(2) streaming lands later).
+- DB migrations (3 files: personal/environment keys, marketplace plugins, litellm users) wired to `ach migrate` cobra subcommand.
+- Internal packages: audit (structured logging), cachefs (PVC layout + sweep), config (env-var helpers), credhash (HMAC-SHA-256 with pepper), keys (pk_/ek_ format validation), keystore (DB-backed + Redis-cached resolver), litellm (typed REST client), connection (LiteLLMConnection materialization), snapshot (in-memory LiteLLM state cache), orphan (ek_/pk_ drain Runnable), sources (6 upstream fetchers), platformapi (9 subpackages).
+- Cobra subcommand bodies: `ach operator` (controller-runtime manager with all 7 reconcilers), `ach platform-api` (chi server + manager.Runnable), `ach forwarder` (healthz stub), `ach content-service` (healthz stub), `ach migrate` (golang-migrate via internal/db).
+- E2E phase invariants ported (stdlib testing, kind+kubectl orchestration, 5 phase test files + fixtures).
+- Integration tests via testcontainers-go (build tag: integration; covers internal/db + platformapi/admin handler).
+- Controller envtest suite ported (CEL admission matrix across all 7 CRDs, per-Kind finalizer tests, external_ref refresh tests, marketplace algorithm tests, main-wiring envtest).
+- Single-binary kustomize manager Pod (operator + content-service co-located, shared RWO PVC, `args:`-selected cobra subcommand).
+- Per-binary RBAC (ServiceAccount + Role + RoleBinding for operator/platform-api/forwarder/content-service).
+- Multi-component Helm chart templates (per-mode Deployments gated by values.yaml toggles + migrate Job via pre-install/upgrade hook).
+
+### Changed
+- Replaced kustomize-generated `install.yaml` monolith with explicit per-mode Helm templates so each service is independently togglable.
+- Replaced kubebuilder-default scaffolded `*_controller_test.go` Ginkgo skeletons with ach-old's real controller envtest specs (CEL, finalizers, refresh, marketplace, main-wiring).
+- Replaced Ginkgo-bootstrapped `test/e2e/suite_test.go` with stdlib-testing TestMain orchestration (matches ach-old's pattern; preserves `E2E_SKIP_SETUP=1` lifecycle handoff to `make e2e` / `cluster-up`).
+
+### Fixed
+- Pre-port CI hygiene (separate PR #3 merged before this branch): removed alitellm-graft duplicate workflows (lint.yml, test.yml, test-e2e.yml), added missing `docs/requirements.txt` for mkdocs/mike, dropped GHAS-gated Dependency Review step (govulncheck ack-list is the canonical guard), gated `make fuzz-short`/`fuzz-long` on package presence.
+
+## [0.1.0] - 2026-05-25
+
+### Added
 - Initial scaffolding (kubebuilder v4 multigroup, single-binary cobra, Helm chart, CI/CD, mkdocs, goreleaser).
