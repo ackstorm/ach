@@ -560,17 +560,30 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 }
 
 // isDuplicateAddErr reports whether err signals LiteLLM's "user already
-// on this team" 4xx response. LiteLLM's makeRequest 4xx wrapper formats
-// the error string as `litellm: ... status: 400 ... body: ... already
-// ...`; the substring check is robust across LiteLLM error-envelope
-// shapes.
+// on this team" response.
+//
+// LiteLLM v1.83's `POST /team/member_add` returns 400 for the
+// duplicate-add case AND the response body is dropped by the
+// `internal/litellm/restclient.go` 4xx wrapper (only `litellm: %d on
+// POST %s (code=%s)` reaches the caller). Match on path + status
+// instead of trying to substring-find "already" / "Bad Request" in a
+// body that isn't there.
+//
+// Our SSO code path is the only caller that issues `POST
+// /team/member_add` (Plan 03-07), and we always send a well-formed
+// envelope `{team_id, member: {user_id, role}}`. The realistic 400
+// causes in production are:
+//   - user already on the team (the case we want to swallow)
+//   - team_id unknown (would fail earlier at ListTeamsByAlias and
+//     surface as default_team_missing, NOT reaching this branch)
+// So (path + 400) is a sufficient duplicate-add discriminator.
 func isDuplicateAddErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	s := err.Error()
-	return strings.Contains(s, "already") &&
-		(strings.Contains(s, "400") || strings.Contains(s, "Bad Request"))
+	return strings.Contains(s, "/team/member_add") &&
+		(strings.Contains(s, "litellm: 400") || strings.Contains(s, "Bad Request"))
 }
 
 // isLiteLLMNotFound reports whether err signals a LiteLLM 404 response.

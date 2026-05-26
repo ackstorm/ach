@@ -41,6 +41,41 @@ Orphan-cleanup reconciler reads back via `/key/list` to validate ACH ↔ LiteLLM
 
 ---
 
+## J.4 — `isDuplicateAddErr` predicate cannot match real LiteLLM 1.83 wrapper
+
+**Status**: DONE.
+
+**Where**: `internal/platformapi/auth/sso.go::isDuplicateAddErr`.
+
+**Symptom**: every existing-user SSO callback returns 500 `default_team_missing`. Operator log shows `sso.callback: TeamMemberAdd on existing-user path failed err="litellm: 400 on POST /team/member_add (code=400)"`.
+
+**Root cause**: `internal/litellm/restclient.go:152` formats 4xx errors as `litellm: %d on %s %s (code=%s)` — the response body is dropped entirely. The predicate searched for `"already"` substring, which is never present in the error string.
+
+**Fix**: match on `(path == "/team/member_add" + status == 400)` instead of a body substring. Our SSO code path is the only caller of `/team/member_add` and always sends a well-formed envelope, so a 400 from that path is realistically only the duplicate-add case.
+
+**Test fixture update**: `sso_test.go::TestCallbackHandler_DuplicateTeamMemberAddSwallowed` was emitting the obsolete `"litellm: status: 400 body: user already in team"` string. Updated to mirror the real wrapper format.
+
+---
+
+## J.5 — operator bootstraps LiteLLM `default` team on startup
+
+**Status**: DONE.
+
+**Where**: `internal/litellm/client.go` (interface), `internal/litellm/team.go` (impl), `internal/controller/ach/litellmconnection_controller.go` (call site).
+
+**Symptom**: a freshly-hydrated cluster (production OR e2e) has zero `default`-alias teams in LiteLLM. The first SSO callback returns `default_team_missing` 500. Until now `scripts/cluster.sh` was a candidate fix, but production has no cluster.sh — the operator must self-bootstrap.
+
+**Fix**:
+- Added `EnsureDefaultTeam(ctx context.Context) error` to the `litellm.Client` interface.
+- Implemented on `RESTClient`: idempotent `ListTeamsByAlias(defaultTeamAlias)` → empty → `CreateTeam({team_alias: defaultTeamAlias})`. The `defaultTeamAlias` constant is hardcoded to `"default"` today; TODO §15 tracks making this configurable per-deployment.
+- `NoopClient` returns nil. All test fakes (8 files) get a no-op `EnsureDefaultTeam` shim.
+- `connection.Client` wrapper delegates to the underlying snapshot client.
+- `LiteLLMConnectionReconciler` calls `client.EnsureDefaultTeam(ctx)` immediately after the probe-success path. Failure is logged + tolerated (next reconcile retries every 5 minutes); the LiteLLMConnection CR's Synced=True does NOT depend on it.
+
+**Bonus**: `scripts/cluster.sh::hydrate_fixtures` is now cleaner — no shell-level team seed, just the Secret + LiteLLMConnection CR. The operator handles the rest.
+
+---
+
 ## J.3 — CLAUDE.md `examples/` reference audit
 
 **Status**: DONE.

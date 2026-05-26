@@ -441,6 +441,90 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 
 ---
 
+## 11. Promote shell-driven UAT checks into `test/e2e/` (Go/Ginkgo)
+
+Today's end-to-end sweep (2026-05-26) drove every CR surface via `kubectl` + `curl` against a live kind cluster. None landed in the Go-based suite at `test/e2e/`. These checks are good regression-catch candidates and belong as `phase4_*_test.go` (or split per concern; the suite already has `phase1_invariants_test.go`, `phase2_invariants_test.go`, `phase2_sc5_orphan_test.go`, `phase3_invariants_test.go`).
+
+Smallest-to-biggest:
+
+### 11a. Force-refresh annotation cycle (3 CR kinds)
+
+For each of `Plugin/caveman`, `Prompt/claude-code-system-prompt`, `Artifact/openclaw-templates`:
+- snapshot `status.lastSuccessfulRefresh`
+- `kubectl annotate <kind>/<name> ach.ackstorm.ai/force-refresh=now --overwrite`
+- assert annotation gets cleared within 10s
+- assert `lastSuccessfulRefresh` advances strictly
+- assert `status.upstreamRev` stays stable (no upstream change → no re-publish)
+
+Cheap. Single helper iterated over the 3 kinds.
+
+### 11b. BackendIdentityPolicy admission + finalizer + duplicate-target
+
+- Apply `examples/09-backendidentitypolicy-context7.yaml` + `examples/10-backendidentitypolicy-duplicate.yaml`
+- Assert both stored, both finalizer-tagged
+- Assert `status.conditions` empty on both (no DuplicateTarget — by design per memory `feedback_bip_no_shadow_logic.md`)
+- Delete both, assert finalizers cleanly removed
+
+### 11c. PluginMarketplace internal-schema happy path
+
+- Drive `examples/05b-pluginmarketplace-internal-http.yaml` end-to-end:
+  - Pre-create ConfigMap `mkt-test-fixture` from `.gocache/uat/marketplace.json`
+  - Deploy `mkt-test-server` (nginx serving the ConfigMap)
+  - Apply the PluginMarketplace CR
+  - Assert `Synced=True` within 30s
+  - Assert `marketplace_plugins` table has the expected entry (name, upstream_rev, storage_location)
+  - Delete CR, assert finalizer cleanup drops the DB row
+
+This is the regression contract for the OUTER fetch + parser of OUR internal schema. Independent of TODO §5 (real Anthropic schema re-model).
+
+### 11d. Operator restart + informer resync
+
+- Snapshot operator pod uid
+- `kubectl delete pod <operator-pod> --wait=false`
+- Wait for fresh pod Ready (new uid)
+- Annotate a Plugin CR with force-refresh
+- Assert reconciliation fires within 30s (annotation cleared, lastRefresh advances)
+
+Catches any "wires-only-on-startup" bugs in the controller-manager setup.
+
+### 11e. `/platform/hydrate` golden JSON
+
+Currently `examples/hydrate-demo.sh` drives the entire pk_ + hydrate path end-to-end and writes `examples/hydrate.json`. Promote to:
+- `test/e2e/phase4_hydrate_test.go` that drives the same flow using the Go test harness (port-forward via the existing `phase3_helpers_test.go` pattern)
+- Assert the response JSON shape against a checked-in golden file at `test/e2e/fixtures/hydrate-golden.json`
+- Tolerate field-order differences but exact-match values + downloadUrl paths
+
+This is the highest-value e2e add — it locks the contract surface the future `ach hydrate` CLI will depend on.
+
+### 11f. Delete + finalizer cleanup matrix (5 CR kinds)
+
+Partially covered by phase3 today. Extend to cover:
+- Environment delete drives the §6.5 LiteLLM `DeleteAccessGroup` + `DeleteTag` calls (assert via LiteLLM mock or live)
+- PluginMarketplace delete drives the §10.3 cache cleanup + `marketplace_plugins` DELETE
+- BIP delete is finalizer-only (no PVC, no DB) — assert clean removal
+
+**Acceptance**: all 6 sub-tests slot into the existing `make e2e-full` / `make e2e-keep` harness; `e2e-focus FOCUS="phase4"` runs only the new ones during dev-loop. Each adds < 30s to the full-suite runtime when run against an already-up kept cluster.
+
+---
+
+## 15. Configurable LiteLLM default-team alias (single source of truth)
+
+**Severity**: LOW (enhancement; default `"default"` works for the bootstrap deployment).
+
+**Where**: `internal/litellm/team.go::defaultTeamAlias` constant; SSO handler at `internal/platformapi/auth/sso.go::provisionUser` (hardcoded `"default"` in `ListTeamsByAlias` + `TeamMemberAdd` calls); EnvKey handler at `internal/platformapi/envkeys/handler.go` (hardcoded `defaultTeam` variable).
+
+**Symptom**: today the operator-bootstrapped team (J.5) is always alias=`default`. Deployers wanting a tenant-specific identity (e.g. an "engineering" team that every SSO user joins) cannot change it without a code patch.
+
+**Fix sketch**:
+- Add a top-level operator config field `--default-team-alias` (default `"default"`); read via the existing config layer (env var `ACH_DEFAULT_TEAM_ALIAS` mirror).
+- Pass into `LiteLLMConnectionReconciler` as a field; the reconciler passes the value to `client.EnsureDefaultTeam(ctx, alias)` (interface signature widens to take the alias).
+- Same value flows into `platformapi/auth/Deps` and `platformapi/envkeys/Deps` so the SSO + EnvKey paths use the same canonical name.
+- Hub §8.1 spec note: "The default team alias is configured at operator startup. SSO callbacks enroll every newly-SSO'd user into the team with this alias."
+
+**Acceptance**: an operator started with `--default-team-alias=engineering` (a) creates a team with that alias on first startup (idempotent), (b) enrolls every SSO-provisioned user into it, (c) makes the value visible in `kubectl describe deploy ach-operator` env.
+
+---
+
 ## Cross-cutting tech debt (deferred)
 
 - **Goreleaser `dockers_v2` migration** — current configs emit deprecation warnings; future maintenance task

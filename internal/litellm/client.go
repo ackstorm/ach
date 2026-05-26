@@ -136,6 +136,18 @@ type Client interface {
 	// KEY-10 enforced at the type level: MaxBudget is *float64 with
 	// omitempty so nil pointer drops the field from the wire payload.
 	KeyGenerate(ctx context.Context, req *KeyGenerateRequest) (*KeyGenerateResponse, error)
+
+	// EnsureDefaultTeam is the operator-side bootstrap call that
+	// guarantees LiteLLM has at least one Team with alias=default
+	// before any SSO callback fires. Idempotent: list by alias first,
+	// only POST /team/new on empty. Called by the LiteLLMConnection
+	// reconciler after a successful probe so we never need the deployer
+	// to hand-seed the team via cluster.sh / curl.
+	//
+	// Returns nil on success (team already present OR newly created).
+	// Returns wrapped error on LiteLLM unreachable / 5xx / unauthorized
+	// — caller logs and continues; the next reconcile retries.
+	EnsureDefaultTeam(ctx context.Context) error
 }
 
 // Compile-time interface assertion: RESTClient satisfies Client. If a
