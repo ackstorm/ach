@@ -576,6 +576,7 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 //   - user already on the team (the case we want to swallow)
 //   - team_id unknown (would fail earlier at ListTeamsByAlias and
 //     surface as default_team_missing, NOT reaching this branch)
+//
 // So (path + 400) is a sufficient duplicate-add discriminator.
 func isDuplicateAddErr(err error) bool {
 	if err == nil {

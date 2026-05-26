@@ -4,41 +4,9 @@ Tracker for non-blocking work after bootstrap release `v0.1.0`. Each item is sel
 
 ---
 
-## 1. Hardening batch (small)
-
-**Scope**: fix the 3 known smoke-verification failures from Phase 16.
-
-**Files**:
-- `scripts/cluster.sh` — postgres image tag pin
-- `docs/Makefile` — nested-docker mount path translation
-- `.golangci.yml` and/or scaffold code — outstanding deprecations
-
-**Acceptance criteria**:
-- `./scripts/dev.sh make cluster-up && make cluster-status && make cluster-down` end-to-end PASS with hydrated postgres/valkey/dex/litellm/toolhive
-- `./scripts/dev.sh make docs-build` PASS (or document host-only path explicitly + remove from `./scripts/dev.sh` smoke list)
-- `./scripts/dev.sh make lint` exit 0 with zero exclusions added beyond the current SA1019 one
-- `make pre-push` GREEN with zero warnings (or 1, max — re-evaluate gate 11 self-match exclusions)
-
-**Specific fixes**:
-
-### 1a. postgres bitnami tag pruned upstream
-- **Symptom**: kind cluster-up fails because `docker.io/bitnami/postgresql:16.4.0-debian-12-r14` is `NotFound` (Bitnami pruned)
-- **Options**: (a) bump to latest published Bitnami tag, (b) mirror to `ghcr.io/ackstorm/mirror/postgresql`, (c) switch to `cloudnative-pg` or upstream postgres image
-- **Recommend**: option (b) — Bitnami's image retention policy will keep pruning; mirror once + control rotation
-- **Audit also**: valkey, redis, any other Bitnami pins in `scripts/cluster.sh` + `deploy/helm/ach/values.yaml`
-
-### 1b. docs-build nested-docker mount
-- **Symptom**: `./scripts/dev.sh make docs-build` invokes a docker container that mounts `$(abspath docs/..)` which resolves to `/workspace` inside devtools, then the mount uses host docker socket → host has no `/workspace`
-- **Options**: (a) translate mount path back to host via env var `HOST_PWD`, (b) refuse to run `docs-build` inside devtools and require host invocation, (c) use `docs-build-local` (python3) as devtools fallback
-- **Recommend**: option (a) — pass `HOST_PWD=$(pwd)` from `dev.sh` into devtools env; docs-build uses `$(HOST_PWD)` for nested mount
-
-### 1c. lint deprecations
-- **Already added**: `SA1019` exclusion for `scheme.Builder` in `api/*`
-- **Audit other warnings**: run `./scripts/dev.sh make lint` (full output) and triage anything else introduced by go 1.26 / k8s 0.36 / controller-runtime 0.24.1 churn
-
----
-
 ## 2. Domain port from ach-old
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-25-ach-domain-port.md](docs/plans/2026-05-25-ach-domain-port.md) (existing plan covers this slice)
 
 **Scope**: lift business logic from `/home/jcm/Projects/ach-old/` into bootstrap shell.
 
@@ -77,51 +45,9 @@ Tracker for non-blocking work after bootstrap release `v0.1.0`. Each item is sel
 
 ---
 
-## 3. Multi-component Helm templates
-
-**Scope**: current `deploy/helm/ach/templates/install.yaml` renders a single Deployment (operator-only baseline inherited from alitellm). `values.yaml` already exposes 5 per-mode toggles (operator, platformApi, forwarder, contentService, migrate). Templates need to consume them.
-
-**Files**:
-- `deploy/helm/ach/templates/operator-deployment.yaml` (new)
-- `deploy/helm/ach/templates/platform-api-deployment.yaml` (new)
-- `deploy/helm/ach/templates/forwarder-deployment.yaml` (new)
-- `deploy/helm/ach/templates/content-service-deployment.yaml` (new)
-- `deploy/helm/ach/templates/migrate-job.yaml` (new — Job, not Deployment)
-- `deploy/helm/ach/templates/_helpers.tpl` (extend with per-mode labels/serviceAccount selectors)
-- `deploy/helm/ach/templates/{service,rbac,sa}-*.yaml` per-mode resources
-- Remove or refactor: `deploy/helm/ach/templates/install.yaml` (monolith from alitellm)
-
-**Pattern**: each Deployment template references `{{ .Values.image.repo }}:{{ .Values.image.tag }}` (single image) with `args: {{ .Values.<mode>.args | toYaml }}` (cobra subcommand). Gated by `{{- if .Values.<mode>.enabled }}`.
-
-**Sync source-of-truth**: `make helm-sync` regenerates from kustomize. Either (a) author Helm templates directly and skip kustomize-to-helm, or (b) extend `config/deployments/` kustomize bases for all 5 modes and let `kustomize-to-helm.sh` regenerate.
-
-**Recommend**: (a) — single-binary makes per-mode templates trivial; keep kustomize for k8s-native users; Helm chart authored independently.
-
-**Acceptance**:
-- `helm template deploy/helm/ach --set operator.enabled=true --set platformApi.enabled=true` renders 2 Deployments
-- `helm template deploy/helm/ach --set migrate.enabled=true` renders 1 Job + the default Deployments
-- `helm lint deploy/helm/ach` PASS
-- Install into kind cluster end-to-end via `helm install ach deploy/helm/ach --namespace ach-system --create-namespace`
-
----
-
-## 4. Sync-back PR to alitellm-operator ✅ STARTED
-
-**Scope**: open a PR against `/home/jcm/Projects/alitellm-operator/` containing the real-bug fixes + hardening improvements ACH developed during bootstrap.
-
-**Briefing files staged at**: `/home/jcm/Projects/alitellm-operator/SYNC-FROM-ACH/`
-
-See `/home/jcm/Projects/alitellm-operator/SYNC-FROM-ACH/README.md` for the agent prompt + per-fix diffs.
-
-**Acceptance**:
-- Branch on alitellm-operator: `sync-from-ach-2026-05-25`
-- Single commit per fix (or one bundled commit per category)
-- PR description references ACH commit SHAs
-- All fixes pass alitellm's own `make pre-push` + CI
-
----
-
 ## 5. PluginMarketplace schema mismatch — re-model to upstream
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-marketplace-real-schema.md](docs/plans/2026-05-26-marketplace-real-schema.md) (19 tasks across 7 phases; new internal/sources/git/ fetcher, parser re-model, audit hardening, hydrate-demo wire-in)
 
 **Status**: discovered during end-to-end demo (2026-05-26). Partial work in tree (see "Current state" below). Do NOT patch with a tolerance shim — re-model to the real upstream schema in one pass.
 
@@ -318,6 +244,8 @@ Half-day to one day, depending on whether the git-remote fetcher needs its own i
 
 ## 6. BackendIdentityPolicy — Forwarder read-path resolves duplicates
 
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-bip-forwarder-read-path.md](docs/plans/2026-05-26-bip-forwarder-read-path.md) (16 tasks: 7 Layer A independent + 6 Layer B blocks on §2 + 3 docs scrubs)
+
 **Design decision (2026-05-26)**: the operator stays dumb on BIP duplicates. There is NO DuplicateTarget reconciler, NO Synced status churn, NO shadow flip. Multiple CRs targeting the same `(target.kind, target.name)` are allowed by design.
 
 The Forwarder (when ported from ach-old / wired into `cmd/ach/cmd/forwarder.go`) MUST resolve duplicates at READ time:
@@ -343,6 +271,8 @@ Rationale: operators wanting different precedence rename their CRs (`zz-` suffix
 ---
 
 ## 7. Environment.AccessGroupSynced never reaches True — BLOCKS EnvKey lifecycle
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-accessgroup-reconciler.md](docs/plans/2026-05-26-environment-accessgroup-reconciler.md) (9 tasks + pre-flight; TDD-first with httptest fake LiteLLM; surfaced 3 ach-old findings: F1 wrong DeleteAccessGroup URL, F2 ach-old has same bug — no verbatim port, F3 binding via team.models prefix not member_add)
 
 **Severity**: HIGH (every `POST /platform/env-keys` returns 503 `not_ready`).
 
@@ -383,6 +313,8 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 
 ## 8. Content Service `/content/{kind}/{name}` routes are unimplemented — BLOCKS artifact download
 
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-content-service-routes.md](docs/plans/2026-05-26-content-service-routes.md) (18 tasks across 7 phases; uses http.ServeContent for free sendfile(2); §2 dependency forked with seed-content-cache.sh fallback)
+
 **Severity**: HIGH (every URL in `hydrate.json::context.*[].downloadUrl` is a dangling pointer today).
 
 **Surface**: `GET /content/prompt/...`, `/content/plugin/...`, `/content/artifact/...` on the `ach-content-service` Service (port 8082).
@@ -409,6 +341,8 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 
 ## 9. Environment `Ready` composite condition missing
 
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-ready-composite.md](docs/plans/2026-05-26-environment-ready-composite.md) (8 tasks; composite is `Available` not `Ready` per Hub §6.6; blocked on §7)
+
 **Severity**: LOW (cosmetic — `kubectl wait` works on the sub-conditions).
 
 **Where**: `internal/controller/ach/environment_controller.go`, `api/ach/v1alpha1/environment_types.go`.
@@ -424,6 +358,8 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 ---
 
 ## 10. CLI commands missing — `ach login`, `ach hydrate`, `ach env`, `ach whoami`
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-cli-commands.md](docs/plans/2026-05-26-cli-commands.md) (12 tasks; designs from scratch — ach-old/cmd/ach/cmd/ does NOT exist; adds new /platform/whoami route; --sso browser flow deferred to §10.1, v1 ships --token paste mode)
 
 **Severity**: MEDIUM (every demo runs through `examples/hydrate-demo.sh` which is the stand-in for the missing CLI).
 
@@ -442,6 +378,8 @@ The unit-test back-compat branch at `environment_controller.go:162-170` emits `A
 ---
 
 ## 11. Promote shell-driven UAT checks into `test/e2e/` (Go/Ginkgo)
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-e2e-promotion.md](docs/plans/2026-05-26-e2e-promotion.md) (21 tasks across six §11.x sub-test groups + harness/docs wrap-up; stdlib testing not Ginkgo per memory feedback_023; Makefile e2e-focus footgun fix included)
 
 Today's end-to-end sweep (2026-05-26) drove every CR surface via `kubectl` + `curl` against a live kind cluster. None landed in the Go-based suite at `test/e2e/`. These checks are good regression-catch candidates and belong as `phase4_*_test.go` (or split per concern; the suite already has `phase1_invariants_test.go`, `phase2_invariants_test.go`, `phase2_sc5_orphan_test.go`, `phase3_invariants_test.go`).
 
@@ -509,6 +447,8 @@ Partially covered by phase3 today. Extend to cover:
 
 ## 15. Configurable LiteLLM default-team alias (single source of truth)
 
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-default-team-alias.md](docs/plans/2026-05-26-default-team-alias.md) (26 tasks across 10 phases; atomic interface widening keeps build green between commits; TDD via unit + envtest + e2e)
+
 **Severity**: LOW (enhancement; default `"default"` works for the bootstrap deployment).
 
 **Where**: `internal/litellm/team.go::defaultTeamAlias` constant; SSO handler at `internal/platformapi/auth/sso.go::provisionUser` (hardcoded `"default"` in `ListTeamsByAlias` + `TeamMemberAdd` calls); EnvKey handler at `internal/platformapi/envkeys/handler.go` (hardcoded `defaultTeam` variable).
@@ -526,6 +466,8 @@ Partially covered by phase3 today. Extend to cover:
 ---
 
 ## 16. Validation gate after §7 + §9 — Environment Available=True end-to-end
+
+> **Status:** 📋 PLANNED — see [docs/plans/2026-05-26-environment-available-uat.md](docs/plans/2026-05-26-environment-available-uat.md) (8 tasks across 3 phases; §7 + §9 marked as hard blocking gates in Task 0; Phase A manual script + Phase B stdlib testing automated, NOT Ginkgo)
 
 **Severity**: MEDIUM (acceptance test for the domain-port work, not a code task itself).
 
