@@ -235,14 +235,20 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// conditions in memory and issue a SINGLE Status().Update so the
 	// conditions slice + the UnresolvedRuntime field land atomically.
 	//
-	// ExecutionResourcesResolved is the only condition this reconciler
-	// computes today. AccessGroupSynced and Available are written as
-	// placeholder Unknown values so the kubebuilder printcolumns surface
-	// SOMETHING (operators reading `kubectl get environment` see
-	// "Unknown" instead of an empty cell). When TODO §7 lands, the
-	// access-group binding step overrides AccessGroupSynced to True /
-	// False with the real reason. When TODO §9 lands, the composite
-	// rollup overrides Available.
+	// Three conditions are emitted in one Status().Update:
+	//
+	//   - ExecutionResourcesResolved: computed above from the
+	//     Snapshotter set-difference (Resolved / ResourceUnresolved).
+	//   - AccessGroupSynced: §7 reconcileAccessGroup helper produces
+	//     the real True/False per Hub §6.6 (Synced / PartialBind /
+	//     AccessGroupCreateFailed).
+	//   - Available: §9 composite rollup. computeAvailable reads the
+	//     two REQUIRED sub-conditions (AccessGroupSynced,
+	//     ExecutionResourcesResolved) from the in-memory conditions
+	//     slice and produces True/False/Unknown per the documented
+	//     precedence. True iff both required sub-conditions are True;
+	//     False iff any required sub-condition is False; Unknown if
+	//     any required sub-condition is Unknown or missing.
 	env.Status.UnresolvedRuntime = &unresolved
 	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
 		Type:               "ExecutionResourcesResolved",
