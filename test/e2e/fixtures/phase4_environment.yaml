@@ -1,0 +1,23 @@
+# Phase 4 e2e fixture: Environment "demo" with runtime.mcpServers
+# carrying "allowed" but NOT "disallowed". Used by SC#2 to verify
+# precheck.CheckMCP returns ErrUnauthorizedResource on /mcp/disallowed
+# and passes on /mcp/allowed. AuthorizedTeams is empty so only ek_
+# (bound-env) authorization grants access — pk_ runs the union-of-envs
+# pk_ path which finds no matching env.
+#
+# Engineer applies BEFORE running TestPhase4Invariants/SC2:
+#   kubectl -n default apply -f test/e2e/fixtures/phase4_environment.yaml
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: demo
+  namespace: default
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  runtime:
+    mcpServers:
+      - allowed
+    a2aAgents: []
+  authorizedTeams: []

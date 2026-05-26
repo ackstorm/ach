@@ -1,0 +1,34 @@
+# Phase 4 e2e fixture: two BackendIdentityPolicy CRs targeting the SAME
+# MCPServer "demo-mcp". They differ in forwardIdentityJWT — so Plan
+# 04-04 alpha-LAST resolution picks `pol-b` initially (lexicographically
+# after `pol-a`). Rename `pol-a` to `pol-zz-a` and the winner flips to
+# `pol-zz-a` (alpha-LAST), demonstrating SC#3 rename-driven precedence.
+#
+# Engineer applies BEFORE running TestPhase4Invariants/SC3:
+#   kubectl -n default apply -f test/e2e/fixtures/phase4_bip_alpha_last.yaml
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: pol-a
+  namespace: default
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp
+  forwardIdentityJWT: true
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: pol-b
+  namespace: default
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp
+  forwardIdentityJWT: false
