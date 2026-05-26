@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -126,27 +127,54 @@ func TestCachedResolverHit(t *testing.T) {
 
 // TestCachedResolverSingleFlight — N concurrent Resolve calls for the
 // same plaintext collapse to exactly ONE inner call.
+//
+// Synchronization strategy (was: 50ms sleep, flaky under -p=GOMAXPROCS
+// parallel package pressure):
+//
+//  1. Spawn N goroutines; each atomically signals "I'm about to call
+//     Resolve" via the `entered` counter BEFORE calling r.Resolve.
+//  2. Main spins on runtime.Gosched until entered == N — that is, all
+//     N goroutines have been scheduled and are about to call r.Resolve
+//     (no longer depends on the scheduler giving every goroutine 50ms).
+//  3. Brief settle so any goroutine between `entered.Add` and the
+//     singleflight enqueue inside r.Resolve actually enqueues. This
+//     window is ~tens of nanoseconds; 100ms is overkill even under
+//     heavy CPU pressure.
+//  4. close(leaderHold) releases the leader; only then can the
+//     singleflight entry be cleared. By construction all followers
+//     have already enqueued, so they join the leader's call → exactly
+//     one inner Resolve.
 func TestCachedResolverSingleFlight(t *testing.T) {
 	const N = 50
 	plaintext := "pk_cccccccccccccccccccccccccc"
-	start := make(chan struct{})
+	leaderHold := make(chan struct{})
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
-		<-start // hold the leader until all goroutines are racing
+		<-leaderHold // hold the leader until all followers have enqueued
 		return &KeyInfo{KeyID: "pkid_sf", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active"}, nil
 	}}
 	r, _, _ := setupCached(t, inner)
+
+	var entered atomic.Int32
 	var wg sync.WaitGroup
 	for i := 0; i < N; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			entered.Add(1)
 			_, _ = r.Resolve(context.Background(), plaintext)
 		}()
 	}
-	// Give every goroutine a chance to start and block on the leader
-	// before releasing.
-	time.Sleep(50 * time.Millisecond)
-	close(start)
+	// Wait until all N goroutines have signaled they are about to call
+	// r.Resolve. This is robust under -p=GOMAXPROCS pressure where a
+	// fixed sleep can race with goroutine scheduling.
+	for entered.Load() < N {
+		runtime.Gosched()
+	}
+	// Brief settle to cover the tiny gap between `entered.Add` and the
+	// singleflight enqueue inside r.Resolve.
+	time.Sleep(100 * time.Millisecond)
+
+	close(leaderHold)
 	wg.Wait()
 	if inner.callCount() != 1 {
 		t.Fatalf("expected exactly 1 inner call (single-flight), got %d", inner.callCount())
