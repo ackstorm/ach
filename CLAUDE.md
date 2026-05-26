@@ -117,7 +117,18 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
-├── examples/                ← runnable CR samples
+├── examples/                ← runnable CR fixtures + hydrate-demo driver
+│   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
+│   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
+│   ├── 05-pluginmarketplace-anthropic.yaml  real upstream (canary, blocked by TODO §5)
+│   ├── 05b-pluginmarketplace-internal-http.yaml  internal-schema fixture
+│   ├── 06-plugin-caveman.yaml     Plugin from JuliusBrussee/caveman
+│   ├── 07-prompt-claudecode-leak.yaml  Prompt from asgeirtj/system_prompts_leaks
+│   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)
+│   ├── 09-backendidentitypolicy-context7.yaml  BIP jwt-on
+│   ├── 10-backendidentitypolicy-duplicate.yaml  BIP duplicate-target demo
+│   ├── hydrate-demo.sh            Stand-in for `ach login` + `ach hydrate` CLI
+│   └── hydrate.json               Last-known-good /platform/hydrate output
 ├── hack/boilerplate.go.txt  ← SPDX one-liner, prepended to generated files
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
@@ -132,6 +143,7 @@ ach/
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
+| New CR fixtures / hydrate-demo path    | `examples/README.md`                     |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |

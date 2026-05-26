@@ -346,14 +346,22 @@ type TeamMemberAddRequest struct {
 //
 // AccessGroups carries the LiteLLM access-group name list (Phase 3 ek_
 // creation passes []string{"<environment>"} — single-element slice).
+//
+// Metadata is a free-form pass-through bag stored verbatim on the
+// LiteLLM-side key row. ACH populates it with `ach_key_id`,
+// `ach_key_type`, `ach_owner_email`, and (for ek_) `ach_environment`
+// so the orphan-cleanup reconciler can validate ACH ↔ LiteLLM mapping
+// deterministically via `/key/list` without relying on user_id +
+// creation-time heuristics.
 type KeyGenerateRequest struct {
-	UserID       string   `json:"user_id,omitempty"`
-	Key          string   `json:"key,omitempty"`
-	KeyAlias     string   `json:"key_alias,omitempty"`
-	Models       []string `json:"models,omitempty"`
-	MaxBudget    *float64 `json:"max_budget,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	AccessGroups []string `json:"access_groups,omitempty"`
+	UserID       string            `json:"user_id,omitempty"`
+	Key          string            `json:"key,omitempty"`
+	KeyAlias     string            `json:"key_alias,omitempty"`
+	Models       []string          `json:"models,omitempty"`
+	MaxBudget    *float64          `json:"max_budget,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	AccessGroups []string          `json:"access_groups,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // KeyGenerateResponse is the POST /key/generate response.

@@ -405,6 +405,11 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 			UserID:    userID,
 			MaxBudget: nil,
+			Metadata: map[string]string{
+				"ach_key_id":      keyID,
+				"ach_key_type":    "pk",
+				"ach_owner_email": claims.Email,
+			},
 		})
 		if err != nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
