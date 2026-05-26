@@ -97,3 +97,15 @@ metrics:
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.
 extraEnv: []
+
+# testMocks: Phase 4 e2e LiteLLM mock + MCP echo backend Deployments.
+# Default disabled — never render in production. Enable via
+# `--set testMocks.enabled=true` for `make e2e-keep` so SC2-tag (FWD-06
+# request-body tag injection) and SC3 (BIP alpha-LAST JWT mint) can
+# inspect what the Forwarder forwarded via /__capture/last on each mock.
+testMocks:
+  enabled: false
+  image:
+    repo: ach-mock
+    tag: latest
+    pullPolicy: IfNotPresent
