@@ -58,8 +58,9 @@ kill ${LITELLM_PF} 2>/dev/null || true
 
 echo "[hydrate-demo] 2. kubectl apply -f examples/*.yaml..."
 kubectl apply -f examples/01-litellmconnection.yaml \
-              -f examples/02-prompt-readme.yaml \
-              -f examples/03-plugin-docs.yaml \
+              -f examples/06-plugin-caveman.yaml \
+              -f examples/07-prompt-claudecode-leak.yaml \
+              -f examples/08-artifact-openclaw-templates.yaml \
               -f examples/04-environment-demo.yaml
 
 echo "[hydrate-demo] 3. waiting for Environment/${ENV_NAME} ExecutionResourcesResolved=True..."

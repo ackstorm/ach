@@ -1,12 +1,18 @@
 # Environment — the projection unit a user hydrates against.
-# References the demo Prompt + Plugin above + the "default" LiteLLM
-# Team (created via scripts/seed-default-team.sh, called from
-# examples/hydrate-demo.sh).
 #
-# runtime.* is intentionally empty: no Models / MCPServers / A2AAgents
-# registered in LiteLLM in this demo. The /platform/hydrate response
-# still emits runtime: {models: [], mcpServers: [], a2aAgents: []}
-# per the schema invariant — both blocks ALWAYS present (Hub §15.1).
+# References the real CRs shipped in this folder:
+#   - Plugin/caveman              (06-plugin-caveman.yaml)
+#   - Prompt/claude-code-system-prompt (07-prompt-claudecode-leak.yaml)
+#   - Artifact/openclaw-templates (08-artifact-openclaw-templates.yaml)
+#
+# plus the "default" LiteLLM Team (auto-created on first cluster-up by
+# scripts/cluster.sh hydrate_litellm + scripts/cluster.sh
+# hydrate_fixtures + the SSO provisionUser flow).
+#
+# runtime.* is intentionally empty: this demo does not register any
+# Models / MCPServers / A2AAgents in LiteLLM. The /platform/hydrate
+# response still emits the runtime block with three empty arrays per
+# the Hub §15.1 "both blocks always present" invariant.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: Environment
 metadata:
@@ -21,9 +27,8 @@ spec:
     a2aAgents: []
   context:
     prompts:
-      - demo-prompt
       - claude-code-system-prompt
     plugins:
-      - demo-plugin
       - caveman
-    artifacts: []
+    artifacts:
+      - openclaw-templates

@@ -9,11 +9,14 @@ will take.
 
 | File | Kind | Notes |
 |------|------|-------|
-| `01-litellmconnection.yaml` | `LiteLLMConnection` | Wires the operator to the in-cluster LiteLLM Service. Also seeded by `scripts/cluster.sh hydrate_fixtures`. |
-| `02-prompt-readme.yaml` | `Prompt` | Pulls `README.md` from this repo via GitHub — single-file external-reference, no auth required. |
-| `03-plugin-docs.yaml` | `Plugin` | Pulls the `docs/` tree from this repo — directory-bundle external-reference, no auth required. |
-| `04-environment-demo.yaml` | `Environment` | References the Prompt + Plugin above. `authorizedTeams: [default]` ties it to the LiteLLM `default` Team the demo script seeds. |
-| `hydrate-demo.sh` | shell | End-to-end driver — apply + wait + SSO + hydrate. |
+| `01-litellmconnection.yaml`           | `LiteLLMConnection`  | Wires the operator to the in-cluster LiteLLM Service. Also seeded by `scripts/cluster.sh hydrate_fixtures`. |
+| `04-environment-demo.yaml`            | `Environment`        | References the three external-reference CRs below. `authorizedTeams: [default]` ties it to the LiteLLM `default` Team the demo script seeds. |
+| `05-pluginmarketplace-anthropic.yaml` | `PluginMarketplace`  | Pulls `anthropics/claude-plugins-official` via `http` source and filters to `^code-.*`. Surfaces FIX01 §F.1/F.2 today — kept as a canary. |
+| `06-plugin-caveman.yaml`              | `Plugin`             | Third-party `JuliusBrussee/caveman` — directory-bundle plugin. |
+| `07-prompt-claudecode-leak.yaml`      | `Prompt`             | Single-file fetch from `asgeirtj/system_prompts_leaks`. |
+| `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. |
+| `hydrate-demo.sh`                     | shell                | End-to-end driver — apply + wait + SSO + hydrate. |
+| `hydrate.json`                        | json                 | Last-known-good output of the hydrate path. |
 
 ## Run it
 

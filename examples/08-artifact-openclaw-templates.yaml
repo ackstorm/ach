@@ -1,0 +1,25 @@
+# Artifact — pulls the docs/reference/templates/ tree from openclaw/
+# openclaw and packages it as a .tar.gz under the operator cache PVC.
+# Demonstrates the `directory` scope: ACH materializes the upstream
+# subtree as a single archive that the Content Service serves on
+# /content/artifact/<name>.
+#
+# (Scope `object` would serve a single file verbatim; `directory`
+# tar-gzs the whole subdirectory at refresh time per CRD-05.)
+#
+# Public repo — no GitHub PAT needed.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Artifact
+metadata:
+  name: openclaw-templates
+  namespace: ach-system
+spec:
+  type: github
+  scope: directory
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: openclaw/openclaw
+    ref: main
+    path: docs/reference/templates

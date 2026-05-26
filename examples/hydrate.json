@@ -9,11 +9,6 @@
   "context": {
     "prompts": [
       {
-        "name": "demo-prompt",
-        "id": "demo-prompt",
-        "downloadUrl": "https://ach.local.test/content/prompt/demo-prompt"
-      },
-      {
         "name": "claude-code-system-prompt",
         "id": "claude-code-system-prompt",
         "downloadUrl": "https://ach.local.test/content/prompt/claude-code-system-prompt"
@@ -21,16 +16,17 @@
     ],
     "plugins": [
       {
-        "name": "demo-plugin",
-        "id": "demo-plugin",
-        "downloadUrl": "https://ach.local.test/content/plugin/demo-plugin"
-      },
-      {
         "name": "caveman",
         "id": "caveman",
         "downloadUrl": "https://ach.local.test/content/plugin/caveman"
       }
     ],
-    "artifacts": []
+    "artifacts": [
+      {
+        "name": "openclaw-templates",
+        "id": "openclaw-templates",
+        "downloadUrl": "https://ach.local.test/content/artifact/openclaw-templates"
+      }
+    ]
   }
 }
