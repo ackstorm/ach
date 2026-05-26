@@ -76,9 +76,13 @@ the operator team's choice).
 ```bash
 NEXT_KID_B64="..."   # from step 1
 NEXT_SEED_B64="..."  # from step 1
+# Use op:add rather than op:replace (RFC 6902 §4.1 vs §4.3). The
+# fresh-install Secret only holds current.kid + current.seed; replace
+# fails with "missing path" against the absent next.* entries. add
+# succeeds whether the target path exists or not (replacing if present).
 kubectl -n <deployment-namespace> patch secret ach-jwt-signing-keys --type=json \
-  -p="[{\"op\":\"replace\",\"path\":\"/data/next.kid\",\"value\":\"$NEXT_KID_B64\"},
-       {\"op\":\"replace\",\"path\":\"/data/next.seed\",\"value\":\"$NEXT_SEED_B64\"}]"
+  -p="[{\"op\":\"add\",\"path\":\"/data/next.kid\",\"value\":\"$NEXT_KID_B64\"},
+       {\"op\":\"add\",\"path\":\"/data/next.seed\",\"value\":\"$NEXT_SEED_B64\"}]"
 ```
 
 ### 3. Verify the Forwarder reloaded
@@ -106,11 +110,15 @@ the new `next.kid`.
 ```bash
 NEXT_KID_B64="..."    # same as step 1
 NEXT_SEED_B64="..."   # same as step 1
+# current.* always exists at this point (Secret was created with both
+# slots populated in step 2), so op:replace is safe. The next.* clears
+# use op:add too, for symmetry with step 2 and to remain robust if a
+# future runbook variant skips step 2.
 kubectl -n <deployment-namespace> patch secret ach-jwt-signing-keys --type=json \
   -p="[{\"op\":\"replace\",\"path\":\"/data/current.kid\",\"value\":\"$NEXT_KID_B64\"},
        {\"op\":\"replace\",\"path\":\"/data/current.seed\",\"value\":\"$NEXT_SEED_B64\"},
-       {\"op\":\"replace\",\"path\":\"/data/next.kid\",\"value\":\"\"},
-       {\"op\":\"replace\",\"path\":\"/data/next.seed\",\"value\":\"\"}]"
+       {\"op\":\"add\",\"path\":\"/data/next.kid\",\"value\":\"\"},
+       {\"op\":\"add\",\"path\":\"/data/next.seed\",\"value\":\"\"}]"
 ```
 
 Setting `next.kid` to the empty base64 string `""` clears the slot
