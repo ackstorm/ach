@@ -27,7 +27,15 @@ func IncJWTSigned(kind string) {}
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}
-//	reason ∈ {no_policy, policy_opt_out, signing_failure}
+//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}
+//
+// list_failure is emitted by bip.ResolveWinner when the controller-runtime
+// cache List call returns a transient error (cache desync, mid-rotation
+// indexer, etc.). The runtime still fails open (no JWT mint) — the
+// counter is the observability seam that distinguishes "no policy
+// matches this target" from "we never got to check". Doc follow-up:
+// add list_failure to the Hub §18.5 normative reason enum in the next
+// phase planning.
 //
 // Phase 4 ships a no-op stub; Phase 5 (OBS-03..06) wires Prometheus.
 func IncJWTSuppressed(kind, reason string) {}

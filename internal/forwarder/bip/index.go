@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/forwarder/metrics"
 )
 
 // TargetIndexKey is the controller-runtime field-indexer key used to
@@ -69,6 +70,17 @@ func ResolveWinner(ctx context.Context, c client.Client, kind, name, namespace s
 	if err := c.List(ctx, &list,
 		client.MatchingFields{TargetIndexKey: kind + "/" + name},
 		client.InNamespace(namespace)); err != nil {
+		// C2 (REVIEW): fail-open at the JWT layer is correct (failing
+		// closed would reject every /mcp request during a transient
+		// cache blip), but the failure MUST be observable. Without the
+		// log + metric, a cache desync would silently downgrade backends
+		// from "JWT-protected" to "no auth" while emitting only the
+		// generic no_policy suppressed counter — indistinguishable from
+		// an intentional opt-out. The list_failure reason (new in
+		// Hub §18.5 enum) is the seam Phase 5 wires to Prometheus.
+		ctrl.Log.WithName("forwarder.bip").Error(err, "BIP list failed; treating as no-policy",
+			"kind", kind, "name", name, "namespace", namespace)
+		metrics.IncJWTSuppressed(kind, "list_failure")
 		return nil
 	}
 	if len(list.Items) == 0 {
