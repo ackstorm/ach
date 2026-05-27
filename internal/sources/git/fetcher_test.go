@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -280,5 +281,46 @@ func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
 	}
 	if out[1] != "http.extraHeader=Authorization: Bearer ***" {
 		t.Errorf("redaction shape unexpected: %q", out[1])
+	}
+}
+
+// TestLsRemote_RespectsInnerTimeout asserts that even with a long
+// (or absent) caller ctx, LsRemote bounds the subprocess via its own
+// internal deadline so a stalled upstream cannot hang the reconciler
+// indefinitely. Pins PR #9 follow-up review finding #3.
+func TestLsRemote_RespectsInnerTimeout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	// Hangs forever — accepts TCP, never sends a byte. git ls-remote
+	// would block on GIT_HTTP_LOW_SPEED_TIME (60s) without an inner
+	// deadline.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Hold the connection; never reply. Closed when listener closes.
+			_ = c
+		}
+	}()
+	url := "http://" + ln.Addr().String() + "/x.git"
+
+	start := time.Now()
+	_, err = LsRemote(context.Background(), url, "main", "")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected error from stalled upstream")
+	}
+	// Inner deadline should be ~30s. Give a generous wall-clock cap
+	// to avoid flake on slow CI.
+	if elapsed > 45*time.Second {
+		t.Errorf("LsRemote took %v; inner deadline should fire well before 45s", elapsed)
 	}
 }
