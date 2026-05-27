@@ -28,11 +28,31 @@ image:
 watchNamespace: ""
 
 # operator: reconciles ACH CRDs (AgentDefinition, AgentSession, etc).
+#
+# Default args bind the controller-runtime metricsserver on :8080
+# (HTTP, no auth) so the Pod-level prometheus.io/scrape annotation
+# in operator-deployment.yaml actually resolves to a live endpoint.
+# Phase 5 OBS-03..06 + SC#5 wiring — the operator's :8080/metrics
+# surfaces controller_runtime_reconcile_*, workqueue_*, plus the
+# shared litellm_unreachable_total{caller="operator"} registered by
+# Plan 05-06 Task 5.
+#
+# To switch to secure metrics (TLS + authn/authz on :8443) for
+# deployers running cert-manager + Prometheus with bearer-token
+# auth, override operator.args via --set or values overlay:
+#   operator:
+#     args:
+#       - operator
+#       - --metrics-bind-address=:8443
+#       - --metrics-secure=true
 operator:
   enabled: true
   replicas: 1
   resources: {}
-  args: ["operator"]
+  args:
+    - operator
+    - --metrics-bind-address=:8080
+    - --metrics-secure=false
 
 # platformApi: HTTP API surface for agent registry, config serving.
 platformApi:
