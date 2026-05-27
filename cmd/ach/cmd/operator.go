@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -45,6 +46,7 @@ import (
 	achcontroller "github.com/ackstorm/ach/internal/controller/ach"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/orphan"
 	"github.com/ackstorm/ach/internal/snapshot"
 	// +kubebuilder:scaffold:imports
@@ -225,6 +227,31 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	if secureMetrics {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
+
+	// ─── Phase 5 D-10 / OBS-05: register the shared
+	//     litellm_unreachable_total counter on controller-runtime's
+	//     global metrics Registry (typed as a RegistererGatherer
+	//     interface, NOT *prometheus.Registry — hence the
+	//     -On suffix overload in internal/metrics/shared.go).
+	//     The Operator keeps controller-runtime's metricsserver
+	//     (:8443 HTTPS by default) — adding the ACH-namespaced shared
+	//     counter to crmetrics.Registry means /metrics on that server
+	//     surfaces the §18.5 cross-component metric with
+	//     caller="operator" dimension pre-declared.
+	//
+	//     Inc instrumentation is REGISTERED-BUT-UNUSED at end of Phase 5
+	//     (see Plan 05-06 spec_divergence): existing
+	//     internal/controller/ach/ reconcilers consume litellm.Client
+	//     for §10.3 force-refresh and the error branches log + retry
+	//     via the controller-runtime workqueue but do NOT emit a
+	//     litellm_unreachable counter. Retrofitting Inc hooks across
+	//     every reconciler error branch is a structural Phase 2/3
+	//     change and out of scope for Phase 5. The pre-declared
+	//     caller dimension means a future phase can add Inc hooks
+	//     without re-registering the metric.
+	_ = achmetrics.MustRegisterLitellmUnreachableOn(crmetrics.Registry)
+	operatorSetupLog.Info("operator: registered ACH-namespaced collectors on controller-runtime metrics registry",
+		"metric_count", 1, "metric", "litellm_unreachable_total")
 
 	if len(metricsCertPath) > 0 {
 		operatorSetupLog.Info("Initializing metrics certificate watcher using provided certificates",
