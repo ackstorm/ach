@@ -539,6 +539,26 @@ WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 hydrate URLs look right — and every GET 404s because the route doesn't
 exist. Fix is a rolling image update; no data migration.
 
+### ❌ "SourceReachable=False reason=Unauthorized" on a public GitHub repo
+```bash
+kubectl get plugin/caveman -o jsonpath='{.status.conditions[0]}'
+# {"reason":"Unauthorized","message":"github: GetCommit 403: sources: unauthorized"}
+```
+✅ This is GitHub's 60 req/h/IP anonymous rate-limit — NOT a config bug. The
+within-interval gate (`shouldSkipFetch` in `internal/controller/ach/external_ref_refresh.go`)
+already prevents steady-state burn; a 403 here means a real burst (multiple
+`cluster.sh up` cycles, operator restarts, or force-refresh fires within an
+hour) has actually exhausted the quota. Either:
+  - wait ~1h for the quota window to roll over, OR
+  - set `authSecretRef` on a CR whose repo legitimately needs auth, OR
+  - investigate why the operator is reconciling more often than expected
+    (`kubectl -n ach-system logs deploy/ach-operator | grep -c GetCommit`)
+
+WHY IT FAILS: GitHub rate-limits anonymous REST calls by source IP. The Hub's
+default refresh interval is 1h per CR, so legitimate steady-state should
+average <5 API calls/h across 3-5 CRs — well below the 60/h ceiling. Hitting
+the limit means a tight loop or many cluster rebuilds in the same hour.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that

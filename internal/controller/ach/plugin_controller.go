@@ -149,6 +149,29 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	// §10.3 within-interval gate: skip the upstream probe when the CR was
+	// successfully refreshed within spec.refresh.interval and nothing
+	// demands re-verification. Cuts steady-state GitHub API burn ~10x.
+	// Reads lastRefresh from cr.Status.LastSuccessfulRefresh (not the DB
+	// row) because the materializeExternalRef NotModified (304) path
+	// returns before the external_refs DB upsert — so the DB row goes
+	// stale on every 304, defeating the gate. Status is bumped on both
+	// fresh and NotModified paths (see plugin_controller.go status block
+	// below), so it is the reliable source for the gate decision.
+	var gateLastRefresh time.Time
+	if cr.Status.LastSuccessfulRefresh != nil {
+		gateLastRefresh = cr.Status.LastSuccessfulRefresh.Time
+	}
+	if shouldSkipFetch(cr.Spec.Refresh, gateLastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, time.Now()) {
+		remaining := time.Until(gateLastRefresh.Add(requeueDurationFromRefresh(cr.Spec.Refresh)))
+		if remaining < time.Second {
+			remaining = time.Second
+		}
+		logger.V(1).Info("§10.3 within-interval gate: skipping fetch",
+			"lastRefresh", gateLastRefresh, "requeueAfter", remaining)
+		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
 	spec := cr.Spec
 	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
 	authRef := extractAuthSecretRef(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)

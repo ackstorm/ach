@@ -139,6 +139,27 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	spec := cr.Spec
 	requeue := requeueDurationFromRefresh(spec.Refresh)
 
+	// §10.3 within-interval gate: skip the stage-1 catalog fetch when the
+	// CR was successfully refreshed within spec.refresh.interval and
+	// nothing demands re-verification. Marketplace reads lastRefresh from
+	// status (no external_refs row is persisted for the catalog file
+	// itself — see stage-1 PriorRev comment below). Spec change, the
+	// ach.ackstorm.ai/force-refresh annotation, and the next-interval
+	// timer still trigger fresh fetches.
+	var lastRefresh time.Time
+	if cr.Status.LastSuccessfulRefresh != nil {
+		lastRefresh = cr.Status.LastSuccessfulRefresh.Time
+	}
+	if shouldSkipFetch(spec.Refresh, lastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, time.Now()) {
+		remaining := time.Until(lastRefresh.Add(requeue))
+		if remaining < time.Second {
+			remaining = time.Second
+		}
+		logger.V(1).Info("§10.3 within-interval gate: skipping stage-1 catalog fetch",
+			"lastRefresh", lastRefresh, "requeueAfter", remaining)
+		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
 	// ─── Stage 1: fetch + parse + filter + conflict resolve. ───
 
 	// 1a: Build the marketplace-file SourceSpec + resolve auth Secret.
@@ -555,6 +576,13 @@ type pluginFailure struct {
 func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *achv1alpha1.PluginMarketplace, message string, requeue time.Duration) (ctrl.Result, error) {
 	setExternalRefCondition(&cr.Status.Conditions, "Synced", metav1.ConditionTrue, ReasonSynced, message, cr.Generation)
 	cr.Status.ObservedGeneration = cr.Generation
+	// Record successful catalog refresh (including 304 NotModified) so the
+	// §10.3 within-interval gate can skip the next reconcile within the
+	// refresh window. Mirrors the Plugin/Prompt/Artifact reconciler
+	// semantics where LastSuccessfulRefresh advances on both fresh
+	// fetches and NotModified shortcuts.
+	now := metav1.Now()
+	cr.Status.LastSuccessfulRefresh = &now
 	if err := r.Status().Update(ctx, cr); err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
