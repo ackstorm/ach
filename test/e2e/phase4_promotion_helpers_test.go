@@ -172,3 +172,59 @@ func walkJSON(path string, a, g any, tolerated map[string]struct{}, out *[]strin
 func jsonScalarEqual(a, b any) bool {
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
+
+// bipFinalizer is the canonical BIP finalizer name. Mirrors
+// internal/controller/ach/finalizers.go.
+const bipFinalizer = "backendidentitypolicies.ach.ackstorm.ai/finalizer"
+
+// assertBIPFinalizerPresent asserts the BIP CR carries the BIP finalizer.
+// Returns the parsed finalizer list for diagnostics.
+func assertBIPFinalizerPresent(t *testing.T, name string) []string {
+	t.Helper()
+	out, err := runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+		"-o", "jsonpath={.metadata.finalizers}")
+	if err != nil {
+		t.Fatalf("§11b get bip/%s finalizers: %v\n%s", name, err, out)
+	}
+	if !strings.Contains(out, bipFinalizer) {
+		t.Fatalf("§11b bip/%s missing finalizer %q; got=%q", name, bipFinalizer, out)
+	}
+	return strings.Fields(strings.Trim(out, "[]"))
+}
+
+// assertBIPConditionsEmpty asserts that status.conditions is
+// empty/missing on the BIP CR. Per memory feedback_bip_no_shadow_logic,
+// the operator stays dumb on BIPs — no DuplicateTarget condition, no
+// Synced churn. The Forwarder resolves duplicates at READ time.
+func assertBIPConditionsEmpty(t *testing.T, name string) {
+	t.Helper()
+	out, err := runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+		"-o", "jsonpath={.status.conditions}")
+	if err != nil {
+		t.Fatalf("§11b get bip/%s conditions: %v\n%s", name, err, out)
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed != "" && trimmed != "[]" && trimmed != "null" {
+		t.Fatalf("§11b bip/%s: status.conditions MUST stay empty by design "+
+			"(no DuplicateTarget reconciler — see feedback_bip_no_shadow_logic); "+
+			"got=%q", name, trimmed)
+	}
+}
+
+// waitForBIPDeleted polls until `kubectl get bip <name>` returns
+// NotFound. Asserts the finalizer was removed cleanly. timeout=30s.
+func waitForBIPDeleted(t *testing.T, name string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+			"--ignore-not-found", "-o", "jsonpath={.metadata.name}")
+		if err == nil && strings.TrimSpace(out) == "" {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	out, _ := runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace, "-o", "yaml")
+	t.Fatalf("§11b bip/%s: not deleted within %s; possibly stuck on finalizer\n%s",
+		name, timeout, out)
+}
