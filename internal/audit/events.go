@@ -59,6 +59,13 @@ const (
 	// Environment-CR reconciliation emission point (Phase 3 wires it via
 	// the existing controller; handlers do NOT emit this action).
 	ActionEnvironmentLifecycle = "platform.environment.lifecycle"
+
+	// ActionContentGet is the Content Service emission action (Phase 5
+	// D-Discretion / Plan 05-05). The handler emits exactly one audit
+	// event per request with this action and an outcome string from the
+	// §15.6 D-03 outcome table (covered Outcome* constants below).
+	// Additive constant per the §18.5 extension policy.
+	ActionContentGet = "content.get"
 )
 
 // Outcome* — the closed set of `outcome` values a Platform API or
@@ -90,4 +97,19 @@ const (
 	// BLK-05). Phase-3-internal additive extension to Hub §18.2 — not
 	// in the original enum.
 	OutcomeStateInvalid = "state_invalid"
+
+	// Content Service additive extensions (Phase 5 / Plan 05-05). Each
+	// of these is one row in the §15.6 D-03 outcome table that did not
+	// previously exist in the Phase 3 vocabulary. Additive per §18.5
+	// extension policy — no rename of existing constants.
+	OutcomeUnauthorizedContent = "unauthorized_content"
+	OutcomeContentNotFound     = "content_not_found"
+	OutcomeStaleCacheExpired   = "stale_cache_expired"
+
+	// OutcomeForwarded is the success outcome string for both the
+	// Phase 4 Forwarder (LLM/MCP proxy) and the Phase 5 Content Service
+	// (cache file streamed). Both components emit the same string so a
+	// single log-filter predicate counts successes across the trust
+	// boundary.
+	OutcomeForwarded = "forwarded"
 )

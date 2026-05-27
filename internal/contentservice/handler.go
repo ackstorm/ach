@@ -12,20 +12,47 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/ackstorm/ach/internal/contentservice/envcache"
+	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/metrics"
 )
 
-// PromptContentTypeLookup returns the Content-Type override for a
-// Prompt by metadata.name, or empty string when not set (caller falls
-// back to the §8 default text/markdown). Implementations close over a
-// k8s cached client in production; tests use a static map.
+// PromptContentTypeLookup is RETAINED in this transitional state so the
+// stub-patched cmd/ach/cmd/content_service.go still compiles between
+// Plan 05-05 (this plan) and Plan 05-06 (full wiring rewrite). After
+// Plan 05-06 lands the type and the PromptContentTypeFn field on Deps
+// will be removed. Production no longer reads spec.contentType via k8s
+// — content_type now flows from the prompts.content_type projection
+// column resolved in pipeline.go.
 type PromptContentTypeLookup func(ctx context.Context, name string) (string, error)
 
-// Deps bundles the handler's runtime collaborators. ZeroValue.Logger
-// falls back to slog.Default(); ZeroValue.PromptContentTypeFn falls
-// back to "always return empty" (handler default content-type).
+// Deps bundles the handler's runtime collaborators per Plan 05-05 D-16.
+// ZeroValue.Logger falls back to slog.Default(); the remaining fields
+// MUST be wired by the caller in cmd/ach/cmd/content_service.go (full
+// rewrite owned by Plan 05-06 Task 1). RegisterRoutes does NOT
+// nil-guard the new fields — a request that lands on a nil-Pool /
+// nil-Resolver Deps panics at request time, surfacing the wiring bug
+// loudly rather than silently 500-ing every request.
+//
+// Field-rename / removal is intentionally avoided in this plan:
+// PromptContentTypeFn is kept transitionally so the compile-tolerance
+// stub patch in cmd/ach/cmd/content_service.go (Task 3a) keeps the
+// build green between waves 2 and 3. Plan 05-06 Task 1 owns the full
+// Deps rewrite.
 type Deps struct {
 	CacheRoot           string
-	PromptContentTypeFn PromptContentTypeLookup
+	Namespace           string
+	PromptContentTypeFn PromptContentTypeLookup // DEPRECATED — Plan 05-06 removes
+	Pool                *pgxpool.Pool
+	EnvCache            envcache.Cache
+	Resolver            keystore.Resolver
+	Teams               keystore.TeamsResolver
+	Metrics             *metrics.ContentServiceCollectors
+	LiteLLMUnreachable  *prometheus.CounterVec
+	AuditLog            *slog.Logger
 	Logger              *slog.Logger
 }
 
