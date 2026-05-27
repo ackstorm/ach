@@ -76,8 +76,11 @@ type Result struct {
 }
 
 // gitDefaultMaxCloneBytes is the on-disk size cap when Spec.MaxCloneBytes
-// is zero. 200 MiB is generous — typical claude-plugin repos are <10 MiB.
-const gitDefaultMaxCloneBytes = 200 << 20
+// is zero. 512 MiB covers the long tail of Artifact directory-scope
+// targets that pull from larger upstream repos (e.g. openclaw/openclaw
+// at ~261 MiB depth-1) while still bounding a runaway clone. Typical
+// claude-plugin Plugin/Prompt repos are <10 MiB and well under the cap.
+const gitDefaultMaxCloneBytes = 512 << 20
 
 // gitCloneTimeout is the wall-clock bound on a single fetch operation.
 // Includes clone + checkout + tar. 5 minutes covers slow upstreams
