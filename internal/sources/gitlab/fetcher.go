@@ -51,6 +51,12 @@ const archiveHTTPTimeout = 5 * time.Minute
 type Fetcher struct {
 	spec       *achv1alpha1.GitLabSource
 	httpClient *nethttp.Client
+
+	// cloneURLForTesting overrides the upstream clone URL the
+	// git-transport branch uses. Empty in production. Set by tests so
+	// the git transport hits a local bare-repo fixture instead of
+	// gitlab.com.
+	cloneURLForTesting string
 }
 
 // New constructs a GitLab source fetcher. Returns ErrUpstreamInvalid
@@ -65,27 +71,54 @@ func New(spec *achv1alpha1.GitLabSource) (*Fetcher, error) {
 	}, nil
 }
 
+// extractToken returns the bearer token to send to GitLab, or empty
+// for anonymous fetch. Shared by both transport branches.
+//
+// Semantics (post Task 1 CRD shape relaxation):
+//
+//   - spec.AuthSecretRef == nil          → anonymous (token="").
+//   - spec.AuthSecretRef != nil,
+//     req.Secret == nil                  → ErrUnauthorized.
+//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
+//     achv1alpha1.DefaultAuthSecretKey("gitlab") == "GITLAB_TOKEN"
+//     so `kubectl create secret generic foo --from-literal=GITLAB_TOKEN=…`
+//     works zero-config.
+//   - resolved key missing from Secret.Data → ErrUnauthorized with the
+//     key NAME in the message (never the absent value — T-02-02-01).
+func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
+	if f.spec.AuthSecretRef == nil {
+		return "", nil
+	}
+	if req.Secret == nil {
+		return "", fmt.Errorf("gitlab: auth secret %q is nil: %w",
+			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
+	}
+	key := f.spec.AuthSecretRef.Key
+	if key == "" {
+		key = achv1alpha1.DefaultAuthSecretKey("gitlab")
+	}
+	raw := req.Secret.Data[key]
+	if len(raw) == 0 {
+		return "", fmt.Errorf("gitlab: missing auth secret key %q: %w",
+			key, sources.ErrUnauthorized)
+	}
+	return string(raw), nil
+}
+
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
+//
+// Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
+//   - "git"  (default) → fetchViaGit (no per-IP REST rate-limit).
+//   - "rest"           → legacy go-gitlab path below.
 func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
-	// 1. Extract PAT from Secret if AuthSecretRef is set. Phase 02.1
-	//    permits anonymous mode (spec.AuthSecretRef == nil) — go-gitlab
-	//    is constructed with an empty token and the PRIVATE-TOKEN header
-	//    is omitted on the raw archive download. Public projects on
-	//    gitlab.com SaaS respond to anonymous callers; private projects
-	//    return 401/404, which surfaces as ErrUnauthorized/ErrNotFound
-	//    through the classifier.
-	var token string
-	if f.spec.AuthSecretRef != nil {
-		if req.Secret == nil {
-			return nil, fmt.Errorf("gitlab: auth secret %q is nil: %w",
-				f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-		}
-		raw := req.Secret.Data[f.spec.AuthSecretRef.Key]
-		if len(raw) == 0 {
-			return nil, fmt.Errorf("gitlab: missing auth secret key %q: %w",
-				f.spec.AuthSecretRef.Key, sources.ErrUnauthorized)
-		}
-		token = string(raw)
+	if f.resolvedTransport() == "git" {
+		return f.fetchViaGit(ctx, req)
+	}
+
+	// ───── legacy REST branch ─────
+	token, err := f.extractToken(req)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Resolve host (default to gitlab.com SaaS when spec.Host is empty).
