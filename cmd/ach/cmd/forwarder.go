@@ -328,8 +328,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  llmUpstream,       // B2: from LiteLLMConnection CR
-		LiteLLMMasterKey: llmRes.MasterKey,  // B2: from MasterKeySecretRef
+		LiteLLMUpstream:  llmUpstream,      // B2: from LiteLLMConnection CR
+		LiteLLMMasterKey: llmRes.MasterKey, // B2: from MasterKeySecretRef
 	}
 	return out, nil
 }
