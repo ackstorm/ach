@@ -299,6 +299,53 @@ spec:
 	})
 }
 
+// getOperatorPodUID returns the metadata.uid of the running ach-operator
+// Pod. The Helm chart installs deploy/ach-operator into the release
+// namespace (E2E_NAMESPACE, default ach-system). The label selector
+// includes component=operator to disambiguate from the forwarder /
+// platform-api / content-service Pods (all share name=ach).
+func getOperatorPodUID(t *testing.T) string {
+	t.Helper()
+	out, err := runCmd("kubectl", "get", "pods", "-n", namespace,
+		"-l", "app.kubernetes.io/name=ach,app.kubernetes.io/component=operator",
+		"-o", "jsonpath={.items[0].metadata.uid}")
+	if err != nil {
+		t.Fatalf("§11d get operator pod uid: %v\n%s", err, out)
+	}
+	uid := strings.TrimSpace(out)
+	if uid == "" {
+		t.Fatalf("§11d: no operator pod found "+
+			"(label app.kubernetes.io/name=ach,component=operator in ns %s)", namespace)
+	}
+	return uid
+}
+
+// waitForOperatorPodChanged polls until a pod with uid != prevUID is
+// Running + Ready. Returns the new uid.
+func waitForOperatorPodChanged(t *testing.T, prevUID string, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := runCmd("kubectl", "get", "pods", "-n", namespace,
+			"-l", "app.kubernetes.io/name=ach,app.kubernetes.io/component=operator",
+			"-o", "jsonpath={range .items[?(@.status.phase=='Running')]}{.metadata.uid}{' '}{.status.conditions[?(@.type=='Ready')].status}{'\\n'}{end}")
+		if err == nil {
+			for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+				parts := strings.Fields(line)
+				if len(parts) == 2 && parts[0] != prevUID && parts[1] == "True" {
+					return parts[0]
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	out, _ := runCmd("kubectl", "get", "pods", "-n", namespace,
+		"-l", "app.kubernetes.io/name=ach,app.kubernetes.io/component=operator", "-o", "wide")
+	t.Fatalf("§11d: no new Ready operator Pod within %s (prev uid=%s)\n%s",
+		timeout, prevUID, out)
+	return ""
+}
+
 // runCmdStdin runs an arbitrary shell pipeline with `stdin` piped in.
 // Used for `... | kubectl apply -f -` patterns.
 func runCmdStdin(cmdline, stdin string) (string, error) {
