@@ -69,6 +69,13 @@ spec:
         - name: cache
           persistentVolumeClaim:
             claimName: ach-operator-cache
+        # Writable /tmp for the git source fetcher (it shells out to
+        # `git clone` into an os.MkdirTemp directory under /tmp).
+        # readOnlyRootFilesystem: true on the manager container means
+        # /tmp must be mounted from an emptyDir or the fetcher fails
+        # with "mkdir /tmp/git-...: read-only file system".
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: manager
           image: {{ include "ach.image" . }}
@@ -92,6 +99,8 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /var/cache/ach
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /healthz
