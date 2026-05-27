@@ -35,7 +35,7 @@ type Deps struct {
 	BaseURL          string
 	Namespace        string
 	LiteLLMUpstream  *url.URL
-	LiteLLMSharedKey string
+	LiteLLMMasterKey string
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -56,7 +56,7 @@ func New(deps Deps) http.Handler {
 	hdeps := proxy.HandlerDeps{
 		Deps: proxy.Deps{
 			LiteLLMUpstream:  deps.LiteLLMUpstream,
-			LiteLLMSharedKey: deps.LiteLLMSharedKey,
+			LiteLLMMasterKey: deps.LiteLLMMasterKey,
 			Logger:           deps.Logger,
 		},
 		Signer: deps.Signer,

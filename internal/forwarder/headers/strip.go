@@ -53,7 +53,7 @@ const authHeader = "Authorization"
 //     - case-insensitive prefix "x-ach-"
 //     - canonical-case form is in the static hopByHop list
 //     - canonical-case form is in the Connection-named set
-//  3. WRITE PASS — h.Set("x-litellm-api-key", sharedKey) and
+//  3. WRITE PASS — h.Set("x-litellm-api-key", masterKey) and
 //     h.Set("x-litellm-key-id", litellmToken). http.Header.Set canonicalizes
 //     to "X-Litellm-Api-Key" / "X-Litellm-Key-Id".
 //
@@ -62,7 +62,11 @@ const authHeader = "Authorization"
 //
 // Pure: no I/O, no logging, no panics on adversarial Connection token shapes
 // (empty value, whitespace-only, comma-only, multi-value entries).
-func StripAndRewrite(h http.Header, sharedKey, litellmToken string) {
+// masterKey is the value LiteLLM upstream trusts via the
+// x-litellm-api-key header (proxy-trust assertion — without it, LiteLLM
+// rejects requests with 401). Sourced from LiteLLMConnection CR's
+// MasterKeySecretRef at forwarder bootstrap.
+func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
 	// 1. Collect Connection-named tokens into a canonical-case set BEFORE the
 	//    strip pass so the iteration below can drop them. h.Values traverses
 	//    every entry (h.Add may have appended multiple Connection headers).
@@ -110,6 +114,6 @@ func StripAndRewrite(h http.Header, sharedKey, litellmToken string) {
 	}
 
 	// 3. Write pass. h.Set canonicalizes the keys.
-	h.Set("x-litellm-api-key", sharedKey)
+	h.Set("x-litellm-api-key", masterKey)
 	h.Set("x-litellm-key-id", litellmToken)
 }

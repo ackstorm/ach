@@ -169,7 +169,7 @@ func mkDeps(t *testing.T, upstream *httptest.Server, k8s client.Client, signer j
 	return HandlerDeps{
 		Deps: Deps{
 			LiteLLMUpstream:  u,
-			LiteLLMSharedKey: "shared",
+			LiteLLMMasterKey: "shared",
 			Logger:           slog.Default(),
 		},
 		Signer:       signer,

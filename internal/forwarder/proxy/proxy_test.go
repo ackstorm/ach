@@ -33,7 +33,7 @@ func newDepsWithUpstream(t *testing.T, upstream *httptest.Server) Deps {
 	t.Helper()
 	return Deps{
 		LiteLLMUpstream:  mustParseURL(t, upstream.URL),
-		LiteLLMSharedKey: "shared-secret",
+		LiteLLMMasterKey: "shared-secret",
 		Logger:           slog.Default(),
 	}
 }
@@ -55,7 +55,7 @@ func ctxWithKeyAndJWT(kc middleware.KeyContext, jwt string) context.Context {
 
 // PR1: New returns a non-nil ReverseProxy.
 func TestNew_NonNil(t *testing.T) {
-	deps := Deps{LiteLLMUpstream: mustParseURL(t, "http://localhost:1"), LiteLLMSharedKey: "k", Logger: slog.Default()}
+	deps := Deps{LiteLLMUpstream: mustParseURL(t, "http://localhost:1"), LiteLLMMasterKey: "k", Logger: slog.Default()}
 	if got := New(deps); got == nil {
 		t.Fatal("New returned nil")
 	}
@@ -66,7 +66,7 @@ func TestNew_NonNil(t *testing.T) {
 func TestDirector_RewriteAndStrip(t *testing.T) {
 	deps := Deps{
 		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
-		LiteLLMSharedKey: "shared-secret",
+		LiteLLMMasterKey: "shared-secret",
 		Logger:           slog.Default(),
 	}
 	rp := New(deps)
@@ -113,7 +113,7 @@ func TestDirector_RewriteAndStrip(t *testing.T) {
 func TestDirector_JWTWrittenLast(t *testing.T) {
 	deps := Deps{
 		LiteLLMUpstream:  mustParseURL(t, "http://upstream:4000"),
-		LiteLLMSharedKey: "shared",
+		LiteLLMMasterKey: "shared",
 		Logger:           slog.Default(),
 	}
 	rp := New(deps)
@@ -142,7 +142,7 @@ func TestErrorHandler_502Envelope(t *testing.T) {
 
 	deps := Deps{
 		LiteLLMUpstream:  mustParseURL(t, "http://"+addr),
-		LiteLLMSharedKey: "k",
+		LiteLLMMasterKey: "k",
 		Logger:           slog.Default(),
 	}
 	rp := New(deps)

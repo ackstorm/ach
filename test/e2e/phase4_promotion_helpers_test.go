@@ -72,6 +72,19 @@ func forceRefreshAndAssert(t *testing.T, kind, name string, timeout time.Duratio
 			}
 			return
 		}
+		// In-loop rate-limit drift detection: skipIfRateLimited at the
+		// call site only sees the snapshot BEFORE annotate. The Fetcher
+		// then runs and may flip SourceReachable to False/Unauthorized
+		// (GitHub anonymous-quota 403) — the wait loop must skip the
+		// test in that case, not time out.
+		st := getCRJSONPath(t, kind, name, "{.status.conditions[?(@.type==\"SourceReachable\")].status}")
+		if st == "False" {
+			reason := getCRJSONPath(t, kind, name, "{.status.conditions[?(@.type==\"SourceReachable\")].reason}")
+			if reason == "Unauthorized" || reason == "RateLimited" {
+				t.Skipf("§11a %s/%s force-refresh triggered SourceReachable=False reason=%s mid-flight — GitHub anonymous-quota rate-limit. Skipping (engineer-pending: provision GitHub PAT Secret + AuthSecretRef on examples/06,07,08).",
+					kind, name, reason)
+			}
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 

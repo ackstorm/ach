@@ -54,10 +54,18 @@ forwarder:
   # next.seed?). Operator MUST create this Secret before forwarder boots
   # — refuse-to-start contract per FWD-09.
   jwtSecretName: ach-jwt-signing-keys
+  # litellmMasterSecretName MUST equal the Secret name in
+  # LiteLLMConnection/default's spec.masterKeySecretRef.name. Forwarder
+  # bootstrap reads this Secret to extract the LiteLLM master key per
+  # B2 refactor (replaces ACH_LITELLM_SHARED_KEY env var). RBAC carves
+  # the Role's secrets verbs to this name + jwtSecretName only.
+  litellmMasterSecretName: litellm-master-key
   # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
-  # ACH_LITELLM_BASE_URL, ACH_LITELLM_SHARED_KEY, ACH_REDIS_ADDR,
-  # ACH_REDIS_PASSWORD via valueFrom, ACH_CREDENTIAL_HASH_PEPPER via
-  # valueFrom). Required env vars not defaulted by the binary itself.
+  # ACH_REDIS_ADDR, ACH_REDIS_PASSWORD via valueFrom,
+  # ACH_CREDENTIAL_HASH_PEPPER via valueFrom). The LiteLLM endpoint +
+  # master key are NOT env-sourced here — they flow from
+  # LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
+  # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
 
 # contentService: serves agent-rendered content (assets, snapshots).

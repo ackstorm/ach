@@ -44,7 +44,7 @@ func jwtFromCtx(ctx context.Context) (string, bool) {
 // one structured logger.
 type Deps struct {
 	LiteLLMUpstream  *url.URL
-	LiteLLMSharedKey string
+	LiteLLMMasterKey string
 	Logger           *slog.Logger
 }
 
@@ -80,7 +80,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMToken != nil {
 				litellmToken = *kc.LiteLLMToken
 			}
-			headers.StripAndRewrite(req.Header, deps.LiteLLMSharedKey, litellmToken)
+			headers.StripAndRewrite(req.Header, deps.LiteLLMMasterKey, litellmToken)
 			if litellmToken == "" {
 				// StripAndRewrite Set'd an empty value — re-strip so the
 				// upstream never sees a misleading "x-litellm-key-id: ".

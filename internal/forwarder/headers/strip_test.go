@@ -23,17 +23,17 @@ import (
 // override (T-04-01-02 mitigation).
 func TestStripAndRewrite(t *testing.T) {
 	const (
-		sharedKey    = "sk-litellm-test-shared-key"
+		masterKey    = "sk-litellm-test-shared-key"
 		litellmToken = "litellm-token-xyz"
 	)
 
 	// twoWritten is the canonical D-07 output that every case (except those
-	// that explicitly override the sharedKey/litellmToken) ends up with as
+	// that explicitly override the masterKey/litellmToken) ends up with as
 	// the two written headers — written via h.Set, which canonicalizes the
 	// key to X-Litellm-Api-Key / X-Litellm-Key-Id.
 	twoWritten := func() http.Header {
 		h := http.Header{}
-		h.Set("x-litellm-api-key", sharedKey)
+		h.Set("x-litellm-api-key", masterKey)
 		h.Set("x-litellm-key-id", litellmToken)
 		return h
 	}
@@ -41,7 +41,7 @@ func TestStripAndRewrite(t *testing.T) {
 	cases := []struct {
 		name         string
 		in           http.Header
-		sharedKey    string
+		masterKey    string
 		litellmToken string
 		want         http.Header
 	}{
@@ -51,7 +51,7 @@ func TestStripAndRewrite(t *testing.T) {
 			in: http.Header{
 				"Authorization": {"Bearer xyz"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -60,7 +60,7 @@ func TestStripAndRewrite(t *testing.T) {
 			in: http.Header{
 				"Authorization": {"Basic dXNlcjpwYXNz"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -74,7 +74,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"x-litellm-baz": {"v3"},
 				"X-LiTeLlM-Qux": {"v4"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -88,7 +88,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"x-ach-something":   {"v"},
 				"X-aCh-Other":       {"v2"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -106,7 +106,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"Transfer-Encoding":   {"chunked"},
 				"Upgrade":             {"websocket"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -121,7 +121,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Foo", "w")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -137,7 +137,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Stay", "kept")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -155,7 +155,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Stay", "kept")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -170,7 +170,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Connection", "   ")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -179,7 +179,7 @@ func TestStripAndRewrite(t *testing.T) {
 		{
 			name:         "08_write_pass_two_headers",
 			in:           http.Header{},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -197,7 +197,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Forwarded-For", "10.0.0.1")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -215,7 +215,7 @@ func TestStripAndRewrite(t *testing.T) {
 		{
 			name:         "11_empty_input",
 			in:           http.Header{},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -229,7 +229,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Litellm-Key-Id", "ATTACKER-KEY-ID")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -244,7 +244,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"X-Ach-Bar":         {"v2"},
 				"X-Ach-Baz":         {"v3"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -257,7 +257,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"X-Litellm-B": {"v2"},
 				"X-Litellm-C": {"v3"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -274,7 +274,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Stay", "yes")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -292,7 +292,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"X-aCh-Other":   {"v2"},
 				"X-LiTeLlM-Bar": {"v3"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -309,7 +309,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Custom-C", "vc")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -323,7 +323,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Connection", "Te")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -338,7 +338,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Forwarded-Host", "ach.example.com")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -358,7 +358,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Cache-Control", "no-cache")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -372,7 +372,7 @@ func TestStripAndRewrite(t *testing.T) {
 		{
 			name:         "21_empty_shared_key_and_token",
 			in:           http.Header{"Authorization": {"Bearer x"}},
-			sharedKey:    "",
+			masterKey:    "",
 			litellmToken: "",
 			want: func() http.Header {
 				h := http.Header{}
@@ -391,7 +391,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Add("Accept", "text/event-stream")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -415,7 +415,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Smuggle", "boom")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -434,7 +434,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Real", "value")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -451,7 +451,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"Authorization": {"Bearer xyz"},
 				"X-Other":       {"keep"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -469,7 +469,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("Keep", "kept")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -487,7 +487,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"Keep-Alive":        {"timeout=5"},
 				"Transfer-Encoding": {"chunked"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -501,7 +501,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Set("X-Present", "yes")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want: func() http.Header {
 				h := twoWritten()
@@ -516,7 +516,7 @@ func TestStripAndRewrite(t *testing.T) {
 			in: http.Header{
 				"X-Ach-Key": {"pk_alone"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -530,7 +530,7 @@ func TestStripAndRewrite(t *testing.T) {
 				h.Add("X-Litellm-Foo", "v2")
 				return h
 			}(),
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -542,7 +542,7 @@ func TestStripAndRewrite(t *testing.T) {
 				"Authorization": {"Bearer x"},
 				"X-Ach-Key":     {"pk_idem"},
 			},
-			sharedKey:    sharedKey,
+			masterKey:    masterKey,
 			litellmToken: litellmToken,
 			want:         twoWritten(),
 		},
@@ -552,7 +552,7 @@ func TestStripAndRewrite(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			got := cloneHeader(tc.in)
-			headers.StripAndRewrite(got, tc.sharedKey, tc.litellmToken)
+			headers.StripAndRewrite(got, tc.masterKey, tc.litellmToken)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("StripAndRewrite mismatch\n got=%#v\nwant=%#v", got, tc.want)
 			}
@@ -569,11 +569,11 @@ func TestStripAndRewrite(t *testing.T) {
 		}
 		// Single call reference.
 		single := cloneHeader(in)
-		headers.StripAndRewrite(single, sharedKey, litellmToken)
+		headers.StripAndRewrite(single, masterKey, litellmToken)
 		// Double call.
 		dbl := cloneHeader(in)
-		headers.StripAndRewrite(dbl, sharedKey, litellmToken)
-		headers.StripAndRewrite(dbl, sharedKey, litellmToken)
+		headers.StripAndRewrite(dbl, masterKey, litellmToken)
+		headers.StripAndRewrite(dbl, masterKey, litellmToken)
 		if !reflect.DeepEqual(single, dbl) {
 			t.Fatalf("StripAndRewrite not idempotent\nsingle=%#v\ndouble=%#v", single, dbl)
 		}
@@ -597,7 +597,7 @@ func TestStripAndRewrite(t *testing.T) {
 		for _, shape := range shapes {
 			h := http.Header{}
 			h.Set("Connection", shape)
-			headers.StripAndRewrite(h, sharedKey, litellmToken)
+			headers.StripAndRewrite(h, masterKey, litellmToken)
 		}
 	})
 }
