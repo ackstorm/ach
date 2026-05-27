@@ -51,15 +51,15 @@ import (
 // 05-04 JSON-marshals []metav1.Condition slices before passing. Nil
 // slices map to SQL NULL via pgx's []byte/jsonb default mapping.
 type EnvironmentRow struct {
-	Namespace        string   // PK part 1 — K8s namespace
-	Name             string   // PK part 2 — Environment metadata.name
-	AuthorizedTeams  []string // spec.authorizedTeams
-	ContextPrompts   []string // spec.context.prompts
-	ContextPlugins   []string // spec.context.plugins
-	ContextArtifacts []string // spec.context.artifacts
-	RuntimeModels    []string // spec.runtime.models
+	Namespace         string   // PK part 1 — K8s namespace
+	Name              string   // PK part 2 — Environment metadata.name
+	AuthorizedTeams   []string // spec.authorizedTeams
+	ContextPrompts    []string // spec.context.prompts
+	ContextPlugins    []string // spec.context.plugins
+	ContextArtifacts  []string // spec.context.artifacts
+	RuntimeModels     []string // spec.runtime.models
 	RuntimeMCPServers []string // spec.runtime.mcpServers
-	RuntimeA2AAgents []string  // spec.runtime.a2aAgents
+	RuntimeA2AAgents  []string // spec.runtime.a2aAgents
 
 	// Raw jsonb-encoded condition payloads (caller JSON-marshals).
 	AvailableCondition                  []byte
