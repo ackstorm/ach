@@ -102,6 +102,18 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
 				}
 			}
+			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the plugins
+			// projection row AFTER the existing external_refs DELETE
+			// and BEFORE finalizer removal. Two writes are intentional:
+			// external_refs is the §10.3 cache-refresh row (no longer
+			// needed once the file is gone); the plugins projection row
+			// stays soft-deleted so CS-09 in-flight reads finish — Plan
+			// 05-05 staleness check filters on deletion_timestamp.
+			if r.DB != nil {
+				if err := achdb.SoftDeletePlugin(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("db soft-delete plugin projection: %w", err)
+				}
+			}
 			controllerutil.RemoveFinalizer(&cr, pluginFinalizer)
 			if err := r.Update(ctx, &cr); err != nil {
 				return ctrl.Result{}, err
@@ -205,6 +217,27 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	now := metav1.Now()
 	cr.Status.LastSuccessfulRefresh = &now
 	cr.Status.ObservedGeneration = cr.Generation
+
+	// Spec v4 §5.2 / D-13 / D-15: dual-write the plugins projection row
+	// BEFORE the best-effort K8s Status update. DB is authoritative —
+	// Plan 05-05 CS pipeline reads max_staleness_seconds + storage_location
+	// + last_successful_refresh from this row on every plugin request.
+	// The external_refs row drives §10.3 cache-refresh decisions for the
+	// Operator side; this projection row is what CS reads.
+	if r.DB != nil {
+		lastRefresh := now.Time
+		row := achdb.PluginRow{
+			Namespace:             cr.Namespace,
+			Name:                  cr.Name,
+			StorageLocation:       cr.Status.StorageLocation,
+			LastSuccessfulRefresh: &lastRefresh,
+			MaxStalenessSeconds:   int64(spec.Refresh.MaxStaleness.Duration.Seconds()),
+			ResourceVersion:       cr.ResourceVersion,
+		}
+		if err := achdb.UpsertPlugin(ctx, r.DB, row); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db upsert plugin projection: %w", err)
+		}
+	}
 	if err := r.Status().Update(ctx, &cr); err != nil {
 		// WR-02: when the status update fails (typically a 409 conflict
 		// from a concurrent reconcile), cr.ResourceVersion is now stale.
