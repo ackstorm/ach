@@ -21,6 +21,7 @@ package e2e
 
 import (
 	"testing"
+	"time"
 )
 
 // TestPhase4Promotion is the single top-level e2e test for the §11 UAT
@@ -36,7 +37,58 @@ func TestPhase4Promotion(t *testing.T) {
 
 // Stub bodies — implemented in later tasks. Each is t.Skipf'd so the
 // suite compiles and `make e2e` runs cleanly while in-flight.
-func testSC11aForceRefreshCycle(t *testing.T)         { t.Skip("implemented in Task 2") }
+// testSC11aForceRefreshCycle drives the force-refresh annotation
+// round-trip across the three external-reference kinds the demo
+// fixture set already exercises (examples/06, 07, 08). Each kind:
+//  1. is pre-applied by examples/hydrate-demo.sh OR this subtest
+//     (hydrate-demo.sh idempotent re-apply path).
+//  2. has its force-refresh annotation cycled once.
+//
+// Total wall-clock: 3 kinds × ≤30s = ≤90s on a cold reconcile; ≤6s on
+// a warm one (annotation event is immediate). Acceptance < 30s overall
+// when run against a kept cluster where the CRs are already at
+// SourceReachable=True.
+func testSC11aForceRefreshCycle(t *testing.T) {
+	t.Helper()
+
+	// Pre-apply the examples bundle. kubectl apply is idempotent;
+	// applies are no-ops on an already-cluster-hydrated kept cluster.
+	for _, f := range []string{
+		"../../examples/01-litellmconnection.yaml",
+		"../../examples/06-plugin-caveman.yaml",
+		"../../examples/07-prompt-claudecode-leak.yaml",
+		"../../examples/08-artifact-openclaw-templates.yaml",
+	} {
+		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
+			t.Fatalf("§11a apply %s: %v\n%s", f, err, out)
+		}
+	}
+
+	// Wait for each kind's first successful reconcile.
+	waitForCondition(t, "plugin", "caveman", "SourceReachable", "True", 120*time.Second)
+	waitForCondition(t, "prompt", "claude-code-system-prompt", "SourceReachable", "True", 120*time.Second)
+	waitForCondition(t, "artifact", "openclaw-templates", "SourceReachable", "True", 120*time.Second)
+
+	// Drive the cycle on each kind.
+	cases := []struct {
+		kind, name string
+	}{
+		{"plugin", "caveman"},
+		{"prompt", "claude-code-system-prompt"},
+		{"artifact", "openclaw-templates"},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.kind+"_"+c.name, func(t *testing.T) {
+			forceRefreshAndAssert(t, c.kind, c.name, 30*time.Second)
+		})
+	}
+
+	// TODO(§16): once Environment AccessGroupSynced + Available
+	// conditions land (plans 2026-05-26-environment-accessgroup-reconciler.md
+	// + 2026-05-26-environment-available-uat.md), also force-refresh
+	// the Environment CR and assert both conditions stay True.
+}
 func testSC11bBIPAdmissionFinalizer(t *testing.T)     { t.Skip("implemented in Task 6") }
 func testSC11cMarketplaceInternalSchema(t *testing.T) { t.Skip("implemented in Task 9") }
 func testSC11dOperatorRestart(t *testing.T)           { t.Skip("implemented in Task 12") }
