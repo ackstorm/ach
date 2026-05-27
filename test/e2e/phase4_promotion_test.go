@@ -20,6 +20,7 @@
 package e2e
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,49 @@ func testSC11dOperatorRestart(t *testing.T) {
 	// Reconciliation MUST fire after restart.
 	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
 }
-func testSC11eHydrateGolden(t *testing.T)             { t.Skip("implemented in Task 14") }
+// testSC11eHydrateGolden is the highest-value §11 add: full /platform/
+// hydrate wire path asserted against a checked-in golden JSON.
+//
+// Wire path: examples/hydrate-demo.sh drives:
+//  1. LiteLLM team seed
+//  2. kubectl apply -f examples/{01,06,07,08,04}
+//  3. wait Environment/demo ExecutionResourcesResolved=True
+//  4. port-forward platform-api + dex
+//  5. Dex SSO → pk_
+//  6. POST /platform/hydrate environment=demo
+//
+// Golden lives at test/e2e/fixtures/hydrate-golden.json (Task 12).
+// Diff tolerates no drift today — every leaf value matches. If future
+// fields legitimately drift (timestamps, hashes), extend the tolerated
+// map below.
+func testSC11eHydrateGolden(t *testing.T) {
+	t.Helper()
+
+	actual := driveHydrateAndCapture(t)
+
+	golden, err := os.ReadFile("../../test/e2e/fixtures/hydrate-golden.json")
+	if err != nil {
+		t.Fatalf("§11e: read golden: %v", err)
+	}
+
+	tolerated := map[string]struct{}{
+		// Add drift paths here when discovered. Example:
+		//   "$.context.plugins[0].downloadUrl": {}, // when host varies
+	}
+
+	diffs := compareJSONShape(actual, golden, tolerated)
+	if len(diffs) > 0 {
+		t.Fatalf("§11e hydrate response differs from golden:\n  %s\n\n"+
+			"If the drift is legitimate, either (a) re-capture the golden "+
+			"(bash examples/hydrate-demo.sh && cp examples/hydrate.json "+
+			"test/e2e/fixtures/hydrate-golden.json) and commit, OR (b) add "+
+			"the drifting JSON path to the `tolerated` map in this test.",
+			strings.Join(diffs, "\n  "))
+	}
+
+	// TODO(§16): once Environment Available + AccessGroupSynced
+	// conditions land, also assert hydrate-demo.sh waits on
+	// Available=True (currently waits only on
+	// ExecutionResourcesResolved=True per FIX01 §C.1).
+}
 func testSC11fFinalizerCleanup(t *testing.T)          { t.Skip("implemented in Task 19") }
