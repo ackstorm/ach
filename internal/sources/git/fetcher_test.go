@@ -168,9 +168,9 @@ func fixtureHeadSHA(t *testing.T, bare string) string {
 func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 	args := buildGitInvocation(
 		"clone",
+		"ghp_secrettoken",
 		"https://github.com/octo/repo.git",
 		"/tmp/x",
-		"ghp_secrettoken",
 	)
 	for _, a := range args {
 		if strings.Contains(a, "ghp_secrettoken@") {
@@ -192,7 +192,7 @@ func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 // empty (anonymous fetch) buildGitInvocation does NOT prepend the
 // http.extraHeader arg.
 func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
-	args := buildGitInvocation("clone", "https://example.com/x.git", "/tmp/x", "")
+	args := buildGitInvocation("clone", "", "https://example.com/x.git", "/tmp/x")
 	for _, a := range args {
 		if strings.HasPrefix(a, "http.extraHeader=") {
 			t.Fatalf("unexpected extraHeader on empty token: %v", args)

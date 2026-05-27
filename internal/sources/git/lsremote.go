@@ -25,7 +25,7 @@ import (
 // Errors are classified via [ClassifyError] so the caller observes the
 // same internal/sources sentinel set as a Fetch failure does.
 func LsRemote(ctx context.Context, url, ref, authToken string) (string, error) {
-	full := buildGitInvocation("ls-remote", "--refs", url, ref, authToken)
+	full := buildGitInvocation("ls-remote", authToken, "--refs", url, ref)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",

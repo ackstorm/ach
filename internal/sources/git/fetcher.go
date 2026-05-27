@@ -215,8 +215,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 }
 
 // buildGitInvocation returns the full args slice for a git subcommand.
-// The last variadic element is interpreted as the bearer token; when
-// non-empty it is prepended as
+// token, when non-empty, is prepended as
 //
 //	-c http.extraHeader=Authorization: Bearer <token>
 //
@@ -227,18 +226,16 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // unavoidable without GIT_ASKPASS plumbing — but it is colocated in
 // one auditable arg slot and is redacted by redactArgs in any logs.
 //
-// Callers that don't need auth pass token="" as the last variadic.
-func buildGitInvocation(subcommand string, args ...string) []string {
-	if len(args) == 0 {
-		return []string{subcommand}
-	}
-	token := args[len(args)-1]
-	body := args[:len(args)-1]
+// token is positional + mandatory so callers cannot accidentally
+// forget it (which under the previous variadic-last convention would
+// silently put a real arg in the token slot — see PR #9 follow-up
+// review finding #4).
+func buildGitInvocation(subcommand, token string, args ...string) []string {
 	if token == "" {
-		return append([]string{subcommand}, body...)
+		return append([]string{subcommand}, args...)
 	}
 	prefix := []string{"-c", "http.extraHeader=Authorization: Bearer " + token, subcommand}
-	return append(prefix, body...)
+	return append(prefix, args...)
 }
 
 // runGit runs a git subcommand without --recurse-submodules (security:
@@ -246,9 +243,10 @@ func buildGitInvocation(subcommand string, args ...string) []string {
 // remote-fetch primitive). Inherits ctx for the wall-clock cap.
 //
 // token, when non-empty, lands as -c http.extraHeader=Authorization:
-// Bearer <token> via buildGitInvocation.
+// Bearer <token> via buildGitInvocation. Pass "" for purely local
+// subcommands that don't touch the remote (e.g. checkout).
 func runGit(ctx context.Context, workdir, token, subcommand string, args ...string) error {
-	full := buildGitInvocation(subcommand, append(args, token)...)
+	full := buildGitInvocation(subcommand, token, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = workdir
 	cmd.Env = append(os.Environ(),
