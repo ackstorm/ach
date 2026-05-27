@@ -20,6 +20,7 @@
 package e2e
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,7 +90,71 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	// + 2026-05-26-environment-available-uat.md), also force-refresh
 	// the Environment CR and assert both conditions stay True.
 }
-func testSC11bBIPAdmissionFinalizer(t *testing.T)     { t.Skip("implemented in Task 6") }
+// testSC11bBIPAdmissionFinalizer asserts the BIP CRUD invariants:
+//  1. Both examples/09 + examples/10 are admitted (CRD validation
+//     passes on the same (target.kind, target.name) duplicate).
+//  2. Both carry the BIP finalizer.
+//  3. status.conditions is empty on both (no DuplicateTarget — by
+//     design per memory feedback_bip_no_shadow_logic).
+//  4. Delete both: finalizers removed cleanly within 30s.
+//
+// Wall clock: ~3s warm.
+func testSC11bBIPAdmissionFinalizer(t *testing.T) {
+	t.Helper()
+
+	const (
+		bipA = "bip-context7-jwt-on"
+		bipB = "zz-bip-context7-jwt-off"
+	)
+	const (
+		fA = "../../examples/09-backendidentitypolicy-context7.yaml"
+		fB = "../../examples/10-backendidentitypolicy-duplicate.yaml"
+	)
+
+	// Apply both.
+	for _, f := range []string{fA, fB} {
+		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
+			t.Fatalf("§11b apply %s: %v\n%s", f, err, out)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = runCmd("kubectl", "delete", "-f", fA, "--wait=false", "--ignore-not-found")
+		_, _ = runCmd("kubectl", "delete", "-f", fB, "--wait=false", "--ignore-not-found")
+	})
+
+	// Give the reconciler a tick to add finalizers. Phase 1 BIP
+	// reconciler is finalizer-only, no Status write — annotation-event
+	// requeue is immediate, but allow up to 5s for the informer.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		out, err := runCmd("kubectl", "get", "bip", bipA, "-n", namespace,
+			"-o", "jsonpath={.metadata.finalizers}")
+		if err == nil && strings.Contains(out, bipFinalizer) {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	// Invariant assertions.
+	assertBIPFinalizerPresent(t, bipA)
+	assertBIPFinalizerPresent(t, bipB)
+	assertBIPConditionsEmpty(t, bipA)
+	assertBIPConditionsEmpty(t, bipB)
+
+	// Drive the delete + assert finalizer-clean teardown. Use --wait=true
+	// here (the helper polls, but kubectl delete with default --wait=true
+	// also blocks on finalizer removal — defensive double-check).
+	if out, err := runCmdLonger(60*time.Second,
+		"kubectl", "delete", "-f", fA, "--wait=true"); err != nil {
+		t.Fatalf("§11b delete %s: %v\n%s", fA, err, out)
+	}
+	if out, err := runCmdLonger(60*time.Second,
+		"kubectl", "delete", "-f", fB, "--wait=true"); err != nil {
+		t.Fatalf("§11b delete %s: %v\n%s", fB, err, out)
+	}
+	waitForBIPDeleted(t, bipA, 30*time.Second)
+	waitForBIPDeleted(t, bipB, 30*time.Second)
+}
 func testSC11cMarketplaceInternalSchema(t *testing.T) { t.Skip("implemented in Task 9") }
 func testSC11dOperatorRestart(t *testing.T)           { t.Skip("implemented in Task 12") }
 func testSC11eHydrateGolden(t *testing.T)             { t.Skip("implemented in Task 14") }
