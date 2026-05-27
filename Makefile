@@ -579,10 +579,16 @@ e2e:        ## Phase 3 — run full e2e suite against running cluster (assumes c
 	# `ach` layout. cluster-up handles the actual image load.
 	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
 
-e2e-focus:  ## Phase 3 — run a single Ginkgo It (usage: make e2e-focus FOCUS='registers via POST /model/new')
-	# `-args` is required: without it, `go test` parses the value after
+e2e-focus:  ## Run a focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
+	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
+	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m ./test/e2e/... -args -ginkgo.focus="$(FOCUS)"
+	# E2E_SKIP_SETUP=1 export via bash -c so the value crosses the
+	# scripts/dev.sh container boundary (the wrapper does not forward
+	# arbitrary host env vars).
+	./scripts/dev.sh bash -c 'E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
+	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
+	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")'
 
 .PHONY: e2e-full e2e-keep
 e2e-full: ## Phase 3 — cluster-up → e2e → cluster-down (trap-guaranteed teardown)
