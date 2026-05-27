@@ -18,33 +18,47 @@ var ErrInvalidKind = errors.New("contentservice: invalid kind")
 // "."). The router rejects these with 400.
 var ErrInvalidName = errors.New("contentservice: invalid name")
 
-// ResolvePath returns the on-disk filename for a (kind, name) pair
-// under cacheRoot. For artifact, both candidate paths are returned —
-// the caller stats each in order (.tar.gz preferred, then bare name)
-// to disambiguate scope=directory vs scope=object without needing the
-// CR. The slice is ordered most-specific first.
+// ErrInvalidScope is returned for an artifact request whose resolved
+// scope (from the projection row) is neither "object" nor "directory".
+// The SQL CHECK constraint should prevent this at write time; the gate
+// here is defensive.
+var ErrInvalidScope = errors.New("contentservice: invalid scope")
+
+// ResolvePath returns the single on-disk filename for a (kind, name,
+// scope) tuple under cacheRoot. Scope is consumed only for
+// kind=artifact: scope="object" → bare name, scope="directory" →
+// name + ".tar.gz". For prompt/plugin scope is ignored — plugin always
+// uses .tar.gz, prompt always uses the bare name.
 //
-// Returns ErrInvalidKind for unknown kinds and ErrInvalidName for any
-// name that would traverse outside the kind subdirectory.
-func ResolvePath(cacheRoot, kind, name string) ([]string, error) {
+// Returns ErrInvalidKind for unknown kinds, ErrInvalidName for any
+// name that would traverse outside the kind subdirectory, and
+// ErrInvalidScope for artifact requests with scope ∉ {object,directory}.
+//
+// Replaces the prior two-candidate signature (which existed because
+// pre-Plan-05-05 the handler did not know the resolved scope — it
+// stat-walked both candidates). After Plan 05-02 + 05-05, the
+// resolved row carries the scope explicitly, so this function returns
+// a single deterministic path.
+func ResolvePath(cacheRoot, kind, name, scope string) (string, error) {
 	if err := validateName(name); err != nil {
-		return nil, err
+		return "", err
 	}
 	switch kind {
 	case kindPrompt:
-		return []string{filepath.Join(cacheRoot, kindPrompt, name)}, nil
+		return filepath.Join(cacheRoot, kindPrompt, name), nil
 	case kindPlugin:
-		return []string{filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix)}, nil
+		return filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix), nil
 	case kindArtifact:
-		// Try .tar.gz first (scope=directory is the more common
-		// case for the v1alpha1 examples corpus); fall through to
-		// bare name (scope=object) if the gzip variant is absent.
-		return []string{
-			filepath.Join(cacheRoot, kindArtifact, name+gzipSuffix),
-			filepath.Join(cacheRoot, kindArtifact, name),
-		}, nil
+		switch scope {
+		case "object":
+			return filepath.Join(cacheRoot, kindArtifact, name), nil
+		case "directory":
+			return filepath.Join(cacheRoot, kindArtifact, name+gzipSuffix), nil
+		default:
+			return "", ErrInvalidScope
+		}
 	}
-	return nil, ErrInvalidKind
+	return "", ErrInvalidKind
 }
 
 func validateName(name string) error {
