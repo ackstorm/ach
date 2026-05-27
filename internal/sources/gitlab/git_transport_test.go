@@ -151,6 +151,39 @@ func TestGitTransport_GitLab_CustomHost(t *testing.T) {
 	}
 }
 
+// TestGitTransport_GitLab_HostCaseInsensitive pins PR #9 follow-up
+// review finding #2: scheme prefixes are stripped case-insensitively
+// so HTTPS:// or Https:// don't leak through into the constructed
+// clone URL.
+func TestGitTransport_GitLab_HostCaseInsensitive(t *testing.T) {
+	cases := []struct {
+		host string
+		want string
+	}{
+		{"https://gitlab.example.com", "https://gitlab.example.com/acme/widgets.git"},
+		{"HTTPS://gitlab.example.com", "https://gitlab.example.com/acme/widgets.git"},
+		{"Https://gitlab.example.com", "https://gitlab.example.com/acme/widgets.git"},
+		{"http://gitlab.example.com", "https://gitlab.example.com/acme/widgets.git"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.host, func(t *testing.T) {
+			f, err := New(&achv1alpha1.GitLabSource{
+				Host:      tc.host,
+				Project:   "acme/widgets",
+				Ref:       "main",
+				Transport: "git",
+			})
+			if err != nil {
+				t.Fatalf("New(host=%q): %v", tc.host, err)
+			}
+			if got := f.constructCloneURL(); got != tc.want {
+				t.Errorf("host %q → %q; want %q", tc.host, got, tc.want)
+			}
+		})
+	}
+}
+
 // setupGitLabBareFixture mirrors the github/git fixture helper.
 func setupGitLabBareFixture(t *testing.T) string {
 	t.Helper()

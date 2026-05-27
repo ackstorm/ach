@@ -30,17 +30,31 @@ func (f *Fetcher) resolvedTransport() string {
 	return "git"
 }
 
+// normalizeGitLabHost strips any case-variant http:// or https://
+// scheme prefix and trailing slashes. Idempotent. Called both at New
+// time (so the normalized form is what cr02validate.HostIdentifier
+// inspects, since CR-02 rejects '/' in flat identifiers) AND at clone-
+// URL construction (defense in depth — and because the spec.Host field
+// is preserved verbatim on the Fetcher).
+func normalizeGitLabHost(host string) string {
+	low := strings.ToLower(host)
+	switch {
+	case strings.HasPrefix(low, "https://"):
+		host = host[len("https://"):]
+	case strings.HasPrefix(low, "http://"):
+		host = host[len("http://"):]
+	}
+	return strings.TrimRight(host, "/")
+}
+
 // constructCloneURL builds the https clone URL from spec.Host (default
 // gitlab.com) and spec.Project. Extracted as a method so the unit tests
 // can pin the default-host behavior without spinning a network call.
 func (f *Fetcher) constructCloneURL() string {
-	host := f.spec.Host
+	host := normalizeGitLabHost(f.spec.Host)
 	if host == "" {
 		host = "gitlab.com"
 	}
-	host = strings.TrimPrefix(host, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimRight(host, "/")
 	return fmt.Sprintf("https://%s/%s.git", host, f.spec.Project)
 }
 

@@ -77,3 +77,34 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 		t.Errorf("error should mention key NAME 'token'; got %q", err.Error())
 	}
 }
+
+// TestFetch_DefaultedKeyMissing_ErrorMessageHasHint asserts the error
+// when AuthSecretRef.Key is empty AND the Secret lacks BITBUCKET_TOKEN
+// includes a hint pointing at the default-key convention. PR #9
+// follow-up review finding #9.
+func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
+	t.Parallel()
+	f, err := New(&achv1alpha1.BitbucketSource{
+		Workspace: "ws",
+		Repo:      "repo",
+		Ref:       "main",
+		Transport: "rest",
+		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
+			Name: "s",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	emptySecret := &corev1.Secret{Data: map[string][]byte{}}
+	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: emptySecret})
+	if !errors.Is(err, sources.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "BITBUCKET_TOKEN") {
+		t.Errorf("error should mention the resolved key name; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "default") {
+		t.Errorf("error should hint that BITBUCKET_TOKEN was the default-key fallback; got %q", err.Error())
+	}
+}

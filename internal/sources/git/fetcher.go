@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -138,10 +136,15 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 	if err := os.MkdirAll(tmpParent, 0o755); err != nil {
 		return nil, fmt.Errorf("git: mkdir tmp parent: %w", err)
 	}
-	nonce := make([]byte, 8)
-	_, _ = rand.Read(nonce)
-	cloneDir := filepath.Join(tmpParent, "git-"+hex.EncodeToString(nonce))
-	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+	// os.MkdirTemp uses crypto/rand internally AND returns an error
+	// when allocation fails — earlier code did rand.Read with a
+	// silently-discarded error, which on rand failure (rare but
+	// possible on minimal containers with seccomp blocking getrandom
+	// and no /dev/urandom fallback) would produce a predictable
+	// .tmp/git-0000000000000000 path. Symlink-race vector on shared
+	// cache PVCs. See PR #9 follow-up review finding #6.
+	cloneDir, err := os.MkdirTemp(tmpParent, "git-*")
+	if err != nil {
 		return nil, fmt.Errorf("git: mkdir clone dir: %w", err)
 	}
 
@@ -172,7 +175,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 
 	// On-disk size cap.
 	var total int64
-	err := filepath.WalkDir(cloneDir, func(_ string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(cloneDir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -218,8 +221,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 }
 
 // buildGitInvocation returns the full args slice for a git subcommand.
-// The last variadic element is interpreted as the bearer token; when
-// non-empty it is prepended as
+// token, when non-empty, is prepended as
 //
 //	-c http.extraHeader=Authorization: Bearer <token>
 //
@@ -230,18 +232,38 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // unavoidable without GIT_ASKPASS plumbing — but it is colocated in
 // one auditable arg slot and is redacted by redactArgs in any logs.
 //
-// Callers that don't need auth pass token="" as the last variadic.
-func buildGitInvocation(subcommand string, args ...string) []string {
-	if len(args) == 0 {
-		return []string{subcommand}
+// token is positional + mandatory so callers cannot accidentally
+// forget it (which under the previous variadic-last convention would
+// silently put a real arg in the token slot — see PR #9 follow-up
+// review finding #4).
+func buildGitInvocation(subcommand, token string, args ...string) []string {
+	// Pin allowed wire protocols. v1alpha1 only ever issues https://
+	// clone URLs in production; the operator never accepts user-
+	// supplied URLs at this layer. Block everything else (ssh://, git://,
+	// ftp://, ...) so an accidental future code path can't honor an
+	// attacker-controlled URL. See PR #9 follow-up review finding #7.
+	//
+	// protocol.file.allow=user permits file:// / local paths when they
+	// originate from a top-level command argument (the operator's case
+	// AND the test fixture case) but blocks them when injected via a
+	// submodule URL (the threat that Git's CVE-2022-39253 closed).
+	configPins := []string{
+		"-c", "protocol.allow=never",
+		"-c", "protocol.https.allow=always",
+		"-c", "protocol.file.allow=user",
 	}
-	token := args[len(args)-1]
-	body := args[:len(args)-1]
+
 	if token == "" {
-		return append([]string{subcommand}, body...)
+		out := append([]string(nil), configPins...)
+		out = append(out, subcommand)
+		return append(out, args...)
 	}
-	prefix := []string{"-c", "http.extraHeader=Authorization: Bearer " + token, subcommand}
-	return append(prefix, body...)
+	prefix := append([]string(nil), configPins...)
+	prefix = append(prefix,
+		"-c", "http.extraHeader=Authorization: Bearer "+token,
+		subcommand,
+	)
+	return append(prefix, args...)
 }
 
 // runGit runs a git subcommand without --recurse-submodules (security:
@@ -249,9 +271,10 @@ func buildGitInvocation(subcommand string, args ...string) []string {
 // remote-fetch primitive). Inherits ctx for the wall-clock cap.
 //
 // token, when non-empty, lands as -c http.extraHeader=Authorization:
-// Bearer <token> via buildGitInvocation.
+// Bearer <token> via buildGitInvocation. Pass "" for purely local
+// subcommands that don't touch the remote (e.g. checkout).
 func runGit(ctx context.Context, workdir, token, subcommand string, args ...string) error {
-	full := buildGitInvocation(subcommand, append(args, token)...)
+	full := buildGitInvocation(subcommand, token, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = workdir
 	cmd.Env = append(os.Environ(),

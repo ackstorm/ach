@@ -67,6 +67,43 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Fixed
 - Pre-port CI hygiene (separate PR #3 merged before this branch): removed alitellm-graft duplicate workflows (lint.yml, test.yml, test-e2e.yml), added missing `docs/requirements.txt` for mkdocs/mike, dropped GHAS-gated Dependency Review step (govulncheck ack-list is the canonical guard), gated `make fuzz-short`/`fuzz-long` on package presence.
+- `internal/sources/github` and `internal/sources/gitlab` now validate
+  `spec.Repo` / `spec.Project` / `spec.Host` / `spec.Ref` for URL-
+  structural metacharacters at `New` time, matching the existing
+  `bitbucket` constructor (CR-02 parity; PR #9 follow-up review HIGH).
+  Validators extracted to a shared `internal/sources/cr02validate`
+  subpackage.
+- `internal/sources/git.LsRemote` now installs an inner 30s
+  `context.WithTimeout` (plus `cmd.WaitDelay=2s` to close pipes after
+  SIGKILL — `git-remote-http` helper inherits them otherwise) so a
+  stalled upstream cannot hang the reconciler regardless of caller ctx.
+- `internal/sources/git.Fetcher` uses `os.MkdirTemp` instead of a
+  manual `crypto/rand` nonce; the prior code silently ignored
+  `rand.Read` errors and on failure produced a predictable temp-dir
+  name (symlink-race vector on shared cache PVCs).
+- `internal/sources/git.buildGitInvocation` refactored from
+  `(subcommand string, args ...string)` (token-as-last-variadic, a
+  footgun) to `(subcommand, token string, args ...string)` — token
+  positional + mandatory, compiler-enforced.
+- `internal/sources/gitlab.Fetcher.constructCloneURL` strips scheme
+  prefixes case-insensitively (`HTTPS://` no longer leaks through).
+  Strip + trim-right-slash extracted to a `normalizeGitLabHost`
+  helper, called both at `New` time (so `cr02validate.HostIdentifier`
+  inspects the normalized form) AND at clone-URL construction.
+- `internal/controller/ach.resolveTransportName` switches on
+  `sourceSpec.Type` instead of pointer-non-nil ordering, matching
+  the registry's dispatch discriminator. Type strings extracted to
+  named constants to satisfy goconst.
+- `extractToken` error message on missing-defaulted-key now includes
+  a hint identifying the resolved key as a default (`(default for
+  github; set authSecretRef.key to override)`); applied uniformly
+  across github / gitlab / bitbucket fetchers.
+- Every `internal/sources/git` git subprocess invocation now carries
+  explicit `-c protocol.allow=never -c protocol.https.allow=always
+  -c protocol.file.allow=user` config, pinning the wire-protocol
+  allow-list. `ssh://`, `git://`, `ftp://` are blocked; `file://`
+  is permitted only when supplied as a top-level command argument
+  (defense against CVE-2022-39253-class submodule URL injection).
 
 ## [0.1.0] - 2026-05-25
 

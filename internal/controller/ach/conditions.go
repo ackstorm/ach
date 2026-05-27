@@ -166,6 +166,15 @@ const (
 	transportLabelNA   = "n/a"
 )
 
+// Source-type discriminators matching sources.SourceSpec.Type values
+// and the registry dispatch enum. Extracted as constants because
+// goconst flags 5+ occurrences across the resolveTransportName switch.
+const (
+	sourceTypeGitHub    = "github"
+	sourceTypeGitLab    = "gitlab"
+	sourceTypeBitbucket = "bitbucket"
+)
+
 // resolveTransportName reports the wire path the outer fetch took for
 // the given SourceSpec. Surfaced on the SourceReachable / Synced
 // condition message so operators can see which transport actually
@@ -178,19 +187,25 @@ const (
 //	         (the one-release legacy escape hatch).
 //	"n/a"  — s3 / gcs / http source (no git transport applies).
 func resolveTransportName(sourceSpec sources.SourceSpec) string {
-	switch {
-	case sourceSpec.GitHub != nil:
-		if sourceSpec.GitHub.Transport == transportLabelRest {
+	// Dispatch on Type — the registry (internal/sources/registry) also
+	// dispatches by sourceSpec.Type, so the label reported here matches
+	// the fetcher actually invoked. If CEL admission is ever bypassed
+	// and multiple per-type pointers are non-nil, this avoids reporting
+	// whichever pointer happened to be checked first instead of the
+	// one Type actually selected. PR #9 follow-up review finding #8.
+	switch sourceSpec.Type {
+	case sourceTypeGitHub:
+		if sourceSpec.GitHub != nil && sourceSpec.GitHub.Transport == transportLabelRest {
 			return transportLabelRest
 		}
 		return transportLabelGit
-	case sourceSpec.GitLab != nil:
-		if sourceSpec.GitLab.Transport == transportLabelRest {
+	case sourceTypeGitLab:
+		if sourceSpec.GitLab != nil && sourceSpec.GitLab.Transport == transportLabelRest {
 			return transportLabelRest
 		}
 		return transportLabelGit
-	case sourceSpec.Bitbucket != nil:
-		if sourceSpec.Bitbucket.Transport == transportLabelRest {
+	case sourceTypeBitbucket:
+		if sourceSpec.Bitbucket != nil && sourceSpec.Bitbucket.Transport == transportLabelRest {
 			return transportLabelRest
 		}
 		return transportLabelGit
