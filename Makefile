@@ -520,8 +520,13 @@ wait-forwarder: ## Wait for forwarder Deployment Available
 	kubectl rollout status deploy/ach-forwarder -n ach-system --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-content-service
-wait-content-service: ## Wait for content-service Deployment Available
-	kubectl rollout status deploy/ach-content-service -n ach-system --timeout=$(WAIT_TIMEOUT)
+wait-content-service: ## Wait for content-service container (co-located in operator Pod) Ready (bounded).
+	# Co-located topology: content-service is the second container in
+	# the ach-operator Pod (RWO PVC forces co-location; Plan 01-08 + 05-07).
+	# There is NO ach-content-service Deployment — the operator Deployment
+	# rollout encompasses both containers and the Pod readinessProbe already
+	# verifies CS :8082/healthz, so rollout=Ready ⇒ both containers serving.
+	kubectl rollout status deploy/ach-operator -n ach-system --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-container
 wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make wait-container NAME=<container> [TIMEOUT=600]
