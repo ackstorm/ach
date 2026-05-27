@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -355,6 +356,46 @@ func runCmdStdin(cmdline, stdin string) (string, error) {
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// driveHydrateAndCapture runs examples/hydrate-demo.sh as a sub-process
+// against the current kept cluster and returns the captured hydrate
+// response JSON. The script is the canonical wire-path stand-in for the
+// not-yet-built `ach login` + `ach hydrate` CLI.
+//
+// Design note (§11e cross-plan ref): when the CLI lands (ROADMAP Phase
+// 6+7), flip the implementation to call the CLI binary, gated by
+// ACH_HYDRATE_DRIVER=cli|shell (default shell). Same wire path either
+// way; same golden.
+//
+// Returns the bytes the script wrote to examples/hydrate.json.
+func driveHydrateAndCapture(t *testing.T) []byte {
+	t.Helper()
+
+	driver := envOr("ACH_HYDRATE_DRIVER", "shell")
+	if driver != "shell" {
+		t.Skipf("§11e: ACH_HYDRATE_DRIVER=%q not supported yet "+
+			"(only 'shell' implemented; CLI driver pending Phase 6+7)", driver)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", "../../examples/hydrate-demo.sh")
+	cmd.Env = append(cmd.Env, "PATH="+envOr("PATH", "/usr/bin:/bin"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("§11e: hydrate-demo.sh failed: %v\n%s\n\n"+
+			"This is the canonical wire-path test. If FIX01.md §A is still "+
+			"blocking the SSO path, the test correctly surfaces the regression.",
+			err, out)
+	}
+
+	body, err := os.ReadFile("../../examples/hydrate.json")
+	if err != nil {
+		t.Fatalf("§11e: read examples/hydrate.json: %v\n--- script stdout ---\n%s",
+			err, out)
+	}
+	return body
 }
 
 // waitForBIPDeleted polls until `kubectl get bip <name>` returns
