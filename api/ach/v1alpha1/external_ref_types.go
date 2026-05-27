@@ -43,8 +43,16 @@ type SourceAuthSecretRef struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 
-	// Key inside the Secret data map carrying the token / PAT / access key.
-	// Used by github, gitlab, bitbucket source types.
+	// Key is the name of the Secret data key holding the bearer token.
+	// Optional; when omitted on a git source type the operator falls
+	// back to a provider-specific default key name:
+	//   - github     → GITHUB_TOKEN
+	//   - gitlab     → GITLAB_TOKEN
+	//   - bitbucket  → BITBUCKET_TOKEN
+	// (Matches the ecosystem env-var convention used by gh, glab,
+	// terraform-provider-*, gitlab-runner, etc.) Other source types
+	// (s3 / gcs / http) carry their own per-type key fields and do
+	// NOT use this fallback.
 	//
 	// +optional
 	// +kubebuilder:validation:MinLength=1
@@ -100,13 +108,30 @@ type GitHubSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
 
-	// AuthSecretRef points at the GitHub PAT Secret. Optional —
-	// when omitted, the fetcher issues anonymous (unauthenticated) GitHub
-	// API calls, which work against public repos at the upstream's
-	// anonymous rate-limit ceiling (60 req/hour per IP for github.com).
+	// AuthSecretRef is optional. When set, the Secret named here MUST
+	// exist in the CR's namespace at reconcile time and the operator
+	// reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+	// When nil, the upstream fetch is anonymous — supported only for
+	// public repositories. Anonymous + transport=rest is also supported
+	// but subject to the provider's anonymous REST quota (GitHub:
+	// 60 req/h/IP) — the bug FIX_GIT.txt fixes by defaulting transport
+	// to git.
 	//
 	// +optional
 	AuthSecretRef *SourceAuthSecretRef `json:"authSecretRef,omitempty"`
+
+	// Transport selects the wire protocol used to fetch from this upstream.
+	//
+	//   "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+	//            recommended; default).
+	//   "rest" — use the provider's REST API. Subject to per-IP anonymous
+	//            quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+	//            Retained as a one-release escape hatch; will be removed.
+	//
+	// +kubebuilder:default=git
+	// +kubebuilder:validation:Enum=git;rest
+	// +optional
+	Transport string `json:"transport,omitempty"`
 }
 
 // GitLabSource describes a gitlab-hosted upstream (Hub §10.1).
@@ -133,14 +158,30 @@ type GitLabSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
 
-	// AuthSecretRef points at the GitLab PAT / deploy-token Secret.
-	// Optional — when omitted, the fetcher issues anonymous GitLab API
-	// calls. Public projects on gitlab.com return commit metadata + the
-	// repository archive to anonymous callers; private projects return
-	// 401/404.
+	// AuthSecretRef is optional. When set, the Secret named here MUST
+	// exist in the CR's namespace at reconcile time and the operator
+	// reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+	// When nil, the upstream fetch is anonymous — supported only for
+	// public projects. Anonymous + transport=rest is also supported
+	// but subject to the provider's anonymous REST quota (GitLab:
+	// 60 req/min/IP) — the bug FIX_GIT.txt fixes by defaulting transport
+	// to git.
 	//
 	// +optional
 	AuthSecretRef *SourceAuthSecretRef `json:"authSecretRef,omitempty"`
+
+	// Transport selects the wire protocol used to fetch from this upstream.
+	//
+	//   "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+	//            recommended; default).
+	//   "rest" — use the provider's REST API. Subject to per-IP anonymous
+	//            quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+	//            Retained as a one-release escape hatch; will be removed.
+	//
+	// +kubebuilder:default=git
+	// +kubebuilder:validation:Enum=git;rest
+	// +optional
+	Transport string `json:"transport,omitempty"`
 }
 
 // BitbucketSource describes a bitbucket-hosted upstream (Hub §10.1).
@@ -168,16 +209,30 @@ type BitbucketSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
 
-	// AuthSecretRef points at the Bitbucket app-password / access-token
-	// Secret. Optional — when omitted, the fetcher issues anonymous
-	// Bitbucket Cloud REST calls. Most Bitbucket Cloud endpoints require
-	// auth even for public repos, so anonymous fetches typically fail
-	// with ErrUnauthorized at runtime; the option exists for consistency
-	// with the github/gitlab sources and for self-hosted Bitbucket Server
-	// instances that permit anonymous access.
+	// AuthSecretRef is optional. When set, the Secret named here MUST
+	// exist in the CR's namespace at reconcile time and the operator
+	// reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+	// When nil, the upstream fetch is anonymous — supported only for
+	// public repositories on the git transport (transport=rest paired
+	// with no auth typically fails because most Bitbucket Cloud REST
+	// endpoints require auth even for public repos). Bitbucket Cloud
+	// anonymous REST quota: 60 req/h/IP.
 	//
 	// +optional
 	AuthSecretRef *SourceAuthSecretRef `json:"authSecretRef,omitempty"`
+
+	// Transport selects the wire protocol used to fetch from this upstream.
+	//
+	//   "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+	//            recommended; default).
+	//   "rest" — use the provider's REST API. Subject to per-IP anonymous
+	//            quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+	//            Retained as a one-release escape hatch; will be removed.
+	//
+	// +kubebuilder:default=git
+	// +kubebuilder:validation:Enum=git;rest
+	// +optional
+	Transport string `json:"transport,omitempty"`
 }
 
 // S3Source describes an S3-compatible object store upstream (Hub §10.1).
