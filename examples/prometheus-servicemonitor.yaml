@@ -1,0 +1,70 @@
+# examples/prometheus-servicemonitor.yaml
+#
+# ServiceMonitor reference manifest (Prometheus Operator CRD —
+# monitoring.coreos.com/v1). Opt-in alternative to the default
+# pod-scrape annotations shipped by the ACH Helm chart (Phase 5
+# OBS-03 + D-12).
+#
+# PREREQUISITES:
+#   - Prometheus Operator installed (commonly via
+#     prometheus-community/kube-prometheus-stack chart).
+#   - The Prometheus instance's `serviceMonitorSelector` matches
+#     this manifest's labels (kube-prometheus-stack defaults to
+#     `release: <chart-release-name>` — set accordingly).
+#
+# USAGE:
+#   kubectl apply -f examples/prometheus-servicemonitor.yaml \
+#     -n <prometheus-namespace>
+#
+# RATIONALE (drift flag #4 — operator Pod has two metric ports):
+#   The operator Pod hosts both operator (:8080) and content-service
+#   (:8082) containers (RWO PVC forces co-location). The default
+#   pod-annotation scrape config can only name one port per Pod;
+#   this ServiceMonitor explicitly enumerates each scrape target via
+#   its Service port name, sidestepping the limitation.
+#
+# OPERATOR :8080 LIMITATION:
+#   The operator's :8080 metrics port has NO Service object (its only
+#   exposure is the Pod IP). The default kubernetes-pods scrape role
+#   covers it via the Pod-level annotation already shipped on the
+#   operator-deployment.yaml Pod template. ServiceMonitor users who
+#   want a fully Service-mediated scrape topology should ship a
+#   dedicated Service for the operator metrics port (left as a
+#   deployer concern — Phase 5 ships the Pod annotation as the
+#   default scrape path).
+#
+# If you use the default pod-scrape config, do NOT apply this file —
+# the chart's pod annotations already cover the same endpoints.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ach
+  labels:
+    app.kubernetes.io/name: ach
+spec:
+  namespaceSelector:
+    matchNames:
+      - ach-system
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [ach]
+  endpoints:
+    # content-service Service (ach-content-service) — port name "http"
+    # maps to operator Pod's cs-http port (8082). Drift flag #4
+    # resolution: this is the second metric target on the operator
+    # Pod, reached via the Service rather than a Pod-level annotation.
+    - port: http
+      path: /metrics
+      interval: 30s
+    # forwarder Service (ach-forwarder) — port name "traffic" maps
+    # to the forwarder container's :8080 port.
+    - port: traffic
+      path: /metrics
+      interval: 30s
+    # platform-api Service (ach-platform-api) — port name "http"
+    # maps to the platform-api container's :8080 port.
+    - port: http
+      path: /metrics
+      interval: 30s
