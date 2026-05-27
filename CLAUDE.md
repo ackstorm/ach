@@ -559,6 +559,21 @@ default refresh interval is 1h per CR, so legitimate steady-state should
 average <5 API calls/h across 3-5 CRs — well below the 60/h ceiling. Hitting
 the limit means a tight loop or many cluster rebuilds in the same hour.
 
+**Resolution as of 2026-05-27**: The default outer transport for all three
+git source types (`github`, `gitlab`, `bitbucket`) is now `git`
+(`FIX_GIT.txt`), which has no per-IP REST rate-limit. If you still see this
+error on the default transport, the upstream is genuinely unreachable, the
+ref doesn't exist, or git's HTTPS auth-prompt fired (anonymous + a
+nonexistent or private repo cannot be told apart by git/HTTPS — both
+surface as "please authenticate"). To temporarily revert one CR to the
+legacy REST path, set `spec.<github|gitlab|bitbucket>.transport: rest` on
+the CR; that path still hits the per-provider anonymous quotas (GitHub
+60/h, GitLab 60/min, Bitbucket 60/h) and will be removed one release after
+the git transport is observed clean. The transport that actually served
+each fetch is now surfaced on the `SourceReachable=True` (Plugin/Prompt/
+Artifact) and `Synced=True` (PluginMarketplace) condition messages as
+`transport=<git|rest|n/a>`.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that

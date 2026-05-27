@@ -51,12 +51,22 @@ func TestNew_AcceptsAnonymousSpec(t *testing.T) {
 // is nil, Fetch does NOT trip the ErrUnauthorized branches — even with
 // req.Secret = nil. The fetch will still fail (no real network here),
 // but the failure mode must be Unreachable, not Unauthorized.
+//
+// Pinned to Transport=rest because the git-protocol upstream returns
+// an auth-prompt for nonexistent github.com repositories regardless of
+// whether the client supplied credentials (git/HTTPS cannot distinguish
+// "private+unauth" from "doesn't exist" — both surface as "please log
+// in"). The original REST semantics — "anonymous + nonexistent → 404
+// NotFound, not Unauthorized" — is what this test exercises. The git
+// transport's own classification for analogous scenarios is covered by
+// TestGitTransport_GitHub_UnreachableClassifies (git_transport_test.go).
 func TestFetch_AnonymousIgnoresSecret(t *testing.T) {
 	t.Parallel()
 
 	f, err := New(&achv1alpha1.GitHubSource{
-		Repo: "no-such-owner-x/no-such-repo-y",
-		Ref:  "main",
+		Repo:      "no-such-owner-x/no-such-repo-y",
+		Ref:       "main",
+		Transport: "rest",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

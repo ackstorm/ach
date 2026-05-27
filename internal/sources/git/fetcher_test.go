@@ -159,3 +159,126 @@ func fixtureHeadSHA(t *testing.T, bare string) string {
 	}
 	return string(out[:40])
 }
+
+// TestFetcher_AuthHeader_NotURL asserts the token reaches git via
+// http.extraHeader and is NEVER embedded in the URL position of the
+// clone command. Token in URL would land in /proc/<pid>/cmdline AND
+// in `git config remote.origin.url` on disk — both are leak paths
+// (T-02-02-02).
+func TestFetcher_AuthHeader_NotURL(t *testing.T) {
+	args := buildGitInvocation(
+		"clone",
+		"https://github.com/octo/repo.git",
+		"/tmp/x",
+		"ghp_secrettoken",
+	)
+	for _, a := range args {
+		if strings.Contains(a, "ghp_secrettoken@") {
+			t.Fatalf("token in URL form: %v", args)
+		}
+	}
+	hasHeader := false
+	for _, a := range args {
+		if a == "http.extraHeader=Authorization: Bearer ghp_secrettoken" {
+			hasHeader = true
+		}
+	}
+	if !hasHeader {
+		t.Fatalf("expected http.extraHeader=Authorization: Bearer …; args=%v", args)
+	}
+}
+
+// TestFetcher_AuthHeader_EmptyTokenNoArg asserts that when the token is
+// empty (anonymous fetch) buildGitInvocation does NOT prepend the
+// http.extraHeader arg.
+func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
+	args := buildGitInvocation("clone", "https://example.com/x.git", "/tmp/x", "")
+	for _, a := range args {
+		if strings.HasPrefix(a, "http.extraHeader=") {
+			t.Fatalf("unexpected extraHeader on empty token: %v", args)
+		}
+	}
+	if args[0] != "clone" {
+		t.Fatalf("expected first arg = subcommand; got %v", args)
+	}
+}
+
+// TestLsRemote_ParsesSHA exercises LsRemote against the local bare-repo
+// fixture and asserts the returned 40-hex SHA matches the fixture HEAD.
+func TestLsRemote_ParsesSHA(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	bare := setupBareFixture(t)
+	want := fixtureHeadSHA(t, bare)
+
+	got, err := LsRemote(context.Background(), bare, "main", "")
+	if err != nil {
+		t.Fatalf("LsRemote: %v", err)
+	}
+	if got != want {
+		t.Errorf("LsRemote SHA mismatch: got %q want %q", got, want)
+	}
+}
+
+// TestLsRemote_BogusRefIsNotFound asserts an unknown ref classifies via
+// sources.ErrNotFound (matches the REST path's 404 semantics).
+func TestLsRemote_BogusRefIsNotFound(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	bare := setupBareFixture(t)
+
+	_, err := LsRemote(context.Background(), bare, "no-such-ref", "")
+	if err == nil {
+		t.Fatal("expected error for unknown ref")
+	}
+	if !errors.Is(err, sources.ErrNotFound) &&
+		!errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("expected ErrNotFound or ErrUpstreamInvalid; got %v", err)
+	}
+}
+
+// TestClassifyError_Exported sanity-checks the exported classifier
+// covers each documented category.
+func TestClassifyError_Exported(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		stderr string
+		want   error
+	}{
+		{"remote: Invalid username or password", sources.ErrUnauthorized},
+		{"Repository not found", sources.ErrNotFound},
+		{"could not resolve host", sources.ErrUnreachable},
+		{"some unrecognized git failure", sources.ErrUpstreamInvalid},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.want.Error(), func(t *testing.T) {
+			t.Parallel()
+			got := ClassifyError(errors.New(tc.stderr))
+			if !errors.Is(got, tc.want) {
+				t.Errorf("ClassifyError(%q) wraps %v; want %v", tc.stderr, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRedactArgs_RedactsExtraHeader confirms the extraHeader token is
+// scrubbed from log output (the process arg is still visible via
+// /proc/<pid>/cmdline, but logs are a separate sink under our control).
+func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
+	args := []string{
+		"-c", "http.extraHeader=Authorization: Bearer ghp_supersecret",
+		"clone", "https://github.com/x/y.git", "/tmp/x",
+	}
+	out := redactArgs(args)
+	for _, a := range out {
+		if strings.Contains(a, "ghp_supersecret") {
+			t.Fatalf("token leaked: %v", out)
+		}
+	}
+	if out[1] != "http.extraHeader=Authorization: Bearer ***" {
+		t.Errorf("redaction shape unexpected: %q", out[1])
+	}
+}

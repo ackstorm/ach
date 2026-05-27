@@ -47,6 +47,12 @@ const (
 type Fetcher struct {
 	spec       *achv1alpha1.BitbucketSource
 	httpClient *nethttp.Client
+
+	// cloneURLForTesting overrides the upstream clone URL the
+	// git-transport branch uses. Empty in production. Set by tests so
+	// the git transport hits a local bare-repo fixture instead of
+	// bitbucket.org.
+	cloneURLForTesting string
 }
 
 // New constructs a Bitbucket source fetcher. Returns ErrUpstreamInvalid
@@ -111,27 +117,54 @@ func validateRefIdentifier(value string) error {
 	return nil
 }
 
+// extractToken returns the bearer token to send to Bitbucket, or empty
+// for anonymous fetch. Shared by both transport branches.
+//
+// Semantics (post Task 1 CRD shape relaxation):
+//
+//   - spec.AuthSecretRef == nil          → anonymous (token="").
+//   - spec.AuthSecretRef != nil,
+//     req.Secret == nil                  → ErrUnauthorized.
+//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
+//     achv1alpha1.DefaultAuthSecretKey("bitbucket") == "BITBUCKET_TOKEN"
+//     so `kubectl create secret generic foo --from-literal=BITBUCKET_TOKEN=…`
+//     works zero-config.
+//   - resolved key missing from Secret.Data → ErrUnauthorized with the
+//     key NAME in the message (never the absent value — T-02-02-01).
+func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
+	if f.spec.AuthSecretRef == nil {
+		return "", nil
+	}
+	if req.Secret == nil {
+		return "", fmt.Errorf("bitbucket: auth secret %q is nil: %w",
+			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
+	}
+	key := f.spec.AuthSecretRef.Key
+	if key == "" {
+		key = achv1alpha1.DefaultAuthSecretKey("bitbucket")
+	}
+	raw := req.Secret.Data[key]
+	if len(raw) == 0 {
+		return "", fmt.Errorf("bitbucket: missing auth secret key %q: %w",
+			key, sources.ErrUnauthorized)
+	}
+	return string(raw), nil
+}
+
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
+//
+// Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
+//   - "git"  (default) → fetchViaGit (no per-IP REST rate-limit).
+//   - "rest"           → legacy two-step REST + tarball-web path below.
 func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
-	// 1. Extract bearer token from Secret if AuthSecretRef is set.
-	//    Phase 02.1 permits anonymous mode (spec.AuthSecretRef == nil) —
-	//    the Authorization header is omitted; Bitbucket Cloud typically
-	//    refuses anonymous callers and the upstream 401 maps to
-	//    ErrUnauthorized. The option exists for consistency with the
-	//    github/gitlab sources and for self-hosted Bitbucket Server
-	//    instances that permit anonymous access.
-	var token string
-	if f.spec.AuthSecretRef != nil {
-		if req.Secret == nil {
-			return nil, fmt.Errorf("bitbucket: auth secret %q is nil: %w",
-				f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-		}
-		raw := req.Secret.Data[f.spec.AuthSecretRef.Key]
-		if len(raw) == 0 {
-			return nil, fmt.Errorf("bitbucket: missing auth secret key %q: %w",
-				f.spec.AuthSecretRef.Key, sources.ErrUnauthorized)
-		}
-		token = string(raw)
+	if f.resolvedTransport() == "git" {
+		return f.fetchViaGit(ctx, req)
+	}
+
+	// ───── legacy REST branch ─────
+	token, err := f.extractToken(req)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Resolve commit SHA via Bitbucket Cloud REST API.

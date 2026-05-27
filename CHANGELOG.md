@@ -25,6 +25,45 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Replaced kustomize-generated `install.yaml` monolith with explicit per-mode Helm templates so each service is independently togglable.
 - Replaced kubebuilder-default scaffolded `*_controller_test.go` Ginkgo skeletons with ach-old's real controller envtest specs (CEL, finalizers, refresh, marketplace, main-wiring).
 - Replaced Ginkgo-bootstrapped `test/e2e/suite_test.go` with stdlib-testing TestMain orchestration (matches ach-old's pattern; preserves `E2E_SKIP_SETUP=1` lifecycle handoff to `make e2e` / `cluster-up`).
+- Default outer fetcher transport for `github`, `gitlab`, `bitbucket`
+  source types swapped from REST/SDK to git protocol
+  (`git ls-remote` + shallow clone + `git archive`). Eliminates
+  per-IP REST rate-limit (GitHub 60 req/h, GitLab 60 req/min,
+  Bitbucket 60 req/h) as a failure mode. All four consuming CRD
+  kinds — `Plugin`, `Prompt`, `Artifact`, `PluginMarketplace` —
+  benefit transparently; wire contract
+  (`FetchResult{Body: tar.gz, UpstreamRev: SHA}`) is unchanged.
+- Auth: token is now passed to git via
+  `http.extraHeader=Authorization: Bearer <token>` instead of
+  URL-embedded form. Closes T-02-02-02 leak path (token no longer
+  persists to `git config remote.origin.url` on disk; still visible
+  in `/proc/<pid>/cmdline` for the duration of the subprocess,
+  which is unavoidable without `GIT_ASKPASS` plumbing).
+- `transport: git|rest` field added to `GitHubSource`, `GitLabSource`,
+  and `BitbucketSource` (default `git`). `rest` is a one-release
+  escape hatch; will be removed in the following release.
+- `authSecretRef` is documented as optional on `GitHubSource`,
+  `GitLabSource`, `BitbucketSource` (the schema already permitted
+  `nil`; the doc-comment shift reflects that anonymous fetch is now
+  the supported shape for public repos — the git transport has no
+  per-IP rate-limit so dummy-Secret workarounds are no longer
+  necessary).
+- `authSecretRef.key` is now optional with a provider-specific default
+  matching the ecosystem env-var convention:
+    github    → `GITHUB_TOKEN`
+    gitlab    → `GITLAB_TOKEN`
+    bitbucket → `BITBUCKET_TOKEN`
+  Explicit `key: <name>` still overrides.
+- `SourceReachable=True` (Plugin/Prompt/Artifact) and `Synced=True`
+  (PluginMarketplace) condition messages now include
+  `transport=<git|rest|n/a>` so operators can see which wire path was
+  used.
+
+### Spec follow-up
+- Hub spec §10.1 currently marks `authSecretRef` as required on the
+  three git source types. The spec rev that reconciles this with the
+  v1alpha1 reality (now optional) will land in the next spec cadence
+  (`spec/ach_hub_spec_*` revision after `v20260515_FINALv4`).
 
 ### Fixed
 - Pre-port CI hygiene (separate PR #3 merged before this branch): removed alitellm-graft duplicate workflows (lint.yml, test.yml, test-e2e.yml), added missing `docs/requirements.txt` for mkdocs/mike, dropped GHAS-gated Dependency Review step (govulncheck ack-list is the canonical guard), gated `make fuzz-short`/`fuzz-long` on package presence.

@@ -151,7 +151,7 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
-	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, "", cr.Generation)
+	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
 	cr.Status.UpstreamRev = result.UpstreamRev
 	if result.NotModified && cr.Status.StorageLocation == "" {
 		cr.Status.StorageLocation = finalPath

@@ -219,7 +219,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// ─── Success / NotModified: status update, annotation clear, requeue. ───
-	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, "", cr.Generation)
+	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
 	if result.NotModified {
 		// Preserve the prior UpstreamRev (already equal to priorRev per
 		// MaterializeResult contract) and StorageLocation; bump

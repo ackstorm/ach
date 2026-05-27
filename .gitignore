@@ -47,3 +47,6 @@ site/
 # Planning corpus (local-only, never committed)
 .planning/
 spec/
+
+# Git worktrees (local-only, never committed)
+.worktrees/
