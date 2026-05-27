@@ -1,14 +1,13 @@
 # PluginMarketplace — pulls anthropic/claude-plugins-official, the
-# upstream Anthropic-curated catalogue. The operator fetches
-# marketplace.json, applies the include/exclude RE2 filters below, and
-# upserts one `marketplace_plugins` row per surviving entry.
+# upstream Anthropic-curated catalogue. The operator fetches the repo
+# tarball, extracts `.claude-plugin/marketplace.json`, applies the
+# include/exclude RE2 filters below, and upserts one
+# `marketplace_plugins` row per surviving entry.
 #
-# Source type is `http` (raw.githubusercontent.com) rather than `github`
-# because the GitHub-source fetcher returns the full repo as a gzipped
-# tarball (Plan 02-05 plugin-publish path), and the marketplace
-# controller passes that stream verbatim to the JSON parser. See
-# FIX01.md §F.1 for the deeper fix; until that lands, `http` is the
-# reliable path for any marketplace.json hosted on a public Git repo.
+# Source type is `github` (mirrors Plugin/Artifact). The marketplace
+# controller's stage-1 body-reshape (pluginmarketplace_controller.go
+# §219-235) detects tarball sources (github/gitlab/bitbucket) and
+# extracts `<root>/.claude-plugin/marketplace.json` before parsing.
 #
 # Filters here pin the catalogue to only the `code-*` plugins (Claude
 # Code-flavoured tooling). Drop or widen the include list to ingest the
@@ -19,9 +18,10 @@ metadata:
   name: anthropic-code
   namespace: ach-system
 spec:
-  type: http
-  http:
-    url: https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json
+  type: github
+  github:
+    repo: anthropics/claude-plugins-official
+    ref: main
   refresh:
     interval: 1h
     maxStaleness: 24h

@@ -1,0 +1,208 @@
+FIX_GIT — switch outer GitHub fetcher from REST API to git protocol
+====================================================================
+
+Context for whoever picks this up. This is a knowledge dump, not a
+plan. The within-interval gate (commits b0ea3e5..27ba27a on
+feat/external-ref-interval-gate, merged in 8adc885) cuts steady-state
+fetch FREQUENCY ~10x but does nothing about per-call COST. The
+operator still uses the GitHub REST API for the outer fetch on every
+Plugin/Prompt/Artifact and PluginMarketplace stage-1 reconcile that
+crosses the interval boundary, and that path is anonymous-rate-limited
+to 60 requests per hour per source IP — a wall we have hit in
+practice during dev (multiple `cluster.sh up` cycles + force-refresh
+fires inside an hour exhaust the quota; symptom is "SourceReachable=
+False reason=Unauthorized" with `GetCommit 403: sources: unauthorized`
+on a public repo). Documented in CLAUDE.md "Common failure modes" as
+of d88ee55. The right fix is to replace the REST-based outer fetcher
+with the git protocol — bandwidth-bound, no per-IP request ceiling.
+
+
+Why git protocol is the right swap
+----------------------------------
+
+- The git protocol has no anonymous rate-limit; GitHub gates only the
+  REST API. `git ls-remote` and `git fetch --depth=1 <sha>` over HTTPS
+  do not count against the 5000/h authenticated or 60/h anonymous
+  REST quota. (Source: GitHub docs on rate limits — REST API only,
+  separately from git itself.)
+- git binary is already in the operator runtime image. Dockerfile L20-
+  L35:
+    # Runtime image: alpine + git + ca-certificates.
+    # git is required at runtime by internal/sources/git/Fetcher, which the
+    # ...
+    # external-ref reconcile fails with "exec: git: not found". alpine is
+    # the smallest base that ships git + ca-certs via apk;
+    ...
+    RUN apk add --no-cache git ca-certificates && \
+- An INNER git-clone fetcher already exists and is wired in for
+  PluginMarketplace stage-2: internal/sources/git/fetcher.go.
+  Doc-comment (internal/sources/git/doc.go) explicitly contrasts
+  itself against the outer github fetcher:
+
+    Unlike the github subpackage (which uses the GitHub REST API to
+    fetch a repo tarball), this package shells out to `git clone
+    --depth=1 --branch=<ref> <url> <dst>` followed by `git fetch
+    origin <sha>` to pin the worktree.
+
+  The shape of that fetcher (Spec{URL,Ref,SHA}, exec.Command, tar
+  output) is the reference implementation for what the outer fetcher
+  should look like.
+
+
+What the outer GitHub fetcher does today
+----------------------------------------
+
+internal/sources/github/fetcher.go uses github.com/google/go-github/v62.
+Per-call shape:
+
+  1. client.Repositories.GetCommit(ctx, owner, repo, ref, nil)
+       → api.github.com/repos/{owner}/{repo}/commits/{ref}
+       → resolves "main" / tag / SHA → real commit SHA + metadata
+       → REST CALL #1 (counts against rate-limit)
+
+  2. If commit.SHA == PriorRev → return NotModified (no body)
+       → this is the 304-equivalent shortcut after gate doesn't skip
+
+  3. client.Repositories.GetArchiveLink(ctx, owner, repo, "tarball", SHA)
+       → api.github.com/repos/{owner}/{repo}/tarball/{sha}
+       → returns a signed redirect URL (codeload.github.com)
+       → REST CALL #2 (counts against rate-limit)
+
+  4. HTTP GET the signed URL → streams tarball back
+
+So each outer fetch is 2 REST calls when there IS a change, 1 REST
+call (just GetCommit) when there is not. With 3 CRs and a 1h interval
+that is 3-6 calls/h — fine. With dev churn (cluster rebuilds,
+force-refresh, pod restarts that fire reconciles outside the gate)
+it spikes to a few hundred/h and hits the wall.
+
+
+Equivalent shape on the git protocol
+------------------------------------
+
+Mapping 1:1 to the REST flow above:
+
+  1. Resolve ref → SHA:
+        git ls-remote --refs https://github.com/{owner}/{repo}.git {ref}
+     → one HTTPS round-trip, no rate-limit
+     → output:  <sha>\trefs/heads/<branch>
+     → parse first column = resolved SHA
+     → replaces GetCommit; no commit metadata returned (we never
+       used it beyond the SHA anyway)
+
+  2. If resolved SHA == PriorRev → return NotModified
+        same logic, just driven by ls-remote output
+
+  3. Materialize tarball:
+        git clone --depth=1 --branch=<ref> --no-checkout \
+            https://github.com/{owner}/{repo}.git <tmp>
+        cd <tmp> && git fetch --depth=1 origin <sha>
+        git -C <tmp> archive --format=tar.gz <sha>
+     → one shallow clone + one fetch-by-sha + tar
+     → replaces GetArchiveLink + tarball download
+
+The `internal/sources/git/fetcher.go` Spec/Fetch shape covers this
+already — the outer github fetcher would compose ls-remote + the
+existing git fetcher rather than calling go-github.
+
+
+Files that change
+-----------------
+
+- internal/sources/github/fetcher.go — full rewrite. Drop
+  go-github/v62 import. Use os/exec for ls-remote + reuse
+  internal/sources/git/Fetcher for the tarball step.
+- internal/sources/github/fetcher_test.go — rewrites. Existing tests
+  mock the go-github HTTP transport; new tests should mock the
+  os/exec boundary (the git fetcher tests do this — see
+  fetcher_test.go for the exec.LookPath stubbing pattern).
+- go.mod — remove github.com/google/go-github/v62 once gitlab +
+  bitbucket are NOT migrated (or keep until they are). They are also
+  REST-based; same swap applies but is out of scope for the first
+  pass.
+- internal/sources/registry/registry.go — likely no change. registry.For
+  keyed by "github" string; the new fetcher just implements the same
+  sources.Fetcher interface.
+- Error classification: classifyGitHubErr in fetcher.go maps go-github
+  *github.ErrorResponse → ReasonUnauthorized/NotFound/Unreachable.
+  After the swap, errors come from exec.ExitError + git's stderr.
+  Heuristic mapping needed:
+    - exit 128 + "Authentication failed" / "could not read Username"
+        → ReasonUnauthorized
+    - exit 128 + "Repository not found" / "not found"
+        → ReasonNotFound
+    - exit 128 + "Could not resolve host" / "Connection refused" /
+      "fatal: unable to access"
+        → ReasonUnreachable
+    - everything else
+        → ReasonUpstreamInvalid
+  Patterns documented in internal/sources/git/fetcher.go classifyGitErr
+  (or similar — read it for the canonical regex set).
+
+
+Conditional-GET / 304 semantics
+-------------------------------
+
+GitHub's REST GetCommit had a useful side effect: it returns 304 with
+no body when If-None-Match matches, which the go-github client maps
+internally. The git flow has no exact 304 equivalent, but the
+PriorRev compare against ls-remote output is cheaper than the REST
+304 (one network round-trip vs. one REST call + ETag parsing). The
+NotModified return value semantics stay identical from
+materializeExternalRef's POV — that part of the contract does not
+change.
+
+
+AuthSecretRef / private repos
+-----------------------------
+
+Current REST path passes a personal-access-token bearer header via
+go-github's `oauth2.NewClient`. The git path needs the same token in
+one of:
+
+  - GIT_ASKPASS=/path/to/helper plus a helper script that echoes the
+    token (what internal/sources/git/fetcher.go does today — see
+    its `prepareAuth` or equivalent for the canonical pattern)
+  - URL form: https://<token>@github.com/owner/repo.git — simpler but
+    leaks the token into ps/exec logs and `git config remote.origin.url`,
+    so DO NOT use.
+  - `git -c http.extraHeader="Authorization: bearer <token>" ...` —
+    also acceptable, header is stripped from process listing.
+
+The Plugin/Prompt/Artifact CRs already carry spec.github.authSecretRef
+→ Secret with `access-key` (PAT). The outer fetcher consumes that
+Secret in the existing path; the git fetcher needs the same
+consumption point.
+
+
+Order of operations (suggested)
+-------------------------------
+
+1. Add a `transport: git|rest` knob to sources.SourceSpec or the
+   github fetcher config — default `git` once the swap lands, but
+   keep `rest` as an escape hatch for the first release.
+2. Land the new git transport for the github outer fetcher behind
+   that knob.
+3. Default flip after observation in dev cluster (cluster.sh up +
+   apply all examples + watch operator logs for ANY exec error from
+   git for a couple of days).
+4. Remove the `rest` branch and the go-github dependency.
+5. Same swap for gitlab/bitbucket outer fetchers (lower priority —
+   we hit GitHub in practice, not the others).
+
+Don't bundle this with the within-interval gate. The gate is correct
+on its own merits (cuts dev-churn cost ~10x, addresses the bug where
+the DB row goes stale on 304 — fixed by switching gate source to
+status). Land the transport swap as its own PR with its own tests.
+
+
+Why this isn't just "use a PAT"
+-------------------------------
+
+Authenticated REST has a 5000 req/h quota, which is plenty. But that
+requires every CR to carry an authSecretRef → PAT → Secret. For
+public-repo Plugin/Artifact CRs whose entire reason for being
+referencable is "no auth required", forcing a PAT is a footgun. The
+git protocol path has zero per-IP quota AND zero auth requirement for
+public repos — strictly dominant for our use case. PATs stay
+supported for private repos via the AuthSecretRef plumbing above.
