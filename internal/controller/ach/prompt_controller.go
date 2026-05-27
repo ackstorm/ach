@@ -63,33 +63,7 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// ─── Deletion path. ───
 	if !cr.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&cr, promptFinalizer) {
-			// §10.3 cache layout: prompt/<name>
-			if err := os.Remove(filepath.Join(r.CacheRoot, "prompt", cr.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return ctrl.Result{}, err
-			}
-			if r.DB != nil {
-				if err := achdb.DeleteExternalRef(ctx, r.DB, "prompt", cr.Name); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
-				}
-			}
-			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the prompts
-			// projection row AFTER the existing external_refs DELETE
-			// and BEFORE finalizer removal. Two writes are intentional —
-			// see plugin_controller.go for rationale (external_refs is the
-			// §10.3 cache-refresh row; this projection row is what CS reads).
-			if r.DB != nil {
-				if err := achdb.SoftDeletePrompt(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db soft-delete prompt projection: %w", err)
-				}
-			}
-			controllerutil.RemoveFinalizer(&cr, promptFinalizer)
-			if err := r.Update(ctx, &cr); err != nil {
-				return ctrl.Result{}, err
-			}
-			logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
-		}
-		return ctrl.Result{}, nil
+		return r.handleDeletion(ctx, &cr, logger)
 	}
 
 	// ─── Finalizer-add path. ───
@@ -231,6 +205,38 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// handleDeletion runs the §10.3 cleanup + finalizer-removal sequence
+// extracted from Reconcile so the latter stays under the gocyclo
+// threshold after Phase 5 (projection writes) + within-interval gate
+// additions stacked into the steady-state branch.
+func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.Prompt, logger logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(cr, promptFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	// §10.3 cache layout: prompt/<name>
+	if err := os.Remove(filepath.Join(r.CacheRoot, "prompt", cr.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return ctrl.Result{}, err
+	}
+	if r.DB != nil {
+		if err := achdb.DeleteExternalRef(ctx, r.DB, "prompt", cr.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
+		}
+		// Spec v4 §5.2 / CS-09 / D-15: soft-delete the prompts
+		// projection row AFTER the existing external_refs DELETE
+		// and BEFORE finalizer removal. Two writes are intentional —
+		// see plugin_controller.go for rationale.
+		if err := achdb.SoftDeletePrompt(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db soft-delete prompt projection: %w", err)
+		}
+	}
+	controllerutil.RemoveFinalizer(cr, promptFinalizer)
+	if err := r.Update(ctx, cr); err != nil {
+		return ctrl.Result{}, err
+	}
+	logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
