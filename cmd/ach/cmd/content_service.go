@@ -98,10 +98,16 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	logger.Info("informer cache synced")
 
 	r := chi.NewRouter()
+	// TODO(Plan 05-06 Task 1): full Deps wiring lands here — this file gets a
+	// complete rewrite in Wave 3. Today (post Plan 05-05) the new Deps fields
+	// (Pool, Resolver, Teams, EnvCache, Metrics, ...) are zero-valued: requests
+	// would panic at runtime. RegisterRoutes accepts the partial Deps so the
+	// build stays green between waves 2 and 3; the operator manager wiring
+	// above is preserved (no functional regression for /healthz).
 	contentservice.RegisterRoutes(r, contentservice.Deps{
-		CacheRoot:           cacheRoot,
-		PromptContentTypeFn: contentservice.NewK8sPromptLookup(mgr.GetClient(), ns),
-		Logger:              logger,
+		CacheRoot: cacheRoot,
+		Namespace: ns,
+		Logger:    logger,
 	})
 
 	srv := &http.Server{

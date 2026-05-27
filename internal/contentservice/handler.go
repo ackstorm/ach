@@ -1,51 +1,118 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package contentservice
-
-import (
-	"context"
-	"errors"
-	"io/fs"
-	"log/slog"
-	"net/http"
-	"os"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
-)
-
-// PromptContentTypeLookup returns the Content-Type override for a
-// Prompt by metadata.name, or empty string when not set (caller falls
-// back to the §8 default text/markdown). Implementations close over a
-// k8s cached client in production; tests use a static map.
-type PromptContentTypeLookup func(ctx context.Context, name string) (string, error)
-
-// Deps bundles the handler's runtime collaborators. ZeroValue.Logger
-// falls back to slog.Default(); ZeroValue.PromptContentTypeFn falls
-// back to "always return empty" (handler default content-type).
-type Deps struct {
-	CacheRoot           string
-	PromptContentTypeFn PromptContentTypeLookup
-	Logger              *slog.Logger
-}
-
-// RegisterRoutes wires the four routes onto r:
+// handler.go ships the Content Service entrypoint per Plan 05-05 D-16:
+// the Deps struct, RegisterRoutes, and the per-kind serve()
+// orchestrator. The §15.6 7-gate pipeline lives in pipeline.go; the
+// kind-specific gate functions live in authz.go; the §15.5 envelope
+// writer + audit emitter live in errors.go; the sendfile-backed body
+// writer lives in stream.go. This file glues them together.
+//
+// Routing topology (chi):
 //
 //	GET /healthz
 //	GET /content/prompt/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
 //
-// Routes are registered explicitly per kind (not via {kind} URL param)
-// so chi can return 404 for /content/marketplace/<name> without the
-// handler ever running — keeping the kind allow-list at the routing
-// layer rather than inside the handler body.
+// /metrics is NOT registered here — Plan 05-06 wires the
+// promhttp.Handler at the cmd-level server setup so the metrics surface
+// stays symmetric with Phase 3's platform-api (which also mounts
+// metrics at the server level, not inside the application router).
+//
+// Routes are explicit per kind (not via {kind} URL param) so chi can
+// return 404 for /content/marketplace/<name> without the handler body
+// ever running. The kind-allowlist stays at the routing layer.
+
+package contentservice
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/contentservice/envcache"
+	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
+)
+
+// PromptContentTypeLookup is RETAINED transitionally so the existing
+// cmd/ach/cmd/content_service.go stub patch keeps compiling between
+// Plan 05-05 (this plan) and Plan 05-06 (full wiring rewrite). Plan
+// 05-06 removes both this type and the deprecated PromptContentTypeFn
+// field below.
+//
+// Production no longer reads spec.contentType via the k8s informer —
+// content_type now flows from the prompts.content_type projection
+// column resolved in resolveContent (authz.go).
+type PromptContentTypeLookup func(ctx context.Context, name string) (string, error)
+
+// Deps bundles the handler's runtime collaborators per Plan 05-05 D-16.
+//
+// Required fields (request-path collaborators):
+//   - CacheRoot          — absolute path of the shared PVC where the
+//     Operator rename(2)s cache files.
+//   - Namespace          — the k8s namespace the Content Service serves
+//     (typically "ach-system"). Read on every
+//     envcache + db.* call.
+//   - Pool               — pgxpool.Pool for projection-row reads.
+//   - EnvCache           — Redis-backed envcache.Cache (Plan 05-03).
+//   - Resolver           — keystore.Resolver (Phase 3 D-08 reused).
+//   - Teams              — keystore.TeamsResolver (Phase 4 D-17 reused).
+//   - Metrics            — *metrics.ContentServiceCollectors (Plan 05-01).
+//   - LiteLLMUnreachable — shared litellm_unreachable_total CounterVec
+//     (Plan 05-01 / OBS-05). Incremented with
+//     caller="content_service" on transport
+//     failures inside enforceTeams.
+//   - AuditLog           — *slog.Logger built by audit.NewLogger
+//     (audit=true predicate already attached).
+//
+// Optional fields (defaulted in RegisterRoutes):
+//   - Logger             — operational logger. Defaults to slog.Default().
+//
+// Deprecated transition-only fields:
+//   - PromptContentTypeFn — DEPRECATED. Pre-Plan-05-05 the handler
+//     resolved Prompt.spec.contentType via a k8s
+//     informer-cached lookup. Plan 05-05 moved the
+//     column into prompts.content_type so the
+//     lookup is now part of resolveContent.
+//     Plan 05-06 Task 1 removes this field.
+//
+// RegisterRoutes does NOT nil-guard the required fields — a request
+// that lands on a nil-Pool / nil-Resolver Deps panics at request time,
+// surfacing the wiring bug loudly rather than silently 500-ing every
+// request. The stub-patched cmd/ach/cmd/content_service.go currently
+// passes a partial Deps (CacheRoot + Namespace + Logger only) so the
+// build stays green between Plan 05-05 and Plan 05-06; that
+// configuration is NOT runtime-safe for content requests.
+type Deps struct {
+	CacheRoot           string
+	Namespace           string
+	PromptContentTypeFn PromptContentTypeLookup // DEPRECATED — Plan 05-06 removes
+	Pool                *pgxpool.Pool
+	EnvCache            envcache.Cache
+	Resolver            keystore.Resolver
+	Teams               keystore.TeamsResolver
+	Metrics             *metrics.ContentServiceCollectors
+	LiteLLMUnreachable  *prometheus.CounterVec
+	AuditLog            *slog.Logger
+	Logger              *slog.Logger
+}
+
+// RegisterRoutes wires Content Service routes onto r. The router MUST
+// NOT have a Compress middleware registered — the body is identity-
+// transfer per CS-06 / D-01 (no chunked encoding, no compression).
+// Plan 05-06 wires the chi.NewRouter() instance and is the canonical
+// site for that invariant.
 func RegisterRoutes(r chi.Router, d Deps) {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
-	}
-	if d.PromptContentTypeFn == nil {
-		d.PromptContentTypeFn = func(context.Context, string) (string, error) { return "", nil }
 	}
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -55,73 +122,64 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/content/artifact/{name}", d.serve(kindArtifact))
 }
 
+// serve returns the http.HandlerFunc for one kind. It orchestrates the
+// §15.6 7-gate pipeline (pipeline.go) and the body-write step.
+//
+// On a denial (any gate returns *errResp), serve calls writeError
+// (errors.go) which renders the §15.5 envelope, emits one audit event,
+// and increments the request-counter. The duration histogram is
+// observed AFTER writeError so denials are still measured.
+//
+// On success, serve calls stream (stream.go) to write the body via
+// io.Copy → sendfile(2). After io.Copy returns, serve emits the
+// success-path audit event with Outcome=forwarded, increments the
+// success metric, adds bytes-served, and records the duration.
 func (d Deps) serve(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ctx := r.Context()
 		name := chi.URLParam(r, "name")
 
-		candidates, err := ResolvePath(d.CacheRoot, kind, name)
-		if err != nil {
-			if errors.Is(err, ErrInvalidName) {
-				http.Error(w, "invalid name", http.StatusBadRequest)
-				return
+		row, errR := pipeline(ctx, d, kind, r)
+		if errR != nil {
+			// pipeline.go MAY return a row even on error if file open
+			// succeeded but a later check failed — but the current
+			// pipeline returns (nil, errR) on every denial. Defensive
+			// close anyway.
+			if row != nil && row.File != nil {
+				_ = row.File.Close()
 			}
-			http.Error(w, "not found", http.StatusNotFound)
+			d.writeError(w, r, kind, name, errR.keyInfo, errR.errResp)
+			if d.Metrics != nil {
+				d.Metrics.ObserveRequestDuration(kind, time.Since(start).Seconds())
+			}
 			return
 		}
-
-		// Walk candidates in order (artifact has 2; others have 1).
-		// First os.Open success wins.
-		var (
-			f       *os.File
-			fi      os.FileInfo
-			openErr error
-			path    string
-		)
-		for _, p := range candidates {
-			f, openErr = os.Open(p) // #nosec G304 — path is filepath.Join(cacheRoot, kind, validatedName)
-			if openErr == nil {
-				fi, openErr = f.Stat()
-				if openErr == nil {
-					path = p
-					break
-				}
-				_ = f.Close()
-				f = nil
-			}
+		// Success: stream the body, close the file, emit success audit.
+		defer func() { _ = row.File.Close() }()
+		n, copyErr := stream(w, r, row.File, row.ContentType, row.Size)
+		if copyErr != nil {
+			// Body already flushed (WriteHeader 200 ran inside stream).
+			// We CANNOT switch to an error envelope at this point —
+			// just log + emit the audit event with the partial-write
+			// indication. The wire response is whatever bytes made it.
+			d.Logger.Warn("content stream interrupted",
+				"kind", kind, "name", name, "bytes_written", n, "err", copyErr)
 		}
-		if f == nil {
-			if errors.Is(openErr, fs.ErrNotExist) || os.IsNotExist(openErr) {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			d.Logger.Error("open cache file", "kind", kind, "name", name, "err", openErr)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+		if d.AuditLog != nil {
+			audit.EmitAudit(ctx, d.AuditLog, audit.Event{
+				Action:    audit.ActionContentGet,
+				Outcome:   audit.OutcomeForwarded,
+				Actor:     actorFromInfo(row.KeyInfo),
+				RequestID: middleware.RequestIDFromCtx(ctx),
+				KeyID:     keyIDFromInfo(row.KeyInfo),
+				Target:    &audit.Target{Kind: kind, Name: name},
+			})
 		}
-		defer func() { _ = f.Close() }()
-
-		// Content-Type: kind-specific policy; prompts may carry an
-		// explicit CR-level override.
-		var override string
-		if kind == kindPrompt {
-			ct, lookupErr := d.PromptContentTypeFn(r.Context(), name)
-			if lookupErr != nil {
-				// Lookup failure must not block serving the body —
-				// fall through to the default content-type. The
-				// reason: the cache file IS authoritative; the CR
-				// only carries the content-type hint.
-				d.Logger.Warn("prompt lookup failed", "name", name, "err", lookupErr)
-			}
-			override = ct
+		if d.Metrics != nil {
+			d.Metrics.IncRequest(kind, audit.OutcomeForwarded)
+			d.Metrics.AddBytesServed(kind, n)
+			d.Metrics.ObserveRequestDuration(kind, time.Since(start).Seconds())
 		}
-		w.Header().Set("Content-Type", ContentTypeForFile(kind, path, override))
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
-
-		// http.ServeContent handles Range, If-Modified-Since,
-		// If-None-Match. It also calls io.CopyBuffer which on Linux
-		// engages sendfile(2) via *os.File.WriteTo when w's
-		// underlying conn is *net.TCPConn (the production case).
-		http.ServeContent(w, r, path, fi.ModTime(), f)
 	}
 }
