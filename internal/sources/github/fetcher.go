@@ -44,10 +44,16 @@ import (
 type Fetcher struct {
 	spec *achv1alpha1.GitHubSource
 
-	// httpClient is the transport for the second leg of the fetch
-	// (tarball stream). Defaults to nethttp.DefaultClient; tests inject
-	// a custom client via setHTTPClientForTesting.
+	// httpClient is the transport for the second leg of the legacy REST
+	// fetch path (tarball stream). Defaults to nethttp.DefaultClient;
+	// tests inject a custom client via setHTTPClientForTesting.
 	httpClient *nethttp.Client
+
+	// cloneURLForTesting overrides the upstream clone URL the
+	// git-transport branch uses. Empty in production. Set by tests so
+	// the git transport hits a local bare-repo fixture instead of
+	// github.com.
+	cloneURLForTesting string
 }
 
 // New constructs a GitHub source fetcher. Returns ErrUpstreamInvalid
@@ -64,27 +70,60 @@ func New(spec *achv1alpha1.GitHubSource) (*Fetcher, error) {
 	}, nil
 }
 
+// extractToken returns the bearer token to send to GitHub, or empty
+// for anonymous fetch. Shared by both transport branches.
+//
+// Semantics (post Task 1 CRD shape relaxation):
+//
+//   - spec.AuthSecretRef == nil          → anonymous (token="").
+//   - spec.AuthSecretRef != nil,
+//     req.Secret == nil                  → ErrUnauthorized (operator
+//     declared intent for auth and we
+//     must not silently fall back to
+//     anonymous).
+//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
+//     achv1alpha1.DefaultAuthSecretKey("github") == "GITHUB_TOKEN"
+//     so `kubectl create secret generic foo --from-literal=GITHUB_TOKEN=…`
+//     works zero-config.
+//   - resolved key missing from Secret.Data
+//     → ErrUnauthorized with the key NAME in the message (never the
+//     absent value — threat T-02-02-01).
+func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
+	if f.spec.AuthSecretRef == nil {
+		return "", nil
+	}
+	if req.Secret == nil {
+		return "", fmt.Errorf("github: auth secret %q is nil: %w",
+			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
+	}
+	key := f.spec.AuthSecretRef.Key
+	if key == "" {
+		key = achv1alpha1.DefaultAuthSecretKey("github")
+	}
+	raw := req.Secret.Data[key]
+	if len(raw) == 0 {
+		return "", fmt.Errorf("github: missing auth secret key %q: %w",
+			key, sources.ErrUnauthorized)
+	}
+	return string(raw), nil
+}
+
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
+//
+// Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
+//   - "git"  (default) → fetchViaGit (no per-IP REST rate-limit).
+//   - "rest"           → legacy go-github path below (escape hatch;
+//     will be removed one release after the git
+//     transport is observed clean).
 func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
-	// 1. Extract PAT from the Secret if AuthSecretRef is set. When
-	//    spec.AuthSecretRef is nil → anonymous fetch (Phase 02.1).
-	//    When AuthSecretRef is set but the Secret/key is missing →
-	//    ErrUnauthorized (the operator declared intent for auth and we
-	//    must not silently fall back to anonymous).
-	var token string
-	if f.spec.AuthSecretRef != nil {
-		if req.Secret == nil {
-			return nil, fmt.Errorf("github: auth secret %q is nil: %w",
-				f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-		}
-		raw := req.Secret.Data[f.spec.AuthSecretRef.Key]
-		if len(raw) == 0 {
-			// Log the KEY NAME (operator-readable) but never the (absent)
-			// value — threat T-02-02-01.
-			return nil, fmt.Errorf("github: missing auth secret key %q: %w",
-				f.spec.AuthSecretRef.Key, sources.ErrUnauthorized)
-		}
-		token = string(raw)
+	if f.resolvedTransport() == "git" {
+		return f.fetchViaGit(ctx, req)
+	}
+
+	// ───── legacy REST branch ─────
+	token, err := f.extractToken(req)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Parse repo into owner/name.
