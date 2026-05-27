@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -247,10 +248,14 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.manager = mgr
 
 	// B2 refactor: resolve LiteLLMConnection/default + masterKey Secret
-	// via uncached APIReader. Refuse-to-start on missing CR / Secret /
-	// data key — operators see the failure inline at boot rather than
-	// 401 storms from the upstream once traffic starts flowing.
-	llmRes, err := litellmconn.Resolve(ctx, mgr.GetAPIReader(), cfg.Namespace)
+	// via uncached APIReader. The CR is typically seeded by the cluster
+	// hydration step that runs AFTER the forwarder Deployment is applied,
+	// so a missing CR/Secret at first boot is expected — poll once per
+	// minute until it appears (or the boot ctx is cancelled by k8s
+	// liveness restart). Other resolver errors (malformed endpoint,
+	// missing secret key) still refuse-to-start so misconfiguration
+	// surfaces at boot instead of as 401 storms under load.
+	llmRes, err := resolveLiteLLMWithRetry(ctx, mgr.GetAPIReader(), cfg.Namespace, logger)
 	if err != nil {
 		return out, fmt.Errorf("litellmconn.Resolve: %w", err)
 	}
@@ -390,6 +395,36 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 		return fmt.Errorf("manager.Add(forwarder.Runnable): %w", err)
 	}
 	return deps.manager.Start(ctx)
+}
+
+// resolveLiteLLMWithRetry wraps litellmconn.Resolve in a 60s-interval
+// poll loop that retries while the CR or its masterKey Secret hasn't
+// been created yet (cluster-hydration race — the forwarder Deployment
+// is rolled out before scripts/cluster.sh hydrate_fixtures seeds
+// LiteLLMConnection/default). Any other resolver error (malformed
+// endpoint, missing secret key, transport error) returns immediately
+// so misconfiguration still surfaces at boot.
+func resolveLiteLLMWithRetry(ctx context.Context, reader client.Reader, namespace string, logger *slog.Logger) (*litellmconn.Resolution, error) {
+	const retryInterval = 60 * time.Second
+	for {
+		res, err := litellmconn.Resolve(ctx, reader, namespace)
+		if err == nil {
+			return res, nil
+		}
+		if !errors.Is(err, litellmconn.ErrCRNotFound) && !errors.Is(err, litellmconn.ErrSecretNotFound) {
+			return nil, err
+		}
+		logger.Info("LiteLLMConnection not yet hydrated; will retry",
+			"namespace", namespace,
+			"err", err.Error(),
+			"retryIn", retryInterval.String(),
+		)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(retryInterval):
+		}
+	}
 }
 
 func runForwarder(_ *cobra.Command, _ []string) error {
