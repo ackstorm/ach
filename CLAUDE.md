@@ -121,7 +121,6 @@ ach/
 │   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
 │   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
 │   ├── 05-pluginmarketplace-anthropic.yaml  real upstream (canary, blocked by TODO §5)
-│   ├── 05b-pluginmarketplace-internal-http.yaml  internal-schema fixture
 │   ├── 06-plugin-caveman.yaml     Plugin from JuliusBrussee/caveman
 │   ├── 07-prompt-claudecode-leak.yaml  Prompt from asgeirtj/system_prompts_leaks
 │   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)

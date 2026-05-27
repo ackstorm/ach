@@ -14,7 +14,7 @@ will take.
 | `05-pluginmarketplace-anthropic.yaml` | `PluginMarketplace`  | Pulls `anthropics/claude-plugins-official` via `http` source and filters to `^code-.*`. Surfaces FIX01 §F.1/F.2 today — kept as a canary. |
 | `06-plugin-caveman.yaml`              | `Plugin`             | Third-party `JuliusBrussee/caveman` — directory-bundle plugin. |
 | `07-prompt-claudecode-leak.yaml`      | `Prompt`             | Single-file fetch from `asgeirtj/system_prompts_leaks`. |
-| `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. |
+| `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. Repo is ~261 MiB depth-1; the 512 MiB default git-clone cap accommodates it. |
 | `hydrate-demo.sh`                     | shell                | End-to-end driver — apply + wait + SSO + hydrate. |
 | `hydrate.json`                        | json                 | Last-known-good output of the hydrate path. |
 
