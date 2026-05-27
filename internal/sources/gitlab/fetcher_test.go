@@ -77,3 +77,74 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 		t.Errorf("error should mention key NAME 'token'; got %q", err.Error())
 	}
 }
+
+// TestNew_RejectsMetacharProject asserts CR-02 mitigation: crafted
+// Project values with URL-structural metacharacters are rejected at
+// New time, never reaching the git subprocess.
+func TestNew_RejectsMetacharProject(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"group/sub\n",
+		"group/sub?evil=1",
+		"group/sub#frag",
+		"group/sub with space",
+		"no-slash",
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitLabSource{Project: c, Ref: "main"})
+			if err == nil {
+				t.Errorf("expected New to reject %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
+	}
+}
+
+// TestNew_RejectsMetacharRef asserts CR-02 mitigation for spec.Ref.
+func TestNew_RejectsMetacharRef(t *testing.T) {
+	t.Parallel()
+	cases := []string{"main\n", "main?evil", "main#frag"}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitLabSource{Project: "g/p", Ref: c})
+			if err == nil {
+				t.Errorf("expected New to reject ref %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
+	}
+}
+
+// TestNew_RejectsMetacharHost asserts CR-02 mitigation for spec.Host.
+func TestNew_RejectsMetacharHost(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"gitlab.example.com/path",
+		"gitlab.example.com\n",
+		"gitlab.example.com?evil",
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitLabSource{
+				Host: c, Project: "g/p", Ref: "main",
+			})
+			if err == nil {
+				t.Errorf("expected New to reject host %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
+	}
+}

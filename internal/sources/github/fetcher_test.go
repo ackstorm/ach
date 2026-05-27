@@ -136,11 +136,12 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 }
 
 // TestFetch_MalformedRepo asserts a spec.Repo that is not <owner>/<name>
-// returns ErrUpstreamInvalid (do NOT reach the network).
+// is rejected at New time (CR-02 parity; see internal/sources/cr02validate).
+// The network is never reached.
 func TestFetch_MalformedRepo(t *testing.T) {
 	t.Parallel()
 
-	f, err := New(&achv1alpha1.GitHubSource{
+	_, err := New(&achv1alpha1.GitHubSource{
 		Repo: "no-slash",
 		Ref:  "main",
 		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
@@ -148,14 +149,54 @@ func TestFetch_MalformedRepo(t *testing.T) {
 			Key:  "token",
 		},
 	})
-	if err != nil {
-		t.Fatalf("New unexpected error: %v", err)
-	}
-
-	secret := &corev1.Secret{Data: map[string][]byte{"token": []byte("ghp_x")}}
-	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: secret})
 	if !errors.Is(err, sources.ErrUpstreamInvalid) {
-		t.Fatalf("expected ErrUpstreamInvalid for malformed repo; got %v", err)
+		t.Fatalf("expected New to reject malformed repo with ErrUpstreamInvalid; got %v", err)
+	}
+}
+
+// TestNew_RejectsMetacharRepo asserts CR-02 mitigation: crafted Repo
+// values with URL-structural metacharacters are rejected at New time,
+// never reaching the git subprocess.
+func TestNew_RejectsMetacharRepo(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"owner/repo\n",
+		"owner/repo?evil=1",
+		"owner/repo#frag",
+		"owner/repo with space",
+		"a/b/c",
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitHubSource{Repo: c, Ref: "main"})
+			if err == nil {
+				t.Errorf("expected New to reject %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
+	}
+}
+
+// TestNew_RejectsMetacharRef asserts CR-02 mitigation for spec.Ref.
+func TestNew_RejectsMetacharRef(t *testing.T) {
+	t.Parallel()
+	cases := []string{"main\n", "main?evil", "main#frag"}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitHubSource{Repo: "owner/repo", Ref: c})
+			if err == nil {
+				t.Errorf("expected New to reject ref %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
 	}
 }
 
