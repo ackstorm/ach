@@ -24,6 +24,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -45,6 +46,7 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/store"
@@ -146,6 +148,18 @@ type platformAPIProcessDeps struct {
 	redis   *redis.Client
 	manager manager.Manager
 	server  platformapi.Deps
+	// Plan 05-06 D-10: metricsReg holds the process-local Registry +
+	// metricsHandler is the corresponding /metrics http.Handler that
+	// runPlatformAPIServer composes onto the chi router. litellmUnreachable
+	// is the shared §18.5 counter registered with caller="platform_api"
+	// dimension pre-declared — registered-but-unused at end of Phase 5
+	// (see Plan 05-06 spec_divergence: Phase 3 handlers emit
+	// audit.OutcomeLitellmUnreachable as a response body code via
+	// render.Error, NOT as a counter Inc; per-call-site Inc retrofit is
+	// out of scope for Phase 5).
+	metricsReg         *prometheus.Registry
+	metricsHandler     http.Handler
+	litellmUnreachable *prometheus.CounterVec
 }
 
 func (p *platformAPIProcessDeps) close() {
@@ -163,6 +177,22 @@ func (p *platformAPIProcessDeps) close() {
 //nolint:gocyclo // single bootstrap function intentionally linear
 func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *slog.Logger) (*platformAPIProcessDeps, error) {
 	out := &platformAPIProcessDeps{}
+
+	// ─── Phase 5 D-09 / D-10 / OBS-05: process-local Prometheus
+	//     Registry + shared litellm_unreachable_total counter (caller
+	//     dimension pre-declared with all four §18.5 values). Platform
+	//     API does NOT receive a typed PlatformAPICollectors struct in
+	//     §18.5 — only Forwarder and Content Service have typed
+	//     collectors. The /metrics endpoint here exposes the shared
+	//     litellm_unreachable counter (registered-but-unused at end of
+	//     Phase 5; see Plan 05-06 spec_divergence) and any future
+	//     additive metrics that land here.
+	out.metricsReg = metrics.NewRegistry()
+	out.litellmUnreachable = metrics.MustRegisterLitellmUnreachable(out.metricsReg)
+	// /metrics is unauthenticated on the main traffic listener (D-10);
+	// internal cluster network only — see Helm values.yaml metricsAuth
+	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted.
+	out.metricsHandler = metrics.Handler(out.metricsReg)
 
 	pool, err := db.Open(ctx, cfg.DBURL)
 	if err != nil {
@@ -266,7 +296,19 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 
 func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bindAddr string) error {
 	httpHandler := platformapi.New(deps.server)
-	runnable := platformapi.NewRunnable(bindAddr, httpHandler, deps.server.Logger)
+
+	// Plan 05-06 Task 4 / D-10: /metrics is served on the SAME port as
+	// the traffic listener. A tiny stdlib ServeMux fronts the chi-built
+	// platform-api handler so /metrics has its own dedicated path
+	// (precedence by path-specificity per net/http ServeMux semantics)
+	// while every other request falls through to the platform-api
+	// router. The metrics handler is unauthenticated; production
+	// scrape clients access it via the in-cluster Service IP / Pod IP.
+	composed := http.NewServeMux()
+	composed.Handle("/metrics", deps.metricsHandler)
+	composed.Handle("/", httpHandler)
+
+	runnable := platformapi.NewRunnable(bindAddr, composed, deps.server.Logger)
 	if err := deps.manager.Add(runnable); err != nil {
 		return fmt.Errorf("manager.Add(serverRunnable): %w", err)
 	}

@@ -3,6 +3,8 @@
 // `ach forwarder` boots the Hub Forwarder service per Plan 04-08. RunE
 // validates env vars, builds the controller-runtime manager (no
 // controllers, no leader election) + informers (BIP, Environment, Secret),
+// resolves the LiteLLM upstream endpoint + master key from the
+// LiteLLMConnection/default CR (refuse-to-start on missing CR or Secret),
 // loads the ach-jwt-signing-keys Secret (refuse-to-start on missing /
 // malformed current slot per FWD-09), wires the Ed25519Signer + Secret
 // hot-reload event handler, and starts the dual-port Runnable (traffic
@@ -11,7 +13,10 @@
 //
 // Refuses to start when:
 //   - ACH_BASE_URL is not https:// (FWD-10 / Hub §9.1)
-//   - ACH_LITELLM_BASE_URL is missing or has an unknown scheme
+//   - LiteLLMConnection/default CR is missing OR its Spec.Endpoint is
+//     not a parseable http(s):// URL OR its MasterKeySecretRef does not
+//     resolve to a non-empty Secret data entry (B2 refactor — replaces
+//     the prior ACH_LITELLM_BASE_URL + ACH_LITELLM_SHARED_KEY env vars)
 //   - ach-jwt-signing-keys Secret is missing OR current.kid is empty OR
 //     current.seed is not exactly 32 bytes (FWD-09 + D-10)
 
@@ -52,8 +57,11 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder"
 	"github.com/ackstorm/ach/internal/forwarder/bip"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
+	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/metrics"
 )
 
 var forwarderScheme = runtime.NewScheme()
@@ -77,21 +85,25 @@ Secret is missing/malformed (FWD-09).`,
 
 // forwarderConfig holds the validated env-var surface; never mutated
 // after validateForwarderConfig returns.
+//
+// B2 refactor: ACH_LITELLM_BASE_URL + ACH_LITELLM_SHARED_KEY are no
+// longer env-sourced. The (endpoint, master key) pair is resolved from
+// LiteLLMConnection/default + its MasterKeySecretRef Secret at the
+// start of buildForwarderDeps (see litellmconn.Resolve). Keeping the
+// resolved values out of forwarderConfig makes the config "env only"
+// and the CR-derived values flow through local vars instead.
 type forwarderConfig struct {
-	BaseURL          string
-	DBURL            string
-	Pepper           []byte
-	LiteLLMBaseURL   string
-	LiteLLMUpstream  *url.URL // W2 (REVIEW): pre-parsed once in validate, reused by build
-	LiteLLMSharedKey string
-	RedisAddr        string
-	RedisPassword    string
-	RedisTLS         bool
-	RedisDB          int
-	TrafficBindAddr  string
-	HealthBindAddr   string
-	Namespace        string
-	JWTSecretName    string
+	BaseURL         string
+	DBURL           string
+	Pepper          []byte
+	RedisAddr       string
+	RedisPassword   string
+	RedisTLS        bool
+	RedisDB         int
+	TrafficBindAddr string
+	HealthBindAddr  string
+	Namespace       string
+	JWTSecretName   string
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -114,23 +126,8 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	}
 	cfg.Pepper = pepper
 
-	if cfg.LiteLLMBaseURL, err = config.MustEnvNonEmpty("ACH_LITELLM_BASE_URL"); err != nil {
-		return nil, err
-	}
-	u, err := url.Parse(cfg.LiteLLMBaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("ACH_LITELLM_BASE_URL parse: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("ACH_LITELLM_BASE_URL must use http:// or https:// (got %q)", u.Scheme)
-	}
-	// W2 (REVIEW): retain the parsed URL so buildForwarderDeps does not
-	// re-parse — single source of truth for scheme + host semantics.
-	cfg.LiteLLMUpstream = u
-
-	if cfg.LiteLLMSharedKey, err = config.MustEnvNonEmpty("ACH_LITELLM_SHARED_KEY"); err != nil {
-		return nil, err
-	}
+	// B2: LiteLLM endpoint + master key now sourced from
+	// LiteLLMConnection/default CR at buildForwarderDeps time.
 
 	if cfg.RedisAddr, err = config.MustEnvNonEmpty("ACH_REDIS_ADDR"); err != nil {
 		return nil, err
@@ -163,6 +160,12 @@ type forwarderProcessDeps struct {
 	signer  *jwt.Ed25519Signer
 	loader  *jwt.SecretLoader
 	logger  *slog.Logger
+	// metricsHandler is the /metrics http.Handler from
+	// metrics.Handler(reg). Composed onto the traffic listener in
+	// runForwarderServer so a scrape client can hit
+	// http://forwarder:8080/metrics on the SAME port as /v1, /gemini,
+	// etc. (Plan 05-06 D-10).
+	metricsHandler http.Handler
 }
 
 func (d *forwarderProcessDeps) close() {
@@ -181,6 +184,25 @@ func (d *forwarderProcessDeps) close() {
 func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.Logger) (*forwarderProcessDeps, error) {
 	out := &forwarderProcessDeps{logger: logger}
 
+	// ─── Phase 5 D-09 / D-10: process-local Prometheus Registry +
+	//     typed ForwarderCollectors + shared litellm_unreachable_total.
+	//     InitCollectors plumbs the typed collectors into the Phase 4
+	//     internal/forwarder/metrics shim (counters.go), so existing
+	//     IncRequests / IncJWTSigned / IncJWTSuppressed /
+	//     IncLiteLLMUnreachable call sites in
+	//     internal/forwarder/{proxy,bip} start emitting real samples
+	//     without any signature change (D-19 thin-shim invariant).
+	reg := metrics.NewRegistry()
+	fwdCollectors := metrics.NewForwarderCollectors(reg)
+	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
+	forwardermetrics.InitCollectors(fwdCollectors, litellmUnreachable)
+	// /metrics is unauthenticated on the main traffic listener (D-10);
+	// internal cluster network only — see Helm values.yaml metricsAuth
+	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted:
+	// Ingress/Service deployers MUST NOT route /metrics from external
+	// traffic.
+	out.metricsHandler = metrics.Handler(reg)
+
 	pool, err := db.Open(ctx, cfg.DBURL)
 	if err != nil {
 		return out, fmt.Errorf("db.Open: %w", err)
@@ -196,8 +218,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
 	}
 	out.redis = redis.NewClient(redisOpts)
-
-	ll := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMSharedKey, ctrl.Log.WithName("litellm"))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 forwarderScheme,
@@ -225,6 +245,23 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		return out, fmt.Errorf("ctrl.NewManager: %w", err)
 	}
 	out.manager = mgr
+
+	// B2 refactor: resolve LiteLLMConnection/default + masterKey Secret
+	// via uncached APIReader. Refuse-to-start on missing CR / Secret /
+	// data key — operators see the failure inline at boot rather than
+	// 401 storms from the upstream once traffic starts flowing.
+	llmRes, err := litellmconn.Resolve(ctx, mgr.GetAPIReader(), cfg.Namespace)
+	if err != nil {
+		return out, fmt.Errorf("litellmconn.Resolve: %w", err)
+	}
+	llmUpstream, err := url.Parse(llmRes.Endpoint)
+	if err != nil {
+		return out, fmt.Errorf("parse LiteLLMConnection.spec.endpoint %q: %w", llmRes.Endpoint, err)
+	}
+	if llmUpstream.Scheme != "http" && llmUpstream.Scheme != "https" {
+		return out, fmt.Errorf("LiteLLMConnection.spec.endpoint must use http:// or https:// (got %q)", llmUpstream.Scheme)
+	}
+	ll := litellm.NewRESTClient(llmRes.Endpoint, llmRes.MasterKey, ctrl.Log.WithName("litellm"))
 
 	// D-09 ORDER: bip.RegisterIndex MUST be called BEFORE the first
 	// GetInformer(ctx, &achv1alpha1.BackendIdentityPolicy{}).
@@ -318,8 +355,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  cfg.LiteLLMUpstream, // W2 (REVIEW): pre-parsed in validate
-		LiteLLMSharedKey: cfg.LiteLLMSharedKey,
+		LiteLLMUpstream:  llmUpstream,      // B2: from LiteLLMConnection CR
+		LiteLLMMasterKey: llmRes.MasterKey, // B2: from MasterKeySecretRef
 	}
 	return out, nil
 }
@@ -331,10 +368,21 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 	}
 	healthHandler := forwarder.NewHealthHandler(deps.signer, mgrCacheSync)
 
+	// Plan 05-06 Task 3 / D-10: /metrics is served on the SAME port as
+	// the traffic listener (no separate metrics port). A tiny stdlib
+	// ServeMux fronts the chi-built trafficHandler so /metrics has its
+	// own dedicated path (precedence by path-specificity per net/http
+	// ServeMux semantics) while every other request falls through to
+	// the chi router. The metrics handler is unauthenticated; production
+	// scrape clients access it via the in-cluster Service IP / Pod IP.
+	composedTraffic := http.NewServeMux()
+	composedTraffic.Handle("/metrics", deps.metricsHandler)
+	composedTraffic.Handle("/", trafficHandler)
+
 	runnable := &forwarder.Runnable{
 		TrafficAddr:    cfg.TrafficBindAddr,
 		HealthAddr:     cfg.HealthBindAddr,
-		TrafficHandler: trafficHandler,
+		TrafficHandler: composedTraffic,
 		HealthHandler:  healthHandler,
 		Logger:         deps.logger,
 	}

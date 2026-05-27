@@ -4,7 +4,7 @@
 
 **Goal:** Promote six end-to-end checks (today driven manually via `kubectl` + `curl` on 2026-05-26) into the Go `test/e2e/` regression net under the `e2e` build tag, so every subsequent push exercises them automatically against the kept kind cluster.
 
-**Architecture:** New file `test/e2e/phase4_promotion_test.go` (single top-level `TestPhase4Promotion(t *testing.T)` with six `t.Run` sub-tests, one per UAT). A small companion `test/e2e/phase4_helpers_test.go` carries reusable helpers (force-refresh round-trip, ConfigMap-backed nginx server bring-up, golden-JSON diff with field tolerance). The hydrate golden lives under VCS at `test/e2e/fixtures/hydrate-golden.json`. All tests follow the existing stdlib `testing` idiom — **no Ginkgo** (per memory `feedback_023_tier_framework_rejected.md`).
+**Architecture:** New file `test/e2e/phase4_promotion_test.go` (single top-level `TestPhase4Promotion(t *testing.T)` with six `t.Run` sub-tests, one per UAT). A small companion `test/e2e/phase4_promotion_helpers_test.go` carries reusable helpers (force-refresh round-trip, ConfigMap-backed nginx server bring-up, golden-JSON diff with field tolerance). The hydrate golden lives under VCS at `test/e2e/fixtures/hydrate-golden.json`. All tests follow the existing stdlib `testing` idiom — **no Ginkgo** (per memory `feedback_023_tier_framework_rejected.md`).
 
 **Tech Stack:** Go stdlib `testing` (build tag `e2e`), `kubectl` shell-outs via `runCmd`/`runCmdLonger`, `kubectl port-forward` via `phase3StartPortForward` (existing helper in `test/e2e/phase3_helpers_test.go`), `encoding/json` + a small recursive `compareJSONShape` for golden diffing, `net/http` for the hydrate POST.
 
@@ -107,7 +107,7 @@ git commit -m "test(e2e): scaffold phase4 promotion suite (skips only)"
 ## Task 2: §11a force-refresh helper — `forceRefreshAndAssert`
 
 **Files:**
-- Create: `test/e2e/phase4_helpers_test.go`
+- Create: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Add the helper**
 
@@ -297,7 +297,7 @@ Expected: clean exit, no `undefined` errors. (`getCRJSONPath`, `dumpOperatorLogs
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): add forceRefreshAndAssert + compareJSONShape helpers"
 ```
 
@@ -411,7 +411,7 @@ Skip — no commit.
 ## Task 5: §11b helper — BIP finalizer probe
 
 **Files:**
-- Modify: `test/e2e/phase4_helpers_test.go`
+- Modify: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Append the BIP helper**
 
@@ -479,7 +479,7 @@ Expected: clean.
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): BIP finalizer + no-shadow assertion helpers"
 ```
 
@@ -639,7 +639,7 @@ git commit -m "test(e2e): §11c marketplace.json fixture under VCS"
 ## Task 8: §11c helper — apply ConfigMap + nginx server + CR
 
 **Files:**
-- Modify: `test/e2e/phase4_helpers_test.go`
+- Modify: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Append the bring-up helper**
 
@@ -742,7 +742,7 @@ func runCmdStdin(cmdline, stdin string) (string, error) {
 }
 ```
 
-Add the imports at top of `phase4_helpers_test.go`:
+Add the imports at top of `phase4_promotion_helpers_test.go`:
 ```go
 import (
     "context"
@@ -760,7 +760,7 @@ Expected: clean.
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): §11c ConfigMap+nginx fixture-server helper"
 ```
 
@@ -863,7 +863,7 @@ git commit -m "test(e2e): §11c PluginMarketplace internal-schema happy path"
 ## Task 10: §11d helper — operator pod restart probe
 
 **Files:**
-- Modify: `test/e2e/phase4_helpers_test.go`
+- Modify: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Append the helper**
 
@@ -922,7 +922,7 @@ Expected: clean.
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): §11d operator pod uid + restart probes"
 ```
 
@@ -1038,7 +1038,7 @@ git commit -m "test(e2e): §11e hydrate golden fixture (captured from hydrate-de
 ## Task 13: §11e helper — driveHydrateAndCapture
 
 **Files:**
-- Modify: `test/e2e/phase4_helpers_test.go`
+- Modify: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Append the helper**
 
@@ -1099,7 +1099,7 @@ Expected: clean.
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): §11e driveHydrateAndCapture helper"
 ```
 
@@ -1183,7 +1183,7 @@ git commit -m "test(e2e): §11e /platform/hydrate golden JSON regression"
 ## Task 15: §11f helper — DB row assertions for cleanup matrix
 
 **Files:**
-- Modify: `test/e2e/phase4_helpers_test.go`
+- Modify: `test/e2e/phase4_promotion_helpers_test.go`
 
 **Step 1: Append DB-query helpers**
 
@@ -1236,7 +1236,7 @@ Expected: clean.
 **Step 3: Commit**
 
 ```bash
-git add test/e2e/phase4_helpers_test.go
+git add test/e2e/phase4_promotion_helpers_test.go
 git commit -m "test(e2e): §11f DB-count helpers for finalizer matrix"
 ```
 
@@ -1465,7 +1465,7 @@ Activation: `make e2e` (assumes `make cluster-up` already invoked).
 | `phase3_invariants_test.go`         | Phase 03 SCs #1–#6 (Platform API SSO + hydrate + revocation + audit) |
 | `phase3_helpers_test.go`            | Port-forward + HTTP-client + audit-line parser helpers       |
 | `phase4_promotion_test.go`          | §11 UAT promotion: force-refresh, BIP, marketplace, restart, hydrate-golden, finalizer matrix |
-| `phase4_helpers_test.go`            | `forceRefreshAndAssert`, `compareJSONShape`, BIP/DB helpers  |
+| `phase4_promotion_helpers_test.go`            | `forceRefreshAndAssert`, `compareJSONShape`, BIP/DB helpers  |
 
 ## Focused dev loop
 

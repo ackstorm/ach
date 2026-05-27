@@ -16,6 +16,18 @@ metadata:
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: content-service
+  annotations:
+    # Phase 5 OBS-03 + D-12 + drift flag #4 resolution.
+    # The CS container is co-located in the operator Pod (RWO PVC
+    # forces single-Pod). The operator Pod already carries scrape
+    # annotations for its own :8080 metrics port; CS's :8082 port
+    # gets a separate scrape target via this Service-level
+    # annotation. Both scrape targets are visible to the default
+    # Prometheus scrape config (kubernetes-pods + kubernetes-services
+    # roles).
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8082"
+    prometheus.io/path: "/metrics"
 spec:
   selector:
     app.kubernetes.io/name: ach

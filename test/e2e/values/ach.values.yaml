@@ -27,6 +27,10 @@ extraEnv:
   - name: ACH_LITELLM_BASE_URL
     value: "http://litellm.litellm-system.svc.cluster.local:4000"
   - name: ACH_LITELLM_MASTER_KEY
+    # Consumed by platform-api only. The forwarder no longer reads this
+    # env var — its master key is sourced from LiteLLMConnection/default
+    # via MasterKeySecretRef at bootstrap (B2 refactor). Migrating
+    # platform-api to the same CR-driven flow is tracked separately.
     value: "sk-test-master-key"
   # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
   # injects into scripts/dex-config.yaml (in-cluster URL, not the

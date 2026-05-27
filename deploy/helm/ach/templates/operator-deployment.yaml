@@ -44,6 +44,17 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        # Prometheus default scrape — Phase 5 OBS-03 + D-12.
+        # Drift flag #4 resolution: this Pod hosts TWO metrics ports
+        # (operator :8080, content-service :8082). Pod annotation here
+        # covers the OPERATOR port. The content-service port has its
+        # own scrape target via Service-level annotation on
+        # ach-content-service (see content-service-deployment.yaml).
+        # See examples/prometheus-servicemonitor.yaml for the
+        # ServiceMonitor alternative.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
       labels:
         {{- include "ach.commonLabels" . | nindent 8 }}
         app.kubernetes.io/component: operator

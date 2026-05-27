@@ -28,11 +28,31 @@ image:
 watchNamespace: ""
 
 # operator: reconciles ACH CRDs (AgentDefinition, AgentSession, etc).
+#
+# Default args bind the controller-runtime metricsserver on :8080
+# (HTTP, no auth) so the Pod-level prometheus.io/scrape annotation
+# in operator-deployment.yaml actually resolves to a live endpoint.
+# Phase 5 OBS-03..06 + SC#5 wiring — the operator's :8080/metrics
+# surfaces controller_runtime_reconcile_*, workqueue_*, plus the
+# shared litellm_unreachable_total{caller="operator"} registered by
+# Plan 05-06 Task 5.
+#
+# To switch to secure metrics (TLS + authn/authz on :8443) for
+# deployers running cert-manager + Prometheus with bearer-token
+# auth, override operator.args via --set or values overlay:
+#   operator:
+#     args:
+#       - operator
+#       - --metrics-bind-address=:8443
+#       - --metrics-secure=true
 operator:
   enabled: true
   replicas: 1
   resources: {}
-  args: ["operator"]
+  args:
+    - operator
+    - --metrics-bind-address=:8080
+    - --metrics-secure=false
 
 # platformApi: HTTP API surface for agent registry, config serving.
 platformApi:
@@ -54,10 +74,18 @@ forwarder:
   # next.seed?). Operator MUST create this Secret before forwarder boots
   # — refuse-to-start contract per FWD-09.
   jwtSecretName: ach-jwt-signing-keys
+  # litellmMasterSecretName MUST equal the Secret name in
+  # LiteLLMConnection/default's spec.masterKeySecretRef.name. Forwarder
+  # bootstrap reads this Secret to extract the LiteLLM master key per
+  # B2 refactor (replaces ACH_LITELLM_SHARED_KEY env var). RBAC carves
+  # the Role's secrets verbs to this name + jwtSecretName only.
+  litellmMasterSecretName: litellm-master-key
   # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
-  # ACH_LITELLM_BASE_URL, ACH_LITELLM_SHARED_KEY, ACH_REDIS_ADDR,
-  # ACH_REDIS_PASSWORD via valueFrom, ACH_CREDENTIAL_HASH_PEPPER via
-  # valueFrom). Required env vars not defaulted by the binary itself.
+  # ACH_REDIS_ADDR, ACH_REDIS_PASSWORD via valueFrom,
+  # ACH_CREDENTIAL_HASH_PEPPER via valueFrom). The LiteLLM endpoint +
+  # master key are NOT env-sourced here — they flow from
+  # LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
+  # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
 
 # contentService: serves agent-rendered content (assets, snapshots).
@@ -87,6 +115,45 @@ redis:
 toolhive:
   enabled: true
 
+# metrics: Prometheus observability topology — Phase 5 OBS-03..06.
+#
+# Each long-running service exposes GET /metrics on its main traffic
+# listener:
+#   - operator:        :8080 (controller-runtime metricsserver)
+#   - platform-api:    :8080 (chi mux)
+#   - forwarder:       :8080 (chi mux)
+#   - content-service: :8082 (chi mux, co-located in operator Pod)
+#
+# /metrics is UNAUTHENTICATED — internal cluster network only.
+# DEPLOYERS MUST NOT expose /metrics through Ingress, LB, or external
+# routing. The operator's controller-runtime metricsserver may be
+# configured for TLS+auth via --metrics-secure (see operator subcommand
+# flags); the other three are plain HTTP.
+#
+# Scrape topology (drift flag #4 — operator Pod has two metric ports):
+#   - operator's :8080 → Pod-level prometheus.io/scrape annotation
+#     on the operator Pod template.
+#   - content-service's :8082 → Service-level prometheus.io/scrape
+#     annotation on the ach-content-service Service object (the Pod
+#     is shared with the operator container, so a single Pod-level
+#     annotation cannot name both ports).
+#   - forwarder + platform-api → Pod-level annotations on their own
+#     Pod templates.
+#
+# Prometheus Operator users: examples/prometheus-servicemonitor.yaml
+# ships an opt-in ServiceMonitor manifest as an alternative to the
+# default pod-scrape annotations.
+#
+# Spec v4 §5.2 RBAC reversal — Content Service no longer holds
+# informers over ACH CRDs (Phase 5 D-Discretion + Plan 05-06). The
+# contract is enforced AT THE GO CODE LEVEL: cmd/ach/cmd/content_service.go
+# does NOT construct a controller-runtime manager.Manager. At the
+# K8s RBAC level the CS container shares the ach-operator
+# ServiceAccount (RWO PVC co-location), so `kubectl auth can-i list
+# environments.ach.ackstorm.ai --as=system:serviceaccount:<ns>:ach-operator`
+# returns "yes" — that grant is needed by the OPERATOR reconcilers
+# (Phase 1 Plan 01-09); CS code never exercises it.
+#
 # metrics.serviceMonitor: enabled=false (default), do not render
 # prometheus-operator ServiceMonitor CR. Set true when prometheus-operator
 # is installed in the cluster.

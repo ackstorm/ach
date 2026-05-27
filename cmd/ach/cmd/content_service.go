@@ -1,21 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach content-service` serves the §15.2 Content Service surface:
+// `ach content-service` serves the §15.6 Content Service surface:
 //
 //	GET /healthz
+//	GET /metrics
 //	GET /content/prompt/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
 //
 // Files are streamed from ACH_CACHE_ROOT (default /var/cache/ach), the
-// RWO PVC mounted by the operator Pod that this container shares. The
-// real handler lives in internal/contentservice; this file wires the
-// k8s-cached Prompt lookup, the chi router, and graceful shutdown.
+// RWO PVC mounted by the operator Pod that this container shares.
+//
+// Phase 5 D-09 / D-10 / D-16 + spec v4 §5.2 reversal: this binary
+// removes the controller-runtime manager that earlier waves held —
+// Content Service reads ACH CRD state ONLY from the Postgres projection
+// tables (Plan 05-02 schema + Plan 05-04 reconciler writes) and the
+// Redis-backed Environment row cache (Plan 05-03 envcache). No
+// informers, no cached k8s client, no ACH-scheme registration. RBAC
+// belt-and-braces for that removal lives in Plan 05-07's Helm chart;
+// the read-side enforcement is here — without an informer cache the
+// code physically cannot initiate ACH-CRD reads (T-05-06-05).
+//
+// /metrics is served on the same chi mux as the traffic listener
+// (D-10) — internal cluster network only per T-05-06-01.
 
 package cmd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,34 +39,100 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/contentservice"
+	"github.com/ackstorm/ach/internal/contentservice/envcache"
+	"github.com/ackstorm/ach/internal/credhash/pepperenv"
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 var contentServiceCmd = &cobra.Command{
 	Use:   "content-service",
 	Short: "Run the ACH artifact content service",
-	Long: `Boot the Content Service. Binds /healthz and
+	Long: `Boot the Content Service. Binds /healthz, /metrics, and
 /content/{prompt,plugin,artifact}/{name} on
 CONTENT_SERVICE_HEALTH_BIND_ADDRESS (default :8082). Streams cached
-files from ACH_CACHE_ROOT (default /var/cache/ach) using stdlib
-http.ServeContent (sendfile-backed on Linux).`,
+files from ACH_CACHE_ROOT (default /var/cache/ach) via io.Copy →
+sendfile(2). Reads ACH CRD state from Postgres + Redis envcache only
+(no Kubernetes informers per spec v4 §5.2).`,
 	RunE: runContentService,
 }
 
 func init() {
 	rootCmd.AddCommand(contentServiceCmd)
+}
+
+// contentServiceConfig holds the validated env-var surface; never
+// mutated after parseContentServiceConfig returns. Mirrors the
+// platformAPIConfig pattern from cmd/ach/cmd/platform_api.go.
+type contentServiceConfig struct {
+	CacheRoot        string
+	Namespace        string
+	DBURL            string
+	RedisAddr        string
+	RedisPassword    string
+	RedisTLS         bool
+	RedisDB          int
+	LiteLLMBaseURL   string
+	LiteLLMMasterKey string
+	BindAddr         string
+	Pepper           []byte
+}
+
+// parseContentServiceConfig validates and returns the env-var surface.
+// Required vars fail-fast with fmt.Errorf so operators see the missing
+// var at boot rather than as a runtime nil-deref. Pepper-placeholder
+// rejection delegates to pepperenv.Load (matches Phase 1 D-09 /
+// REPLACE-ME-WITH-RANDOM- prefix enforcement).
+func parseContentServiceConfig() (*contentServiceConfig, error) {
+	cfg := &contentServiceConfig{
+		CacheRoot: config.EnvOr("ACH_CACHE_ROOT", "/var/cache/ach"),
+		Namespace: config.EnvOr("ACH_NAMESPACE", "ach-system"),
+		BindAddr:  config.EnvOr("CONTENT_SERVICE_HEALTH_BIND_ADDRESS", ":8082"),
+	}
+
+	var err error
+	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
+		return nil, fmt.Errorf("ACH_DB_URL required (Phase 1 D-18): %w", err)
+	}
+	if cfg.LiteLLMBaseURL, err = config.MustEnvNonEmpty("ACH_LITELLM_BASE_URL"); err != nil {
+		return nil, err
+	}
+	if cfg.LiteLLMMasterKey, err = config.MustEnvNonEmpty("ACH_LITELLM_MASTER_KEY"); err != nil {
+		return nil, err
+	}
+
+	cfg.RedisAddr = config.EnvOr("ACH_REDIS_ADDR", "localhost:6379")
+	cfg.RedisPassword = os.Getenv("ACH_REDIS_PASSWORD")
+	cfg.RedisTLS = config.EnvBool("ACH_REDIS_TLS", false)
+	// ACH_REDIS_DB=0 is the default Redis logical DB and a legitimate
+	// value; EnvIntNonNeg permits 0 (MustEnvIntPositive would reject).
+	if cfg.RedisDB, err = config.EnvIntNonNeg("ACH_REDIS_DB", 0); err != nil {
+		return nil, err
+	}
+
+	// Pepper: REPLACE-ME-WITH-RANDOM- prefix rejected here by reusing
+	// the Phase 1 pepperenv.Load() validator (same code path the operator
+	// uses; see internal/credhash/pepperenv/pepperenv.go).
+	// Pepper validation: pepperenv.Load() rejects empty values AND
+	// the REPLACE-ME-WITH-RANDOM- placeholder prefix (Phase 1 D-09 /
+	// Hub §16.1 parity with the operator's enforcement).
+	pepper, err := pepperenv.Load()
+	if err != nil {
+		return nil, fmt.Errorf("ACH_CREDENTIAL_HASH_PEPPER invalid: %w", err)
+	}
+	cfg.Pepper = pepper
+
+	return cfg, nil
 }
 
 func runContentService(cmd *cobra.Command, _ []string) error {
@@ -63,56 +142,130 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 		ctx = context.Background()
 	}
 
-	cacheRoot := config.EnvOr("ACH_CACHE_ROOT", "/var/cache/ach")
-	ns := config.EnvOr("ACH_NAMESPACE", "ach-system")
-	addr := config.EnvOr("CONTENT_SERVICE_HEALTH_BIND_ADDRESS", ":8082")
-	logger.Info("content-service starting",
-		"cacheRoot", cacheRoot, "namespace", ns, "addr", addr)
-
-	// Build a controller-runtime manager scoped to the watch namespace
-	// just to get a cached client over Prompt. We don't reconcile
-	// anything — the manager runs purely for its informer cache.
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(achv1alpha1.AddToScheme(scheme))
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
-		Scheme: scheme,
-		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{ns: {}},
-		},
-		Metrics: metricsserver.Options{BindAddress: "0"}, // operator owns metrics
-	})
+	cfg, err := parseContentServiceConfig()
 	if err != nil {
-		return fmt.Errorf("create manager: %w", err)
+		return fmt.Errorf("parseConfig: %w", err)
+	}
+	logger.Info("content-service starting",
+		"cacheRoot", cfg.CacheRoot, "namespace", cfg.Namespace, "addr", cfg.BindAddr)
+
+	// ─── Postgres pool ───
+	pool, err := db.Open(ctx, cfg.DBURL)
+	if err != nil {
+		return fmt.Errorf("db.Open: %w", err)
+	}
+	defer pool.Close()
+
+	// ─── Redis client ───
+	redisOpts := &redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	}
+	if cfg.RedisTLS {
+		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
+	}
+	redisClient := redis.NewClient(redisOpts)
+	defer func() { _ = redisClient.Close() }()
+
+	// ─── LiteLLM REST client (Phase 3 D-25 pattern reused) ───
+	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, ctrl.Log.WithName("litellm"))
+
+	// ─── audit logger (D-Discretion: one audit event per CS GET) ───
+	auditLog := audit.NewLogger(os.Stdout)
+
+	// ─── keystore.Resolver chain (Phase 3 D-08) ───
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
+	if err != nil {
+		return fmt.Errorf("keystore.NewDBResolver: %w", err)
+	}
+	resolver, err := keystore.NewCachedResolver(dbResolver, redisClient, cfg.Pepper)
+	if err != nil {
+		return fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
 
-	mgrCtx, mgrCancel := context.WithCancel(ctx)
-	defer mgrCancel()
-	mgrErr := make(chan error, 1)
-	go func() { mgrErr <- mgr.Start(mgrCtx) }()
-	if !mgr.GetCache().WaitForCacheSync(mgrCtx) {
-		mgrCancel()
-		return errors.New("cache failed to sync")
+	// ─── keystore.TeamsResolver chain (Phase 4 D-17) ───
+	litellmTeamsResolver, err := keystore.NewLiteLLMTeamsResolver(liteLLM)
+	if err != nil {
+		return fmt.Errorf("keystore.NewLiteLLMTeamsResolver: %w", err)
 	}
-	logger.Info("informer cache synced")
+	teamsResolver, err := keystore.NewCachedTeamsResolver(litellmTeamsResolver, redisClient)
+	if err != nil {
+		return fmt.Errorf("keystore.NewCachedTeamsResolver: %w", err)
+	}
 
+	// ─── envcache loader (D-07): closure over db.GetEnvironmentByName ───
+	loader := func(loaderCtx context.Context, ns, name string) (*envcache.EnvRow, error) {
+		row, err := db.GetEnvironmentByName(loaderCtx, pool, ns, name)
+		if err != nil {
+			return nil, err
+		}
+		if row == nil {
+			return nil, nil
+		}
+		return &envcache.EnvRow{
+			Namespace:         row.Namespace,
+			Name:              row.Name,
+			AuthorizedTeams:   row.AuthorizedTeams,
+			ContextPrompts:    row.ContextPrompts,
+			ContextPlugins:    row.ContextPlugins,
+			ContextArtifacts:  row.ContextArtifacts,
+			DeletionTimestamp: row.DeletionTimestamp,
+			ResourceVersion:   row.ResourceVersion,
+		}, nil
+	}
+	envCache, err := envcache.NewCachedEnvCache(loader, redisClient)
+	if err != nil {
+		return fmt.Errorf("envcache.NewCachedEnvCache: %w", err)
+	}
+
+	// ─── metrics: process-local Registry + ContentServiceCollectors +
+	//     shared litellm_unreachable_total (caller="content_service" Inc
+	//     happens inside enforceTeams in internal/contentservice/authz.go).
+	reg := metrics.NewRegistry()
+	csCollectors := metrics.NewContentServiceCollectors(reg)
+	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
+
+	// ─── Deps wiring (Plan 05-05 D-16 surface) ───
+	deps := contentservice.Deps{
+		CacheRoot:          cfg.CacheRoot,
+		Namespace:          cfg.Namespace,
+		Pool:               pool,
+		EnvCache:           envCache,
+		Resolver:           resolver,
+		Teams:              teamsResolver,
+		Metrics:            csCollectors,
+		LiteLLMUnreachable: litellmUnreachable,
+		AuditLog:           auditLog,
+		Logger:             logger,
+	}
+
+	// ─── chi router: RequestID middleware + /metrics + content routes ───
 	r := chi.NewRouter()
-	contentservice.RegisterRoutes(r, contentservice.Deps{
-		CacheRoot:           cacheRoot,
-		PromptContentTypeFn: contentservice.NewK8sPromptLookup(mgr.GetClient(), ns),
-		Logger:              logger,
-	})
+	r.Use(middleware.RequestID)
+	// /metrics is unauthenticated on the main traffic listener (D-10);
+	// internal cluster network only — see Helm values.yaml + Plan 05-07
+	// service exposure note. T-05-06-01 disposition: accept (in-cluster
+	// scrape only; ingress MUST NOT route /metrics from external traffic).
+	r.Handle("/metrics", metrics.Handler(reg))
+	contentservice.RegisterRoutes(r, deps)
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.BindAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
+		// WHY WriteTimeout=0:
+		// D-Discretion (Phase 5 CONTEXT.md) — large artifact tarballs may
+		// exceed any non-zero deadline; rely on Request.Context()
+		// cancellation for client-disconnect propagation. See spec §15.6.
+		// /metrics responses are tiny (KBs) and complete well inside
+		// stdlib net/http's idle/header bounds (T-05-06-04 accepted).
+		WriteTimeout: 0,
 	}
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", addr)
+		logger.Info("listening", "addr", cfg.BindAddr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 			return
@@ -126,27 +279,17 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	case <-sig:
 		logger.Info("shutdown signal received, draining")
 	case err := <-serverErr:
-		mgrCancel()
-		<-mgrErr
 		if err != nil {
 			return fmt.Errorf("server error: %w", err)
 		}
 		return nil
-	case err := <-mgrErr:
-		if err != nil {
-			return fmt.Errorf("manager error: %w", err)
-		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		mgrCancel()
-		<-mgrErr
 		return fmt.Errorf("graceful shutdown failed: %w", err)
 	}
-	mgrCancel()
-	<-mgrErr
 	logger.Info("shutdown complete")
 	return nil
 }

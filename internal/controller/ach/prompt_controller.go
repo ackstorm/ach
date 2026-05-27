@@ -73,6 +73,16 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
 				}
 			}
+			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the prompts
+			// projection row AFTER the existing external_refs DELETE
+			// and BEFORE finalizer removal. Two writes are intentional —
+			// see plugin_controller.go for rationale (external_refs is the
+			// §10.3 cache-refresh row; this projection row is what CS reads).
+			if r.DB != nil {
+				if err := achdb.SoftDeletePrompt(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("db soft-delete prompt projection: %w", err)
+				}
+			}
 			controllerutil.RemoveFinalizer(&cr, promptFinalizer)
 			if err := r.Update(ctx, &cr); err != nil {
 				return ctrl.Result{}, err
@@ -155,6 +165,33 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	now := metav1.Now()
 	cr.Status.LastSuccessfulRefresh = &now
 	cr.Status.ObservedGeneration = cr.Generation
+
+	// Spec v4 §5.2 / D-13 / D-15: dual-write the prompts projection row
+	// BEFORE the best-effort K8s Status update. DB is authoritative —
+	// Plan 05-05 CS pipeline reads content_type + max_staleness_seconds +
+	// last_successful_refresh from this row. ContentType is optional
+	// (CS-06 falls back to application/octet-stream when NULL); only
+	// populate it when spec.contentType is set.
+	if r.DB != nil {
+		lastRefresh := now.Time
+		var contentType *string
+		if cr.Spec.ContentType != "" {
+			ct := cr.Spec.ContentType
+			contentType = &ct
+		}
+		row := achdb.PromptRow{
+			Namespace:             cr.Namespace,
+			Name:                  cr.Name,
+			StorageLocation:       cr.Status.StorageLocation,
+			ContentType:           contentType,
+			LastSuccessfulRefresh: &lastRefresh,
+			MaxStalenessSeconds:   int64(spec.Refresh.MaxStaleness.Duration.Seconds()),
+			ResourceVersion:       cr.ResourceVersion,
+		}
+		if err := achdb.UpsertPrompt(ctx, r.DB, row); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db upsert prompt projection: %w", err)
+		}
+	}
 	if err := r.Status().Update(ctx, &cr); err != nil {
 		// WR-02: see plugin_controller.go for rationale — stale
 		// ResourceVersion after a failed Status().Update would make

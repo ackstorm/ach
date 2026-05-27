@@ -1,0 +1,16 @@
+{
+  "name": "ach-internal-test-marketplace",
+  "owner": {"name": "ACH UAT", "url": "https://ackstorm.ai"},
+  "plugins": [
+    {
+      "name": "phase4-mkt-plugin",
+      "description": "ACH §11c real-schema fixture entry (post-§5 re-model)",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/JuliusBrussee/caveman.git",
+        "ref": "main",
+        "sha": "655b7d9c5431f822264b7732e9901c5578ac84cf"
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 E2E fixture — Plugin "foo" pulls a small public repo and the
+# Operator's §10.3 cache-refresh loop writes plugin/foo.tar.gz under
+# the operator cache PVC. CS handler serves /content/plugin/foo from
+# the projection row. Drift flag #5 + §12.3 precedence lock-in: this
+# CRD-row branch wins over any marketplace_plugins row with the same
+# name (see Plan 05-02 ResolvePluginByName CTE).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: foo
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 1h
+    maxStaleness: 24h
+  github:
+    repo: JuliusBrussee/caveman
+    ref: main

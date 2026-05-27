@@ -73,35 +73,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// ─── Deletion path: prefer status.StorageLocation when set. ───
 	if !cr.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&cr, artifactFinalizer) {
-			if cr.Status.StorageLocation != "" {
-				// Exact path recorded by Phase 2 — remove only that.
-				if err := os.Remove(cr.Status.StorageLocation); err != nil && !errors.Is(err, fs.ErrNotExist) {
-					return ctrl.Result{}, err
-				}
-			} else {
-				// Phase 1 carry-forward: status was never populated (CR
-				// existed before Phase 2 reconcile ran). Attempt BOTH
-				// paths; tolerate IsNotExist on either.
-				if err := os.Remove(filepath.Join(r.CacheRoot, "artifact", cr.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-					return ctrl.Result{}, err
-				}
-				if err := os.Remove(filepath.Join(r.CacheRoot, "artifact", cr.Name+".tar.gz")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-					return ctrl.Result{}, err
-				}
-			}
-			if r.DB != nil {
-				if err := achdb.DeleteExternalRef(ctx, r.DB, "artifact", cr.Name); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
-				}
-			}
-			controllerutil.RemoveFinalizer(&cr, artifactFinalizer)
-			if err := r.Update(ctx, &cr); err != nil {
-				return ctrl.Result{}, err
-			}
-			logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, &cr, logger)
 	}
 
 	// ─── Finalizer-add path. ───
@@ -177,6 +149,18 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	now := metav1.Now()
 	cr.Status.LastSuccessfulRefresh = &now
 	cr.Status.ObservedGeneration = cr.Generation
+
+	// Spec v4 §5.2 / D-13 / D-15: dual-write the artifacts projection
+	// row BEFORE the best-effort K8s Status update. DB is authoritative —
+	// Plan 05-05 CS pipeline reads scope + max_staleness_seconds +
+	// last_successful_refresh from this row on every artifact request.
+	// cr.Spec.Scope is passed verbatim — kubebuilder enum validation
+	// constrains it to {"object","directory"} at admission AND the DB
+	// CHECK constraint scope IN ('object','directory') in migration
+	// 000004 catches any drift.
+	if err := r.writeArtifactProjection(ctx, &cr, now.Time, spec.Refresh.MaxStaleness.Duration); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.Status().Update(ctx, &cr); err != nil {
 		// WR-02: see plugin_controller.go for rationale.
 		logger.Error(err, "status update failed; skipping annotation-clear")
@@ -191,6 +175,106 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// reconcileDeletion runs the artifact deletion path: on-disk cache rm
+// (using the recorded cr.Status.StorageLocation when set, else the
+// Phase 1 carry-forward sweep over both object + directory paths) →
+// external_refs DELETE (Phase 2 row removal) → projection-row soft-delete
+// (Plan 05-04 — CS-09 grace window) → finalizer removal.
+//
+// Extracted from Reconcile to keep its cyclomatic complexity within the
+// gocyclo budget after the spec v4 §5.2 projection-write extension landed.
+// The body is purely sequential — every error path is a `return ctrl.Result{}, err`,
+// no requeue cadence to compute here.
+func (r *ArtifactReconciler) reconcileDeletion(
+	ctx context.Context,
+	cr *achv1alpha1.Artifact,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(cr, artifactFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	if cr.Status.StorageLocation != "" {
+		// Exact path recorded by Phase 2 — remove only that.
+		if err := os.Remove(cr.Status.StorageLocation); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return ctrl.Result{}, err
+		}
+	} else {
+		// Phase 1 carry-forward: status was never populated (CR
+		// existed before Phase 2 reconcile ran). Attempt BOTH
+		// paths; tolerate IsNotExist on either.
+		if err := os.Remove(filepath.Join(r.CacheRoot, "artifact", cr.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return ctrl.Result{}, err
+		}
+		if err := os.Remove(filepath.Join(r.CacheRoot, "artifact", cr.Name+".tar.gz")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return ctrl.Result{}, err
+		}
+	}
+	if r.DB != nil {
+		if err := achdb.DeleteExternalRef(ctx, r.DB, "artifact", cr.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
+		}
+	}
+	// Spec v4 §5.2 / CS-09 / D-15: soft-delete the artifacts projection
+	// row AFTER the existing external_refs DELETE and BEFORE finalizer
+	// removal. Two writes are intentional — see plugin_controller.go.
+	if err := r.softDeleteArtifactProjection(ctx, cr); err != nil {
+		return ctrl.Result{}, err
+	}
+	controllerutil.RemoveFinalizer(cr, artifactFinalizer)
+	if err := r.Update(ctx, cr); err != nil {
+		return ctrl.Result{}, err
+	}
+	logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
+	return ctrl.Result{}, nil
+}
+
+// writeArtifactProjection wraps the spec v4 §5.2 dual-write to the
+// artifacts projection table — encapsulating the nil-DB gate and the
+// achdb.UpsertArtifact call so Reconcile's cyclomatic complexity stays
+// within the gocyclo budget. lastRefresh is the metav1.Time the caller
+// already stamped on cr.Status.LastSuccessfulRefresh; maxStaleness is
+// pulled from spec.Refresh.MaxStaleness so callers don't reach back into
+// cr.Spec from the helper.
+func (r *ArtifactReconciler) writeArtifactProjection(
+	ctx context.Context,
+	cr *achv1alpha1.Artifact,
+	lastRefresh time.Time,
+	maxStaleness time.Duration,
+) error {
+	if r.DB == nil {
+		return nil
+	}
+	row := achdb.ArtifactRow{
+		Namespace:             cr.Namespace,
+		Name:                  cr.Name,
+		StorageLocation:       cr.Status.StorageLocation,
+		Scope:                 cr.Spec.Scope,
+		LastSuccessfulRefresh: &lastRefresh,
+		MaxStalenessSeconds:   int64(maxStaleness.Seconds()),
+		ResourceVersion:       cr.ResourceVersion,
+	}
+	if err := achdb.UpsertArtifact(ctx, r.DB, row); err != nil {
+		return fmt.Errorf("db upsert artifact projection: %w", err)
+	}
+	return nil
+}
+
+// softDeleteArtifactProjection wraps the nil-DB gate + the
+// achdb.SoftDeleteArtifact call. Caller is the deletion path between
+// the external_refs DELETE and RemoveFinalizer.
+func (r *ArtifactReconciler) softDeleteArtifactProjection(
+	ctx context.Context,
+	cr *achv1alpha1.Artifact,
+) error {
+	if r.DB == nil {
+		return nil
+	}
+	if err := achdb.SoftDeleteArtifact(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+		return fmt.Errorf("db soft-delete artifact projection: %w", err)
+	}
+	return nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.

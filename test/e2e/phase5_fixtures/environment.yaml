@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 E2E fixture — Environment "prod" exercises CS authz + content
+# resolution paths. authorizedTeams="team-a"; context names the three
+# downstream CR fixtures (plugin-foo, prompt-bar, artifact-baz) so the
+# projection layer (Plan 05-02 + 05-04) populates the read cache that
+# the Content Service handler (Plan 05-05) hits per request.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: prod
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - team-a
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    plugins:
+      - foo
+    prompts:
+      - bar
+    artifacts:
+      - baz

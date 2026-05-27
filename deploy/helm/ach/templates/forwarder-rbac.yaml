@@ -1,7 +1,17 @@
 {{- if .Values.forwarder.enabled }}
 ---
-# Forwarder reads ONLY environments + backendidentitypolicies + the
-# ach-jwt-signing-keys Secret (resourceNames carve-out per D-22).
+# Forwarder reads:
+#   - environments + backendidentitypolicies (cached informers; D-22)
+#   - litellmconnections (one-shot APIReader.Get at bootstrap so the
+#     forwarder discovers the LiteLLM upstream + master-key Secret ref
+#     from LiteLLMConnection/default per B2 refactor — replaces the
+#     prior ACH_LITELLM_BASE_URL + ACH_LITELLM_SHARED_KEY env vars)
+#   - ach-jwt-signing-keys Secret (resourceNames carve-out per D-22)
+#   - the masterKey Secret named by LiteLLMConnection's
+#     MasterKeySecretRef (resourceNames carve-out — chart value
+#     forwarder.litellmMasterSecretName, default litellm-master-key,
+#     MUST match the CR's spec.masterKeySecretRef.name)
+#
 # External-reference kinds (plugins/prompts/artifacts/pluginmarketplaces)
 # are served from the PVC cache (T-09-02 mitigation), so they are
 # deliberately excluded. Namespace-scoped Role (not ClusterRole) per
@@ -20,9 +30,15 @@ rules:
   - environments
   - backendidentitypolicies
   verbs: ["get", "list", "watch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["litellmconnections"]
+  resourceNames: ["default"]
+  verbs: ["get"]
 - apiGroups: [""]
   resources: ["secrets"]
-  resourceNames: ["{{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}"]
+  resourceNames:
+  - "{{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}"
+  - "{{ .Values.forwarder.litellmMasterSecretName | default "litellm-master-key" }}"
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

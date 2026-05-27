@@ -1,10 +1,26 @@
-# Use distroless as minimal base image for the ach binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+# Runtime image consumed by goreleaser's `dockers:` blocks.
+#
+# Base must ship `git` because internal/sources/git/Fetcher exec's the
+# git CLI to clone external upstreams referenced by Plugin / Prompt /
+# Artifact / PluginMarketplace CRs. distroless/static lacks git, so we
+# use alpine + apk add git ca-certificates. CGO_ENABLED=0 in the build,
+# so musl is not exercised. nonroot uid 65532 matches the chart's
+# securityContext.runAsNonRoot=true.
+FROM alpine:3.20
+
+RUN apk add --no-cache git ca-certificates && \
+    addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S nonroot -G nonroot
 
 WORKDIR /
 
-# Copy the pre-built binary from GoReleaser build context
+# Copy the pre-built binary from GoReleaser build context.
+# Note: db/migrations is intentionally NOT baked here. goreleaser's
+# default docker build context only contains files staged by its
+# `builds:` block (i.e. the `ach` binary). Migrations are supplied to
+# release images via a ConfigMap mount in deploy/helm/ach. The
+# in-tree Dockerfile does bake them for local/e2e cycles where the
+# Helm chart doesn't synthesise the ConfigMap.
 COPY ach .
 
 USER 65532:65532

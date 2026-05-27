@@ -520,8 +520,13 @@ wait-forwarder: ## Wait for forwarder Deployment Available
 	kubectl rollout status deploy/ach-forwarder -n ach-system --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-content-service
-wait-content-service: ## Wait for content-service Deployment Available
-	kubectl rollout status deploy/ach-content-service -n ach-system --timeout=$(WAIT_TIMEOUT)
+wait-content-service: ## Wait for content-service container (co-located in operator Pod) Ready (bounded).
+	# Co-located topology: content-service is the second container in
+	# the ach-operator Pod (RWO PVC forces co-location; Plan 01-08 + 05-07).
+	# There is NO ach-content-service Deployment — the operator Deployment
+	# rollout encompasses both containers and the Pod readinessProbe already
+	# verifies CS :8082/healthz, so rollout=Ready ⇒ both containers serving.
+	kubectl rollout status deploy/ach-operator -n ach-system --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-container
 wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make wait-container NAME=<container> [TIMEOUT=600]
@@ -579,10 +584,16 @@ e2e:        ## Phase 3 — run full e2e suite against running cluster (assumes c
 	# `ach` layout. cluster-up handles the actual image load.
 	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
 
-e2e-focus:  ## Phase 3 — run a single Ginkgo It (usage: make e2e-focus FOCUS='registers via POST /model/new')
-	# `-args` is required: without it, `go test` parses the value after
+e2e-focus:  ## Run a focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
+	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
+	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m ./test/e2e/... -args -ginkgo.focus="$(FOCUS)"
+	# E2E_SKIP_SETUP=1 export via bash -c so the value crosses the
+	# scripts/dev.sh container boundary (the wrapper does not forward
+	# arbitrary host env vars).
+	./scripts/dev.sh bash -c 'E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
+	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
+	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")'
 
 .PHONY: e2e-full e2e-keep
 e2e-full: ## Phase 3 — cluster-up → e2e → cluster-down (trap-guaranteed teardown)
