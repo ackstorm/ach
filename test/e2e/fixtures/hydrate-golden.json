@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "v1alpha1",
+  "environment": "demo",
+  "runtime": {
+    "models": [],
+    "mcpServers": [],
+    "a2aAgents": []
+  },
+  "context": {
+    "prompts": [
+      {
+        "name": "claude-code-system-prompt",
+        "id": "claude-code-system-prompt",
+        "downloadUrl": "https://ach.local.test/content/prompt/claude-code-system-prompt"
+      }
+    ],
+    "plugins": [
+      {
+        "name": "caveman",
+        "id": "caveman",
+        "downloadUrl": "https://ach.local.test/content/plugin/caveman"
+      }
+    ],
+    "artifacts": [
+      {
+        "name": "openclaw-templates",
+        "id": "openclaw-templates",
+        "downloadUrl": "https://ach.local.test/content/artifact/openclaw-templates"
+      }
+    ]
+  }
+}
