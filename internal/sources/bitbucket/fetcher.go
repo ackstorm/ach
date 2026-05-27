@@ -91,7 +91,6 @@ func New(spec *achv1alpha1.BitbucketSource) (*Fetcher, error) {
 	}, nil
 }
 
-
 // extractToken returns the bearer token to send to Bitbucket, or empty
 // for anonymous fetch. Shared by both transport branches.
 //
