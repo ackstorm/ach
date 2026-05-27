@@ -55,6 +55,26 @@ import (
 var (
 	operatorScheme   = runtime.NewScheme()
 	operatorSetupLog = ctrl.Log.WithName("setup")
+
+	// Operator-subcommand flags. Registered on stdlib `flag.CommandLine`
+	// (kubebuilder boilerplate) and bridged into cobra's pflag set in
+	// init() so `ach operator --metrics-bind-address=:8080` actually
+	// reaches the operator. Without the bridge, cobra rejects unknown
+	// flags before RunE runs.
+	operatorFlags struct {
+		metricsAddr          string
+		probeAddr            string
+		enableLeaderElection bool
+		secureMetrics        bool
+		webhookCertPath      string
+		webhookCertName      string
+		webhookCertKey       string
+		metricsCertPath      string
+		metricsCertName      string
+		metricsCertKey       string
+		enableHTTP2          bool
+	}
+	operatorZapOpts = zap.Options{Development: true}
 )
 
 func init() {
@@ -62,6 +82,31 @@ func init() {
 	utilruntime.Must(achv1alpha1.AddToScheme(operatorScheme))
 	// +kubebuilder:scaffold:scheme
 
+	flag.StringVar(&operatorFlags.metricsAddr, "metrics-bind-address",
+		config.EnvOr("METRICS_BIND_ADDRESS", "0"),
+		"The address the metrics endpoint binds to. "+
+			"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	flag.StringVar(&operatorFlags.probeAddr, "health-probe-bind-address",
+		config.EnvOr("PROBE_BIND_ADDRESS", ":8081"),
+		"The address the probe endpoint binds to.")
+	flag.BoolVar(&operatorFlags.enableLeaderElection, "leader-elect",
+		config.EnvBool("LEADER_ELECT", false),
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&operatorFlags.secureMetrics, "metrics-secure", true,
+		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&operatorFlags.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&operatorFlags.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	flag.StringVar(&operatorFlags.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	flag.StringVar(&operatorFlags.metricsCertPath, "metrics-cert-path", "",
+		"The directory that contains the metrics server certificate.")
+	flag.StringVar(&operatorFlags.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&operatorFlags.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.BoolVar(&operatorFlags.enableHTTP2, "enable-http2", false,
+		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	operatorZapOpts.BindFlags(flag.CommandLine)
+
+	operatorCmd.Flags().AddGoFlagSet(flag.CommandLine)
 	rootCmd.AddCommand(operatorCmd)
 }
 
@@ -77,43 +122,20 @@ ACH_NAMESPACE. Health probes at :8081; metrics at the configured address.`,
 
 // nolint:gocyclo
 func runOperator(_ *cobra.Command, _ []string) error {
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
+	metricsAddr := operatorFlags.metricsAddr
+	probeAddr := operatorFlags.probeAddr
+	enableLeaderElection := operatorFlags.enableLeaderElection
+	secureMetrics := operatorFlags.secureMetrics
+	webhookCertPath := operatorFlags.webhookCertPath
+	webhookCertName := operatorFlags.webhookCertName
+	webhookCertKey := operatorFlags.webhookCertKey
+	metricsCertPath := operatorFlags.metricsCertPath
+	metricsCertName := operatorFlags.metricsCertName
+	metricsCertKey := operatorFlags.metricsCertKey
+	enableHTTP2 := operatorFlags.enableHTTP2
 	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address",
-		config.EnvOr("METRICS_BIND_ADDRESS", "0"),
-		"The address the metrics endpoint binds to. "+
-			"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address",
-		config.EnvOr("PROBE_BIND_ADDRESS", ":8081"),
-		"The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect",
-		config.EnvBool("LEADER_ELECT", false),
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
-		"The directory that contains the metrics server certificate.")
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&operatorZapOpts)))
 
 	// ─── Multi-tenancy: namespace-scoped informer cache (MULTI-01) ───
 	watchNS := config.EnvOr("ACH_NAMESPACE", "ach-system")
