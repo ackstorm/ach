@@ -220,7 +220,8 @@ Targets that only call `kubectl`/`docker`/`helm`/`kind`/bash run on host
 | `make lint`        | golangci-lint full sweep               | before commit (pre-commit hook)       |
 | `make envtest-run` | controller-runtime envtest (race), ~7m | before commit on controller changes   |
 | `make envtest-fast`| envtest without -race, ~3m             | dev inner loop                        |
-| `make e2e-full`    | kind + Helm + Ginkgo, ~6m              | final gate before commit              |
+| `make e2e-full`    | kind + Helm + stdlib testing, ~6m      | final gate before commit              |
+| `make e2e-focus`   | focused subtest. `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on a single sub-test |
 | `make security`    | gosec + govulncheck + fuzz-short, ≤6m  | in-container; before commit           |
 | `make pre-commit`  | lint-changed + unit                    | host-only; runs on every `git commit` once `make hooks` installed |
 | `make pre-push`    | gitleaks + trufflehog + 15 gates (incl. full lint + unit) | host-only; before push |
