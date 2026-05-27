@@ -438,6 +438,47 @@ func extractAuthSecretRef(specType string, github *achv1alpha1.GitHubSource, git
 	return nil
 }
 
+// shouldSkipFetch decides whether the per-kind reconciler may skip the
+// materializeExternalRef call this turn and return immediately with
+// ctrl.Result{RequeueAfter} pointing at the next interval boundary.
+//
+// Skip iff ALL of:
+//   - lastRefresh is non-zero (CR has at least one successful prior fetch)
+//   - now < lastRefresh + interval (within the refresh window)
+//   - observedGeneration == generation (no spec change since last reconcile)
+//   - "ach.ackstorm.ai/force-refresh" annotation is absent
+//
+// Rationale: the operator was burning ~3 GitHub REST calls per CR per
+// reconcile event (GetCommit + GetArchiveLink + tarball GET), and the
+// reconciler is triggered by every status update, pod restart, spec
+// re-apply, and periodic RequeueAfter. With three CRs and a handful of
+// dev cycles per hour that exceeds GitHub's anonymous 60 req/hour/IP
+// ceiling. Gating on the refresh window cuts steady-state burn ~10x
+// without changing correctness — spec change, annotation, and the
+// next-interval timer still trigger fresh fetches.
+//
+// Pure: no I/O, no logging. Caller computes time.Now() at the same
+// instant as cr.Get() to avoid TOCTOU between gate eval and Fetch call.
+func shouldSkipFetch(
+	refresh achv1alpha1.RefreshBlock,
+	lastRefresh time.Time,
+	observedGen, generation int64,
+	annotations map[string]string,
+	now time.Time,
+) bool {
+	if lastRefresh.IsZero() {
+		return false
+	}
+	if observedGen != generation {
+		return false
+	}
+	if _, hasForce := annotations["ach.ackstorm.ai/force-refresh"]; hasForce {
+		return false
+	}
+	window := requeueDurationFromRefresh(refresh)
+	return now.Before(lastRefresh.Add(window))
+}
+
 // requeueDurationFromRefresh returns the RequeueAfter duration to use
 // after a successful (or terminal-fail) reconcile. When spec.refresh.interval
 // is set, use that; otherwise fall back to maxStaleness/2 so the reconciler
