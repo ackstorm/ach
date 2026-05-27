@@ -77,13 +77,20 @@ func extractMarketplaceJSON(r io.Reader) ([]byte, error) {
 			continue
 		}
 		// Match by suffix to be agnostic of the GitHub-style
-		// `<repo>-<shortsha>/` wrapper prefix. Reject any name that
-		// contains `..` to defend against crafted tar entries even
-		// though we don't write to disk — pure-paranoia gate.
+		// `<repo>-<shortsha>/` wrapper prefix. The git-protocol
+		// fetcher (internal/sources/git/fetcher.go: tarSubtree)
+		// strips the root prefix from entry names, so the tarball
+		// it produces lists the file as `.claude-plugin/marketplace.json`
+		// (no leading `/`). Accept that bare form alongside the
+		// wrapper-prefixed form GitHub/GitLab/Bitbucket archive APIs
+		// emit. Reject any name containing `..` to defend against
+		// crafted tar entries even though we don't write to disk —
+		// pure-paranoia gate.
 		if strings.Contains(hdr.Name, "..") {
 			continue
 		}
-		if !strings.HasSuffix(hdr.Name, marketplaceJSONRelPath) {
+		if !strings.HasSuffix(hdr.Name, marketplaceJSONRelPath) &&
+			hdr.Name != strings.TrimPrefix(marketplaceJSONRelPath, "/") {
 			continue
 		}
 		// Per-entry cap. hdr.Size is upstream-supplied and must be
