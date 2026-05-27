@@ -156,6 +156,16 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 	})
 }
 
+// Transport label constants surfaced on the SourceReachable / Synced
+// condition message. The "rest" / "git" string values match the
+// kubebuilder enum on GitHubSource.Transport / GitLabSource.Transport /
+// BitbucketSource.Transport.
+const (
+	transportLabelGit  = "git"
+	transportLabelRest = "rest"
+	transportLabelNA   = "n/a"
+)
+
 // resolveTransportName reports the wire path the outer fetch took for
 // the given SourceSpec. Surfaced on the SourceReachable / Synced
 // condition message so operators can see which transport actually
@@ -170,22 +180,22 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 func resolveTransportName(sourceSpec sources.SourceSpec) string {
 	switch {
 	case sourceSpec.GitHub != nil:
-		if sourceSpec.GitHub.Transport == "rest" {
-			return "rest"
+		if sourceSpec.GitHub.Transport == transportLabelRest {
+			return transportLabelRest
 		}
-		return "git"
+		return transportLabelGit
 	case sourceSpec.GitLab != nil:
-		if sourceSpec.GitLab.Transport == "rest" {
-			return "rest"
+		if sourceSpec.GitLab.Transport == transportLabelRest {
+			return transportLabelRest
 		}
-		return "git"
+		return transportLabelGit
 	case sourceSpec.Bitbucket != nil:
-		if sourceSpec.Bitbucket.Transport == "rest" {
-			return "rest"
+		if sourceSpec.Bitbucket.Transport == transportLabelRest {
+			return transportLabelRest
 		}
-		return "git"
+		return transportLabelGit
 	default:
-		return "n/a"
+		return transportLabelNA
 	}
 }
 
