@@ -155,7 +155,75 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	waitForBIPDeleted(t, bipA, 30*time.Second)
 	waitForBIPDeleted(t, bipB, 30*time.Second)
 }
-func testSC11cMarketplaceInternalSchema(t *testing.T) { t.Skip("implemented in Task 9") }
+// testSC11cMarketplaceInternalSchema drives examples/05b end-to-end:
+//
+//  1. applyPhase4MarketplaceServer: ConfigMap + nginx Deployment+Service.
+//  2. Apply examples/05b PluginMarketplace CR.
+//  3. waitForCondition Synced=True (60s).
+//  4. Assert the DB row exists: marketplace_plugins WHERE
+//     marketplace_name='internal-test' AND name='phase4-mkt-plugin'.
+//  5. Delete the CR; assert the DB row disappears within 30s
+//     (finalizer cleanup contract per §10.3).
+//
+// Regression contract for the OUTER fetch + parser + Stage-2 git
+// fetcher of the real-schema (post-§5) format. Stage-2 clones
+// github.com/JuliusBrussee/caveman at the pinned SHA; the kind cluster
+// must have outbound HTTPS to github.com.
+func testSC11cMarketplaceInternalSchema(t *testing.T) {
+	t.Helper()
+
+	applyPhase4MarketplaceServer(t)
+
+	const fixture = "../../examples/05b-pluginmarketplace-internal-http.yaml"
+	if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
+		t.Fatalf("§11c apply marketplace CR: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		_, _ = runCmd("kubectl", "delete", "-f", fixture, "--wait=false", "--ignore-not-found")
+	})
+
+	// Replace ConfigMap with our phase4 fixture (the 05b example points
+	// at mkt-test-server which we just brought up; the ConfigMap key
+	// `marketplace.json` is what the parser fetches).
+	waitForCondition(t, "pluginmarketplace", "internal-test", "Synced", "True", 120*time.Second)
+
+	// Assert DB row.
+	const sql = `SELECT count(*) FROM marketplace_plugins ` +
+		`WHERE marketplace_name='internal-test' AND name='phase4-mkt-plugin'`
+	out, err := runCmd("kubectl", "exec", "-n", namespace,
+		"sts/ach-postgres", "--",
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
+	if err != nil {
+		t.Fatalf("§11c DB query: %v\n%s", err, out)
+	}
+	count := strings.TrimSpace(out)
+	if count != "1" {
+		t.Fatalf("§11c: marketplace_plugins row count = %q, want %q.\n"+
+			"Marketplace parser may not be accepting the fixture shape — "+
+			"re-anchor fixture against the live parser, do NOT change the parser.",
+			count, "1")
+	}
+
+	// Drive delete; assert DB row gone.
+	if out, err := runCmd("kubectl", "delete", "-f", fixture, "--wait=true"); err != nil {
+		t.Fatalf("§11c delete marketplace CR: %v\n%s", err, out)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		out, err := runCmd("kubectl", "exec", "-n", namespace,
+			"sts/ach-postgres", "--",
+			"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
+		if err == nil && strings.TrimSpace(out) == "0" {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	out, _ = runCmd("kubectl", "exec", "-n", namespace,
+		"sts/ach-postgres", "--",
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
+	t.Fatalf("§11c: marketplace_plugins row not cleaned up within 30s; row count still=%q",
+		strings.TrimSpace(out))
+}
 func testSC11dOperatorRestart(t *testing.T)           { t.Skip("implemented in Task 12") }
 func testSC11eHydrateGolden(t *testing.T)             { t.Skip("implemented in Task 14") }
 func testSC11fFinalizerCleanup(t *testing.T)          { t.Skip("implemented in Task 19") }
