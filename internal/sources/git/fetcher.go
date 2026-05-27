@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -135,10 +133,15 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 	if err := os.MkdirAll(tmpParent, 0o755); err != nil {
 		return nil, fmt.Errorf("git: mkdir tmp parent: %w", err)
 	}
-	nonce := make([]byte, 8)
-	_, _ = rand.Read(nonce)
-	cloneDir := filepath.Join(tmpParent, "git-"+hex.EncodeToString(nonce))
-	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+	// os.MkdirTemp uses crypto/rand internally AND returns an error
+	// when allocation fails — earlier code did rand.Read with a
+	// silently-discarded error, which on rand failure (rare but
+	// possible on minimal containers with seccomp blocking getrandom
+	// and no /dev/urandom fallback) would produce a predictable
+	// .tmp/git-0000000000000000 path. Symlink-race vector on shared
+	// cache PVCs. See PR #9 follow-up review finding #6.
+	cloneDir, err := os.MkdirTemp(tmpParent, "git-*")
+	if err != nil {
 		return nil, fmt.Errorf("git: mkdir clone dir: %w", err)
 	}
 
@@ -169,7 +172,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 
 	// On-disk size cap.
 	var total int64
-	err := filepath.WalkDir(cloneDir, func(_ string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(cloneDir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

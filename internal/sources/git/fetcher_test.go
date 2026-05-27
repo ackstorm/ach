@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -281,6 +282,51 @@ func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
 	}
 	if out[1] != "http.extraHeader=Authorization: Bearer ***" {
 		t.Errorf("redaction shape unexpected: %q", out[1])
+	}
+}
+
+// TestFetcher_TempDirCollisionResistance asserts that parallel Fetch
+// calls against the same CacheRoot allocate distinct cloneDirs (PR #9
+// follow-up review finding #6: defense against a zeroed-nonce
+// collision when crypto/rand silently fails). Uses real Fetch calls
+// against a local bare-repo fixture in parallel; if both calls shared
+// a cloneDir name the second clone would race on EEXIST or overwrite.
+func TestFetcher_TempDirCollisionResistance(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	bare := setupBareFixture(t)
+	wantSHA := fixtureHeadSHA(t, bare)
+	cacheRoot := t.TempDir()
+
+	const parallel = 8
+	errs := make(chan error, parallel)
+	var wg sync.WaitGroup
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f := New(Spec{
+				URL:       bare,
+				Ref:       "main",
+				SHA:       wantSHA,
+				CacheRoot: cacheRoot,
+			})
+			res, err := f.Fetch(context.Background(), Request{})
+			if err != nil {
+				errs <- err
+				return
+			}
+			_ = res.Body.Close()
+			errs <- nil
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("parallel Fetch failed: %v", err)
+		}
 	}
 }
 
