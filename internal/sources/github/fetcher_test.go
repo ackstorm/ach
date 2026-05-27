@@ -135,12 +135,45 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 	}
 }
 
+// TestFetch_DefaultedKeyMissing_ErrorMessageHasHint asserts the error
+// when AuthSecretRef.Key is empty AND the Secret lacks GITHUB_TOKEN
+// includes a hint pointing at the default-key convention so the
+// operator knows where the GITHUB_TOKEN name came from. PR #9
+// follow-up review finding #9.
+func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
+	t.Parallel()
+	f, err := New(&achv1alpha1.GitHubSource{
+		Repo:      "owner/repo",
+		Ref:       "main",
+		Transport: "rest",
+		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
+			Name: "s",
+			// Key intentionally empty → resolved to GITHUB_TOKEN.
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	emptySecret := &corev1.Secret{Data: map[string][]byte{}}
+	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: emptySecret})
+	if !errors.Is(err, sources.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized; got %v", err)
+	}
+	if !contains(err.Error(), "GITHUB_TOKEN") {
+		t.Errorf("error should still mention the resolved key name; got %q", err.Error())
+	}
+	if !contains(err.Error(), "default") {
+		t.Errorf("error should hint that GITHUB_TOKEN was the default-key fallback; got %q", err.Error())
+	}
+}
+
 // TestFetch_MalformedRepo asserts a spec.Repo that is not <owner>/<name>
-// returns ErrUpstreamInvalid (do NOT reach the network).
+// is rejected at New time (CR-02 parity; see internal/sources/cr02validate).
+// The network is never reached.
 func TestFetch_MalformedRepo(t *testing.T) {
 	t.Parallel()
 
-	f, err := New(&achv1alpha1.GitHubSource{
+	_, err := New(&achv1alpha1.GitHubSource{
 		Repo: "no-slash",
 		Ref:  "main",
 		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
@@ -148,14 +181,54 @@ func TestFetch_MalformedRepo(t *testing.T) {
 			Key:  "token",
 		},
 	})
-	if err != nil {
-		t.Fatalf("New unexpected error: %v", err)
-	}
-
-	secret := &corev1.Secret{Data: map[string][]byte{"token": []byte("ghp_x")}}
-	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: secret})
 	if !errors.Is(err, sources.ErrUpstreamInvalid) {
-		t.Fatalf("expected ErrUpstreamInvalid for malformed repo; got %v", err)
+		t.Fatalf("expected New to reject malformed repo with ErrUpstreamInvalid; got %v", err)
+	}
+}
+
+// TestNew_RejectsMetacharRepo asserts CR-02 mitigation: crafted Repo
+// values with URL-structural metacharacters are rejected at New time,
+// never reaching the git subprocess.
+func TestNew_RejectsMetacharRepo(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"owner/repo\n",
+		"owner/repo?evil=1",
+		"owner/repo#frag",
+		"owner/repo with space",
+		"a/b/c",
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitHubSource{Repo: c, Ref: "main"})
+			if err == nil {
+				t.Errorf("expected New to reject %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
+	}
+}
+
+// TestNew_RejectsMetacharRef asserts CR-02 mitigation for spec.Ref.
+func TestNew_RejectsMetacharRef(t *testing.T) {
+	t.Parallel()
+	cases := []string{"main\n", "main?evil", "main#frag"}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(&achv1alpha1.GitHubSource{Repo: "owner/repo", Ref: c})
+			if err == nil {
+				t.Errorf("expected New to reject ref %q", c)
+			}
+			if err != nil && !errors.Is(err, sources.ErrUpstreamInvalid) {
+				t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+			}
+		})
 	}
 }
 

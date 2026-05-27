@@ -36,6 +36,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sources/cr02validate"
 )
 
 // defaultGitLabHost is the canonical SaaS host when spec.Host is empty.
@@ -64,6 +65,25 @@ type Fetcher struct {
 func New(spec *achv1alpha1.GitLabSource) (*Fetcher, error) {
 	if spec == nil {
 		return nil, fmt.Errorf("gitlab: spec is nil: %w", sources.ErrUpstreamInvalid)
+	}
+	// CR-02 metachar parity with bitbucket: reject URL-structural
+	// metacharacters in spec.Host / spec.Project / spec.Ref at
+	// construction time so a crafted CR cannot smuggle them into the
+	// constructed clone URL or the git subprocess argv. gitlab
+	// projects can be deeply nested — allowMultiSegment=true.
+	//
+	// spec.Host is normalized (case-insensitive scheme strip +
+	// trailing-slash strip) BEFORE validation so a legitimate
+	// `https://gitlab.example.com` doesn't fail the HostIdentifier
+	// '/'-forbidden rule.
+	if err := cr02validate.HostIdentifier(normalizeGitLabHost(spec.Host)); err != nil {
+		return nil, fmt.Errorf("gitlab: %w", err)
+	}
+	if err := cr02validate.RepoSlashIdentifier("gitlab.project", spec.Project, true); err != nil {
+		return nil, fmt.Errorf("gitlab: %w", err)
+	}
+	if err := cr02validate.RefIdentifier(spec.Ref); err != nil {
+		return nil, fmt.Errorf("gitlab: %w", err)
 	}
 	return &Fetcher{
 		spec:       spec,
@@ -94,11 +114,18 @@ func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
 			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
 	}
 	key := f.spec.AuthSecretRef.Key
+	defaulted := false
 	if key == "" {
 		key = achv1alpha1.DefaultAuthSecretKey("gitlab")
+		defaulted = true
 	}
 	raw := req.Secret.Data[key]
 	if len(raw) == 0 {
+		if defaulted {
+			return "", fmt.Errorf(
+				"gitlab: missing auth secret key %q (default for gitlab; set authSecretRef.key to override): %w",
+				key, sources.ErrUnauthorized)
+		}
 		return "", fmt.Errorf("gitlab: missing auth secret key %q: %w",
 			key, sources.ErrUnauthorized)
 	}

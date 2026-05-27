@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,9 +170,9 @@ func fixtureHeadSHA(t *testing.T, bare string) string {
 func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 	args := buildGitInvocation(
 		"clone",
+		"ghp_secrettoken",
 		"https://github.com/octo/repo.git",
 		"/tmp/x",
-		"ghp_secrettoken",
 	)
 	for _, a := range args {
 		if strings.Contains(a, "ghp_secrettoken@") {
@@ -192,14 +194,23 @@ func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 // empty (anonymous fetch) buildGitInvocation does NOT prepend the
 // http.extraHeader arg.
 func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
-	args := buildGitInvocation("clone", "https://example.com/x.git", "/tmp/x", "")
+	args := buildGitInvocation("clone", "", "https://example.com/x.git", "/tmp/x")
 	for _, a := range args {
 		if strings.HasPrefix(a, "http.extraHeader=") {
 			t.Fatalf("unexpected extraHeader on empty token: %v", args)
 		}
 	}
-	if args[0] != "clone" {
-		t.Fatalf("expected first arg = subcommand; got %v", args)
+	// Subcommand follows the protocol-allow config pins (Task 8) but
+	// before any further args.
+	foundSubcommand := false
+	for _, a := range args {
+		if a == "clone" {
+			foundSubcommand = true
+			break
+		}
+	}
+	if !foundSubcommand {
+		t.Fatalf("expected subcommand in args; got %v", args)
 	}
 }
 
@@ -280,5 +291,111 @@ func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
 	}
 	if out[1] != "http.extraHeader=Authorization: Bearer ***" {
 		t.Errorf("redaction shape unexpected: %q", out[1])
+	}
+}
+
+// TestFetcher_PinsProtocolAllow asserts every git invocation carries
+// the explicit protocol allow-list so an accidental file:// or ssh://
+// URL cannot be honored. Defense in depth per PR #9 review finding #7.
+func TestFetcher_PinsProtocolAllow(t *testing.T) {
+	args := buildGitInvocation("clone", "tok", "https://example.com/x.git", "/tmp/x")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "protocol.allow=never") {
+		t.Errorf("expected protocol.allow=never; got %q", joined)
+	}
+	if !strings.Contains(joined, "protocol.https.allow=always") {
+		t.Errorf("expected protocol.https.allow=always; got %q", joined)
+	}
+}
+
+// TestFetcher_TempDirCollisionResistance asserts that parallel Fetch
+// calls against the same CacheRoot allocate distinct cloneDirs (PR #9
+// follow-up review finding #6: defense against a zeroed-nonce
+// collision when crypto/rand silently fails). Uses real Fetch calls
+// against a local bare-repo fixture in parallel; if both calls shared
+// a cloneDir name the second clone would race on EEXIST or overwrite.
+func TestFetcher_TempDirCollisionResistance(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	bare := setupBareFixture(t)
+	wantSHA := fixtureHeadSHA(t, bare)
+	cacheRoot := t.TempDir()
+
+	const parallel = 8
+	errs := make(chan error, parallel)
+	var wg sync.WaitGroup
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f := New(Spec{
+				URL:       bare,
+				Ref:       "main",
+				SHA:       wantSHA,
+				CacheRoot: cacheRoot,
+			})
+			res, err := f.Fetch(context.Background(), Request{})
+			if err != nil {
+				errs <- err
+				return
+			}
+			_ = res.Body.Close()
+			errs <- nil
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("parallel Fetch failed: %v", err)
+		}
+	}
+}
+
+// TestLsRemote_RespectsInnerTimeout asserts that even with a long
+// (or absent) caller ctx, LsRemote bounds the subprocess via its own
+// internal deadline so a stalled upstream cannot hang the reconciler
+// indefinitely. Pins PR #9 follow-up review finding #3.
+//
+// NOTE: post Task 8 (protocol allow-list pinning), the http:// URL is
+// rejected at git's URL-parse step before any TCP connect; this test
+// now also exercises that fast-fail path. The 30s deadline still
+// guards genuine HTTPS-handshake-stall scenarios; a dedicated TLS-
+// fixture test would be needed to exercise the deadline directly.
+func TestLsRemote_RespectsInnerTimeout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	// Hangs forever — accepts TCP, never sends a byte. git ls-remote
+	// would block on GIT_HTTP_LOW_SPEED_TIME (60s) without an inner
+	// deadline.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Hold the connection; never reply. Closed when listener closes.
+			_ = c
+		}
+	}()
+	url := "http://" + ln.Addr().String() + "/x.git"
+
+	start := time.Now()
+	_, err = LsRemote(context.Background(), url, "main", "")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected error from stalled upstream")
+	}
+	// Inner deadline should be ~30s. Give a generous wall-clock cap
+	// to avoid flake on slow CI.
+	if elapsed > 45*time.Second {
+		t.Errorf("LsRemote took %v; inner deadline should fire well before 45s", elapsed)
 	}
 }

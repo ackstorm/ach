@@ -28,11 +28,11 @@ import (
 	"io"
 	nethttp "net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sources/cr02validate"
 )
 
 // defaultBitbucketAPI is the canonical SaaS API host. Bitbucket Cloud
@@ -76,45 +76,19 @@ func New(spec *achv1alpha1.BitbucketSource) (*Fetcher, error) {
 	if spec == nil {
 		return nil, fmt.Errorf("bitbucket: spec is nil: %w", sources.ErrUpstreamInvalid)
 	}
-	if err := validateFlatIdentifier("workspace", spec.Workspace); err != nil {
-		return nil, err
+	if err := cr02validate.FlatIdentifier("bitbucket.workspace", spec.Workspace); err != nil {
+		return nil, fmt.Errorf("bitbucket: %w", err)
 	}
-	if err := validateFlatIdentifier("repo", spec.Repo); err != nil {
-		return nil, err
+	if err := cr02validate.FlatIdentifier("bitbucket.repo", spec.Repo); err != nil {
+		return nil, fmt.Errorf("bitbucket: %w", err)
 	}
-	if err := validateRefIdentifier(spec.Ref); err != nil {
-		return nil, err
+	if err := cr02validate.RefIdentifier(spec.Ref); err != nil {
+		return nil, fmt.Errorf("bitbucket: %w", err)
 	}
 	return &Fetcher{
 		spec:       spec,
 		httpClient: &nethttp.Client{Timeout: defaultTimeout},
 	}, nil
-}
-
-// validateFlatIdentifier rejects URL-structural metacharacters in a
-// Bitbucket workspace or repo identifier. CR-02 mitigation.
-func validateFlatIdentifier(field, value string) error {
-	if value == "" {
-		return fmt.Errorf("bitbucket: %s must not be empty: %w", field, sources.ErrUpstreamInvalid)
-	}
-	if strings.ContainsAny(value, "/?#\\ \t\r\n") {
-		return fmt.Errorf("bitbucket: %s %q contains forbidden URL metacharacter: %w",
-			field, value, sources.ErrUpstreamInvalid)
-	}
-	return nil
-}
-
-// validateRefIdentifier permits '/' (for feature/branch shapes) but
-// rejects query/fragment/whitespace metacharacters. CR-02 mitigation.
-func validateRefIdentifier(value string) error {
-	if value == "" {
-		return fmt.Errorf("bitbucket: ref must not be empty: %w", sources.ErrUpstreamInvalid)
-	}
-	if strings.ContainsAny(value, "?#\\ \t\r\n") {
-		return fmt.Errorf("bitbucket: ref %q contains forbidden URL metacharacter: %w",
-			value, sources.ErrUpstreamInvalid)
-	}
-	return nil
 }
 
 // extractToken returns the bearer token to send to Bitbucket, or empty
@@ -140,11 +114,18 @@ func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
 			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
 	}
 	key := f.spec.AuthSecretRef.Key
+	defaulted := false
 	if key == "" {
 		key = achv1alpha1.DefaultAuthSecretKey("bitbucket")
+		defaulted = true
 	}
 	raw := req.Secret.Data[key]
 	if len(raw) == 0 {
+		if defaulted {
+			return "", fmt.Errorf(
+				"bitbucket: missing auth secret key %q (default for bitbucket; set authSecretRef.key to override): %w",
+				key, sources.ErrUnauthorized)
+		}
 		return "", fmt.Errorf("bitbucket: missing auth secret key %q: %w",
 			key, sources.ErrUnauthorized)
 	}

@@ -38,6 +38,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sources/cr02validate"
 )
 
 // Fetcher implements [sources.Fetcher] for GitHubSource.
@@ -63,6 +64,17 @@ type Fetcher struct {
 func New(spec *achv1alpha1.GitHubSource) (*Fetcher, error) {
 	if spec == nil {
 		return nil, fmt.Errorf("github: spec is nil: %w", sources.ErrUpstreamInvalid)
+	}
+	// CR-02 metachar parity with bitbucket: reject URL-structural
+	// metacharacters in spec.Repo / spec.Ref at construction time so a
+	// crafted CR cannot smuggle them into the constructed clone URL or
+	// the git subprocess argv. github repos are exactly <owner>/<name>
+	// — allowMultiSegment=false.
+	if err := cr02validate.RepoSlashIdentifier("github.repo", spec.Repo, false); err != nil {
+		return nil, fmt.Errorf("github: %w", err)
+	}
+	if err := cr02validate.RefIdentifier(spec.Ref); err != nil {
+		return nil, fmt.Errorf("github: %w", err)
 	}
 	return &Fetcher{
 		spec:       spec,
@@ -97,11 +109,18 @@ func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
 			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
 	}
 	key := f.spec.AuthSecretRef.Key
+	defaulted := false
 	if key == "" {
 		key = achv1alpha1.DefaultAuthSecretKey("github")
+		defaulted = true
 	}
 	raw := req.Secret.Data[key]
 	if len(raw) == 0 {
+		if defaulted {
+			return "", fmt.Errorf(
+				"github: missing auth secret key %q (default for github; set authSecretRef.key to override): %w",
+				key, sources.ErrUnauthorized)
+		}
 		return "", fmt.Errorf("github: missing auth secret key %q: %w",
 			key, sources.ErrUnauthorized)
 	}
