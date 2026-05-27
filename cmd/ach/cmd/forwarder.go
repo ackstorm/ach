@@ -58,8 +58,10 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/bip"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
+	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/metrics"
 )
 
 var forwarderScheme = runtime.NewScheme()
@@ -158,6 +160,12 @@ type forwarderProcessDeps struct {
 	signer  *jwt.Ed25519Signer
 	loader  *jwt.SecretLoader
 	logger  *slog.Logger
+	// metricsHandler is the /metrics http.Handler from
+	// metrics.Handler(reg). Composed onto the traffic listener in
+	// runForwarderServer so a scrape client can hit
+	// http://forwarder:8080/metrics on the SAME port as /v1, /gemini,
+	// etc. (Plan 05-06 D-10).
+	metricsHandler http.Handler
 }
 
 func (d *forwarderProcessDeps) close() {
@@ -175,6 +183,25 @@ func (d *forwarderProcessDeps) close() {
 //nolint:gocyclo // single bootstrap function intentionally linear
 func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.Logger) (*forwarderProcessDeps, error) {
 	out := &forwarderProcessDeps{logger: logger}
+
+	// ─── Phase 5 D-09 / D-10: process-local Prometheus Registry +
+	//     typed ForwarderCollectors + shared litellm_unreachable_total.
+	//     InitCollectors plumbs the typed collectors into the Phase 4
+	//     internal/forwarder/metrics shim (counters.go), so existing
+	//     IncRequests / IncJWTSigned / IncJWTSuppressed /
+	//     IncLiteLLMUnreachable call sites in
+	//     internal/forwarder/{proxy,bip} start emitting real samples
+	//     without any signature change (D-19 thin-shim invariant).
+	reg := metrics.NewRegistry()
+	fwdCollectors := metrics.NewForwarderCollectors(reg)
+	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
+	forwardermetrics.InitCollectors(fwdCollectors, litellmUnreachable)
+	// /metrics is unauthenticated on the main traffic listener (D-10);
+	// internal cluster network only — see Helm values.yaml metricsAuth
+	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted:
+	// Ingress/Service deployers MUST NOT route /metrics from external
+	// traffic.
+	out.metricsHandler = metrics.Handler(reg)
 
 	pool, err := db.Open(ctx, cfg.DBURL)
 	if err != nil {
@@ -328,8 +355,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  llmUpstream,       // B2: from LiteLLMConnection CR
-		LiteLLMMasterKey: llmRes.MasterKey,  // B2: from MasterKeySecretRef
+		LiteLLMUpstream:  llmUpstream,      // B2: from LiteLLMConnection CR
+		LiteLLMMasterKey: llmRes.MasterKey, // B2: from MasterKeySecretRef
 	}
 	return out, nil
 }
@@ -341,10 +368,21 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 	}
 	healthHandler := forwarder.NewHealthHandler(deps.signer, mgrCacheSync)
 
+	// Plan 05-06 Task 3 / D-10: /metrics is served on the SAME port as
+	// the traffic listener (no separate metrics port). A tiny stdlib
+	// ServeMux fronts the chi-built trafficHandler so /metrics has its
+	// own dedicated path (precedence by path-specificity per net/http
+	// ServeMux semantics) while every other request falls through to
+	// the chi router. The metrics handler is unauthenticated; production
+	// scrape clients access it via the in-cluster Service IP / Pod IP.
+	composedTraffic := http.NewServeMux()
+	composedTraffic.Handle("/metrics", deps.metricsHandler)
+	composedTraffic.Handle("/", trafficHandler)
+
 	runnable := &forwarder.Runnable{
 		TrafficAddr:    cfg.TrafficBindAddr,
 		HealthAddr:     cfg.HealthBindAddr,
-		TrafficHandler: trafficHandler,
+		TrafficHandler: composedTraffic,
 		HealthHandler:  healthHandler,
 		Logger:         deps.logger,
 	}

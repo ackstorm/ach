@@ -19,20 +19,20 @@
 // PVC mounted by the operator Pod that this container shares.
 //
 // §15.6 pipeline (D-04 7-gate, cheaper-first):
-//   1. resolveAuthn      — x-ach-key + keystore.Resolver
-//   2/3. resolveEnv      — header policy (pk_ required / ek_ bound) +
-//                          envcache.Cache.Get
-//   4. enforceTeams      — pk_ only; TeamsResolver intersection
-//   5. enforceAllowlist  — name ∈ envRow.Context<Kind> (CHEAPER-FIRST
-//                          divergence vs spec §15.6 v10 fix step
-//                          order; see pipeline.go doc comment for
-//                          rationale + audit-outcome implication)
-//   6. resolveContent    — kind-dispatched projection-row lookup;
-//                          plugin uses §12.3 CTE
-//                          (db.ResolvePluginByName)
-//   7. checkStaleness    — now - LSR > MaxStaleness OR LSR == NULL →
-//                          503 stale_cache_expired
-//   8. file open (D-02)  — os.Open EARLY (inode-pin) → stream.go
+//  1. resolveAuthn      — x-ach-key + keystore.Resolver
+//     2/3. resolveEnv      — header policy (pk_ required / ek_ bound) +
+//     envcache.Cache.Get
+//  4. enforceTeams      — pk_ only; TeamsResolver intersection
+//  5. enforceAllowlist  — name ∈ envRow.Context<Kind> (CHEAPER-FIRST
+//     divergence vs spec §15.6 v10 fix step
+//     order; see pipeline.go doc comment for
+//     rationale + audit-outcome implication)
+//  6. resolveContent    — kind-dispatched projection-row lookup;
+//     plugin uses §12.3 CTE
+//     (db.ResolvePluginByName)
+//  7. checkStaleness    — now - LSR > MaxStaleness OR LSR == NULL →
+//     503 stale_cache_expired
+//  8. file open (D-02)  — os.Open EARLY (inode-pin) → stream.go
 //
 // HTTP surface invariants (CS-06 / CS-08 / D-01):
 //   - Auth required: pk_ (with x-ach-environment header) or ek_

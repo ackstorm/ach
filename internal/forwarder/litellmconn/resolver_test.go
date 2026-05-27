@@ -122,4 +122,3 @@ func TestResolve_SecretKeyEmptyValue(t *testing.T) {
 		t.Fatalf("want ErrSecretKeyMissing for empty value, got %v", err)
 	}
 }
-
