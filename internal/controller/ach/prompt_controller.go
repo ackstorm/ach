@@ -115,6 +115,19 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	// §10.3 within-interval gate: skip the upstream probe when the CR was
+	// successfully refreshed within spec.refresh.interval and nothing
+	// demands re-verification. Cuts steady-state GitHub API burn ~10x.
+	if shouldSkipFetch(cr.Spec.Refresh, lastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, time.Now()) {
+		remaining := time.Until(lastRefresh.Add(requeueDurationFromRefresh(cr.Spec.Refresh)))
+		if remaining < time.Second {
+			remaining = time.Second
+		}
+		logger.V(1).Info("§10.3 within-interval gate: skipping fetch",
+			"lastRefresh", lastRefresh, "requeueAfter", remaining)
+		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
 	spec := cr.Spec
 	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
 	authRef := extractAuthSecretRef(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
