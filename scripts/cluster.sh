@@ -256,19 +256,39 @@ hydrate_ach() {
   # Image coordinates come from the ACH_IMAGE_REPO / ACH_IMAGE_TAG env
   # vars (CI sets them before invoking cluster.sh; default to dev tag
   # `e2e`) so the same chart can target prod registries too.
+  #
+  # NOTE: --wait is intentionally NOT passed here. The forwarder
+  # Deployment depends on LiteLLMConnection/default existing at boot,
+  # but the CR is seeded by hydrate_fixtures which runs AFTER this
+  # function. If we --wait on helm, we deadlock: hydrate_fixtures
+  # never gets to apply the CR. Instead, install without --wait,
+  # then run hydrate_fixtures, then explicitly wait for rollouts.
   local helm_rc=0
   helm upgrade --install ach deploy/helm/ach \
     --namespace ach-system \
     --values "${VALUES_DIR}/ach.values.yaml" \
     --set "image.repo=${ACH_IMAGE_REPO}" \
     --set "image.tag=${ACH_IMAGE_TAG}" \
-    --set "image.pullPolicy=IfNotPresent" \
-    --wait --timeout 5m || helm_rc=$?
+    --set "image.pullPolicy=IfNotPresent" || helm_rc=$?
   if [ "${helm_rc}" -ne 0 ]; then
     echo "[cluster.sh] ach helm install failed (rc=${helm_rc}) — dumping pods for forensics:" >&2
     kubectl -n ach-system get pods >&2 || true
     kubectl -n ach-system describe pods >&2 || true
     return "${helm_rc}"
+  fi
+}
+
+wait_ach() {
+  echo "[cluster.sh] waiting for ach Deployments to be Ready..."
+  local rc=0
+  for d in ach-operator ach-platform-api ach-forwarder; do
+    kubectl -n ach-system rollout status deploy/"${d}" --timeout=5m || rc=$?
+  done
+  if [ "${rc}" -ne 0 ]; then
+    echo "[cluster.sh] one or more ach Deployments failed to become Ready — dumping pods for forensics:" >&2
+    kubectl -n ach-system get pods >&2 || true
+    kubectl -n ach-system describe pods >&2 || true
+    return "${rc}"
   fi
 }
 
@@ -287,11 +307,30 @@ hydrate_fixtures() {
   # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a
   # successful probe (idempotent — list-first, create-on-empty). That
   # way production deployments converge without cluster.sh / hand-curl.
-  echo "[cluster.sh] seeding e2e fixtures (litellm-master-key + LiteLLMConnection)..."
+  echo "[cluster.sh] seeding e2e fixtures (litellm-master-key + LiteLLMConnection + JWT signing keys)..."
   kubectl -n ach-system create secret generic litellm-master-key \
     --from-literal=masterKey="sk-test-master-key" \
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f config/samples/ach_v1alpha1_litellmconnection.yaml
+
+  # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start
+  # without it. Generated fresh per `cluster.sh up` invocation — kid is
+  # a timestamp so re-running hydration produces a new (kid, seed) pair
+  # instead of clobbering with a stale value. NOT the same as the
+  # test/e2e/fixtures/*UNSAFE* known-plaintext seed: that one lives in
+  # `default` for SC#4 JWKS-roundtrip asserts and must never land in
+  # `ach-system`.
+  if ! kubectl -n ach-system get secret ach-jwt-signing-keys >/dev/null 2>&1; then
+    local jwttmp; jwttmp="$(mktemp -d)"
+    openssl rand 32 > "${jwttmp}/current.seed"
+    printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
+    kubectl -n ach-system create secret generic ach-jwt-signing-keys \
+      --from-file=current.kid="${jwttmp}/current.kid" \
+      --from-file=current.seed="${jwttmp}/current.seed"
+    rm -rf "${jwttmp}"
+  else
+    echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
+  fi
 }
 
 hydrate_all() {
@@ -302,6 +341,7 @@ hydrate_all() {
   hydrate_toolhive
   hydrate_ach
   hydrate_fixtures
+  wait_ach
 }
 
 print_status() (
