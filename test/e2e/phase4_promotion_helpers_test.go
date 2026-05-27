@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -396,6 +397,42 @@ func driveHydrateAndCapture(t *testing.T) []byte {
 			err, out)
 	}
 	return body
+}
+
+// queryACHPostgresCount runs a `SELECT count(*) ...` against the
+// ach-postgres pod and returns the integer. The whereClause MUST NOT
+// be user-tainted (this is a test helper, not a runtime path; SQL is
+// shell-quoted as-is).
+func queryACHPostgresCount(t *testing.T, table, whereClause string) int {
+	t.Helper()
+	sql := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, whereClause)
+	out, err := runCmd("kubectl", "exec", "-n", namespace,
+		"sts/ach-postgres", "--",
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
+	if err != nil {
+		t.Fatalf("§11f DB query %q: %v\n%s", sql, err, out)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("§11f DB query %q: non-integer result %q: %v", sql, out, err)
+	}
+	return n
+}
+
+// waitForACHPostgresCount polls until the count equals want, or t.Fatalf
+// at the timeout. Used to assert finalizer cleanup completed (count→0).
+func waitForACHPostgresCount(t *testing.T, table, whereClause string, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if queryACHPostgresCount(t, table, whereClause) == want {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	got := queryACHPostgresCount(t, table, whereClause)
+	t.Fatalf("§11f DB count: table=%s where=%q want=%d got=%d (timeout=%s)",
+		table, whereClause, want, got, timeout)
 }
 
 // waitForBIPDeleted polls until `kubectl get bip <name>` returns
