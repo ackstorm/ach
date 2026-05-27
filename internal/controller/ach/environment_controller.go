@@ -4,6 +4,7 @@ package ach
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
@@ -132,6 +134,16 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				// requeues with exponential backoff; the finalizer stays.
 				return ctrl.Result{}, err
 			}
+			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the environments
+			// projection row AFTER the ek_ drain and BEFORE the finalizer
+			// removal so Content Service in-flight reads keep working until
+			// the row is fully removed. Hard removal is a follow-up sweep —
+			// Plan 05-05's staleness check filters on deletion_timestamp.
+			if r.DB != nil {
+				if err := achdb.SoftDeleteEnvironment(ctx, r.DB, env.Namespace, env.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("db soft-delete environment projection: %w", err)
+				}
+			}
 			// §6.5 step 5: remove the finalizer.
 			controllerutil.RemoveFinalizer(&env, environmentFinalizer)
 			if err := r.Update(ctx, &env); err != nil {
@@ -177,6 +189,22 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		available.LastTransitionTime = metav1.Now()
 		apimeta.SetStatusCondition(&env.Status.Conditions, available)
 		env.Status.ObservedGeneration = env.Generation
+		// Spec v4 §5.2 / D-15: dual-write the projection row BEFORE the
+		// best-effort K8s Status update. DB is authoritative — a DB
+		// failure must retry the whole reconcile so the K8s status and
+		// the projection row stay aligned. The back-compat branch ships
+		// placeholder Unknown conditions for AccessGroupSynced /
+		// ExecutionResourcesResolved — the JSON marshal still works and
+		// envtest mode gets the projection row Plan 05-05 will read.
+		if r.DB != nil {
+			row, perr := buildEnvironmentRow(&env, available)
+			if perr != nil {
+				return ctrl.Result{}, perr
+			}
+			if err := achdb.UpsertEnvironment(ctx, r.DB, row); err != nil {
+				return ctrl.Result{}, fmt.Errorf("db upsert environment projection: %w", err)
+			}
+		}
 		if err := r.Status().Update(ctx, &env); err != nil {
 			logger.Error(err, "status update failed")
 		}
@@ -284,6 +312,22 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	available.LastTransitionTime = metav1.Now()
 	apimeta.SetStatusCondition(&env.Status.Conditions, available)
 	env.Status.ObservedGeneration = env.Generation
+
+	// Spec v4 §5.2 / D-15: DB-first, K8s best-effort. Write the
+	// projection row BEFORE the K8s Status subresource so a transient
+	// DB failure retries the whole reconcile and the row + status land
+	// together. buildEnvironmentRow marshals the three §6.6 closed-set
+	// conditions (Available, AccessGroupSynced, ExecutionResourcesResolved)
+	// into jsonb bytes for the dual-write to environments.{*}_condition.
+	if r.DB != nil {
+		row, perr := buildEnvironmentRow(&env, available)
+		if perr != nil {
+			return ctrl.Result{}, perr
+		}
+		if err := achdb.UpsertEnvironment(ctx, r.DB, row); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db upsert environment projection: %w", err)
+		}
+	}
 	if err := r.Status().Update(ctx, &env); err != nil {
 		logger.Error(err, "status update failed")
 	}
@@ -292,6 +336,65 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// on snapshot drift even when no spec change triggers an event-
 	// driven reconcile.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// buildEnvironmentRow assembles the spec v4 §5.2 environments projection
+// row from the in-memory Environment + the just-computed Available
+// condition. The three §6.6 closed-set conditions (Available,
+// AccessGroupSynced, ExecutionResourcesResolved) are JSON-marshalled into
+// the row's jsonb columns so Content Service / Platform API can render
+// kubectl-describe parity without round-tripping K8s.
+//
+// Per D-15 the caller passes the row to achdb.UpsertEnvironment AT EACH
+// CALL SITE (steady-state and back-compat branches) rather than hiding
+// the call inside a helper — the literal text appearance is the contract
+// the projection-extension reviewer + grep-based DoD verifies.
+//
+// AccessGroupSynced and ExecutionResourcesResolved are read back from
+// env.Status.Conditions via apimeta.FindStatusCondition: the steady-state
+// caller has just set both via SetStatusCondition; the back-compat caller
+// has just set AccessGroupSynced=Unknown/Initializing and leaves
+// ExecutionResourcesResolved unset — FindStatusCondition returns nil →
+// the corresponding column marshals to NULL via pgx's []byte/jsonb default.
+func buildEnvironmentRow(
+	env *achv1alpha1.Environment,
+	available metav1.Condition,
+) (achdb.EnvironmentRow, error) {
+	availBytes, err := json.Marshal(available)
+	if err != nil {
+		return achdb.EnvironmentRow{}, fmt.Errorf("marshal Available condition: %w", err)
+	}
+	var agSyncedBytes []byte
+	if c := apimeta.FindStatusCondition(env.Status.Conditions, "AccessGroupSynced"); c != nil {
+		b, mErr := json.Marshal(c)
+		if mErr != nil {
+			return achdb.EnvironmentRow{}, fmt.Errorf("marshal AccessGroupSynced condition: %w", mErr)
+		}
+		agSyncedBytes = b
+	}
+	var execResolvedBytes []byte
+	if c := apimeta.FindStatusCondition(env.Status.Conditions, "ExecutionResourcesResolved"); c != nil {
+		b, mErr := json.Marshal(c)
+		if mErr != nil {
+			return achdb.EnvironmentRow{}, fmt.Errorf("marshal ExecutionResourcesResolved condition: %w", mErr)
+		}
+		execResolvedBytes = b
+	}
+	return achdb.EnvironmentRow{
+		Namespace:                           env.Namespace,
+		Name:                                env.Name,
+		AuthorizedTeams:                     env.Spec.AuthorizedTeams,
+		ContextPrompts:                      env.Spec.Context.Prompts,
+		ContextPlugins:                      env.Spec.Context.Plugins,
+		ContextArtifacts:                    env.Spec.Context.Artifacts,
+		RuntimeModels:                       env.Spec.Runtime.Models,
+		RuntimeMCPServers:                   env.Spec.Runtime.MCPServers,
+		RuntimeA2AAgents:                    env.Spec.Runtime.A2AAgents,
+		AvailableCondition:                  availBytes,
+		AccessGroupSyncedCondition:          agSyncedBytes,
+		ExecutionResourcesResolvedCondition: execResolvedBytes,
+		ResourceVersion:                     env.ResourceVersion,
+	}, nil
 }
 
 // reconcileAccessGroup is the §7 implementation step: ensure the LiteLLM
