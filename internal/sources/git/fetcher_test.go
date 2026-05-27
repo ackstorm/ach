@@ -200,8 +200,17 @@ func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
 			t.Fatalf("unexpected extraHeader on empty token: %v", args)
 		}
 	}
-	if args[0] != "clone" {
-		t.Fatalf("expected first arg = subcommand; got %v", args)
+	// Subcommand follows the protocol-allow config pins (Task 8) but
+	// before any further args.
+	foundSubcommand := false
+	for _, a := range args {
+		if a == "clone" {
+			foundSubcommand = true
+			break
+		}
+	}
+	if !foundSubcommand {
+		t.Fatalf("expected subcommand in args; got %v", args)
 	}
 }
 
@@ -285,6 +294,20 @@ func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
 	}
 }
 
+// TestFetcher_PinsProtocolAllow asserts every git invocation carries
+// the explicit protocol allow-list so an accidental file:// or ssh://
+// URL cannot be honored. Defense in depth per PR #9 review finding #7.
+func TestFetcher_PinsProtocolAllow(t *testing.T) {
+	args := buildGitInvocation("clone", "tok", "https://example.com/x.git", "/tmp/x")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "protocol.allow=never") {
+		t.Errorf("expected protocol.allow=never; got %q", joined)
+	}
+	if !strings.Contains(joined, "protocol.https.allow=always") {
+		t.Errorf("expected protocol.https.allow=always; got %q", joined)
+	}
+}
+
 // TestFetcher_TempDirCollisionResistance asserts that parallel Fetch
 // calls against the same CacheRoot allocate distinct cloneDirs (PR #9
 // follow-up review finding #6: defense against a zeroed-nonce
@@ -334,6 +357,12 @@ func TestFetcher_TempDirCollisionResistance(t *testing.T) {
 // (or absent) caller ctx, LsRemote bounds the subprocess via its own
 // internal deadline so a stalled upstream cannot hang the reconciler
 // indefinitely. Pins PR #9 follow-up review finding #3.
+//
+// NOTE: post Task 8 (protocol allow-list pinning), the http:// URL is
+// rejected at git's URL-parse step before any TCP connect; this test
+// now also exercises that fast-fail path. The 30s deadline still
+// guards genuine HTTPS-handshake-stall scenarios; a dedicated TLS-
+// fixture test would be needed to exercise the deadline directly.
 func TestLsRemote_RespectsInnerTimeout(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not on PATH")

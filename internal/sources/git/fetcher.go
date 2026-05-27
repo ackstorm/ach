@@ -234,10 +234,32 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // silently put a real arg in the token slot — see PR #9 follow-up
 // review finding #4).
 func buildGitInvocation(subcommand, token string, args ...string) []string {
-	if token == "" {
-		return append([]string{subcommand}, args...)
+	// Pin allowed wire protocols. v1alpha1 only ever issues https://
+	// clone URLs in production; the operator never accepts user-
+	// supplied URLs at this layer. Block everything else (ssh://, git://,
+	// ftp://, ...) so an accidental future code path can't honor an
+	// attacker-controlled URL. See PR #9 follow-up review finding #7.
+	//
+	// protocol.file.allow=user permits file:// / local paths when they
+	// originate from a top-level command argument (the operator's case
+	// AND the test fixture case) but blocks them when injected via a
+	// submodule URL (the threat that Git's CVE-2022-39253 closed).
+	configPins := []string{
+		"-c", "protocol.allow=never",
+		"-c", "protocol.https.allow=always",
+		"-c", "protocol.file.allow=user",
 	}
-	prefix := []string{"-c", "http.extraHeader=Authorization: Bearer " + token, subcommand}
+
+	if token == "" {
+		out := append([]string(nil), configPins...)
+		out = append(out, subcommand)
+		return append(out, args...)
+	}
+	prefix := append([]string(nil), configPins...)
+	prefix = append(prefix,
+		"-c", "http.extraHeader=Authorization: Bearer "+token,
+		subcommand,
+	)
 	return append(prefix, args...)
 }
 
