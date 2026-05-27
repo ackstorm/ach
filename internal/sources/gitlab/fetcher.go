@@ -71,7 +71,12 @@ func New(spec *achv1alpha1.GitLabSource) (*Fetcher, error) {
 	// construction time so a crafted CR cannot smuggle them into the
 	// constructed clone URL or the git subprocess argv. gitlab
 	// projects can be deeply nested — allowMultiSegment=true.
-	if err := cr02validate.HostIdentifier(spec.Host); err != nil {
+	//
+	// spec.Host is normalized (case-insensitive scheme strip +
+	// trailing-slash strip) BEFORE validation so a legitimate
+	// `https://gitlab.example.com` doesn't fail the HostIdentifier
+	// '/'-forbidden rule.
+	if err := cr02validate.HostIdentifier(normalizeGitLabHost(spec.Host)); err != nil {
 		return nil, fmt.Errorf("gitlab: %w", err)
 	}
 	if err := cr02validate.RepoSlashIdentifier("gitlab.project", spec.Project, true); err != nil {
