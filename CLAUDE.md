@@ -101,7 +101,7 @@ ach/
 ├── .goreleaser.yml          ← stable release config (single-binary)
 ├── .goreleaser.prerelease.yml   ← prerelease (alpha/beta/rc tags)
 ├── .goreleaser.snapshot.yml ← main-branch snapshot builds
-├── Dockerfile               ← runtime image (golang builder → distroless)
+├── Dockerfile               ← runtime image (golang builder → alpine + git)
 ├── Dockerfile.devtools      ← devtools container (scripts/dev.sh)
 ├── Dockerfile.goreleaser    ← release image, consumed by goreleaser
 ├── api/                     ← CRD Go types (ach.ackstorm.ai/v1alpha1)
@@ -313,7 +313,8 @@ Per-release flow (after the `chore(release): v0.1.0` push):
    - goreleaser runs with `GORELEASER_CURRENT_TAG=v<X.Y.Z>` (no git
      tag at HEAD yet). The GitHub release-create API call auto-creates
      the tag at default-branch HEAD, which is the bot-bump commit.
-     - cross-builds amd64 + arm64 (CGO_ENABLED=0, distroless runtime).
+     - cross-builds amd64 + arm64 (CGO_ENABLED=0, alpine runtime with
+       git + ca-certificates baked).
      - builds multi-arch manifest list at
        `ghcr.io/ackstorm/ach:vX.Y.Z` (+ `:latest` on
        stable).
