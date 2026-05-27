@@ -109,11 +109,18 @@ func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
 			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
 	}
 	key := f.spec.AuthSecretRef.Key
+	defaulted := false
 	if key == "" {
 		key = achv1alpha1.DefaultAuthSecretKey("github")
+		defaulted = true
 	}
 	raw := req.Secret.Data[key]
 	if len(raw) == 0 {
+		if defaulted {
+			return "", fmt.Errorf(
+				"github: missing auth secret key %q (default for github; set authSecretRef.key to override): %w",
+				key, sources.ErrUnauthorized)
+		}
 		return "", fmt.Errorf("github: missing auth secret key %q: %w",
 			key, sources.ErrUnauthorized)
 	}

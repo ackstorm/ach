@@ -135,6 +135,38 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 	}
 }
 
+// TestFetch_DefaultedKeyMissing_ErrorMessageHasHint asserts the error
+// when AuthSecretRef.Key is empty AND the Secret lacks GITHUB_TOKEN
+// includes a hint pointing at the default-key convention so the
+// operator knows where the GITHUB_TOKEN name came from. PR #9
+// follow-up review finding #9.
+func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
+	t.Parallel()
+	f, err := New(&achv1alpha1.GitHubSource{
+		Repo:      "owner/repo",
+		Ref:       "main",
+		Transport: "rest",
+		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
+			Name: "s",
+			// Key intentionally empty → resolved to GITHUB_TOKEN.
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	emptySecret := &corev1.Secret{Data: map[string][]byte{}}
+	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: emptySecret})
+	if !errors.Is(err, sources.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized; got %v", err)
+	}
+	if !contains(err.Error(), "GITHUB_TOKEN") {
+		t.Errorf("error should still mention the resolved key name; got %q", err.Error())
+	}
+	if !contains(err.Error(), "default") {
+		t.Errorf("error should hint that GITHUB_TOKEN was the default-key fallback; got %q", err.Error())
+	}
+}
+
 // TestFetch_MalformedRepo asserts a spec.Repo that is not <owner>/<name>
 // is rejected at New time (CR-02 parity; see internal/sources/cr02validate).
 // The network is never reached.
