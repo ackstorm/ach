@@ -224,6 +224,49 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Fatalf("§11c: marketplace_plugins row not cleaned up within 30s; row count still=%q",
 		strings.TrimSpace(out))
 }
-func testSC11dOperatorRestart(t *testing.T)           { t.Skip("implemented in Task 12") }
+// testSC11dOperatorRestart catches "wires-only-on-startup" bugs:
+//
+//  1. Snapshot the operator Pod's metadata.uid.
+//  2. kubectl delete pod (no wait) — kube restarts the Pod.
+//  3. Wait for a NEW Pod (different uid) to become Ready (90s).
+//  4. Annotate plugin/caveman force-refresh=now.
+//  5. Assert reconciliation fires within 30s (annotation cleared,
+//     lastSuccessfulRefresh advanced).
+//
+// Pre-req: §11a has already applied plugin/caveman and waited for
+// first SourceReachable=True. We re-apply defensively here (idempotent).
+//
+// Wall clock: 30s pod restart + 5s force-refresh round-trip ≈ 35s.
+func testSC11dOperatorRestart(t *testing.T) {
+	t.Helper()
+
+	// Defensive: apply plugin/caveman + LiteLLMConnection (idempotent).
+	for _, f := range []string{
+		"../../examples/01-litellmconnection.yaml",
+		"../../examples/06-plugin-caveman.yaml",
+	} {
+		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
+			t.Fatalf("§11d apply %s: %v\n%s", f, err, out)
+		}
+	}
+	waitForCondition(t, "plugin", "caveman", "SourceReachable", "True", 120*time.Second)
+
+	prevUID := getOperatorPodUID(t)
+
+	// Delete (no wait — kube schedules replacement).
+	if out, err := runCmd("kubectl", "delete", "pod", "-n", namespace,
+		"-l", "app.kubernetes.io/name=ach,app.kubernetes.io/component=operator",
+		"--wait=false"); err != nil {
+		t.Fatalf("§11d delete operator pod: %v\n%s", err, out)
+	}
+
+	newUID := waitForOperatorPodChanged(t, prevUID, 90*time.Second)
+	if newUID == prevUID {
+		t.Fatalf("§11d: operator Pod uid did not change (prev=%s new=%s)", prevUID, newUID)
+	}
+
+	// Reconciliation MUST fire after restart.
+	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
+}
 func testSC11eHydrateGolden(t *testing.T)             { t.Skip("implemented in Task 14") }
 func testSC11fFinalizerCleanup(t *testing.T)          { t.Skip("implemented in Task 19") }
