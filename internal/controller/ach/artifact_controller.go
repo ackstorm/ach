@@ -161,7 +161,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, "", cr.Generation)
+	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
 	cr.Status.UpstreamRev = result.UpstreamRev
 	if result.NotModified && cr.Status.StorageLocation == "" {
 		cr.Status.StorageLocation = finalPath

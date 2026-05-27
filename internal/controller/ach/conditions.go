@@ -14,6 +14,8 @@ package ach
 import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ackstorm/ach/internal/sources"
 )
 
 // Hub §6.6 closed-set reason vocabulary for the SourceReachable
@@ -152,4 +154,45 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 		ObservedGeneration: observedGen,
 		LastTransitionTime: metav1.Now(),
 	})
+}
+
+// resolveTransportName reports the wire path the outer fetch took for
+// the given SourceSpec. Surfaced on the SourceReachable / Synced
+// condition message so operators can see which transport actually
+// served the request during the one-release window in which both
+// transports coexist (FIX_GIT.txt). Returns:
+//
+//	"git"  — github/gitlab/bitbucket source with Transport != "rest"
+//	         (or empty, defaults to git per kubebuilder default).
+//	"rest" — github/gitlab/bitbucket source with Transport == "rest"
+//	         (the one-release legacy escape hatch).
+//	"n/a"  — s3 / gcs / http source (no git transport applies).
+func resolveTransportName(sourceSpec sources.SourceSpec) string {
+	switch {
+	case sourceSpec.GitHub != nil:
+		if sourceSpec.GitHub.Transport == "rest" {
+			return "rest"
+		}
+		return "git"
+	case sourceSpec.GitLab != nil:
+		if sourceSpec.GitLab.Transport == "rest" {
+			return "rest"
+		}
+		return "git"
+	case sourceSpec.Bitbucket != nil:
+		if sourceSpec.Bitbucket.Transport == "rest" {
+			return "rest"
+		}
+		return "git"
+	default:
+		return "n/a"
+	}
+}
+
+// sourceReachableMessage returns the condition.Message format used by
+// the per-kind reconcilers on success: "transport=<git|rest|n/a>".
+// Keeps the format string centrally so the per-kind controllers stay
+// surgical.
+func sourceReachableMessage(sourceSpec sources.SourceSpec) string {
+	return "transport=" + resolveTransportName(sourceSpec)
 }

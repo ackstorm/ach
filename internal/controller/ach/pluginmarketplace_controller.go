@@ -208,8 +208,9 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	if fetchResult.NotModified {
 		// 304 on the catalog file → no Stage-2/3 work; refresh staleness
-		// window stays implicit. Return Synced=True with empty message.
-		return r.markSyncedTrue(ctx, &cr, "", requeue)
+		// window stays implicit. Surface the transport that served the
+		// fetch so operators can see which wire path was used.
+		return r.markSyncedTrue(ctx, &cr, sourceReachableMessage(sourceSpec), requeue)
 	}
 	if fetchResult.Body == nil {
 		return r.markSyncedFalse(ctx, &cr, ReasonUpstreamInvalid, "stage-1: fetcher returned nil body without NotModified", requeue, nil)
@@ -379,7 +380,14 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.markSyncedFalse(ctx, &cr, ReasonNameConflict, msg, requeue, nil)
 	}
 
-	if _, err := r.markSyncedTrue(ctx, &cr, msg, requeue); err != nil {
+	// Compose the success message: transport= prefix lets operators see
+	// the wire path; the partial-failure summary (msg) follows when
+	// non-empty so per-plugin failures stay visible alongside.
+	finalMsg := sourceReachableMessage(sourceSpec)
+	if msg != "" {
+		finalMsg = finalMsg + " " + msg
+	}
+	if _, err := r.markSyncedTrue(ctx, &cr, finalMsg, requeue); err != nil {
 		// WR-02: when markSyncedTrue's r.Status().Update fails (typically
 		// 409 from a concurrent reconcile), cr.ResourceVersion is stale.
 		// A follow-up r.Update for the annotation-clear would also 409;
