@@ -101,6 +101,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// ─── Phase 2 steady state: §10.3 refresh. ───
 	var priorRev string
 	var lastRefresh time.Time
+	var forceRefreshRequestedAt time.Time
 	if r.DB != nil {
 		priorRow, err := achdb.GetExternalRef(ctx, r.DB, "artifact", cr.Name)
 		if err != nil {
@@ -109,6 +110,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if priorRow != nil {
 			priorRev = priorRow.UpstreamRev
 			lastRefresh = priorRow.LastSuccessfulRefresh
+			forceRefreshRequestedAt = priorRow.ForceRefreshRequestedAt
 		}
 	}
 
@@ -124,7 +126,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if cr.Status.LastSuccessfulRefresh != nil {
 		gateLastRefresh = cr.Status.LastSuccessfulRefresh.Time
 	}
-	if shouldSkipFetch(cr.Spec.Refresh, gateLastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, time.Now()) {
+	if shouldSkipFetch(cr.Spec.Refresh, gateLastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, forceRefreshRequestedAt, time.Now()) {
 		remaining := time.Until(gateLastRefresh.Add(requeueDurationFromRefresh(cr.Spec.Refresh)))
 		if remaining < time.Second {
 			remaining = time.Second

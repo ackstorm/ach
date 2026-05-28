@@ -180,7 +180,15 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if cr.Status.LastSuccessfulRefresh != nil {
 		lastRefresh = cr.Status.LastSuccessfulRefresh.Time
 	}
-	if shouldSkipFetch(spec.Refresh, lastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, time.Now()) {
+	var forceRefreshRequestedAt time.Time
+	if r.DB != nil {
+		ts, err := achdb.MaxMarketplaceForceRefresh(ctx, r.DB, cr.Name)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("db max marketplace force refresh: %w", err)
+		}
+		forceRefreshRequestedAt = ts
+	}
+	if shouldSkipFetch(spec.Refresh, lastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, forceRefreshRequestedAt, time.Now()) {
 		remaining := time.Until(lastRefresh.Add(requeue))
 		if remaining < time.Second {
 			remaining = time.Second

@@ -165,6 +165,28 @@ func DeleteMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, marketplac
 	return nil
 }
 
+// MaxMarketplaceForceRefresh returns the most recent force_refresh_requested_at
+// across every row under marketplaceName. Returns the Go zero time when no
+// row has a pending marker (NULL force_refresh_requested_at on every row).
+// Used by the PluginMarketplace reconciler's within-interval gate to honor
+// Admin-API force-refresh signals (issue #34 B2 — SetForceRefresh stamps
+// the marker on every CR-origin row under the marketplace).
+func MaxMarketplaceForceRefresh(ctx context.Context, pool *pgxpool.Pool, marketplaceName string) (time.Time, error) {
+	const sql = `
+		SELECT COALESCE(MAX(force_refresh_requested_at), '0001-01-01 00:00:00+00'::timestamptz)
+		  FROM marketplace_plugins
+		 WHERE marketplace_name = $1
+	`
+	var ts time.Time
+	if err := pool.QueryRow(ctx, sql, marketplaceName).Scan(&ts); err != nil {
+		if isTransientPgErr(err) {
+			return time.Time{}, err
+		}
+		return time.Time{}, fmt.Errorf("db: MaxMarketplaceForceRefresh(%s): %w", marketplaceName, err)
+	}
+	return ts, nil
+}
+
 // ResetMarketplacePluginsRefreshOnEmptyCache NULLs out last_successful_refresh
 // on every row. Mirrors ResetExternalRefRefreshOnEmptyCache; called from
 // Plan 02-09 startup on empty-PVC detection (OP-11). The Plan 02-09 call

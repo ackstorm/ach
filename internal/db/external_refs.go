@@ -44,13 +44,14 @@ import (
 // The Kind ∈ {"plugin", "prompt", "artifact"} and Name uniquely identify a
 // row; together they form the PRIMARY KEY (kind, name).
 type ExternalRef struct {
-	Kind                  string    // "plugin" / "prompt" / "artifact"
-	Name                  string    // CR metadata.name
-	StorageLocation       string    // absolute path the rename(2) published to
-	UpstreamRev           string    // FetchResult.UpstreamRev (commit SHA / ETag / generation)
-	LastSuccessfulRefresh time.Time // last successful refresh wall-clock
-	NextRefreshAt         time.Time // when the next reconcile should run
-	MaxStalenessSeconds   int64     // spec.refresh.maxStaleness in seconds
+	Kind                    string    // "plugin" / "prompt" / "artifact"
+	Name                    string    // CR metadata.name
+	StorageLocation         string    // absolute path the rename(2) published to
+	UpstreamRev             string    // FetchResult.UpstreamRev (commit SHA / ETag / generation)
+	LastSuccessfulRefresh   time.Time // last successful refresh wall-clock
+	NextRefreshAt           time.Time // when the next reconcile should run
+	MaxStalenessSeconds     int64     // spec.refresh.maxStaleness in seconds
+	ForceRefreshRequestedAt time.Time // zero when no pending force-refresh marker (D-07)
 }
 
 // UpsertExternalRef inserts-or-updates a row keyed by (kind, name).
@@ -133,7 +134,8 @@ func GetExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name string) 
 		       COALESCE(upstream_rev, ''),
 		       COALESCE(last_successful_refresh, 'epoch'::timestamptz),
 		       COALESCE(next_refresh_at, 'epoch'::timestamptz),
-		       max_staleness_seconds
+		       max_staleness_seconds,
+		       COALESCE(force_refresh_requested_at, '0001-01-01 00:00:00+00'::timestamptz)
 		  FROM external_refs
 		 WHERE kind = $1 AND name = $2
 	`
@@ -141,6 +143,7 @@ func GetExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name string) 
 	if err := pool.QueryRow(ctx, sql, kind, name).Scan(
 		&r.Kind, &r.Name, &r.StorageLocation, &r.UpstreamRev,
 		&r.LastSuccessfulRefresh, &r.NextRefreshAt, &r.MaxStalenessSeconds,
+		&r.ForceRefreshRequestedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

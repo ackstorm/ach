@@ -532,6 +532,10 @@ func extractAuthSecretRef(specType string, github *achv1alpha1.GitHubSource, git
 //   - now < lastRefresh + interval (within the refresh window)
 //   - observedGeneration == generation (no spec change since last reconcile)
 //   - "ach.ackstorm.ai/force-refresh" annotation is absent
+//   - force_refresh_requested_at on the external_refs projection row is
+//     zero or older than lastRefresh (issue #34 B2 — Platform-API's
+//     /admin/refresh handler writes this column instead of patching the CR;
+//     the gate MUST honor it to make NOTIFY-driven refresh observable)
 //
 // Rationale: the operator was burning ~3 GitHub REST calls per CR per
 // reconcile event (GetCommit + GetArchiveLink + tarball GET), and the
@@ -539,8 +543,9 @@ func extractAuthSecretRef(specType string, github *achv1alpha1.GitHubSource, git
 // re-apply, and periodic RequeueAfter. With three CRs and a handful of
 // dev cycles per hour that exceeds GitHub's anonymous 60 req/hour/IP
 // ceiling. Gating on the refresh window cuts steady-state burn ~10x
-// without changing correctness — spec change, annotation, and the
-// next-interval timer still trigger fresh fetches.
+// without changing correctness — spec change, annotation, the
+// next-interval timer, and an Admin-API force-refresh marker still
+// trigger fresh fetches.
 //
 // Pure: no I/O, no logging. Caller computes time.Now() at the same
 // instant as cr.Get() to avoid TOCTOU between gate eval and Fetch call.
@@ -549,6 +554,7 @@ func shouldSkipFetch(
 	lastRefresh time.Time,
 	observedGen, generation int64,
 	annotations map[string]string,
+	forceRefreshRequestedAt time.Time,
 	now time.Time,
 ) bool {
 	if lastRefresh.IsZero() {
@@ -558,6 +564,9 @@ func shouldSkipFetch(
 		return false
 	}
 	if _, hasForce := annotations["ach.ackstorm.ai/force-refresh"]; hasForce {
+		return false
+	}
+	if !forceRefreshRequestedAt.IsZero() && forceRefreshRequestedAt.After(lastRefresh) {
 		return false
 	}
 	window := requeueDurationFromRefresh(refresh)
