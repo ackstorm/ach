@@ -23,7 +23,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/audit"
@@ -1541,3 +1543,236 @@ func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
+
+// --- Phase 6 D-20 — LoginHandler + CallbackHandler session_id threading ---
+
+// TestLoginHandlerPacksSessionIDIntoState — when ?session_id is set on
+// the login URL, LoginHandler must pack it into the OAuth2 state as
+// "<random_state>|<session_id>" so Dex echoes it back unchanged on
+// the callback. The cookie still stores ONLY the random state so the
+// CSRF check in CallbackHandler remains intact (URL state's prefix is
+// compared against the cookie).
+func TestLoginHandlerPacksSessionIDIntoState(t *testing.T) {
+	deps := minimalLoginDeps()
+	h := LoginHandler(deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/platform/auth/login?session_id=devcode-xyz", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status: got %d want 302; body=%s", rec.Code, rec.Body.String())
+	}
+	loc := rec.Header().Get("Location")
+	if loc == "" {
+		t.Fatalf("Location header empty")
+	}
+	parsedLoc, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("parse Location: %v (%s)", err, loc)
+	}
+	stateParam := parsedLoc.Query().Get("state")
+	if stateParam == "" {
+		t.Fatalf("Location missing state= param: %s", loc)
+	}
+	if !strings.HasSuffix(stateParam, "|devcode-xyz") {
+		t.Errorf("state param: %q does not end with '|devcode-xyz'", stateParam)
+	}
+	if strings.Count(stateParam, "|") != 1 {
+		t.Errorf("state param: %q must contain exactly one '|' separator", stateParam)
+	}
+
+	// Cookie payload MUST contain only the random_state (NOT the
+	// session_id suffix). Decode and check.
+	cookies := rec.Result().Cookies()
+	var found *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			found = c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing %s cookie", cookieName)
+	}
+	raw, decErr := base64.URLEncoding.DecodeString(found.Value)
+	if decErr != nil {
+		t.Fatalf("cookie b64 decode: %v", decErr)
+	}
+	parts := strings.SplitN(string(raw), "|", 2)
+	if len(parts) != 2 {
+		t.Fatalf("cookie payload does not split into (state, verifier): %q", string(raw))
+	}
+	cookieState := parts[0]
+	if strings.Contains(cookieState, "devcode-xyz") {
+		t.Errorf("cookie state must NOT carry session_id: %q", cookieState)
+	}
+	// The random_state prefix of the URL state MUST equal the cookie state.
+	urlStatePrefix := strings.SplitN(stateParam, "|", 2)[0]
+	if urlStatePrefix != cookieState {
+		t.Errorf("URL state prefix %q != cookie state %q", urlStatePrefix, cookieState)
+	}
+}
+
+// TestLoginHandlerNoSessionIDLeavesStateUnpacked — backward compat:
+// when ?session_id is absent the URL state is the raw random_state
+// (no separator), preserving pre-Phase-6 e2e behavior.
+func TestLoginHandlerNoSessionIDLeavesStateUnpacked(t *testing.T) {
+	deps := minimalLoginDeps()
+	h := LoginHandler(deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/platform/auth/login", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status: got %d want 302", rec.Code)
+	}
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	state := loc.Query().Get("state")
+	if strings.Contains(state, "|") {
+		t.Errorf("state must not contain '|' when session_id is absent; got %q", state)
+	}
+}
+
+// TestCallbackHandler_NoSessionIDPreservesJSONBranch — the D-20
+// backward-compat invariant: when the OAuth2 state lacks the suffix,
+// CallbackHandler renders the pre-Phase-6 JSON response and Redis is
+// NEVER touched. test/e2e/phase3_invariants assertions depend on this.
+func TestCallbackHandler_NoSessionIDPreservesJSONBranch(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "noaml@example.com"
+
+	flm := newFakeLiteLLM()
+	dbRec := newDBInsertRecord()
+
+	tc := &callbackTestCase{
+		stateCookie: "state-no-session",
+		urlState:    "state-no-session", // no |suffix
+		urlCode:     "code-no-session",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("pepper-no-sess-32-bytes-aaaaaa"),
+	}
+	// runCallback does NOT inject Redis — the existing helper leaves
+	// deps.Redis nil, exercising the absence-of-Redis branch.
+	w := runCallback(t, tc)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Errorf("Content-Type: got %q, want application/json prefix (D-20 absence-of-session_id)", got)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"plaintext":"pk_`) {
+		t.Errorf("expected JSON body with plaintext; got %s", string(body))
+	}
+}
+
+// TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML — D-20
+// active branch: URL state carries "<random_state>|<session_id>",
+// deps.Redis is wired; on success the pk_ payload is written under
+// "ach:cli-session:<id>" and the response is the HTML close-window
+// page (NOT JSON, NOT carrying the pk_ in the browser body).
+func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "browser@example.com"
+
+	flm := newFakeLiteLLM()
+	dbRec := newDBInsertRecord()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis Run: %v", err)
+	}
+	defer mr.Close()
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rc.Close()
+
+	// Build a callback driver mirroring runCallback but injecting Redis.
+	auditBuf := &bytes.Buffer{}
+	deps := Deps{
+		OIDCProvider:    fix.provider,
+		IDTokenVerifier: fix.provider.Verifier(&oidc.Config{ClientID: fix.clientID}),
+		OAuth2Cfg:       fix.cfg,
+		LiteLLM:         flm,
+		Pepper:          []byte("pepper-d20-32-bytes-aaaaaa"),
+		Audit:           slog.New(slog.NewJSONHandler(auditBuf, nil)),
+		Logger:          slog.New(slog.NewTextHandler(io_Discard{}, nil)),
+		Namespace:       "ach-system",
+		InsertPKFn:      dbRec.insertFn,
+		NowFn:           func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		Redis:           rc,
+	}
+
+	// Drive the cookie + URL state with the packed session_id suffix.
+	cookieRecorder := httptest.NewRecorder()
+	setSSOCookie(cookieRecorder, "state-d20", "verifier-state-d20")
+	cookieHeader := cookieRecorder.Result().Header.Get("Set-Cookie")
+
+	target := "/platform/auth/sso/callback?state=" + url.QueryEscape("state-d20|sess-d20-id") + "&code=code-d20"
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Add("Cookie", cookieHeader)
+	w := httptest.NewRecorder()
+	CallbackHandler(deps).ServeHTTP(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+
+	// Content-Type MUST be text/html.
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Errorf("Content-Type: got %q, want text/html prefix", got)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "You may close this window") {
+		t.Errorf("html body missing close-window text; got: %s", string(body))
+	}
+	// The pk_ plaintext MUST NOT be in the browser body — only Redis
+	// gets it (consumed via /platform/auth/cli/token).
+	if strings.Contains(string(body), "pk_") {
+		t.Errorf("FATAL: pk_ plaintext leaked into browser HTML body: %s", string(body))
+	}
+
+	// Redis MUST carry the session payload at "ach:cli-session:sess-d20-id".
+	redisKey := "ach:cli-session:sess-d20-id"
+	if !mr.Exists(redisKey) {
+		t.Fatalf("expected Redis key %q to exist after D-20 callback", redisKey)
+	}
+	raw, gerr := mr.Get(redisKey)
+	if gerr != nil {
+		t.Fatalf("miniredis Get %q: %v", redisKey, gerr)
+	}
+	var stored map[string]string
+	if uerr := json.Unmarshal([]byte(raw), &stored); uerr != nil {
+		t.Fatalf("unmarshal stored session: %v raw=%s", uerr, raw)
+	}
+	if !strings.HasPrefix(stored["key_id"], "pkid_") {
+		t.Errorf("stored key_id: %q does not start with pkid_", stored["key_id"])
+	}
+	if !strings.HasPrefix(stored["plaintext"], "pk_") {
+		t.Errorf("stored plaintext: %q does not start with pk_", stored["plaintext"])
+	}
+	if stored["owner_email"] != "browser@example.com" {
+		t.Errorf("stored owner_email: %q want browser@example.com", stored["owner_email"])
+	}
+
+	// Audit emission MUST still be the SSO action (NOT the cli action —
+	// that one fires at /token consumption, Task 2 territory).
+	auditStr := auditBuf.String()
+	if !strings.Contains(auditStr, audit.ActionSSOLogin) {
+		t.Errorf("audit log missing platform.sso.login: %s", auditStr)
+	}
+	if strings.Contains(auditStr, audit.ActionCliLogin) {
+		t.Errorf("audit log MUST NOT carry platform.cli.login at callback time: %s", auditStr)
+	}
+}
