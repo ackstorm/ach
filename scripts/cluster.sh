@@ -60,6 +60,7 @@ Usage:
   scripts/cluster.sh down      # delete kind cluster
   scripts/cluster.sh keep      # same as up but no EXIT trap (local iteration)
   scripts/cluster.sh status    # print kubectl + helm state
+  scripts/cluster.sh wait_ach  # wait for ach Deployments (operator+platform-api+forwarder) Ready
 USAGE
   exit 1
 }
@@ -433,5 +434,6 @@ print_status() (
 
 case "${1:-}" in
   up|hydrate|down|keep|status) "cmd_${1}" ;;
+  wait_ach) wait_ach ;;
   *) usage ;;
 esac

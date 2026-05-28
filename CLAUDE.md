@@ -51,23 +51,26 @@ planning corpus at `/home/jcm/Projects/ach-old`).
 ## Architecture
 
 ```
-┌──────────────┐ reconcile ┌──────────────────┐  Postgres/Redis  ┌────────────┐
-│     CRDs     │──────────▶│   ach operator   │─────────────────▶│ Hub state  │
-│ (AgentDef…)  │           │ (operator mode)  │                  └────────────┘
-└──────────────┘           └─────────┬────────┘
-                                     │
-                                     ▼
-                          ┌────────────────────┐    HTTP    ┌───────────────────┐
-                          │ ach platform-api   │◀──────────▶│ ach forwarder     │
-                          │ (REST + Dex SSO)   │            │ (LLM/MCP routing) │
-                          └────────────────────┘            └───────────────────┘
-                                     │
-                                     ▼
-                          ┌────────────────────┐
-                          │ ach content-service│
-                          │ (artifacts stream) │
-                          └────────────────────┘
+┌──────────────┐ reconcile ┌─────────────────────────────┐ Postgres/Redis ┌────────────┐
+│     CRDs     │──────────▶│       ach operator Pod      │───────────────▶│ Hub state  │
+│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │                └────────────┘
+└──────────────┘           │ │  operator   │ │ content │ │
+                           │ │ (reconcile) │ │ service │ │  HTTP /content/{prompt,plugin,artifact}
+                           │ └─────────────┘ └────┬────┘ │  (sendfile(2) streaming, RWO PVC)
+                           └─────────┬────────────┼──────┘
+                                     │            │
+                                     ▼            ▼
+                          ┌────────────────────┐  ┌───────────────────┐
+                          │ ach platform-api   │  │ ach forwarder     │
+                          │ (REST + Dex SSO +  │◀▶│ (JWT trust path,  │
+                          │  /platform/hydrate)│  │  BIP read-cache)  │
+                          └────────────────────┘  └───────────────────┘
 ```
+Content-service runs as a **sidecar container in the operator Pod**
+(co-located because the artifact PVC is RWO); there is no separate
+`ach-content-service` Deployment. operator, platform-api, and
+forwarder are independent Deployments. Each Deployment runs the same
+`ach` image with `args: ["<mode>"]`.
 
 Owned CRDs (API group `ach.ackstorm.ai/v1alpha1`): `AgentDefinition`,
 `AgentSession`, `Team`, `EnvKey`, `BackendIdentityPolicy`, `ContentRef`
@@ -86,9 +89,12 @@ as `args:`:
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition update
-- `ach login` → platform-api → Dex SSO → `pk_` issuance
-- `ach hydrate` → platform-api → content-service → workspace materialization
-- LLM request → forwarder → JWT mint → upstream LLM/MCP backend
+- `ach login` → platform-api → Dex SSO → `provisionUser` (LiteLLM user/team mint) → `pk_` issuance
+- `ach hydrate` → platform-api `/platform/hydrate` → content-service sidecar (`/content/{prompt,plugin,artifact}` routes) → workspace materialization
+- Environment reconcile → resolve `mcpServers` / `a2aAgents` / `authorizedTeams` against LiteLLM → `POST /v1/access_group` → `AccessGroupSynced=True`
+- Environment status → composite `Available=True` rollup over `ExecutionResourcesResolved` + `AccessGroupSynced`
+- BackendIdentityPolicy apply → operator writes RBAC for forwarder → forwarder watches BIPs (read-path cache) → JWT mint uses per-target identity
+- LLM request → forwarder → BIP-driven JWT mint → upstream LLM/MCP backend
 - Operator restart → informer resync → drift reconciliation
 
 ## Repository layout (post-graft)
@@ -120,7 +126,7 @@ ach/
 ├── examples/                ← runnable CR fixtures + hydrate-demo driver
 │   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
 │   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
-│   ├── 05-pluginmarketplace-anthropic.yaml  real upstream (canary, blocked by TODO §5)
+│   ├── 05-pluginmarketplace-anthropic.yaml  real upstream canary (5-Kind parser landed via #16)
 │   ├── 06-plugin-caveman.yaml     Plugin from JuliusBrussee/caveman
 │   ├── 07-prompt-claudecode-leak.yaml  Prompt from asgeirtj/system_prompts_leaks
 │   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)
@@ -398,7 +404,8 @@ Use these Makefile targets instead:
 | Operator Deployment Ready               | `make wait-operator`                                |
 | Platform API Deployment Ready           | `make wait-platform-api`                            |
 | Forwarder Deployment Ready              | `make wait-forwarder`                               |
-| Content Service Deployment Ready        | `make wait-content-service`                         |
+| Content Service container Ready (co-located in operator Pod) | `make wait-content-service`             |
+| All ach Deployments (operator+platform-api+forwarder) Ready | `make wait-ach` (wraps `scripts/cluster.sh wait_ach`) |
 | Postgres StatefulSet Ready              | `make wait-postgres`                                |
 | Redis (Valkey) StatefulSet Ready        | `make wait-redis`                                   |
 | Dex Deployment Ready                    | `make wait-dex`                                     |
@@ -534,10 +541,14 @@ wrong tree leave this repo unchanged while appearing to "succeed."
 curl https://ach.local.test/content/prompt/foo
 # HTTP 404 (or no handler registered at all → chi 404)
 ```
-✅ Confirm content-service is on the build that includes
-`internal/contentservice` routes (not the Phase 1 stub):
+✅ Confirm the content-service sidecar in the operator Pod is on a
+build that includes `internal/contentservice` routes (not the Phase 1
+stub). The content-service runs as the second container of the
+`ach-operator` Deployment (RWO PVC forces co-location); there is NO
+`ach-content-service` Deployment. Use the operator Deployment + the
+`content-service` container name when exec'ing:
 ```bash
-kubectl -n ach-system exec deploy/ach-content-service \
+kubectl -n ach-system exec deploy/ach-operator \
   -c content-service -- ach content-service --help \
   | grep -q "/content/{prompt,plugin,artifact}"
 ```
@@ -545,6 +556,33 @@ WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 `/healthz`-only stub. The Service is healthy, the Pod is Ready, the
 hydrate URLs look right — and every GET 404s because the route doesn't
 exist. Fix is a rolling image update; no data migration.
+
+### ❌ Forwarder Pod CrashLoopBackOff: `ach-jwt-signing-keys` Secret missing
+```bash
+kubectl -n ach-system logs deploy/ach-forwarder -c forwarder
+# fatal: load JWT signing keys: secret "ach-jwt-signing-keys" not found in namespace "ach-system"
+```
+✅ The forwarder refuses to start without `ach-jwt-signing-keys`
+(FWD-09 — no in-cluster fallback, no implicit zero-key). The Secret
+must carry two keys: `current.kid` (short ASCII id) and `current.seed`
+(32 random bytes). `scripts/cluster.sh hydrate_fixtures` seeds a fresh
+(kid=`dev-<timestamp>`, seed=`openssl rand 32`) pair on every
+`cluster.sh up` if the Secret is absent; production deploys must
+provision it explicitly (e.g. ExternalSecrets / SealedSecrets — never
+the dev seed). Manual seed if you need one:
+```bash
+jwttmp=$(mktemp -d)
+openssl rand 32 > "${jwttmp}/current.seed"
+printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
+kubectl -n ach-system create secret generic ach-jwt-signing-keys \
+  --from-file=current.kid="${jwttmp}/current.kid" \
+  --from-file=current.seed="${jwttmp}/current.seed"
+rm -rf "${jwttmp}"
+```
+WHY IT FAILS: The forwarder mints the per-request JWT off this seed at
+startup; a missing Secret turns the whole JWT trust path unreachable,
+which would silently degrade upstream auth. Refusing to start is the
+correct posture — fix the seed, not the check.
 
 ### ❌ "SourceReachable=False reason=Unauthorized" on a public GitHub repo
 ```bash
@@ -637,12 +675,33 @@ Snapshotter cache), so the condition reflects fresh upstream state.
   unit testability — the reconciler owns the k8s-state machine, the
   service packages own the I/O.
 
-- **Per-mode Helm Deployments**: every long-running service is a separate
-  Deployment in the Helm chart, all consuming the same image. Per-mode
-  toggles in `deploy/helm/ach/values.yaml` (`operator.enabled`,
-  `platformApi.enabled`, ...) let users install partial topologies (e.g.
+- **Per-mode Helm Deployments**: operator, platform-api, and forwarder
+  are independent Deployments in the Helm chart, all consuming the same
+  image. content-service is NOT a separate Deployment — it runs as the
+  second container in the operator Pod (co-located because the
+  artifacts PVC is RWO). Per-mode toggles in `deploy/helm/ach/values.yaml`
+  (`operator.enabled`, `platformApi.enabled`, `forwarder.enabled`,
+  `contentService.enabled`) let users install partial topologies (e.g.
   operator-only baseline, full hub). Each Deployment carries
-  `args: ["<mode>"]` to select the cobra subcommand.
+  `args: ["<mode>"]` to select the cobra subcommand; the
+  content-service sidecar carries `args: ["content-service"]` on the
+  second container of the operator Pod.
+
+- **Environment two-axis status**: the Environment CR exposes
+  `ExecutionResourcesResolved` (Plugin/Prompt/Artifact closed-set
+  marker) and `AccessGroupSynced` (LiteLLM access-group reconciler:
+  resolves names → IDs on each reconcile via
+  `ListMCPServers` / `ListA2AAgents` / `ListTeamsByAlias`, then
+  `POST /v1/access_group`). The composite `Available=True` rolls both
+  up — that is what `ach hydrate` / the demo script gate on, not
+  individual sub-conditions.
+
+- **BackendIdentityPolicy forwarder read-path**: BIPs are owned by the
+  operator but consumed by the forwarder via an informer-backed cache
+  (`internal/forwarder/bip`). The forwarder mints per-target JWTs off
+  the BIP's identity material plus the `ach-jwt-signing-keys` seed —
+  no Postgres lookup on the request path. Operator writes the policy
+  and `Synced=True`; forwarder picks it up on the next informer event.
 
 - **SPDX-only license headers**: every `*.go` outside `vendor/`,
   `zz_generated*.go`, `mock_*.go` starts with

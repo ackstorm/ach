@@ -9,8 +9,8 @@
 #   2. kubectl apply -f examples/ — Environment + Plugin + Prompt +
 #      LiteLLMConnection CRs.
 #   3. Wait for the operator's ExecutionResourcesResolved condition
-#      (the §6.6 closed-set marker — no `Ready` rollup yet, see FIX01
-#      §C.1).
+#      (the §6.6 closed-set marker; the Environment Available composite
+#      rolls this up alongside AccessGroupSynced).
 #   4. Port-forward platform-api (8080) + Dex (5556).
 #   5. Drive a Dex SSO round-trip → mint a pk_ via /platform/auth/login
 #      → /sso/callback.
@@ -19,13 +19,6 @@
 #
 # Output: examples/hydrate.json — the snapshot the CLI will eventually
 # return.
-#
-# Known blockers (see FIX01.md for the full inventory):
-#   - FIX01 §A.1 / A.2 / A.3 — provisionUser is currently broken end-
-#     to-end against LiteLLM v1.83 (json type mismatch on /user/info,
-#     placeholder-user-id catch-all, fail-loud on duplicate /team/
-#     member_add). Step 5 will fail with `litellm_unreachable` or
-#     `default_team_missing` until those land. Steps 1-4 work today.
 #
 # Prereqs: cluster brought up via `make cluster-up` (operator +
 # platform-api + LiteLLM + Dex + ach-postgres all Running).
@@ -72,7 +65,9 @@ kubectl apply -f examples/01-litellmconnection.yaml \
               -f examples/04-environment-demo.yaml
 
 echo "[hydrate-demo] 3. waiting for Environment/${ENV_NAME} ExecutionResourcesResolved=True..."
-# No `Ready` rollup condition yet on the Environment CR (FIX01 §C.1).
+# Available is the composite rollup; ExecutionResourcesResolved is the
+# closed-set marker that all referenced Plugin/Prompt/Artifact CRs
+# fetched cleanly.
 kubectl -n "${NS}" wait --for=condition=ExecutionResourcesResolved \
   "environment/${ENV_NAME}" --timeout=120s || {
     echo "[hydrate-demo] Environment did not converge — dumping status:" >&2
@@ -117,12 +112,11 @@ if [ -z "${PK}" ]; then
 Raw response (first 1KB):
 $(printf '%s' "${SSO_RESP}" | head -c 1024)
 
-This is the expected failure mode today — see FIX01.md §A for the
-inventory of LiteLLM-client + provisionUser bugs that block the SSO
-path end-to-end. Steps 1-4 of this script DID succeed: the CRs are
-applied, the operator reconciled to ExecutionResourcesResolved=True,
-and the platform-api + dex Services are reachable on the port-
-forwards. Inspect the cluster state with:
+SSO is expected to succeed; if you reach this branch on a green
+cluster it is a real regression. Steps 1-4 of this script DID succeed:
+the CRs are applied, the operator reconciled to
+ExecutionResourcesResolved=True, and the platform-api + dex Services
+are reachable on the port-forwards. Inspect the cluster state with:
 
   kubectl -n ${NS} describe environment/${ENV_NAME}
   kubectl -n ${NS} get plugin,prompt,environment

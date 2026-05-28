@@ -519,6 +519,10 @@ wait-platform-api: ## Wait for platform-api Deployment Available
 wait-forwarder: ## Wait for forwarder Deployment Available
 	kubectl rollout status deploy/ach-forwarder -n ach-system --timeout=$(WAIT_TIMEOUT)
 
+.PHONY: wait-ach
+wait-ach: ## Wait for all ach Deployments (operator+platform-api+forwarder) Ready.
+	bash scripts/cluster.sh wait_ach
+
 .PHONY: wait-content-service
 wait-content-service: ## Wait for content-service container (co-located in operator Pod) Ready (bounded).
 	# Co-located topology: content-service is the second container in

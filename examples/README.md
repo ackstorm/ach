@@ -11,7 +11,7 @@ will take.
 |------|------|-------|
 | `01-litellmconnection.yaml`           | `LiteLLMConnection`  | Wires the operator to the in-cluster LiteLLM Service. Also seeded by `scripts/cluster.sh hydrate_fixtures`. |
 | `04-environment-demo.yaml`            | `Environment`        | References the three external-reference CRs below. `authorizedTeams: [default]` ties it to the LiteLLM `default` Team the demo script seeds. |
-| `05-pluginmarketplace-anthropic.yaml` | `PluginMarketplace`  | Pulls `anthropics/claude-plugins-official` via `http` source and filters to `^code-.*`. Surfaces FIX01 §F.1/F.2 today — kept as a canary. |
+| `05-pluginmarketplace-anthropic.yaml` | `PluginMarketplace`  | Pulls `anthropics/claude-plugins-official` via `http` source and filters to `^code-.*`. Kept as a real-upstream canary now that the 5-Kind parser (#16) has landed. |
 | `06-plugin-caveman.yaml`              | `Plugin`             | Third-party `JuliusBrussee/caveman` — directory-bundle plugin. |
 | `07-prompt-claudecode-leak.yaml`      | `Prompt`             | Single-file fetch from `asgeirtj/system_prompts_leaks`. |
 | `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. Repo is ~261 MiB depth-1; the 512 MiB default git-clone cap accommodates it. |
@@ -30,12 +30,14 @@ make cluster-up
 bash examples/hydrate-demo.sh
 ```
 
-What works today vs. what's blocked is enumerated in `FIX01.md`.
-Steps 1-4 (apply, wait for `ExecutionResourcesResolved`, port-forward)
-succeed; step 5 (Dex SSO + `provisionUser`) currently fails on a
-stack of LiteLLM-client + SSO bugs detailed in `FIX01.md` §A. Once
-those land the script will produce `examples/hydrate.json` end-to-end
-with no manual tricks.
+The script runs end-to-end against a green cluster: it applies the
+CRs, waits for `Synced=True` on each external-reference CR plus
+`Available=True` / `AccessGroupSynced=True` on the Environment,
+port-forwards the platform API, drives the Dex SSO callback, and
+writes the resulting hydrate response to `examples/hydrate.json`.
+The previously documented LiteLLM-client / SSO blockers (issues #17
+and #19) have landed; if the script fails today, treat it as a real
+regression rather than a known caveat.
 
 ## What the example explicitly does NOT do
 
@@ -51,11 +53,11 @@ with no manual tricks.
   private repo + add a Secret per the API doc to test the authed path.
 
 - **It does NOT pre-create the `default` LiteLLM Team with a literal
-  `team_id="default"`.** Earlier iterations of this script did, as a
-  workaround for FIX01 §A.4; that trick has been removed so the demo
-  reflects what a real deployment will see (LiteLLM auto-assigns a
-  UUID `team_id`). The trade-off: until FIX01 §A.4 is fixed, step 5
-  will fail.
+  `team_id="default"`.** The operator's LiteLLMConnection reconciler
+  calls `EnsureDefaultTeam` (idempotent list-then-create) after a
+  successful probe, so the demo reflects what a real deployment will
+  see: LiteLLM auto-assigns a UUID `team_id` and the operator handles
+  it via `ListTeamsByAlias` ordering.
 
 ## Cleanup
 
