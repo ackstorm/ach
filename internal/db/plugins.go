@@ -88,25 +88,57 @@ type PluginResolution struct {
 // pgconn class 08/57 errors propagate raw (transient backoff). Other errors
 // wrap with non-secret (namespace, name) identifiers — pgErr.Message NEVER
 // included.
+// upsertPluginSQL: origin='cr' guarded UPSERT (issue #34). See
+// upsertEnvironmentSQL for the row-blocking pattern.
+const upsertPluginSQL = `
+	INSERT INTO plugins
+	    (namespace, name, storage_location,
+	     last_successful_refresh, max_staleness_seconds,
+	     resource_version, updated_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, now(), 'cr', TRUE)
+	ON CONFLICT (namespace, name) DO UPDATE SET
+	    storage_location        = EXCLUDED.storage_location,
+	    last_successful_refresh = EXCLUDED.last_successful_refresh,
+	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
+	    resource_version        = EXCLUDED.resource_version,
+	    updated_at              = now(),
+	    locked                  = TRUE
+	WHERE plugins.origin = 'cr'
+	RETURNING namespace
+`
+
 func UpsertPlugin(ctx context.Context, pool *pgxpool.Pool, row PluginRow) error {
-	const sql = `
-		INSERT INTO plugins
-		    (namespace, name, storage_location,
-		     last_successful_refresh, max_staleness_seconds,
-		     resource_version, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())
-		ON CONFLICT (namespace, name) DO UPDATE SET
-		    storage_location        = EXCLUDED.storage_location,
-		    last_successful_refresh = EXCLUDED.last_successful_refresh,
-		    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
-		    resource_version        = EXCLUDED.resource_version,
-		    updated_at              = now()
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertPlugin(%s/%s): begin: %w", row.Namespace, row.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertPluginTx(ctx, tx, row); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertPlugin(%s/%s): commit: %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+func upsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
+	var ns string
+	err := tx.QueryRow(ctx, upsertPluginSQL,
 		row.Namespace, row.Name, row.StorageLocation,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	); err != nil {
+	).Scan(&ns)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -147,13 +179,7 @@ func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 // SoftDeletePlugin sets deletion_timestamp = now() without removing the row
 // (CS-09). Idempotent on already-drained rows.
 func SoftDeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `
-		UPDATE plugins
-		   SET deletion_timestamp = now(),
-		       updated_at         = now()
-		 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-	`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -161,6 +187,23 @@ func SoftDeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	}
 	return nil
 }
+
+func softDeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SoftDeletePlugin(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+const softDeletePluginSQL = `
+	UPDATE plugins
+	   SET deletion_timestamp = now(),
+	       updated_at         = now()
+	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
+`
 
 // DeletePlugin removes the plugins row keyed by (namespace, name) outright.
 // Called only after finalizer drain. Absence is not an error.

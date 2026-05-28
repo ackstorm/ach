@@ -51,21 +51,33 @@ planning corpus at `/home/jcm/Projects/ach-old`).
 ## Architecture
 
 ```
-┌──────────────┐ reconcile ┌─────────────────────────────┐ Postgres/Redis ┌────────────┐
-│     CRDs     │──────────▶│       ach operator Pod      │───────────────▶│ Hub state  │
-│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │                └────────────┘
-└──────────────┘           │ │  operator   │ │ content │ │
-                           │ │ (reconcile) │ │ service │ │  HTTP /content/{prompt,plugin,artifact}
-                           │ └─────────────┘ └────┬────┘ │  (sendfile(2) streaming, RWO PVC)
-                           └─────────┬────────────┼──────┘
-                                     │            │
-                                     ▼            ▼
-                          ┌────────────────────┐  ┌───────────────────┐
-                          │ ach platform-api   │  │ ach forwarder     │
-                          │ (REST + Dex SSO +  │◀▶│ (JWT trust path,  │
-                          │  /platform/hydrate)│  │  BIP read-cache)  │
-                          └────────────────────┘  └───────────────────┘
+┌──────────────┐ reconcile ┌─────────────────────────────┐  project    ┌────────────┐
+│     CRDs     │──────────▶│       ach operator Pod      │────rows────▶│  Postgres  │
+│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │  + NOTIFY   │  (SoT for  │
+└──────────────┘           │ │  operator   │ │ content │ │             │ ACH state) │
+                           │ │ (reconcile) │ │ service │◀┼──READ ROWS──│            │
+                           │ └─────────────┘ └────┬────┘ │             └─────┬──────┘
+                           └─────────┬────────────┼──────┘                   │
+                                     │            │                          │
+                                     ▼            ▼ /content/{prompt,…}      │
+                          ┌────────────────────┐  ┌───────────────────┐      │
+                          │ ach platform-api   │  │ ach forwarder     │      │
+                          │ (REST + Dex SSO +  │◀▶│ (JWT trust path,  │      │
+                          │  /platform/hydrate)│  │  BIP+Env caches)  │      │
+                          └─────────┬──────────┘  └─────────┬─────────┘      │
+                                    │                       │                │
+                                    └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
+**Source of truth (Phase D, issue #34)**: the operator is the only
+writer to Postgres (`environments`, `plugins`, `prompts`, `artifacts`,
+`litellm_connections`, `backend_identity_policies`, `external_refs`,
+`marketplace_plugins`); platform-api, forwarder, and content-service
+READ from Postgres and LISTEN on the `ach_*_changed` channels emitted
+by `with_tx_notify`. The forwarder's only remaining k8s read is the
+`ach-jwt-signing-keys` Secret informer; the platform-api's only
+remaining k8s touchpoint is the Dex SSO flow. CRDs are no longer
+the read path for any non-operator service.
+
 Content-service runs as a **sidecar container in the operator Pod**
 (co-located because the artifact PVC is RWO); there is no separate
 `ach-content-service` Deployment. operator, platform-api, and
@@ -661,6 +673,19 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
 
+### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
+A CR's projection collides with a row created by the UI (`origin='ui'`). The
+operator refuses to clobber the UI-managed row.
+✅ Rename the CR, or delete the UI row from Postgres before letting the
+operator reconcile. UI and CR row names must be disjoint within a (namespace).
+WHY IT FAILS: every projection table (environments, plugins, prompts, artifacts,
+litellm_connections, backend_identity_policies, external_refs, marketplace_plugins)
+has an `origin TEXT CHECK IN ('cr','ui')` column. The operator's UPSERTs are
+guarded by `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; the
+filter miss returns `pgx.ErrNoRows` which the helper maps to `ErrOriginConflict`,
+which the reconciler maps to `Synced=False reason=ConflictWithUIRow` and a 1-min
+requeue.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that
@@ -697,12 +722,20 @@ Snapshotter cache), so the condition reflects fresh upstream state.
   up — that is what `ach hydrate` / the demo script gate on, not
   individual sub-conditions.
 
-- **BackendIdentityPolicy forwarder read-path**: BIPs are owned by the
-  operator but consumed by the forwarder via an informer-backed cache
-  (`internal/forwarder/bip`). The forwarder mints per-target JWTs off
-  the BIP's identity material plus the `ach-jwt-signing-keys` seed —
-  no Postgres lookup on the request path. Operator writes the policy
-  and `Synced=True`; forwarder picks it up on the next informer event.
+- **BackendIdentityPolicy + Environment forwarder read-path**
+  (Postgres-as-SoT, issue #34): the operator projects BIPs into the
+  `backend_identity_policies` table and Environments into the
+  `environments` table, then emits `NOTIFY ach_backend_identity_policies_changed`
+  / `NOTIFY ach_environments_changed` from the same transaction via
+  `with_tx_notify`. The forwarder's `internal/forwarder/bipcache` runs
+  a `db.Listener` on `ach_backend_identity_policies_changed` plus a
+  5-minute periodic refresh as a safety net against missed NOTIFYs
+  (Postgres LISTEN/NOTIFY is at-most-once on session loss). The
+  forwarder's `internal/forwarder/envstore` follows the same pattern
+  on `ach_environments_changed`. JWT mint reads the in-memory cache
+  on the request path — no Postgres round-trip per request, no k8s
+  informer. The only remaining k8s informer on the forwarder is the
+  `ach-jwt-signing-keys` Secret watch.
 
 - **SPDX-only license headers**: every `*.go` outside `vendor/`,
   `zz_generated*.go`, `mock_*.go` starts with

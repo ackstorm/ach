@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,13 +22,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
+
+// environmentsChannel is the NOTIFY channel emitted on every Environment
+// projection write/soft-delete (issue #34). Consumers waking on this
+// channel select the matching row to drive their read-side caches.
+const environmentsChannel = "ach_environments_changed"
 
 // ekDrainMaxIterations bounds the §6.5 step-4 drain loop. Phase 1 has
 // zero ek_ rows, so the first listing returns 0 and the loop exits on
@@ -73,6 +82,11 @@ type EnvironmentReconciler struct {
 	DB        *pgxpool.Pool
 	// Phase 2 (Plan 02-09 wires from cmd/operator/main.go):
 	Snapshotter *snapshot.Snapshotter
+	// Issue #34 (A10/A11): external source.Channel feed used by the
+	// resync runnable (periodic full re-list) and the refreshsignal
+	// listener (NOTIFY ach_refresh). When non-nil the SetupWithManager
+	// wires WatchesRawSource on the corresponding builder.
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=environments,verbs=get;list;watch;create;update;patch;delete
@@ -118,38 +132,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// ─── Step 2a: Deletion path — §6.5 drain ───────────────────────
 	if !env.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&env, environmentFinalizer) {
-			// §6.5 step 2: delete LiteLLM access group.
-			if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
-				return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
-			}
-			// §6.5 step 3: delete LiteLLM tag.
-			if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
-				return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
-			}
-			// §6.5 step 4: drain ek_ rows (REAL Phase 1 code per D-12;
-			// trivially exits in Phase 1 because no rows exist).
-			if err := r.drainEkRows(ctx, &env); err != nil {
-				// Transient/wrapped DB errors propagate — controller-runtime
-				// requeues with exponential backoff; the finalizer stays.
-				return ctrl.Result{}, err
-			}
-			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the environments
-			// projection row AFTER the ek_ drain and BEFORE the finalizer
-			// removal so Content Service in-flight reads keep working until
-			// the row is fully removed. Hard removal is a follow-up sweep —
-			// Plan 05-05's staleness check filters on deletion_timestamp.
-			if err := r.softDeleteEnvironmentProjection(ctx, &env); err != nil {
-				return ctrl.Result{}, err
-			}
-			// §6.5 step 5: remove the finalizer.
-			controllerutil.RemoveFinalizer(&env, environmentFinalizer)
-			if err := r.Update(ctx, &env); err != nil {
-				return ctrl.Result{}, err
-			}
-			logger.Info("§6.5 drain complete; finalizer removed", "env", env.Name)
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, &env, logger)
 	}
 
 	// ─── Step 2b: Finalizer-add path ───────────────────────────────
@@ -193,6 +176,9 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// ExecutionResourcesResolved — the JSON marshal still works and
 		// envtest mode gets the projection row Plan 05-05 will read.
 		if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
+			if errors.Is(err, achdb.ErrOriginConflict) {
+				return r.writeConflictWithUIRow(ctx, &env, logger)
+			}
 			return ctrl.Result{}, err
 		}
 		desiredStatus := env.Status
@@ -314,6 +300,9 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// ExecutionResourcesResolved into jsonb bytes) and calls
 	// achdb.UpsertEnvironment under the nil-DB gate.
 	if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
+		if errors.Is(err, achdb.ErrOriginConflict) {
+			return r.writeConflictWithUIRow(ctx, &env, logger)
+		}
 		return ctrl.Result{}, err
 	}
 	desiredStatus := env.Status
@@ -363,6 +352,34 @@ const staleRequeueAfter = 15 * time.Second
 // the corresponding column marshals to NULL via pgx's []byte/jsonb default.
 //
 // Per D-15 the DB write (achdb.UpsertEnvironment) is authoritative: a
+// reconcileDeletion is the §6.5 finalizer drain — extracted from Reconcile
+// to keep the main method's cyclomatic complexity within golangci-lint's
+// gocyclo budget. Runs delete-side-effects on LiteLLM, drains ek_ rows,
+// soft-deletes the projection row, then removes the finalizer.
+func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv1alpha1.Environment, logger logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(env, environmentFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
+	}
+	if err := r.drainEkRows(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.softDeleteEnvironmentProjection(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	controllerutil.RemoveFinalizer(env, environmentFinalizer)
+	if err := r.Update(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	logger.Info("§6.5 drain complete; finalizer removed", "env", env.Name)
+	return ctrl.Result{}, nil
+}
+
 // transient error wraps with fmt.Errorf so controller-runtime requeues
 // the whole reconcile (K8s status + projection row land together or not
 // at all). Nil DB returns nil — the per-call-site `if r.DB != nil` gate
@@ -410,7 +427,18 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ExecutionResourcesResolvedCondition: execResolvedBytes,
 		ResourceVersion:                     env.ResourceVersion,
 	}
-	if err := achdb.UpsertEnvironment(ctx, r.DB, row); err != nil {
+	// Issue #34: project + NOTIFY atomically so any consumer waking on
+	// ach_environments_changed SELECTs a snapshot that already reflects
+	// the upsert. ErrOriginConflict (UI-owned row) is mapped to the
+	// closed-set Synced=False/ConflictWithUIRow condition above by the
+	// reconciler, so we return it raw here and let the caller handle.
+	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
+	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.UpsertEnvironmentTx(ctx, tx, row)
+	}); err != nil {
+		if errors.Is(err, achdb.ErrOriginConflict) {
+			return err
+		}
 		return fmt.Errorf("db upsert environment projection: %w", err)
 	}
 	return nil
@@ -428,7 +456,10 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 	if r.DB == nil {
 		return nil
 	}
-	if err := achdb.SoftDeleteEnvironment(ctx, r.DB, env.Namespace, env.Name); err != nil {
+	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
+	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.SoftDeleteEnvironmentTx(ctx, tx, env.Namespace, env.Name)
+	}); err != nil {
 		return fmt.Errorf("db soft-delete environment projection: %w", err)
 	}
 	return nil
@@ -827,12 +858,45 @@ func classifyDrainErr(label string, err error) error {
 	return fmt.Errorf("%s: %w", label, err)
 }
 
+// writeConflictWithUIRow flips AccessGroupSynced=False/ConflictWithUIRow
+// when the projection upsert is blocked by a UI-origin row holding the
+// same PK. Requeues in 1 minute so the operator does not hot-loop. The
+// CR status surfaces enough detail for an operator to investigate (the
+// row's UI lock will be released elsewhere; the next reconcile retries).
+func (r *EnvironmentReconciler) writeConflictWithUIRow(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+		Type:               "AccessGroupSynced",
+		Status:             metav1.ConditionFalse,
+		Reason:             "ConflictWithUIRow",
+		Message:            "projection row owned by UI; operator declines to overwrite",
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	env.Status.ObservedGeneration = env.Generation
+	desiredStatus := env.Status
+	if err := retryStatusUpdate(ctx, r.Client, env, func(fresh *achv1alpha1.Environment) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+	}
+	return ctrl.Result{RequeueAfter: time.Minute}, nil
+}
+
 // SetupWithManager registers the reconciler with controller-runtime.
 // Single watch on Environment — Phase 2 will add Secret + LiteLLM
 // fast-path watches when they exist.
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.Environment{}, builder.WithPredicates()).
-		Named("ach-environment").
-		Complete(r)
+		Named("ach-environment")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

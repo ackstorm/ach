@@ -7,7 +7,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ackstorm/ach/internal/forwarder/bip"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
@@ -17,20 +17,31 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// BIPResolver is the narrow contract handlers consume from the
+// Postgres-backed BIP cache (internal/forwarder/bipcache). Returning
+// nil collapses both "no policy" and "explicit opt-out" into the
+// no-JWT path, matching bipcache.Cache.Resolve and the legacy
+// bip.ResolveWinner contract.
+type BIPResolver interface {
+	Resolve(targetKind, targetName string) *db.BIPRow
+}
+
 // HandlerDeps extends proxy.Deps with the per-route dependencies
-// (signer, BIP resolver path via PrecheckDeps.K8sClient, precheck deps,
-// base URL, namespace).
+// (signer, BIP resolver, precheck deps, base URL, namespace).
 type HandlerDeps struct {
 	// Deps wires the shared *httputil.ReverseProxy.
 	Deps Deps
 	// Signer mints per-request ACH JWTs for /mcp + /a2a routes.
 	Signer jwt.Signer
+	// BIPResolver is the Postgres-backed BIP cache (C4). Resolve returns
+	// nil for "no policy" AND for explicit opt-out (alpha-LAST winner
+	// has ForwardIdentityJWT=false).
+	BIPResolver BIPResolver
 	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.
 	PrecheckDeps precheck.Deps
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
-	// Namespace is the POD_NAMESPACE; used as the JWT "sub" prefix and as
-	// the bip.ResolveWinner namespace argument.
+	// Namespace is the POD_NAMESPACE; used as the JWT "sub" prefix.
 	Namespace string
 }
 
@@ -102,11 +113,12 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 
-		// 2. BIP resolve. ResolveWinner returns nil for no-policy AND for
-		//    explicit opt-out (winner.Spec.ForwardIdentityJWT == false);
+		// 2. BIP resolve. BIPResolver.Resolve returns nil for no-policy
+		//    AND for explicit opt-out (winner.ForwardIdentityJWT == false);
 		//    both collapse to "no_policy" at the metrics layer per
-		//    CONTEXT D-Discretion.
-		winner := bip.ResolveWinner(r.Context(), deps.PrecheckDeps.K8sClient, kind, name, deps.Namespace)
+		//    CONTEXT D-Discretion. The cache itself reads from Postgres
+		//    (internal/forwarder/bipcache, issue #34 C1).
+		winner := deps.BIPResolver.Resolve(kind, name)
 		if winner == nil {
 			metrics.IncJWTSuppressed(kind, "no_policy")
 			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
