@@ -56,8 +56,10 @@ var newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 }
 
 // newResolveHeadSHAFn does a `git ls-remote <url> <ref>` and returns the
-// resolved 40-hex commit SHA. Used for local-path entries whose SHA
-// is implicit (tracks the marketplace's own ref).
+// resolved 40-hex commit SHA. Called by dispatchMarketplacePlugin for
+// any git-backed entry whose sha field is absent — invoked before
+// handing the Spec to git.Fetcher so Fetcher's 40-hex contract is
+// satisfied. Generalized from local-path-only in Phase 2 (#15).
 //
 // Overridable in tests so we don't shell out in unit tests.
 var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (string, error) {
