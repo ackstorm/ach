@@ -191,6 +191,66 @@ hydrate_litellm() {
   kubectl -n litellm-system wait --for=condition=complete \
     job/litellm-migrations --timeout=180s
 
+  # ─── issue #17: seed LiteLLM with DB-stored Model + MCP + A2A so
+  # examples/04-environment-demo.yaml can reach AccessGroupSynced=True
+  # end-to-end. These are the canonical names referenced by the demo
+  # Environment; examples/04b-environment-unresolved.yaml deliberately
+  # references absent names for negative-path coverage.
+  #
+  # All three calls are idempotent: LiteLLM returns 200 on duplicate
+  # name/server_name/agent_name (v1.83.10 behavior). We exec curl
+  # through the LiteLLM Pod's runtime image (alpine ships curl) so
+  # we don't need a port-forward.
+  echo "[cluster.sh] seeding LiteLLM with demo Model + MCP + A2A (issue #17)..."
+
+  # Wait for /health/readiness so seed calls don't 503 on a still-starting pod.
+  kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+    sh -c 'for i in $(seq 1 30); do curl -sf http://localhost:4000/health/readiness && exit 0; sleep 2; done; exit 1'
+
+  # 1) Seed Model — points at LiteLLM's openai mock backend, no upstream creds needed.
+  set +e
+  local seed_out
+  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+    curl -s -X POST http://localhost:4000/model/new \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "model_name": "demo-model",
+        "litellm_params": {
+          "model": "openai/demo-model",
+          "api_base": "http://localhost:4000/mock",
+          "api_key": "sk-mock"
+        }
+      }' 2>&1)"
+  echo "[cluster.sh]   model 'demo-model' → ${seed_out}"
+
+  # 2) Seed MCP server.
+  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+    curl -s -X POST http://localhost:4000/v1/mcp/server \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "server_name": "demo-mcp",
+        "transport": "http",
+        "url": "http://localhost:4000/mock-mcp"
+      }' 2>&1)"
+  echo "[cluster.sh]   mcp server 'demo-mcp' → ${seed_out}"
+
+  # 3) Seed A2A agent.
+  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+    curl -s -X POST http://localhost:4000/v1/agents \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "agent_name": "demo-agent",
+        "agent_card_params": {
+          "name": "demo-agent",
+          "url": "http://localhost:4000/mock-agent"
+        }
+      }' 2>&1)"
+  echo "[cluster.sh]   a2a agent 'demo-agent' → ${seed_out}"
+  set -e
+
   rm -rf "${tmpdir}"
   trap - EXIT
 }

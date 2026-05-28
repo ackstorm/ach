@@ -1,26 +1,14 @@
-# Environment — the projection unit a user hydrates against.
+# Environment — happy-path projection unit (issue #17).
 #
-# References the real CRs shipped in this folder:
-#   - Plugin/caveman              (06-plugin-caveman.yaml)
-#   - Prompt/claude-code-system-prompt (07-prompt-claudecode-leak.yaml)
-#   - Artifact/openclaw-templates (08-artifact-openclaw-templates.yaml)
+# Every name in spec.runtime.* and spec.authorizedTeams resolves
+# against the seeds added by scripts/cluster.sh hydrate_litellm:
+#   - Model:   demo-model
+#   - MCP:     demo-mcp
+#   - A2A:     demo-agent
+#   - Team:    default (created by LiteLLMConnection.EnsureDefaultTeam)
 #
-# plus the "default" LiteLLM Team (auto-created on first cluster-up by
-# scripts/cluster.sh hydrate_litellm + scripts/cluster.sh
-# hydrate_fixtures + the SSO provisionUser flow).
-#
-# runtime.* references real LiteLLM-side resources by name. The
-# operator's Snapshotter polls LiteLLM (/models, /v1/mcp/server,
-# /v1/agents) every 5 min; ExecutionResourcesResolved=True requires
-# every name here to be present in the most-recent snapshot. Missing
-# names show up in status.unresolvedRuntime and flip the condition to
-# False reason=ResourceUnresolved (Hub §6.6) until LiteLLM catches up.
-#
-# To wire these end-to-end you also need the LiteLLM side declared
-# (model rows for the two LLMs, MCPServer rows for vmcp-dev/vmcp-aws,
-# AgentEntry for test-noop-agent). Declare those via Model/MCPServer/
-# A2AAgent CRs OR via the LiteLLM admin UI; this Environment CR just
-# OPTS IN to them.
+# Expected after apply: AccessGroupSynced=True reason=Synced within
+# ~10s on a freshly-bootstrapped cluster.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: Environment
 metadata:
@@ -31,13 +19,11 @@ spec:
     - default
   runtime:
     models:
-      - gemini.gemini-flash-latest
-      - openai.gpt-5-mini
+      - demo-model
     mcpServers:
-      - vmcp-dev
-      - vmcp-aws
+      - demo-mcp
     a2aAgents:
-      - test-noop-agent
+      - demo-agent
   context:
     prompts:
       - claude-code-system-prompt
