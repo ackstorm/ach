@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,6 +35,11 @@ import (
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/registry"
 )
+
+// marketplacePluginsChannel is the NOTIFY channel emitted on every
+// per-plugin marketplace_plugins write/soft-delete (issue #34). Payload
+// is "<marketplace_name>/<plugin_name>".
+const marketplacePluginsChannel = "ach_marketplace_plugins_changed"
 
 // marketplaceJSONMaxBytes is the hard cap on the marketplace.json upstream
 // body itself (T-02-06-03 mitigation: bounded body read keeps adversarial
@@ -550,6 +556,10 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	}
 
 	// ─── 8: UPSERT marketplace_plugins (when DB available) ───
+	// Issue #34: project + NOTIFY atomically on ach_marketplace_plugins_changed.
+	// Payload is "<marketplace_name>/<plugin_name>". ErrOriginConflict
+	// propagates raw — the Stage-2 caller treats UI-conflict as a
+	// per-plugin failure recorded in the partial-failure summary.
 	if r.DB != nil {
 		now := time.Now()
 		next := now.Add(requeueDurationFromRefresh(mp.Spec.Refresh))
@@ -562,7 +572,11 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 			NextRefreshAt:         next,
 			MaxStalenessSeconds:   int64(mp.Spec.Refresh.MaxStaleness.Duration.Seconds()),
 		}
-		if err := achdb.UpsertMarketplacePlugin(ctx, r.DB, row); err != nil {
+		payload := fmt.Sprintf("%s/%s", mp.Name, entry.Name)
+		err := achdb.WithTxNotify(ctx, r.DB, marketplacePluginsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.UpsertMarketplacePluginTx(ctx, tx, row)
+		})
+		if err != nil {
 			return "", fmt.Errorf("plugin %q: db upsert: %w", entry.Name, err)
 		}
 	}

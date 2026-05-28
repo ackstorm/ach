@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -25,6 +27,12 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 )
+
+// pluginsChannel is the NOTIFY channel emitted on every Plugin projection
+// write/soft-delete (issue #34). The external_refs upsert (the
+// fetcher-state side of the same logical resource) also fires on this
+// channel under the "plugin/<name>" payload.
+const pluginsChannel = "ach_plugins_changed"
 
 // PluginReconciler reconciles a Plugin object. Phase 2 implements the
 // §10.3 steady-state refresh loop (fetch → stage → fsync → rename(2) →
@@ -109,8 +117,13 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			// needed once the file is gone); the plugins projection row
 			// stays soft-deleted so CS-09 in-flight reads finish — Plan
 			// 05-05 staleness check filters on deletion_timestamp.
+			// Issue #34: soft-delete + NOTIFY in one tx so consumers
+			// waking on ach_plugins_changed SELECT the soft-deleted row.
 			if r.DB != nil {
-				if err := achdb.SoftDeletePlugin(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+				payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
+				if err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
+					return achdb.SoftDeletePluginTx(ctx, tx, cr.Namespace, cr.Name)
+				}); err != nil {
 					return ctrl.Result{}, fmt.Errorf("db soft-delete plugin projection: %w", err)
 				}
 			}
@@ -260,7 +273,19 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			MaxStalenessSeconds:   int64(spec.Refresh.MaxStaleness.Duration.Seconds()),
 			ResourceVersion:       cr.ResourceVersion,
 		}
-		if err := achdb.UpsertPlugin(ctx, r.DB, row); err != nil {
+		// Issue #34: project + NOTIFY atomically so any consumer waking
+		// on ach_plugins_changed SELECTs a snapshot that already reflects
+		// the upsert. ErrOriginConflict (UI-owned row) flips to
+		// SourceReachable=False/ConflictWithUIRow and requeues in a
+		// minute so the operator does not hot-loop.
+		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
+		err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.UpsertPluginTx(ctx, tx, row)
+		})
+		if err != nil {
+			if errors.Is(err, achdb.ErrOriginConflict) {
+				return r.writePluginConflictStatus(ctx, &cr, logger)
+			}
 			return ctrl.Result{}, fmt.Errorf("db upsert plugin projection: %w", err)
 		}
 	}
@@ -287,6 +312,33 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// writePluginConflictStatus flips Synced=False/ConflictWithUIRow when the
+// projection upsert is blocked by a UI-origin row holding the same PK.
+// Mirrors the back-off pattern used by the other reconcilers: 1-minute
+// RequeueAfter so the operator does not hot-loop on a UI lock.
+func (r *PluginReconciler) writePluginConflictStatus(
+	ctx context.Context,
+	cr *achv1alpha1.Plugin,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
+		Type:               ConditionSynced,
+		Status:             metav1.ConditionFalse,
+		Reason:             "ConflictWithUIRow",
+		Message:            "projection row owned by UI; operator declines to overwrite",
+		ObservedGeneration: cr.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	cr.Status.ObservedGeneration = cr.Generation
+	desiredStatus := cr.Status
+	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.Plugin) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+	}
+	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.

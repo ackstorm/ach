@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +29,11 @@ import (
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
+
+// environmentsChannel is the NOTIFY channel emitted on every Environment
+// projection write/soft-delete (issue #34). Consumers waking on this
+// channel select the matching row to drive their read-side caches.
+const environmentsChannel = "ach_environments_changed"
 
 // ekDrainMaxIterations bounds the §6.5 step-4 drain loop. Phase 1 has
 // zero ek_ rows, so the first listing returns 0 and the loop exits on
@@ -193,6 +199,9 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// ExecutionResourcesResolved — the JSON marshal still works and
 		// envtest mode gets the projection row Plan 05-05 will read.
 		if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
+			if errors.Is(err, achdb.ErrOriginConflict) {
+				return r.writeConflictWithUIRow(ctx, &env, logger)
+			}
 			return ctrl.Result{}, err
 		}
 		desiredStatus := env.Status
@@ -314,6 +323,9 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// ExecutionResourcesResolved into jsonb bytes) and calls
 	// achdb.UpsertEnvironment under the nil-DB gate.
 	if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
+		if errors.Is(err, achdb.ErrOriginConflict) {
+			return r.writeConflictWithUIRow(ctx, &env, logger)
+		}
 		return ctrl.Result{}, err
 	}
 	desiredStatus := env.Status
@@ -410,7 +422,18 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ExecutionResourcesResolvedCondition: execResolvedBytes,
 		ResourceVersion:                     env.ResourceVersion,
 	}
-	if err := achdb.UpsertEnvironment(ctx, r.DB, row); err != nil {
+	// Issue #34: project + NOTIFY atomically so any consumer waking on
+	// ach_environments_changed SELECTs a snapshot that already reflects
+	// the upsert. ErrOriginConflict (UI-owned row) is mapped to the
+	// closed-set Synced=False/ConflictWithUIRow condition above by the
+	// reconciler, so we return it raw here and let the caller handle.
+	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
+	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.UpsertEnvironmentTx(ctx, tx, row)
+	}); err != nil {
+		if errors.Is(err, achdb.ErrOriginConflict) {
+			return err
+		}
 		return fmt.Errorf("db upsert environment projection: %w", err)
 	}
 	return nil
@@ -428,7 +451,10 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 	if r.DB == nil {
 		return nil
 	}
-	if err := achdb.SoftDeleteEnvironment(ctx, r.DB, env.Namespace, env.Name); err != nil {
+	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
+	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.SoftDeleteEnvironmentTx(ctx, tx, env.Namespace, env.Name)
+	}); err != nil {
 		return fmt.Errorf("db soft-delete environment projection: %w", err)
 	}
 	return nil
@@ -825,6 +851,34 @@ func classifyDrainErr(label string, err error) error {
 	// Wrap so the operator log carries the label and the underlying
 	// error string; controller-runtime still requeues.
 	return fmt.Errorf("%s: %w", label, err)
+}
+
+// writeConflictWithUIRow flips AccessGroupSynced=False/ConflictWithUIRow
+// when the projection upsert is blocked by a UI-origin row holding the
+// same PK. Requeues in 1 minute so the operator does not hot-loop. The
+// CR status surfaces enough detail for an operator to investigate (the
+// row's UI lock will be released elsewhere; the next reconcile retries).
+func (r *EnvironmentReconciler) writeConflictWithUIRow(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
+		Type:               "AccessGroupSynced",
+		Status:             metav1.ConditionFalse,
+		Reason:             "ConflictWithUIRow",
+		Message:            "projection row owned by UI; operator declines to overwrite",
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	env.Status.ObservedGeneration = env.Generation
+	desiredStatus := env.Status
+	if err := retryStatusUpdate(ctx, r.Client, env, func(fresh *achv1alpha1.Environment) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+	}
+	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
