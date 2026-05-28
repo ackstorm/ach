@@ -489,7 +489,7 @@ wait-cr-ready: ## Wait for a CR Ready condition. Usage: make wait-cr-ready KIND=
 
 .PHONY: wait-operator
 wait-operator: ## Wait operator Deployment Ready (bounded).
-	kubectl -n default rollout status deploy/ach --timeout=$(WAIT_TIMEOUT)
+	kubectl -n ach-system rollout status deploy/ach-operator --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-litellm
 wait-litellm: ## Wait LiteLLM Deployment Ready (bounded).
