@@ -95,6 +95,25 @@ type PluginMarketplaceSpec struct {
 	HTTP *HTTPSource `json:"http,omitempty"`
 }
 
+// MarketplacePluginRef is the per-plugin entry surfaced on
+// PluginMarketplace status — operators reading the CR need at-a-glance
+// visibility into which plugin names the most recent reconcile
+// materialized AND the upstream revision they pin against.
+type MarketplacePluginRef struct {
+	// Name is the plugin's identifier within the catalog
+	// (marketplace.json plugins[].name).
+	Name string `json:"name"`
+
+	// UpstreamRev is the resolved revision the materialized tarball
+	// was fetched at — a 40-hex commit SHA for git-backed sources, an
+	// S3 ETag for S3, a generation for GCS, an ETag|Last-Modified
+	// composite for HTTP. Empty when the reconciler hasn't recorded a
+	// per-plugin revision yet (e.g. dry-run paths).
+	//
+	// +optional
+	UpstreamRev string `json:"upstreamRev,omitempty"`
+}
+
 // PluginMarketplaceStatus defines the observed state of PluginMarketplace.
 //
 // In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
@@ -103,6 +122,25 @@ type PluginMarketplaceSpec struct {
 // surface; Phase 2 fills the reconciler logic.
 type PluginMarketplaceStatus struct {
 	ExternalRefStatus `json:",inline"`
+
+	// Plugins lists the entries in the upstream catalog that the most
+	// recent reconcile successfully materialized into marketplace_plugins
+	// (+ the per-marketplace cache). Ordered by Name. Entries that
+	// failed Stage-2 are NOT included here — those surface in the
+	// Synced condition's message field (`stage-2: <N> plugin(s)
+	// failed: ...`). Empty before the first successful reconcile.
+	//
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Plugins []MarketplacePluginRef `json:"plugins,omitempty"`
+
+	// PluginsCount is the size of Plugins, denormalized so the
+	// kubectl print column can show it without a JSONPath length()
+	// expression. Equal to len(Plugins).
+	//
+	// +optional
+	PluginsCount int `json:"pluginsCount,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -113,6 +151,7 @@ type PluginMarketplaceStatus struct {
 // +kubebuilder:validation:XValidation:rule="(self.spec.type == 'github' && has(self.spec.github)) || (self.spec.type == 'gitlab' && has(self.spec.gitlab)) || (self.spec.type == 'bitbucket' && has(self.spec.bitbucket)) || (self.spec.type == 's3' && has(self.spec.s3)) || (self.spec.type == 'gcs' && has(self.spec.gcs)) || (self.spec.type == 'http' && has(self.spec.http))",message="PluginMarketplace.spec must include the subobject matching spec.type (CRD-03)"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Synced",type=string,JSONPath=".status.conditions[?(@.type=='Synced')].status"
+// +kubebuilder:printcolumn:name="Plugins",type=integer,JSONPath=".status.pluginsCount"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // PluginMarketplace is the Schema for the pluginmarketplaces API (Hub §12).

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -288,6 +289,13 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// ─── Stage 2: serial per-plugin materialization (D-09). ───
 
 	var failures []pluginFailure
+	// successful collects the per-entry (name, upstreamRev) pairs that
+	// passed Stage-2 — feeds status.plugins[] so operators can `kubectl
+	// get pluginmarketplace -o yaml` to see exactly what materialized.
+	// Capacity = len(decisions) is the upper bound (every decision Kept
+	// AND materialized); the actual length will be smaller when there
+	// are filters or per-entry failures.
+	successful := make([]achv1alpha1.MarketplacePluginRef, 0, len(decisions))
 	// Track whether ANY decision was a marketplace-loser (vs Plugin-CRD-wins)
 	// — only marketplace-losers flip Synced=False reason=NameConflict per
 	// the Plan 02-06 spec-interpretation choice. Plugin-CRD-wins drops are
@@ -326,12 +334,16 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// auth Secret (which may be nil for anonymous-HTTPS marketplaces).
 		// This is acceptable because the entries fetched are typically
 		// hosted by the same identity that hosts the marketplace.json.
-		perr := r.materializeMarketplacePlugin(ctx, &cr, entry, marketplaceSecret)
+		upstreamRev, perr := r.materializeMarketplacePlugin(ctx, &cr, entry, marketplaceSecret)
 		if perr != nil {
 			reason, _ := classifyFetchErrorMarketplace(perr, spec.Refresh, time.Time{})
 			failures = append(failures, pluginFailure{name: entry.Name, reason: reason})
 			continue
 		}
+		successful = append(successful, achv1alpha1.MarketplacePluginRef{
+			Name:        entry.Name,
+			UpstreamRev: upstreamRev,
+		})
 	}
 
 	// ─── Stage 3: DELETE sweep of vanished names. ───
@@ -388,11 +400,22 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Info("stage-2 partial failures", "summary", msg)
 	}
 
+	// Sort the successful entries by Name for stable status output —
+	// otherwise the listMapKey marshal order tracks reconcile iteration
+	// order and reads like a flicker between successive reconciles.
+	sort.Slice(successful, func(i, j int) bool { return successful[i].Name < successful[j].Name })
+
 	// Spec-interpretation choice (Plan 02-06): a marketplace whose name lost
 	// the cross-marketplace tiebreaker flips Synced=False reason=NameConflict
 	// even when Stage-1 succeeded. Per-plugin Stage-2 fetch failures and
 	// Plugin-CRD-wins drops do NOT flip Synced.
 	if marketplaceLoserFound {
+		// Loser → no plugins materialized under this CR's name; zero the
+		// discovery list so an operator inspecting the CR doesn't see a
+		// stale set of plugins that aren't being served from this
+		// marketplace anymore.
+		cr.Status.Plugins = nil
+		cr.Status.PluginsCount = 0
 		return r.markSyncedFalse(ctx, &cr, ReasonNameConflict, msg, requeue, nil)
 	}
 
@@ -403,6 +426,8 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if msg != "" {
 		finalMsg = finalMsg + " " + msg
 	}
+	cr.Status.Plugins = successful
+	cr.Status.PluginsCount = len(successful)
 	if _, err := r.markSyncedTrue(ctx, &cr, finalMsg, requeue); err != nil {
 		// WR-02: when markSyncedTrue's r.Status().Update fails (typically
 		// 409 from a concurrent reconcile), cr.ResourceVersion is stale.
@@ -443,25 +468,25 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	mp *achv1alpha1.PluginMarketplace,
 	entry ClaudeCodeMarketplacePlugin,
 	secret *corev1.Secret,
-) error {
+) (string, error) {
 	// ─── 1+2: dispatch + fetch via internal/sources/git ───
 	body, upstreamRev, err := dispatchMarketplacePlugin(ctx, mp, entry, secret, r.CacheRoot)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer body.Close()
 
 	// ─── 3: ensure the per-marketplace plugin dir exists ───
 	finalDir := filepath.Join(r.CacheRoot, "marketplace", mp.Name, "plugin")
 	if err := os.MkdirAll(finalDir, 0o755); err != nil {
-		return fmt.Errorf("plugin %q: mkdir final dir: %w", entry.Name, err)
+		return "", fmt.Errorf("plugin %q: mkdir final dir: %w", entry.Name, err)
 	}
 	finalPath := filepath.Join(finalDir, entry.Name+".tar.gz")
 
 	// ─── 4: stage at .tmp/stg-<random> ───
 	tmpFile, err := os.CreateTemp(filepath.Join(r.CacheRoot, ".tmp"), "stg-")
 	if err != nil {
-		return fmt.Errorf("plugin %q: create staging file: %w", entry.Name, err)
+		return "", fmt.Errorf("plugin %q: create staging file: %w", entry.Name, err)
 	}
 	stagingPath := tmpFile.Name()
 	closed := false
@@ -483,21 +508,21 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	}
 	if copyErr != nil {
 		_ = os.Remove(stagingPath)
-		return fmt.Errorf("plugin %q: staging copy: %w", entry.Name, copyErr)
+		return "", fmt.Errorf("plugin %q: staging copy: %w", entry.Name, copyErr)
 	}
 	if capBytes > 0 && n > capBytes {
 		_ = os.Remove(stagingPath)
-		return &OversizeError{Bytes: n, Cap: capBytes}
+		return "", &OversizeError{Bytes: n, Cap: capBytes}
 	}
 
 	// ─── 6: fsync + close ───
 	if err := tmpFile.Sync(); err != nil {
 		_ = os.Remove(stagingPath)
-		return fmt.Errorf("plugin %q: staging fsync: %w", entry.Name, err)
+		return "", fmt.Errorf("plugin %q: staging fsync: %w", entry.Name, err)
 	}
 	if err := tmpFile.Close(); err != nil {
 		_ = os.Remove(stagingPath)
-		return fmt.Errorf("plugin %q: staging close: %w", entry.Name, err)
+		return "", fmt.Errorf("plugin %q: staging close: %w", entry.Name, err)
 	}
 	closed = true
 
@@ -508,19 +533,19 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	stagedForVerify, openErr := os.Open(stagingPath)
 	if openErr != nil {
 		_ = os.Remove(stagingPath)
-		return fmt.Errorf("plugin %q: open staged tar: %w", entry.Name, openErr)
+		return "", fmt.Errorf("plugin %q: open staged tar: %w", entry.Name, openErr)
 	}
 	verifyErr := verifyPluginManifest(stagedForVerify)
 	_ = stagedForVerify.Close()
 	if verifyErr != nil {
 		_ = os.Remove(stagingPath)
-		return verifyErr
+		return "", verifyErr
 	}
 
 	// ─── 7: atomic rename(2) ───
 	if err := os.Rename(stagingPath, finalPath); err != nil {
 		_ = os.Remove(stagingPath)
-		return fmt.Errorf("plugin %q: §10.3 rename(2): %w", entry.Name, err)
+		return "", fmt.Errorf("plugin %q: §10.3 rename(2): %w", entry.Name, err)
 	}
 
 	// ─── 8: UPSERT marketplace_plugins (when DB available) ───
@@ -537,10 +562,10 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 			MaxStalenessSeconds:   int64(mp.Spec.Refresh.MaxStaleness.Duration.Seconds()),
 		}
 		if err := achdb.UpsertMarketplacePlugin(ctx, r.DB, row); err != nil {
-			return fmt.Errorf("plugin %q: db upsert: %w", entry.Name, err)
+			return "", fmt.Errorf("plugin %q: db upsert: %w", entry.Name, err)
 		}
 	}
-	return nil
+	return upstreamRev, nil
 }
 
 // classifyFetchErrorMarketplace is the marketplace-side fork of

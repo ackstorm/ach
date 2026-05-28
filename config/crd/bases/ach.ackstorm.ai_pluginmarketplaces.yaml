@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: Synced
       type: string
+    - jsonPath: .status.pluginsCount
+      name: Plugins
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -682,6 +685,47 @@ spec:
                   ObservedGeneration is the metadata.generation of the CR the
                   reconciler most recently processed.
                 format: int64
+                type: integer
+              plugins:
+                description: |-
+                  Plugins lists the entries in the upstream catalog that the most
+                  recent reconcile successfully materialized into marketplace_plugins
+                  (+ the per-marketplace cache). Ordered by Name. Entries that
+                  failed Stage-2 are NOT included here — those surface in the
+                  Synced condition's message field (`stage-2: <N> plugin(s)
+                  failed: ...`). Empty before the first successful reconcile.
+                items:
+                  description: |-
+                    MarketplacePluginRef is the per-plugin entry surfaced on
+                    PluginMarketplace status — operators reading the CR need at-a-glance
+                    visibility into which plugin names the most recent reconcile
+                    materialized AND the upstream revision they pin against.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the plugin's identifier within the catalog
+                        (marketplace.json plugins[].name).
+                      type: string
+                    upstreamRev:
+                      description: |-
+                        UpstreamRev is the resolved revision the materialized tarball
+                        was fetched at — a 40-hex commit SHA for git-backed sources, an
+                        S3 ETag for S3, a generation for GCS, an ETag|Last-Modified
+                        composite for HTTP. Empty when the reconciler hasn't recorded a
+                        per-plugin revision yet (e.g. dry-run paths).
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              pluginsCount:
+                description: |-
+                  PluginsCount is the size of Plugins, denormalized so the
+                  kubectl print column can show it without a JSONPath length()
+                  expression. Equal to len(Plugins).
                 type: integer
               storageLocation:
                 description: |-

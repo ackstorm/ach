@@ -22,6 +22,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: Synced
       type: string
+    - jsonPath: .status.pluginsCount
+      name: Plugins
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -52,10 +55,17 @@ spec:
             description: |-
               PluginMarketplaceSpec defines the desired state of PluginMarketplace (Hub §12).
 
-              The marketplace file itself is fetched via the chosen source type
-              (§12.1). Per-source defaults: github/gitlab/bitbucket default
-              path=.claude-plugin/marketplace.json. s3/gcs/http require explicit
-              key/object/url pointing at the marketplace file.
+              The marketplace file is fetched via the chosen source type (§12.1).
+              Body handling depends on the type:
+
+                - github / gitlab / bitbucket: the fetcher returns the full repo
+                  tarball (Hub §10.1, Path-subset extraction deferred to v1beta1).
+                  Stage-1 walks the tarball and extracts the first regular file
+                  whose path ends with `/.claude-plugin/marketplace.json`. spec.<type>.path
+                  is IGNORED for marketplaces (the file location is conventional).
+                - s3 / gcs / http: spec.<type>.key/object/url MUST point at the
+                  marketplace.json body directly; the fetcher returns that body
+                  verbatim with no extraction.
 
               CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
               CRD-04: spec.refresh.maxStaleness is REQUIRED.
@@ -65,13 +75,14 @@ spec:
                 properties:
                   authSecretRef:
                     description: |-
-                      AuthSecretRef points at the Bitbucket app-password / access-token
-                      Secret. Optional — when omitted, the fetcher issues anonymous
-                      Bitbucket Cloud REST calls. Most Bitbucket Cloud endpoints require
-                      auth even for public repos, so anonymous fetches typically fail
-                      with ErrUnauthorized at runtime; the option exists for consistency
-                      with the github/gitlab sources and for self-hosted Bitbucket Server
-                      instances that permit anonymous access.
+                      AuthSecretRef is optional. When set, the Secret named here MUST
+                      exist in the CR's namespace at reconcile time and the operator
+                      reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+                      When nil, the upstream fetch is anonymous — supported only for
+                      public repositories on the git transport (transport=rest paired
+                      with no auth typically fails because most Bitbucket Cloud REST
+                      endpoints require auth even for public repos). Bitbucket Cloud
+                      anonymous REST quota: 60 req/h/IP.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -93,8 +104,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -120,6 +139,20 @@ spec:
                   repo:
                     description: Repo within the workspace.
                     minLength: 1
+                    type: string
+                  transport:
+                    default: git
+                    description: |-
+                      Transport selects the wire protocol used to fetch from this upstream.
+
+                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+                                 recommended; default).
+                        "rest" — use the provider's REST API. Subject to per-IP anonymous
+                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+                                 Retained as a one-release escape hatch; will be removed.
+                    enum:
+                    - git
+                    - rest
                     type: string
                   workspace:
                     description: Workspace name on Bitbucket.
@@ -176,8 +209,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -212,10 +253,14 @@ spec:
                 properties:
                   authSecretRef:
                     description: |-
-                      AuthSecretRef points at the GitHub PAT Secret. Optional —
-                      when omitted, the fetcher issues anonymous (unauthenticated) GitHub
-                      API calls, which work against public repos at the upstream's
-                      anonymous rate-limit ceiling (60 req/hour per IP for github.com).
+                      AuthSecretRef is optional. When set, the Secret named here MUST
+                      exist in the CR's namespace at reconcile time and the operator
+                      reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+                      When nil, the upstream fetch is anonymous — supported only for
+                      public repositories. Anonymous + transport=rest is also supported
+                      but subject to the provider's anonymous REST quota (GitHub:
+                      60 req/h/IP) — the bug FIX_GIT.txt fixes by defaulting transport
+                      to git.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -237,8 +282,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -269,6 +322,20 @@ spec:
                     description: Repo is the "<owner>/<name>" GitHub identifier.
                     minLength: 1
                     type: string
+                  transport:
+                    default: git
+                    description: |-
+                      Transport selects the wire protocol used to fetch from this upstream.
+
+                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+                                 recommended; default).
+                        "rest" — use the provider's REST API. Subject to per-IP anonymous
+                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+                                 Retained as a one-release escape hatch; will be removed.
+                    enum:
+                    - git
+                    - rest
+                    type: string
                 required:
                 - ref
                 - repo
@@ -278,11 +345,14 @@ spec:
                 properties:
                   authSecretRef:
                     description: |-
-                      AuthSecretRef points at the GitLab PAT / deploy-token Secret.
-                      Optional — when omitted, the fetcher issues anonymous GitLab API
-                      calls. Public projects on gitlab.com return commit metadata + the
-                      repository archive to anonymous callers; private projects return
-                      401/404.
+                      AuthSecretRef is optional. When set, the Secret named here MUST
+                      exist in the CR's namespace at reconcile time and the operator
+                      reads the bearer token from the named key (see SourceAuthSecretRef.Key).
+                      When nil, the upstream fetch is anonymous — supported only for
+                      public projects. Anonymous + transport=rest is also supported
+                      but subject to the provider's anonymous REST quota (GitLab:
+                      60 req/min/IP) — the bug FIX_GIT.txt fixes by defaulting transport
+                      to git.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -304,8 +374,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -335,6 +413,20 @@ spec:
                   ref:
                     description: Ref is a branch or tag name.
                     minLength: 1
+                    type: string
+                  transport:
+                    default: git
+                    description: |-
+                      Transport selects the wire protocol used to fetch from this upstream.
+
+                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
+                                 recommended; default).
+                        "rest" — use the provider's REST API. Subject to per-IP anonymous
+                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
+                                 Retained as a one-release escape hatch; will be removed.
+                    enum:
+                    - git
+                    - rest
                     type: string
                 required:
                 - project
@@ -369,8 +461,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -443,8 +543,16 @@ spec:
                         type: string
                       key:
                         description: |-
-                          Key inside the Secret data map carrying the token / PAT / access key.
-                          Used by github, gitlab, bitbucket source types.
+                          Key is the name of the Secret data key holding the bearer token.
+                          Optional; when omitted on a git source type the operator falls
+                          back to a provider-specific default key name:
+                            - github     → GITHUB_TOKEN
+                            - gitlab     → GITLAB_TOKEN
+                            - bitbucket  → BITBUCKET_TOKEN
+                          (Matches the ecosystem env-var convention used by gh, glab,
+                          terraform-provider-*, gitlab-runner, etc.) Other source types
+                          (s3 / gcs / http) carry their own per-type key fields and do
+                          NOT use this fallback.
                         minLength: 1
                         type: string
                       name:
@@ -578,6 +686,47 @@ spec:
                   ObservedGeneration is the metadata.generation of the CR the
                   reconciler most recently processed.
                 format: int64
+                type: integer
+              plugins:
+                description: |-
+                  Plugins lists the entries in the upstream catalog that the most
+                  recent reconcile successfully materialized into marketplace_plugins
+                  (+ the per-marketplace cache). Ordered by Name. Entries that
+                  failed Stage-2 are NOT included here — those surface in the
+                  Synced condition's message field (`stage-2: <N> plugin(s)
+                  failed: ...`). Empty before the first successful reconcile.
+                items:
+                  description: |-
+                    MarketplacePluginRef is the per-plugin entry surfaced on
+                    PluginMarketplace status — operators reading the CR need at-a-glance
+                    visibility into which plugin names the most recent reconcile
+                    materialized AND the upstream revision they pin against.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the plugin's identifier within the catalog
+                        (marketplace.json plugins[].name).
+                      type: string
+                    upstreamRev:
+                      description: |-
+                        UpstreamRev is the resolved revision the materialized tarball
+                        was fetched at — a 40-hex commit SHA for git-backed sources, an
+                        S3 ETag for S3, a generation for GCS, an ETag|Last-Modified
+                        composite for HTTP. Empty when the reconciler hasn't recorded a
+                        per-plugin revision yet (e.g. dry-run paths).
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              pluginsCount:
+                description: |-
+                  PluginsCount is the size of Plugins, denormalized so the
+                  kubectl print column can show it without a JSONPath length()
+                  expression. Equal to len(Plugins).
                 type: integer
               storageLocation:
                 description: |-
