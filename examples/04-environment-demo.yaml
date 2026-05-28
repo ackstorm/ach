@@ -22,8 +22,6 @@ spec:
       - demo-model
     mcpServers:
       - demo-mcp
-      - mcp-echo
-      - context7
     a2aAgents:
       - demo-agent
   context:

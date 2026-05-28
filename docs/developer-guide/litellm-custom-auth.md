@@ -50,6 +50,11 @@ from litellm.proxy._types import UserAPIKeyAuth
 
 # LITELLM_MASTER_KEY is the standard environment variable injected by the Helm chart
 MASTER_KEY = os.getenv("LITELLM_MASTER_KEY") or os.getenv("PROXY_MASTER_KEY")
+if not MASTER_KEY:
+    raise RuntimeError(
+        "auth_user_map: neither LITELLM_MASTER_KEY nor PROXY_MASTER_KEY is set; "
+        "custom auth cannot operate"
+    )
 
 def clean_bearer(val: str) -> str:
     if not val:

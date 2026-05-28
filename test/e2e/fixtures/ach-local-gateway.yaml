@@ -7,9 +7,21 @@ data:
   nginx.conf: |
     events {}
     http {
+        # Stream-friendly defaults: disable response buffering so SSE
+        # (/v1/chat/completions?stream=true) and streamable-http MCP
+        # responses flush chunks to the client as they arrive. HTTP/1.1
+        # + cleared Connection header preserves keep-alive upstream.
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        client_max_body_size 32m;
+
         server {
             listen 8080;
-            
+
             # Platform API Routing
             location /platform/ {
                 proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/platform/;
@@ -31,7 +43,7 @@ data:
                 proxy_set_header X-Real-IP $remote_addr;
             }
 
-            # Forwarder data plane Routing (/v1)
+            # Forwarder data plane Routing (/v1) — SSE streaming
             location /v1/ {
                 proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/v1/;
                 proxy_set_header Host $host;
@@ -45,14 +57,14 @@ data:
                 proxy_set_header X-Real-IP $remote_addr;
             }
 
-            # Forwarder data plane Routing (/mcp)
+            # Forwarder data plane Routing (/mcp) — streamable-http
             location /mcp/ {
                 proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/mcp/;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
             }
 
-            # Forwarder data plane Routing (/a2a)
+            # Forwarder data plane Routing (/a2a) — streaming
             location /a2a/ {
                 proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/a2a/;
                 proxy_set_header Host $host;
