@@ -536,6 +536,10 @@ wait-content-service: ## Wait for content-service container (co-located in opera
 	# verifies CS :8082/healthz, so rollout=Ready ⇒ both containers serving.
 	kubectl rollout status deploy/ach-operator -n ach-system --timeout=$(WAIT_TIMEOUT)
 
+.PHONY: wait-mcp-echo
+wait-mcp-echo: ## Wait for ach-mcp-echo Deployment Available (bounded) (issue #35)
+	kubectl rollout status deploy/ach-mcp-echo -n ach-system --timeout=$(WAIT_TIMEOUT)
+
 .PHONY: wait-container
 wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make wait-container NAME=<container> [TIMEOUT=600]
 	@test -n "$(NAME)" || { echo "ERROR: NAME= required" >&2; exit 1; }
