@@ -145,7 +145,7 @@ const marketplaceMaxPluginsPerCatalog = 5000
 //
 // Per-entry DEMOTE (sets Source.Kind="", catalog continues):
 //   - git-subdir entry missing url OR path.
-//   - url entry missing url OR sha.
+//   - url entry missing url (sha is optional; Phase 2 resolves ref→sha).
 //   - local-path entry with empty / path-traversal path.
 //   - Unknown source discriminator (already demoted by UnmarshalJSON).
 //
@@ -181,7 +181,7 @@ func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "url":
-			if p.Source.URL == "" || p.Source.SHA == "" {
+			if p.Source.URL == "" {
 				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "local-path":

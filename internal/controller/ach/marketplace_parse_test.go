@@ -199,18 +199,19 @@ func TestParseClaudeCodeMarketplace_PluginNameUppercaseRejected(t *testing.T) {
 
 // ─── Per-entry demote tests (issue #15 / Phase 1) ─────────────────────
 
-func TestParseClaudeCodeMarketplace_UrlMissingShaDemotedPerEntry(t *testing.T) {
-	// A url-Kind entry missing `sha` MUST NOT abort the catalog. The
-	// invalid entry resolves to Kind="" so Stage-2 demotes it via
-	// ReasonUnsupportedPluginSource. The sibling valid git-subdir entry
-	// must round-trip intact.
+func TestParseClaudeCodeMarketplace_UrlMissingShaNotDemoted(t *testing.T) {
+	// A url-Kind entry without sha MUST NOT be demoted at parse time —
+	// Phase 2 pre-resolves ref→sha at dispatch time. The parser only
+	// demotes on missing url (the truly-required field for git fetch).
+	// Issue #15 acceptance: Anthropic catalog entries without sha keep
+	// flowing into Stage-2.
 	body := `{
 	  "name": "mkt",
 	  "owner": {"name": "o"},
 	  "plugins": [
 	    {
-	      "name": "missing-sha",
-	      "source": {"source": "url", "url": "https://example.com/p.git"}
+	      "name": "no-sha-but-ok",
+	      "source": {"source": "url", "url": "https://example.com/p.git", "ref": "main"}
 	    },
 	    {
 	      "name": "valid-git-subdir",
@@ -231,11 +232,33 @@ func TestParseClaudeCodeMarketplace_UrlMissingShaDemotedPerEntry(t *testing.T) {
 	if len(mkt.Plugins) != 2 {
 		t.Fatalf("want 2 plugins; got %d", len(mkt.Plugins))
 	}
-	if mkt.Plugins[0].Source.Kind != "" {
-		t.Errorf("plugin[0].Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("plugin[0].Kind = %q; want \"url\" preserved (Phase 2 resolves sha)", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.URL != "https://example.com/p.git" {
+		t.Errorf("plugin[0].URL = %q; want preserved", mkt.Plugins[0].Source.URL)
 	}
 	if mkt.Plugins[1].Source.Kind != "git-subdir" {
 		t.Errorf("plugin[1].Kind = %q; want git-subdir", mkt.Plugins[1].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlMissingUrlFieldDemoted(t *testing.T) {
+	// url-Kind entry without the `url` field cannot be fetched —
+	// demote to Kind="".
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "url", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
 	}
 }
 
