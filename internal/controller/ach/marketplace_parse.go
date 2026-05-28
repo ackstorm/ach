@@ -130,34 +130,27 @@ const dns1123MaxLen = 253
 const marketplaceMaxPluginsPerCatalog = 5000
 
 // parseClaudeCodeMarketplace unmarshals the upstream marketplace.json
-// (Claude Code real schema) and performs Stage-1 validation. Every
-// failure wraps sources.ErrUpstreamInvalid so the caller's
-// classifyFetchError maps to ReasonUpstreamInvalid uniformly.
+// (Claude Code real schema — see CLAUDE.md "External references" for
+// the schemastore URLs) and performs Stage-1 validation.
 //
-// Per-plugin validation rules:
+// Validation surface:
 //
-//  1. plugin.Name MUST match DNS-1123 subdomain rules — adversarial
-//     names like ../etc/passwd are rejected before they reach
-//     materializeMarketplacePlugin (T-02-06-01 mitigation, preserved
-//     from the placeholder parser).
-//  2. plugin.Source.Kind MUST be one of {"git-subdir","url","local-path"}
-//     OR empty (empty signals the per-entry UnsupportedPluginSource
-//     branch in Stage-2 — kept so a single bad entry never aborts the
-//     whole marketplace).
-//  3. For Kind=="git-subdir" / "url": URL and SHA MUST be non-empty.
-//     For Kind=="local-path": Path MUST be non-empty AND MUST NOT
-//     escape the marketplace repo root (no leading "/", no "..")
-//     — defense-in-depth path-traversal gate even though Stage-2
-//     uses the path purely as a tar subtree filter.
+// Catalog-level HARD FAIL (returns wrapped sources.ErrUpstreamInvalid):
+//   - JSON-level unmarshal failure.
+//   - len(plugins) == 0 — a marketplace with zero entries is not legit.
+//   - len(plugins) > marketplaceMaxPluginsPerCatalog (DoS guard).
+//   - plugin.Name fails DNS-1123 / per-label / length check
+//     (T-02-06-08: adversarial names propagate to k8s status.message
+//     via formatStage2Message).
 //
-// Per-entry validation surface bounds (audit findings folded in):
-//   - plugin.Name truncated to dns1123MaxLen (already enforced by the
-//     regex which caps at 253 chars; per-label 63-char cap enforced by
-//     a separate check because the regex misses it).
-//   - plugins[] length capped at marketplaceMaxPluginsPerCatalog.
+// Per-entry DEMOTE (sets Source.Kind="", catalog continues):
+//   - git-subdir entry missing url OR path.
+//   - url entry missing url OR sha.
+//   - local-path entry with empty / path-traversal path.
+//   - Unknown source discriminator (already demoted by UnmarshalJSON).
 //
-// An empty plugins[] is treated as ErrUpstreamInvalid — a marketplace
-// that ships no plugins is not legitimate steady-state.
+// Per-entry validation is intentionally minimal — sha / ref are both
+// optional and Phase-2 pre-resolution handles the rest at dispatch time.
 func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 	var mkt ClaudeCodeMarketplace
 	if err := json.Unmarshal(body, &mkt); err != nil {
@@ -173,36 +166,33 @@ func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 	for i := range mkt.Plugins {
 		p := &mkt.Plugins[i]
 		// (1) name validation — bounded length + DNS-1123 + per-label.
+		// Hard fail (catalog-wide): adversarial names land in
+		// status.message via formatStage2Message (T-02-06-08).
 		if err := validatePluginName(p.Name); err != nil {
 			return nil, fmt.Errorf("marketplace.json: plugin[%d].name %q: %v: %w",
 				i, truncateErrField(p.Name), err, sources.ErrUpstreamInvalid)
 		}
-		// (2)+(3) per-Kind validation.
+		// (2)+(3) per-Kind field validation. Failure demotes the entry to
+		// Kind="" so Stage-2 emits ReasonUnsupportedPluginSource per-entry
+		// (issue #15 contract). The catalog continues.
 		switch p.Source.Kind {
 		case "git-subdir":
-			if p.Source.URL == "" || p.Source.SHA == "" || p.Source.Path == "" {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: git-subdir requires url+path+sha: %w",
-					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
+			if p.Source.URL == "" || p.Source.Path == "" {
+				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "url":
 			if p.Source.URL == "" || p.Source.SHA == "" {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: url requires url+sha: %w",
-					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
+				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "local-path":
-			if p.Source.Path == "" {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: local-path requires path: %w",
-					truncateErrField(p.Name), sources.ErrUpstreamInvalid)
-			}
-			if err := validateLocalPath(p.Source.Path); err != nil {
-				return nil, fmt.Errorf("marketplace.json: plugin %q: local-path %q: %v: %w",
-					truncateErrField(p.Name), truncateErrField(p.Source.Path), err, sources.ErrUpstreamInvalid)
+			if p.Source.Path == "" || validateLocalPath(p.Source.Path) != nil {
+				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "":
-			// Tolerated — Stage-2 emits ReasonUnsupportedPluginSource.
+			// Already demoted upstream by UnmarshalJSON (unknown discriminator).
 		default:
-			// Should be unreachable (UnmarshalJSON resolves unknowns to "")
-			// but defensive: tolerate the same way the empty case does.
+			// Should be unreachable.
+			p.Source = ClaudeCodeMarketplaceSource{}
 		}
 	}
 	return &mkt, nil

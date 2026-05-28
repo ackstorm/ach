@@ -196,3 +196,83 @@ func TestParseClaudeCodeMarketplace_PluginNameUppercaseRejected(t *testing.T) {
 		t.Fatal("expected DNS-1123 rejection for uppercase plugin name")
 	}
 }
+
+// ─── Per-entry demote tests (issue #15 / Phase 1) ─────────────────────
+
+func TestParseClaudeCodeMarketplace_UrlMissingShaDemotedPerEntry(t *testing.T) {
+	// A url-Kind entry missing `sha` MUST NOT abort the catalog. The
+	// invalid entry resolves to Kind="" so Stage-2 demotes it via
+	// ReasonUnsupportedPluginSource. The sibling valid git-subdir entry
+	// must round-trip intact.
+	body := `{
+	  "name": "mkt",
+	  "owner": {"name": "o"},
+	  "plugins": [
+	    {
+	      "name": "missing-sha",
+	      "source": {"source": "url", "url": "https://example.com/p.git"}
+	    },
+	    {
+	      "name": "valid-git-subdir",
+	      "source": {
+	        "source": "git-subdir",
+	        "url": "https://github.com/o/r.git",
+	        "path": "plugins/x",
+	        "ref": "v1",
+	        "sha": "0123456789abcdef0123456789abcdef01234567"
+	      }
+	    }
+	  ]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (whole-catalog abort is the bug)", err)
+	}
+	if len(mkt.Plugins) != 2 {
+		t.Fatalf("want 2 plugins; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("plugin[0].Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[1].Source.Kind != "git-subdir" {
+		t.Errorf("plugin[1].Kind = %q; want git-subdir", mkt.Plugins[1].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitSubdirMissingUrlDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "git-subdir", "path": "p", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing.T) {
+	// local-path with `..` segment must NOT abort the catalog (#4 (b)
+	// decision: demote per-entry, T-02-06-01 mitigation still applies
+	// because the traversal path never reaches the filesystem — the
+	// dispatcher short-circuits on Kind="").
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "evil",
+	    "source": "../etc/passwd"
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
+	}
+}
