@@ -500,12 +500,12 @@ wait-mocks: ## Wait all mock Pods Ready (bounded).
 	kubectl -n mocks wait --for=condition=Ready --timeout=$(WAIT_TIMEOUT) pod --all
 
 .PHONY: wait-postgres
-wait-postgres: ## Wait for postgres pod Ready
-	kubectl wait --for=condition=Ready pod -l app=postgres -n ach-system --timeout=$(WAIT_TIMEOUT)
+wait-postgres: ## Wait for postgres StatefulSet Ready
+	kubectl -n ach-system rollout status statefulset/ach-postgres --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-redis
-wait-redis: ## Wait for redis pod Ready
-	kubectl wait --for=condition=Ready pod -l app=redis -n ach-system --timeout=$(WAIT_TIMEOUT)
+wait-redis: ## Wait for redis (valkey) StatefulSet Ready
+	kubectl -n ach-system rollout status statefulset/valkey-primary --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-dex
 wait-dex: ## Wait for dex pod Ready
