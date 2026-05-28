@@ -39,9 +39,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/config"
@@ -169,7 +169,10 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	defer func() { _ = redisClient.Close() }()
 
 	// ─── LiteLLM REST client (Phase 3 D-25 pattern reused) ───
-	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, ctrl.Log.WithName("litellm"))
+	// Bridge the slog handler into a logr.Logger; content-service no
+	// longer registers a controller-runtime manager (Plan 05-02 §5.2),
+	// so the ctrl.Log root is unavailable here.
+	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, logr.FromSlogHandler(logger.Handler()).WithName("litellm"))
 
 	// ─── audit logger (D-Discretion: one audit event per CS GET) ───
 	auditLog := audit.NewLogger(os.Stdout)
