@@ -1,21 +1,20 @@
 {{- if .Values.forwarder.enabled }}
+{{- $masterKeyNS := default .Release.Namespace .Values.forwarder.litellmMasterKey.namespace -}}
+{{- $masterKeyName := default .Values.forwarder.litellmMasterSecretName .Values.forwarder.litellmMasterKey.name -}}
 ---
-# Forwarder reads:
-#   - environments + backendidentitypolicies (cached informers; D-22)
-#   - litellmconnections (one-shot APIReader.Get at bootstrap so the
-#     forwarder discovers the LiteLLM upstream + master-key Secret ref
-#     from LiteLLMConnection/default per B2 refactor — replaces the
-#     prior ACH_LITELLM_BASE_URL + ACH_LITELLM_SHARED_KEY env vars)
-#   - ach-jwt-signing-keys Secret (resourceNames carve-out per D-22)
-#   - the masterKey Secret named by LiteLLMConnection's
-#     MasterKeySecretRef (resourceNames carve-out — chart value
-#     forwarder.litellmMasterSecretName, default litellm-master-key,
-#     MUST match the CR's spec.masterKeySecretRef.name)
+# Forwarder reads (issue #34 C7 — Postgres-only trim):
+#   - ach-jwt-signing-keys Secret (FWD-09 JWT seed hot-reload via
+#     filtered informer in cmd/ach/cmd/forwarder.go).
+#   - the LiteLLM master-key Secret named by LiteLLMConnection/default's
+#     spec.masterKeySecretRef (one-shot read at boot via APIReader).
 #
-# External-reference kinds (plugins/prompts/artifacts/pluginmarketplaces)
-# are served from the PVC cache (T-09-02 mitigation), so they are
-# deliberately excluded. Namespace-scoped Role (not ClusterRole) per
-# MULTI-01 — multi-tenant deployments isolate per-namespace.
+# All ACH CRD reads (Environment, BackendIdentityPolicy, LiteLLMConnection)
+# now flow through Postgres-backed caches (bipcache, envstore) +
+# db.GetDefaultLiteLLMConnection — the `apiGroups: ["ach.ackstorm.ai"]`
+# rules carried by pre-#34 charts are intentionally removed here.
+#
+# Namespace-scoped Role per MULTI-01 — multi-tenant deployments isolate
+# per-namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -25,20 +24,10 @@ metadata:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: forwarder
 rules:
-- apiGroups: ["ach.ackstorm.ai"]
-  resources:
-  - environments
-  - backendidentitypolicies
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["ach.ackstorm.ai"]
-  resources: ["litellmconnections"]
-  resourceNames: ["default"]
-  verbs: ["get"]
 - apiGroups: [""]
   resources: ["secrets"]
   resourceNames:
   - "{{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}"
-  - "{{ .Values.forwarder.litellmMasterSecretName | default "litellm-master-key" }}"
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -57,4 +46,76 @@ subjects:
 - kind: ServiceAccount
   name: ach-forwarder
   namespace: {{ .Release.Namespace }}
+{{- if eq $masterKeyNS .Release.Namespace }}
+---
+# Same-namespace master-key Secret: extend the in-namespace Role with a
+# second resourceName carve-out (keeps a single Role for the in-ns case).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames:
+  - "{{ $masterKeyName }}"
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-forwarder-master-key
+subjects:
+- kind: ServiceAccount
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+{{- else }}
+---
+# Cross-namespace master-key Secret: Role lives in the Secret's
+# namespace; the RoleBinding's subject references the forwarder
+# ServiceAccount in .Release.Namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ $masterKeyNS }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames:
+  - "{{ $masterKeyName }}"
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ $masterKeyNS }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-forwarder-master-key
+subjects:
+- kind: ServiceAccount
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
