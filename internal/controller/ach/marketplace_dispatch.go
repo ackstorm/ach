@@ -19,9 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -56,30 +53,23 @@ var newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 	return sourcesgit.New(spec)
 }
 
-// newResolveHeadSHAFn does a `git ls-remote <url> <ref>` and returns the
-// resolved 40-hex commit SHA. Called by dispatchMarketplacePlugin for
-// any git-backed entry whose sha field is absent — invoked before
-// handing the Spec to git.Fetcher so Fetcher's 40-hex contract is
-// satisfied. Generalized from local-path-only in Phase 2 (#15).
+// newResolveHeadSHAFn resolves ref→sha for sha-less marketplace entries
+// before handing the Spec to git.Fetcher (the Fetcher's 40-hex contract
+// requires a pinned SHA). Delegates to git.LsRemote which already
+// implements namespace-scoped ref disambiguation
+// (refs/heads/<ref>+refs/tags/<ref> with branch-preferred resolution) —
+// critical because Stage-2 fetched the wrong tree on real repos where
+// a branch named "main" and another like "daisy/caffeinate/main" both
+// existed, and the dispatcher's own ls-remote wrapper picked the
+// alphabetically first match.
 //
 // Overridable in tests so we don't shell out in unit tests.
 var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (string, error) {
-	cloneURL := url
-	if token != "" && strings.HasPrefix(cloneURL, "https://") {
-		cloneURL = "https://" + token + ":x-oauth-basic@" + strings.TrimPrefix(cloneURL, "https://")
-	}
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", cloneURL, ref)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.Output()
+	sha, err := sourcesgit.LsRemote(ctx, url, ref, token)
 	if err != nil {
-		return "", fmt.Errorf("ls-remote %s %s: %v: %w", url, ref, err, sources.ErrUpstreamInvalid)
+		return "", fmt.Errorf("ls-remote %s %s: %w", url, ref, err)
 	}
-	// Output format: "<40-hex>\t<refname>\n"
-	parts := strings.SplitN(strings.TrimSpace(string(out)), "\t", 2)
-	if len(parts) != 2 || len(parts[0]) != 40 {
-		return "", fmt.Errorf("ls-remote %s %s: unexpected output %q: %w", url, ref, out, sources.ErrUpstreamInvalid)
-	}
-	return parts[0], nil
+	return sha, nil
 }
 
 // dispatchMarketplacePlugin runs the per-entry fetch and returns a

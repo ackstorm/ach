@@ -250,6 +250,125 @@ func TestLsRemote_BogusRefIsNotFound(t *testing.T) {
 	}
 }
 
+// TestLsRemote_BranchNameShadowedBySiblingDisambiguates pins the
+// real-world bug behind the issue #15 follow-up: a repo with a
+// branch literally named "main" AND another branch whose path
+// happens to END in "main" (e.g. "feature/main") used to make
+// `git ls-remote --refs <url> main` return BOTH refs, and the
+// previous LsRemote implementation took the alphabetically-first
+// line — the wrong one. The fix scopes the query to
+// refs/heads/<ref> (+refs/tags/<ref>) so only the literal branch
+// matches.
+func TestLsRemote_BranchNameShadowedBySiblingDisambiguates(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	work := t.TempDir()
+	run := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return string(out)
+	}
+	run("init", "-b", "main", ".")
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("v1"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	run("add", "f")
+	run("commit", "-m", "v1")
+	// Create a sibling branch ending in "main" — pre-fix LsRemote
+	// sorted this BEFORE refs/heads/main and returned its SHA.
+	run("checkout", "-b", "feature/main")
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("v2"), 0o644); err != nil {
+		t.Fatalf("write v2: %v", err)
+	}
+	run("add", "f")
+	run("commit", "-m", "v2")
+	// HEAD of feature/main differs from refs/heads/main now.
+	siblingSHA := strings.TrimSpace(run("rev-parse", "refs/heads/feature/main"))
+	mainSHA := strings.TrimSpace(run("rev-parse", "refs/heads/main"))
+	if mainSHA == siblingSHA {
+		t.Fatal("test setup: feature/main and main SHAs should differ")
+	}
+
+	bare := filepath.Join(t.TempDir(), "shadow.git")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cloneCmd := exec.Command("git", "clone", "--bare", ".", bare)
+	cloneCmd.Dir = work
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v: %s", err, out)
+	}
+
+	got, err := LsRemote(context.Background(), bare, "main", "")
+	if err != nil {
+		t.Fatalf("LsRemote: %v", err)
+	}
+	if got != mainSHA {
+		t.Errorf("LsRemote(main) = %q; want refs/heads/main = %q (NOT feature/main %q)",
+			got, mainSHA, siblingSHA)
+	}
+}
+
+// TestLsRemote_TagFallback verifies that when no branch matches the
+// bare ref but a tag does, LsRemote returns the tag's SHA.
+func TestLsRemote_TagFallback(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH")
+	}
+	work := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main", ".")
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("hi"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	run("add", "f")
+	run("commit", "-m", "init")
+	run("tag", "v1.0.0")
+	cmd := exec.Command("git", "-C", work, "rev-parse", "refs/tags/v1.0.0")
+	tagOut, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("rev-parse tag: %v", err)
+	}
+	wantTagSHA := strings.TrimSpace(string(tagOut))
+
+	bare := filepath.Join(t.TempDir(), "tag.git")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cloneCmd := exec.Command("git", "clone", "--bare", ".", bare)
+	cloneCmd.Dir = work
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v: %s", err, out)
+	}
+
+	got, err := LsRemote(context.Background(), bare, "v1.0.0", "")
+	if err != nil {
+		t.Fatalf("LsRemote(tag): %v", err)
+	}
+	if got != wantTagSHA {
+		t.Errorf("LsRemote(v1.0.0) = %q; want tag SHA %q", got, wantTagSHA)
+	}
+}
+
 // TestClassifyError_Exported sanity-checks the exported classifier
 // covers each documented category.
 func TestClassifyError_Exported(t *testing.T) {
