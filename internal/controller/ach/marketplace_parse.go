@@ -135,14 +135,29 @@ func (s *ClaudeCodeMarketplaceSource) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// dns1123SubdomainRe validates a plugin name as a DNS-1123 subdomain (RFC
-// 1123): lowercase ASCII + digits + '-' + '.', start and end with
-// alphanumeric. This excludes '/', '..', leading '.', non-printable
-// chars, and control sequences — the T-02-06-01 mitigation surface.
-var dns1123SubdomainRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+// pluginNameSafeRe is the T-02-06-08 mitigation: entry.Name is used as
+// a filename segment (<CacheRoot>/marketplace/<mp>/plugin/<name>.tar.gz)
+// AND as a Postgres text column, so the threat surface is path-traversal
+// + control-character injection — NOT Kubernetes DNS-1123 (the name
+// never becomes a CR identifier; the marketplace_plugins row is keyed
+// by (marketplace_name, name) and the row never round-trips through
+// the k8s API). Marketplace catalog names like "Notion" or
+// "API-Reference" are legitimate and must pass.
+//
+// Allowed: ASCII alphanumerics (mixed case) + the three separators
+// '.', '-', '_'. The leading character must be alphanumeric so a name
+// can never start with a separator (no hidden-file confusion, no
+// leading-hyphen flag confusion in any downstream CLI).
+//
+// Rejected: '/', '\', NUL, any control char, leading separator, empty.
+// '..' is rejected by an explicit strings.Contains check in
+// validatePluginName because the regex would otherwise admit it.
+var pluginNameSafeRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
-// dns1123MaxLen is the standard DNS-1123 subdomain length cap.
-const dns1123MaxLen = 253
+// pluginNameMaxLen bounds entry.Name embedded into a filesystem path
+// segment + DB text column. 253 mirrors the historical DNS-1123 cap so
+// existing storage_location strings remain bounded.
+const pluginNameMaxLen = 253
 
 // marketplaceMaxPluginsPerCatalog bounds the number of plugins[] entries
 // a single marketplace.json may declare. 5000 is generous: Anthropic's
@@ -160,11 +175,12 @@ const marketplaceMaxPluginsPerCatalog = 5000
 //   - JSON-level unmarshal failure.
 //   - len(plugins) == 0 — a marketplace with zero entries is not legit.
 //   - len(plugins) > marketplaceMaxPluginsPerCatalog (DoS guard).
-//   - plugin.Name fails DNS-1123 / per-label / length check
-//     (T-02-06-08: adversarial names propagate to k8s status.message
-//     via formatStage2Message).
 //
 // Per-entry DEMOTE (sets Source.Kind="", catalog continues):
+//   - plugin.Name fails the filename-safety check
+//     (T-02-06-08: name is used as a filename segment + DB text; the
+//     adversarial-name surface is bounded by truncateErrField when the
+//     demote feeds formatStage2Message).
 //   - git-subdir entry missing url OR path.
 //   - url entry missing url (sha is optional; Phase 2 resolves ref→sha).
 //   - github entry missing repo.
@@ -187,12 +203,14 @@ func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 	}
 	for i := range mkt.Plugins {
 		p := &mkt.Plugins[i]
-		// (1) name validation — bounded length + DNS-1123 + per-label.
-		// Hard fail (catalog-wide): adversarial names land in
-		// status.message via formatStage2Message (T-02-06-08).
-		if err := validatePluginName(p.Name); err != nil {
-			return nil, fmt.Errorf("marketplace.json: plugin[%d].name %q: %v: %w",
-				i, truncateErrField(p.Name), err, sources.ErrUpstreamInvalid)
+		// (1) name validation — filename-safe + bounded length. Failure
+		// demotes the entry to Kind="" so Stage-2 emits
+		// ReasonUnsupportedPluginSource per-entry; the catalog continues.
+		// (#15 follow-up: previously catalog-wide hard fail — one upstream
+		// `name: "Notion"` entry would doom the whole anthropic catalog.)
+		if validatePluginName(p.Name) != nil {
+			p.Source = ClaudeCodeMarketplaceSource{} // demote
+			continue
 		}
 		// (2)+(3) per-Kind field validation. Failure demotes the entry to
 		// Kind="" so Stage-2 emits ReasonUnsupportedPluginSource per-entry
@@ -238,23 +256,24 @@ func truncateErrField(s string) string {
 	return s[:truncateErrFieldMax] + "…"
 }
 
-// validatePluginName enforces RFC 1123 subdomain rules plus the per-label
-// 63-char cap that the dns1123SubdomainRe regex misses.
+// validatePluginName enforces filename-safety + bounded length on a
+// marketplace plugin name. See pluginNameSafeRe for the threat-model
+// rationale. The function is intentionally permissive about case +
+// separators (allows "Notion", "API-Reference", "code-review.v2")
+// because the name does NOT become a Kubernetes resource identifier —
+// it lives only as a Postgres text column and a filename segment.
 func validatePluginName(name string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("empty")
 	}
-	if len(name) > dns1123MaxLen {
-		return fmt.Errorf("length %d exceeds %d", len(name), dns1123MaxLen)
+	if len(name) > pluginNameMaxLen {
+		return fmt.Errorf("length %d exceeds %d", len(name), pluginNameMaxLen)
 	}
-	if !dns1123SubdomainRe.MatchString(name) {
-		return fmt.Errorf("not a DNS-1123 subdomain")
+	if !pluginNameSafeRe.MatchString(name) {
+		return fmt.Errorf("not filename-safe (allowed: [A-Za-z0-9._-], must start with alphanumeric)")
 	}
-	// Per-label 63-char cap (RFC 1123 §2.1).
-	for _, label := range strings.Split(name, ".") {
-		if len(label) > 63 {
-			return fmt.Errorf("label %q exceeds 63 chars", label)
-		}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("contains '..' (path-traversal)")
 	}
 	return nil
 }

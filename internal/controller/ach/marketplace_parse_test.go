@@ -160,9 +160,12 @@ func TestParseClaudeCodeMarketplace_ZeroPlugins(t *testing.T) {
 	}
 }
 
-func TestParseClaudeCodeMarketplace_PluginNameTraversalRejected(t *testing.T) {
-	// T-02-06-01 adversarial-name mitigation: '../etc/passwd' MUST be
-	// rejected by the DNS-1123-subdomain check.
+func TestParseClaudeCodeMarketplace_PluginNameTraversalDemoted(t *testing.T) {
+	// T-02-06-08 mitigation: '../etc/passwd' as a plugin name MUST be
+	// rejected because entry.Name is used as a filename segment. The
+	// rejection is now per-entry (demote to Kind="") instead of a
+	// catalog-wide hard fail — one adversarial name in a large catalog
+	// shouldn't doom every other valid entry.
 	body := `{
       "name": "m",
       "owner": {"name": "o", "url": ""},
@@ -171,29 +174,97 @@ func TestParseClaudeCodeMarketplace_PluginNameTraversalRejected(t *testing.T) {
         "source": "./safe"
       }]
     }`
-	_, err := parseClaudeCodeMarketplace([]byte(body))
-	if err == nil {
-		t.Fatal("expected DNS-1123 rejection for path-traversal plugin name")
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (path-traversal should demote, not abort catalog)", err)
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
-		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+	if len(mkt.Plugins) != 1 {
+		t.Fatalf("want 1 plugin (demoted in-place); got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\" for path-traversal name", mkt.Plugins[0].Source.Kind)
 	}
 }
 
-func TestParseClaudeCodeMarketplace_PluginNameUppercaseRejected(t *testing.T) {
-	// DNS-1123 subdomains are lowercase-only; an uppercase plugin name
-	// SHOULD be rejected.
+func TestParseClaudeCodeMarketplace_PluginNameUppercaseAccepted(t *testing.T) {
+	// "Notion", "API-Reference" and similar mixed-case names ship in
+	// real upstream catalogs (anthropic/claude-plugins-official has
+	// `name: "Notion"` as of 2026-05). Plugin names live in the Postgres
+	// `marketplace_plugins.name` text column + a filename segment — they
+	// are NEVER used as Kubernetes resource identifiers, so the historical
+	// DNS-1123 lowercase constraint was wrong. #15 follow-up: accept.
 	body := `{
       "name": "m",
       "owner": {"name": "o", "url": ""},
       "plugins": [{
-        "name": "UpperCase",
-        "source": "./safe"
+        "name": "Notion",
+        "source": {"source": "github", "repo": "o/r"}
       }]
     }`
-	_, err := parseClaudeCodeMarketplace([]byte(body))
-	if err == nil {
-		t.Fatal("expected DNS-1123 rejection for uppercase plugin name")
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mkt.Plugins) != 1 {
+		t.Fatalf("want 1 plugin; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Name != "Notion" {
+		t.Errorf("Name = %q; want %q preserved", mkt.Plugins[0].Name, "Notion")
+	}
+	if mkt.Plugins[0].Source.Kind != "github" {
+		t.Errorf("Kind = %q; want \"github\" preserved", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameLeadingSeparatorDemoted(t *testing.T) {
+	// A leading '-' could be confused with a CLI flag in downstream
+	// tools; a leading '.' is a hidden-file/dotfile pattern. Both demote.
+	body := `{
+      "name": "m", "owner": {"name": "o"},
+      "plugins": [
+        {"name": "-leading-hyphen", "source": {"source": "github", "repo": "o/r"}},
+        {"name": ".hidden", "source": {"source": "github", "repo": "o/r"}}
+      ]
+    }`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for i, p := range mkt.Plugins {
+		if p.Source.Kind != "" {
+			t.Errorf("plugin[%d].Kind = %q; want demoted to \"\"", i, p.Source.Kind)
+		}
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameCatalogContinuesAfterBadEntry(t *testing.T) {
+	// Issue #15's headline symptom: one bad entry (here: a name with '/')
+	// must NOT prevent every other entry from being parsed. Verifies the
+	// catalog still returns all plugins (bad ones demoted) so Stage-2
+	// reports per-entry failures while flowing the good ones through.
+	body := `{
+      "name": "m", "owner": {"name": "o"},
+      "plugins": [
+        {"name": "good-one", "source": {"source": "github", "repo": "o/r"}},
+        {"name": "with/slash", "source": {"source": "github", "repo": "o/r"}},
+        {"name": "Notion", "source": {"source": "github", "repo": "o/r"}}
+      ]
+    }`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (catalog must not abort)", err)
+	}
+	if len(mkt.Plugins) != 3 {
+		t.Fatalf("want 3 plugins (demoted in-place); got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "github" {
+		t.Errorf("plugin[0] (good-one).Kind = %q; want preserved", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[1].Source.Kind != "" {
+		t.Errorf("plugin[1] (with/slash).Kind = %q; want demoted", mkt.Plugins[1].Source.Kind)
+	}
+	if mkt.Plugins[2].Source.Kind != "github" {
+		t.Errorf("plugin[2] (Notion).Kind = %q; want preserved (mixed-case is fine)", mkt.Plugins[2].Source.Kind)
 	}
 }
 
