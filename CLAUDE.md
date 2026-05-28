@@ -158,6 +158,7 @@ ach/
 | API reference rendering                | `docs/Makefile` (`gen-crd-ref-docs`) + `docs/.crd-ref-docs.yaml` |
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
+| Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
 
 ## CI gating — one-line summary
 
@@ -659,6 +660,30 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 `access_agent_ids` / `assigned_team_ids` must exist upstream. The
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
+
+### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
+```bash
+curl -i -H 'Authorization: Bearer pk_demo' https://forwarder.local/mcp/demo-mcp-echo
+# HTTP/1.1 401 Unauthorized
+# WWW-Authenticate: Bearer error="invalid_token"
+```
+✅ The mcp-echo backend (issue #35) cryptographically verifies the JWT
+against the forwarder's JWKS. A 401 here means one of:
+- The BIP `bip-demo-mcp-echo` is missing or `Synced=False` (forwarder
+  did not promote to JWT-mint; backend sees the raw `pk_` instead of
+  a JWT). Check `kubectl -n ach-system get bip bip-demo-mcp-echo -o yaml`.
+- The forwarder's `ACH_BASE_URL` does not match the backend's
+  `ACH_EXPECTED_ISS` (Helm `testMocks.mcpEcho.expectedIss`). The
+  `iss` claim must match exactly.
+- The minted JWT's `aud=mcp:<name>` does not match
+  `testMocks.mcpEcho.expectedAud`. The route name and the audience
+  expectation must agree.
+- The backend's JWKS cache hasn't refreshed since a forwarder rotation.
+  Restart `deploy/ach-mcp-echo` to force a clean re-fetch.
+
+WHY IT FAILS: The verifier is intentionally strict — the trust path is
+only meaningful if the backend refuses on the slightest mismatch. Fix
+the configuration, not the verifier.
 
 ## Repository-specific patterns
 
