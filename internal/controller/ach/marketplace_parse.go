@@ -1,15 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Claude Code marketplace.json wire-format types + parser. The schema
-// is the upstream Claude Code real schema (TODO §5):
+// is the upstream Claude Code real schema:
 //
 //   plugins[].source can be either a bare string (local-path) or an
-//   object with a "source" discriminator that is either "git-subdir"
-//   or "url". Any other shape (unknown discriminator, malformed JSON)
-//   resolves to Kind="" so the per-entry Stage-2 path can surface
-//   ReasonUnsupportedPluginSource without aborting the whole catalog.
+//   object with a "source" discriminator. Recognised discriminators:
+//
+//     - "git-subdir": {url, path, ref?, sha?}
+//     - "url":        {url, path?, ref?, sha?}   (path accepts upstream
+//                                                  drift — schema says
+//                                                  no path, real catalogs
+//                                                  ship it; treated as
+//                                                  git-subdir when set)
+//     - "github":     {repo, ref?, sha?} → cloned as
+//                     https://github.com/<repo>.git
+//
+//   Any other discriminator (npm, ftp, ...) resolves to Kind="" so the
+//   per-entry Stage-2 path surfaces ReasonUnsupportedPluginSource
+//   without aborting the whole catalog.
 //
 // Per-entry dispatch + fetch lives in marketplace_dispatch.go.
+// Schema URLs: see CLAUDE.md "External references".
 
 package ach
 
@@ -62,15 +73,20 @@ type ClaudeCodeMarketplacePlugin struct {
 //   - object git-subdir:  "source": {"source":"git-subdir","url":"...","path":"...","ref":"v1","sha":"..."}
 //     → Kind="git-subdir", URL/Path set; Ref/SHA optional (Phase 2 resolves
 //     ref→sha at dispatch time if SHA is absent).
-//   - object url:         "source": {"source":"url","url":"..."}
-//     → Kind="url", URL set; Ref/SHA optional (Phase 2 resolves at dispatch).
+//   - object url:         "source": {"source":"url","url":"...","path":"?"}
+//     → Kind="url", URL set; Path preserved when present (upstream-drift
+//     ack); Ref/SHA optional (Phase 2 resolves at dispatch).
+//   - object github:      "source": {"source":"github","repo":"owner/name","ref":"?","sha":"?"}
+//     → Kind="github", Repo set; Ref/SHA optional (Phase 2 resolves at
+//     dispatch). Cloned as https://github.com/<repo>.git.
 //
 // Any other shape (object with unknown source.source, malformed JSON
 // for the source field) → Kind="" so Stage-2 surfaces
 // ReasonUnsupportedPluginSource per-entry.
 type ClaudeCodeMarketplaceSource struct {
-	Kind string // "git-subdir" | "url" | "local-path" | "" (unsupported)
+	Kind string // "git-subdir" | "url" | "github" | "local-path" | "" (unsupported)
 	URL  string
+	Repo string // github-Kind only: "owner/name" → cloned as https://github.com/<repo>.git
 	Path string
 	Ref  string
 	SHA  string
@@ -92,6 +108,7 @@ func (s *ClaudeCodeMarketplaceSource) UnmarshalJSON(data []byte) error {
 	var obj struct {
 		Source string `json:"source"`
 		URL    string `json:"url"`
+		Repo   string `json:"repo"`
 		Path   string `json:"path"`
 		Ref    string `json:"ref"`
 		SHA    string `json:"sha"`
@@ -102,13 +119,16 @@ func (s *ClaudeCodeMarketplaceSource) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	switch obj.Source {
-	case "git-subdir", "url":
+	case "git-subdir", "url", "github":
 		s.Kind = obj.Source
 	default:
-		// Unknown discriminator — Kind="" → per-entry unsupported.
+		// Unknown discriminator (npm, ftp, ...) — Kind="" → per-entry
+		// unsupported. npm is a known wire-format value we intentionally
+		// route here per the v1alpha1 git-only operator scope.
 		return nil
 	}
 	s.URL = obj.URL
+	s.Repo = obj.Repo
 	s.Path = obj.Path
 	s.Ref = obj.Ref
 	s.SHA = obj.SHA
@@ -147,6 +167,7 @@ const marketplaceMaxPluginsPerCatalog = 5000
 // Per-entry DEMOTE (sets Source.Kind="", catalog continues):
 //   - git-subdir entry missing url OR path.
 //   - url entry missing url (sha is optional; Phase 2 resolves ref→sha).
+//   - github entry missing repo.
 //   - local-path entry with empty / path-traversal path.
 //   - Unknown source discriminator (already demoted by UnmarshalJSON).
 //
@@ -183,6 +204,10 @@ func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 			}
 		case "url":
 			if p.Source.URL == "" {
+				p.Source = ClaudeCodeMarketplaceSource{} // demote
+			}
+		case "github":
+			if p.Source.Repo == "" {
 				p.Source = ClaudeCodeMarketplaceSource{} // demote
 			}
 		case "local-path":

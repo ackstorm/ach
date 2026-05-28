@@ -35,6 +35,7 @@ import (
 const (
 	kindGitSubdir = "git-subdir"
 	kindURL       = "url"
+	kindGitHub    = "github"
 	kindLocalPath = "local-path"
 )
 
@@ -149,11 +150,23 @@ func buildGitSpecForEntry(
 			CacheRoot: cacheRoot,
 		}, nil
 	case kindURL:
+		// url+path collapse: when path is non-empty the entry behaves
+		// like git-subdir (upstream-drift ack — see marketplace_parse.go
+		// header). Empty path → whole-worktree tar.
 		return sourcesgit.Spec{
 			URL:       entry.Source.URL,
 			Ref:       defaultRef(entry.Source.Ref),
 			SHA:       entry.Source.SHA,
-			Subtree:   "", // whole worktree
+			Subtree:   entry.Source.Path,
+			Token:     token,
+			CacheRoot: cacheRoot,
+		}, nil
+	case kindGitHub:
+		return sourcesgit.Spec{
+			URL:       "https://github.com/" + entry.Source.Repo + ".git",
+			Ref:       defaultRef(entry.Source.Ref),
+			SHA:       entry.Source.SHA,
+			Subtree:   "", // github Kind has no path → whole-worktree
 			Token:     token,
 			CacheRoot: cacheRoot,
 		}, nil

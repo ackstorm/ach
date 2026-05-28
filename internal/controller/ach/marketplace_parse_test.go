@@ -323,3 +323,68 @@ func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing
 		t.Errorf("Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
 	}
 }
+
+// ─── Phase 3: github Kind + url+path normalization ────────────────────
+
+func TestClaudeCodeMarketplaceSource_UnmarshalGitHub(t *testing.T) {
+	body := []byte(`{"source":"github","repo":"owner/name","ref":"v1","sha":"0123456789abcdef0123456789abcdef01234567"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "github" {
+		t.Errorf("Kind = %q; want github", s.Kind)
+	}
+	if s.Repo != "owner/name" {
+		t.Errorf("Repo = %q", s.Repo)
+	}
+	if s.Ref != "v1" || s.SHA == "" {
+		t.Errorf("got %+v", s)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitHubMissingRepoDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "github", "ref": "main"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlWithPathAccepted(t *testing.T) {
+	// Upstream schema says `url` has no path. Real-world catalogs (e.g.
+	// the zilliz entry in claude-plugins-official) ship url+path. We
+	// accept the drift: url with non-empty path is parsed as-is and the
+	// dispatcher treats it like git-subdir.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "zilliz",
+	    "source": {
+	      "source": "url",
+	      "url": "https://github.com/zilliztech/zilliz-plugin.git",
+	      "path": "plugins/zilliz",
+	      "sha": "e960396da0bd0b1cb219fa97e3bcbb425ee1abbd"
+	    }
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("Kind = %q; want url", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.Path != "plugins/zilliz" {
+		t.Errorf("Path = %q; want path preserved", mkt.Plugins[0].Source.Path)
+	}
+}

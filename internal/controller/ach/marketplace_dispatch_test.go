@@ -217,3 +217,63 @@ func TestDispatchMarketplacePlugin_SHA_TakesPrecedenceOverRef(t *testing.T) {
 		t.Errorf("rev = %q; want %q", rev, pinnedSHA)
 	}
 }
+
+func TestDispatchMarketplacePlugin_GitHub(t *testing.T) {
+	const pinnedSHA = "0123456789abcdef0123456789abcdef01234567"
+	var captured sourcesgit.Spec
+	origFetch := newGitFetcherFn
+	defer func() { newGitFetcherFn = origFetch }()
+	newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
+		captured = spec
+		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
+	}
+	entry := ClaudeCodeMarketplacePlugin{
+		Name: "x",
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: "github",
+			Repo: "owner/name",
+			Ref:  "v2",
+			SHA:  pinnedSHA,
+		},
+	}
+	_, _, err := dispatchMarketplacePlugin(context.Background(), &achv1alpha1.PluginMarketplace{}, entry, nil, "/tmp")
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if captured.URL != "https://github.com/owner/name.git" {
+		t.Errorf("URL = %q; want https://github.com/owner/name.git", captured.URL)
+	}
+	if captured.Subtree != "" {
+		t.Errorf("Subtree = %q; want \"\" (github clones whole repo)", captured.Subtree)
+	}
+	if captured.Ref != "v2" || captured.SHA != pinnedSHA {
+		t.Errorf("captured = %+v", captured)
+	}
+}
+
+func TestDispatchMarketplacePlugin_UrlWithPath_TreatedAsGitSubdir(t *testing.T) {
+	const pinnedSHA = "abcdefabcdefabcdefabcdefabcdefabcdef0123"
+	var captured sourcesgit.Spec
+	origFetch := newGitFetcherFn
+	defer func() { newGitFetcherFn = origFetch }()
+	newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
+		captured = spec
+		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
+	}
+	entry := ClaudeCodeMarketplacePlugin{
+		Name: "zilliz",
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: "url",
+			URL:  "https://github.com/zilliztech/zilliz-plugin.git",
+			Path: "plugins/zilliz",
+			SHA:  pinnedSHA,
+		},
+	}
+	_, _, err := dispatchMarketplacePlugin(context.Background(), &achv1alpha1.PluginMarketplace{}, entry, nil, "/tmp")
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if captured.Subtree != "plugins/zilliz" {
+		t.Errorf("Subtree = %q; want plugins/zilliz (url+path collapsed to git-subdir)", captured.Subtree)
+	}
+}
