@@ -31,6 +31,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -100,6 +101,19 @@ Exit codes (D-14):
 func doWhoami(cmd *cobra.Command, verify, verbose bool, deployment, apiKey, envKey string) error {
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
+
+	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
+	// --deployment, --env-key) — runs BEFORE resolveActiveBearer so
+	// the centralized half-set message wins over any disk-config
+	// disposition.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateWhoami,
+		APIKeyFlag:     apiKey,
+		EnvKeyFlag:     envKey,
+		DeploymentFlag: deployment,
+	}); err != nil {
+		return err
+	}
 
 	// Resolve the active deployment + bearer credential.
 	name, dep, bearer, err := resolveActiveBearer(deployment, apiKey, envKey)
@@ -179,16 +193,15 @@ func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string,
 	envEnvKey := os.Getenv("ACH_ENV_KEY")
 	envDeployment := os.Getenv("ACH_DEPLOYMENT")
 
-	// Synthetic-mode short-circuit.
+	// Synthetic-mode bearer synthesis. The synthetic.GuardCommand call
+	// in doWhoami already rejected --deployment / --env-key / half-set
+	// for this code path; here we just synthesize a one-off Deployment
+	// from the env bearer + URL. The label "(env)" matches
+	// synthetic.SyntheticDeploymentLabel (Phase 7 consumes that const
+	// directly when writing state.json).
 	if envBaseURL != "" && envAPIKey != "" {
-		if flagDeployment != "" || envDeployment != "" {
-			return "", nil, "", &exit.CodedError{
-				Code: exit.General,
-				Msg:  "synthetic mode (ACH_BASE_URL + ACH_API_KEY) rejects --deployment / ACH_DEPLOYMENT (CLI spec §3.3)",
-			}
-		}
 		dep := &config.Deployment{URL: envBaseURL}
-		return "(env)", dep, envAPIKey, nil
+		return synthetic.SyntheticDeploymentLabel, dep, envAPIKey, nil
 	}
 
 	// Disk-config path: load + resolve active.

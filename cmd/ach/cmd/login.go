@@ -26,7 +26,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -36,6 +35,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/devicecode"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // deploymentNamePattern enforces DNS-1123-style names so the config
@@ -106,13 +106,15 @@ Flags:
 func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarnings bool) error {
 	ctx := cmd.Context()
 
-	// Step 1 — synthetic-mode short-circuit (CLI-07 minimal inline
-	// check; full enforcement lands in W3-P1).
-	if os.Getenv("ACH_BASE_URL") != "" && os.Getenv("ACH_API_KEY") != "" {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "ach login is not available in synthetic mode (ACH_BASE_URL + ACH_API_KEY set; see CLI spec §3.3)",
-		}
+	// Step 1 — synthetic-mode gate via the centralized 06-07 helper.
+	// GateLogin denies under synthetic; the same call also rejects
+	// half-set (ACH_BASE_URL set without credential) before any
+	// device-code request fires.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateLogin,
+		DeploymentFlag: deployment,
+	}); err != nil {
+		return err
 	}
 
 	stdout := cmd.OutOrStdout()
