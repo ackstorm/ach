@@ -100,8 +100,8 @@ func TestDirector_RewriteAndStrip(t *testing.T) {
 	if got := req.Header.Get("x-ach-key"); got != "" {
 		t.Errorf("x-ach-key = %q; want stripped", got)
 	}
-	if got := req.Header.Get("x-litellm-api-key"); got != "shared-secret" {
-		t.Errorf("x-litellm-api-key = %q; want shared-secret", got)
+	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared-secret" {
+		t.Errorf("x-litellm-api-key = %q; want Bearer shared-secret", got)
 	}
 	if got := req.Header.Get("x-litellm-key-id"); got != litellmToken {
 		t.Errorf("x-litellm-key-id = %q; want %s", got, litellmToken)

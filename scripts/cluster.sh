@@ -179,6 +179,13 @@ hydrate_litellm() {
   local tmpdir; tmpdir="$(mktemp -d)"
   trap 'rm -rf "${tmpdir}"' EXIT
   ( cd "${tmpdir}" && helm pull oci://docker.litellm.ai/berriai/litellm-helm --version "${version}" --untar )
+
+  # Create ConfigMap with the custom auth script before installing/upgrading LiteLLM
+  echo "[cluster.sh] creating/updating ackstorm-litellm-extras ConfigMap..."
+  kubectl -n litellm-system create configmap ackstorm-litellm-extras \
+    --from-file=auth_user_map.py="test/e2e/fixtures/auth_user_map.py" \
+    -o yaml --dry-run=client | kubectl apply -f -
+
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
     --values "${VALUES_DIR}/litellm.values.yaml" \
@@ -199,20 +206,25 @@ hydrate_litellm() {
   # references absent names for negative-path coverage.
   #
   # All three calls are idempotent: LiteLLM returns 200 on duplicate
-  # name/server_name/agent_name (v1.83.10 behavior). We exec curl
-  # through the LiteLLM Pod's runtime image (alpine ships curl) so
-  # we don't need a port-forward.
+  # name/server_name/agent_name (v1.83.10 behavior). We use a local
+  # port-forward so we do not depend on the container having curl in its PATH.
   echo "[cluster.sh] seeding LiteLLM with demo Model + MCP + A2A (issue #17)..."
 
+  # Start a local port-forward to LiteLLM
+  kubectl -n litellm-system port-forward svc/litellm 4001:4000 >/dev/null 2>&1 &
+  local pf_pid=$!
+  trap "kill ${pf_pid} 2>/dev/null || true; rm -rf ${tmpdir}" EXIT
+
   # Wait for /health/readiness so seed calls don't 503 on a still-starting pod.
-  kubectl -n litellm-system exec deploy/litellm -c litellm -- \
-    sh -c 'for i in $(seq 1 30); do curl -sf http://localhost:4000/health/readiness && exit 0; sleep 2; done; exit 1'
+  for i in $(seq 1 30); do
+    curl -sf http://localhost:4001/health/readiness && break
+    sleep 2
+  done
 
   # 1) Seed Model — points at LiteLLM's openai mock backend, no upstream creds needed.
   set +e
   local seed_out
-  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
-    curl -s -X POST http://localhost:4000/model/new \
+  seed_out="$(curl -s -X POST http://localhost:4001/model/new \
       -H 'Authorization: Bearer sk-test-master-key' \
       -H 'Content-Type: application/json' \
       -d '{
@@ -226,8 +238,7 @@ hydrate_litellm() {
   echo "[cluster.sh]   model 'demo-model' → ${seed_out}"
 
   # 2) Seed MCP server.
-  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
-    curl -s -X POST http://localhost:4000/v1/mcp/server \
+  seed_out="$(curl -s -X POST http://localhost:4001/v1/mcp/server \
       -H 'Authorization: Bearer sk-test-master-key' \
       -H 'Content-Type: application/json' \
       -d '{
@@ -238,8 +249,7 @@ hydrate_litellm() {
   echo "[cluster.sh]   mcp server 'demo-mcp' → ${seed_out}"
 
   # 3) Seed A2A agent.
-  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
-    curl -s -X POST http://localhost:4000/v1/agents \
+  seed_out="$(curl -s -X POST http://localhost:4001/v1/agents \
       -H 'Authorization: Bearer sk-test-master-key' \
       -H 'Content-Type: application/json' \
       -d '{
@@ -252,6 +262,7 @@ hydrate_litellm() {
   echo "[cluster.sh]   a2a agent 'demo-agent' → ${seed_out}"
   set -e
 
+  kill "${pf_pid}" 2>/dev/null || true
   rm -rf "${tmpdir}"
   trap - EXIT
 }
@@ -277,17 +288,9 @@ hydrate_toolhive() {
     --wait --timeout 90s
 
   # Step 2.5 — add v1beta1 versions to ToolHive CRDs (not yet in
-  # published charts). The OCI chart above ships only v1alpha1. This
-  # fixture (vendored from stacklok/toolhive v0.28.0 @ 748a64228710...)
-  # adds v1beta1 served=true, storage=false to MCPServer + VirtualMCPServer
-  # so dual-vintage informers can register against both. v1alpha1 stays
-  # storage=true (preserved). kubectl apply replaces the OCI chart's CRD
-  # with the multi-version fixture; safe in ephemeral kind. Idempotent.
-  echo "[cluster.sh] adding v1beta1 CRD versions (toolhive dual-vintage fixture)..."
-  kubectl apply --server-side --force-conflicts \
-    --field-manager=ach-cluster-bootstrap \
-    -f test/e2e/fixtures/toolhive-v1beta1-crds.yaml
-  echo "[cluster.sh] toolhive CRD versions after fixture: $(kubectl get crd mcpservers.toolhive.stacklok.dev -o jsonpath='{.spec.versions[*].name}' 2>/dev/null || echo 'crd-not-found')"
+  # published charts). Since we upgraded to 0.28.3, this is natively supported.
+  # We can skip applying this fixture now.
+  echo "[cluster.sh] toolhive CRD versions: $(kubectl get crd mcpservers.toolhive.stacklok.dev -o jsonpath='{.spec.versions[*].name}' 2>/dev/null || echo 'crd-not-found')"
 }
 
 hydrate_ach() {
@@ -330,7 +333,7 @@ hydrate_ach() {
     --values "${VALUES_DIR}/ach.values.yaml" \
     --set "image.repo=${ACH_IMAGE_REPO}" \
     --set "image.tag=${ACH_IMAGE_TAG}" \
-    --set "image.pullPolicy=IfNotPresent" || helm_rc=$?
+    --set "image.pullPolicy=Always" || helm_rc=$?
   if [ "${helm_rc}" -ne 0 ]; then
     echo "[cluster.sh] ach helm install failed (rc=${helm_rc}) — dumping pods for forensics:" >&2
     kubectl -n ach-system get pods >&2 || true
@@ -342,7 +345,7 @@ hydrate_ach() {
 wait_ach() {
   echo "[cluster.sh] waiting for ach Deployments to be Ready..."
   local rc=0
-  for d in ach-operator ach-platform-api ach-forwarder; do
+  for d in ach-operator ach-platform-api ach-forwarder ach-local-gateway; do
     kubectl -n ach-system rollout status deploy/"${d}" --timeout=5m || rc=$?
   done
   if [ "${rc}" -ne 0 ]; then
@@ -385,13 +388,17 @@ hydrate_fixtures() {
     local jwttmp; jwttmp="$(mktemp -d)"
     openssl rand 32 > "${jwttmp}/current.seed"
     printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
-    kubectl -n ach-system create secret generic ach-jwt-signing-keys \
+     kubectl -n ach-system create secret generic ach-jwt-signing-keys \
       --from-file=current.kid="${jwttmp}/current.kid" \
       --from-file=current.seed="${jwttmp}/current.seed"
     rm -rf "${jwttmp}"
   else
     echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
   fi
+
+  # Apply local unified gateway for dev/testing on Kind
+  echo "[cluster.sh] applying ach-local-gateway..."
+  kubectl apply -f test/e2e/fixtures/ach-local-gateway.yaml
 }
 
 hydrate_examples() {

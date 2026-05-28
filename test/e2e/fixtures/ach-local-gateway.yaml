@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ach-local-gateway-config
+  namespace: ach-system
+data:
+  nginx.conf: |
+    events {}
+    http {
+        server {
+            listen 8080;
+            
+            # Platform API Routing
+            location /platform/ {
+                proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/platform/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Content Service Routing
+            location /content/ {
+                proxy_pass http://ach-content-service.ach-system.svc.cluster.local:8082/content/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Dex OIDC SSO Routing
+            location /dex/ {
+                proxy_pass http://dex.dex-system.svc.cluster.local:5556/dex/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Forwarder data plane Routing (/v1)
+            location /v1/ {
+                proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/v1/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Forwarder JWKS Routing (/.well-known)
+            location /.well-known/ {
+                proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/.well-known/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Forwarder data plane Routing (/mcp)
+            location /mcp/ {
+                proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/mcp/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+
+            # Forwarder data plane Routing (/a2a)
+            location /a2a/ {
+                proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/a2a/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-local-gateway
+  namespace: ach-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ach-local-gateway
+  template:
+    metadata:
+      labels:
+        app: ach-local-gateway
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: config
+        configMap:
+          name: ach-local-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-local-gateway
+  namespace: ach-system
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  selector:
+    app: ach-local-gateway

@@ -157,8 +157,12 @@ func TestUserInfoByEmailLiteLLM183Fallback(t *testing.T) {
 		w.WriteHeader(200)
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/user/info"):
-			// Placeholder catch-all (LiteLLM 1.83 quirk).
-			_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+			if strings.Contains(r.URL.RawQuery, "user_id") {
+				_, _ = w.Write([]byte(`{"user_id":"u-real","user_email":"existing@example.com","teams":[{"team_id":"default","team_alias":"default"}]}`))
+			} else {
+				// Placeholder catch-all (LiteLLM 1.83 quirk).
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+			}
 		case strings.HasPrefix(r.URL.Path, "/user/list"):
 			// The user DOES exist — /user/list returns the real row.
 			_, _ = w.Write([]byte(`{"users":[{"user_id":"u-real","user_email":"existing@example.com","teams":["default"]}]}`))

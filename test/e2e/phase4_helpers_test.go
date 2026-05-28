@@ -6,18 +6,19 @@
 //
 // Shared helpers used by phase4_invariants_test.go. Mirrors the Phase 3
 // pattern: stdlib testing, kubectl orchestration, no Ginkgo.
-//
-// Engineer-pending verification debt: the suite is mechanically correct
-// but defers prerequisite acquisition (pk_/ek_ keys via Phase 3 SSO,
-// LiteLLM mock provisioning, BIP fixture seeding) to engineer action
-// once the kind cluster is up per CLAUDE.md "E2E debug loop".
 
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,7 +28,7 @@ import (
 
 const (
 	// phase4Namespace is where the Helm chart installs ach-forwarder.
-	phase4Namespace = "default"
+	phase4Namespace = "ach-system"
 	// phase4ForwarderDeployment is the Deployment name created by the Helm
 	// chart (matches deploy/helm/ach/templates/forwarder-deployment.yaml).
 	phase4ForwarderDeployment = "ach-forwarder"
@@ -63,26 +64,27 @@ func waitForwarderReady(t *testing.T, deadline time.Duration) error {
 }
 
 // mustAcquirePk acquires a pk_ via the Phase 3 SSO flow.
-// Engineer-pending: stub returning a Skip until the in-cluster SSO mock
-// is wired into the Phase 4 e2e harness.
 func mustAcquirePk(t *testing.T) string {
 	t.Helper()
 	pk := os.Getenv("ACH_E2E_PK_FIXTURE")
 	if pk == "" {
-		t.Skipf("ACH_E2E_PK_FIXTURE not set — provision a pk_ via Phase 3 SSO then export it. Skipping (engineer-pending).")
+		// Use automatic SSO acquisition
+		return phase4AcquirePkAutomatically(t, "8084")
 	}
 	return pk
 }
 
 // mustAcquireEkBoundToEnv acquires an ek_ bound to the given Environment.
-// Engineer-pending: stub returning a Skip until the env-keys provisioning
-// fixture is wired.
 func mustAcquireEkBoundToEnv(t *testing.T, env string) string {
 	t.Helper()
 	key := os.Getenv("ACH_E2E_EK_FIXTURE_" + strings.ToUpper(env))
 	if key == "" {
-		t.Skipf("ACH_E2E_EK_FIXTURE_%s not set — provision an ek_ bound to env %q. Skipping (engineer-pending).",
-			strings.ToUpper(env), env)
+		pk := mustAcquirePk(t)
+		ek, err := phase4AcquireEkBoundToEnvAutomatically(t, "8084", pk, env)
+		if err != nil {
+			t.Skipf("Skipping: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
+		}
+		return ek
 	}
 	return key
 }
@@ -110,6 +112,147 @@ func phase4AssertSecretRbacNegative(t *testing.T) error {
 		return fmt.Errorf("kubectl auth can-i: %v output=%s", err, verdict)
 	}
 	return nil
+}
+
+// --- Automated SSO and Key Minting for local/automated testing ---
+
+type noSecureCookieTransport struct {
+	underlying http.RoundTripper
+}
+
+func (t *noSecureCookieTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.underlying.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	cookies := resp.Header["Set-Cookie"]
+	for i, c := range cookies {
+		cookies[i] = strings.ReplaceAll(strings.ReplaceAll(c, "; Secure", ""), "; secure", "")
+	}
+	resp.Header["Set-Cookie"] = cookies
+	return resp, nil
+}
+
+func phase4StartGatewayPortForward(t *testing.T, localPort string) func() {
+	t.Helper()
+	cmd := exec.Command("kubectl", "port-forward",
+		"-n", "ach-system",
+		"svc/ach-local-gateway",
+		localPort+":80",
+	)
+	if err := cmd.Start(); err != nil {
+		t.Skipf("phase4StartGatewayPortForward: cannot start port-forward: %v", err)
+		return func() {}
+	}
+	time.Sleep(3 * time.Second)
+	return func() {
+		_ = cmd.Process.Kill()
+	}
+}
+
+func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Jar: jar,
+		Timeout: 10 * time.Second,
+		Transport: &noSecureCookieTransport{
+			underlying: http.DefaultTransport,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	loginURL := fmt.Sprintf("http://localhost:%s/platform/auth/login", localPort)
+	loginResp, err := client.Get(loginURL)
+	if err != nil {
+		t.Fatalf("GET /login failed: %v", err)
+	}
+	defer loginResp.Body.Close()
+
+	dexURL := loginResp.Header.Get("Location")
+	if dexURL == "" {
+		t.Fatalf("empty redirect location from login")
+	}
+
+	currentURL := dexURL
+	var finalResp *http.Response
+	for {
+		currentURL = strings.ReplaceAll(currentURL, "dex.dex-system.svc.cluster.local:5556", "localhost:"+localPort)
+		currentURL = strings.ReplaceAll(currentURL, "localhost:8080", "localhost:"+localPort)
+
+		resp, err := client.Get(currentURL)
+		if err != nil {
+			t.Fatalf("request to %s failed: %v", currentURL, err)
+		}
+
+		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther || resp.StatusCode == http.StatusMovedPermanently {
+			resp.Body.Close()
+			loc := resp.Header.Get("Location")
+			base, _ := url.Parse(currentURL)
+			rel, _ := url.Parse(loc)
+			currentURL = base.ResolveReference(rel).String()
+		} else {
+			finalResp = resp
+			break
+		}
+	}
+	defer finalResp.Body.Close()
+
+	if finalResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(finalResp.Body)
+		t.Fatalf("SSO callback returned status %d: %s", finalResp.StatusCode, string(body))
+	}
+
+	var data struct {
+		Plaintext string `json:"plaintext"`
+	}
+	body, _ := io.ReadAll(finalResp.Body)
+	if err := json.Unmarshal(body, &data); err != nil {
+		t.Fatalf("failed to decode JSON response: %v, body: %s", err, string(body))
+	}
+
+	if data.Plaintext == "" {
+		t.Fatalf("empty pk plaintext in response: %s", string(body))
+	}
+
+	return data.Plaintext
+}
+
+func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, localPort, pk, env string) (string, error) {
+	t.Helper()
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"environment": env,
+		"name":        "demo-ek",
+	})
+
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:%s/platform/env-keys", localPort), bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-ach-key", pk)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("POST /platform/env-keys failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("POST /platform/env-keys status = %d: %s", resp.StatusCode, string(body))
+	}
+
+	var data struct {
+		Plaintext string `json:"plaintext"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", fmt.Errorf("failed to decode env-keys JSON: %w, body: %s", err, string(body))
+	}
+
+	return data.Plaintext, nil
 }
 
 // _ ensures errors stays referenced — helpers may grow into wrapping.

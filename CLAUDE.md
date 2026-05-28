@@ -157,6 +157,7 @@ ach/
 | Helm chart values + defaults           | `deploy/helm/ach/values.yaml` (per-mode toggles) |
 | API reference rendering                | `docs/Makefile` (`gen-crd-ref-docs`) + `docs/.crd-ref-docs.yaml` |
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |
+| Local testing, SSO login & Gateway    | `references/local-testing-gateway.md`     |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 
 ## CI gating — one-line summary
