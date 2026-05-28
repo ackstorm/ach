@@ -1,0 +1,537 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// `ach admin` is the operator-facing escape hatch for revoking
+// misplaced keys and forcing a content refresh outside the §10.3
+// hourly cycle. Three sub-subcommands (2-level parent-with-children
+// per Pattern P3 for `keys revoke` + `users revoke-keys`; flat leaf
+// for `refresh`):
+//
+//   - ach admin keys revoke <key-id>             — pkid_… or ekid_…
+//   - ach admin users revoke-keys <email>        — bulk per-user revoke
+//   - ach admin refresh <kind> <name>            — force-refresh CR
+//
+// CLI-10: every endpoint exits 3 on `403 not_admin` / `403
+// unauthorized_team` / `401 invalid_key` — exit.MapServerError owns
+// the translation (Pattern P6). Exit 6 on 503/504; exit 0 on 200;
+// exit 1 on client-side validation failure.
+//
+// CLI-13: `keys revoke` accepts BOTH `pkid_…` AND `ekid_…` key IDs;
+// raw `pk_…`/`ek_…` plaintext is rejected client-side BEFORE any HTTP
+// call (prevents a misplaced plaintext from landing in the audit
+// event Target / appearing in shell history).
+//
+// D-CONTEXT W3b / spec §15.5: `refresh` validates `kind` against the
+// closed set {plugin, prompt, artifact, marketplace}. Other kinds
+// the server-side handler supports (`environment`,
+// `backendidentitypolicy`, future) are rejected client-side with
+// exit 1 — the user-facing CLI deliberately does NOT surface them in
+// v1alpha1.
+//
+// Synthetic mode (CLI-07): admin works normally — admin endpoints
+// accept pk_ only, and a synthetic pk_ + allowlisted email behaves
+// identically to a config-loaded pk_. The synthetic.GuardCommand
+// call uses GateAdmin to gate --deployment / --env-key / half-set
+// per the cross-gate rules (see 06-07 SUMMARY for the matrix).
+//
+// Pattern S5 (no plaintext through logs): the API key flows ONLY
+// into httpclient.Client.APIKey; verbose-mode header dumps redact
+// `x-ach-key` to `<prefix>_***` via httpclient.Redact (CLI-04).
+
+package cmd
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
+	"github.com/ackstorm/ach/internal/keys"
+)
+
+// adminConfirmYes is the string literal users type to confirm a
+// destructive admin operation at the interactive y/N prompt. Hoisted
+// to a constant so the two prompt sites (keys revoke + users
+// revoke-keys) share a single source of truth and goconst stays
+// happy.
+const adminConfirmYes = "yes"
+
+// adminCredFlags bundles the standard credential-set flags every
+// admin subcommand exposes. Hoisted into one type + one
+// registration helper so the per-subcommand cobra.Command struct
+// stays small (cobra defaults + RunE only) and dupl doesn't trip
+// on the otherwise-identical flag declaration blocks across the
+// three subcommands.
+type adminCredFlags struct {
+	Yes        bool
+	Deployment string
+	APIKey     string
+	EnvKey     string
+	Verbose    bool
+}
+
+// registerAdminCredFlags wires the standard credential-set flags on
+// the given cobra.Command. `withYes=false` for `refresh` (idempotent
+// operation — no confirmation prompt). All other admin subcommands
+// pass `withYes=true`.
+func registerAdminCredFlags(cmd *cobra.Command, f *adminCredFlags, withYes bool) {
+	if withYes {
+		cmd.Flags().BoolVar(&f.Yes, "yes", false, "Bypass interactive confirmation")
+	}
+	cmd.Flags().StringVar(&f.Deployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&f.APIKey, "api-key", "", "Override pk_ from flag")
+	cmd.Flags().StringVar(&f.EnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().BoolVar(&f.Verbose, "verbose", false,
+		"Dump request headers to stderr (x-ach-key redacted)")
+}
+
+// adminConfirm prompts on the given writer (typically stderr) and
+// reads a single line from stdin. Returns nil when the user typed
+// y/Y/yes; otherwise returns the "cancelled" CodedError so the
+// caller can bubble it up unchanged. The `--yes` short-circuit is
+// implemented by the caller (skip the call entirely when yes==true).
+func adminConfirm(stdin io.Reader, w io.Writer, prompt string) error {
+	_, _ = fmt.Fprint(w, prompt)
+	scanner := bufio.NewScanner(stdin)
+	answer := ""
+	if scanner.Scan() {
+		answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
+	}
+	switch answer {
+	case "y", adminConfirmYes:
+		return nil
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "cancelled",
+		}
+	}
+}
+
+// adminHTTPClient is the test-only seam: when non-nil it replaces the
+// default *http.Client inside the httpclient.Client constructed by
+// each admin subcommand. Tests targeting httptest.NewTLSServer set
+// this to the test server's TLS-trusting Client so the call reaches
+// the ephemeral cert. Mirrors the env_keys/whoami/login pattern from
+// 06-03 / 06-05.
+var adminHTTPClient *http.Client
+
+// swapAdminHTTPClientForTest swaps adminHTTPClient for the lifetime
+// of t. Test-only helper.
+func swapAdminHTTPClientForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, c *http.Client) {
+	t.Helper()
+	previous := adminHTTPClient
+	adminHTTPClient = c
+	t.Cleanup(func() { adminHTTPClient = previous })
+}
+
+// allowedRefreshKinds is the closed-set client-side allow-list per
+// D-CONTEXT W3b. The server-side handler additionally accepts
+// `pluginmarketplace` (with the canonical kind name) — we surface
+// the user-facing name `marketplace` and map it server-side via the
+// `kind` request body. For symmetry with the user-facing spec we
+// only accept the four names here; other kinds the server might
+// support are intentionally NOT exposed.
+var allowedRefreshKinds = map[string]struct{}{
+	"plugin":      {},
+	"prompt":      {},
+	"artifact":    {},
+	"marketplace": {},
+}
+
+// adminRevokeKeyResponse mirrors admin.revokeKeyResponse on the wire.
+type adminRevokeKeyResponse struct {
+	KeyID  string `json:"key_id"`
+	Status string `json:"status"`
+}
+
+// adminUserRevokeResponse mirrors admin.userRevokeResponse on the wire.
+type adminUserRevokeResponse struct {
+	RevokedCount int      `json:"revoked_count"`
+	Errors       []string `json:"errors"`
+}
+
+// adminRefreshResponse is the body of POST /platform/admin/refresh.
+// The server returns {"status":"accepted"} (or empty body in some
+// branches); we accept both via the optional field.
+type adminRefreshResponse struct {
+	Status string `json:"status,omitempty"`
+}
+
+// newAdminCmd returns a fresh `ach admin` parent with its three
+// children registered. Factory shape (mirrors 06-03/06-04/06-05
+// newXCmd factories) so tests construct a hermetic cobra subtree per
+// t.Run without cross-test global cobra state leaks.
+func newAdminCmd() *cobra.Command {
+	parent := &cobra.Command{
+		Use:   "admin",
+		Short: "Admin operations (key revocation, force-refresh) — requires allowlisted pk_",
+		Long: `Operator-facing admin surface. Every subcommand requires a pk_ whose
+owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + `
+or the equivalent Helm value). Non-allowlisted callers receive
+` + "`403 not_admin`" + ` and the CLI exits 3 (CLI-10).
+
+Subcommands:
+  keys revoke <key-id>             Revoke a key by ID (pkid_… or ekid_…).
+                                    Raw pk_…/ek_… plaintext is rejected
+                                    client-side (CLI-13).
+  users revoke-keys <email>        Revoke ALL keys owned by <email>.
+                                    Returns {revoked_count, errors}.
+  refresh <kind> <name>            Force-refresh an external content
+                                    resource. kind ∈ {plugin, prompt,
+                                    artifact, marketplace}.
+`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	parent.AddCommand(
+		newAdminKeysCmd(),
+		newAdminUsersCmd(),
+		newAdminRefreshCmd(),
+	)
+	return parent
+}
+
+// ---------------------------------------------------------------------
+// keys → revoke
+// ---------------------------------------------------------------------
+
+// newAdminKeysCmd returns the intermediate `ach admin keys` parent
+// with its single child `revoke`. Two-level nesting per Pattern P3
+// because the spec surface is `ach admin keys revoke <key-id>` —
+// keys is a noun-grouping under admin, revoke is the verb.
+func newAdminKeysCmd() *cobra.Command {
+	parent := &cobra.Command{
+		Use:   "keys",
+		Short: "Admin key operations",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	parent.AddCommand(newAdminKeysRevokeCmd())
+	return parent
+}
+
+func newAdminKeysRevokeCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	// SilenceUsage + SilenceErrors per Pattern S5 — cobra would
+	// otherwise echo its Usage block (containing flag descriptions
+	// referencing pk_/ek_) to the SetOut writer on a non-nil RunE
+	// return. cmd/ach/main.go owns the err render via the typed-
+	// error dispatch (Pattern P12).
+	cmd := &cobra.Command{
+		Use:           "revoke",
+		Short:         "Revoke a key by ID (pkid_… or ekid_…). Usage: ach admin keys revoke <key-id>",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminKeysRevoke(cmd, args[0], f)
+		},
+	}
+	registerAdminCredFlags(cmd, f, true)
+	return cmd
+}
+
+func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) error {
+	stderr := cmd.ErrOrStderr()
+	stdout := cmd.OutOrStdout()
+	stdin := cmd.InOrStdin()
+	ctx := cmd.Context()
+
+	// CLI-07 synthetic gate (admin allowed in synthetic; --deployment /
+	// --env-key / half-set still rejected per the cross-gate rules).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateAdmin,
+		APIKeyFlag:     f.APIKey,
+		EnvKeyFlag:     f.EnvKey,
+		DeploymentFlag: f.Deployment,
+	}); err != nil {
+		return err
+	}
+
+	// CLI-13: client-side key-id classification BEFORE any HTTP call.
+	if err := validateAdminKeyID(keyID); err != nil {
+		return err
+	}
+
+	if !f.Yes {
+		if err := adminConfirm(stdin, stderr,
+			fmt.Sprintf("Revoke key %s ? (y/N): ", keyID)); err != nil {
+			return err
+		}
+	}
+
+	baseURL, bearer, err := resolveAdminBearer(f.Deployment, f.APIKey, f.EnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: adminHTTPClient,
+		Verbose:    f.Verbose,
+		Stderr:     stderr,
+	}
+
+	body := struct {
+		KeyID string `json:"key_id"`
+	}{KeyID: keyID}
+	var resp adminRevokeKeyResponse
+	if doErr := hc.Do(ctx, http.MethodPost, "/platform/admin/keys/revoke", body, &resp); doErr != nil {
+		return doErr
+	}
+	_, _ = fmt.Fprintf(stdout, "Revoked %s (status: %s)\n", resp.KeyID, resp.Status)
+	return nil
+}
+
+// validateAdminKeyID enforces the CLI-13 client-side classification:
+// only pkid_ / ekid_ key IDs are accepted; raw pk_ / ek_ plaintext is
+// rejected with a clear message; everything else is rejected as
+// invalid. Returns nil when the key ID is well-formed.
+func validateAdminKeyID(keyID string) error {
+	switch {
+	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix),
+		strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
+		return nil
+	case strings.HasPrefix(keyID, keys.PkBearerPrefix),
+		strings.HasPrefix(keyID, keys.EkBearerPrefix):
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf(
+				"refusing plaintext key — pass the key id (%s or %s) instead (CLI-13)",
+				keys.PkidKeyIDPrefix, keys.EkidKeyIDPrefix),
+		}
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf(
+				"invalid key id %q; expected %s or %s prefix",
+				keyID, keys.PkidKeyIDPrefix, keys.EkidKeyIDPrefix),
+		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// users → revoke-keys
+// ---------------------------------------------------------------------
+
+func newAdminUsersCmd() *cobra.Command {
+	parent := &cobra.Command{
+		Use:   "users",
+		Short: "Admin user operations",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	parent.AddCommand(newAdminUsersRevokeKeysCmd())
+	return parent
+}
+
+func newAdminUsersRevokeKeysCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	cmd := &cobra.Command{
+		Use:           "revoke-keys",
+		Short:         "Revoke ALL keys owned by <email>. Usage: ach admin users revoke-keys <email>",
+		Long:          "Bulk-revoke every pk_ and ek_ owned by the given email. Returns {revoked_count, errors}.",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminUsersRevokeKeys(cmd, args[0], f)
+		},
+	}
+	registerAdminCredFlags(cmd, f, true)
+	return cmd
+}
+
+func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags) error {
+	stderr := cmd.ErrOrStderr()
+	stdout := cmd.OutOrStdout()
+	stdin := cmd.InOrStdin()
+	ctx := cmd.Context()
+
+	// CLI-07 synthetic gate (admin allowed in synthetic).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateAdmin,
+		APIKeyFlag:     f.APIKey,
+		EnvKeyFlag:     f.EnvKey,
+		DeploymentFlag: f.Deployment,
+	}); err != nil {
+		return err
+	}
+
+	email = strings.TrimSpace(email)
+	if email == "" || !strings.Contains(email, "@") {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid email %q", email),
+		}
+	}
+
+	if !f.Yes {
+		if err := adminConfirm(stdin, stderr,
+			fmt.Sprintf("Revoke ALL keys owned by %s ? (y/N): ", email)); err != nil {
+			return err
+		}
+	}
+
+	baseURL, bearer, err := resolveAdminBearer(f.Deployment, f.APIKey, f.EnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: adminHTTPClient,
+		Verbose:    f.Verbose,
+		Stderr:     stderr,
+	}
+
+	// URL-escape the email so `+` / `@` / `.` survive the wire path
+	// (T-06-08-07 path-injection mitigation). The server-side handler
+	// decodes via url.PathUnescape (see internal/platformapi/admin/
+	// handler.go RevokeUserKeysHandler).
+	escaped := url.PathEscape(email)
+	path := "/platform/admin/users/" + escaped + "/revoke-keys"
+	// Body is empty {} per the spec — the email lives in the URL path.
+	var resp adminUserRevokeResponse
+	if doErr := hc.Do(ctx, http.MethodPost, path, struct{}{}, &resp); doErr != nil {
+		return doErr
+	}
+	_, _ = fmt.Fprintf(stdout, "Revoked %d keys owned by %s\n", resp.RevokedCount, email)
+	for _, e := range resp.Errors {
+		_, _ = fmt.Fprintf(stdout, "  - %s\n", e)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// refresh
+// ---------------------------------------------------------------------
+
+func newAdminRefreshCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	cmd := &cobra.Command{
+		Use: "refresh",
+		Short: "Force-refresh an external content resource. " +
+			"Usage: ach admin refresh <kind> <name>",
+		Long: "kind must be one of {plugin, prompt, artifact, marketplace}. " +
+			"No interactive confirmation (idempotent operation).",
+		Args:          cobra.ExactArgs(2),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminRefresh(cmd, args[0], args[1], f)
+		},
+	}
+	// withYes=false — refresh is idempotent / non-destructive, no prompt.
+	registerAdminCredFlags(cmd, f, false)
+	return cmd
+}
+
+func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) error {
+	stderr := cmd.ErrOrStderr()
+	stdout := cmd.OutOrStdout()
+	ctx := cmd.Context()
+
+	// CLI-07 synthetic gate (admin allowed in synthetic).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateAdmin,
+		APIKeyFlag:     f.APIKey,
+		EnvKeyFlag:     f.EnvKey,
+		DeploymentFlag: f.Deployment,
+	}); err != nil {
+		return err
+	}
+
+	// D-CONTEXT W3b: closed-set client-side validation. Even though the
+	// server-side ForceRefreshHandler supports additional kinds (e.g.
+	// pluginmarketplace) that v1alpha1 doesn't expose on the CLI, the
+	// user-facing surface is intentionally limited to four. Phase 7
+	// can lift this gate if/when additional kinds are surfaced.
+	if _, ok := allowedRefreshKinds[kind]; !ok {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf(
+				"kind must be one of: plugin, prompt, artifact, marketplace; got: %s",
+				kind),
+		}
+	}
+
+	if strings.TrimSpace(name) == "" {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "name is required",
+		}
+	}
+
+	baseURL, bearer, err := resolveAdminBearer(f.Deployment, f.APIKey, f.EnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: adminHTTPClient,
+		Verbose:    f.Verbose,
+		Stderr:     stderr,
+	}
+
+	body := struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	}{Kind: kind, Name: name}
+	var resp adminRefreshResponse
+	if doErr := hc.Do(ctx, http.MethodPost, "/platform/admin/refresh", body, &resp); doErr != nil {
+		return doErr
+	}
+	_, _ = fmt.Fprintf(stdout, "Refresh requested: %s/%s\n", kind, name)
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// shared helpers
+// ---------------------------------------------------------------------
+
+// resolveAdminBearer is a thin alias for resolveEnvKeysBearer
+// (06-05). The precedence + sentinel-error shape is identical
+// because admin shares env-keys' credential surface verbatim:
+// synthetic → --api-key → --env-key → ACH_API_KEY → ACH_ENV_KEY →
+// disk dep.PK. Pattern S5: bearer flows ONLY into
+// httpclient.Client.APIKey; never into a print/log call.
+//
+// We accept --env-key here for compositional parity even though
+// admin endpoints reject ek_ at the server side (AdminOnly
+// middleware in internal/platformapi/admin/mount.go) — the server
+// emits a clear `invalid_key_type` outcome and the CLI maps it to
+// exit 3 via MapServerError, which is the correct user experience
+// (the user is told they used the wrong key type).
+//
+// Aliasing rather than duplicating avoids drift and satisfies dupl
+// without hoisting the whole resolver into a new `internal/cli/`
+// package for two callers. When a third caller appears (Phase 7?)
+// the natural next step is to lift this into `internal/cli/cred/`.
+func resolveAdminBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string, string, error) {
+	return resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+}
+
+// Register `ach admin` on the root command. Mirrors the env-keys /
+// login / whoami pattern from 06-03 / 06-05 — each subcommand owns
+// its own init() so cobra registration is local to the file.
+func init() {
+	rootCmd.AddCommand(newAdminCmd())
+}
