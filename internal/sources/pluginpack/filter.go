@@ -1,0 +1,395 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package pluginpack
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"errors"
+	"fmt"
+	"io"
+	"path"
+	"strings"
+
+	"github.com/ackstorm/ach/internal/sources"
+)
+
+// manifestMaxBytes caps the size of the `.claude-plugin/plugin.json`
+// entry the filter is willing to buffer in memory. Mirrors the
+// marketplace_extract.go marketplaceJSONInTarballMaxBytes constant
+// (5 MiB — enough for any sane plugin manifest).
+const manifestMaxBytes = 5 << 20
+
+// pluginTarballMaxEntries bounds the inbound tar walk. Mirrors the
+// marketplaceTarballMaxEntries constant (50000 — two orders of
+// magnitude headroom over real-world Plugin tarballs). Declared as
+// var (not const) so unit tests can dial it down to exercise the
+// boundary without allocating 50000 tar headers each run.
+var pluginTarballMaxEntries = 50000
+
+// tarEntryMaxBytes caps the size of any single regular-file entry the
+// filter is willing to buffer. Plugin entries are small in practice
+// (source files, JSON, markdown); 50 MiB is well above the real-world
+// ceiling and well below the controller's pluginRawIngressCap, so a
+// tarball whose declared per-entry size is pathological gets rejected
+// here before allocating gigabytes.
+const tarEntryMaxBytes = 50 << 20
+
+// manifestRelPath is the location inside the tarball where the
+// `.claude-plugin/plugin.json` manifest must live. The Plugin CR
+// fetcher (git.tarSubtree) strips the subtree prefix, so the manifest
+// always sits at the tar root.
+const manifestRelPath = ".claude-plugin/plugin.json"
+
+// collectedEntry captures the bits of a source tar entry we need to
+// re-emit later. Regular file bodies are buffered in memory; dir
+// entries carry just the header metadata.
+type collectedEntry struct {
+	name     string
+	typeflag byte
+	hdr      tar.Header
+	body     []byte // regular files only
+}
+
+// Filter reads a gzipped tar (the upstream-fetched Plugin tarball
+// body) and returns a fresh gzipped tar containing only the runtime-
+// relevant subset (see the package doc for the whitelist edges).
+//
+// Errors:
+//
+//   - gzip header malformed → wraps sources.ErrUpstreamInvalid.
+//   - more than pluginTarballMaxEntries entries scanned → wraps
+//     sources.ErrUpstreamInvalid.
+//   - `.claude-plugin/plugin.json` absent → ErrManifestMissing
+//     wrapping sources.ErrUpstreamInvalid.
+//   - plugin.json JSON parse failure → wraps sources.ErrUpstreamInvalid.
+//   - manifest reference escapes plugin root (`..` or absolute) →
+//     wraps sources.ErrUpstreamInvalid (NOT ErrManifestMissing).
+//
+// The function is pure — no I/O outside the in-memory byte buffer.
+func Filter(in []byte) ([]byte, error) {
+	entries, manifestBytes, err := readTarballEntries(in)
+	if err != nil {
+		return nil, err
+	}
+	if manifestBytes == nil {
+		return nil, fmt.Errorf("%w: %w", ErrManifestMissing, sources.ErrUpstreamInvalid)
+	}
+
+	manifestTree, err := parsePluginJSON(manifestBytes)
+	if err != nil {
+		return nil, err
+	}
+	parentDirs, err := extractReferences(manifestTree)
+	if err != nil {
+		return nil, err
+	}
+
+	includedDirs, includedFiles := computeIncludeSets(entries, parentDirs)
+	return emitFiltered(entries, includedDirs, includedFiles)
+}
+
+// readTarballEntries decompresses the input tar.gz and returns:
+//
+//   - the slice of regular-file + dir entries (normalized names,
+//     bodies buffered for regular files);
+//   - the raw bytes of `.claude-plugin/plugin.json` when present
+//     (nil when absent — the caller surfaces ErrManifestMissing).
+//
+// Symlink / device / FIFO entries and `..`-bearing names are silently
+// dropped from the entry list.
+func readTarballEntries(in []byte) ([]collectedEntry, []byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(in))
+	if err != nil {
+		return nil, nil, fmt.Errorf("pluginpack: gzip header: %v: %w", err, sources.ErrUpstreamInvalid)
+	}
+	defer func() { _ = gz.Close() }()
+
+	tr := tar.NewReader(gz)
+	var entries []collectedEntry
+	var manifestBytes []byte
+
+	for scanned := 0; ; scanned++ {
+		hdr, terr := tr.Next()
+		if errors.Is(terr, io.EOF) {
+			break
+		}
+		if terr != nil {
+			return nil, nil, fmt.Errorf("pluginpack: tar header: %v: %w", terr, sources.ErrUpstreamInvalid)
+		}
+		// Cap fires on the SCANNED+1-th entry — i.e. a tarball with
+		// exactly pluginTarballMaxEntries entries is accepted, the
+		// (max+1)-th is rejected. Moving the check after EOF detection
+		// closes the off-by-one where the boundary case was wrongly
+		// rejected.
+		if scanned >= pluginTarballMaxEntries {
+			return nil, nil, fmt.Errorf("pluginpack: exceeded %d tar entries: %w", pluginTarballMaxEntries, sources.ErrUpstreamInvalid)
+		}
+		if !acceptableEntry(hdr) {
+			continue
+		}
+		name := normalizeEntryName(hdr)
+		c, mbody, perr := processEntry(hdr, tr, name)
+		if perr != nil {
+			return nil, nil, perr
+		}
+		if mbody != nil {
+			manifestBytes = mbody
+		}
+		entries = append(entries, c)
+	}
+	return entries, manifestBytes, nil
+}
+
+// acceptableEntry rejects `..`-bearing names plus any non-regular-file,
+// non-directory tar entry (symlinks, char/block devices, FIFOs).
+func acceptableEntry(hdr *tar.Header) bool {
+	if strings.Contains(hdr.Name, "..") {
+		return false
+	}
+	return hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeDir
+}
+
+// normalizeEntryName trims the optional `./` prefix and ensures dir
+// entries carry an explicit trailing slash so prefix tests downstream
+// work uniformly.
+func normalizeEntryName(hdr *tar.Header) string {
+	name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
+	if hdr.Typeflag == tar.TypeDir && !strings.HasSuffix(name, "/") {
+		name += "/"
+	}
+	return name
+}
+
+// processEntry consumes one tar entry's body (when regular), enforces
+// the manifest-size cap, and packages the metadata into a
+// collectedEntry. Returns the manifest bytes when this entry IS the
+// manifest, otherwise nil.
+func processEntry(hdr *tar.Header, tr *tar.Reader, name string) (collectedEntry, []byte, error) {
+	c := collectedEntry{
+		name:     name,
+		typeflag: hdr.Typeflag,
+		hdr: tar.Header{
+			Name:     name,
+			Mode:     hdr.Mode,
+			Size:     hdr.Size,
+			ModTime:  hdr.ModTime,
+			Typeflag: hdr.Typeflag,
+		},
+	}
+	if hdr.Typeflag != tar.TypeReg {
+		return c, nil, nil
+	}
+	if name == manifestRelPath {
+		body, err := readManifestBody(hdr, tr)
+		if err != nil {
+			return collectedEntry{}, nil, err
+		}
+		c.body = body
+		return c, body, nil
+	}
+	if hdr.Size < 0 || hdr.Size > tarEntryMaxBytes {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: entry %q header claims %d bytes (cap %d): %w",
+			name, hdr.Size, tarEntryMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	body, err := io.ReadAll(io.LimitReader(tr, tarEntryMaxBytes+1))
+	if err != nil {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: read entry %q: %v: %w", name, err, sources.ErrUpstreamInvalid)
+	}
+	if int64(len(body)) > tarEntryMaxBytes {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: entry %q body exceeds cap %d: %w",
+			name, tarEntryMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	c.body = body
+	return c, nil, nil
+}
+
+// readManifestBody enforces the per-entry manifest size cap on read.
+func readManifestBody(hdr *tar.Header, tr *tar.Reader) ([]byte, error) {
+	if hdr.Size < 0 || hdr.Size > manifestMaxBytes {
+		return nil, fmt.Errorf("pluginpack: %s header claims %d bytes (cap %d): %w",
+			manifestRelPath, hdr.Size, manifestMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	body, err := io.ReadAll(io.LimitReader(tr, manifestMaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("pluginpack: read %s: %v: %w", manifestRelPath, err, sources.ErrUpstreamInvalid)
+	}
+	if int64(len(body)) > manifestMaxBytes {
+		return nil, fmt.Errorf("pluginpack: %s body exceeds cap %d: %w",
+			manifestRelPath, manifestMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	return body, nil
+}
+
+// computeIncludeSets walks the collected entries and returns the set
+// of directories we must emit explicitly and the set of file names we
+// must include.
+func computeIncludeSets(entries []collectedEntry, parentDirs map[string]struct{}) (dirs map[string]struct{}, files map[string]bool) {
+	dirs = map[string]struct{}{}
+	files = map[string]bool{}
+	predicate := includePredicate(parentDirs)
+	for _, c := range entries {
+		test := strings.TrimSuffix(c.name, "/")
+		if test == "" {
+			continue
+		}
+		var pname string
+		if c.typeflag == tar.TypeDir {
+			pname = test + "/"
+		} else {
+			pname = test
+		}
+		if !predicate(pname) {
+			continue
+		}
+		if c.typeflag == tar.TypeDir {
+			dirs[test] = struct{}{}
+			continue
+		}
+		files[test] = true
+		// Synthesize the file's parent directory chain so the emitted
+		// tar always has the `parent/` headers preceding the file
+		// headers.
+		for d := path.Dir(test); d != "." && d != "/"; d = path.Dir(d) {
+			dirs[d] = struct{}{}
+		}
+	}
+	return dirs, files
+}
+
+// includePredicate returns the per-entry-name include test. A name is
+// included when it matches a whitelist edge OR sits under a manifest-
+// referenced parent directory.
+func includePredicate(parentDirs map[string]struct{}) func(string) bool {
+	return func(name string) bool {
+		if name == manifestRelPath || name == "README.md" {
+			return true
+		}
+		if isRootLicense(name) {
+			return true
+		}
+		if matchesRootConventionDir(name) {
+			return true
+		}
+		for parent := range parentDirs {
+			if name == parent ||
+				name == parent+"/" ||
+				strings.HasPrefix(name, parent+"/") {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// emitFiltered writes a fresh tar.gz containing the included dirs
+// (sorted lexicographically so parents precede children) followed by
+// the included files in source order.
+func emitFiltered(entries []collectedEntry, includedDirs map[string]struct{}, includedFiles map[string]bool) ([]byte, error) {
+	var outBuf bytes.Buffer
+	outGz := gzip.NewWriter(&outBuf)
+	outTw := tar.NewWriter(outGz)
+
+	for _, d := range sortedKeys(includedDirs) {
+		if err := writeDirHeader(outTw, entries, d); err != nil {
+			return nil, err
+		}
+	}
+	for _, c := range entries {
+		if c.typeflag != tar.TypeReg || !includedFiles[c.name] {
+			continue
+		}
+		if err := writeFileEntry(outTw, c); err != nil {
+			return nil, err
+		}
+	}
+	if err := outTw.Close(); err != nil {
+		return nil, fmt.Errorf("pluginpack: close tar writer: %w", err)
+	}
+	if err := outGz.Close(); err != nil {
+		return nil, fmt.Errorf("pluginpack: close gzip writer: %w", err)
+	}
+	return outBuf.Bytes(), nil
+}
+
+// writeDirHeader emits an explicit TypeDir header for dir, mirroring
+// the source dir's mode + mtime when a matching source entry exists.
+func writeDirHeader(tw *tar.Writer, entries []collectedEntry, dir string) error {
+	hdr := &tar.Header{
+		Name:     dir + "/",
+		Mode:     0o755,
+		Typeflag: tar.TypeDir,
+	}
+	for _, c := range entries {
+		if c.typeflag != tar.TypeDir {
+			continue
+		}
+		if strings.TrimSuffix(c.name, "/") == dir {
+			hdr.Mode = c.hdr.Mode
+			hdr.ModTime = c.hdr.ModTime
+			break
+		}
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("pluginpack: write dir header %q: %w", dir, err)
+	}
+	return nil
+}
+
+// writeFileEntry emits a TypeReg header + body for the file entry.
+func writeFileEntry(tw *tar.Writer, c collectedEntry) error {
+	hdr := &tar.Header{
+		Name:     c.name,
+		Mode:     c.hdr.Mode,
+		Size:     int64(len(c.body)),
+		ModTime:  c.hdr.ModTime,
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("pluginpack: write file header %q: %w", c.name, err)
+	}
+	if _, err := tw.Write(c.body); err != nil {
+		return fmt.Errorf("pluginpack: write file body %q: %w", c.name, err)
+	}
+	return nil
+}
+
+// isRootLicense reports whether name is a root-level LICENSE file.
+// Accepts bare `LICENSE` and any extension (LICENSE.txt, LICENSE.md,
+// LICENSE-MIT) at the tar root only.
+func isRootLicense(name string) bool {
+	if strings.Contains(name, "/") {
+		return false
+	}
+	if name == "LICENSE" {
+		return true
+	}
+	return strings.HasPrefix(name, "LICENSE.") || strings.HasPrefix(name, "LICENSE-")
+}
+
+// matchesRootConventionDir reports whether name lives under a
+// root-level Claude Code convention directory.
+func matchesRootConventionDir(name string) bool {
+	for _, prefix := range []string{"commands/", "agents/", "skills/", "hooks/", "mcpServers/"} {
+		if strings.HasPrefix(name, prefix) || name == strings.TrimSuffix(prefix, "/") {
+			return true
+		}
+	}
+	return false
+}
+
+// sortedKeys returns the map keys sorted lexicographically.
+func sortedKeys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	// Insertion sort — set sizes here are tiny (≤ a few dozen entries).
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
+}

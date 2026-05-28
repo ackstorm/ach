@@ -16,6 +16,7 @@
 package ach
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sources/pluginpack"
 	"github.com/ackstorm/ach/internal/sources/registry"
 )
 
@@ -162,6 +164,10 @@ type MaterializeResult struct {
 //  3. fetcher.Fetch(ctx, FetchRequest{Spec, Secret, PriorRev}).
 //  4. NotModified shortcut → return early without staging or UPSERT.
 //  5. Stage at deps.CacheRoot/.tmp/stg-<random> via os.CreateTemp.
+//     (issue #26) When deps.Kind == "plugin", apply pluginpack.Filter
+//     to result.Body BEFORE the size-cap copy so the cap measures the
+//     filtered bytes. Prompt/Artifact paths are byte-identical to
+//     pre-issue-26 behavior.
 //  6. Wrap body in io.LimitReader when SizeCapBytes > 0; io.Copy; check
 //     overshoot (overshoot → delete staging file → OversizeError); fsync.
 //  7. Atomic rename(2) staging → deps.FinalPath.
@@ -220,6 +226,48 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		return MaterializeResult{Err: fmt.Errorf("fetcher returned nil body without NotModified: %w", sources.ErrUpstreamInvalid)}
 	}
 	defer result.Body.Close()
+
+	// ─── Step 5.5: kind-specific body transform (issue #26). ───
+	// TODO(#26-followup): generalize to BodyTransform once marketplace path consumes the same filter.
+	// For Plugin CRs only, run the upstream tarball through the
+	// pluginpack content filter before the size-cap copy. This means
+	// the existing io.LimitReader cap below operates on FILTERED bytes
+	// — the "size cap applies POST-filter" decision locked in
+	// CONTEXT.md. Prompt and Artifact paths are byte-identical to
+	// pre-issue-26 behavior.
+	if deps.Kind == "plugin" {
+		// Defense in depth: bound the raw upstream read BEFORE the
+		// filter consumes it. The user-visible SizeCapBytes applies to
+		// the filtered output (locked decision); pluginRawIngressCap
+		// is a separate operator-memory guard against a multi-GB
+		// tarball reaching this path (most acute for type: http where
+		// the fetcher has no body cap). Sized to mirror
+		// gitDefaultMaxCloneBytes (512 MiB) — the existing ceiling on
+		// git-transport clones.
+		const pluginRawIngressCap = 512 << 20
+		raw, err := io.ReadAll(io.LimitReader(result.Body, pluginRawIngressCap+1))
+		if err != nil {
+			return MaterializeResult{Err: fmt.Errorf("plugin filter: read body: %w", err)}
+		}
+		if int64(len(raw)) > pluginRawIngressCap {
+			return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: pluginRawIngressCap}}
+		}
+		filtered, err := pluginpack.Filter(raw)
+		if err != nil {
+			// The error already wraps sources.ErrUpstreamInvalid via
+			// ErrManifestMissing or the traversal-rejection path;
+			// classifyFetchError below maps it to ReasonUpstreamInvalid.
+			return MaterializeResult{Err: err}
+		}
+		// Rebind result.Body so the existing Step 6 LimitReader sees
+		// the filtered bytes. The deferred Close() above was registered
+		// against the ORIGINAL result.Body (Go defer receivers are
+		// evaluated at defer-time), so the upstream reader is still
+		// closed on every exit path; the fresh NopCloser is never
+		// explicitly closed (Close on a bytes.Reader-backed NopCloser
+		// is a no-op).
+		result.Body = io.NopCloser(bytes.NewReader(filtered))
+	}
 
 	tmpFile, err := os.CreateTemp(filepath.Join(deps.CacheRoot, ".tmp"), "stg-")
 	if err != nil {
