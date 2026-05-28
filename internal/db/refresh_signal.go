@@ -59,10 +59,10 @@ const refreshSignalChannel = "ach_refresh"
 // Kind discipline:
 //   - "plugin", "prompt", "artifact" → external_refs (kind, name) PK.
 //   - "pluginmarketplace"            → marketplace_plugins (marketplace_name, name)
-//                                       PK — the operator's marketplace reconciler
-//                                       sweeps every plugin under the named
-//                                       marketplace on the next pass, so the
-//                                       UPDATE sets every row's marker.
+//     PK — the operator's marketplace reconciler
+//     sweeps every plugin under the named
+//     marketplace on the next pass, so the
+//     UPDATE sets every row's marker.
 //
 // Behavioural contract:
 //   - Returns ErrUIOriginRefreshUnsupported when the row exists with

@@ -1,4 +1,12 @@
 ---
+# Issue #34 (Postgres source of truth): platform-api holds zero K8s
+# privileges. The pre-issue-34 informer-cache + force-refresh-annotation
+# verbs are gone — environment reads go through pgxpool, and
+# /admin/refresh signals the operator via NOTIFY ach_refresh.
+#
+# The empty Role + RoleBinding stay in place so any leftover client-go
+# credential lookup (e.g. accidental in-cluster config use by a
+# dependency) cannot reach anything sensitive.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -7,34 +15,4 @@ metadata:
   labels:
     app.kubernetes.io/name: ach
     app.kubernetes.io/component: platform-api
-rules:
-# Read all six ACH kinds (informer-backed views in Phase 3+).
-- apiGroups: ["ach.ackstorm.ai"]
-  resources:
-  - environments
-  - plugins
-  - pluginmarketplaces
-  - artifacts
-  - prompts
-  - backendidentitypolicies
-  verbs: ["get", "list", "watch"]
-# MULTI-02 carve-out: patch ONLY on the four external-reference kinds,
-# used exclusively for the `ach.ackstorm.ai/force-refresh` annotation per
-# Hub §15.5. Patch is NOT granted on `environments` or
-# `backendidentitypolicies` (status writes belong to the Operator alone).
-- apiGroups: ["ach.ackstorm.ai"]
-  resources:
-  - plugins
-  - prompts
-  - artifacts
-  - pluginmarketplaces
-  verbs: ["patch"]
-# Phase 3 D-04 / D-06: Dex client secret rotation observation. The
-# Platform API's OIDC provider re-reads the Dex client secret from a
-# K8s Secret on rotation; the informer-backed read is what makes that
-# rotation a hot-reload rather than a Pod restart. Namespace-scoped per
-# MULTI-01 (Role, not ClusterRole). Mirrors operator_role.yaml's
-# Phase 2 D-11 Secret rule.
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "watch"]
+rules: []

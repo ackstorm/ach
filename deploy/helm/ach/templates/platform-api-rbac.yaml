@@ -1,13 +1,23 @@
 {{- if .Values.platformApi.enabled }}
 ---
-# ClusterRole — platform-api informer cache watches the 6 read-side ACH
-# CRDs and Secrets (Dex client-secret hot-reload, D-04/D-06). The Secrets
-# rule is the direct fix for the controller-runtime reflector
-# "cannot list resource secrets" error on Pod start. MULTI-02 carve-out:
-# patch ONLY on the four external-reference kinds (used for the
-# ach.ackstorm.ai/force-refresh annotation per Hub §15.5). NO patch on
-# environments or backendidentitypolicies (operator owns those status
-# writes).
+# ClusterRole — platform-api needs NO K8s API access after issue #34.
+#
+# Pre-issue-34 the platform-api held a controller-runtime informer cache for
+# Secret (Dex client-secret hot-reload) and six ACH CRD Kinds (environments,
+# plugins, prompts, artifacts, pluginmarketplaces, backendidentitypolicies),
+# plus a `patch` verb on the four external-reference kinds for the
+# ach.ackstorm.ai/force-refresh annotation write path.
+#
+# Issue #34 makes Postgres the source of truth:
+#   - Environment reads go through the pgxpool-backed store (Phase B1).
+#   - /admin/refresh signals the operator via NOTIFY ach_refresh + the
+#     force_refresh_requested_at column (Phase B2).
+#   - Dex client-secret is read from env at boot; no Secret informer.
+#
+# Result: platform-api holds zero K8s privileges. The ServiceAccount stays
+# bound to an empty ClusterRole so any leftover client-go credential lookup
+# (e.g. accidental in-cluster config use by a dependency) cannot reach
+# anything sensitive.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -15,26 +25,7 @@ metadata:
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: platform-api
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["ach.ackstorm.ai"]
-  resources:
-  - environments
-  - plugins
-  - pluginmarketplaces
-  - artifacts
-  - prompts
-  - backendidentitypolicies
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["ach.ackstorm.ai"]
-  resources:
-  - plugins
-  - prompts
-  - artifacts
-  - pluginmarketplaces
-  verbs: ["patch"]
+rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -461,7 +461,7 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 // Error codes:
 //   - 400 invalid_argument                — unknown kind / missing field / extra field
 //   - 400 invalid_argument (UI origin)    — row exists with origin='ui' (UI-managed
-//                                            rows have no upstream to refresh)
+//     rows have no upstream to refresh)
 //   - 404 environment_not_found           — the named projection row is absent
 //   - 500 internal_error                  — any other DB failure
 func ForceRefreshHandler(deps Deps) http.HandlerFunc {
