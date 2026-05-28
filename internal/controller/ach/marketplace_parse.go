@@ -59,10 +59,11 @@ type ClaudeCodeMarketplacePlugin struct {
 //
 //   - bare string:        "source": "./relative/path"
 //     → Kind="local-path", Path="./relative/path"
-//   - object git-subdir:  "source": {"source":"git-subdir","url":"...","path":"...","ref":"v1","sha":"<40hex>"}
-//     → Kind="git-subdir", URL/Path/Ref/SHA populated
-//   - object url:         "source": {"source":"url","url":"...","sha":"<40hex>"}
-//     → Kind="url", URL/SHA populated (whole-repo, no Path)
+//   - object git-subdir:  "source": {"source":"git-subdir","url":"...","path":"...","ref":"v1","sha":"..."}
+//     → Kind="git-subdir", URL/Path set; Ref/SHA optional (Phase 2 resolves
+//     ref→sha at dispatch time if SHA is absent).
+//   - object url:         "source": {"source":"url","url":"..."}
+//     → Kind="url", URL set; Ref/SHA optional (Phase 2 resolves at dispatch).
 //
 // Any other shape (object with unknown source.source, malformed JSON
 // for the source field) → Kind="" so Stage-2 surfaces

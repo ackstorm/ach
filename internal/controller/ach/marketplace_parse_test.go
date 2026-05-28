@@ -279,6 +279,30 @@ func TestParseClaudeCodeMarketplace_GitSubdirMissingUrlDemoted(t *testing.T) {
 	}
 }
 
+func TestParseClaudeCodeMarketplace_GitSubdirMissingPathDemoted(t *testing.T) {
+	// Independent of the URL-missing branch: a git-subdir entry with
+	// url present but path absent must also demote. Path is required by
+	// git-subdir semantics (subtree to tar) — without it we can't fetch.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "no-path",
+	    "source": {
+	      "source": "git-subdir",
+	      "url": "https://github.com/o/r.git",
+	      "sha": "0123456789abcdef0123456789abcdef01234567"
+	    }
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\" (path missing)", mkt.Plugins[0].Source.Kind)
+	}
+}
+
 func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing.T) {
 	// local-path with `..` segment must NOT abort the catalog (#4 (b)
 	// decision: demote per-entry, T-02-06-01 mitigation still applies
