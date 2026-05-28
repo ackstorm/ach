@@ -55,3 +55,13 @@ import-as-library.
   is your hint.
 - **Accepting `alg=none`** — `jwt.Parse(...)` defaults vary by
   library; pin the algorithm explicitly.
+- **LiteLLM strips `Authorization` by default** — when ACH proxies
+  through LiteLLM's MCP gateway (the default `/mcp/<name>` route),
+  the gateway drops the caller's `Authorization` header before
+  calling the backend. Register the backend with
+  `extra_headers: ["authorization"]` so LiteLLM propagates the
+  forwarder-minted JWT through to your MCP server. Without this the
+  backend sees no token and 401s every request, and LiteLLM
+  surfaces `tools=[]` even on healthy servers. ACH's
+  `scripts/cluster.sh hydrate_fixtures` registers the e2e
+  `demo-mcp-echo` server with this opt-in already in place.

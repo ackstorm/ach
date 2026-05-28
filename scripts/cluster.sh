@@ -249,6 +249,14 @@ hydrate_litellm() {
   echo "[cluster.sh]   mcp server 'demo-mcp' → ${seed_out}"
 
   # 2b) Seed JWT-validating MCP server (issue #35).
+  #
+  # extra_headers: ["authorization"] is REQUIRED for the JWT round-trip
+  # to work end-to-end. By default LiteLLM's MCP gateway drops the
+  # caller's Authorization header before forwarding to the backend.
+  # Listing "authorization" in extra_headers tells LiteLLM to propagate
+  # the forwarder-minted ACH JWT through to ach-mcp-echo, which then
+  # verifies it via the JWKS published at
+  # http://ach-forwarder.ach-system.svc/.well-known/jwks.json.
   seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
     curl -s -X POST http://localhost:4000/v1/mcp/server \
       -H 'Authorization: Bearer sk-test-master-key' \
@@ -256,7 +264,8 @@ hydrate_litellm() {
       -d '{
         "server_name": "demo-mcp-echo",
         "transport": "http",
-        "url": "http://ach-mcp-echo.ach-system.svc"
+        "url": "http://ach-mcp-echo.ach-system.svc",
+        "extra_headers": ["authorization"]
       }' 2>&1)"
   echo "[cluster.sh]   mcp server 'demo-mcp-echo' → ${seed_out}"
 

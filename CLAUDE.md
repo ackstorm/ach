@@ -737,6 +737,14 @@ against the forwarder's JWKS. A 401 here means one of:
   expectation must agree.
 - The backend's JWKS cache hasn't refreshed since a forwarder rotation.
   Restart `deploy/ach-mcp-echo` to force a clean re-fetch.
+- The LiteLLM MCP server registration is missing
+  `extra_headers: ["authorization"]`. LiteLLM acts as an MCP gateway
+  in front of the backend; by default it DROPS the caller's
+  Authorization header before forwarding. Without the opt-in, the
+  backend never sees the JWT and 401s every call (visible upstream
+  as `tools=[]` on `tools/list`). `scripts/cluster.sh hydrate_fixtures`
+  registers `demo-mcp-echo` with this opt-in already in place; users
+  registering their own backends MUST do the same.
 
 WHY IT FAILS: The verifier is intentionally strict — the trust path is
 only meaningful if the backend refuses on the slightest mismatch. Fix
