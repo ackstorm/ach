@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# BackendIdentityPolicy for the demo-mcp-echo MCP server (issue #35).
+# Enables forwarder JWT mint on /mcp/demo-mcp-echo so the
+# TestPhase4JWTValidate e2e can assert the round-trip end-to-end.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-demo-mcp-echo
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp-echo
+  forwardIdentityJWT: true

@@ -237,6 +237,18 @@ hydrate_litellm() {
       }' 2>&1)"
   echo "[cluster.sh]   mcp server 'demo-mcp' → ${seed_out}"
 
+  # 2b) Seed JWT-validating MCP server (issue #35).
+  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+    curl -s -X POST http://localhost:4000/v1/mcp/server \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "server_name": "demo-mcp-echo",
+        "transport": "http",
+        "url": "http://ach-mcp-echo.ach-system.svc"
+      }' 2>&1)"
+  echo "[cluster.sh]   mcp server 'demo-mcp-echo' → ${seed_out}"
+
   # 3) Seed A2A agent.
   seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
     curl -s -X POST http://localhost:4000/v1/agents \
