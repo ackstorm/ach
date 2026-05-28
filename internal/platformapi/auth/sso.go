@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/audit"
@@ -22,6 +24,7 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
+	cli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
@@ -58,6 +61,15 @@ type Deps struct {
 	// Pool is the Postgres connection pool. CallbackHandler uses
 	// db.InsertPersonalKey to write the new pk_ row.
 	Pool *pgxpool.Pool
+
+	// Redis is the device-code session store used by Phase 6 D-20:
+	// when LoginHandler is invoked with ?session_id=<id>, the value
+	// is packed into the OAuth2 state and the matching CallbackHandler
+	// invocation writes the freshly minted pk_ payload to
+	// "ach:cli-session:<id>" via cli.Put. Absence-of-Redis (or
+	// absence-of-session_id) preserves the pre-Phase-6 JSON browser
+	// flow verbatim — phase3 e2e assertions continue to pass.
+	Redis *redis.Client
 
 	// Pepper is the server-side HMAC pepper sourced from
 	// ACH_CREDENTIAL_HASH_PEPPER (Phase 1 D-09) — used to derive
@@ -97,6 +109,15 @@ type IDTokenVerifier interface {
 	Verify(ctx context.Context, rawIDToken string) (*oidc.IDToken, error)
 }
 
+// stateSessionSeparator joins the (random_state, session_id) parts
+// inside the OAuth2 state parameter when Phase 6 D-20 device-code
+// threading is active. Both parts are base64url-encoded and never
+// contain "|", so the separator is unambiguous. CallbackHandler splits
+// the URL-state on this separator to extract the optional session_id;
+// the cookie-state is ALWAYS the random_state alone, so the existing
+// CSRF check compares the random prefix verbatim.
+const stateSessionSeparator = "|"
+
 // LoginHandler returns the GET /platform/auth/login HTTP handler. It
 // implements D-04 step 1:
 //
@@ -105,6 +126,14 @@ type IDTokenVerifier interface {
 //  2. Compute the S256 `code_challenge` = SHA-256(verifier).
 //  3. Set the __Host-ach_sso cookie carrying base64url(state + "|" + verifier).
 //  4. Redirect 302 to the Dex authorize URL with code_challenge=S256.
+//
+// Phase 6 D-20 extension: if the request carries ?session_id=<id>, the
+// id is packed into the OAuth2 state as "<random_state>|<session_id>"
+// — Dex echoes the entire opaque state back unchanged on the callback,
+// where CallbackHandler unpacks the suffix to know which CLI session
+// to write the pk_ into. The cookie still stores ONLY the random
+// state so the existing CSRF equality check remains intact (the URL
+// state's random_state prefix is compared against the cookie state).
 //
 // The handler does NOT touch LiteLLM, the DB, the audit logger, or any
 // other side-effecting collaborator — it is pure redirect logic.
@@ -120,6 +149,17 @@ func LoginHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 		state := base64.RawURLEncoding.EncodeToString(stateBytes[:])
+
+		// Phase 6 D-20: pack optional ?session_id into the OAuth2
+		// state we send to Dex. Cookie still stores ONLY the random
+		// state — CallbackHandler compares the URL state's prefix
+		// (before the separator) against the cookie, so CSRF coverage
+		// is preserved verbatim.
+		sessionID := r.URL.Query().Get("session_id")
+		urlState := state
+		if sessionID != "" {
+			urlState = state + stateSessionSeparator + sessionID
+		}
 
 		// Step 1b: PKCE verifier = 32 random bytes -> base64url-no-pad.
 		// 32 bytes gives 256 bits of entropy (well above the 43..128 char
@@ -142,7 +182,9 @@ func LoginHandler(deps Deps) http.HandlerFunc {
 		setSSOCookie(w, state, verifier)
 
 		// Step 4: build Dex authorize URL with PKCE params and redirect.
-		authURL := deps.OAuth2Cfg.AuthCodeURL(state,
+		// urlState includes the optional session_id suffix (D-20);
+		// state (without suffix) is what landed in the cookie above.
+		authURL := deps.OAuth2Cfg.AuthCodeURL(urlState,
 			oauth2.SetAuthURLParam("code_challenge", challenge),
 			oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		)
@@ -238,7 +280,18 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		//   (b) URL ?state= empty,
 		//   (c) URL ?state= != cookie state.
 		// All three branches emit OutcomeStateInvalid (BLK-05).
+		//
+		// Phase 6 D-20: the URL state MAY carry a session_id suffix
+		// packed by LoginHandler as "<random_state>|<session_id>".
+		// Split on the separator; the random_state prefix is the
+		// part compared against the cookie (CSRF check intact); the
+		// suffix is the optional CLI session id.
 		urlState := r.URL.Query().Get("state")
+		var sessionID string
+		if i := strings.Index(urlState, stateSessionSeparator); i >= 0 {
+			sessionID = urlState[i+len(stateSessionSeparator):]
+			urlState = urlState[:i]
+		}
 		if urlState == "" || urlState != state {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionSSOLogin,
@@ -467,12 +520,68 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 			RequestID: reqID,
 			KeyID:     keyID,
 		})
+
+		// Phase 6 D-20: when the OAuth2 state carried a session_id
+		// suffix AND Redis is wired, write the pk_ payload to
+		// "ach:cli-session:<id>" so the polling /platform/auth/cli/
+		// token endpoint can hand it to the CLI. Render a friendly
+		// browser-side HTML page instead of the legacy JSON — the
+		// user is on a browser they're about to close, not a script
+		// that needs to parse the body.
+		//
+		// Absence-of-session_id preserves the pre-Phase-6 JSON
+		// branch verbatim so test/e2e/phase3_invariants browser-
+		// driven assertions remain valid (D-20 backward compat).
+		if sessionID != "" && deps.Redis != nil {
+			sess := cli.Session{
+				KeyID:      keyID,
+				Plaintext:  plaintext,
+				OwnerEmail: claims.Email,
+				CreatedAt:  deps.callbackNow().UTC().Format(time.RFC3339),
+			}
+			if putErr := cli.Put(ctx, deps.Redis, sessionID, sess, cli.DefaultSessionTTL); putErr != nil {
+				// Log the write failure but still render the HTML —
+				// the CLI's /token poll will eventually return 404
+				// session_not_found, surfacing the failure to the
+				// user without leaking the pk_ through the browser
+				// response.
+				deps.Logger.Error("sso.callback: cli session writeback failed",
+					"err", putErr, "request_id", reqID)
+			}
+			renderCallbackHTML(w)
+			return
+		}
+
 		render.JSON(w, http.StatusOK, callbackResponse{
 			KeyID:      keyID,
 			Plaintext:  plaintext,
 			OwnerEmail: claims.Email,
 		})
 	}
+}
+
+// callbackHTMLPage is the browser-friendly success page rendered when
+// the OAuth2 state carried a session_id (D-20). It contains NO pk_
+// plaintext — the CLI receives the pk_ via the /platform/auth/cli/
+// token poll, not via the browser.
+const callbackHTMLPage = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ach login</title></head>
+<body>
+<h1>Login successful</h1>
+<p>You may close this window and return to your terminal.</p>
+</body>
+</html>
+`
+
+// renderCallbackHTML writes the browser-friendly success page with
+// Content-Type: text/html. Errors on the writer are swallowed (mirrors
+// render.JSON discipline — by the time the encoder fails the status
+// is already flushed and there is no clean recovery path).
+func renderCallbackHTML(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, callbackHTMLPage)
 }
 
 // provisionUser implements D-04 step 5 + BLK-05 sub-point 3 + D-25

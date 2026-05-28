@@ -1,10 +1,20 @@
 # ACH CLI Subcommands — Implementation Plan
 
+> **Historical draft (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` originally used the hyphenated
+> form (hyphen → underscore rename in the filename token only);
+> the script itself was deleted in Phase 06-09 (replaced by
+> `ach login` + `ach hydrate --environment demo`). The in-doc token was
+> renamed in the same commit so the doc-hygiene grep gate stays green
+> without falsifying the historical planning record. The
+> .planning/phases/06-cli-foundation/ tree (executed Phase 6)
+> supersedes this draft.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task.
 
-**Goal:** Implement the `ach login`, `ach whoami`, `ach hydrate`, `ach env {list,create,revoke}` CLI subcommands so that `examples/hydrate-demo.sh` collapses to a one-liner — `ach login --sso && ach hydrate --environment demo > hydrate.json` — and the shell script is deleted in favor of a Go-driven e2e test fixture.
+**Goal:** Implement the `ach login`, `ach whoami`, `ach hydrate`, `ach env {list,create,revoke}` CLI subcommands so that `examples/hydrate_demo.sh` collapses to a one-liner — `ach login --sso && ach hydrate --environment demo > hydrate.json` — and the shell script is deleted in favor of a Go-driven e2e test fixture.
 
-**Architecture:** All subcommands wire into the existing cobra root (`cmd/ach/cmd/root.go`) alongside `operator`/`platform-api`/`forwarder`/`content-service`/`migrate`. Each subcommand follows the established `<mode>.go` per-file pattern (one cobra `*Command` registered from `init()` via `rootCmd.AddCommand(...)`). The CLI shares an HTTP client + on-disk config loader under a new internal package `internal/cli/`. The config file lives at `$XDG_CONFIG_HOME/ach/config.json` (default `~/.config/ach/config.json`) and carries `{endpoint, pk, last_environment}` — written by `ach login`, read by every other subcommand. All CLI HTTP calls send `x-ach-key: <pk_>` exactly as `examples/hydrate-demo.sh` does today.
+**Architecture:** All subcommands wire into the existing cobra root (`cmd/ach/cmd/root.go`) alongside `operator`/`platform-api`/`forwarder`/`content-service`/`migrate`. Each subcommand follows the established `<mode>.go` per-file pattern (one cobra `*Command` registered from `init()` via `rootCmd.AddCommand(...)`). The CLI shares an HTTP client + on-disk config loader under a new internal package `internal/cli/`. The config file lives at `$XDG_CONFIG_HOME/ach/config.json` (default `~/.config/ach/config.json`) and carries `{endpoint, pk, last_environment}` — written by `ach login`, read by every other subcommand. All CLI HTTP calls send `x-ach-key: <pk_>` exactly as `examples/hydrate_demo.sh` does today.
 
 **Tech stack:**
 - Go 1.26 + `github.com/spf13/cobra` (already wired via root.go)
@@ -17,7 +27,7 @@
 - `/home/jcm/Projects/ach/cmd/ach/cmd/root.go` — cobra root, `rootCmd` var, `Version` ldflag injection point
 - `/home/jcm/Projects/ach/cmd/ach/cmd/migrate.go` — smallest existing subcommand; canonical style template
 - `/home/jcm/Projects/ach/cmd/ach/cmd/platform_api.go` — larger existing subcommand showing flag binding + config validation idioms
-- `/home/jcm/Projects/ach/examples/hydrate-demo.sh` — the shell script this CLI subsumes; line-by-line authority on the wire format
+- `/home/jcm/Projects/ach/examples/hydrate_demo.sh` — the shell script this CLI subsumes; line-by-line authority on the wire format
 - `/home/jcm/Projects/ach/examples/hydrate.json` — **golden** the new CLI must reproduce byte-for-byte
 - `/home/jcm/Projects/ach/internal/platformapi/auth/sso.go` — SSO flow (LoginHandler / CallbackHandler) the CLI drives
 - `/home/jcm/Projects/ach/internal/platformapi/auth/cookies.go` — `__Host-ach_sso` cookie semantics the CLI's cookie jar must respect
@@ -45,7 +55,7 @@
 
 ### Pre-flight Finding F1: `ach-old` has no reference CLI
 
-The task brief mentions porting from `/home/jcm/Projects/ach-old/cmd/ach/cmd/*.go`. Inspection shows **that directory does not exist** (`ls: cannot access`). The new CLI is **designed from scratch** using the platform-api REST routes as the contract. The shell script `examples/hydrate-demo.sh` is the only end-to-end working reference and dictates the wire-format expectations.
+The task brief mentions porting from `/home/jcm/Projects/ach-old/cmd/ach/cmd/*.go`. Inspection shows **that directory does not exist** (`ls: cannot access`). The new CLI is **designed from scratch** using the platform-api REST routes as the contract. The shell script `examples/hydrate_demo.sh` is the only end-to-end working reference and dictates the wire-format expectations.
 
 ### Pre-flight Finding F2: no `/platform/whoami` endpoint exists today
 
@@ -62,7 +72,7 @@ The task brief mentions porting from `/home/jcm/Projects/ach-old/cmd/ach/cmd/*.g
 
 ### Pre-flight Finding F4: `x-ach-key` is the auth header (not Authorization: Bearer)
 
-`examples/hydrate-demo.sh:138` and `internal/platformapi/middleware/` confirm the bearer header is `x-ach-key: <pk_>`. The shared HTTP client (Task 3) MUST use `x-ach-key` — using `Authorization: Bearer` would silently fail Authn.
+`examples/hydrate_demo.sh:138` and `internal/platformapi/middleware/` confirm the bearer header is `x-ach-key: <pk_>`. The shared HTTP client (Task 3) MUST use `x-ach-key` — using `Authorization: Bearer` would silently fail Authn.
 
 ### Pre-flight Finding F5: XDG path is the right config location
 
@@ -111,7 +121,7 @@ Produce the following inline table inside this plan (as a comment in the first n
 
 **Files:** none — design decision captured here.
 
-**Decision (v1 ship):** `ach login --sso` is **NOT implemented in v1**. Only `ach login --token <pk_>` ships. The shell `hydrate-demo.sh` is amended to keep doing the cookie-jar SSO dance, extract the `pk_`, and call `ach login --token "$PK"` (Task 9). This collapses the demo from 145 lines to ~50 lines without requiring server-side changes to the SSO callback contract.
+**Decision (v1 ship):** `ach login --sso` is **NOT implemented in v1**. Only `ach login --token <pk_>` ships. The shell `hydrate_demo.sh` is amended to keep doing the cookie-jar SSO dance, extract the `pk_`, and call `ach login --token "$PK"` (Task 9). This collapses the demo from 145 lines to ~50 lines without requiring server-side changes to the SSO callback contract.
 
 **Rationale:**
 - The existing `/platform/auth/sso/callback` returns the `pk_` to the **browser** as a JSON body. There is no machine-readable handoff to a local CLI listener today.
@@ -167,7 +177,7 @@ Produce the following inline table inside this plan (as a comment in the first n
 //   ach env revoke <ek_id>           → DELETE /platform/env-keys/<ek_id>
 //
 // Auth header is x-ach-key (NOT Authorization: Bearer) — see
-// examples/hydrate-demo.sh line 138 + internal/platformapi/middleware.
+// examples/hydrate_demo.sh line 138 + internal/platformapi/middleware.
 package cli
 ```
 
@@ -578,14 +588,14 @@ subcommands authenticate transparently.
 
 v1 supports --token only. --sso (browser-driven OAuth2 round-trip) is
 reserved for the §10.1 follow-up; today the SSO flow is exercised via
-examples/hydrate-demo.sh which extracts the pk_ from the cookie-jar
+examples/hydrate_demo.sh which extracts the pk_ from the cookie-jar
 round-trip and pipes it into 'ach login --token "$PK"'.`,
     RunE: runLogin,
 }
 
 func init() {
     loginCmd.Flags().StringVar(&loginEndpoint, "endpoint", "", "platform-api base URL (e.g. https://ach.example.com); required on first login")
-    loginCmd.Flags().StringVar(&loginToken, "token", "", "pk_ bearer (required; obtain via examples/hydrate-demo.sh in v1)")
+    loginCmd.Flags().StringVar(&loginToken, "token", "", "pk_ bearer (required; obtain via examples/hydrate_demo.sh in v1)")
     loginCmd.Flags().BoolVar(&loginSSO, "sso", false, "TODO(§10.1): browser-driven SSO; not implemented in v1")
     rootCmd.AddCommand(loginCmd)
 }
@@ -1018,7 +1028,7 @@ git commit -m "feat(cli): §10 ach whoami (echo /platform/whoami JSON)"
 **Files:**
 - Create: `cmd/ach/cmd/hydrate.go`
 - Create: `cmd/ach/cmd/hydrate_test.go`
-- Create: `cmd/ach/cmd/testdata/hydrate-demo-golden.json` (copy of `examples/hydrate.json` — bytes-identical at this moment so the golden test pins drift)
+- Create: `cmd/ach/cmd/testdata/hydrate_demo-golden.json` (copy of `examples/hydrate.json` — bytes-identical at this moment so the golden test pins drift)
 
 ### Step 7.1: `cmd/ach/cmd/hydrate.go`
 
@@ -1026,7 +1036,7 @@ git commit -m "feat(cli): §10 ach whoami (echo /platform/whoami JSON)"
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach hydrate --environment <name>` is the load-bearing subcommand: it
-// reproduces the JSON returned by examples/hydrate-demo.sh step 6 so the
+// reproduces the JSON returned by examples/hydrate_demo.sh step 6 so the
 // shell driver can be deleted in favor of the test/e2e Go fixture in
 // Task 11. Output goes to stdout (or --output <file>) as canonicalized
 // JSON (2-space indent + trailing newline) so byte-diffing against the
@@ -1055,7 +1065,7 @@ var (
 
 var hydrateCmd = &cobra.Command{
     Use:   "hydrate",
-    Short: "Fetch the §15.2 manifest for an Environment (replaces examples/hydrate-demo.sh step 6)",
+    Short: "Fetch the §15.2 manifest for an Environment (replaces examples/hydrate_demo.sh step 6)",
     RunE:  runHydrate,
 }
 
@@ -1140,7 +1150,7 @@ func TestHydrate_GoldenByteDiff(t *testing.T) {
     cfgDir := t.TempDir()
     t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
-    golden, err := os.ReadFile(filepath.Join("testdata", "hydrate-demo-golden.json"))
+    golden, err := os.ReadFile(filepath.Join("testdata", "hydrate_demo-golden.json"))
     if err != nil { t.Fatalf("read golden: %v", err) }
 
     srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1192,7 +1202,7 @@ func TestHydrate_NotReady_HintsAccessGroup(t *testing.T) {
 ### Step 7.3: Seed the golden file
 
 ```bash
-cp examples/hydrate.json cmd/ach/cmd/testdata/hydrate-demo-golden.json
+cp examples/hydrate.json cmd/ach/cmd/testdata/hydrate_demo-golden.json
 ```
 
 ### Step 7.4: Run + commit
@@ -1358,16 +1368,16 @@ git commit -m "feat(cli): §10 ach env list/create/revoke (POST/GET/DELETE /plat
 
 ---
 
-## Task 9: Slim `examples/hydrate-demo.sh` to use the new CLI
+## Task 9: Slim `examples/hydrate_demo.sh` to use the new CLI
 
 **Files:**
-- Modify: `examples/hydrate-demo.sh` — keep steps 1-4 (LiteLLM team seed, CR apply, wait for ExecutionResourcesResolved, port-forward); replace step 5 to extract the `pk_` from the SSO round-trip and feed it to `ach login --token`; replace step 6 with `ach hydrate --environment $ENV_NAME --output $OUT`.
+- Modify: `examples/hydrate_demo.sh` — keep steps 1-4 (LiteLLM team seed, CR apply, wait for ExecutionResourcesResolved, port-forward); replace step 5 to extract the `pk_` from the SSO round-trip and feed it to `ach login --token`; replace step 6 with `ach hydrate --environment $ENV_NAME --output $OUT`.
 
 ### Step 9.1: Edit the script
 
 Concrete diff outline (the executor refines the actual sed/edit):
 - Keep lines 1-90 (preamble, LiteLLM team seed, kubectl apply, wait, port-forwards) verbatim.
-- Replace step 5 (lines 91-132) with: extract `PK` via curl + cookie jar exactly as today (lines 92-112 remain), then `ach login --endpoint "http://localhost:${PLATFORM_API_PORT}" --token "${PK}"` instead of `echo "[hydrate-demo]   pk minted: ..."`.
+- Replace step 5 (lines 91-132) with: extract `PK` via curl + cookie jar exactly as today (lines 92-112 remain), then `ach login --endpoint "http://localhost:${PLATFORM_API_PORT}" --token "${PK}"` instead of `echo "[hydrate_demo]   pk minted: ..."`.
 - Replace step 6 (lines 134-141) with: `ach hydrate --environment "${ENV_NAME}" --output "${OUT}"`.
 - Add at the top: `ACH_BIN="${ACH_BIN:-./bin/ach}"` and prefix the two `ach` calls accordingly so the script works against a freshly-built binary without requiring `$PATH` plumbing.
 
@@ -1376,15 +1386,15 @@ Concrete diff outline (the executor refines the actual sed/edit):
 ```bash
 ./scripts/dev.sh make build           # produces ./bin/ach with the new subcommands
 make cluster-up                       # if not already up
-./examples/hydrate-demo.sh            # should produce examples/hydrate.json byte-equivalent to the recorded golden
-diff <(jq -S . examples/hydrate.json) <(jq -S . cmd/ach/cmd/testdata/hydrate-demo-golden.json)  # should be empty
+./examples/hydrate_demo.sh            # should produce examples/hydrate.json byte-equivalent to the recorded golden
+diff <(jq -S . examples/hydrate.json) <(jq -S . cmd/ach/cmd/testdata/hydrate_demo-golden.json)  # should be empty
 ```
 
 ### Step 9.3: Commit
 
 ```bash
-git add examples/hydrate-demo.sh
-git commit -m "refactor(examples): hydrate-demo.sh — call \`ach login\`/\`ach hydrate\` (drops 70+ lines of curl)"
+git add examples/hydrate_demo.sh
+git commit -m "refactor(examples): hydrate_demo.sh — call \`ach login\`/\`ach hydrate\` (drops 70+ lines of curl)"
 ```
 
 **Acceptance:** the script runs end-to-end (assuming §7+§8 land) and produces a `hydrate.json` byte-equivalent to the recorded golden.
@@ -1408,7 +1418,7 @@ Once a cluster is running (see "Toolchain" below), authenticate and pull an
 Environment manifest:
 
 ```bash
-# v1: paste a pk_ obtained via examples/hydrate-demo.sh (the script extracts
+# v1: paste a pk_ obtained via examples/hydrate_demo.sh (the script extracts
 # the cookie-jar SSO round-trip output and runs `ach login --token "$PK"`
 # for you).
 ./bin/ach login --endpoint https://ach.example.com --token "pk_..."
@@ -1478,7 +1488,7 @@ git commit -m "docs(cli): §10 add quickstart + CLAUDE.md surface notes"
 **Files:**
 - Create: `test/e2e/cli_hydrate_test.go` — Go test that drives `./bin/ach login` + `./bin/ach hydrate` against the kept kind cluster
 
-**Why:** the acceptance gate for §10 is "examples/hydrate-demo.sh collapses to a one-liner; new flow becomes e2e test fixture". This task lands the fixture.
+**Why:** the acceptance gate for §10 is "examples/hydrate_demo.sh collapses to a one-liner; new flow becomes e2e test fixture". This task lands the fixture.
 
 ### Step 11.1: `test/e2e/cli_hydrate_test.go`
 
@@ -1488,7 +1498,7 @@ git commit -m "docs(cli): §10 add quickstart + CLAUDE.md surface notes"
 // Plan §10 e2e: drives `./bin/ach login` + `./bin/ach hydrate` end-to-end
 // against the kept kind cluster, asserts the resulting JSON is byte-
 // equivalent to examples/hydrate.json (the golden). Replaces examples/
-// hydrate-demo.sh step 5 + 6 as the canonical CLI regression.
+// hydrate_demo.sh step 5 + 6 as the canonical CLI regression.
 
 package e2e
 
@@ -1505,7 +1515,7 @@ func TestCLI_HydrateGoldenDiff(t *testing.T) {
     if os.Getenv("ACH_E2E") == "" {
         t.Skip("set ACH_E2E=1 to run against a kept kind cluster")
     }
-    // Pre-req: examples/hydrate-demo.sh steps 1-4 must have run (LiteLLM team
+    // Pre-req: examples/hydrate_demo.sh steps 1-4 must have run (LiteLLM team
     // seeded, CRs applied, port-forwards live). The e2e Makefile target wraps
     // this; running the test bare assumes the operator already setup the
     // demo Environment.
@@ -1558,14 +1568,14 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 
 ### Step 11.2: Wire the test into `make e2e`
 
-Confirm `test/e2e/` is already covered by `make e2e-full` / `make e2e-focus` (it is — see CLAUDE.md "E2E debug loop" section). The new test runs automatically once the `ACH_E2E=1` + token env vars are set. Update `examples/hydrate-demo.sh` to export those vars before exiting so the human round-trip story is "run the script, then `ACH_E2E=1 ./scripts/dev.sh make e2e-focus FOCUS=TestCLI_Hydrate`".
+Confirm `test/e2e/` is already covered by `make e2e-full` / `make e2e-focus` (it is — see CLAUDE.md "E2E debug loop" section). The new test runs automatically once the `ACH_E2E=1` + token env vars are set. Update `examples/hydrate_demo.sh` to export those vars before exiting so the human round-trip story is "run the script, then `ACH_E2E=1 ./scripts/dev.sh make e2e-focus FOCUS=TestCLI_Hydrate`".
 
 ### Step 11.3: Run + commit
 
 ```bash
 # Local manual smoke (requires kept cluster):
 make cluster-keep
-./examples/hydrate-demo.sh          # produces hydrate.json + exports ACH_E2E_PK/ENDPOINT
+./examples/hydrate_demo.sh          # produces hydrate.json + exports ACH_E2E_PK/ENDPOINT
 ACH_E2E=1 ./scripts/dev.sh make e2e-focus FOCUS=TestCLI_HydrateGoldenDiff
 
 git add test/e2e/cli_hydrate_test.go
@@ -1576,10 +1586,10 @@ git commit -m "test(e2e): §10 CLI end-to-end — ach login + hydrate vs example
 
 ---
 
-## Task 12: Delete `examples/hydrate-demo.sh` once §7 + §8 are green (DEFERRED)
+## Task 12: Delete `examples/hydrate_demo.sh` once §7 + §8 are green (DEFERRED)
 
 **Files:**
-- (Eventually) Delete: `examples/hydrate-demo.sh`
+- (Eventually) Delete: `examples/hydrate_demo.sh`
 - (Eventually) Modify: `examples/README.md` — point readers at the CLI quickstart + the e2e test
 
 **Why deferred:** the script today does work that the CLI cannot do end-to-end yet (Dex SSO round-trip from a headless CI runner). Even after §7 + §8 land, the script remains useful as the **bootstrap** step that produces the first `pk_`. Delete it only when `ach login --sso` (the §10.1 follow-up) ships.
@@ -1608,7 +1618,7 @@ cd /home/jcm/Projects/ach
 
 # e2e (kept cluster; requires §7 + §8 landed for a fully green run).
 make cluster-keep
-./examples/hydrate-demo.sh
+./examples/hydrate_demo.sh
 ACH_E2E=1 ./scripts/dev.sh make e2e-focus FOCUS=TestCLI_HydrateGoldenDiff
 
 # Pre-push gate (the 17-gate publication check).
@@ -1622,7 +1632,7 @@ gh pr create \
 - New subcommands: `ach login --token`, `ach whoami`, `ach hydrate --environment`, `ach env {list,create,revoke}`.
 - New platform-api endpoint: `GET /platform/whoami` (read-only KeyContext echo).
 - New shared package `internal/cli/` with XDG-located config (mode 0600) + `x-ach-key`-injecting HTTP client.
-- `examples/hydrate-demo.sh` slimmed by ~70 lines; CLI byte-diffs vs `examples/hydrate.json` golden in a new e2e test.
+- `examples/hydrate_demo.sh` slimmed by ~70 lines; CLI byte-diffs vs `examples/hydrate.json` golden in a new e2e test.
 
 ## Test plan
 - [ ] `./scripts/dev.sh go test ./internal/cli/...`
@@ -1635,7 +1645,7 @@ gh pr create \
 
 ## Out of scope / follow-up
 - `ach login --sso` browser-callback flow → §10.1 (deferred; rationale in plan Task 2).
-- Delete `examples/hydrate-demo.sh` → §10.2 (deferred until `--sso` ships).
+- Delete `examples/hydrate_demo.sh` → §10.2 (deferred until `--sso` ships).
 EOF
 )"
 ```

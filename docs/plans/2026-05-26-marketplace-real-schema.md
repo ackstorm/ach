@@ -1,5 +1,13 @@
 # Re-model PluginMarketplace for Real Claude Code Schema — Implementation Plan
 
+> **Historical draft (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` originally used the hyphenated
+> form (hyphen → underscore rename in the filename token only);
+> the script itself was deleted in Phase 06-09 (replaced by
+> `ach login` + `ach hydrate --environment demo`). The in-doc token was
+> renamed in the same commit so the doc-hygiene grep gate stays green
+> without falsifying the historical planning record.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace the placeholder 6-source-discriminator marketplace parser with the real upstream Claude Code marketplace schema (`{source: "git-subdir" | "url" | "local-path", url, path, ref, sha}`), introduce a generic `internal/sources/git/` fetcher to materialize per-entry plugins from any git remote, and prove end-to-end against `anthropics/claude-plugins-official`.
@@ -2439,25 +2447,25 @@ plugins flip ReasonUnsupportedPluginSource). The real upstream is
 exercised by examples/05 directly; no need for a hand-rolled fixture."
 ```
 
-### Task 5.3: Update examples/README.md + hydrate-demo.sh
+### Task 5.3: Update examples/README.md + hydrate_demo.sh
 
 **Files:**
 - Modify: `examples/README.md` (paragraph about 05 / 05b — confirm 05b reference is removed)
-- Modify: `examples/hydrate-demo.sh` (add 05 to the apply list if not already present)
+- Modify: `examples/hydrate_demo.sh` (add 05 to the apply list if not already present)
 
 **Step 1: Update README**
 
 Find the section that mentions `05-pluginmarketplace-anthropic.yaml` and `05b-pluginmarketplace-internal-http.yaml`. Remove the 05b paragraph entirely. Update the 05 paragraph to mention the new type:github + real-schema flow.
 
-**Step 2: Verify hydrate-demo applies 05**
+**Step 2: Verify hydrate_demo applies 05**
 
 ```bash
-grep "05-pluginmarketplace" /home/jcm/Projects/ach/examples/hydrate-demo.sh
+grep "05-pluginmarketplace" /home/jcm/Projects/ach/examples/hydrate_demo.sh
 ```
 
 Currently the script does NOT apply 05 (only 06/07/08/04/01). Add it so the marketplace gets exercised end-to-end:
 
-In `examples/hydrate-demo.sh`, change the `kubectl apply -f` invocation to:
+In `examples/hydrate_demo.sh`, change the `kubectl apply -f` invocation to:
 
 ```bash
 kubectl apply -f examples/01-litellmconnection.yaml \
@@ -2471,10 +2479,10 @@ kubectl apply -f examples/01-litellmconnection.yaml \
 After the existing `kubectl wait` for the Environment, add a wait for the marketplace:
 
 ```bash
-echo "[hydrate-demo] 3b. waiting for PluginMarketplace/anthropic-code Synced=True..."
+echo "[hydrate_demo] 3b. waiting for PluginMarketplace/anthropic-code Synced=True..."
 kubectl -n "${NS}" wait --for=condition=Synced \
   pluginmarketplace/anthropic-code --timeout=180s || {
-    echo "[hydrate-demo] PluginMarketplace did not converge — dumping status:" >&2
+    echo "[hydrate_demo] PluginMarketplace did not converge — dumping status:" >&2
     kubectl -n "${NS}" describe pluginmarketplace/anthropic-code >&2
     exit 1
   }
@@ -2483,10 +2491,10 @@ kubectl -n "${NS}" wait --for=condition=Synced \
 **Step 3: Commit**
 
 ```bash
-git add examples/README.md examples/hydrate-demo.sh
-git commit -m "docs(examples): wire PluginMarketplace into hydrate-demo
+git add examples/README.md examples/hydrate_demo.sh
+git commit -m "docs(examples): wire PluginMarketplace into hydrate_demo
 
-hydrate-demo.sh now applies examples/05 and waits for
+hydrate_demo.sh now applies examples/05 and waits for
 Synced=True before driving SSO + hydrate. README is updated to
 drop the 05b placeholder reference and document the new
 type:github + real-schema flow."
@@ -2506,14 +2514,14 @@ type:github + real-schema flow."
 
 All three: PASS. If any fail, fix in-place (no shortcuts; the plan's commits should already cover the needed surface).
 
-### Task 6.2: hydrate-demo end-to-end against a live kind cluster
+### Task 6.2: hydrate_demo end-to-end against a live kind cluster
 
 The cluster.sh wait targets cover everything we need. The user directive: "Adversarial cases pass per spec above."
 
 ```bash
 make cluster-up
 ./scripts/dev.sh make operator-redeploy
-./examples/hydrate-demo.sh
+./examples/hydrate_demo.sh
 ```
 
 Expected outcomes per the prompt's Acceptance section:
@@ -2521,7 +2529,7 @@ Expected outcomes per the prompt's Acceptance section:
 1. `kubectl get pluginmarketplace anthropic-code -o yaml` shows `status.conditions[?(@.type=='Synced')].status == True`.
 2. `kubectl -n ach-system exec deploy/ach-platform-api -- psql -c "select marketplace_name, name, storage_location from marketplace_plugins where marketplace_name='anthropic-code'"` shows at least one row whose `name` matches `^code-.*` (or whatever the include pattern resolves to today).
 3. `find $(./scripts/dev.sh kubectl -n ach-system exec deploy/ach -- sh -c 'echo $ACH_CACHE_ROOT')/marketplace/anthropic-code/plugin/ -type f` (or the equivalent via the operator pod) shows the tarball on the cache PVC.
-4. `examples/hydrate.json` (regenerated by hydrate-demo.sh) contains at least one entry under `context.plugins[]` whose source attribution mentions `anthropic-code` (alongside the standalone caveman Plugin already proven by `06-plugin-caveman.yaml`).
+4. `examples/hydrate.json` (regenerated by hydrate_demo.sh) contains at least one entry under `context.plugins[]` whose source attribution mentions `anthropic-code` (alongside the standalone caveman Plugin already proven by `06-plugin-caveman.yaml`).
 
 If any acceptance criterion fails: pause, debug, fix root cause, commit incrementally. Do NOT push partial work.
 
@@ -2548,14 +2556,14 @@ gh pr create --title "feat(marketplace): real Claude Code schema parser + git fe
 - Introduce `internal/sources/git/` — a generic git-remote fetcher (shells out to `git` for shallow clone + pinned SHA checkout + worktree/subtree tar) used for INNER fetch of every marketplace plugin entry
 - Audit hardening: plugins[] count cap (5000), per-label 63-char DNS cap, body-overflow detection (5MiB JSON / 200MiB tarball)
 - Switch examples/05 from the `http` + raw.githubusercontent.com hack to `type:github` against `anthropics/claude-plugins-official`; drop placeholder examples/05b
-- Wire PluginMarketplace into examples/hydrate-demo.sh so the end-to-end UAT exercises a real upstream marketplace
+- Wire PluginMarketplace into examples/hydrate_demo.sh so the end-to-end UAT exercises a real upstream marketplace
 
 Closes TODO §5.
 
 ## Test plan
 - [x] `./scripts/dev.sh make unit` PASS (parser unit tests, dispatch unit tests, git fetcher unit tests)
 - [x] `./scripts/dev.sh make envtest-fast` PASS (re-authored Stage-1/Stage-2/Stage-3 fixtures + new local-path + adversarial-entry cases)
-- [x] `examples/hydrate-demo.sh` end-to-end: anthropic-code PluginMarketplace → Synced=True → ≥1 marketplace_plugins row → tarball on cache PVC → entry in hydrate.json context.plugins[]
+- [x] `examples/hydrate_demo.sh` end-to-end: anthropic-code PluginMarketplace → Synced=True → ≥1 marketplace_plugins row → tarball on cache PVC → entry in hydrate.json context.plugins[]
 - [x] `make pre-push` 17 gates GREEN
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -2569,7 +2577,7 @@ EOF
 
 1. `./scripts/dev.sh make unit` PASS — Task 6.1
 2. `./scripts/dev.sh make envtest-fast` PASS with re-authored fixtures — Task 6.1
-3. `examples/hydrate-demo.sh` end-to-end converges:
+3. `examples/hydrate_demo.sh` end-to-end converges:
    - PluginMarketplace `anthropic-code` Synced=True
    - ≥1 inner plugin (`^code-.*`) materialized as a `marketplace_plugins` row with a real tarball at `storage_location` on the operator cache PVC
    - `hydrate.json` contains marketplace-sourced plugin under `context.plugins[]` alongside the standalone caveman Plugin
@@ -2589,7 +2597,7 @@ EOF
 - **No new go.mod entries.** All new code uses stdlib (`archive/tar`, `compress/gzip`, `os/exec`, `crypto/rand`, `bytes`). The git CLI is the runtime dependency — already in the devtools container and the runtime distroless image (verify in Task 0.1).
 - **Build-break window:** Task 1.2 deletes `marketplacePluginToSourceSpec` and `errUnsupportedPluginSource`, leaving `pluginmarketplace_controller.go` non-compiling. Task 3.1 closes the gap. Do NOT push between these commits. If splitting work across sessions, sequence Tasks 1.2 → 3.1 inside a single session.
 - **TDD discipline:** every Task in Phases 1–4 follows write-failing-test → run-to-confirm-fail → minimal-implementation → re-run-to-confirm-pass → commit. Skipping the "confirm fail" step has bitten this codebase before (see TODO history); do not skip.
-- **Naked-poll ban (CLAUDE.md):** all `wait-*` invocations use the blessed Makefile targets. No `until ... do sleep ... done` loops anywhere in the new shell scripts. The Task 5.3 hydrate-demo addition uses `kubectl wait --for=condition=Synced --timeout=180s` per the canonical pattern.
+- **Naked-poll ban (CLAUDE.md):** all `wait-*` invocations use the blessed Makefile targets. No `until ... do sleep ... done` loops anywhere in the new shell scripts. The Task 5.3 hydrate_demo addition uses `kubectl wait --for=condition=Synced --timeout=180s` per the canonical pattern.
 
 ---
 

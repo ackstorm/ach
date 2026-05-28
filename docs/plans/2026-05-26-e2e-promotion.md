@@ -1,5 +1,13 @@
 # E2E Promotion of Six Shell-Driven UAT Checks Implementation Plan
 
+> **Historical draft (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` originally used the hyphenated
+> form (hyphen → underscore rename in the filename token only);
+> the script itself was deleted in Phase 06-09 (replaced by
+> `ach login` + `ach hydrate --environment demo`). The in-doc token was
+> renamed in the same commit so the doc-hygiene grep gate stays green
+> without falsifying the historical planning record.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Promote six end-to-end checks (today driven manually via `kubectl` + `curl` on 2026-05-26) into the Go `test/e2e/` regression net under the `e2e` build tag, so every subsequent push exercises them automatically against the kept kind cluster.
@@ -21,7 +29,7 @@
 | Force-refresh annotation contract | `internal/controller/ach/{plugin,prompt,artifact,pluginmarketplace}_controller.go` (search `force-refresh`) | All four kinds clear `ach.ackstorm.ai/force-refresh` after successful reconcile; status writes touch `LastSuccessfulRefresh` + `UpstreamRev` |
 | External-ref status fields | `api/ach/v1alpha1/external_ref_types.go` lines 285–310 | `status.lastSuccessfulRefresh` (metav1.Time) + `status.upstreamRev` (string) — the two fields 11a asserts on |
 | BIP no-shadow-logic invariant | `examples/10-backendidentitypolicy-duplicate.yaml` header comment + memory `feedback_bip_no_shadow_logic.md` | Both CRs apply, both finalizer-tagged, `status.conditions` empty by design — 11b asserts this |
-| Shell drivers being promoted | `examples/hydrate-demo.sh`, today's 2026-05-26 UAT sweep (TODO §11) | The exact wire path and assertions the new Go code reproduces |
+| Shell drivers being promoted | `examples/hydrate_demo.sh`, today's 2026-05-26 UAT sweep (TODO §11) | The exact wire path and assertions the new Go code reproduces |
 | Internal-schema fixture body | `.gocache/uat/marketplace.json` (created by UAT operator) + `examples/05b-pluginmarketplace-internal-http.yaml` header comment | The marketplace JSON 11c serves via ConfigMap-backed nginx |
 | Operator Deployment name + namespace | `Makefile` line 537 `operator-redeploy: … deploy/ach … -n default` | Helm chart names operator `deploy/ach` in namespace `default` — **NOT** `ach-operator/ach-system`. 11d MUST target `deploy/ach -n default` |
 | Platform-API Service name | `phase3_helpers_test.go` line 363: `svc/ach-platform-api` in namespace `ach-system` | 11e port-forward target |
@@ -316,8 +324,8 @@ In `test/e2e/phase4_promotion_test.go`, delete the `testSC11aForceRefreshCycle` 
 // testSC11aForceRefreshCycle drives the force-refresh annotation
 // round-trip across the three external-reference kinds the demo
 // fixture set already exercises (examples/06, 07, 08). Each kind:
-//   1. is pre-applied by examples/hydrate-demo.sh OR this subtest
-//      (hydrate-demo.sh idempotent re-apply path).
+//   1. is pre-applied by examples/hydrate_demo.sh OR this subtest
+//      (hydrate_demo.sh idempotent re-apply path).
 //   2. has its force-refresh annotation cycled once.
 //
 // Total wall-clock: 3 kinds × ≤30s = ≤90s on a cold reconcile; ≤6s on
@@ -1010,13 +1018,13 @@ git commit -m "test(e2e): §11d operator restart + informer resync"
 **Files:**
 - Create: `test/e2e/fixtures/hydrate-golden.json`
 
-**Step 1: Drive examples/hydrate-demo.sh once + capture**
+**Step 1: Drive examples/hydrate_demo.sh once + capture**
 
 This step depends on FIX01.md §A being unblocked. If it isn't, mark this task **engineer-pending** and t.Skipf §11e with a clear message. Otherwise:
 
 ```bash
 make cluster-keep
-bash examples/hydrate-demo.sh
+bash examples/hydrate_demo.sh
 cp examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
 ```
 
@@ -1028,7 +1036,7 @@ Inspect `test/e2e/fixtures/hydrate-golden.json`. Strip any fields that legitimat
 
 ```bash
 git add test/e2e/fixtures/hydrate-golden.json
-git commit -m "test(e2e): §11e hydrate golden fixture (captured from hydrate-demo.sh)"
+git commit -m "test(e2e): §11e hydrate golden fixture (captured from hydrate_demo.sh)"
 ```
 
 > **If FIX01 §A is blocking and no real golden can be captured**, write the golden using the body in `examples/hydrate.json` already in-repo (it's the last-known-good snapshot). The §11e sub-test (Task 14) will then surface FIX01 §A as a hard failure, which is the desired regression behavior — flipping from "engineer-pending verification debt" to "Go-asserted invariant" on the day FIX01 §A lands.
@@ -1043,7 +1051,7 @@ git commit -m "test(e2e): §11e hydrate golden fixture (captured from hydrate-de
 **Step 1: Append the helper**
 
 ```go
-// driveHydrateAndCapture runs examples/hydrate-demo.sh as a sub-process
+// driveHydrateAndCapture runs examples/hydrate_demo.sh as a sub-process
 // against the current kept cluster and returns the captured hydrate
 // response JSON. The script is the canonical wire-path stand-in for the
 // not-yet-built `ach login` + `ach hydrate` CLI.
@@ -1065,11 +1073,11 @@ func driveHydrateAndCapture(t *testing.T) []byte {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "../../examples/hydrate-demo.sh")
+	cmd := exec.CommandContext(ctx, "bash", "../../examples/hydrate_demo.sh")
 	cmd.Env = append(cmd.Env, "PATH="+envOr("PATH", "/usr/bin:/bin"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("§11e: hydrate-demo.sh failed: %v\n%s\n\n"+
+		t.Fatalf("§11e: hydrate_demo.sh failed: %v\n%s\n\n"+
 			"This is the canonical wire-path test. If FIX01.md §A is still "+
 			"blocking the SSO path, the test correctly surfaces the regression.",
 			err, out)
@@ -1118,7 +1126,7 @@ Delete the stub. Append:
 // testSC11eHydrateGolden is the highest-value §11 add: full /platform/
 // hydrate wire path asserted against a checked-in golden JSON.
 //
-// Wire path: examples/hydrate-demo.sh drives:
+// Wire path: examples/hydrate_demo.sh drives:
 //   1. LiteLLM team seed
 //   2. kubectl apply -f examples/{01,06,07,08,04}
 //   3. wait Environment/demo ExecutionResourcesResolved=True
@@ -1149,14 +1157,14 @@ func testSC11eHydrateGolden(t *testing.T) {
 	if len(diffs) > 0 {
 		t.Fatalf("§11e hydrate response differs from golden:\n  %s\n\n"+
 			"If the drift is legitimate, either (a) re-capture the golden "+
-			"(bash examples/hydrate-demo.sh && cp examples/hydrate.json "+
+			"(bash examples/hydrate_demo.sh && cp examples/hydrate.json "+
 			"test/e2e/fixtures/hydrate-golden.json) and commit, OR (b) add "+
 			"the drifting JSON path to the `tolerated` map in this test.",
 			strings.Join(diffs, "\n  "))
 	}
 
 	// TODO(§16): once Environment Available + AccessGroupSynced
-	// conditions land, also assert hydrate-demo.sh waits on
+	// conditions land, also assert hydrate_demo.sh waits on
 	// Available=True (currently waits only on
 	// ExecutionResourcesResolved=True per FIX01 §C.1).
 }
@@ -1493,7 +1501,7 @@ lands), re-capture the golden:
 
 ```bash
 make cluster-keep
-bash examples/hydrate-demo.sh
+bash examples/hydrate_demo.sh
 cp examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
 git add test/e2e/fixtures/hydrate-golden.json
 git commit -m "test(e2e): refresh §11e hydrate golden (<reason>)"

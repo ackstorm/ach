@@ -18,6 +18,7 @@ import (
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
+	authcli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
 	"github.com/ackstorm/ach/internal/platformapi/environments"
 	"github.com/ackstorm/ach/internal/platformapi/envkeys"
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
@@ -124,6 +125,7 @@ func New(deps Deps) http.Handler {
 		OAuth2Cfg:       deps.OAuth2Cfg,
 		LiteLLM:         deps.LiteLLM,
 		Pool:            deps.Pool,
+		Redis:           deps.Redis, // Phase 6 D-20: callback writeback target.
 		Pepper:          deps.Pepper,
 		Audit:           deps.Audit,
 		Logger:          deps.Logger,
@@ -131,6 +133,18 @@ func New(deps Deps) http.Handler {
 	}
 	r.Get("/platform/auth/login", auth.LoginHandler(authDeps))
 	r.Get("/platform/auth/sso/callback", auth.CallbackHandler(authDeps))
+
+	// Phase 6 device-code endpoints (unauthenticated; D-02 + D-19).
+	// /init mints session_id anonymously; /token gates by session_id
+	// alone (one-shot Redis GETDEL). Mount OUTSIDE the Authn-gated
+	// chi.Group — both endpoints sit alongside the SSO routes above.
+	r.Route("/platform/auth/cli", authcli.Mount(authcli.Deps{
+		Redis:     deps.Redis,
+		Audit:     deps.Audit,
+		Logger:    deps.Logger,
+		Namespace: deps.Namespace,
+		BaseURL:   deps.BaseURL,
+	}))
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
 	// deps.Allowlist, deps.Audit) — allowlist passed positionally so
