@@ -26,13 +26,13 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/render"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // newConfigCmd returns a fresh `ach config` parent cobra.Command with
@@ -296,30 +296,14 @@ func loadConfigForCmd() (*config.File, error) {
 	return f, nil
 }
 
-// configSyntheticGuard returns a CodedError when synthetic-mode env
-// vars are set (ACH_BASE_URL + ACH_API_KEY). Mirrors the inline check
-// used by login.go + logout.go; centralization lands in W3-P1
-// (06-07) via internal/cli/synthetic.GuardCommand.
-func configSyntheticGuard(sub string) error {
-	if syntheticActive() {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: fmt.Sprintf(
-				"ach config %s is not available in synthetic mode "+
-					"(ACH_BASE_URL + ACH_API_KEY set; see CLI spec §3.3)",
-				sub,
-			),
-		}
-	}
-	return nil
-}
-
-// syntheticActive reports whether both ACH_BASE_URL and ACH_API_KEY
-// are non-empty (synthetic-mode trigger per CLI spec §3.3). Extracted
-// as a package-level helper so config.go's 5 children share one
-// definition with potential future callers.
-func syntheticActive() bool {
-	return os.Getenv("ACH_BASE_URL") != "" && os.Getenv("ACH_API_KEY") != ""
+// configSyntheticGuard delegates to the centralized 06-07 helper. The
+// `sub` argument is preserved in the local signature so call sites
+// stay self-documenting (`configSyntheticGuard("list")` etc.) — the
+// shared helper's message already names the gate (`ach config is not
+// available in synthetic mode...`), so the sub label is no longer
+// folded into the rendered string.
+func configSyntheticGuard(_ string) error {
+	return synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateConfig})
 }
 
 func init() {

@@ -35,6 +35,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/render"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // envHTTPClient is a test-only package-level seam — same pattern as
@@ -111,6 +112,17 @@ func newEnvListCmd() *cobra.Command {
 		Short: "List environments visible to the active credential",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
+			// half-set, --deployment, --env-key) — runs BEFORE the
+			// credential resolution so half-set wins over disk errors.
+			if err := synthetic.GuardCommand(synthetic.Params{
+				Gate:           synthetic.GateEnvList,
+				APIKeyFlag:     flagAPIKey,
+				EnvKeyFlag:     flagEnvKey,
+				DeploymentFlag: flagDeployment,
+			}); err != nil {
+				return err
+			}
 			hc, err := buildEnvHTTPClient(flagDeployment, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
 			if err != nil {
 				return err
@@ -145,6 +157,16 @@ func newEnvDescribeCmd() *cobra.Command {
 		Short: "Show one environment's runtime + context manifest",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
+			// half-set, --deployment, --env-key).
+			if err := synthetic.GuardCommand(synthetic.Params{
+				Gate:           synthetic.GateEnvDescribe,
+				APIKeyFlag:     flagAPIKey,
+				EnvKeyFlag:     flagEnvKey,
+				DeploymentFlag: flagDeployment,
+			}); err != nil {
+				return err
+			}
 			name := args[0]
 			hc, err := buildEnvHTTPClient(flagDeployment, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
 			if err != nil {

@@ -53,6 +53,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/render"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -177,14 +178,18 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
 
-	// D-08: synthetic mode + no-save mandate. Detect synthetic before
-	// any config read so we never accidentally load a stale file.
-	if isSynthetic() && !noSave {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: "ach env-keys create requires --no-save in synthetic mode " +
-				"(ACH_BASE_URL + ACH_API_KEY set; no writable config file — D-08)",
-		}
+	// D-08 + CLI-07 synthetic gate via the centralized 06-07 helper.
+	// GateEnvKeysCreate is allowed in synthetic IFF --no-save is set;
+	// the helper also rejects half-set, --deployment, and --env-key
+	// before any HTTP call.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateEnvKeysCreate,
+		APIKeyFlag:     flagAPIKey,
+		EnvKeyFlag:     flagEnvKey,
+		DeploymentFlag: flagDeployment,
+		NoSaveFlag:     noSave,
+	}); err != nil {
+		return err
 	}
 
 	name = strings.TrimSpace(name)
@@ -316,6 +321,18 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
 
+	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
+	// --deployment, --env-key) — runs BEFORE resolveEnvKeysBearer so
+	// the half-set message wins over any disk-config error.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateEnvKeysList,
+		APIKeyFlag:     flagAPIKey,
+		EnvKeyFlag:     flagEnvKey,
+		DeploymentFlag: flagDeployment,
+	}); err != nil {
+		return err
+	}
+
 	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
 	if err != nil {
 		return err
@@ -414,6 +431,17 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
 
+	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
+	// --deployment, --env-key).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateEnvKeysRevoke,
+		APIKeyFlag:     flagAPIKey,
+		EnvKeyFlag:     flagEnvKey,
+		DeploymentFlag: flagDeployment,
+	}); err != nil {
+		return err
+	}
+
 	// CLI-13: client-side key-id classification BEFORE any HTTP.
 	switch {
 	case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
@@ -481,13 +509,6 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 // shared helpers
 // ---------------------------------------------------------------------
 
-// isSynthetic returns true when ACH_BASE_URL + ACH_API_KEY are both
-// set — the canonical Phase 6 synthetic-mode trigger per spec §3.3.
-// Full CLI-09 mutex enforcement lands in W3-P1 / 06-07.
-func isSynthetic() bool {
-	return os.Getenv("ACH_BASE_URL") != "" && os.Getenv("ACH_API_KEY") != ""
-}
-
 // resolveEnvKeysBearer is the env-keys sibling of whoami's
 // resolveActiveBearer. Precedence (W1 minimal; full mutex in W3-P1):
 //
@@ -509,14 +530,10 @@ func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string
 	envDeployment := os.Getenv("ACH_DEPLOYMENT")
 
 	if envBaseURL != "" && envAPIKey != "" {
-		// Synthetic — no disk config consulted. Reject --deployment.
-		if flagDeployment != "" || envDeployment != "" {
-			return "", "", &exit.CodedError{
-				Code: exit.General,
-				Msg: "synthetic mode (ACH_BASE_URL + ACH_API_KEY) rejects " +
-					"--deployment / ACH_DEPLOYMENT (CLI spec §3.3)",
-			}
-		}
+		// Synthetic — no disk config consulted. The synthetic.GuardCommand
+		// call in the cobra RunE already rejected --deployment under
+		// synthetic; the synthesized "(env)" deployment lives only in
+		// memory for this request.
 		return envBaseURL, envAPIKey, nil
 	}
 

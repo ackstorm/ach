@@ -24,6 +24,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // newLogoutCmd returns a fresh `ach logout` cobra.Command.
@@ -58,12 +59,13 @@ CLI spec §3.3.
 func doLogout(cmd *cobra.Command, flagDeployment string) error {
 	stdout := cmd.OutOrStdout()
 
-	// Synthetic-mode short-circuit (D-06).
-	if os.Getenv("ACH_BASE_URL") != "" && os.Getenv("ACH_API_KEY") != "" {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "ach logout is not available in synthetic mode (ACH_BASE_URL + ACH_API_KEY set; see CLI spec §3.3)",
-		}
+	// Synthetic-mode gate via the centralized 06-07 helper (D-06).
+	// Also rejects half-set before any disk read.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateLogout,
+		DeploymentFlag: flagDeployment,
+	}); err != nil {
+		return err
 	}
 
 	// Load config.

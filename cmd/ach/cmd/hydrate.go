@@ -46,6 +46,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -208,7 +209,19 @@ func runHydrate(cmd *cobra.Command, environment string, noWarnings, verbose bool
 	if err := assertMutexCreds(in.flagAPIKey, in.flagEnvKey, in.envAPIKey, in.envEnvKey); err != nil {
 		return err
 	}
-	if err := assertSyntheticConstraints(in); err != nil {
+	// CLI-07 synthetic gate via the centralized 06-07 helper.
+	// GateHydrate is allowed in synthetic; the helper rejects half-set,
+	// --deployment, and --env-key under synthetic. The legacy
+	// assertSyntheticConstraints is retained for the "half-synthetic
+	// + --env-key" case where ACH_BASE_URL is set but no credential
+	// resolves and --env-key was passed — the half-set arm of
+	// GuardCommand fires first, with a stronger message.
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:           synthetic.GateHydrate,
+		APIKeyFlag:     in.flagAPIKey,
+		EnvKeyFlag:     in.flagEnvKey,
+		DeploymentFlag: in.flagDeployment,
+	}); err != nil {
 		return err
 	}
 
@@ -243,30 +256,6 @@ func runHydrate(cmd *cobra.Command, environment string, noWarnings, verbose bool
 	}
 
 	return postAndStream(cmd, baseURL, bearer, effectiveEnv, in.verbose)
-}
-
-// assertSyntheticConstraints enforces the spec §3.3 / D-11 rules that
-// apply when ACH_BASE_URL is set: --deployment / ACH_DEPLOYMENT and
-// --env-key / ACH_ENV_KEY are all rejected. Half-synthetic invocations
-// (ACH_BASE_URL set, no ACH_API_KEY) hit the --env-key arm too.
-func assertSyntheticConstraints(in hydrateInputs) error {
-	if in.envBaseURL == "" {
-		return nil
-	}
-	synthetic := in.envAPIKey != "" || in.flagAPIKey != ""
-	if synthetic && (in.flagDeployment != "" || in.envDeployment != "") {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "synthetic mode (ACH_BASE_URL + ACH_API_KEY) rejects --deployment / ACH_DEPLOYMENT (CLI spec §3.3)",
-		}
-	}
-	if in.flagEnvKey != "" || in.envEnvKey != "" {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "--env-key requires a config-file-resolved deployment; not available with ACH_BASE_URL set",
-		}
-	}
-	return nil
 }
 
 // resolveBearer returns (baseURL, bearer) for the request, dispatching
