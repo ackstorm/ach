@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
@@ -238,7 +238,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.Spec.AuthorizedTeams, teams) {
+			if !hasIntersect(env.AuthorizedTeams, teams) {
 				if deps.Audit != nil {
 					audit.EmitAudit(ctx, deps.Audit, audit.Event{
 						Action:    audit.ActionHydrate,
@@ -269,8 +269,8 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 		resp := HydrateResponse{
 			SchemaVersion: SchemaVersion,
 			Environment:   envName,
-			Runtime:       toRuntimeBlock(env.Spec.Runtime, deps.BaseURL),
-			Context:       toContextBlock(env.Spec.Context, deps.BaseURL),
+			Runtime:       toRuntimeBlockFromRow(env, deps.BaseURL),
+			Context:       toContextBlockFromRow(env, deps.BaseURL),
 		}
 
 		// Audit success — ActionHydrate + OutcomeCreated (created is the
@@ -292,30 +292,35 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// toRuntimeBlock maps the CRD's RuntimeBlock (a slice-of-names per kind)
-// to the §15.2 response shape (slice of {id, endpoint} per kind).
-// Endpoint shapes are the WARN-02 commit (Phase 3 frozen):
+// toRuntimeBlockFromRow maps the projection row's flat runtime arrays
+// (runtime_models / runtime_mcp_servers / runtime_a2a_agents) into the §15.2
+// response shape (slice of {id, endpoint} per kind). Endpoint shapes are the
+// WARN-02 commit (Phase 3 frozen):
 //
 //   - models     -> ${BaseURL}/v1               (all models share one endpoint)
 //   - mcpServers -> ${BaseURL}/mcp/<name>
 //   - a2aAgents  -> ${BaseURL}/a2a/<name>
 //
 // Phase 4 Forwarder may extend the prefix scheme; Phase 3 freezes these.
-func toRuntimeBlock(in achv1alpha1.RuntimeBlock, baseURL string) RuntimeBlock {
+//
+// Renamed from toRuntimeBlock (issue #34): the input changed from
+// achv1alpha1.RuntimeBlock to *db.EnvironmentRow when platform-api moved off
+// the informer cache.
+func toRuntimeBlockFromRow(row *db.EnvironmentRow, baseURL string) RuntimeBlock {
 	out := emptyRuntime()
-	for _, name := range in.Models {
+	for _, name := range row.RuntimeModels {
 		out.Models = append(out.Models, RuntimeItem{
 			ID:       name,
 			Endpoint: baseURL + "/v1",
 		})
 	}
-	for _, name := range in.MCPServers {
+	for _, name := range row.RuntimeMCPServers {
 		out.MCPServers = append(out.MCPServers, RuntimeItem{
 			ID:       name,
 			Endpoint: baseURL + "/mcp/" + name,
 		})
 	}
-	for _, name := range in.A2AAgents {
+	for _, name := range row.RuntimeA2AAgents {
 		out.A2AAgents = append(out.A2AAgents, RuntimeItem{
 			ID:       name,
 			Endpoint: baseURL + "/a2a/" + name,
@@ -324,31 +329,35 @@ func toRuntimeBlock(in achv1alpha1.RuntimeBlock, baseURL string) RuntimeBlock {
 	return out
 }
 
-// toContextBlock maps the CRD's ContextBlock (a slice-of-names per kind)
-// to the §15.2 response shape (slice of {name, id, downloadUrl} per kind).
-// The downloadUrl is the §15.6 Content Service URL; kind in the path is
-// the singular form (prompt|plugin|artifact) — Phase 5 binds against this.
-func toContextBlock(in achv1alpha1.ContextBlock, baseURL string) ContextBlock {
+// toContextBlockFromRow maps the projection row's flat context arrays
+// (context_prompts / context_plugins / context_artifacts) into the §15.2
+// response shape (slice of {name, id, downloadUrl} per kind). The downloadUrl
+// is the §15.6 Content Service URL; kind in the path is the singular form
+// (prompt|plugin|artifact) — Phase 5 binds against this.
+//
+// Renamed from toContextBlock (issue #34): same reasoning as
+// toRuntimeBlockFromRow above.
+func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock {
 	out := emptyContext()
 	// Strict literal "/content/" + kind + "/" + name keeps the Phase 5
 	// Content Service URL construction grep-able from a single place and
 	// makes the §15.6 contract obvious to future readers.
 	const contentPrefix = "/content/"
-	for _, name := range in.Prompts {
+	for _, name := range row.ContextPrompts {
 		out.Prompts = append(out.Prompts, ContextItem{
 			Name:        name,
 			ID:          name,
 			DownloadURL: baseURL + contentPrefix + "prompt/" + name,
 		})
 	}
-	for _, name := range in.Plugins {
+	for _, name := range row.ContextPlugins {
 		out.Plugins = append(out.Plugins, ContextItem{
 			Name:        name,
 			ID:          name,
 			DownloadURL: baseURL + contentPrefix + "plugin/" + name,
 		})
 	}
-	for _, name := range in.Artifacts {
+	for _, name := range row.ContextArtifacts {
 		out.Artifacts = append(out.Artifacts, ContextItem{
 			Name:        name,
 			ID:          name,

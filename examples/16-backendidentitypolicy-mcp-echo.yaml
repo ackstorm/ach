@@ -1,0 +1,10 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-mcp-echo-jwt-on
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: mcp-echo
+  forwardIdentityJWT: true

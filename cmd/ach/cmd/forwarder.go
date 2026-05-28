@@ -12,7 +12,7 @@
 // ctrl.SetupSignalHandler.
 //
 // Refuses to start when:
-//   - ACH_BASE_URL is not https:// (FWD-10 / Hub §9.1)
+//   - ACH_BASE_URL is not http(s)://
 //   - LiteLLMConnection/default CR is missing OR its Spec.Endpoint is
 //     not a parseable http(s):// URL OR its MasterKeySecretRef does not
 //     resolve to a non-empty Secret data entry (B2 refactor — replaces
@@ -56,7 +56,8 @@ import (
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder"
-	"github.com/ackstorm/ach/internal/forwarder/bip"
+	"github.com/ackstorm/ach/internal/forwarder/bipcache"
+	"github.com/ackstorm/ach/internal/forwarder/envstore"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
@@ -79,7 +80,7 @@ var forwarderCmd = &cobra.Command{
 	Long: `Boot the chi-backed reverse proxy on /v1, /gemini, /mcp/{name},
 /a2a/{name} with §5.1 header strip+rewrite, §9 Ed25519 JWT signing gated
 by BackendIdentityPolicy, and /.well-known/jwks.json. Refuses to start
-when ACH_BASE_URL is not https:// (FWD-10) or the ach-jwt-signing-keys
+when ACH_BASE_URL is not http(s):// or the ach-jwt-signing-keys
 Secret is missing/malformed (FWD-09).`,
 	RunE: runForwarder,
 }
@@ -113,8 +114,8 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ACH_BASE_URL required: %w", err)
 	}
-	if !strings.HasPrefix(baseURL, "https://") {
-		return nil, errors.New("ACH_BASE_URL must be https:// (FWD-10 / Hub §9.1)")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
 
@@ -255,7 +256,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// liveness restart). Other resolver errors (malformed endpoint,
 	// missing secret key) still refuse-to-start so misconfiguration
 	// surfaces at boot instead of as 401 storms under load.
-	llmRes, err := resolveLiteLLMWithRetry(ctx, mgr.GetAPIReader(), cfg.Namespace, logger)
+	llmRes, err := resolveLiteLLMWithRetry(ctx, pool, mgr.GetAPIReader(), cfg.Namespace, logger)
 	if err != nil {
 		return out, fmt.Errorf("litellmconn.Resolve: %w", err)
 	}
@@ -268,20 +269,21 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 	ll := litellm.NewRESTClient(llmRes.Endpoint, llmRes.MasterKey, ctrl.Log.WithName("litellm"))
 
-	// D-09 ORDER: bip.RegisterIndex MUST be called BEFORE the first
-	// GetInformer(ctx, &achv1alpha1.BackendIdentityPolicy{}).
-	if err := bip.RegisterIndex(ctx, mgr); err != nil {
-		return out, fmt.Errorf("bip.RegisterIndex: %w", err)
+	// Issue #34 C6: BIP + Environment now flow from Postgres-backed
+	// caches; controller-runtime informers for those kinds are dropped.
+	// The Secret informer for ach-jwt-signing-keys is retained below for
+	// JWT seed hot-reload.
+	bipCache := bipcache.New(pool, cfg.Namespace, ctrl.Log.WithName("bipcache"))
+	envStore := envstore.New(pool, cfg.Namespace, ctrl.Log.WithName("envstore"))
+	if err := mgr.Add(runnableFn(bipCache.Run)); err != nil {
+		return out, fmt.Errorf("manager.Add(bipcache): %w", err)
+	}
+	if err := mgr.Add(runnableFn(envStore.Run)); err != nil {
+		return out, fmt.Errorf("manager.Add(envstore): %w", err)
 	}
 
-	for _, obj := range []client.Object{
-		&achv1alpha1.BackendIdentityPolicy{},
-		&achv1alpha1.Environment{},
-		&corev1.Secret{},
-	} {
-		if _, err := mgr.GetCache().GetInformer(ctx, obj); err != nil {
-			return out, fmt.Errorf("informer %T: %w", obj, err)
-		}
+	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Secret{}); err != nil {
+		return out, fmt.Errorf("informer Secret: %w", err)
 	}
 
 	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
@@ -353,7 +355,9 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Redis:            out.redis,
 		LiteLLM:          ll,
 		Pepper:           cfg.Pepper,
-		K8sClient:        mgr.GetClient(),
+		K8sClient:        mgr.GetClient(), // Secret hot-reload watcher only
+		BIPResolver:      bipCache,        // C1/C4: Postgres-backed BIP cache
+		EnvProvider:      envStore,        // C2/C5: Postgres-backed Env cache
 		Resolver:         cachedResolver,
 		TeamsResolver:    teamsResolver,
 		Signer:           out.signer,
@@ -365,6 +369,13 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 	return out, nil
 }
+
+// runnableFn adapts a `func(ctx) error` to controller-runtime's
+// manager.Runnable interface so the bipcache + envstore Run methods can
+// be added to the manager without a wrapper type per package.
+type runnableFn func(ctx context.Context) error
+
+func (f runnableFn) Start(ctx context.Context) error { return f(ctx) }
 
 func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *forwarderConfig) error {
 	trafficHandler := forwarder.New(deps.server)
@@ -406,17 +417,18 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 // so misconfiguration still surfaces at boot.
 func resolveLiteLLMWithRetry(
 	ctx context.Context,
+	pool *pgxpool.Pool,
 	reader client.Reader,
 	namespace string,
 	logger *slog.Logger,
 ) (*litellmconn.Resolution, error) {
 	const retryInterval = 60 * time.Second
 	for {
-		res, err := litellmconn.Resolve(ctx, reader, namespace)
+		res, err := litellmconn.Resolve(ctx, pool, reader, namespace)
 		if err == nil {
 			return res, nil
 		}
-		if !errors.Is(err, litellmconn.ErrCRNotFound) && !errors.Is(err, litellmconn.ErrSecretNotFound) {
+		if !errors.Is(err, litellmconn.ErrLiteLLMConnectionNotReady) && !errors.Is(err, litellmconn.ErrSecretNotFound) {
 			return nil, err
 		}
 		logger.Info("LiteLLMConnection not yet hydrated; will retry",

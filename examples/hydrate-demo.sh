@@ -124,6 +124,7 @@ EOF
   exit 1
 fi
 echo "[hydrate-demo]   pk minted: ${KEY_ID} (owner ${OWNER})"
+echo "[hydrate-demo]   plaintext pk: ${PK}"
 
 echo "[hydrate-demo] 6. POST /platform/hydrate environment=${ENV_NAME}..."
 mkdir -p "$(dirname "${OUT}")"

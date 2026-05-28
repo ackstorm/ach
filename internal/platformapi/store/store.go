@@ -1,173 +1,185 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Plan 03-06 — informer-backed Environment reader helpers (D-20 / D-21).
+// Package store ships the Postgres-backed Environment reader helpers the
+// platform-api handlers consume (issue #34 / Phase B1).
 //
-// The Store wraps a controller-runtime cache-backed client.Client and exposes
-// the four reader entry points Phase 3 handlers consume:
+// Pre-issue-34 the Store wrapped a controller-runtime cached client.Client and
+// served reads from the informer cache. Issue #34 makes Postgres the source of
+// truth: the Operator dual-writes Environments into the `environments`
+// projection table, and platform-api reads the projection via pgxpool. The
+// Store API surface (GetEnvironment / EnvironmentTerminating /
+// EnvironmentAccessGroupSynced / ListAuthorizedEnvironments) is preserved so
+// handler logic does not change shape — only the underlying transport.
 //
-//   - GetEnvironment                — single Environment by name, nil-on-absent.
-//   - EnvironmentAccessGroupSynced  — boolean projection of the
-//     `AccessGroupSynced` condition (false when missing or env absent).
-//   - EnvironmentTerminating        — true when env.DeletionTimestamp != nil.
-//   - ListAuthorizedEnvironments    — caller-team intersection + admin override.
-//
-// All reads go through s.client.Get / s.client.List with
-// client.InNamespace(s.ns) — namespace isolation per MULTI-01 is baked into
-// the constructor and cannot be bypassed by callers.
+// All reads scope to the `s.ns` namespace passed at construction (MULTI-01
+// invariant unchanged from the informer-era Store).
 
 package store
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 
 	"github.com/go-logr/logr"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/db"
 )
 
-// ConditionTypeAccessGroupSynced is the Hub §6.6 condition type name that
-// Phase 2's Environment reconciler writes when the LiteLLM access group
-// matches the Environment's spec.runtime projection. Phase 3 §8.2 step 3
-// gates ek_ creation on this condition being True.
+// ConditionTypeAccessGroupSynced is the Hub §6.6 condition type name the
+// Phase 2 Environment reconciler writes when the LiteLLM access group matches
+// the Environment's spec.runtime projection. Phase 3 §8.2 step 3 gates ek_
+// creation on this condition being True.
 const ConditionTypeAccessGroupSynced = "AccessGroupSynced"
 
-// Store is the informer-backed Environment reader. Construct via New.
+// Store is the Postgres-backed Environment reader.
 //
 // Field discipline:
-//   - client is a controller-runtime cached client (mgr.GetClient() after
-//     mgr.GetCache().WaitForCacheSync). Direct API-server clients defeat
-//     the Hub §5.2 cache-served promise.
-//   - ns is the watch namespace (MULTI-01). All Get/List calls are scoped
-//     via client.InNamespace(ns); the field is set ONCE at construction.
+//   - pool is the pgxpool.Pool the platform-api process opened against the
+//     Hub Postgres. Reads use pool.QueryRow / pool.Query directly; no
+//     in-process cache (Postgres is the single source of truth per issue
+//     #34 / spec v4 §5.2).
+//   - ns is the watch namespace (MULTI-01). All Get/List calls bind ns as
+//     the first $-parameter; the field is set ONCE at construction and the
+//     Store offers no API to override it per-call.
 //   - log is the operational logger; the Store never emits audit events
-//     itself (audit emission is the handler's responsibility per D-19).
+//     itself (audit emission stays a handler-side responsibility per D-19).
 type Store struct {
-	client client.Client
-	ns     string
-	log    logr.Logger
+	pool *pgxpool.Pool
+	ns   string
+	log  logr.Logger
 }
 
-// New returns a Store reading Environments in ns. The caller MUST pass a
-// cache-backed client.Client (mgr.GetClient() returns one after the manager's
-// cache has synced); passing a direct REST client would silently bypass the
-// Hub §5.2 discipline and hit the API server on every read.
-func New(c client.Client, ns string, log logr.Logger) *Store {
-	return &Store{client: c, ns: ns, log: log}
+// New returns a Store reading Environments in ns from the supplied Postgres
+// pool. The pool MUST already be opened (db.Open) — the constructor does no
+// ping or migration check; the platform-api bootstrap (cmd/ach/cmd/platform_api.go)
+// already verifies pool reachability via /readyz at process start.
+func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Store {
+	return &Store{pool: pool, ns: ns, log: log}
 }
 
-// GetEnvironment returns (*Environment, nil) when the named Environment
-// exists in s.ns, (nil, nil) when absent, and (nil, err) on any other
-// read failure. The (nil, nil) absent shape lets the handler distinguish
-// "env_not_found" from "internal_error" without inspecting the underlying
-// apierrors type — a deliberate ergonomic simplification per Hub §8.3.
+// GetEnvironment returns the projection row keyed by (s.ns, name).
 //
-// The Get hits the controller-runtime informer cache; the round-trip is
-// sub-millisecond after warmup. Caller is responsible for checking
-// env.DeletionTimestamp if drain semantics matter (see EnvironmentTerminating).
-func (s *Store) GetEnvironment(ctx context.Context, name string) (*achv1alpha1.Environment, error) {
-	env := &achv1alpha1.Environment{}
-	if err := s.client.Get(ctx, types.NamespacedName{Namespace: s.ns, Name: name}, env); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("store: GetEnvironment(%s): %w", name, err)
-	}
-	return env, nil
+// Absent row → (nil, nil) — preserved from the informer-era contract so the
+// handler can distinguish "env_not_found" from "internal_error" without
+// inspecting a wrapped error type. Pgconn 08/57 transients propagate raw
+// (db.GetEnvironmentByName already implements that classification).
+func (s *Store) GetEnvironment(ctx context.Context, name string) (*db.EnvironmentRow, error) {
+	return db.GetEnvironmentByName(ctx, s.pool, s.ns, name)
 }
 
-// EnvironmentTerminating returns true when the named Environment exists AND
-// has a non-nil DeletionTimestamp. Returns (false, nil) when the Environment
-// is absent — callers checking drain semantics first should have already
-// invoked GetEnvironment for an explicit "env_not_found" branch (Hub §8.3).
+// EnvironmentTerminating returns true iff the projection row for the named
+// Environment has a non-NULL deletion_timestamp (drain semantics per CS-09).
+// Absent row → (false, nil).
 //
-// This helper does NOT distinguish "absent" from "present and not terminating"
-// because the §8.2 step-2 contract treats them identically: env_not_found is
-// surfaced from the GetEnvironment call site one step earlier in the flow.
+// The check delegates to GetEnvironment; the round-trip cost is identical to
+// the informer-era helper (single Postgres SELECT) so call sites that
+// previously did GetEnvironment + EnvironmentTerminating back-to-back still
+// pay only two round trips — pre-issue-34 they paid one informer-cache hit;
+// the new path is bounded by Postgres read latency.
 func (s *Store) EnvironmentTerminating(ctx context.Context, name string) (bool, error) {
-	env, err := s.GetEnvironment(ctx, name)
+	row, err := s.GetEnvironment(ctx, name)
 	if err != nil {
 		return false, err
 	}
-	if env == nil {
+	if row == nil {
 		return false, nil
 	}
-	return env.DeletionTimestamp != nil, nil
+	return row.DeletionTimestamp != nil, nil
 }
 
-// EnvironmentAccessGroupSynced returns the boolean status of the
-// `AccessGroupSynced` condition in the named Environment's status.conditions
-// slice (Hub §6.6 closed set). Returns:
+// EnvironmentAccessGroupSynced returns true iff the named Environment's
+// access_group_synced_condition JSONB column carries a Condition with
+// Type=AccessGroupSynced and Status=True. The Operator dual-writes the column
+// from its status-rollup path (Phase 2 D-14 / D-15), so platform-api can read
+// the boolean projection directly without a JOIN.
 //
+// Returns:
 //   - (true,  nil) when the condition is present with Status=True.
 //   - (false, nil) when the condition is present with Status=False or Unknown.
-//   - (false, nil) when the condition is missing entirely — Phase 3 §8.2
-//     step 3 treats missing as not-ready (503 not_ready), matching the
-//     Phase 2 Environment reconciler's pre-first-reconcile state where the
-//     condition has not yet been written.
-//   - (false, nil) when the Environment itself is absent — the env_not_found
-//     branch is the caller's responsibility via GetEnvironment one step earlier.
-//   - (false, err) on read failure.
+//   - (false, nil) when the column is empty/NULL (pre-first-reconcile or the
+//     reconciler has not yet written the condition).
+//   - (false, nil) when the environment row itself is absent — the
+//     env_not_found branch is the caller's responsibility via GetEnvironment
+//     one step earlier.
+//   - (false, err) on a read or decode failure that is not a clean
+//     (nil, nil) absent shape.
 func (s *Store) EnvironmentAccessGroupSynced(ctx context.Context, name string) (bool, error) {
-	env, err := s.GetEnvironment(ctx, name)
+	row, err := s.GetEnvironment(ctx, name)
 	if err != nil {
 		return false, err
 	}
-	if env == nil {
+	if row == nil {
 		return false, nil
 	}
-	for _, c := range env.Status.Conditions {
-		if c.Type == ConditionTypeAccessGroupSynced {
-			return c.Status == metav1.ConditionTrue, nil
-		}
-	}
-	return false, nil
+	return decodeAccessGroupSynced(row.AccessGroupSyncedCondition), nil
 }
 
-// ListAuthorizedEnvironments returns the Environments in s.ns that the
+// decodeAccessGroupSynced extracts the AccessGroupSynced=True predicate from
+// the access_group_synced_condition JSONB column. The writer's canonical
+// shape is a []metav1.Condition slice (mirrors the K8s status subresource
+// .conditions field), but the helper tolerates a bare metav1.Condition object
+// — the column type doesn't enforce a shape, and a hand-edited row should
+// degrade gracefully rather than crash the reader.
+//
+// A malformed payload contributes False (not-synced) — the steady-state
+// reconciler rewrites the column on its next pass.
+func decodeAccessGroupSynced(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	// Slice form (the Phase 2 writer's canonical encoding).
+	var slice []metav1.Condition
+	if err := json.Unmarshal(raw, &slice); err == nil {
+		for _, c := range slice {
+			if c.Type == ConditionTypeAccessGroupSynced {
+				return c.Status == metav1.ConditionTrue
+			}
+		}
+		return false
+	}
+	// Single-object form.
+	var single metav1.Condition
+	if err := json.Unmarshal(raw, &single); err == nil && single.Type == ConditionTypeAccessGroupSynced {
+		return single.Status == metav1.ConditionTrue
+	}
+	return false
+}
+
+// ListAuthorizedEnvironments returns the projection rows in s.ns that the
 // caller is authorized to see (API-08 / Hub §15.5):
 //
 //   - When isAdmin is true, every Environment in s.ns is returned (the admin
-//     allowlist check is the handler's responsibility — Plan 03-10 sets
-//     isAdmin only AFTER verifying the caller's owner_email is in the
-//     admin allowlist).
+//     allowlist check is the handler's responsibility — only callers whose
+//     owner_email is in the allowlist reach this code path with isAdmin=true).
 //   - When isAdmin is false, an Environment is included iff its
-//     spec.authorizedTeams[] shares at least one element with callerTeams.
+//     authorized_teams[] shares at least one element with callerTeams.
 //
-// Terminating Environments (env.DeletionTimestamp != nil) ARE included in
-// the result; drain semantics are Phase 5 / CS-09 concern. The handler may
-// further filter the result if its own contract requires it.
-//
-// The List hits the controller-runtime informer cache; iteration is
-// O(len(EnvironmentList)) which is bounded by the namespace's Environment
-// count (deployment concern).
-func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []string, isAdmin bool) ([]achv1alpha1.Environment, error) {
-	var list achv1alpha1.EnvironmentList
-	if err := s.client.List(ctx, &list, client.InNamespace(s.ns)); err != nil {
-		return nil, fmt.Errorf("store: ListAuthorizedEnvironments: %w", err)
+// Soft-deleted rows (deletion_timestamp IS NOT NULL) are excluded by the
+// underlying db.ListEnvironments helper — the list endpoint surfaces the
+// not-draining set; the Content Service authz path uses GetEnvironment which
+// deliberately surfaces drain-mode rows per CS-09.
+func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []string, isAdmin bool) ([]db.EnvironmentRow, error) {
+	rows, err := db.ListEnvironments(ctx, s.pool, s.ns)
+	if err != nil {
+		return nil, err
 	}
-	out := make([]achv1alpha1.Environment, 0, len(list.Items))
-	for _, env := range list.Items {
-		if isAdmin || hasIntersect(env.Spec.AuthorizedTeams, callerTeams) {
-			out = append(out, env)
+	out := make([]db.EnvironmentRow, 0, len(rows))
+	for _, row := range rows {
+		if isAdmin || hasIntersect(row.AuthorizedTeams, callerTeams) {
+			out = append(out, row)
 		}
 	}
 	return out, nil
 }
 
 // hasIntersect reports whether the two string slices share at least one
-// element. Used for the authorizedTeams ∩ callerTeams check in
-// ListAuthorizedEnvironments. Empty slice in either argument short-
-// circuits to false — an Environment with no authorizedTeams entries is
-// unreachable to non-admin callers, and a caller with no Team membership
-// sees nothing (admins bypass this helper entirely).
-//
-// Complexity: O(len(a) + len(b)). Building a set from the smaller side would
-// be a minor improvement; current call sites carry single-digit team counts.
+// element. Used for the authorized_teams ∩ callerTeams check in
+// ListAuthorizedEnvironments. Empty slice in either argument short-circuits
+// to false — an Environment with no authorized_teams entries is unreachable
+// to non-admin callers, and a caller with no Team membership sees nothing
+// (admins bypass this helper entirely).
 func hasIntersect(a, b []string) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return false

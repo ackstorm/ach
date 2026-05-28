@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach platform-api` boots the ACH Hub Platform REST API. It wires every
-// Phase 3 piece — env-var validation (D-06 / D-08 / D-09), Postgres pool,
+// `ach platform-api` boots the ACH Hub Platform REST API. Issue #34 made
+// Postgres the source of truth: platform-api no longer constructs a
+// controller-runtime manager, no longer watches Secret or any ACH CRD, and
+// no longer holds a K8s client at all. The read path goes through the
+// pgxpool-backed store (Phase B1), and /admin/refresh signals the operator
+// via NOTIFY ach_refresh (Phase B2).
+//
+// The remaining bootstrap wires env-vars (D-06 / D-08 / D-09), Postgres pool,
 // Redis client (D-09), LiteLLM REST client (D-25), OIDC provider + OAuth2
-// PKCE config (D-04 / D-06), admin allowlist (D-22 / D-23), informer-only
-// controller-runtime manager (D-20), and chi.Mux server wrapped as
-// manager.Runnable — then blocks on mgr.Start under
-// ctrl.SetupSignalHandler (D-03 graceful shutdown). Body lifted from
-// ach-old/cmd/platform-api/main.go and adapted to a cobra RunE for the
-// single-binary layout.
+// PKCE config (D-04 / D-06), admin allowlist (D-22 / D-23), and the chi.Mux
+// server — then blocks on the stdlib http.Server under a SetupSignalHandler
+// for graceful shutdown.
 
 package cmd
 
@@ -23,23 +26,14 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
@@ -52,11 +46,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
-var platformAPIScheme = runtime.NewScheme()
-
 func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(platformAPIScheme))
-	utilruntime.Must(achv1alpha1.AddToScheme(platformAPIScheme))
 	rootCmd.AddCommand(platformAPICmd)
 }
 
@@ -65,7 +55,7 @@ var platformAPICmd = &cobra.Command{
 	Short: "Run the ACH Platform REST API server (chi + Dex SSO)",
 	Long: `Boot the chi-backed REST API exposing the ACH platform surface (Login,
 EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
-without ACH_BASE_URL (https://...), ACH_DB_URL, the credential-hash
+without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
 pepper, the four Dex OAuth2 vars, ACH_LITELLM_BASE_URL +
 ACH_LITELLM_MASTER_KEY, ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 	RunE: runPlatformAPI,
@@ -98,8 +88,8 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ACH_BASE_URL required: %w", err)
 	}
-	if !strings.HasPrefix(baseURL, "https://") {
-		return nil, errors.New("ACH_BASE_URL must be https:// (Hub §9.1 / T-API-04)")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
 
@@ -144,10 +134,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 }
 
 type platformAPIProcessDeps struct {
-	pool    *pgxpool.Pool
-	redis   *redis.Client
-	manager manager.Manager
-	server  platformapi.Deps
+	pool   *pgxpool.Pool
+	redis  *redis.Client
+	server platformapi.Deps
 	// Plan 05-06 D-10: metricsReg holds the process-local Registry +
 	// metricsHandler is the corresponding /metrics http.Handler that
 	// runPlatformAPIServer composes onto the chi router. litellmUnreachable
@@ -231,39 +220,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return nil, fmt.Errorf("admin.LoadAllowlist: %w", err)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 platformAPIScheme,
-		LeaderElection:         false,
-		HealthProbeBindAddress: "0",
-		Metrics:                metricsserver.Options{BindAddress: "0"},
-		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{
-				cfg.Namespace: {},
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("ctrl.NewManager: %w", err)
-	}
-	out.manager = mgr
-
-	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Secret{}); err != nil {
-		return nil, fmt.Errorf("informer Secret: %w", err)
-	}
-	for _, obj := range []client.Object{
-		&achv1alpha1.Environment{},
-		&achv1alpha1.Plugin{},
-		&achv1alpha1.Prompt{},
-		&achv1alpha1.Artifact{},
-		&achv1alpha1.PluginMarketplace{},
-		&achv1alpha1.BackendIdentityPolicy{},
-	} {
-		if _, err := mgr.GetCache().GetInformer(ctx, obj); err != nil {
-			return nil, fmt.Errorf("informer: %w", err)
-		}
-	}
-
-	platformStore := store.New(mgr.GetClient(), cfg.Namespace, ctrl.Log.WithName("store"))
+	platformStore := store.New(pool, cfg.Namespace, logr.Discard())
 
 	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
 	if err != nil {
@@ -283,7 +240,6 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		OIDCProvider:    oidcProvider,
 		IDTokenVerifier: idTokenVerifier,
 		OAuth2Cfg:       oauth2Cfg,
-		K8sClient:       mgr.GetClient(),
 		Store:           platformStore,
 		Resolver:        cachedResolver,
 		Audit:           auditLog,
@@ -294,6 +250,11 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	return out, nil
 }
 
+// runPlatformAPIServer wires the chi handler + /metrics endpoint behind the
+// shared ServerRunnable (which already encodes the D-03 timeouts + graceful
+// shutdown semantics) and waits on the supplied context. Issue #34 dropped
+// the controller-runtime manager — the runnable now starts directly on its
+// own goroutine and the signal context drives shutdown.
 func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bindAddr string) error {
 	httpHandler := platformapi.New(deps.server)
 
@@ -309,21 +270,11 @@ func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bin
 	composed.Handle("/", httpHandler)
 
 	runnable := platformapi.NewRunnable(bindAddr, composed, deps.server.Logger)
-	if err := deps.manager.Add(runnable); err != nil {
-		return fmt.Errorf("manager.Add(serverRunnable): %w", err)
-	}
-	return deps.manager.Start(ctx)
+	return runnable.Start(ctx)
 }
 
 func runPlatformAPI(_ *cobra.Command, _ []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	// Install a controller-runtime logger before any client-go cache or
-	// reflector is constructed. Without this, the reflector's first
-	// ListAndWatchWithContext call hits an unset delegating sink and the
-	// runtime prints a "log.SetLogger(...) was never called" stack dump
-	// to stderr on every Pod start.
-	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 
 	cfg, err := validatePlatformAPIConfig()
 	if err != nil {

@@ -2,9 +2,32 @@
   "schemaVersion": "v1alpha1",
   "environment": "demo",
   "runtime": {
-    "models": [],
-    "mcpServers": [],
-    "a2aAgents": []
+    "models": [
+      {
+        "id": "demo-model",
+        "endpoint": "https://ach.local.test/v1"
+      }
+    ],
+    "mcpServers": [
+      {
+        "id": "demo-mcp",
+        "endpoint": "https://ach.local.test/mcp/demo-mcp"
+      },
+      {
+        "id": "mcp-echo",
+        "endpoint": "https://ach.local.test/mcp/mcp-echo"
+      },
+      {
+        "id": "context7",
+        "endpoint": "https://ach.local.test/mcp/context7"
+      }
+    ],
+    "a2aAgents": [
+      {
+        "id": "demo-agent",
+        "endpoint": "https://ach.local.test/a2a/demo-agent"
+      }
+    ]
   },
   "context": {
     "prompts": [

@@ -102,10 +102,44 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 		}
 		for _, u := range listEnv.Users {
 			if u.UserEmail == email {
+				idPath := "/user/info?user_id=" + url.QueryEscape(u.UserID)
+				idRaw, idErr := c.makeRequest(ctx, "GET", idPath, nil)
+				if idErr != nil {
+					return &UserInfo{
+						UserID:    u.UserID,
+						UserEmail: u.UserEmail,
+						Teams:     u.Teams,
+					}, nil
+				}
+				var idEnv struct {
+					UserID   string `json:"user_id"`
+					UserInfo struct {
+						UserEmail string `json:"user_email"`
+					} `json:"user_info"`
+					Teams []struct {
+						TeamID    string `json:"team_id"`
+						TeamAlias string `json:"team_alias"`
+					} `json:"teams,omitempty"`
+				}
+				if err := json.Unmarshal(idRaw, &idEnv); err != nil {
+					return &UserInfo{
+						UserID:    u.UserID,
+						UserEmail: u.UserEmail,
+						Teams:     u.Teams,
+					}, nil
+				}
+				outTeams := make([]string, 0, len(idEnv.Teams))
+				for _, t := range idEnv.Teams {
+					if t.TeamAlias != "" {
+						outTeams = append(outTeams, t.TeamAlias)
+					} else if t.TeamID != "" {
+						outTeams = append(outTeams, t.TeamID)
+					}
+				}
 				return &UserInfo{
-					UserID:    u.UserID,
+					UserID:    idEnv.UserID,
 					UserEmail: u.UserEmail,
-					Teams:     u.Teams,
+					Teams:     outTeams,
 				}, nil
 			}
 		}
@@ -117,7 +151,9 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 		Teams:     make([]string, 0, len(env.Teams)),
 	}
 	for _, t := range env.Teams {
-		if t.TeamID != "" {
+		if t.TeamAlias != "" {
+			out.Teams = append(out.Teams, t.TeamAlias)
+		} else if t.TeamID != "" {
 			out.Teams = append(out.Teams, t.TeamID)
 		}
 	}

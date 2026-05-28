@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,6 +39,24 @@ import (
 	"github.com/ackstorm/ach/internal/sources/pluginpack"
 	"github.com/ackstorm/ach/internal/sources/registry"
 )
+
+// externalRefChannel returns the NOTIFY channel matching the external_ref
+// kind. Issue #34: external_refs is the fetcher-state side of the same
+// logical resource as plugins/prompts/artifacts, so it emits on the
+// kind-specific channel (so a single consumer subscribing to one channel
+// catches both the projection-side UPSERT and the fetcher-side refresh).
+func externalRefChannel(kind string) string {
+	switch kind {
+	case "plugin":
+		return pluginsChannel
+	case "prompt":
+		return promptsChannel
+	case "artifact":
+		return artifactsChannel
+	default:
+		return ""
+	}
+}
 
 // FetcherFactory is the indirection the reconciler uses to construct a
 // [sources.Fetcher] per [sources.SourceSpec]. Production wires
@@ -332,6 +351,11 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	}
 
 	// ─── Step 8: UPSERT external_refs (when DB available). ───
+	// Issue #34: project + NOTIFY atomically on the kind-specific channel
+	// (ach_plugins_changed / ach_prompts_changed / ach_artifacts_changed)
+	// with payload "<kind>/<name>". The Plugin/Prompt/Artifact projection
+	// rows fire on the same channel — consumers wake once per logical
+	// resource change regardless of which side moved first.
 	if deps.DB != nil {
 		now := time.Now()
 		next := now.Add(requeueDurationFromRefresh(deps.Refresh))
@@ -344,8 +368,21 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 			NextRefreshAt:         next,
 			MaxStalenessSeconds:   int64(deps.Refresh.MaxStaleness.Duration.Seconds()),
 		}
-		if err := achdb.UpsertExternalRef(ctx, deps.DB, ref); err != nil {
-			return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
+		channel := externalRefChannel(deps.Kind)
+		payload := deps.Kind + "/" + deps.Name
+		if channel == "" {
+			// Unknown kind: fall back to the legacy pool-form upsert so we
+			// at least project the row. Unreachable in v1alpha1 (only
+			// plugin/prompt/artifact are valid kinds).
+			if err := achdb.UpsertExternalRef(ctx, deps.DB, ref); err != nil {
+				return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
+			}
+		} else {
+			if err := achdb.WithTxNotify(ctx, deps.DB, channel, payload, func(tx pgx.Tx) error {
+				return achdb.UpsertExternalRefTx(ctx, tx, ref)
+			}); err != nil {
+				return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
+			}
 		}
 	}
 

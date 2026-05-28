@@ -21,7 +21,7 @@ installCRDs: true
 image:
   repo: ghcr.io/ackstorm/ach
   tag: v0.1.0
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 # watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
 # Maps to WATCH_NAMESPACE env var on operator Deployment.
@@ -79,7 +79,19 @@ forwarder:
   # bootstrap reads this Secret to extract the LiteLLM master key per
   # B2 refactor (replaces ACH_LITELLM_SHARED_KEY env var). RBAC carves
   # the Role's secrets verbs to this name + jwtSecretName only.
+  #
+  # DEPRECATED in favor of forwarder.litellmMasterKey.* (below); kept
+  # for backward compatibility with charts pinned pre-issue-#34.
   litellmMasterSecretName: litellm-master-key
+  # litellmMasterKey carries the namespace/name/key triple matching the
+  # LiteLLMConnection/default projection row. When .namespace differs
+  # from .Release.Namespace, the Helm chart adds a cross-namespace Role
+  # + RoleBinding in .namespace so the forwarder ServiceAccount can
+  # read the Secret across namespaces (issue #34 C7).
+  litellmMasterKey:
+    namespace: litellm-system
+    name: litellm-master-key
+    key: master_key
   # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
   # ACH_REDIS_ADDR, ACH_REDIS_PASSWORD via valueFrom,
   # ACH_CREDENTIAL_HASH_PEPPER via valueFrom). The LiteLLM endpoint +
