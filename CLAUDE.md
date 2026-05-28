@@ -658,3 +658,12 @@ For up-to-date API info beyond this project's docs:
 - **goreleaser v2**: https://goreleaser.com — pay attention to the
   `dockers` → `dockers_v2` migration warning (currently deferred; all
   three configs validate today).
+- **Claude Code plugin / marketplace schemas**: official JSON Schemas at
+  https://www.schemastore.org/claude-code-plugin-manifest.json and
+  https://www.schemastore.org/claude-code-marketplace.json — authoritative
+  for the shape of `marketplace.json` and `.claude-plugin/plugin.json`.
+  Narrative docs at https://code.claude.com/docs/en/plugin-marketplaces.
+  The marketplace parser (`internal/controller/ach/marketplace_parse.go`)
+  follows the real schema with one ack of upstream drift: `url`-Kind
+  entries carry an optional `path` field (schema says no path; real
+  catalogs ship it — treated as `git-subdir` when set).

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // marketplace_dispatch.go owns Stage-2's per-entry fetch path. The
-// Claude Code marketplace real schema (TODO §5) replaces the 6-source
-// CRD discriminator with three Kinds (git-subdir / url / local-path),
-// none of which dispatch through internal/sources/registry.For. All
-// three resolve to a git-remote clone via internal/sources/git.
+// Claude Code marketplace real schema defines four plugin-source Kinds
+// (git-subdir / url / github / local-path), none of which dispatch
+// through internal/sources/registry.For. All four resolve to a
+// git-remote clone via internal/sources/git.
 //
 // The local-path Kind is special: it points at a subdirectory of the
 // MARKETPLACE's OWN repo. We resolve it by reading the marketplace
 // CR's spec.<type>.repo/url, building a synthetic git-subdir Spec, and
-// calling the same git.Fetcher used by the other two Kinds. This is
+// calling the same git.Fetcher used by the other three Kinds. This is
 // why this function takes the parent PluginMarketplace pointer.
 
 package ach
@@ -35,6 +35,7 @@ import (
 const (
 	kindGitSubdir = "git-subdir"
 	kindURL       = "url"
+	kindGitHub    = "github"
 	kindLocalPath = "local-path"
 )
 
@@ -56,8 +57,10 @@ var newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 }
 
 // newResolveHeadSHAFn does a `git ls-remote <url> <ref>` and returns the
-// resolved 40-hex commit SHA. Used for local-path entries whose SHA
-// is implicit (tracks the marketplace's own ref).
+// resolved 40-hex commit SHA. Called by dispatchMarketplacePlugin for
+// any git-backed entry whose sha field is absent — invoked before
+// handing the Spec to git.Fetcher so Fetcher's 40-hex contract is
+// satisfied. Generalized from local-path-only in Phase 2 (#15).
 //
 // Overridable in tests so we don't shell out in unit tests.
 var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (string, error) {
@@ -82,14 +85,18 @@ var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (str
 // dispatchMarketplacePlugin runs the per-entry fetch and returns a
 // streaming io.ReadCloser + the UpstreamRev (the resolved SHA).
 //
-//   - git-subdir: clone entry.Source.URL at entry.Source.Ref, checkout
-//     entry.Source.SHA, tar the entry.Source.Path subtree.
-//   - url:        same but tar the whole worktree (no subtree).
-//   - local-path: clone the MARKETPLACE'S OWN repo (resolved from
-//     mp.Spec.<type>.{Repo,Project,URL}), resolve its HEAD SHA via
-//     git ls-remote, then fetch + tar the entry.Source.Path subtree.
-//   - "":         errUnsupportedPluginSource (Stage-2 maps to
+//   - git-subdir / url / github / local-path: build a git.Spec via
+//     buildGitSpecForEntry. If Spec.SHA is empty, pre-resolve via
+//     newResolveHeadSHAFn (git ls-remote semantics) so the Fetcher's
+//     40-hex contract is satisfied. Then Fetch + return the streaming
+//     tar.gz body.
+//   - "": errUnsupportedPluginSource (Stage-2 maps to
 //     ReasonUnsupportedPluginSource).
+//
+// Sha-optional rationale: the official schema lists ref and sha as both
+// optional. Upstream catalogs (Anthropic) ship entries without sha that
+// MUST still materialize. The Fetcher itself keeps the 40-hex pin
+// contract — we satisfy it by resolving on the marketplace layer.
 //
 // auth is the marketplace's auth Secret (re-used per the v1alpha1
 // design: per-entry auth is NOT yet a wire-format field). May be nil.
@@ -104,8 +111,11 @@ func dispatchMarketplacePlugin(
 	if err != nil {
 		return nil, "", err
 	}
-	// local-path: SHA was deliberately empty; resolve it now.
-	if entry.Source.Kind == kindLocalPath {
+	// Pre-resolve ref→sha when the entry didn't pin one. Applies to every
+	// git-backed Kind (git-subdir, url, github, local-path). local-path
+	// already had this branch — Phase 2 generalizes it to all Kinds the
+	// dispatcher returned a Spec for.
+	if spec.SHA == "" {
 		sha, rerr := newResolveHeadSHAFn(ctx, spec.URL, spec.Ref, spec.Token)
 		if rerr != nil {
 			return nil, "", rerr
@@ -140,11 +150,23 @@ func buildGitSpecForEntry(
 			CacheRoot: cacheRoot,
 		}, nil
 	case kindURL:
+		// url+path collapse: when path is non-empty the entry behaves
+		// like git-subdir (upstream-drift ack — see marketplace_parse.go
+		// header). Empty path → whole-worktree tar.
 		return sourcesgit.Spec{
 			URL:       entry.Source.URL,
 			Ref:       defaultRef(entry.Source.Ref),
 			SHA:       entry.Source.SHA,
-			Subtree:   "", // whole worktree
+			Subtree:   entry.Source.Path,
+			Token:     token,
+			CacheRoot: cacheRoot,
+		}, nil
+	case kindGitHub:
+		return sourcesgit.Spec{
+			URL:       "https://github.com/" + entry.Source.Repo + ".git",
+			Ref:       defaultRef(entry.Source.Ref),
+			SHA:       entry.Source.SHA,
+			Subtree:   "", // github Kind has no path → whole-worktree
 			Token:     token,
 			CacheRoot: cacheRoot,
 		}, nil

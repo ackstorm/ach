@@ -196,3 +196,195 @@ func TestParseClaudeCodeMarketplace_PluginNameUppercaseRejected(t *testing.T) {
 		t.Fatal("expected DNS-1123 rejection for uppercase plugin name")
 	}
 }
+
+// ─── Per-entry demote tests (issue #15 / Phase 1) ─────────────────────
+
+func TestParseClaudeCodeMarketplace_UrlMissingShaNotDemoted(t *testing.T) {
+	// A url-Kind entry without sha MUST NOT be demoted at parse time —
+	// Phase 2 pre-resolves ref→sha at dispatch time. The parser only
+	// demotes on missing url (the truly-required field for git fetch).
+	// Issue #15 acceptance: Anthropic catalog entries without sha keep
+	// flowing into Stage-2.
+	body := `{
+	  "name": "mkt",
+	  "owner": {"name": "o"},
+	  "plugins": [
+	    {
+	      "name": "no-sha-but-ok",
+	      "source": {"source": "url", "url": "https://example.com/p.git", "ref": "main"}
+	    },
+	    {
+	      "name": "valid-git-subdir",
+	      "source": {
+	        "source": "git-subdir",
+	        "url": "https://github.com/o/r.git",
+	        "path": "plugins/x",
+	        "ref": "v1",
+	        "sha": "0123456789abcdef0123456789abcdef01234567"
+	      }
+	    }
+	  ]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (whole-catalog abort is the bug)", err)
+	}
+	if len(mkt.Plugins) != 2 {
+		t.Fatalf("want 2 plugins; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("plugin[0].Kind = %q; want \"url\" preserved (Phase 2 resolves sha)", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.URL != "https://example.com/p.git" {
+		t.Errorf("plugin[0].URL = %q; want preserved", mkt.Plugins[0].Source.URL)
+	}
+	if mkt.Plugins[1].Source.Kind != "git-subdir" {
+		t.Errorf("plugin[1].Kind = %q; want git-subdir", mkt.Plugins[1].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlMissingUrlFieldDemoted(t *testing.T) {
+	// url-Kind entry without the `url` field cannot be fetched —
+	// demote to Kind="".
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "url", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitSubdirMissingUrlDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "git-subdir", "path": "p", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitSubdirMissingPathDemoted(t *testing.T) {
+	// Independent of the URL-missing branch: a git-subdir entry with
+	// url present but path absent must also demote. Path is required by
+	// git-subdir semantics (subtree to tar) — without it we can't fetch.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "no-path",
+	    "source": {
+	      "source": "git-subdir",
+	      "url": "https://github.com/o/r.git",
+	      "sha": "0123456789abcdef0123456789abcdef01234567"
+	    }
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\" (path missing)", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing.T) {
+	// local-path with `..` segment must NOT abort the catalog (#4 (b)
+	// decision: demote per-entry, T-02-06-01 mitigation still applies
+	// because the traversal path never reaches the filesystem — the
+	// dispatcher short-circuits on Kind="").
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "evil",
+	    "source": "../etc/passwd"
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+// ─── Phase 3: github Kind + url+path normalization ────────────────────
+
+func TestClaudeCodeMarketplaceSource_UnmarshalGitHub(t *testing.T) {
+	body := []byte(`{"source":"github","repo":"owner/name","ref":"v1","sha":"0123456789abcdef0123456789abcdef01234567"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "github" {
+		t.Errorf("Kind = %q; want github", s.Kind)
+	}
+	if s.Repo != "owner/name" {
+		t.Errorf("Repo = %q", s.Repo)
+	}
+	if s.Ref != "v1" || s.SHA == "" {
+		t.Errorf("got %+v", s)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitHubMissingRepoDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "github", "ref": "main"}
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlWithPathAccepted(t *testing.T) {
+	// Upstream schema says `url` has no path. Real-world catalogs (e.g.
+	// the zilliz entry in claude-plugins-official) ship url+path. We
+	// accept the drift: url with non-empty path is parsed as-is and the
+	// dispatcher treats it like git-subdir.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "zilliz",
+	    "source": {
+	      "source": "url",
+	      "url": "https://github.com/zilliztech/zilliz-plugin.git",
+	      "path": "plugins/zilliz",
+	      "sha": "e960396da0bd0b1cb219fa97e3bcbb425ee1abbd"
+	    }
+	  }]
+	}`
+	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("Kind = %q; want url", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.Path != "plugins/zilliz" {
+		t.Errorf("Path = %q; want path preserved", mkt.Plugins[0].Source.Path)
+	}
+}

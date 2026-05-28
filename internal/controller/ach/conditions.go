@@ -102,11 +102,20 @@ const (
 	// drops apart from marketplace-loser drops at a glance.
 	ReasonPluginCRDPrecedence = "PluginCRDPrecedence"
 
-	// ReasonUnsupportedPluginSource (Plan 02-06) — a marketplace entry's
-	// source.type is in the Claude Code wire format but not supported by
-	// ACH v1alpha1 (today: only "npm"). Per-entry only — the marketplace's
-	// Synced condition stays True if Stage-1 succeeded; the rejected
-	// entry is recorded in status.message via the partial-failure path.
+	// ReasonUnsupportedPluginSource (Plan 02-06 / issue #15) — a
+	// marketplace entry resolved to Source.Kind="" because its wire
+	// shape is not materializable. Covers:
+	//
+	//   - Known-but-unsupported discriminators (today: "npm" — the
+	//     v1alpha1 operator is git-only).
+	//   - Unknown discriminators (any other source.source value).
+	//   - Required-field gaps the parser couldn't recover from
+	//     (e.g. git-subdir without url+path, github without repo,
+	//     local-path with path-traversal).
+	//
+	// Per-entry only — the marketplace's Synced condition stays True if
+	// Stage-1 succeeded; the rejected entry is recorded in
+	// status.message via the partial-failure path.
 	ReasonUnsupportedPluginSource = "UnsupportedPluginSource"
 
 	// ─── Hub §6.6 closed-set reasons for the Environment.Available
