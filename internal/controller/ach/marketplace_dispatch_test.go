@@ -13,6 +13,11 @@ import (
 	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
 )
 
+// defaultRefMain is the default git ref assumed when a marketplace entry
+// omits Ref. Extracted as a constant to satisfy goconst (3+ occurrences
+// across dispatch tests).
+const defaultRefMain = "main"
+
 // fakeDispatchGitFetcher records the Spec it was constructed with and returns
 // a canned body / SHA. Tests swap newGitFetcherFn for a closure that
 // returns this fake. Named with "Dispatch" prefix to avoid clashing with
@@ -86,7 +91,7 @@ func TestDispatchMarketplacePlugin_LocalPathResolvesMarketplaceRepo(t *testing.T
 			Type: "github",
 			GitHub: &achv1alpha1.GitHubSource{
 				Repo: "anthropics/claude-plugins-official",
-				Ref:  "main",
+				Ref:  defaultRefMain,
 			},
 		},
 	}
@@ -151,7 +156,7 @@ func TestDispatchMarketplacePlugin_GitSubdir_RefOnly_PreResolvesSHA(t *testing.T
 		if url != "https://github.com/o/r.git" {
 			t.Errorf("LsRemote url = %q", url)
 		}
-		if ref != "main" {
+		if ref != defaultRefMain {
 			t.Errorf("LsRemote ref = %q; want main (default)", ref)
 		}
 		return resolvedSHA, nil
@@ -275,5 +280,57 @@ func TestDispatchMarketplacePlugin_UrlWithPath_TreatedAsGitSubdir(t *testing.T) 
 	}
 	if captured.Subtree != "plugins/zilliz" {
 		t.Errorf("Subtree = %q; want plugins/zilliz (url+path collapsed to git-subdir)", captured.Subtree)
+	}
+}
+
+func TestDispatchMarketplacePlugin_GitHub_ShalessPreResolves(t *testing.T) {
+	// github Kind without sha must trigger the generic ref→sha
+	// pre-resolution path (Phase 2). Validates that the github URL
+	// pattern (https://github.com/<repo>.git) is passed to LsRemote
+	// and that Subtree stays empty (github Kind has no path concept).
+	const resolvedSHA = "fedcba9876543210fedcba9876543210fedcba98"
+	var captured sourcesgit.Spec
+	var resolveCalled bool
+
+	origFetch := newGitFetcherFn
+	origResolve := newResolveHeadSHAFn
+	defer func() {
+		newGitFetcherFn = origFetch
+		newResolveHeadSHAFn = origResolve
+	}()
+	newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
+		captured = spec
+		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
+	}
+	newResolveHeadSHAFn = func(_ context.Context, url, ref, _ string) (string, error) {
+		resolveCalled = true
+		if url != "https://github.com/owner/name.git" {
+			t.Errorf("LsRemote url = %q", url)
+		}
+		if ref != defaultRefMain {
+			t.Errorf("LsRemote ref = %q; want main (default)", ref)
+		}
+		return resolvedSHA, nil
+	}
+	entry := ClaudeCodeMarketplacePlugin{
+		Name: "x",
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: "github",
+			Repo: "owner/name",
+			// No Ref, no SHA.
+		},
+	}
+	_, rev, err := dispatchMarketplacePlugin(context.Background(), &achv1alpha1.PluginMarketplace{}, entry, nil, "/tmp")
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !resolveCalled {
+		t.Fatal("newResolveHeadSHAFn was not called for sha-less github entry")
+	}
+	if rev != resolvedSHA {
+		t.Errorf("rev = %q; want %q", rev, resolvedSHA)
+	}
+	if captured.Subtree != "" {
+		t.Errorf("Subtree = %q; want empty (github Kind has no path)", captured.Subtree)
 	}
 }

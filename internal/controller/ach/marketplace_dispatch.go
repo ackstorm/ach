@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // marketplace_dispatch.go owns Stage-2's per-entry fetch path. The
-// Claude Code marketplace real schema (TODO §5) replaces the 6-source
-// CRD discriminator with three Kinds (git-subdir / url / local-path),
-// none of which dispatch through internal/sources/registry.For. All
-// three resolve to a git-remote clone via internal/sources/git.
+// Claude Code marketplace real schema defines four plugin-source Kinds
+// (git-subdir / url / github / local-path), none of which dispatch
+// through internal/sources/registry.For. All four resolve to a
+// git-remote clone via internal/sources/git.
 //
 // The local-path Kind is special: it points at a subdirectory of the
 // MARKETPLACE's OWN repo. We resolve it by reading the marketplace
 // CR's spec.<type>.repo/url, building a synthetic git-subdir Spec, and
-// calling the same git.Fetcher used by the other two Kinds. This is
+// calling the same git.Fetcher used by the other three Kinds. This is
 // why this function takes the parent PluginMarketplace pointer.
 
 package ach
