@@ -3,9 +3,6 @@
 package cmd
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,22 +37,10 @@ func seedConfigFile(t *testing.T, dir string, f *config.File) string {
 
 // executeConfig runs a fresh `ach config <sub>` invocation with the
 // given args and returns stdout, stderr, exit code, raw error.
+// Delegates to the shared executeCommand helper (helpers_test.go).
 func executeConfig(t *testing.T, args ...string) (string, string, exit.Code, error) {
 	t.Helper()
-	cmd := newConfigCmd()
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetArgs(args)
-	err := cmd.ExecuteContext(context.Background())
-	if err == nil {
-		return outBuf.String(), errBuf.String(), exit.OK, nil
-	}
-	var cErr *exit.CodedError
-	if errors.As(err, &cErr) {
-		return outBuf.String(), errBuf.String(), cErr.Code, err
-	}
-	return outBuf.String(), errBuf.String(), exit.General, err
+	return executeCommand(t, newConfigCmd(), args...)
 }
 
 // TestConfig_List_Empty asserts `ach config list` exits 0 + prints
