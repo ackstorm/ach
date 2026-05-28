@@ -255,7 +255,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// liveness restart). Other resolver errors (malformed endpoint,
 	// missing secret key) still refuse-to-start so misconfiguration
 	// surfaces at boot instead of as 401 storms under load.
-	llmRes, err := resolveLiteLLMWithRetry(ctx, mgr.GetAPIReader(), cfg.Namespace, logger)
+	llmRes, err := resolveLiteLLMWithRetry(ctx, pool, mgr.GetAPIReader(), cfg.Namespace, logger)
 	if err != nil {
 		return out, fmt.Errorf("litellmconn.Resolve: %w", err)
 	}
@@ -406,17 +406,18 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 // so misconfiguration still surfaces at boot.
 func resolveLiteLLMWithRetry(
 	ctx context.Context,
+	pool *pgxpool.Pool,
 	reader client.Reader,
 	namespace string,
 	logger *slog.Logger,
 ) (*litellmconn.Resolution, error) {
 	const retryInterval = 60 * time.Second
 	for {
-		res, err := litellmconn.Resolve(ctx, reader, namespace)
+		res, err := litellmconn.Resolve(ctx, pool, reader, namespace)
 		if err == nil {
 			return res, nil
 		}
-		if !errors.Is(err, litellmconn.ErrCRNotFound) && !errors.Is(err, litellmconn.ErrSecretNotFound) {
+		if !errors.Is(err, litellmconn.ErrLiteLLMConnectionNotReady) && !errors.Is(err, litellmconn.ErrSecretNotFound) {
 			return nil, err
 		}
 		logger.Info("LiteLLMConnection not yet hydrated; will retry",
