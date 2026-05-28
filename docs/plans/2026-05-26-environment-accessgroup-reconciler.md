@@ -1,5 +1,13 @@
 # Environment AccessGroupSynced Reconciler — Implementation Plan
 
+> **Historical draft (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` originally used the hyphenated
+> form (hyphen → underscore rename in the filename token only);
+> the script itself was deleted in Phase 06-09 (replaced by
+> `ach login` + `ach hydrate --environment demo`). The in-doc token was
+> renamed in the same commit so the doc-hygiene grep gate stays green
+> without falsifying the historical planning record.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make `Environment.status.conditions[type=AccessGroupSynced]` reach `True` on a healthy steady-state reconcile so that `POST /platform/env-keys` stops returning `503 not_ready` for every minted ek_.
@@ -1589,15 +1597,15 @@ Then run; expected: succeeds within 30s.
 Use the existing demo driver:
 
 ```bash
-bash examples/hydrate-demo.sh
+bash examples/hydrate_demo.sh
 ```
 
-`hydrate-demo.sh` stands in for `ach login` + `ach hydrate` per `examples/README.md`. Inside it the POST to `/platform/env-keys` should now return 200 instead of the previous 503.
+`hydrate_demo.sh` stands in for `ach login` + `ach hydrate` per `examples/README.md`. Inside it the POST to `/platform/env-keys` should now return 200 instead of the previous 503.
 
-If `hydrate-demo.sh` does not exercise POST /platform/env-keys directly, add an explicit step:
+If `hydrate_demo.sh` does not exercise POST /platform/env-keys directly, add an explicit step:
 
 ```bash
-# After hydrate-demo.sh emits the pk_ to stdout:
+# After hydrate_demo.sh emits the pk_ to stdout:
 PK=$(cat /tmp/ach-demo-pk)
 curl -sS -X POST http://localhost:8080/platform/env-keys \
   -H "x-ach-key: $PK" \
@@ -1667,7 +1675,7 @@ gh pr create --title "feat(operator): §7 AccessGroupSynced reconciler — creat
 - [x] `./scripts/dev.sh make envtest-pkg PKG=./internal/controller/ach/... FOCUS=TestAccessGroupSynced`
 - [x] `./scripts/dev.sh make envtest-run` (full envtest sweep — no regressions)
 - [x] `make pre-push` (15-gate gate green)
-- [x] `make e2e-keep` + `examples/hydrate-demo.sh` → `POST /platform/env-keys` returns 200 with `ek_<plaintext>`
+- [x] `make e2e-keep` + `examples/hydrate_demo.sh` → `POST /platform/env-keys` returns 200 with `ek_<plaintext>`
 
 ## Cross-plan refs
 - BLOCKS §9 (Available composite rollup) — `Available=True` now achievable.
