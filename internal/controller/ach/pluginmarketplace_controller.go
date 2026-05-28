@@ -639,7 +639,7 @@ type pluginFailure struct {
 // Returns (ctrl.Result{RequeueAfter: requeue}, err) so callers can return
 // directly.
 func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *achv1alpha1.PluginMarketplace, message string, requeue time.Duration) (ctrl.Result, error) {
-	setExternalRefCondition(&cr.Status.Conditions, "Synced", metav1.ConditionTrue, ReasonSynced, message, cr.Generation)
+	applyReconcileConditions(&cr.Status.Conditions, ReasonSynced, message, cr.Generation)
 	cr.Status.ObservedGeneration = cr.Generation
 	// Record successful catalog refresh (including 304 NotModified) so the
 	// §10.3 within-interval gate can skip the next reconcile within the
@@ -666,7 +666,7 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 //     (Result{}, originalErr) so controller-runtime's workqueue applies
 //     exponential backoff.
 func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *achv1alpha1.PluginMarketplace, reason, message string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
-	setExternalRefCondition(&cr.Status.Conditions, "Synced", metav1.ConditionFalse, reason, message, cr.Generation)
+	applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 	cr.Status.ObservedGeneration = cr.Generation
 	if err := r.Status().Update(ctx, cr); err != nil {
 		// Status update failure is logged by the controller-runtime

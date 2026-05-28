@@ -138,7 +138,7 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if result.Err != nil {
 		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
-		setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionFalse, reason, message, cr.Generation)
+		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 		cr.Status.ObservedGeneration = cr.Generation
 		if statusErr := r.Status().Update(ctx, &cr); statusErr != nil {
 			logger.Error(statusErr, "status update failed", "reason", reason)
@@ -151,7 +151,7 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
-	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
+	applyReconcileConditions(&cr.Status.Conditions, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
 	cr.Status.UpstreamRev = result.UpstreamRev
 	if result.NotModified && cr.Status.StorageLocation == "" {
 		cr.Status.StorageLocation = finalPath

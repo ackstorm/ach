@@ -19,6 +19,9 @@ spec:
     - jsonPath: .spec.type
       name: Type
       type: string
+    - jsonPath: .status.conditions[?(@.type=='SourceReachable')].status
+      name: Reachable
+      type: string
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: Synced
       type: string

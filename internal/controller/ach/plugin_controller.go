@@ -200,7 +200,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// ─── Failure path. ───
 	if result.Err != nil {
 		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
-		setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionFalse, reason, message, cr.Generation)
+		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 		cr.Status.ObservedGeneration = cr.Generation
 		if statusErr := r.Status().Update(ctx, &cr); statusErr != nil {
 			logger.Error(statusErr, "status update failed", "reason", reason)
@@ -219,7 +219,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// ─── Success / NotModified: status update, annotation clear, requeue. ───
-	setExternalRefCondition(&cr.Status.Conditions, "SourceReachable", metav1.ConditionTrue, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
+	applyReconcileConditions(&cr.Status.Conditions, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
 	if result.NotModified {
 		// Preserve the prior UpstreamRev (already equal to priorRev per
 		// MaterializeResult contract) and StorageLocation; bump

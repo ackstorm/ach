@@ -165,6 +165,86 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 	})
 }
 
+// Condition type constants. Every external-ref-shaped resource
+// (Plugin, Prompt, Artifact, PluginMarketplace) surfaces the same
+// two-axis status model:
+//
+//   - SourceReachable: did we actually obtain the bytes we asked for?
+//     True iff the fetch returned a usable response body. 401/403/404
+//     count as NOT reachable — the auth gate and the 404 are part of
+//     "can I get what I asked for?" Network failures and staleness
+//     expiry on prior Unreachable cycles also force False. Pre-fetch
+//     failures (config invalid, name conflict, unsupported source)
+//     leave it Unknown — no fetch was attempted, so neither reachable
+//     nor unreachable can be asserted.
+//
+//   - Synced: did the reconciler complete its full sweep (fetch → stage
+//     → verify → publish → DB upsert)? True only on the terminal happy
+//     path. False on every failure including post-fetch content errors
+//     (UpstreamInvalid, PluginTooLarge) where SourceReachable is True
+//     but the bytes were unusable.
+//
+// The matrix encoded in [reasonToConditionStates] is the source of
+// truth — every reason maps to exactly one (SourceReachable, Synced)
+// status pair.
+const (
+	ConditionSourceReachable = "SourceReachable"
+	ConditionSynced          = "Synced"
+)
+
+// reasonToConditionStates maps a Hub §6.6 reason to the
+// (SourceReachable, Synced) status pair. The matrix:
+//
+//	Reason                   SourceReachable  Synced
+//	Synced                   True             True
+//	Unreachable              False            False
+//	Unauthorized             False            False
+//	NotFound                 False            False
+//	UpstreamInvalid          True             False   (got bytes, content bad)
+//	PluginTooLarge           True             False   (got bytes, oversized)
+//	StaleCacheExpired        False            False
+//	InvalidConfig            Unknown          False   (no fetch attempted)
+//	NameConflict             Unknown          False   (pre-fetch decision)
+//	UnsupportedPluginSource  Unknown          False   (pre-fetch)
+//	PluginCRDPrecedence      Unknown          False   (pre-fetch)
+//	Initializing             Unknown          False   (no fetch yet)
+//	<any other>              Unknown          False   (conservative default)
+func reasonToConditionStates(reason string) (sourceReachable, synced metav1.ConditionStatus) {
+	switch reason {
+	case ReasonSynced:
+		return metav1.ConditionTrue, metav1.ConditionTrue
+	case ReasonUnreachable, ReasonUnauthorized, ReasonNotFound, ReasonStaleCacheExpired:
+		return metav1.ConditionFalse, metav1.ConditionFalse
+	case ReasonUpstreamInvalid, ReasonPluginTooLarge:
+		return metav1.ConditionTrue, metav1.ConditionFalse
+	default:
+		// InvalidConfig, NameConflict, UnsupportedPluginSource,
+		// PluginCRDPrecedence, Initializing, and any reason the closed
+		// enum gains in the future without a matrix update fall here.
+		// Unknown is the conservative SourceReachable answer when no
+		// fetch was attempted or the post-fetch outcome doesn't pin
+		// connectivity either way.
+		return metav1.ConditionUnknown, metav1.ConditionFalse
+	}
+}
+
+// applyReconcileConditions writes BOTH SourceReachable and Synced for
+// the given reason+message tuple. The single classification call site
+// keeps the two conditions in lockstep so a reconciler can't
+// accidentally update one and forget the other.
+//
+// message is propagated to both conditions verbatim — the diagnostic
+// text answers "why isn't it reachable?" and "why isn't it synced?"
+// identically when both flip together (the common case). Reconcilers
+// that want different per-condition messages can still call
+// setExternalRefCondition directly, but the unified call is preferred
+// because diverging messages quickly drift out of sync.
+func applyReconcileConditions(conds *[]metav1.Condition, reason, message string, observedGen int64) {
+	srStatus, syncStatus := reasonToConditionStates(reason)
+	setExternalRefCondition(conds, ConditionSourceReachable, srStatus, reason, message, observedGen)
+	setExternalRefCondition(conds, ConditionSynced, syncStatus, reason, message, observedGen)
+}
+
 // Transport label constants surfaced on the SourceReachable / Synced
 // condition message. The "rest" / "git" string values match the
 // kubebuilder enum on GitHubSource.Transport / GitLabSource.Transport /
