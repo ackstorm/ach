@@ -4,47 +4,19 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
-
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
-	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
 
-// executeCommand drives any cobra.Command with the given args and
-// resolves stdout / stderr / exit-code / raw error the same way
-// cmd/ach/main.go's typed-error dispatch would in production. Test-
-// only; production callers route through main.go. Hydrate uses this
-// directly via executeHydrate below.
-func executeCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, string, exit.Code, error) {
-	t.Helper()
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetArgs(args)
-	err := cmd.ExecuteContext(context.Background())
-	if err == nil {
-		return outBuf.String(), errBuf.String(), exit.OK, nil
-	}
-	var sErr *httpclient.ServerError
-	if errors.As(err, &sErr) {
-		return outBuf.String(), errBuf.String(), exit.MapServerError(sErr), err
-	}
-	var cErr *exit.CodedError
-	if errors.As(err, &cErr) {
-		return outBuf.String(), errBuf.String(), cErr.Code, err
-	}
-	return outBuf.String(), errBuf.String(), exit.General, err
-}
+// executeCommand moved to helpers_test.go (06-04) — single shared driver
+// for the entire cmd/ach/cmd package. This file consumes it directly.
 
 // canonicalHydrateJSON is the canonical wire payload the test mock
 // serves for `ach hydrate` byte-for-byte assertions. The CLI MUST emit

@@ -246,14 +246,9 @@ func TestFormatEkList(t *testing.T) {
 	}
 }
 
-// TestFormatEkList_Empty asserts the empty-slice path emits a stable
-// "No env-keys" marker.
-func TestFormatEkList_Empty(t *testing.T) {
-	got := FormatEkList(nil)
-	if !strings.Contains(got, "No env-keys") {
-		t.Errorf("expected 'No env-keys' marker; got: %s", got)
-	}
-}
+// TestFormatEkList_Empty moved to ek_test.go (06-05) — single source of
+// truth for the empty-slice marker assertion (now strict-matches
+// "No env-keys found").
 
 // TestFormatIdentity asserts the identity block carries the four-line
 // shape consumed by whoami (deployment, URL, key — render is the

@@ -25,20 +25,12 @@ type EnvView struct {
 	Status    string `json:"status,omitempty"`
 }
 
-// EkRowView is the per-row shape rendered by FormatEkList — used by
-// 06-05 `ach env-keys list` AND 06-08 `ach admin keys list` (W7
-// hoist; avoids inline duplication). Matches the wire shape of
-// internal/platformapi/envkeys.EkRowView's subset that the CLI
-// surfaces to the user (key_id, owner_email, environment, name,
-// created_at). json tags match the server's snake_case for trivial
-// json.Decoder round-trips.
-type EkRowView struct {
-	KeyID       string `json:"key_id"`
-	OwnerEmail  string `json:"owner_email"`
-	Environment string `json:"environment"`
-	Name        string `json:"name"`
-	CreatedAt   string `json:"created_at"`
-}
+// EkRowView + FormatEkList moved to ek.go (06-05) — single source of truth
+// for env-keys row shape and table formatter (richer schema with Status,
+// LastUsedAt, RevokedAt). render.go's stub removed in wave-3 merge to
+// resolve symbol collision; 06-04's FormatEkList tests in render_test.go
+// continue to pass because ek.go's superset table preserves the 5
+// columns the tests assert.
 
 // HydrateView is the lean local copy of the server's HydrateResponse
 // that render needs to format a describe block. Defined here (NOT
@@ -249,29 +241,6 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	}
 	_ = tw.Flush()
 
-	return sb.String()
-}
-
-// FormatEkList renders the env-keys table for `ach env-keys list`
-// (06-05) AND `ach admin keys list` (06-08). Rows are sorted
-// deterministically by KeyID ascending (W7 — both call sites consume
-// the same output). Empty input → stable "No env-keys" stub.
-func FormatEkList(rows []EkRowView) string {
-	if len(rows) == 0 {
-		return "No env-keys\n"
-	}
-	sorted := make([]EkRowView, len(rows))
-	copy(sorted, rows)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].KeyID < sorted[j].KeyID
-	})
-	var sb strings.Builder
-	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "KEY-ID\tOWNER\tENVIRONMENT\tNAME\tCREATED")
-	for _, r := range sorted {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.KeyID, r.OwnerEmail, r.Environment, r.Name, r.CreatedAt)
-	}
-	_ = tw.Flush()
 	return sb.String()
 }
 
