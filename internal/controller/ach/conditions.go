@@ -12,8 +12,12 @@
 package ach
 
 import (
+	"context"
+
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ackstorm/ach/internal/sources"
 )
@@ -309,4 +313,51 @@ func resolveTransportName(sourceSpec sources.SourceSpec) string {
 // surgical.
 func sourceReachableMessage(sourceSpec sources.SourceSpec) string {
 	return "transport=" + resolveTransportName(sourceSpec)
+}
+
+// retryStatusUpdate wraps c.Status().Update in retry-on-conflict and a
+// fresh Get-per-attempt so concurrent reconcilers cannot lose status
+// updates to apiserver 409 races. Generic over any CR type T whose
+// pointer satisfies client.Object.
+//
+// Apply callback runs on a freshly-Got copy of the CR; it re-applies
+// the caller's desired status fields onto `fresh`. On success
+// `cr.ResourceVersion` is mirrored back so subsequent metadata writes
+// (e.g. force-refresh annotation clear) carry the post-Update version
+// and do not 409 themselves.
+//
+// Issue #18 + sister project alitellm-operator's writeStatus pattern.
+// Before this helper, every reconciler's `r.Status().Update(ctx, &cr)`
+// was a naked best-effort write that intermittently lost the race to
+// the suite-level reconciler under envtest, producing
+// `TestPMR_Stage1_ParseFails`-class flakes:
+//
+//	Operation cannot be fulfilled on …: the object has been modified;
+//	please apply your changes to the latest version and try again
+//
+// All non-pluginmarketplace reconcilers (prompt, plugin, artifact,
+// environment, litellmconnection) call this helper at every site that
+// previously called `r.Status().Update` directly.
+func retryStatusUpdate[T any, PT interface {
+	*T
+	client.Object
+}](
+	ctx context.Context,
+	c client.Client,
+	cr PT,
+	apply func(fresh PT),
+) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var obj T
+		fresh := PT(&obj)
+		if err := c.Get(ctx, client.ObjectKeyFromObject(cr), fresh); err != nil {
+			return err
+		}
+		apply(fresh)
+		if err := c.Status().Update(ctx, fresh); err != nil {
+			return err
+		}
+		cr.SetResourceVersion(fresh.GetResourceVersion())
+		return nil
+	})
 }

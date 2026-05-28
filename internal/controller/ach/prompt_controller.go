@@ -140,7 +140,10 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
 		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 		cr.Status.ObservedGeneration = cr.Generation
-		if statusErr := r.Status().Update(ctx, &cr); statusErr != nil {
+		desiredStatus := cr.Status
+		if statusErr := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Prompt) {
+			fresh.Status = desiredStatus
+		}); statusErr != nil {
 			logger.Error(statusErr, "status update failed", "reason", reason)
 		}
 		switch reason {
@@ -188,11 +191,14 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, fmt.Errorf("db upsert prompt projection: %w", err)
 		}
 	}
-	if err := r.Status().Update(ctx, &cr); err != nil {
-		// WR-02: see plugin_controller.go for rationale — stale
-		// ResourceVersion after a failed Status().Update would make
-		// the subsequent r.Update on the annotation also 409. Skip
-		// and let the next reconcile retry from a fresh Get.
+	desiredStatus := cr.Status
+	if err := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Prompt) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		// WR-02: even with retry-on-conflict, a non-409 Get/Update
+		// error (e.g. apiserver unreachable) lands here. The follow-up
+		// r.Update on the annotation would also fail; skip and let the
+		// next reconcile retry from a fresh Get.
 		logger.Error(err, "status update failed; skipping annotation-clear")
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
