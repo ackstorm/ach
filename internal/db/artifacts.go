@@ -58,26 +58,56 @@ type ArtifactRow struct {
 // errors wrap with non-secret (namespace, name) identifiers — pgErr.Message
 // NEVER included. A row with Scope ∉ {"object","directory"} fails the SQL
 // CHECK and is returned wrapped as a terminal error (caller's bug).
+const upsertArtifactSQL = `
+	INSERT INTO artifacts
+	    (namespace, name, storage_location, scope,
+	     last_successful_refresh, max_staleness_seconds,
+	     resource_version, updated_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE)
+	ON CONFLICT (namespace, name) DO UPDATE SET
+	    storage_location        = EXCLUDED.storage_location,
+	    scope                   = EXCLUDED.scope,
+	    last_successful_refresh = EXCLUDED.last_successful_refresh,
+	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
+	    resource_version        = EXCLUDED.resource_version,
+	    updated_at              = now(),
+	    locked                  = TRUE
+	WHERE artifacts.origin = 'cr'
+	RETURNING namespace
+`
+
 func UpsertArtifact(ctx context.Context, pool *pgxpool.Pool, row ArtifactRow) error {
-	const sql = `
-		INSERT INTO artifacts
-		    (namespace, name, storage_location, scope,
-		     last_successful_refresh, max_staleness_seconds,
-		     resource_version, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-		ON CONFLICT (namespace, name) DO UPDATE SET
-		    storage_location        = EXCLUDED.storage_location,
-		    scope                   = EXCLUDED.scope,
-		    last_successful_refresh = EXCLUDED.last_successful_refresh,
-		    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
-		    resource_version        = EXCLUDED.resource_version,
-		    updated_at              = now()
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertArtifact(%s/%s): begin: %w", row.Namespace, row.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertArtifactTx(ctx, tx, row); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertArtifact(%s/%s): commit: %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+func upsertArtifactTx(ctx context.Context, tx pgx.Tx, row ArtifactRow) error {
+	var ns string
+	err := tx.QueryRow(ctx, upsertArtifactSQL,
 		row.Namespace, row.Name, row.StorageLocation, row.Scope,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	); err != nil {
+	).Scan(&ns)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -119,13 +149,7 @@ func GetArtifactByName(ctx context.Context, pool *pgxpool.Pool, ns, name string)
 // row (CS-09). Idempotent: rows already in drain-mode are left untouched
 // so duplicate finalizer ticks do not refresh the drain clock.
 func SoftDeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `
-		UPDATE artifacts
-		   SET deletion_timestamp = now(),
-		       updated_at         = now()
-		 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-	`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -133,6 +157,23 @@ func SoftDeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string
 	}
 	return nil
 }
+
+func softDeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SoftDeleteArtifact(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+const softDeleteArtifactSQL = `
+	UPDATE artifacts
+	   SET deletion_timestamp = now(),
+	       updated_at         = now()
+	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
+`
 
 // DeleteArtifact removes the row keyed by (namespace, name) outright. Called
 // only after finalizer drain completes. Absence is not an error.

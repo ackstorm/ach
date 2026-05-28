@@ -5,9 +5,12 @@ package ach
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -18,12 +21,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/connection"
+	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 )
+
+// litellmConnectionsChannel is the NOTIFY channel emitted on every
+// LiteLLMConnection projection write/soft-delete. Forwarder boots and
+// hot-reloads off this channel (issue #34).
+const litellmConnectionsChannel = "ach_litellm_connections_changed"
 
 const litellmConnectionFinalizer = "litellmconnections.ach.ackstorm.ai/finalizer"
 
@@ -40,6 +51,14 @@ type LiteLLMConnectionReconciler struct {
 	Cache     connection.CacheReader
 	Namespace string
 	Log       logr.Logger
+	// Pool projects the LiteLLMConnection CR spec to the
+	// litellm_connections table inside a single transaction with the
+	// ach_litellm_connections_changed NOTIFY (issue #34). Nil-tolerant for
+	// existing envtests that do not need projection.
+	Pool *pgxpool.Pool
+
+	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
+	ResyncSource chan event.GenericEvent
 }
 
 // Reconcile reconciles the singleton LiteLLMConnection/default.
@@ -54,6 +73,20 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if !conn.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&conn, litellmConnectionFinalizer) {
+			// Issue #34: soft-delete the projection row inside the same
+			// transaction as the NOTIFY so any consumer waking up on
+			// ach_litellm_connections_changed SELECTs a snapshot that
+			// already reflects the soft-delete. Skipped when r.Pool is
+			// nil (existing envtests).
+			if r.Pool != nil {
+				ns, name := conn.Namespace, conn.Name
+				payload := fmt.Sprintf("%s/%s", ns, name)
+				if err := achdb.WithTxNotify(ctx, r.Pool, litellmConnectionsChannel, payload, func(tx pgx.Tx) error {
+					return achdb.SoftDeleteLiteLLMConnectionTx(ctx, tx, ns, name)
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("db soft-delete litellm_connections projection: %w", err)
+				}
+			}
 			controllerutil.RemoveFinalizer(&conn, litellmConnectionFinalizer)
 			if err := r.Update(ctx, &conn); err != nil {
 				return ctrl.Result{}, err
@@ -155,6 +188,37 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		Generation: conn.Generation,
 	})
 
+	// Issue #34: project the CR spec to the litellm_connections table
+	// inside a single transaction with the ach_litellm_connections_changed
+	// NOTIFY so the forwarder can boot from Postgres alone. ErrOriginConflict
+	// (a UI row holds the same PK) flips Synced=False/ConflictWithUIRow and
+	// requeues in 1 minute. r.Pool is nil-tolerant for existing envtests.
+	if r.Pool != nil {
+		row := achdb.LiteLLMConnectionRow{
+			Namespace:                conn.Namespace,
+			Name:                     conn.Name,
+			Endpoint:                 conn.Spec.Endpoint,
+			MasterKeySecretNamespace: conn.Namespace,
+			MasterKeySecretName:      conn.Spec.MasterKeySecretRef.Name,
+			MasterKeySecretKey:       conn.Spec.MasterKeySecretRef.Key,
+			ResourceVersion:          conn.ResourceVersion,
+		}
+		payload := fmt.Sprintf("%s/%s", conn.Namespace, conn.Name)
+		err := achdb.WithTxNotify(ctx, r.Pool, litellmConnectionsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.UpsertLiteLLMConnectionTx(ctx, tx, row)
+		})
+		if err != nil {
+			if errors.Is(err, achdb.ErrOriginConflict) {
+				if werr := r.writeStatus(ctx, &conn, metav1.ConditionFalse, "ConflictWithUIRow",
+					"projection row owned by UI; operator declines to overwrite"); werr != nil {
+					r.Log.Error(werr, "status update failed", "reason", "ConflictWithUIRow")
+				}
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("db upsert litellm_connections projection: %w", err)
+		}
+	}
+
 	// Operator-side bootstrap: guarantee LiteLLM has the canonical
 	// `default` team before any SSO callback fires. Idempotent —
 	// list-first, create only on empty. Failure is logged + tolerated;
@@ -208,12 +272,17 @@ func (r *LiteLLMConnectionReconciler) secretToConnection(ctx context.Context, ob
 }
 
 func (r *LiteLLMConnectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.LiteLLMConnection{}, builder.WithPredicates()).
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.secretToConnection),
 		).
-		Named("litellmconnection").
-		Complete(r)
+		Named("litellmconnection")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

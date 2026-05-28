@@ -14,9 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
@@ -27,13 +25,16 @@ import (
 	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
 )
 
-// envStore is the read-only Environment-CR projection the envkeys handlers
-// consume from internal/platformapi/store.Store. Declared as an interface
-// here so tests can inject fakes without spinning a full controller-runtime
-// envtest control plane (the production type satisfies this trivially via
-// pointer receivers on *store.Store).
+// envStore is the read-only Environment-projection seam the envkeys handlers
+// consume from internal/platformapi/store.Store. Declared as an interface here
+// so tests can inject fakes without standing up a real Postgres (the
+// production type *store.Store satisfies it via pointer-receiver methods).
+//
+// Issue #34: the return type moved from *achv1alpha1.Environment to
+// *db.EnvironmentRow when platform-api switched its read path from the
+// controller-runtime informer cache to the Postgres projection table.
 type envStore interface {
-	GetEnvironment(ctx context.Context, name string) (*achv1alpha1.Environment, error)
+	GetEnvironment(ctx context.Context, name string) (*db.EnvironmentRow, error)
 	EnvironmentTerminating(ctx context.Context, name string) (bool, error)
 	EnvironmentAccessGroupSynced(ctx context.Context, name string) (bool, error)
 }
@@ -177,23 +178,21 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Step 3a: GetEnvironment (informer cache) — absent → 404.
+		// Step 3a: GetEnvironment (Postgres projection per issue #34) — absent → 404.
+		// db.GetEnvironmentByName returns (nil, nil) on a clean absence, so
+		// any non-nil err here is a genuine internal failure.
 		env, err := deps.Store.GetEnvironment(ctx, req.Environment)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				env = nil
-			} else {
-				deps.Logger.Error("envkeys.create: GetEnvironment failed", "env", req.Environment, "err", err)
-				audit.EmitAudit(ctx, deps.Audit, audit.Event{
-					Action:    audit.ActionEkCreate,
-					Outcome:   audit.OutcomeInternalError,
-					Actor:     actor,
-					RequestID: reqID,
-					Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-				})
-				render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-				return
-			}
+			deps.Logger.Error("envkeys.create: GetEnvironment failed", "env", req.Environment, "err", err)
+			audit.EmitAudit(ctx, deps.Audit, audit.Event{
+				Action:    audit.ActionEkCreate,
+				Outcome:   audit.OutcomeInternalError,
+				Actor:     actor,
+				RequestID: reqID,
+				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
+			})
+			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+			return
 		}
 		if env == nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -275,7 +274,7 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
 			return
 		}
-		if !hasIntersect(env.Spec.AuthorizedTeams, callerTeams) {
+		if !hasIntersect(env.AuthorizedTeams, callerTeams) {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkCreate,
 				Outcome:   audit.OutcomeUnauthorizedTeam,

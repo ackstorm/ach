@@ -24,9 +24,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,25 +50,55 @@ type MarketplacePlugin struct {
 // (marketplace_name, name). force_refresh_requested_at is force-set to NULL
 // in the same UPDATE per D-07 (Phase 3 Platform-API force-refresh marker
 // clears once an actual refresh completes).
+const upsertMarketplacePluginSQL = `
+	INSERT INTO marketplace_plugins
+	    (marketplace_name, name, storage_location, upstream_rev,
+	     last_successful_refresh, next_refresh_at,
+	     max_staleness_seconds, force_refresh_requested_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, 'cr', TRUE)
+	ON CONFLICT (marketplace_name, name) DO UPDATE SET
+	    storage_location           = EXCLUDED.storage_location,
+	    upstream_rev               = EXCLUDED.upstream_rev,
+	    last_successful_refresh    = EXCLUDED.last_successful_refresh,
+	    next_refresh_at            = EXCLUDED.next_refresh_at,
+	    max_staleness_seconds      = EXCLUDED.max_staleness_seconds,
+	    force_refresh_requested_at = NULL,
+	    locked                     = TRUE
+	WHERE marketplace_plugins.origin = 'cr'
+	RETURNING marketplace_name
+`
+
 func UpsertMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, p MarketplacePlugin) error {
-	const sql = `
-		INSERT INTO marketplace_plugins
-		    (marketplace_name, name, storage_location, upstream_rev,
-		     last_successful_refresh, next_refresh_at,
-		     max_staleness_seconds, force_refresh_requested_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)
-		ON CONFLICT (marketplace_name, name) DO UPDATE SET
-		    storage_location           = EXCLUDED.storage_location,
-		    upstream_rev               = EXCLUDED.upstream_rev,
-		    last_successful_refresh    = EXCLUDED.last_successful_refresh,
-		    next_refresh_at            = EXCLUDED.next_refresh_at,
-		    max_staleness_seconds      = EXCLUDED.max_staleness_seconds,
-		    force_refresh_requested_at = NULL
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertMarketplacePlugin(%s/%s): begin: %w", p.MarketplaceName, p.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertMarketplacePluginTx(ctx, tx, p); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertMarketplacePlugin(%s/%s): commit: %w", p.MarketplaceName, p.Name, err)
+	}
+	return nil
+}
+
+func upsertMarketplacePluginTx(ctx context.Context, tx pgx.Tx, p MarketplacePlugin) error {
+	var m string
+	err := tx.QueryRow(ctx, upsertMarketplacePluginSQL,
 		p.MarketplaceName, p.Name, p.StorageLocation, p.UpstreamRev,
 		p.LastSuccessfulRefresh, p.NextRefreshAt, p.MaxStalenessSeconds,
-	); err != nil {
+	).Scan(&m)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}

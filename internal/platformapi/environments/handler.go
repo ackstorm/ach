@@ -164,8 +164,8 @@ func ListHandler(deps Deps) http.HandlerFunc {
 		page := envs[offset:end]
 
 		items := make([]store.EnvironmentView, 0, len(page))
-		for _, env := range page {
-			items = append(items, store.ToEnvironmentView(env))
+		for _, row := range page {
+			items = append(items, store.RowToView(row))
 		}
 
 		// Compute next_cursor — base64 of the next offset, or nil when the
@@ -251,14 +251,14 @@ func GetHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.Spec.AuthorizedTeams, teams) {
+			if !hasIntersect(env.AuthorizedTeams, teams) {
 				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
 					"caller is not a member of any authorized team", reqID)
 				return
 			}
 		}
 
-		render.JSON(w, http.StatusOK, store.ToEnvironmentView(*env))
+		render.JSON(w, http.StatusOK, store.RowToView(*env))
 	}
 }
 

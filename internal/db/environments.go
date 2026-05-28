@@ -80,42 +80,82 @@ type EnvironmentRow struct {
 // Returns raw error on pgconn class 08/57 (transient) so controller-runtime
 // applies exponential backoff. Other errors wrap with non-secret
 // (namespace, name) identifiers; pgErr.Message is never included.
+// upsertEnvironmentSQL inserts/updates CR-origin environment rows. The
+// ON CONFLICT WHERE clause filters by existing.origin='cr' so a UI-managed
+// row blocks the operator's UPDATE; the RETURNING + ErrNoRows mapping
+// converts that filter miss into ErrOriginConflict (issue #34).
+const upsertEnvironmentSQL = `
+	INSERT INTO environments
+	    (namespace, name,
+	     authorized_teams, context_prompts, context_plugins, context_artifacts,
+	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+	     available_condition, access_group_synced_condition,
+	     execution_resources_resolved_condition,
+	     resource_version, updated_at, origin, locked)
+	VALUES ($1, $2,
+	        $3, $4, $5, $6,
+	        $7, $8, $9,
+	        $10, $11, $12,
+	        $13, now(), 'cr', TRUE)
+	ON CONFLICT (namespace, name) DO UPDATE SET
+	    authorized_teams                       = EXCLUDED.authorized_teams,
+	    context_prompts                        = EXCLUDED.context_prompts,
+	    context_plugins                        = EXCLUDED.context_plugins,
+	    context_artifacts                      = EXCLUDED.context_artifacts,
+	    runtime_models                         = EXCLUDED.runtime_models,
+	    runtime_mcp_servers                    = EXCLUDED.runtime_mcp_servers,
+	    runtime_a2a_agents                     = EXCLUDED.runtime_a2a_agents,
+	    available_condition                    = EXCLUDED.available_condition,
+	    access_group_synced_condition          = EXCLUDED.access_group_synced_condition,
+	    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
+	    resource_version                       = EXCLUDED.resource_version,
+	    updated_at                             = now(),
+	    locked                                 = TRUE
+	WHERE environments.origin = 'cr'
+	RETURNING namespace
+`
+
 func UpsertEnvironment(ctx context.Context, pool *pgxpool.Pool, row EnvironmentRow) error {
-	const sql = `
-		INSERT INTO environments
-		    (namespace, name,
-		     authorized_teams, context_prompts, context_plugins, context_artifacts,
-		     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
-		     available_condition, access_group_synced_condition,
-		     execution_resources_resolved_condition,
-		     resource_version, updated_at)
-		VALUES ($1, $2,
-		        $3, $4, $5, $6,
-		        $7, $8, $9,
-		        $10, $11, $12,
-		        $13, now())
-		ON CONFLICT (namespace, name) DO UPDATE SET
-		    authorized_teams                       = EXCLUDED.authorized_teams,
-		    context_prompts                        = EXCLUDED.context_prompts,
-		    context_plugins                        = EXCLUDED.context_plugins,
-		    context_artifacts                      = EXCLUDED.context_artifacts,
-		    runtime_models                         = EXCLUDED.runtime_models,
-		    runtime_mcp_servers                    = EXCLUDED.runtime_mcp_servers,
-		    runtime_a2a_agents                     = EXCLUDED.runtime_a2a_agents,
-		    available_condition                    = EXCLUDED.available_condition,
-		    access_group_synced_condition          = EXCLUDED.access_group_synced_condition,
-		    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
-		    resource_version                       = EXCLUDED.resource_version,
-		    updated_at                             = now()
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertEnvironment(%s/%s): begin: %w", row.Namespace, row.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertEnvironmentTx(ctx, tx, row); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertEnvironment(%s/%s): commit: %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+// upsertEnvironmentTx is the tx-form helper that controllers use via
+// db.WithTxNotify so the projection write and the pg_notify call commit
+// atomically. The bare pool form above is retained for tests and callers
+// without an outer transaction.
+func upsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {
+	var ns string
+	err := tx.QueryRow(ctx, upsertEnvironmentSQL,
 		row.Namespace, row.Name,
 		row.AuthorizedTeams, row.ContextPrompts, row.ContextPlugins, row.ContextArtifacts,
 		row.RuntimeModels, row.RuntimeMCPServers, row.RuntimeA2AAgents,
 		row.AvailableCondition, row.AccessGroupSyncedCondition,
 		row.ExecutionResourcesResolvedCondition,
 		row.ResourceVersion,
-	); err != nil {
+	).Scan(&ns)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// ON CONFLICT WHERE existing.origin='cr' filtered the row out:
+			// the existing row is non-CR origin (UI-owned).
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -164,6 +204,56 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 	return r, nil
 }
 
+// ListEnvironments returns every live row in ns ordered by name ASC. Used by
+// the platform-api store (B1) and the forwarder envstore (C2) periodic
+// refresh. Rows with deletion_timestamp set are excluded (the steady-state
+// caller — platform-api environments list, forwarder precheck — wants the
+// not-draining set; the Content Service authz path uses GetEnvironmentByName
+// which deliberately surfaces drain-mode rows per CS-09).
+func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
+	const sql = `
+		SELECT namespace, name,
+		       authorized_teams, context_prompts, context_plugins, context_artifacts,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+		       available_condition, access_group_synced_condition,
+		       execution_resources_resolved_condition,
+		       deletion_timestamp, resource_version, updated_at
+		  FROM environments
+		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+	`
+	rows, err := pool.Query(ctx, sql, ns)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListEnvironments(%s): %w", ns, err)
+	}
+	defer rows.Close()
+	out := []EnvironmentRow{}
+	for rows.Next() {
+		var r EnvironmentRow
+		if err := rows.Scan(
+			&r.Namespace, &r.Name,
+			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
+			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
+			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
+			&r.ExecutionResourcesResolvedCondition,
+			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("db: ListEnvironments(%s) scan: %w", ns, err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListEnvironments(%s) iterate: %w", ns, err)
+	}
+	return out, nil
+}
+
 // SoftDeleteEnvironment sets deletion_timestamp = now() without removing the
 // row (CS-09 — Content Service serves until full removal). Idempotent: a
 // row already in drain-mode (deletion_timestamp IS NOT NULL) is left
@@ -172,13 +262,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 // updated_at is bumped on the matching path so the Operator's downstream
 // readers see fresh wall-clock state.
 func SoftDeleteEnvironment(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `
-		UPDATE environments
-		   SET deletion_timestamp = now(),
-		       updated_at         = now()
-		 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-	`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, softDeleteEnvironmentSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -186,6 +270,25 @@ func SoftDeleteEnvironment(ctx context.Context, pool *pgxpool.Pool, ns, name str
 	}
 	return nil
 }
+
+// softDeleteEnvironmentTx mirrors SoftDeleteEnvironment for use inside an
+// outer transaction (db.WithTxNotify). Same idempotent semantics.
+func softDeleteEnvironmentTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, softDeleteEnvironmentSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SoftDeleteEnvironment(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+const softDeleteEnvironmentSQL = `
+	UPDATE environments
+	   SET deletion_timestamp = now(),
+	       updated_at         = now()
+	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
+`
 
 // DeleteEnvironment removes the row keyed by (namespace, name) outright.
 // Called only after the Operator's finalizer drain completes (CS-09);

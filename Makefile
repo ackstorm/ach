@@ -466,6 +466,10 @@ samples-audit: ## DEPLOY-02: fail the build if any sample manifest contains a TO
 e2e-mock-build: ## build the ach-mock:e2e image
 	$(CONTAINER_TOOL) build -t ach-mock:e2e -f test/e2e/mock/Dockerfile test/e2e/mock/
 
+.PHONY: e2e-mcp-echo-build
+e2e-mcp-echo-build: ## build the ach-mcp-echo:e2e image (issue #35)
+	$(CONTAINER_TOOL) build -t ach-mcp-echo:e2e -f test/e2e/mcp-echo/Dockerfile .
+
 .PHONY: cluster-up cluster-down cluster-hydrate cluster-keep cluster-status
 cluster-up:      ## bring up canonical kind cluster + hydration
 	bash scripts/cluster.sh up
@@ -531,6 +535,10 @@ wait-content-service: ## Wait for content-service container (co-located in opera
 	# rollout encompasses both containers and the Pod readinessProbe already
 	# verifies CS :8082/healthz, so rollout=Ready ⇒ both containers serving.
 	kubectl rollout status deploy/ach-operator -n ach-system --timeout=$(WAIT_TIMEOUT)
+
+.PHONY: wait-mcp-echo
+wait-mcp-echo: ## Wait for ach-mcp-echo Deployment Available (bounded) (issue #35)
+	kubectl rollout status deploy/ach-mcp-echo -n ach-system --timeout=$(WAIT_TIMEOUT)
 
 .PHONY: wait-container
 wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make wait-container NAME=<container> [TIMEOUT=600]

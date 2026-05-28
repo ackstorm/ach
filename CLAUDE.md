@@ -51,21 +51,33 @@ planning corpus at `/home/jcm/Projects/ach-old`).
 ## Architecture
 
 ```
-┌──────────────┐ reconcile ┌─────────────────────────────┐ Postgres/Redis ┌────────────┐
-│     CRDs     │──────────▶│       ach operator Pod      │───────────────▶│ Hub state  │
-│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │                └────────────┘
-└──────────────┘           │ │  operator   │ │ content │ │
-                           │ │ (reconcile) │ │ service │ │  HTTP /content/{prompt,plugin,artifact}
-                           │ └─────────────┘ └────┬────┘ │  (sendfile(2) streaming, RWO PVC)
-                           └─────────┬────────────┼──────┘
-                                     │            │
-                                     ▼            ▼
-                          ┌────────────────────┐  ┌───────────────────┐
-                          │ ach platform-api   │  │ ach forwarder     │
-                          │ (REST + Dex SSO +  │◀▶│ (JWT trust path,  │
-                          │  /platform/hydrate)│  │  BIP read-cache)  │
-                          └────────────────────┘  └───────────────────┘
+┌──────────────┐ reconcile ┌─────────────────────────────┐  project    ┌────────────┐
+│     CRDs     │──────────▶│       ach operator Pod      │────rows────▶│  Postgres  │
+│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │  + NOTIFY   │  (SoT for  │
+└──────────────┘           │ │  operator   │ │ content │ │             │ ACH state) │
+                           │ │ (reconcile) │ │ service │◀┼──READ ROWS──│            │
+                           │ └─────────────┘ └────┬────┘ │             └─────┬──────┘
+                           └─────────┬────────────┼──────┘                   │
+                                     │            │                          │
+                                     ▼            ▼ /content/{prompt,…}      │
+                          ┌────────────────────┐  ┌───────────────────┐      │
+                          │ ach platform-api   │  │ ach forwarder     │      │
+                          │ (REST + Dex SSO +  │◀▶│ (JWT trust path,  │      │
+                          │  /platform/hydrate)│  │  BIP+Env caches)  │      │
+                          └─────────┬──────────┘  └─────────┬─────────┘      │
+                                    │                       │                │
+                                    └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
+**Source of truth (Phase D, issue #34)**: the operator is the only
+writer to Postgres (`environments`, `plugins`, `prompts`, `artifacts`,
+`litellm_connections`, `backend_identity_policies`, `external_refs`,
+`marketplace_plugins`); platform-api, forwarder, and content-service
+READ from Postgres and LISTEN on the `ach_*_changed` channels emitted
+by `with_tx_notify`. The forwarder's only remaining k8s read is the
+`ach-jwt-signing-keys` Secret informer; the platform-api's only
+remaining k8s touchpoint is the Dex SSO flow. CRDs are no longer
+the read path for any non-operator service.
+
 Content-service runs as a **sidecar container in the operator Pod**
 (co-located because the artifact PVC is RWO); there is no separate
 `ach-content-service` Deployment. operator, platform-api, and
@@ -158,6 +170,7 @@ ach/
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |
 | Local testing, SSO login & Gateway    | `references/local-testing-gateway.md`     |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
+| Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
 
 ## CI gating — one-line summary
 
@@ -705,6 +718,42 @@ isn't the standard `ach.local.test` fixture — and the failure mode is
 identical to a real schema drift (`schemaVersion` bump, new field, etc.),
 so getting the gotcha documented protects future debuggers from chasing a
 phantom regression.
+### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
+```bash
+curl -i -H 'Authorization: Bearer pk_demo' https://forwarder.local/mcp/demo-mcp-echo
+# HTTP/1.1 401 Unauthorized
+# WWW-Authenticate: Bearer error="invalid_token"
+```
+✅ The mcp-echo backend (issue #35) cryptographically verifies the JWT
+against the forwarder's JWKS. A 401 here means one of:
+- The BIP `bip-demo-mcp-echo` is missing or `Synced=False` (forwarder
+  did not promote to JWT-mint; backend sees the raw `pk_` instead of
+  a JWT). Check `kubectl -n ach-system get bip bip-demo-mcp-echo -o yaml`.
+- The forwarder's `ACH_BASE_URL` does not match the backend's
+  `ACH_EXPECTED_ISS` (Helm `testMocks.mcpEcho.expectedIss`). The
+  `iss` claim must match exactly.
+- The minted JWT's `aud=mcp:<name>` does not match
+  `testMocks.mcpEcho.expectedAud`. The route name and the audience
+  expectation must agree.
+- The backend's JWKS cache hasn't refreshed since a forwarder rotation.
+  Restart `deploy/ach-mcp-echo` to force a clean re-fetch.
+
+WHY IT FAILS: The verifier is intentionally strict — the trust path is
+only meaningful if the backend refuses on the slightest mismatch. Fix
+the configuration, not the verifier.
+
+### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
+A CR's projection collides with a row created by the UI (`origin='ui'`). The
+operator refuses to clobber the UI-managed row.
+✅ Rename the CR, or delete the UI row from Postgres before letting the
+operator reconcile. UI and CR row names must be disjoint within a (namespace).
+WHY IT FAILS: every projection table (environments, plugins, prompts, artifacts,
+litellm_connections, backend_identity_policies, external_refs, marketplace_plugins)
+has an `origin TEXT CHECK IN ('cr','ui')` column. The operator's UPSERTs are
+guarded by `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; the
+filter miss returns `pgx.ErrNoRows` which the helper maps to `ErrOriginConflict`,
+which the reconciler maps to `Synced=False reason=ConflictWithUIRow` and a 1-min
+requeue.
 
 ## Repository-specific patterns
 
@@ -742,12 +791,20 @@ phantom regression.
   up — that is what `ach hydrate` / the demo script gate on, not
   individual sub-conditions.
 
-- **BackendIdentityPolicy forwarder read-path**: BIPs are owned by the
-  operator but consumed by the forwarder via an informer-backed cache
-  (`internal/forwarder/bip`). The forwarder mints per-target JWTs off
-  the BIP's identity material plus the `ach-jwt-signing-keys` seed —
-  no Postgres lookup on the request path. Operator writes the policy
-  and `Synced=True`; forwarder picks it up on the next informer event.
+- **BackendIdentityPolicy + Environment forwarder read-path**
+  (Postgres-as-SoT, issue #34): the operator projects BIPs into the
+  `backend_identity_policies` table and Environments into the
+  `environments` table, then emits `NOTIFY ach_backend_identity_policies_changed`
+  / `NOTIFY ach_environments_changed` from the same transaction via
+  `with_tx_notify`. The forwarder's `internal/forwarder/bipcache` runs
+  a `db.Listener` on `ach_backend_identity_policies_changed` plus a
+  5-minute periodic refresh as a safety net against missed NOTIFYs
+  (Postgres LISTEN/NOTIFY is at-most-once on session loss). The
+  forwarder's `internal/forwarder/envstore` follows the same pattern
+  on `ach_environments_changed`. JWT mint reads the in-memory cache
+  on the request path — no Postgres round-trip per request, no k8s
+  informer. The only remaining k8s informer on the forwarder is the
+  `ach-jwt-signing-keys` Secret watch.
 
 - **SPDX-only license headers**: every `*.go` outside `vendor/`,
   `zz_generated*.go`, `mock_*.go` starts with

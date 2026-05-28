@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package litellmconn resolves the LiteLLMConnection/default CR + its
-// master-key Secret into the (endpoint, masterKey) pair the forwarder
-// needs at boot. Mirrors the operator's LiteLLMConnection reconciler
-// probe path so the forwarder and operator agree on what "ready" means,
-// without duplicating reconcile logic.
+// Package litellmconn resolves the LiteLLMConnection/default projection +
+// its master-key Secret into the (endpoint, masterKey) pair the forwarder
+// needs at boot.
 //
-// Refuse-to-start contract: Resolve returns a wrapped error if any of
-// the CR, the Secret, or the named key are missing/empty. The forwarder
-// surfaces those errors verbatim so operators see exactly which piece
-// of the chain is unwired.
+// Postgres is the source of truth for the CR projection (issue #34); the
+// referenced Secret is read from the Kubernetes control plane via the
+// caller's client.Reader. The forwarder retains a filtered Secret cache
+// only for ach-jwt-signing-keys hot-reload; the LiteLLM master-key Secret
+// is read once at boot via an uncached APIReader.
 //
-// Hot-reload of the master key is intentionally out of scope here —
-// operators rotate the Secret by editing the LiteLLMConnection CR or
-// the Secret, and the forwarder Deployment is restarted to pick the new
-// value up. The JWT signing-keys Secret has a stricter rotation SLO and
-// uses a controller-runtime informer; the LiteLLM master key does not.
+// Refuse-to-start contract: Resolve returns a wrapped sentinel when any
+// of the projection row, the Secret, or the named key are
+// missing/empty. The forwarder surfaces those errors verbatim so
+// operators see exactly which piece of the chain is unwired. The
+// resolveLiteLLMWithRetry caller treats ErrLiteLLMConnectionNotReady
+// (projection row absent) and ErrSecretNotFound (Secret not yet
+// reconciled by the operator) as retryable boot states.
 package litellmconn
 
 import (
@@ -28,14 +29,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ackstorm/ach/internal/db"
 )
 
 // CRName is the only admitted LiteLLMConnection name per namespace
-// (enforced by the CRD's XValidation rule).
+// (enforced by the CRD's XValidation rule and by the projection's
+// GetDefaultLiteLLMConnection helper).
 const CRName = "default"
 
-// Resolution carries the values resolved from the CR + Secret pair.
+// Resolution carries the values resolved from the projection row +
+// Secret pair.
 type Resolution struct {
 	// Endpoint is the LiteLLM upstream URL (CR Spec.Endpoint, e.g.
 	// http://litellm.litellm-system.svc.cluster.local:4000).
@@ -45,59 +50,66 @@ type Resolution struct {
 	// key named by CR Spec.MasterKeySecretRef.Key. Used by the forwarder
 	// both as the litellm REST admin credential AND as the
 	// x-litellm-api-key header value StripAndRewrite injects on every
-	// proxied request (proxy-trust assertion — LiteLLM upstream rejects
-	// requests without this header with 401).
+	// proxied request (proxy-trust assertion).
 	MasterKey string
 }
 
 // Sentinel errors callers can unwrap for refuse-to-start classification.
+//
+// ErrLiteLLMConnectionNotReady replaces the legacy ErrCRNotFound: the
+// forwarder no longer reads the CR directly, so "not found" is now a
+// "projection row absent" condition. The retry-wrapper treats this
+// (alongside ErrSecretNotFound) as a transient cluster-hydration race
+// that resolves once the operator runs.
 var (
-	ErrCRNotFound       = errors.New("LiteLLMConnection CR not found")
-	ErrEndpointEmpty    = errors.New("LiteLLMConnection.spec.endpoint empty")
-	ErrSecretNotFound   = errors.New("masterKey Secret not found")
-	ErrSecretKeyMissing = errors.New("masterKey Secret key empty/missing")
+	ErrLiteLLMConnectionNotReady = errors.New("LiteLLMConnection projection row not yet reconciled")
+	ErrEndpointEmpty             = errors.New("LiteLLMConnection.endpoint empty")
+	ErrSecretNotFound            = errors.New("masterKey Secret not found")
+	ErrSecretKeyMissing          = errors.New("masterKey Secret key empty/missing")
 )
 
-// Resolve reads LiteLLMConnection/default + the referenced master-key
-// Secret in `namespace` via an uncached client.Reader (typically
-// mgr.GetAPIReader() during bootstrap, before the controller-runtime
-// cache has synced).
-func Resolve(ctx context.Context, reader client.Reader, namespace string) (*Resolution, error) {
-	var conn achv1alpha1.LiteLLMConnection
-	connKey := types.NamespacedName{Namespace: namespace, Name: CRName}
-	if err := reader.Get(ctx, connKey, &conn); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: %s/%s", ErrCRNotFound, namespace, CRName)
-		}
-		return nil, fmt.Errorf("get LiteLLMConnection %s/%s: %w", namespace, CRName, err)
+// Resolve reads the litellm_connections/default projection row from
+// Postgres, then dereferences its MasterKeySecretRef into a Kubernetes
+// Secret via the given uncached client.Reader (typically
+// mgr.GetAPIReader() at bootstrap).
+//
+// The pool is the source of truth for the connection spec; the k8s
+// reader exists solely because Secrets stay on the Kubernetes control
+// plane (not projected to Postgres).
+func Resolve(ctx context.Context, pool *pgxpool.Pool, reader client.Reader, namespace string) (*Resolution, error) {
+	row, err := db.GetDefaultLiteLLMConnection(ctx, pool, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("db.GetDefaultLiteLLMConnection(%s): %w", namespace, err)
 	}
-	if conn.Spec.Endpoint == "" {
+	if row == nil {
+		return nil, fmt.Errorf("%w: %s/%s", ErrLiteLLMConnectionNotReady, namespace, CRName)
+	}
+	if row.Endpoint == "" {
 		return nil, fmt.Errorf("%w: %s/%s", ErrEndpointEmpty, namespace, CRName)
 	}
 
 	var secret corev1.Secret
 	secKey := types.NamespacedName{
-		Namespace: namespace,
-		Name:      conn.Spec.MasterKeySecretRef.Name,
+		Namespace: row.MasterKeySecretNamespace,
+		Name:      row.MasterKeySecretName,
 	}
 	if err := reader.Get(ctx, secKey, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w: %s/%s", ErrSecretNotFound,
-				namespace, conn.Spec.MasterKeySecretRef.Name)
+				row.MasterKeySecretNamespace, row.MasterKeySecretName)
 		}
 		return nil, fmt.Errorf("get masterKey Secret %s/%s: %w",
-			namespace, conn.Spec.MasterKeySecretRef.Name, err)
+			row.MasterKeySecretNamespace, row.MasterKeySecretName, err)
 	}
 
-	raw, ok := secret.Data[conn.Spec.MasterKeySecretRef.Key]
+	raw, ok := secret.Data[row.MasterKeySecretKey]
 	if !ok || len(raw) == 0 {
 		return nil, fmt.Errorf("%w: %s/%s data[%q]", ErrSecretKeyMissing,
-			namespace, conn.Spec.MasterKeySecretRef.Name,
-			conn.Spec.MasterKeySecretRef.Key)
+			row.MasterKeySecretNamespace, row.MasterKeySecretName, row.MasterKeySecretKey)
 	}
 
 	return &Resolution{
-		Endpoint:  conn.Spec.Endpoint,
+		Endpoint:  row.Endpoint,
 		MasterKey: string(raw),
 	}, nil
 }

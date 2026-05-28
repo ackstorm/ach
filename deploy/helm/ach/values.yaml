@@ -79,7 +79,19 @@ forwarder:
   # bootstrap reads this Secret to extract the LiteLLM master key per
   # B2 refactor (replaces ACH_LITELLM_SHARED_KEY env var). RBAC carves
   # the Role's secrets verbs to this name + jwtSecretName only.
+  #
+  # DEPRECATED in favor of forwarder.litellmMasterKey.* (below); kept
+  # for backward compatibility with charts pinned pre-issue-#34.
   litellmMasterSecretName: litellm-master-key
+  # litellmMasterKey carries the namespace/name/key triple matching the
+  # LiteLLMConnection/default projection row. When .namespace differs
+  # from .Release.Namespace, the Helm chart adds a cross-namespace Role
+  # + RoleBinding in .namespace so the forwarder ServiceAccount can
+  # read the Secret across namespaces (issue #34 C7).
+  litellmMasterKey:
+    namespace: litellm-system
+    name: litellm-master-key
+    key: master_key
   # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
   # ACH_REDIS_ADDR, ACH_REDIS_PASSWORD via valueFrom,
   # ACH_CREDENTIAL_HASH_PEPPER via valueFrom). The LiteLLM endpoint +
@@ -176,3 +188,19 @@ testMocks:
     repo: ach-mock
     tag: latest
     pullPolicy: IfNotPresent
+  # mcpEcho is the JWT-validating MCP echo backend (issue #35). When
+  # enabled it deploys ach-mcp-echo as a third Service alongside the
+  # legacy litellm + mcp mocks.
+  mcpEcho:
+    enabled: false
+    image:
+      repo: ach-mcp-echo
+      tag: e2e
+      pullPolicy: IfNotPresent
+    # Forwarder JWKS URL the backend polls to verify incoming tokens.
+    jwksUrl: "http://ach-forwarder.{{ .Release.Namespace }}.svc/.well-known/jwks.json"
+    # iss the backend requires on every JWT. MUST match the Forwarder's
+    # ACH_BASE_URL (HTTPS-only per FWD-10).
+    expectedIss: "https://ach.local.test"
+    # Comma-separated list of accepted aud claims.
+    expectedAud: "mcp:demo-mcp-echo"

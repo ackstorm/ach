@@ -12,19 +12,29 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 )
+
+// promptsChannel is the NOTIFY channel emitted on every Prompt projection
+// write/soft-delete (issue #34). The external_refs upsert for prompts
+// fires on this same channel.
+const promptsChannel = "ach_prompts_changed"
 
 // PromptReconciler reconciles a Prompt object. Phase 2 implements the
 // §10.3 steady-state refresh via materializeExternalRef. Prompts have
@@ -42,6 +52,9 @@ type PromptReconciler struct {
 	// Phase 2:
 	DB       *pgxpool.Pool
 	Fetchers FetcherFactory
+
+	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=prompts,verbs=get;list;watch;create;update;patch;delete
@@ -187,7 +200,16 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			MaxStalenessSeconds:   int64(spec.Refresh.MaxStaleness.Duration.Seconds()),
 			ResourceVersion:       cr.ResourceVersion,
 		}
-		if err := achdb.UpsertPrompt(ctx, r.DB, row); err != nil {
+		// Issue #34: project + NOTIFY atomically on ach_prompts_changed.
+		// ErrOriginConflict surfaces as Synced=False/ConflictWithUIRow.
+		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
+		err := achdb.WithTxNotify(ctx, r.DB, promptsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.UpsertPromptTx(ctx, tx, row)
+		})
+		if err != nil {
+			if errors.Is(err, achdb.ErrOriginConflict) {
+				return r.writePromptConflictStatus(ctx, &cr, logger)
+			}
 			return ctrl.Result{}, fmt.Errorf("db upsert prompt projection: %w", err)
 		}
 	}
@@ -233,7 +255,11 @@ func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.P
 		// projection row AFTER the existing external_refs DELETE
 		// and BEFORE finalizer removal. Two writes are intentional —
 		// see plugin_controller.go for rationale.
-		if err := achdb.SoftDeletePrompt(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+		// Issue #34: soft-delete + NOTIFY in one tx.
+		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
+		if err := achdb.WithTxNotify(ctx, r.DB, promptsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.SoftDeletePromptTx(ctx, tx, cr.Namespace, cr.Name)
+		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("db soft-delete prompt projection: %w", err)
 		}
 	}
@@ -245,10 +271,40 @@ func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.P
 	return ctrl.Result{}, nil
 }
 
+// writePromptConflictStatus flips Synced=False/ConflictWithUIRow when the
+// projection upsert collides with a UI-origin row holding the same PK.
+func (r *PromptReconciler) writePromptConflictStatus(
+	ctx context.Context,
+	cr *achv1alpha1.Prompt,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
+		Type:               ConditionSynced,
+		Status:             metav1.ConditionFalse,
+		Reason:             "ConflictWithUIRow",
+		Message:            "projection row owned by UI; operator declines to overwrite",
+		ObservedGeneration: cr.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	cr.Status.ObservedGeneration = cr.Generation
+	desiredStatus := cr.Status
+	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.Prompt) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+	}
+	return ctrl.Result{RequeueAfter: time.Minute}, nil
+}
+
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PromptReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.Prompt{}, builder.WithPredicates()).
-		Named("ach-prompt").
-		Complete(r)
+		Named("ach-prompt")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

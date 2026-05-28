@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -60,11 +59,9 @@ type Deps struct {
 	// OAuth2Cfg is the OAuth2 PKCE config.
 	OAuth2Cfg *oauth2.Config
 
-	// K8sClient is the typed controller-runtime client backed by an
-	// informer cache (manager.GetClient).
-	K8sClient client.Client
-
-	// Store is the informer-backed Environment reader (Plan 03-06).
+	// Store is the Postgres-backed Environment projection reader
+	// (issue #34 / Phase B1). Replaces the pre-issue-34 informer-backed
+	// reader; platform-api no longer holds a K8s client.
 	Store *store.Store
 
 	// Resolver is the per-request key resolution path (Plan 03-05).
@@ -195,7 +192,6 @@ func New(deps Deps) http.Handler {
 			Pool:      deps.Pool,
 			LiteLLM:   deps.LiteLLM,
 			Redis:     deps.Redis,
-			K8sClient: deps.K8sClient,
 			Allowlist: deps.Allowlist,
 			Audit:     deps.Audit,
 			Logger:    deps.Logger,
