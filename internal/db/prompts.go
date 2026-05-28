@@ -53,26 +53,56 @@ type PromptRow struct {
 // pgconn class 08/57 errors propagate raw (transient backoff). Other
 // errors wrap with non-secret (namespace, name); pgErr.Message NEVER
 // included.
+const upsertPromptSQL = `
+	INSERT INTO prompts
+	    (namespace, name, storage_location, content_type,
+	     last_successful_refresh, max_staleness_seconds,
+	     resource_version, updated_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE)
+	ON CONFLICT (namespace, name) DO UPDATE SET
+	    storage_location        = EXCLUDED.storage_location,
+	    content_type            = EXCLUDED.content_type,
+	    last_successful_refresh = EXCLUDED.last_successful_refresh,
+	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
+	    resource_version        = EXCLUDED.resource_version,
+	    updated_at              = now(),
+	    locked                  = TRUE
+	WHERE prompts.origin = 'cr'
+	RETURNING namespace
+`
+
 func UpsertPrompt(ctx context.Context, pool *pgxpool.Pool, row PromptRow) error {
-	const sql = `
-		INSERT INTO prompts
-		    (namespace, name, storage_location, content_type,
-		     last_successful_refresh, max_staleness_seconds,
-		     resource_version, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-		ON CONFLICT (namespace, name) DO UPDATE SET
-		    storage_location        = EXCLUDED.storage_location,
-		    content_type            = EXCLUDED.content_type,
-		    last_successful_refresh = EXCLUDED.last_successful_refresh,
-		    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
-		    resource_version        = EXCLUDED.resource_version,
-		    updated_at              = now()
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertPrompt(%s/%s): begin: %w", row.Namespace, row.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertPromptTx(ctx, tx, row); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertPrompt(%s/%s): commit: %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+func upsertPromptTx(ctx context.Context, tx pgx.Tx, row PromptRow) error {
+	var ns string
+	err := tx.QueryRow(ctx, upsertPromptSQL,
 		row.Namespace, row.Name, row.StorageLocation, row.ContentType,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	); err != nil {
+	).Scan(&ns)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -114,13 +144,7 @@ func GetPromptByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 // row (CS-09). Idempotent: rows already in drain-mode are left untouched
 // so duplicate finalizer ticks do not refresh the drain clock.
 func SoftDeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `
-		UPDATE prompts
-		   SET deletion_timestamp = now(),
-		       updated_at         = now()
-		 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-	`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -128,6 +152,23 @@ func SoftDeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	}
 	return nil
 }
+
+func softDeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SoftDeletePrompt(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+const softDeletePromptSQL = `
+	UPDATE prompts
+	   SET deletion_timestamp = now(),
+	       updated_at         = now()
+	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
+`
 
 // DeletePrompt removes the row keyed by (namespace, name) outright. Called
 // only after finalizer drain completes. Absence is not an error.

@@ -21,6 +21,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// ErrOriginConflict is returned when an Upsert from one origin would overwrite
+// a row owned by a different origin (e.g. operator UPSERT against a UI-owned
+// row). The CR reconciler surfaces this as a Synced=False/ConflictWithUIRow
+// status condition; a symmetric helper for UI-side writers asserts the same
+// guard in the opposite direction. See migration 000005 for the schema.
+var ErrOriginConflict = errors.New("db: origin conflict — row owned by different origin")
+
 // isTransientPgErr returns true when err is a *pgconn.PgError with SQLSTATE
 // class "08" (connection exception) or "57" (operator intervention). These
 // are the canonical transient classes per Phase 1 W3; returning the raw

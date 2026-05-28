@@ -64,25 +64,55 @@ type ExternalRef struct {
 // controller-runtime workqueue applies exponential backoff. Other errors wrap
 // via fmt.Errorf("db: UpsertExternalRef(%s/%s): %w", Kind, Name, err) — Kind
 // and Name are non-secret CR identifiers, safe in log output.
+const upsertExternalRefSQL = `
+	INSERT INTO external_refs
+	    (kind, name, storage_location, upstream_rev,
+	     last_successful_refresh, next_refresh_at,
+	     max_staleness_seconds, force_refresh_requested_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, 'cr', TRUE)
+	ON CONFLICT (kind, name) DO UPDATE SET
+	    storage_location           = EXCLUDED.storage_location,
+	    upstream_rev               = EXCLUDED.upstream_rev,
+	    last_successful_refresh    = EXCLUDED.last_successful_refresh,
+	    next_refresh_at            = EXCLUDED.next_refresh_at,
+	    max_staleness_seconds      = EXCLUDED.max_staleness_seconds,
+	    force_refresh_requested_at = NULL,
+	    locked                     = TRUE
+	WHERE external_refs.origin = 'cr'
+	RETURNING kind
+`
+
 func UpsertExternalRef(ctx context.Context, pool *pgxpool.Pool, r ExternalRef) error {
-	const sql = `
-		INSERT INTO external_refs
-		    (kind, name, storage_location, upstream_rev,
-		     last_successful_refresh, next_refresh_at,
-		     max_staleness_seconds, force_refresh_requested_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)
-		ON CONFLICT (kind, name) DO UPDATE SET
-		    storage_location           = EXCLUDED.storage_location,
-		    upstream_rev               = EXCLUDED.upstream_rev,
-		    last_successful_refresh    = EXCLUDED.last_successful_refresh,
-		    next_refresh_at            = EXCLUDED.next_refresh_at,
-		    max_staleness_seconds      = EXCLUDED.max_staleness_seconds,
-		    force_refresh_requested_at = NULL
-	`
-	if _, err := pool.Exec(ctx, sql,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertExternalRef(%s/%s): begin: %w", r.Kind, r.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := upsertExternalRefTx(ctx, tx, r); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertExternalRef(%s/%s): commit: %w", r.Kind, r.Name, err)
+	}
+	return nil
+}
+
+func upsertExternalRefTx(ctx context.Context, tx pgx.Tx, r ExternalRef) error {
+	var k string
+	err := tx.QueryRow(ctx, upsertExternalRefSQL,
 		r.Kind, r.Name, r.StorageLocation, r.UpstreamRev,
 		r.LastSuccessfulRefresh, r.NextRefreshAt, r.MaxStalenessSeconds,
-	); err != nil {
+	).Scan(&k)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
 		if isTransientPgErr(err) {
 			return err
 		}
