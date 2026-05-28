@@ -22,7 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -79,6 +82,11 @@ type EnvironmentReconciler struct {
 	DB        *pgxpool.Pool
 	// Phase 2 (Plan 02-09 wires from cmd/operator/main.go):
 	Snapshotter *snapshot.Snapshotter
+	// Issue #34 (A10/A11): external source.Channel feed used by the
+	// resync runnable (periodic full re-list) and the refreshsignal
+	// listener (NOTIFY ach_refresh). When non-nil the SetupWithManager
+	// wires WatchesRawSource on the corresponding builder.
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=environments,verbs=get;list;watch;create;update;patch;delete
@@ -885,8 +893,13 @@ func (r *EnvironmentReconciler) writeConflictWithUIRow(
 // Single watch on Environment — Phase 2 will add Secret + LiteLLM
 // fast-path watches when they exist.
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.Environment{}, builder.WithPredicates()).
-		Named("ach-environment").
-		Complete(r)
+		Named("ach-environment")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

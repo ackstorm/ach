@@ -19,7 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -57,6 +60,9 @@ type BackendIdentityPolicyReconciler struct {
 	// table inside a single transaction with the
 	// ach_backend_identity_policies_changed NOTIFY (issue #34). Nil-tolerant.
 	Pool *pgxpool.Pool
+
+	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=backendidentitypolicies,verbs=get;list;watch;create;update;patch;delete
@@ -190,8 +196,13 @@ func (r *BackendIdentityPolicyReconciler) writeConflictStatus(
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *BackendIdentityPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.BackendIdentityPolicy{}, builder.WithPredicates()).
-		Named("ach-backendidentitypolicy").
-		Complete(r)
+		Named("ach-backendidentitypolicy")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

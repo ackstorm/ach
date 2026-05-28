@@ -31,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -47,10 +48,18 @@ import (
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/operator/resync"
 	"github.com/ackstorm/ach/internal/orphan"
 	"github.com/ackstorm/ach/internal/snapshot"
 	// +kubebuilder:scaffold:imports
 )
+
+// resyncSourceChanCap bounds each per-Kind source.Channel so a slow
+// reconciler doesn't backpressure the resync sweep into ctx-cancel.
+// 64 covers a typical envtest spec; oversize sweeps (>64 CRs of one
+// Kind) push out the resync horizon by one tick — acceptable safety
+// net behavior.
+const resyncSourceChanCap = 64
 
 var (
 	operatorScheme   = runtime.NewScheme()
@@ -316,13 +325,40 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to install Secret informer pre-warm: %w", err)
 	}
 
+	// ─── Issue #34 (A10/A11): per-Kind source.Channel feeds ───
+	//
+	// Each reconciler that owns one of the seven ACH CR Kinds picks up
+	// GenericEvents from a dedicated buffered channel via
+	// WatchesRawSource(source.Channel(...)). Two upstream producers push
+	// into these channels:
+	//
+	//   - resync.Resync (this file) — 5-minute periodic full re-list of
+	//     every Kind in watchNS. Safety net for missed events, operator
+	//     restart drift, and rare DB-NOTIFY drops.
+	//
+	//   - refreshsignal.Listener (this file) — Postgres LISTEN
+	//     ach_refresh consumer. Replaces the legacy platform-api
+	//     annotation-patch path; each payload "<kind>/<name>" is
+	//     resolved against the namespaced cache and a GenericEvent
+	//     is pushed into the matching channel.
+	//
+	// Capacity 64 (resyncSourceChanCap) bounds per-Kind backpressure.
+	envCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	pluginCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	promptCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	artifactCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	mpCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	bipCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	llmCh := make(chan event.GenericEvent, resyncSourceChanCap)
+
 	if err = (&achcontroller.LiteLLMConnectionReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Cache:     connCache,
-		Namespace: watchNS,
-		Log:       ctrl.Log.WithName("controller").WithName("LiteLLMConnection"),
-		Pool:      dbPool,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Cache:        connCache,
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("LiteLLMConnection"),
+		Pool:         dbPool,
+		ResyncSource: llmCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller LiteLLMConnection: %w", err)
 	}
@@ -339,13 +375,14 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 
 	if err = (&achcontroller.EnvironmentReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		LiteLLM:     realLiteLLM,
-		Namespace:   watchNS,
-		Log:         ctrl.Log.WithName("controller").WithName("Environment"),
-		DB:          dbPool,
-		Snapshotter: snapshotter,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		LiteLLM:      realLiteLLM,
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("Environment"),
+		DB:           dbPool,
+		Snapshotter:  snapshotter,
+		ResyncSource: envCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Environment: %w", err)
 	}
@@ -358,6 +395,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:               dbPool,
 		PluginMaxSizeMiB: pluginMaxSizeMiB,
 		Fetchers:         nil,
+		ResyncSource:     pluginCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Plugin: %w", err)
 	}
@@ -370,41 +408,64 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:               dbPool,
 		PluginMaxSizeMiB: pluginMaxSizeMiB,
 		Fetchers:         nil,
+		ResyncSource:     mpCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller PluginMarketplace: %w", err)
 	}
 	if err = (&achcontroller.ArtifactReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: watchNS,
-		Log:       ctrl.Log.WithName("controller").WithName("Artifact"),
-		CacheRoot: cacheRoot,
-		DB:        dbPool,
-		Fetchers:  nil,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("Artifact"),
+		CacheRoot:    cacheRoot,
+		DB:           dbPool,
+		Fetchers:     nil,
+		ResyncSource: artifactCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Artifact: %w", err)
 	}
 	if err = (&achcontroller.PromptReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: watchNS,
-		Log:       ctrl.Log.WithName("controller").WithName("Prompt"),
-		CacheRoot: cacheRoot,
-		DB:        dbPool,
-		Fetchers:  nil,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("Prompt"),
+		CacheRoot:    cacheRoot,
+		DB:           dbPool,
+		Fetchers:     nil,
+		ResyncSource: promptCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Prompt: %w", err)
 	}
 	if err = (&achcontroller.BackendIdentityPolicyReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: watchNS,
-		Log:       ctrl.Log.WithName("controller").WithName("BackendIdentityPolicy"),
-		Pool:      dbPool,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("BackendIdentityPolicy"),
+		Pool:         dbPool,
+		ResyncSource: bipCh,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// ─── Issue #34 A10: periodic full resync runnable. ───
+	resyncRunnable := &resync.Resync{
+		Client:    mgr.GetClient(),
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("resync"),
+		Channels: resync.Channels{
+			Environment:       envCh,
+			Plugin:            pluginCh,
+			Prompt:            promptCh,
+			Artifact:          artifactCh,
+			Marketplace:       mpCh,
+			BIP:               bipCh,
+			LiteLLMConnection: llmCh,
+		},
+	}
+	if err := mgr.Add(resyncRunnable); err != nil {
+		return fmt.Errorf("unable to add resync Runnable: %w", err)
+	}
 
 	if metricsCertWatcher != nil {
 		operatorSetupLog.Info("Adding metrics certificate watcher to manager")

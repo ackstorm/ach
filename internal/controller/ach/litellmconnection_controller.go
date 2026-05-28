@@ -21,7 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/connection"
@@ -54,6 +56,9 @@ type LiteLLMConnectionReconciler struct {
 	// ach_litellm_connections_changed NOTIFY (issue #34). Nil-tolerant for
 	// existing envtests that do not need projection.
 	Pool *pgxpool.Pool
+
+	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
+	ResyncSource chan event.GenericEvent
 }
 
 // Reconcile reconciles the singleton LiteLLMConnection/default.
@@ -267,12 +272,17 @@ func (r *LiteLLMConnectionReconciler) secretToConnection(ctx context.Context, ob
 }
 
 func (r *LiteLLMConnectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.LiteLLMConnection{}, builder.WithPredicates()).
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.secretToConnection),
 		).
-		Named("litellmconnection").
-		Complete(r)
+		Named("litellmconnection")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

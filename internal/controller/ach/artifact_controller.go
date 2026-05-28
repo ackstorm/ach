@@ -22,7 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -59,6 +62,9 @@ type ArtifactReconciler struct {
 	// Phase 2:
 	DB       *pgxpool.Pool
 	Fetchers FetcherFactory
+
+	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=artifacts,verbs=get;list;watch;create;update;patch;delete
@@ -354,8 +360,13 @@ func (r *ArtifactReconciler) writeArtifactConflictStatus(
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *ArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.Artifact{}, builder.WithPredicates()).
-		Named("ach-artifact").
-		Complete(r)
+		Named("ach-artifact")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }

@@ -22,7 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -69,6 +72,11 @@ type PluginReconciler struct {
 	// Tests inject a fake fetcher to exercise the §10.3 staging /
 	// rename(2) / UPSERT branches without live HTTPS traffic.
 	Fetchers FetcherFactory
+
+	// Issue #34 (A10/A11): external source.Channel feed used by the
+	// resync runnable (periodic full re-list) and the refreshsignal
+	// listener (NOTIFY ach_refresh).
+	ResyncSource chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=plugins,verbs=get;list;watch;create;update;patch;delete
@@ -343,8 +351,13 @@ func (r *PluginReconciler) writePluginConflictStatus(
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.Plugin{}, builder.WithPredicates()).
-		Named("ach-plugin").
-		Complete(r)
+		Named("ach-plugin")
+	if r.ResyncSource != nil {
+		b = b.WatchesRawSource(
+			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
+		)
+	}
+	return b.Complete(r)
 }
