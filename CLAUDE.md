@@ -171,6 +171,7 @@ ach/
 | Local testing, SSO login & Gateway    | `references/local-testing-gateway.md`     |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
+| Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/developer-guide/jwt-forwarder.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in) |
 
 ## CI gating — one-line summary
 

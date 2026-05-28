@@ -1,6 +1,13 @@
 # LiteLLM Custom Auth & Impersonation Configuration Guide
 
-This guide details how to configure **LiteLLM** to support the secure, zero-leak key impersonation protocol used by the ACH **Forwarder**.
+This guide details how to configure **LiteLLM** to support the secure, zero-leak key impersonation protocol used by the ACH **Forwarder** on the `/v1` chat-completions path.
+
+> **Looking for `/mcp` or `/a2a` instead?** That route family uses a
+> different trust path — short-lived EdDSA JWTs minted by the Forwarder
+> and verified by the backend MCP/A2A server (no impersonation). See
+> [JWT Forwarder](jwt-forwarder.md), in particular §3 for the
+> `extra_headers: ["authorization"]` opt-in LiteLLM needs so the
+> minted JWT actually reaches the backend.
 
 ---
 

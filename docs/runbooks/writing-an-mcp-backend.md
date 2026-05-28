@@ -1,5 +1,11 @@
 # Writing an MCP backend that validates ACH JWTs
 
+> **Context first:** the end-to-end trust path (forwarder mint →
+> LiteLLM gateway → backend verify, including the
+> `extra_headers: ["authorization"]` opt-in LiteLLM requires) is
+> documented in [JWT Forwarder](../developer-guide/jwt-forwarder.md).
+> This runbook focuses on the backend-side verifier.
+
 ACH's Forwarder mints a short-lived Ed25519 JWT on `/mcp/<name>` when
 a `BackendIdentityPolicy` (BIP) with `spec.forwardIdentityJWT=true`
 targets the named MCP server. This page describes how a backend
@@ -40,9 +46,9 @@ operator implements the verifying side.
 ## Reference implementation
 
 A runnable, stdlib-only Go reference lives at
-[`test/e2e/mcp-echo/`](../../test/e2e/mcp-echo/). The verifier is
-in `test/e2e/mcp-echo/jwt/verify.go`; the JWKS cache is in
-`test/e2e/mcp-echo/jwt/jwks.go`. Both files are ~150 lines and ship
+[`test/e2e/mcp-echo/`](https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo).
+The verifier is in `test/e2e/mcp-echo/jwt/verify.go`; the JWKS cache is
+in `test/e2e/mcp-echo/jwt/jwks.go`. Both files are ~150 lines and ship
 with their unit tests next to them — copy-and-adapt rather than
 import-as-library.
 

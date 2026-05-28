@@ -1,5 +1,10 @@
 # JWT Signing Key Rotation (Ed25519)
 
+> **Context first:** for the end-to-end trust path (forwarder mint →
+> LiteLLM `extra_headers` propagation → backend verify), see
+> [JWT Forwarder](../developer-guide/jwt-forwarder.md). This runbook
+> covers only the key-rotation procedure.
+
 The ACH Forwarder signs ACH JWTs (used on `/mcp/{name}` and `/a2a/{name}`
 when a matching `BackendIdentityPolicy` opts in via `forwardIdentityJWT:
 true`) with an Ed25519 keypair stored in a single Kubernetes Secret

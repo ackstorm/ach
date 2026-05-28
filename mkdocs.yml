@@ -14,8 +14,13 @@ nav:
   - Developer Guide:
       - Architecture: developer-guide/architecture.md
       - Development: developer-guide/development.md
+      - JWT Forwarder: developer-guide/jwt-forwarder.md
       - LiteLLM Custom Auth: developer-guide/litellm-custom-auth.md
       - Release process: developer-guide/release-process.md
+  - Runbooks:
+      - JWT Key Rotation: runbooks/jwt-key-rotation.md
+      - Writing an MCP backend: runbooks/writing-an-mcp-backend.md
+      - Phase 6 CLI E2E Verification: runbooks/phase6-cli-e2e-verification.md
   - API Reference:
       - ach.ackstorm.ai: api-reference/ach.ackstorm.ai.md
 
