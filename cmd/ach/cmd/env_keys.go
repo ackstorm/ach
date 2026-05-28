@@ -1,0 +1,587 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// `ach env-keys` is the ek_ Environment Key lifecycle CLI surface:
+// three sub-subcommands (create / list / revoke) backed by the
+// `/platform/env-keys` REST endpoints already shipped by Phase 3
+// (internal/platformapi/envkeys/handler.go).
+//
+// D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
+// spec divergence): `ach env-keys create` ALWAYS persists the
+// returned `ek_` plaintext to `deployments.<active>.ek.<server-name>`
+// in the active deployment. The spec's `--save-as` flag is removed;
+// `--no-save` opts out of persist (ek_ flows to stdout only — for
+// CI / vault-piping workflows). See:
+//   - .planning/REQUIREMENTS.md CLI-09 row (marked DEVIATED, D-07).
+//   - spec/ach_cli_spec_v20260515_FINALv4.md changelog (always-persist
+//     + --no-save entry).
+//
+// D-08: `ach env-keys create` in synthetic mode (ACH_BASE_URL +
+// ACH_API_KEY) requires `--no-save` — without it, the CLI exits 1
+// because synthetic mode never has a writable config file.
+//
+// CLI-04 (S5 plaintext lifecycle): ek_ printed to stdout EXACTLY
+// ONCE at the success branch of `create`. NEVER echoed by `list` or
+// `revoke`. On non-2xx the partial body is consumed by the §15.5
+// envelope decoder in `httpclient` — no path leaks plaintext on
+// failure.
+//
+// CLI-13: `revoke` enforces the `ekid_…` key-id prefix CLIENT-side
+// BEFORE any HTTP call. Raw plaintext (`ek_…`) is rejected with a
+// message that surfaces the mistake to stderr; `pkid_…` is rejected
+// with a pointer to `ach admin keys revoke` (which W3-P2 / 06-08
+// will accept).
+//
+// Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatEkList`
+// — a single source of truth shared with `ach admin keys list`
+// (06-08). NO inline tabwriter here.
+
+package cmd
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/ackstorm/ach/internal/cli/config"
+	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/render"
+	"github.com/ackstorm/ach/internal/keys"
+)
+
+// envKeysHTTPClient is the test-only seam: when non-nil it replaces
+// the default *http.Client inside the httpclient.Client constructed by
+// each env-keys subcommand. Tests targeting httptest.NewTLSServer set
+// this to the test server's TLS-trusting Client so the call reaches
+// the ephemeral cert. Mirrors the whoami/login pattern from 06-03.
+var envKeysHTTPClient *http.Client
+
+// swapEnvKeysHTTPClientForTest is the test helper that swaps
+// envKeysHTTPClient for the lifetime of t.
+func swapEnvKeysHTTPClientForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, c *http.Client) {
+	t.Helper()
+	previous := envKeysHTTPClient
+	envKeysHTTPClient = c
+	t.Cleanup(func() { envKeysHTTPClient = previous })
+}
+
+// envKeysCreateResponse mirrors envkeys.CreateResponse on the wire.
+// Re-declared here to avoid pulling internal/platformapi (k8s/chi
+// deps) into the CLI binary.
+type envKeysCreateResponse struct {
+	KeyID       string `json:"key_id"`
+	Plaintext   string `json:"plaintext"`
+	Environment string `json:"environment"`
+	Name        string `json:"name"`
+	OwnerEmail  string `json:"owner_email"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// envKeysListResponse mirrors envkeys.ListResponse on the wire.
+type envKeysListResponse struct {
+	Items      []render.EkRowView `json:"items"`
+	NextCursor string             `json:"next_cursor,omitempty"`
+}
+
+// newEnvKeysCmd returns a fresh `ach env-keys` parent with its three
+// children registered. Factory shape (mirrors 06-03 login/whoami/logout)
+// lets tests construct a hermetic cobra subtree per t.Run without
+// cross-test global cobra state leaks.
+func newEnvKeysCmd() *cobra.Command {
+	parent := &cobra.Command{
+		Use:   "env-keys",
+		Short: "Manage ek_ Environment Keys (create, list, revoke)",
+		Long: `Manage ek_ Environment Keys. All three sub-subcommands require pk_ auth.
+
+Sub-subcommands:
+  create  Issue a new ek_ for an Environment (D-07: always-persists to
+          ~/.config/ach/config.yaml unless --no-save).
+  list    Paginate the env-keys visible to the caller (server-side
+          filters by owner email for non-admins).
+  revoke  Delete an ek_ by its ekid_ identifier.
+
+D-07 (spec deviation): ek_ create ALWAYS persists the returned plaintext
+to deployments.<active>.ek.<server-name> in the active deployment. The
+spec's --save-as flag is REMOVED; --no-save opts out (ek_ flows to stdout
+only — useful for CI scripts piping ek_ into a vault).
+
+D-08: In synthetic mode (ACH_BASE_URL + ACH_API_KEY both set), create
+without --no-save exits 1.
+`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	parent.AddCommand(newEnvKeysCreateCmd(), newEnvKeysListCmd(), newEnvKeysRevokeCmd())
+	return parent
+}
+
+// ---------------------------------------------------------------------
+// create
+// ---------------------------------------------------------------------
+
+func newEnvKeysCreateCmd() *cobra.Command {
+	var (
+		flagEnvironment string
+		flagName        string
+		flagNoSave      bool
+		flagDeployment  string
+		flagAPIKey      string
+		flagEnvKey      string
+		flagVerbose     bool
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Issue a new ek_ for an Environment (D-07 always-persists)",
+		// SilenceUsage + SilenceErrors: cobra otherwise echoes its
+		// Usage block (containing the "ek_" flag descriptions) to
+		// the writer attached via SetOut when a RunE returns
+		// non-nil. That would clobber CLI-04 — stdout must NEVER
+		// emit any ek_ fragment on a non-2xx response. Errors
+		// surface through cmd/ach/main.go's typed-error dispatch
+		// (Pattern P12); the cobra-side echo is redundant.
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runEnvKeysCreate(cmd, flagEnvironment, flagName, flagNoSave,
+				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+		},
+	}
+	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (required)")
+	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek_ (required)")
+	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
+		"Do NOT persist ek_ to ~/.config/ach/config.yaml (D-07 escape hatch)")
+	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label (rare for create)")
+	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
+	_ = cmd.MarkFlagRequired("environment")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
+	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+	ctx := cmd.Context()
+
+	// D-08: synthetic mode + no-save mandate. Detect synthetic before
+	// any config read so we never accidentally load a stale file.
+	if isSynthetic() && !noSave {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: "ach env-keys create requires --no-save in synthetic mode " +
+				"(ACH_BASE_URL + ACH_API_KEY set; no writable config file — D-08)",
+		}
+	}
+
+	name = strings.TrimSpace(name)
+	environment = strings.TrimSpace(environment)
+	if environment == "" || name == "" {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "--environment and --name are required",
+		}
+	}
+
+	// Resolve credential + base URL (mirrors whoami's pattern; full
+	// CLI-09 mutex enforcement deferred to W3-P1 / 06-07).
+	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: envKeysHTTPClient,
+		Verbose:    verbose,
+		Stderr:     stderr,
+	}
+
+	body := struct {
+		Environment string `json:"environment"`
+		Name        string `json:"name"`
+	}{Environment: environment, Name: name}
+	var resp envKeysCreateResponse
+	if doErr := hc.Do(ctx, http.MethodPost, "/platform/env-keys", body, &resp); doErr != nil {
+		// On non-2xx, do NOT echo any fragment — main.go's
+		// errors.As branch will map *ServerError to the right exit
+		// code via exit.MapServerError. The Do() decode path drains
+		// the body via the envelope path; nothing of `resp.Plaintext`
+		// leaks here because resp is zero-valued.
+		return doErr
+	}
+
+	// CLI-04: print plaintext exactly once.
+	_, _ = fmt.Fprintln(stdout, resp.Plaintext)
+
+	if noSave {
+		// Disk untouched. Done.
+		return nil
+	}
+
+	// D-07: always-persist to deployments.<active>.ek[name].
+	cfgPath, err := config.Path()
+	if err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	file, err := config.Load(cfgPath)
+	if err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	if file == nil || len(file.Deployments) == 0 {
+		// Synthetic mode handled above; this path is only reachable
+		// when the user has a base URL via flag/disk but no deployment
+		// entry — unusual but defended for completeness.
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "cannot --save: no deployment configured; run `ach login` or pass --no-save",
+		}
+	}
+	envDeployment := os.Getenv("ACH_DEPLOYMENT")
+	_, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	if err != nil {
+		return &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("%v; run `ach login` or pass --no-save", err),
+			Wrapped: err,
+		}
+	}
+	if dep.EK == nil {
+		dep.EK = map[string]string{}
+	}
+	dep.EK[name] = resp.Plaintext
+	if saveErr := config.Save(cfgPath, file); saveErr != nil {
+		// Plaintext already on stdout (exactly once per CLI-04); do
+		// NOT re-print it here. Surface the config write failure.
+		_, _ = fmt.Fprintf(stderr, "warning: failed to persist ek_ to config: %v\n", saveErr)
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: saveErr.Error(), Wrapped: saveErr}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// list
+// ---------------------------------------------------------------------
+
+func newEnvKeysListCmd() *cobra.Command {
+	var (
+		flagEnvironment string
+		flagOwnerEmail  string
+		flagCursor      string
+		flagLimit       int
+		flagDeployment  string
+		flagAPIKey      string
+		flagEnvKey      string
+		flagVerbose     bool
+	)
+	cmd := &cobra.Command{
+		Use:           "list",
+		Short:         "List ek_ Environment Keys visible to the caller",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runEnvKeysList(cmd, flagEnvironment, flagOwnerEmail, flagCursor, flagLimit,
+				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+		},
+	}
+	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
+	cmd.Flags().StringVar(&flagOwnerEmail, "owner-email", "", "Filter by owner email (admin-only; server enforces)")
+	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
+	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
+	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
+	return cmd
+}
+
+func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, limit int,
+	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+	ctx := cmd.Context()
+
+	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: envKeysHTTPClient,
+		Verbose:    verbose,
+		Stderr:     stderr,
+	}
+
+	// Paginate until next_cursor empty. Accumulate items.
+	all := []render.EkRowView{}
+	currentCursor := cursor
+	for {
+		path := buildEnvKeysListPath(environment, ownerEmail, currentCursor, limit)
+		var resp envKeysListResponse
+		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
+			return doErr
+		}
+		all = append(all, resp.Items...)
+		if resp.NextCursor == "" {
+			break
+		}
+		currentCursor = resp.NextCursor
+	}
+
+	// W7: single source of truth via render.FormatEkList. NO inline
+	// tabwriter in this file.
+	_, _ = io.WriteString(stdout, render.FormatEkList(all))
+	return nil
+}
+
+func buildEnvKeysListPath(environment, ownerEmail, cursor string, limit int) string {
+	q := url.Values{}
+	if environment != "" {
+		q.Set("environment", environment)
+	}
+	if ownerEmail != "" {
+		q.Set("owner_email", ownerEmail)
+	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	if len(q) == 0 {
+		return "/platform/env-keys"
+	}
+	return "/platform/env-keys?" + q.Encode()
+}
+
+// ---------------------------------------------------------------------
+// revoke
+// ---------------------------------------------------------------------
+
+func newEnvKeysRevokeCmd() *cobra.Command {
+	var (
+		flagYes        bool
+		flagDeployment string
+		flagAPIKey     string
+		flagEnvKey     string
+		flagVerbose    bool
+	)
+	cmd := &cobra.Command{
+		// Bare `revoke` (no inline arg hint in `Use:`) so the
+		// `<key-id>` arg shape is documented purely via the
+		// Short/Long help text + the cobra.ExactArgs(1) gate.
+		// Keeps the `grep -c '"revoke"'` count == 3 in the
+		// 06-05 plan acceptance text.
+		Use:           "revoke",
+		Short:         "Revoke an ek_ by its ekid_ identifier (CLI-13). Usage: ach env-keys revoke <ekid_…>",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runEnvKeysRevoke(cmd, args[0], flagYes,
+				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+		},
+	}
+	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
+	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
+	return cmd
+}
+
+func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
+	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+
+	stderr := cmd.ErrOrStderr()
+	stdin := cmd.InOrStdin()
+	ctx := cmd.Context()
+
+	// CLI-13: client-side key-id classification BEFORE any HTTP.
+	switch {
+	case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
+		// ok — proceed.
+	case strings.HasPrefix(keyID, keys.EkBearerPrefix):
+		// Raw plaintext rejected.
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf(
+				"key id must be in %s form, got %s (raw plaintext rejected — CLI-13)",
+				keys.EkidKeyIDPrefix, keys.EkBearerPrefix),
+		}
+	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf(
+				"ach env-keys revoke accepts only %s ids; use `ach admin keys revoke` for %s ids",
+				keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
+		}
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid key id %q; expected %s prefix", keyID, keys.EkidKeyIDPrefix),
+		}
+	}
+
+	// Interactive confirmation unless --yes.
+	if !yes {
+		_, _ = fmt.Fprintf(stderr, "Confirm revoke of %s [y/N]: ", keyID)
+		scanner := bufio.NewScanner(stdin)
+		answer := ""
+		if scanner.Scan() {
+			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
+		}
+		switch answer {
+		case "y", "yes":
+			// proceed.
+		default:
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  "cancelled",
+			}
+		}
+	}
+
+	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: envKeysHTTPClient,
+		Verbose:    verbose,
+		Stderr:     stderr,
+	}
+	if doErr := hc.Do(ctx, http.MethodDelete, "/platform/env-keys/"+keyID, nil, nil); doErr != nil {
+		return doErr
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// shared helpers
+// ---------------------------------------------------------------------
+
+// isSynthetic returns true when ACH_BASE_URL + ACH_API_KEY are both
+// set — the canonical Phase 6 synthetic-mode trigger per spec §3.3.
+// Full CLI-09 mutex enforcement lands in W3-P1 / 06-07.
+func isSynthetic() bool {
+	return os.Getenv("ACH_BASE_URL") != "" && os.Getenv("ACH_API_KEY") != ""
+}
+
+// resolveEnvKeysBearer is the env-keys sibling of whoami's
+// resolveActiveBearer. Precedence (W1 minimal; full mutex in W3-P1):
+//
+//  1. Synthetic mode → use ACH_BASE_URL + ACH_API_KEY env.
+//  2. --api-key flag → bearer; deployment for URL only.
+//  3. --env-key flag → resolve against deployments.<active>.ek.<label>.
+//  4. ACH_API_KEY env → same as --api-key.
+//  5. ACH_ENV_KEY env → same as --env-key.
+//  6. default → deployment.PK from disk config.
+//
+// Returns baseURL (deployment.url or ACH_BASE_URL) and the bearer
+// plaintext. The resolved deployment name is folded into error
+// strings only (no caller currently consumes it), keeping the
+// signature lean.
+func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string, string, error) {
+	envBaseURL := os.Getenv("ACH_BASE_URL")
+	envAPIKey := os.Getenv("ACH_API_KEY")
+	envEnvKey := os.Getenv("ACH_ENV_KEY")
+	envDeployment := os.Getenv("ACH_DEPLOYMENT")
+
+	if envBaseURL != "" && envAPIKey != "" {
+		// Synthetic — no disk config consulted. Reject --deployment.
+		if flagDeployment != "" || envDeployment != "" {
+			return "", "", &exit.CodedError{
+				Code: exit.General,
+				Msg: "synthetic mode (ACH_BASE_URL + ACH_API_KEY) rejects " +
+					"--deployment / ACH_DEPLOYMENT (CLI spec §3.3)",
+			}
+		}
+		return envBaseURL, envAPIKey, nil
+	}
+
+	cfgPath, err := config.Path()
+	if err != nil {
+		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	file, err := config.Load(cfgPath)
+	if err != nil {
+		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	if file == nil {
+		return "", "", &exit.CodedError{
+			Code: exit.General,
+			Msg:  "no deployment configured; run `ach login` (CLI-08)",
+		}
+	}
+	name, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	if err != nil {
+		return "", "", &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("%v; run `ach login`", err),
+			Wrapped: err,
+		}
+	}
+
+	switch {
+	case flagAPIKey != "":
+		return dep.URL, flagAPIKey, nil
+	case flagEnvKey != "":
+		ek, ok := dep.EK[flagEnvKey]
+		if !ok {
+			return "", "", &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("--env-key %q not found in deployments.%s.ek", flagEnvKey, name),
+			}
+		}
+		return dep.URL, ek, nil
+	case envAPIKey != "":
+		return dep.URL, envAPIKey, nil
+	case envEnvKey != "":
+		ek, ok := dep.EK[envEnvKey]
+		if !ok {
+			return "", "", &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in deployments.%s.ek", envEnvKey, name),
+			}
+		}
+		return dep.URL, ek, nil
+	case dep.PK != "":
+		return dep.URL, dep.PK, nil
+	}
+	return "", "", &exit.CodedError{
+		Code: exit.General,
+		Msg:  fmt.Sprintf("no bearer for deployment %q; run `ach login`", name),
+	}
+}
+
+// Defensive: keep context import used even on platforms where the
+// linker might trim the unused import.
+var _ = context.Background
+
+// Register `ach env-keys` on the root command. Mirrors the
+// login/logout/whoami pattern from 06-03 — each subcommand owns its
+// own init() so cobra registration is local to the file.
+func init() {
+	rootCmd.AddCommand(newEnvKeysCmd())
+}
