@@ -447,3 +447,101 @@ func TestFilter_OutputIsValidTarGz(t *testing.T) {
 	// Re-reading must succeed.
 	_ = readTarGz(t, out)
 }
+
+// TestFilter_EntryCount_BoundaryAndOver asserts the off-by-one fix:
+// a tarball with EXACTLY pluginTarballMaxEntries entries is accepted,
+// the (max+1)-th is rejected. Uses a test-only override of the var so
+// the boundary is testable without allocating 50000 tar headers per
+// run.
+func TestFilter_EntryCount_BoundaryAndOver(t *testing.T) {
+	// Override the package-level limit for this test only; restore in
+	// a t.Cleanup so parallel runs aren't disrupted (no t.Parallel
+	// here).
+	originalMax := pluginTarballMaxEntries
+	pluginTarballMaxEntries = 5
+	t.Cleanup(func() { pluginTarballMaxEntries = originalMax })
+
+	buildTarballWithDirs := func(extraDirs int) []byte {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gz)
+		manifest := `{"name":"x"}`
+		_ = tw.WriteHeader(&tar.Header{
+			Name: ".claude-plugin/plugin.json", Mode: 0o644,
+			Size: int64(len(manifest)), Typeflag: tar.TypeReg,
+		})
+		_, _ = tw.Write([]byte(manifest))
+		for i := 0; i < extraDirs; i++ {
+			_ = tw.WriteHeader(&tar.Header{
+				Name:     "skills/d" + string(rune('0'+i)) + "/",
+				Typeflag: tar.TypeDir,
+			})
+		}
+		_ = tw.Close()
+		_ = gz.Close()
+		return buf.Bytes()
+	}
+
+	// At-boundary: 1 manifest + 4 dirs = 5 = pluginTarballMaxEntries.
+	if _, err := Filter(buildTarballWithDirs(pluginTarballMaxEntries - 1)); err != nil {
+		t.Fatalf("Filter rejected exactly pluginTarballMaxEntries=%d entries (expected accept): %v",
+			pluginTarballMaxEntries, err)
+	}
+
+	// Over-boundary: 1 manifest + 5 dirs = 6 = pluginTarballMaxEntries+1.
+	_, err := Filter(buildTarballWithDirs(pluginTarballMaxEntries))
+	if err == nil {
+		t.Fatalf("Filter accepted pluginTarballMaxEntries+1 entries (expected reject)")
+	}
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("expected wrapped sources.ErrUpstreamInvalid; got %v", err)
+	}
+}
+
+// TestFilter_PerEntrySizeCap asserts the per-entry header-size guard
+// rejects a tarball whose non-manifest entry advertises more than
+// tarEntryMaxBytes. Defends against archive bombs that claim a huge
+// Size in the tar header.
+func TestFilter_PerEntrySizeCap(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	manifest := `{"name":"x"}`
+	if err := tw.WriteHeader(&tar.Header{
+		Name: ".claude-plugin/plugin.json", Mode: 0o644,
+		Size: int64(len(manifest)), Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatalf("WriteHeader manifest: %v", err)
+	}
+	if _, err := tw.Write([]byte(manifest)); err != nil {
+		t.Fatalf("Write manifest: %v", err)
+	}
+	// A whitelisted entry (root README.md) but with a pathological
+	// declared size. tar.Writer will refuse to write a body smaller
+	// than Size, so produce a header-only entry by closing the writer
+	// after WriteHeader without writing the body — the Filter must
+	// reject on the declared header size before trying to read.
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "README.md",
+		Mode:     0o644,
+		Size:     tarEntryMaxBytes + 1,
+		Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatalf("WriteHeader README: %v", err)
+	}
+	// Write zero-length padding the tar.Writer requires for the
+	// declared size, but we don't actually want gigabytes; close the
+	// writer with an underfilled entry, which is what triggers the
+	// reader-side header check first (the size cap fires before any
+	// body read).
+	_ = tw.Close()
+	_ = gz.Close()
+	_, err := Filter(buf.Bytes())
+	if err == nil {
+		t.Fatalf("Filter accepted entry advertising %d bytes (expected reject at cap %d)",
+			tarEntryMaxBytes+1, tarEntryMaxBytes)
+	}
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("expected wrapped sources.ErrUpstreamInvalid; got %v", err)
+	}
+}

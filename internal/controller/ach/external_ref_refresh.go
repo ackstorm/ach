@@ -236,9 +236,21 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// CONTEXT.md. Prompt and Artifact paths are byte-identical to
 	// pre-issue-26 behavior.
 	if deps.Kind == "plugin" {
-		raw, err := io.ReadAll(result.Body)
+		// Defense in depth: bound the raw upstream read BEFORE the
+		// filter consumes it. The user-visible SizeCapBytes applies to
+		// the filtered output (locked decision); pluginRawIngressCap
+		// is a separate operator-memory guard against a multi-GB
+		// tarball reaching this path (most acute for type: http where
+		// the fetcher has no body cap). Sized to mirror
+		// gitDefaultMaxCloneBytes (512 MiB) — the existing ceiling on
+		// git-transport clones.
+		const pluginRawIngressCap = 512 << 20
+		raw, err := io.ReadAll(io.LimitReader(result.Body, pluginRawIngressCap+1))
 		if err != nil {
 			return MaterializeResult{Err: fmt.Errorf("plugin filter: read body: %w", err)}
+		}
+		if int64(len(raw)) > pluginRawIngressCap {
+			return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: pluginRawIngressCap}}
 		}
 		filtered, err := pluginpack.Filter(raw)
 		if err != nil {
@@ -248,9 +260,12 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 			return MaterializeResult{Err: err}
 		}
 		// Rebind result.Body so the existing Step 6 LimitReader sees
-		// the filtered bytes. The deferred Close() above closes the
-		// fresh NopCloser (no-op); the original body was fully
-		// consumed by io.ReadAll and does not need an explicit close.
+		// the filtered bytes. The deferred Close() above was registered
+		// against the ORIGINAL result.Body (Go defer receivers are
+		// evaluated at defer-time), so the upstream reader is still
+		// closed on every exit path; the fresh NopCloser is never
+		// explicitly closed (Close on a bytes.Reader-backed NopCloser
+		// is a no-op).
 		result.Body = io.NopCloser(bytes.NewReader(filtered))
 	}
 

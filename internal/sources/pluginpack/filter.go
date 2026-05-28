@@ -23,8 +23,18 @@ const manifestMaxBytes = 5 << 20
 
 // pluginTarballMaxEntries bounds the inbound tar walk. Mirrors the
 // marketplaceTarballMaxEntries constant (50000 — two orders of
-// magnitude headroom over real-world Plugin tarballs).
-const pluginTarballMaxEntries = 50000
+// magnitude headroom over real-world Plugin tarballs). Declared as
+// var (not const) so unit tests can dial it down to exercise the
+// boundary without allocating 50000 tar headers each run.
+var pluginTarballMaxEntries = 50000
+
+// tarEntryMaxBytes caps the size of any single regular-file entry the
+// filter is willing to buffer. Plugin entries are small in practice
+// (source files, JSON, markdown); 50 MiB is well above the real-world
+// ceiling and well below the controller's pluginRawIngressCap, so a
+// tarball whose declared per-entry size is pathological gets rejected
+// here before allocating gigabytes.
+const tarEntryMaxBytes = 50 << 20
 
 // manifestRelPath is the location inside the tarball where the
 // `.claude-plugin/plugin.json` manifest must live. The Plugin CR
@@ -101,15 +111,20 @@ func readTarballEntries(in []byte) ([]collectedEntry, []byte, error) {
 	var manifestBytes []byte
 
 	for scanned := 0; ; scanned++ {
-		if scanned >= pluginTarballMaxEntries {
-			return nil, nil, fmt.Errorf("pluginpack: exceeded %d tar entries: %w", pluginTarballMaxEntries, sources.ErrUpstreamInvalid)
-		}
 		hdr, terr := tr.Next()
 		if errors.Is(terr, io.EOF) {
 			break
 		}
 		if terr != nil {
 			return nil, nil, fmt.Errorf("pluginpack: tar header: %v: %w", terr, sources.ErrUpstreamInvalid)
+		}
+		// Cap fires on the SCANNED+1-th entry — i.e. a tarball with
+		// exactly pluginTarballMaxEntries entries is accepted, the
+		// (max+1)-th is rejected. Moving the check after EOF detection
+		// closes the off-by-one where the boundary case was wrongly
+		// rejected.
+		if scanned >= pluginTarballMaxEntries {
+			return nil, nil, fmt.Errorf("pluginpack: exceeded %d tar entries: %w", pluginTarballMaxEntries, sources.ErrUpstreamInvalid)
 		}
 		if !acceptableEntry(hdr) {
 			continue
@@ -174,9 +189,17 @@ func processEntry(hdr *tar.Header, tr *tar.Reader, name string) (collectedEntry,
 		c.body = body
 		return c, body, nil
 	}
-	body, err := io.ReadAll(tr)
+	if hdr.Size < 0 || hdr.Size > tarEntryMaxBytes {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: entry %q header claims %d bytes (cap %d): %w",
+			name, hdr.Size, tarEntryMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	body, err := io.ReadAll(io.LimitReader(tr, tarEntryMaxBytes+1))
 	if err != nil {
 		return collectedEntry{}, nil, fmt.Errorf("pluginpack: read entry %q: %v: %w", name, err, sources.ErrUpstreamInvalid)
+	}
+	if int64(len(body)) > tarEntryMaxBytes {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: entry %q body exceeds cap %d: %w",
+			name, tarEntryMaxBytes, sources.ErrUpstreamInvalid)
 	}
 	c.body = body
 	return c, nil, nil
