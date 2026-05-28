@@ -84,12 +84,14 @@ forwarder:
   # for backward compatibility with charts pinned pre-issue-#34.
   litellmMasterSecretName: litellm-master-key
   # litellmMasterKey carries the namespace/name/key triple matching the
-  # LiteLLMConnection/default projection row. When .namespace differs
-  # from .Release.Namespace, the Helm chart adds a cross-namespace Role
-  # + RoleBinding in .namespace so the forwarder ServiceAccount can
-  # read the Secret across namespaces (issue #34 C7).
+  # LiteLLMConnection/default projection row. Default namespace is empty,
+  # which resolves to .Release.Namespace via `default` in the RBAC template
+  # — matching the LiteLLMConnection resolver, which looks up the Secret
+  # in the connection CR's own namespace (no spec.masterKeySecretRef.namespace
+  # field today). Set a non-empty namespace to render a cross-namespace
+  # Role + RoleBinding (issue #34 C7).
   litellmMasterKey:
-    namespace: litellm-system
+    namespace: ""
     name: litellm-master-key
     key: master_key
   # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,

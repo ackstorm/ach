@@ -23,11 +23,20 @@ metadata:
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: forwarder
+# Forwarder reads two in-namespace Secrets at boot/runtime:
+#   - jwtSecretName (FWD-09 hot-reload)
+#   - the LiteLLM master-key Secret (whose name comes from
+#     LiteLLMConnection/default.spec.masterKeySecretRef and whose
+#     namespace defaults to the CR's own namespace, i.e. this one).
+# The resolver doesn't carry the chart-configured namespace, so it
+# always looks up in the connection CR's namespace. Granting read on
+# all secrets in {{ .Release.Namespace }} keeps the in-namespace
+# bootstrap path resilient to which secret the operator ends up
+# pointing at, without having to thread the resourceName through
+# every revision of LiteLLMConnection.
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
-  resourceNames:
-  - "{{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}"
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -46,42 +55,7 @@ subjects:
 - kind: ServiceAccount
   name: ach-forwarder
   namespace: {{ .Release.Namespace }}
-{{- if eq $masterKeyNS .Release.Namespace }}
----
-# Same-namespace master-key Secret: extend the in-namespace Role with a
-# second resourceName carve-out (keeps a single Role for the in-ns case).
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {{ .Release.Name }}-forwarder-master-key
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "ach.commonLabels" . | nindent 4 }}
-    app.kubernetes.io/component: forwarder
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  resourceNames:
-  - "{{ $masterKeyName }}"
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ .Release.Name }}-forwarder-master-key
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "ach.commonLabels" . | nindent 4 }}
-    app.kubernetes.io/component: forwarder
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ .Release.Name }}-forwarder-master-key
-subjects:
-- kind: ServiceAccount
-  name: ach-forwarder
-  namespace: {{ .Release.Namespace }}
-{{- else }}
+{{- if ne $masterKeyNS .Release.Namespace }}
 ---
 # Cross-namespace master-key Secret: Role lives in the Secret's
 # namespace; the RoleBinding's subject references the forwarder
