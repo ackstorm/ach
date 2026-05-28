@@ -320,8 +320,24 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// D-08: Hub §6.4 requeue cadence — keeps Environments converging
 	// on snapshot drift even when no spec change triggers an event-
 	// driven reconcile.
+	//
+	// Issue #30: when the snapshot is stale (LiteLLM unreachable at the
+	// moment this reconcile observed it), shorten the requeue so the
+	// Environment converges to its terminal state on a timescale matched
+	// to the Snapshotter's adaptive-backoff retry (seconds), not the
+	// 5min steady-state interval. Otherwise an operator restart would
+	// leave Available=False for ~5min even after the Snapshotter has
+	// already recovered.
+	if snap.Stale {
+		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
+
+// staleRequeueAfter is the requeue cadence when the LiteLLM snapshot
+// is stale. Picked to converge within ~30s of the Snapshotter's
+// adaptive-backoff recovery (issue #30) without hammering the apiserver.
+const staleRequeueAfter = 15 * time.Second
 
 // writeEnvironmentProjection performs the spec v4 §5.2 dual-write to
 // the environments projection table — wrapping the nil-DB gate, the

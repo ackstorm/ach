@@ -370,6 +370,65 @@ func TestSnapshotter_StartRespectsCtxCancel(t *testing.T) {
 	}
 }
 
+// TestSnapshotter_FailureFollowedBySuccess_FastRetry covers issue #30:
+// when the initial refresh fails (typically because the LiteLLMConnection
+// reconciler hasn't completed its first probe yet and the lazy connection
+// returns ErrNotReady), the Snapshotter must retry on its backoff
+// cadence rather than waiting a full s.interval. We seed the fake with
+// an error, then clear it asynchronously, and assert the snapshot flips
+// to Stale=false well inside one steady-state interval.
+func TestSnapshotter_FailureFollowedBySuccess_FastRetry(t *testing.T) {
+	fake := &fakeLiteLLM{
+		models: []litellm.ModelInfoResponse{{ModelName: "m1"}},
+	}
+	fake.setErr(errors.New("litellm connection not ready: Connecting"))
+	s := NewSnapshotter(fake, logr.Discard())
+	// Pick a steady interval large enough that — if the retry-on-failure
+	// path is broken (i.e. Start waits a full s.interval after a failed
+	// refresh, the pre-fix behavior) — this test would have to wait 5s
+	// before the second refresh, blowing past the 1s assertion below
+	// and failing loudly. With the fix, the second refresh fires after
+	// initialRetryBackoff (1s).
+	s.interval = 5 * time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start(ctx) }()
+
+	// First refresh runs synchronously in Start before the first sleep,
+	// so the stale-empty snapshot lands within microseconds. Confirm.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if snap := s.Snapshot(); snap.Stale {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !s.Snapshot().Stale {
+		t.Fatal("setup: initial refresh did not publish a stale snapshot")
+	}
+
+	// Clear the error — the next refresh must succeed.
+	fake.setErr(nil)
+
+	// With initialRetryBackoff=1s, the next refresh fires ~1s after
+	// the initial failure. Allow a comfortable margin but cap WELL
+	// below s.interval (5s) so we'd fail loudly if Start were waiting
+	// the full interval.
+	pollDeadline := time.Now().Add(2500 * time.Millisecond)
+	for time.Now().Before(pollDeadline) {
+		snap := s.Snapshot()
+		if !snap.Stale && len(snap.Models) == 1 {
+			return // success — fast-retry recovered within 2.5s
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	snap := s.Snapshot()
+	t.Fatalf("snapshot did not recover within %v: Stale=%v Models=%d",
+		2500*time.Millisecond, snap.Stale, len(snap.Models))
+}
+
 // ListTeamsByAlias is a no-op shim — Client interface compliance.
 func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil

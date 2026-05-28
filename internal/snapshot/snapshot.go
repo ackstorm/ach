@@ -19,6 +19,13 @@ import (
 // Environment misses an event is still bounded to one refresh window.
 const DefaultRefreshInterval = 5 * time.Minute
 
+// initialRetryBackoff is the first sleep after a refresh failure. Each
+// subsequent failure doubles the sleep, capped at DefaultRefreshInterval.
+// Sized for the typical post-operator-restart race where the
+// LiteLLMConnection reconciler completes its first probe within a few
+// hundred milliseconds — issue #30.
+const initialRetryBackoff = 1 * time.Second
+
 // LiteLLMSnapshot is the immutable refresh result. Reads via
 // Snapshotter.Snapshot are atomic.Pointer.Load + value-copy — lock-free.
 //
@@ -122,18 +129,53 @@ func (s *Snapshotter) LiteLLMUnreachableCount() int64 {
 // with Stale=true per D-14.
 func (s *Snapshotter) Start(ctx context.Context) error {
 	s.log.Info("litellm-snapshot Runnable starting", "interval", s.interval)
-	s.refresh(ctx)
-	t := time.NewTicker(s.interval)
-	defer t.Stop()
+	// Issue #30: refresh failures (typically connection.ErrNotReady at
+	// operator boot, before the LiteLLMConnection reconciler has probed)
+	// previously waited a full s.interval before retrying. We now drive
+	// the next-tick interval from the most recent refresh result:
+	// success → steady s.interval; failure → exponential backoff seeded
+	// at initialRetryBackoff, doubling, capped at s.interval. Reset on
+	// success so a single transient failure doesn't permanently shorten
+	// the tick.
+	next := s.refreshAndNextInterval(ctx, initialRetryBackoff)
+	backoff := initialRetryBackoff
 	for {
 		select {
 		case <-ctx.Done():
 			s.log.Info("litellm-snapshot Runnable stopping")
 			return nil
-		case <-t.C:
-			s.refresh(ctx)
+		case <-time.After(next):
+			next = s.refreshAndNextInterval(ctx, backoff)
+			if next == s.interval {
+				backoff = initialRetryBackoff
+			} else {
+				backoff = nextBackoff(backoff, s.interval)
+			}
 		}
 	}
+}
+
+// refreshAndNextInterval runs a refresh and returns how long the caller
+// should sleep before the next tick. On success it returns s.interval;
+// on failure it returns the supplied backoff (clamped to s.interval).
+// Split out so Start can stay readable.
+func (s *Snapshotter) refreshAndNextInterval(ctx context.Context, backoff time.Duration) time.Duration {
+	if s.refresh(ctx) {
+		return s.interval
+	}
+	if backoff > s.interval {
+		return s.interval
+	}
+	return backoff
+}
+
+// nextBackoff doubles cur, capped at maxDur.
+func nextBackoff(cur, maxDur time.Duration) time.Duration {
+	doubled := cur * 2
+	if doubled > maxDur {
+		return maxDur
+	}
+	return doubled
 }
 
 // refresh issues the three LiteLLM list calls and, on full success,
@@ -162,7 +204,10 @@ func (s *Snapshotter) RefreshForTest(ctx context.Context) {
 // refresh is invoked only from Start's single-writer goroutine, so no
 // internal lock is required against itself. The atomic.Pointer.Store
 // guarantees publication-safety against concurrent Snapshot() readers.
-func (s *Snapshotter) refresh(ctx context.Context) {
+// Returns true on a fully successful refresh (all three list calls OK
+// or ErrNotFound), false otherwise. Start uses the return value to
+// pick the next-tick interval (issue #30).
+func (s *Snapshotter) refresh(ctx context.Context) bool {
 	models, errM := s.client.ListModels(ctx)
 	mcps, errC := s.client.ListMCPServers(ctx)
 	agents, errA := s.client.ListA2AAgents(ctx)
@@ -191,7 +236,7 @@ func (s *Snapshotter) refresh(ctx context.Context) {
 				"a2aErr", errA,
 				"priorRefreshedAt", cur.RefreshedAt,
 			)
-			return
+			return false
 		}
 		// First refresh ever failed — store an empty stale snapshot so
 		// callers don't oscillate between "cold start" and "stale"
@@ -205,7 +250,7 @@ func (s *Snapshotter) refresh(ctx context.Context) {
 			"mcpErr", errC,
 			"a2aErr", errA,
 		)
-		return
+		return false
 	}
 
 	next := &LiteLLMSnapshot{
@@ -221,6 +266,7 @@ func (s *Snapshotter) refresh(ctx context.Context) {
 		"mcpServers", len(next.MCPServers),
 		"a2aAgents", len(next.A2AAgents),
 	)
+	return true
 }
 
 // toModelSet projects a ModelInfoResponse slice into a name set keyed
