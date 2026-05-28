@@ -149,4 +149,81 @@ spec:
     - name: http
       port: 80
       targetPort: 9090
+{{- if .Values.testMocks.mcpEcho.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mcp-echo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-mcp-echo
+    test.ach.ackstorm.ai/phase: "4"
+    test.ach.ackstorm.ai/issue: "35"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-mcp-echo
+  template:
+    metadata:
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mock-mcp-echo
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp-echo
+          image: {{ .Values.testMocks.mcpEcho.image.repo }}:{{ .Values.testMocks.mcpEcho.image.tag }}
+          imagePullPolicy: {{ .Values.testMocks.mcpEcho.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+            - name: ACH_JWKS_URL
+              value: {{ tpl .Values.testMocks.mcpEcho.jwksUrl . | quote }}
+            - name: ACH_EXPECTED_ISS
+              value: {{ .Values.testMocks.mcpEcho.expectedIss | quote }}
+            - name: ACH_EXPECTED_AUD
+              value: {{ .Values.testMocks.mcpEcho.expectedAud | quote }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mcp-echo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock-mcp-echo
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-mcp-echo
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+{{- end }}
 {{- end }}
