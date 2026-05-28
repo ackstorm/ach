@@ -283,11 +283,13 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 	return mustMarketplaceTarball(t, marshalMarketplaceWire(t, mkt))
 }
 
-// mustPluginTarGz returns a minimal gzipped tar that satisfies
-// verifyPluginManifest for the given subtree. The single entry inside
-// the archive is "<subtree>/.claude-plugin/plugin.json" (or
-// ".claude-plugin/plugin.json" when subtree is empty). Used by Stage-2
-// fakeGitFetcher bodies so they pass the F4 manifest-existence check.
+// mustPluginTarGz returns a minimal tar.gz body containing
+// <subtree>/.claude-plugin/plugin.json so verifyPluginManifest (F4) is
+// satisfied. The return type is `string` rather than `[]byte` because
+// fakeGitFetcher's body field is `string` (the pre-F4 fake-fetcher
+// contract); binary safety is preserved by Go's untyped byte-string
+// semantics, so this is purely an ergonomic choice — callers feed the
+// result directly to strings.NewReader.
 func mustPluginTarGz(t *testing.T, subtree string) string {
 	t.Helper()
 	entryPath := ".claude-plugin/plugin.json"

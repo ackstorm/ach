@@ -102,3 +102,15 @@ func TestVerifyPluginManifest_LeadingDotSlashSubtreeTolerated(t *testing.T) {
 		t.Errorf("verify: %v; want nil with ./ prefix", err)
 	}
 }
+
+func TestVerifyPluginManifest_CorruptGzip(t *testing.T) {
+	// Non-gzip input must surface as wrapped ErrUpstreamInvalid (the
+	// gzip.NewReader failure branch).
+	err := verifyPluginManifest(bytes.NewReader([]byte("not gzip")), "")
+	if err == nil {
+		t.Fatal("expected error on corrupt gzip")
+	}
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("err = %v; want wrap of ErrUpstreamInvalid", err)
+	}
+}
