@@ -404,7 +404,12 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 // LiteLLMConnection/default). Any other resolver error (malformed
 // endpoint, missing secret key, transport error) returns immediately
 // so misconfiguration still surfaces at boot.
-func resolveLiteLLMWithRetry(ctx context.Context, reader client.Reader, namespace string, logger *slog.Logger) (*litellmconn.Resolution, error) {
+func resolveLiteLLMWithRetry(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	logger *slog.Logger,
+) (*litellmconn.Resolution, error) {
 	const retryInterval = 60 * time.Second
 	for {
 		res, err := litellmconn.Resolve(ctx, reader, namespace)
