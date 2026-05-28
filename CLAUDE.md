@@ -235,6 +235,14 @@ Umbrella targets:
 on host docker. Do NOT call it via `./scripts/dev.sh` (would nest docker
 mounts that don't resolve). The same applies to `make pre-commit`.
 
+Do NOT invoke `make pre-push` (or `make pre-commit`) manually before
+pushing — the installed git hooks (`make hooks`) fire the same script
+on every `git push` / `git commit`. Running them by hand is duplicate
+work and burns the cache; just run `git push` and let the hook gate.
+If the hook is intentionally bypassed with `--no-verify`, then a
+manual `make pre-push` is the right safety net — but that's the
+exception, not the rule.
+
 Inner-loop iteration helpers:
 - `make unit-pkg PKG=./internal/<service>/...`
 - `make envtest-pkg PKG=./internal/controller/... [FOCUS=TestX] [TIMEOUT=10m]`
