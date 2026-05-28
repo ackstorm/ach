@@ -75,10 +75,26 @@ type PluginMarketplaceReconciler struct {
 	// at zero and exercises the no-cap branch.
 	PluginMaxSizeMiB int
 
+	// PluginMaxSizeMiBFn, when non-nil, overrides PluginMaxSizeMiB at
+	// every cap read. envtest wires this so the suite-level reconciler
+	// and a per-test reconciler can share a size cap via a shared atomic
+	// (issue #18 follow-up); production always leaves it nil and reads
+	// the immutable PluginMaxSizeMiB field directly.
+	PluginMaxSizeMiBFn func() int
+
 	// Fetchers is the FetcherFactory; nil → defaults to registry.For.
 	// Tests inject a fake fetcher to exercise Stage-1 + Stage-2 dispatch
 	// without live HTTPS traffic.
 	Fetchers FetcherFactory
+}
+
+// sizeCapMiB returns the per-plugin tarball cap in MiB. Prefers the
+// test-only PluginMaxSizeMiBFn override; falls back to PluginMaxSizeMiB.
+func (r *PluginMarketplaceReconciler) sizeCapMiB() int {
+	if r.PluginMaxSizeMiBFn != nil {
+		return r.PluginMaxSizeMiBFn()
+	}
+	return r.PluginMaxSizeMiB
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=pluginmarketplaces,verbs=get;list;watch;create;update;patch;delete
@@ -456,7 +472,7 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	}()
 
 	// ─── 5: copy with optional cap (T-02-06-07) ───
-	capBytes := int64(r.PluginMaxSizeMiB) << 20
+	capBytes := int64(r.sizeCapMiB()) << 20
 	var n int64
 	var copyErr error
 	if capBytes > 0 {

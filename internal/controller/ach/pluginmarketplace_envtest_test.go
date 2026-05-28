@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,6 +92,37 @@ func setSuiteMarketplaceFactory(f FetcherFactory) func() {
 		sharedSuiteFactoryMu.Lock()
 		sharedSuiteFactory = prev
 		sharedSuiteFactoryMu.Unlock()
+	}
+}
+
+// ─── Shared suite/per-test PluginMaxSizeMiB ───────────────────────────
+//
+// Issue #18 follow-up: TestPMR_Stage2_PluginTooLarge constructs a
+// per-test reconciler with PluginMaxSizeMiB=1 so a 2 MiB body trips the
+// LimitReader cap and surfaces ReasonPluginTooLarge. The suite-level
+// PMR has PluginMaxSizeMiB=0 (default, unlimited) and would happily
+// stage the same body to disk, producing a Synced=True without the
+// expected per-entry PluginTooLarge marker. This shared atomic lets
+// drainReconcileUntil mirror the per-test cap onto the suite reconciler
+// via PluginMaxSizeMiBFn (a function-typed override the suite PMR is
+// wired to read from), so both reconcilers converge on the same per-
+// entry classification. Zero (the default) preserves the suite's
+// pre-existing no-cap behavior for tests that never opt into a cap.
+var sharedSuitePluginMaxSizeMiB atomic.Int32
+
+// suitePluginMaxSizeMiB is wired into the suite-level PMR's
+// PluginMaxSizeMiBFn so every cap read goes through the shared atomic.
+func suitePluginMaxSizeMiB() int {
+	return int(sharedSuitePluginMaxSizeMiB.Load())
+}
+
+// setSuitePluginMaxSizeMiB installs the supplied cap on the shared
+// atomic and returns a reset closure that restores the previous value
+// — defer-friendly, race-free under -race.
+func setSuitePluginMaxSizeMiB(n int) func() {
+	prev := sharedSuitePluginMaxSizeMiB.Swap(int32(n))
+	return func() {
+		sharedSuitePluginMaxSizeMiB.Store(prev)
 	}
 }
 
@@ -540,13 +572,17 @@ func waitForFinalizer(t *testing.T, ctx context.Context, cr *achv1alpha1.PluginM
 // Issue #18: the suite-level PMR also reconciles this CR in the manager
 // goroutine. To prevent a resourceVersion race between the two
 // reconcilers (which produce different Synced reasons whenever the
-// suite reconciler hits the real registry instead of the per-test fake),
-// install the per-test FetcherFactory into the shared suite holder for
-// the duration of this drain so the suite reconciler routes through the
-// same fakes and both converge on identical status.
+// suite reconciler hits the real registry instead of the per-test fake,
+// or applies a different size cap), mirror the per-test FetcherFactory
+// and PluginMaxSizeMiB onto the shared holders the suite reconciler
+// reads from. Both reconcilers then converge on identical per-entry
+// classification.
 func drainReconcileUntil(ctx context.Context, r *PluginMarketplaceReconciler, cr *achv1alpha1.PluginMarketplace, cond func(*achv1alpha1.PluginMarketplace) bool) bool {
 	if r.Fetchers != nil {
 		defer setSuiteMarketplaceFactory(r.Fetchers)()
+	}
+	if r.PluginMaxSizeMiB != 0 {
+		defer setSuitePluginMaxSizeMiB(r.PluginMaxSizeMiB)()
 	}
 	return Eventually(func() bool {
 		req := ctrlReq(cr)

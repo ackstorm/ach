@@ -43,6 +43,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/connection"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/snapshot"
@@ -189,11 +190,9 @@ func setupAndRun(m *testing.M) int {
 		return 1
 	}
 	defer func() { _ = os.RemoveAll(testCacheRoot) }()
-	for _, d := range []string{"plugin", "prompt", "artifact", "marketplace"} {
-		if err := os.MkdirAll(filepath.Join(testCacheRoot, d), 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "mkdir %s: %v\n", d, err)
-			return 1
-		}
+	if err := cachefs.EnsureLayout(testCacheRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "cachefs.EnsureLayout(%q): %v\n", testCacheRoot, err)
+		return 1
 	}
 
 	// Counting LiteLLM fake for §6.5 finalizer assertions + §7
@@ -285,6 +284,11 @@ func setupAndRun(m *testing.M) int {
 		// per-test reconciler. Falls through to registry.For when no
 		// per-test factory is installed. See issue #18.
 		Fetchers: suiteMarketplaceFactory,
+		// Mirror the per-test PluginMaxSizeMiB via the shared atomic so
+		// the suite and per-test reconcilers agree on the cap. Zero
+		// (the default) preserves the no-cap behavior for tests that
+		// don't opt into a cap. See issue #18 follow-up.
+		PluginMaxSizeMiBFn: suitePluginMaxSizeMiB,
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(PluginMarketplace): %v\n", err)
 		return 1
