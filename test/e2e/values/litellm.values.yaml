@@ -69,7 +69,9 @@ redis:
 masterkey: sk-test-master-key
 
 envVars:
-  LITELLM_LOG: ERROR
+  LITELLM_LOG: DEBUG
+  # Custom auth for SSO and virtual key impersonation by our forwarder
+  LITELLM_CUSTOM_AUTH: "auth_user_map.sso_key_swapper"
   # MCP server_name sanitization (FIX2.txt HIGH-1, 2026-05-22): pin the
   # separator the upstream LiteLLM v1.83.x validator uses so internal/
   # litellm's mcp.go server_name rewriter and the upstream agree.
@@ -84,6 +86,22 @@ envVars:
   # ready, so the K8s Job backoff retries until the StatefulSet is up
   # (vs LiteLLM's internal "continuing startup" exit 0 silently bailing).
   ENFORCE_PRISMA_MIGRATION_CHECK: "true"
+
+# Mount the custom auth script into the LiteLLM pod
+volumes:
+  - name: ackstorm-litellm-auth
+    configMap:
+      name: ackstorm-litellm-extras
+      items:
+        - key: auth_user_map.py
+          path: auth_user_map.py
+      optional: false
+
+volumeMounts:
+  - name: ackstorm-litellm-auth
+    mountPath: /app/auth_user_map.py
+    subPath: auth_user_map.py
+    readOnly: true
 
 # resources: deliberately unset. LiteLLM 1.83 is heavy (Python + Prisma
 # + many provider SDKs); fixed limits keep tripping OOMKilled on kind.

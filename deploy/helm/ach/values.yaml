@@ -21,7 +21,7 @@ installCRDs: true
 image:
   repo: ghcr.io/ackstorm/ach
   tag: v0.1.0
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 # watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
 # Maps to WATCH_NAMESPACE env var on operator Deployment.

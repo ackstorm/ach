@@ -14,6 +14,7 @@ nav:
   - Developer Guide:
       - Architecture: developer-guide/architecture.md
       - Development: developer-guide/development.md
+      - LiteLLM Custom Auth: developer-guide/litellm-custom-auth.md
       - Release process: developer-guide/release-process.md
   - API Reference:
       - ach.ackstorm.ai: api-reference/ach.ackstorm.ai.md

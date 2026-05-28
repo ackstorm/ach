@@ -7,5 +7,5 @@
 # CRDs and operator live on independent version streams (0.0.x vs 0.5.x) —
 # they are NOT co-versioned. Bump both deliberately and re-run e2e.
 
-crdsChartVersion: 0.0.55
-operatorChartVersion: 0.5.5
+crdsChartVersion: 0.28.3
+operatorChartVersion: 0.28.3

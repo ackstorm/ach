@@ -23,7 +23,7 @@ extraEnv:
         name: ach-credential-hash-pepper
         key: pepper
   - name: ACH_BASE_URL
-    value: "https://ach.local.test"
+    value: "http://localhost:8080"
   - name: ACH_LITELLM_BASE_URL
     value: "http://litellm.litellm-system.svc.cluster.local:4000"
   - name: ACH_LITELLM_MASTER_KEY

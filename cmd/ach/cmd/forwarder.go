@@ -12,7 +12,7 @@
 // ctrl.SetupSignalHandler.
 //
 // Refuses to start when:
-//   - ACH_BASE_URL is not https:// (FWD-10 / Hub §9.1)
+//   - ACH_BASE_URL is not http(s)://
 //   - LiteLLMConnection/default CR is missing OR its Spec.Endpoint is
 //     not a parseable http(s):// URL OR its MasterKeySecretRef does not
 //     resolve to a non-empty Secret data entry (B2 refactor — replaces
@@ -79,7 +79,7 @@ var forwarderCmd = &cobra.Command{
 	Long: `Boot the chi-backed reverse proxy on /v1, /gemini, /mcp/{name},
 /a2a/{name} with §5.1 header strip+rewrite, §9 Ed25519 JWT signing gated
 by BackendIdentityPolicy, and /.well-known/jwks.json. Refuses to start
-when ACH_BASE_URL is not https:// (FWD-10) or the ach-jwt-signing-keys
+when ACH_BASE_URL is not http(s):// or the ach-jwt-signing-keys
 Secret is missing/malformed (FWD-09).`,
 	RunE: runForwarder,
 }
@@ -113,8 +113,8 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ACH_BASE_URL required: %w", err)
 	}
-	if !strings.HasPrefix(baseURL, "https://") {
-		return nil, errors.New("ACH_BASE_URL must be https:// (FWD-10 / Hub §9.1)")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
 

@@ -40,7 +40,7 @@ var ErrNoCurrentSlot = errors.New("jwt: no current slot loaded")
 // model — replay-window restatement is v1beta1 backlog).
 type Claims struct {
 	// Iss is the JWT "iss" (issuer) claim. Production forwarder code
-	// sets this to ACH_BASE_URL verbatim (already validated https-only
+	// sets this to ACH_BASE_URL verbatim (already validated as http(s)://
 	// at process start).
 	Iss string
 	// Sub is the JWT "sub" (subject) claim. Production forwarder code

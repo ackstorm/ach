@@ -65,7 +65,7 @@ var platformAPICmd = &cobra.Command{
 	Short: "Run the ACH Platform REST API server (chi + Dex SSO)",
 	Long: `Boot the chi-backed REST API exposing the ACH platform surface (Login,
 EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
-without ACH_BASE_URL (https://...), ACH_DB_URL, the credential-hash
+without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
 pepper, the four Dex OAuth2 vars, ACH_LITELLM_BASE_URL +
 ACH_LITELLM_MASTER_KEY, ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 	RunE: runPlatformAPI,
@@ -98,8 +98,8 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ACH_BASE_URL required: %w", err)
 	}
-	if !strings.HasPrefix(baseURL, "https://") {
-		return nil, errors.New("ACH_BASE_URL must be https:// (Hub §9.1 / T-API-04)")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
 
