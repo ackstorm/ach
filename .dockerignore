@@ -1,7 +1,14 @@
 # More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
-# Ignore build and test binaries.
+#
+# Defense-in-depth deny-list. The Dockerfile uses explicit per-directory
+# COPY directives (cmd/, api/, internal/, db/migrations/), so the build
+# context surface is already small. This file additionally excludes
+# directories that should NEVER enter the build context even if a future
+# Dockerfile change reintroduces `COPY . .`.
 bin/
 # Devtools-container persistent Go module/build cache + kubeconfig (mounted
 # from host at runtime — copying it into the Docker build context bloats
 # the image and can exhaust disk on shallow runners).
 .gocache/
+# Git metadata: large, churny, and never needed by the builder or runtime.
+.git/

@@ -5,7 +5,14 @@ WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
-COPY . .
+# Explicit per-directory COPY (allow-list) — keeps the builder layer cache
+# tight: edits to docs/, test/, examples/, deploy/, scripts/, top-level
+# *.md, etc. do NOT bust this layer. If a new top-level Go package is ever
+# added (e.g. pkg/), it must be added here or `go build` fails with
+# "package not found".
+COPY cmd/ ./cmd/
+COPY api/ ./api/
+COPY internal/ ./internal/
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
