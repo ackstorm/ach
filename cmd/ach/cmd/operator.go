@@ -322,6 +322,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		Cache:     connCache,
 		Namespace: watchNS,
 		Log:       ctrl.Log.WithName("controller").WithName("LiteLLMConnection"),
+		Pool:      dbPool,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller LiteLLMConnection: %w", err)
 	}
