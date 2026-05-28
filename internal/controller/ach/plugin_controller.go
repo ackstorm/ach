@@ -105,43 +105,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// ─── Deletion path: §10.3 cleanup + DB row drop + finalizer remove. ───
 	if !cr.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&cr, pluginFinalizer) {
-			// §10.3 cache layout: plugin/<name>.tar.gz
-			if err := os.Remove(filepath.Join(r.CacheRoot, "plugin", cr.Name+".tar.gz")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return ctrl.Result{}, err
-			}
-			// OP-12: drop the DB row in sync with the cached file. Nil-DB
-			// (Phase 1 envtest) skips the call so the finalizer test still
-			// passes without a Postgres pool.
-			if r.DB != nil {
-				if err := achdb.DeleteExternalRef(ctx, r.DB, "plugin", cr.Name); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
-				}
-			}
-			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the plugins
-			// projection row AFTER the existing external_refs DELETE
-			// and BEFORE finalizer removal. Two writes are intentional:
-			// external_refs is the §10.3 cache-refresh row (no longer
-			// needed once the file is gone); the plugins projection row
-			// stays soft-deleted so CS-09 in-flight reads finish — Plan
-			// 05-05 staleness check filters on deletion_timestamp.
-			// Issue #34: soft-delete + NOTIFY in one tx so consumers
-			// waking on ach_plugins_changed SELECT the soft-deleted row.
-			if r.DB != nil {
-				payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
-				if err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
-					return achdb.SoftDeletePluginTx(ctx, tx, cr.Namespace, cr.Name)
-				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db soft-delete plugin projection: %w", err)
-				}
-			}
-			controllerutil.RemoveFinalizer(&cr, pluginFinalizer)
-			if err := r.Update(ctx, &cr); err != nil {
-				return ctrl.Result{}, err
-			}
-			logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, &cr, logger)
 	}
 
 	// ─── Finalizer-add path. ───
@@ -323,6 +287,37 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 // writePluginConflictStatus flips Synced=False/ConflictWithUIRow when the
+// reconcileDeletion is the §10.3 finalizer drain extracted from Reconcile
+// to keep cyclomatic complexity within the gocyclo budget. Removes the
+// cached file, drops the external_refs row, soft-deletes the plugins
+// projection row (in one tx with NOTIFY ach_plugins_changed), then removes
+// the finalizer. Nil DB paths skip the DB writes for Phase 1 envtest mode.
+func (r *PluginReconciler) reconcileDeletion(ctx context.Context, cr *achv1alpha1.Plugin, logger logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(cr, pluginFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	if err := os.Remove(filepath.Join(r.CacheRoot, "plugin", cr.Name+".tar.gz")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return ctrl.Result{}, err
+	}
+	if r.DB != nil {
+		if err := achdb.DeleteExternalRef(ctx, r.DB, "plugin", cr.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
+		}
+		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
+		if err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.SoftDeletePluginTx(ctx, tx, cr.Namespace, cr.Name)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("db soft-delete plugin projection: %w", err)
+		}
+	}
+	controllerutil.RemoveFinalizer(cr, pluginFinalizer)
+	if err := r.Update(ctx, cr); err != nil {
+		return ctrl.Result{}, err
+	}
+	logger.Info("§10.3 cleanup complete; finalizer removed", "name", cr.Name)
+	return ctrl.Result{}, nil
+}
+
 // projection upsert is blocked by a UI-origin row holding the same PK.
 // Mirrors the back-off pattern used by the other reconcilers: 1-minute
 // RequeueAfter so the operator does not hot-loop on a UI lock.

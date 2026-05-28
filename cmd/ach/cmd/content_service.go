@@ -172,7 +172,8 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	// Bridge the slog handler into a logr.Logger; content-service no
 	// longer registers a controller-runtime manager (Plan 05-02 §5.2),
 	// so the ctrl.Log root is unavailable here.
-	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, logr.FromSlogHandler(logger.Handler()).WithName("litellm"))
+	liteLLMLog := logr.FromSlogHandler(logger.Handler()).WithName("litellm")
+	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, liteLLMLog)
 
 	// ─── audit logger (D-Discretion: one audit event per CS GET) ───
 	auditLog := audit.NewLogger(os.Stdout)

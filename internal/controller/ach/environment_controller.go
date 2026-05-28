@@ -132,38 +132,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// ─── Step 2a: Deletion path — §6.5 drain ───────────────────────
 	if !env.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&env, environmentFinalizer) {
-			// §6.5 step 2: delete LiteLLM access group.
-			if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
-				return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
-			}
-			// §6.5 step 3: delete LiteLLM tag.
-			if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
-				return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
-			}
-			// §6.5 step 4: drain ek_ rows (REAL Phase 1 code per D-12;
-			// trivially exits in Phase 1 because no rows exist).
-			if err := r.drainEkRows(ctx, &env); err != nil {
-				// Transient/wrapped DB errors propagate — controller-runtime
-				// requeues with exponential backoff; the finalizer stays.
-				return ctrl.Result{}, err
-			}
-			// Spec v4 §5.2 / CS-09 / D-15: soft-delete the environments
-			// projection row AFTER the ek_ drain and BEFORE the finalizer
-			// removal so Content Service in-flight reads keep working until
-			// the row is fully removed. Hard removal is a follow-up sweep —
-			// Plan 05-05's staleness check filters on deletion_timestamp.
-			if err := r.softDeleteEnvironmentProjection(ctx, &env); err != nil {
-				return ctrl.Result{}, err
-			}
-			// §6.5 step 5: remove the finalizer.
-			controllerutil.RemoveFinalizer(&env, environmentFinalizer)
-			if err := r.Update(ctx, &env); err != nil {
-				return ctrl.Result{}, err
-			}
-			logger.Info("§6.5 drain complete; finalizer removed", "env", env.Name)
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, &env, logger)
 	}
 
 	// ─── Step 2b: Finalizer-add path ───────────────────────────────
@@ -383,6 +352,34 @@ const staleRequeueAfter = 15 * time.Second
 // the corresponding column marshals to NULL via pgx's []byte/jsonb default.
 //
 // Per D-15 the DB write (achdb.UpsertEnvironment) is authoritative: a
+// reconcileDeletion is the §6.5 finalizer drain — extracted from Reconcile
+// to keep the main method's cyclomatic complexity within golangci-lint's
+// gocyclo budget. Runs delete-side-effects on LiteLLM, drains ek_ rows,
+// soft-deletes the projection row, then removes the finalizer.
+func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv1alpha1.Environment, logger logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(env, environmentFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
+	}
+	if err := r.drainEkRows(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.softDeleteEnvironmentProjection(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	controllerutil.RemoveFinalizer(env, environmentFinalizer)
+	if err := r.Update(ctx, env); err != nil {
+		return ctrl.Result{}, err
+	}
+	logger.Info("§6.5 drain complete; finalizer removed", "env", env.Name)
+	return ctrl.Result{}, nil
+}
+
 // transient error wraps with fmt.Errorf so controller-runtime requeues
 // the whole reconcile (K8s status + projection row land together or not
 // at all). Nil DB returns nil — the per-call-site `if r.DB != nil` gate
