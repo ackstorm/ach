@@ -82,14 +82,18 @@ var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (str
 // dispatchMarketplacePlugin runs the per-entry fetch and returns a
 // streaming io.ReadCloser + the UpstreamRev (the resolved SHA).
 //
-//   - git-subdir: clone entry.Source.URL at entry.Source.Ref, checkout
-//     entry.Source.SHA, tar the entry.Source.Path subtree.
-//   - url:        same but tar the whole worktree (no subtree).
-//   - local-path: clone the MARKETPLACE'S OWN repo (resolved from
-//     mp.Spec.<type>.{Repo,Project,URL}), resolve its HEAD SHA via
-//     git ls-remote, then fetch + tar the entry.Source.Path subtree.
-//   - "":         errUnsupportedPluginSource (Stage-2 maps to
+//   - git-subdir / url / github / local-path: build a git.Spec via
+//     buildGitSpecForEntry. If Spec.SHA is empty, pre-resolve via
+//     newResolveHeadSHAFn (git ls-remote semantics) so the Fetcher's
+//     40-hex contract is satisfied. Then Fetch + return the streaming
+//     tar.gz body.
+//   - "": errUnsupportedPluginSource (Stage-2 maps to
 //     ReasonUnsupportedPluginSource).
+//
+// Sha-optional rationale: the official schema lists ref and sha as both
+// optional. Upstream catalogs (Anthropic) ship entries without sha that
+// MUST still materialize. The Fetcher itself keeps the 40-hex pin
+// contract — we satisfy it by resolving on the marketplace layer.
 //
 // auth is the marketplace's auth Secret (re-used per the v1alpha1
 // design: per-entry auth is NOT yet a wire-format field). May be nil.
@@ -104,8 +108,11 @@ func dispatchMarketplacePlugin(
 	if err != nil {
 		return nil, "", err
 	}
-	// local-path: SHA was deliberately empty; resolve it now.
-	if entry.Source.Kind == kindLocalPath {
+	// Pre-resolve ref→sha when the entry didn't pin one. Applies to every
+	// git-backed Kind (git-subdir, url, github, local-path). local-path
+	// already had this branch — Phase 2 generalizes it to all Kinds the
+	// dispatcher returned a Spec for.
+	if spec.SHA == "" {
 		sha, rerr := newResolveHeadSHAFn(ctx, spec.URL, spec.Ref, spec.Token)
 		if rerr != nil {
 			return nil, "", rerr
