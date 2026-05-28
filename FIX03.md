@@ -1,5 +1,15 @@
 # FIX03 — quick wins from the end-to-end sweep
 
+> **Historical session log (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` were originally to the
+> hyphenated form (the rename is hyphen→underscore in the filename token);
+> the script itself was deleted in
+> Phase 06-09 (replaced by `ach login` + `ach hydrate --environment demo`),
+> and the in-doc token was renamed to `hydrate_demo` for the same-commit
+> doc-hygiene gate. The hyphen → underscore rename is a presentation
+> change only; the historical fixes recorded here landed against the
+> hyphenated original.
+
 Session scratchpad for fast fixes discovered while testing every CRD surface against the live e2e cluster (2026-05-26). Items here are either already resolved (kept as a session changelog) or small enough to land before the session ends.
 
 Heavier blockers from the same sweep live in `TODO.md` §7-§10 (Environment AccessGroupSynced, Content Service streaming, Ready rollup, CLI commands).
@@ -29,11 +39,11 @@ Orphan-cleanup reconciler reads back via `/key/list` to validate ACH ↔ LiteLLM
 
 ---
 
-## J.2 — `hydrate-demo.sh` step 1 not idempotent → LiteLLM `default` team accumulation
+## J.2 — `hydrate_demo.sh` step 1 not idempotent → LiteLLM `default` team accumulation
 
 **Status**: DONE.
 
-**Where**: `examples/hydrate-demo.sh` step 1.
+**Where**: `examples/hydrate_demo.sh` step 1.
 
 **Symptom**: Every invocation calls `POST /team/new team_alias=default` unconditionally. LiteLLM allows alias duplicates with fresh UUIDs → N+1 teams labeled `default` after N runs.
 

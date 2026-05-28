@@ -123,7 +123,7 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
-├── examples/                ← runnable CR fixtures + hydrate-demo driver
+├── examples/                ← runnable CR fixtures + golden hydrate.json
 │   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
 │   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
 │   ├── 05-pluginmarketplace-anthropic.yaml  real upstream canary (5-Kind parser landed via #16)
@@ -132,8 +132,7 @@ ach/
 │   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)
 │   ├── 09-backendidentitypolicy-context7.yaml  BIP jwt-on
 │   ├── 10-backendidentitypolicy-duplicate.yaml  BIP duplicate-target demo
-│   ├── hydrate-demo.sh            Stand-in for `ach login` + `ach hydrate` CLI
-│   └── hydrate.json               Last-known-good /platform/hydrate output
+│   └── hydrate.json               Golden /platform/hydrate output (CLI e2e diffs vs this)
 ├── hack/boilerplate.go.txt  ← SPDX one-liner, prepended to generated files
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
@@ -148,7 +147,7 @@ ach/
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
-| New CR fixtures / hydrate-demo path    | `examples/README.md`                     |
+| New CR fixtures / `ach login` + `ach hydrate` demo path | `examples/README.md`                     |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |
@@ -660,6 +659,52 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 `access_agent_ids` / `assigned_team_ids` must exist upstream. The
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
+
+### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster host
+```bash
+./bin/ach hydrate --environment demo > /tmp/hydrate-test.json
+diff -u /tmp/hydrate-test.json examples/hydrate.json
+# --- /tmp/hydrate-test.json
+# +++ examples/hydrate.json
+# -        "downloadUrl": "https://kind.cluster.local/content/prompt/..."
+# +        "downloadUrl": "https://ach.local.test/content/prompt/..."
+```
+✅ The golden at `examples/hydrate.json` captures the standard kind+Helm
+fixture topology where the externally-visible platform-api host is
+`ach.local.test` (the `ACH_BASE_URL` baked into `deploy/helm/ach/values.yaml`
++ `test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
+platform-api on a different externally-visible host (NodePort + 127.0.0.1,
+a custom Ingress on a different DNS name, etc.), the raw `diff -u` will
+flag every `downloadUrl` row even though the underlying response shape is
+byte-identical.
+
+Two remedies, in preference order:
+
+1. **Normalize the golden in-test** (CLI e2e suite does this automatically):
+   the canonical helper is `phase6NormalizeHydrate(golden, clusterHost)` in
+   `test/e2e/phase6_helpers_test.go`, which rewrites every `ach.local.test`
+   occurrence to the live cluster's host. The `TestPhase6CLI` umbrella's
+   `hydrate_golden_diff` subtest uses this to compare against the normalized
+   form. Manual repro:
+   ```bash
+   sed 's/ach.local.test/<your-cluster-host>/g' examples/hydrate.json | \
+     diff -u - /tmp/hydrate-test.json
+   ```
+2. **Re-capture the golden** against the current cluster's host (only when
+   the host change is permanent):
+   ```bash
+   ./bin/ach hydrate --environment demo > examples/hydrate.json
+   git diff examples/hydrate.json   # audit the diff — should be host-only
+   ```
+
+WHY IT FAILS: the 06-06 hydrate command emits the response body verbatim
+via `io.Copy` (no re-encoding); the only intentional cross-cluster
+transform is the platform-api host on each `downloadUrl`. A raw byte-for-
+byte compare without normalization will trip on any cluster topology that
+isn't the standard `ach.local.test` fixture — and the failure mode is
+identical to a real schema drift (`schemaVersion` bump, new field, etc.),
+so getting the gotcha documented protects future debuggers from chasing a
+phantom regression.
 
 ## Repository-specific patterns
 

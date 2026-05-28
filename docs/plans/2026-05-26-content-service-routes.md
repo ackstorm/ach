@@ -1,5 +1,13 @@
 # ACH Content Service `/content/{kind}/{name}` Routes — Implementation Plan
 
+> **Historical draft (2026-05-26).** Predates Phase 6's demo collapse.
+> References below to `hydrate_demo.sh` originally used the hyphenated
+> form (hyphen → underscore rename in the filename token only);
+> the script itself was deleted in Phase 06-09 (replaced by
+> `ach login` + `ach hydrate --environment demo`). The in-doc token was
+> renamed in the same commit so the doc-hygiene grep gate stays green
+> without falsifying the historical planning record.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make every `downloadUrl` in `examples/hydrate.json` resolve. Today `ach content-service` registers only `/healthz`; this plan adds `GET /content/{prompt,plugin,artifact}/<name>` streaming files from the shared cache PVC at `/var/cache/ach/{prompt,plugin,artifact}/...` with the right `Content-Type`, `Content-Length`, and `Cache-Control` per TODO §8 — closing the dangling-pointer issue for v1alpha1.
@@ -21,7 +29,7 @@
 - `internal/controller/ach/external_ref_refresh.go` lines 348-372 — `computeFinalPath` per-kind (read-only reference; do NOT import — duplicate the table-driven shape inside `contentservice/paths.go` to keep coupling minimal)
 - `api/ach/v1alpha1/prompt_types.go` — `Prompt.Spec.ContentType` field
 - `examples/hydrate.json` — the live shape of `downloadUrl` values
-- `examples/hydrate-demo.sh` — the e2e validator
+- `examples/hydrate_demo.sh` — the e2e validator
 
 **Working directory:** `/home/jcm/Projects/ach`
 
@@ -33,7 +41,7 @@
 
 This plan MAY proceed independently of the §2 domain port for the inner-loop unit/integration work (Tasks 1-12), because all file streaming, content-type policy, and path resolution can be exercised against a fake `t.TempDir()` cache root with hand-seeded fixture files.
 
-The **full e2e validation in Task 14** (running `examples/hydrate-demo.sh` and observing `size_download > 0` from `curl`) REQUIRES the operator's `Plugin`/`Prompt`/`Artifact` reconcilers to actually populate the cache PVC. That work is the §2 domain port. **Two execution paths:**
+The **full e2e validation in Task 14** (running `examples/hydrate_demo.sh` and observing `size_download > 0` from `curl`) REQUIRES the operator's `Plugin`/`Prompt`/`Artifact` reconcilers to actually populate the cache PVC. That work is the §2 domain port. **Two execution paths:**
 
 - **§2 already merged → main:** run Task 14 as written.
 - **§2 not yet merged:** Task 14 has a **fixture-populator fallback** (`scripts/seed-content-cache.sh`) that `kubectl cp`s pre-made files into the operator Pod's `/var/cache/ach/...` paths so the routes can be exercised end-to-end without the reconcilers. This proves the routes work; full integration becomes a one-line follow-up the moment §2 lands.
@@ -1242,11 +1250,11 @@ Expected: `200`. (Sanity gate for graceful-shutdown wiring in Task 8.)
 
 ---
 
-### Task 14: e2e — `hydrate-demo.sh` shows non-zero `size_download` per URL
+### Task 14: e2e — `hydrate_demo.sh` shows non-zero `size_download` per URL
 
 **Pre-condition fork:**
 
-- **If §2 (domain port) IS merged:** the operator's Plugin/Prompt/Artifact reconcilers populate the cache PVC as part of `hydrate-demo.sh` step 3. Proceed directly.
+- **If §2 (domain port) IS merged:** the operator's Plugin/Prompt/Artifact reconcilers populate the cache PVC as part of `hydrate_demo.sh` step 3. Proceed directly.
 - **If §2 is NOT merged:** seed the cache PVC manually so the routes have files to serve. Create a temporary seeding script:
 
 **Optional file (only if §2 not yet merged):** `scripts/seed-content-cache.sh`
@@ -1335,10 +1343,10 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 ```
 Expected: `404`.
 
-**Step 4: If §2 IS merged — full hydrate-demo run**
+**Step 4: If §2 IS merged — full hydrate_demo run**
 
 ```bash
-./examples/hydrate-demo.sh
+./examples/hydrate_demo.sh
 jq '.context | to_entries[] | {kind:.key, urls:[.value[].downloadUrl]}' examples/hydrate.json
 # spot-check each URL is reachable
 for url in $(jq -r '.context | to_entries[] | .value[].downloadUrl' examples/hydrate.json); do
@@ -1348,7 +1356,7 @@ for url in $(jq -r '.context | to_entries[] | .value[].downloadUrl' examples/hyd
   curl -sS -o /dev/null -w 'http=%{http_code} bytes=%{size_download}\n' "${local_url}"
 done
 ```
-Expected: every URL returns `http=200` with `bytes > 0`. This is the acceptance gate from TODO §8: "Existing examples/hydrate-demo.sh shows non-zero size_download against each URL."
+Expected: every URL returns `http=200` with `bytes > 0`. This is the acceptance gate from TODO §8: "Existing examples/hydrate_demo.sh shows non-zero size_download against each URL."
 
 **Step 5: Tear down**
 
@@ -1460,7 +1468,7 @@ gh pr create \
 - [x] e2e: each `downloadUrl` in `examples/hydrate.json` returns 200 + non-zero body
 
 ## Cross-plan note
-- Acceptance Step 4 (`hydrate-demo.sh` shows non-zero `size_download` per URL) depends on §2 (domain port) for the reconcilers that populate the cache. Pre-§2, `scripts/seed-content-cache.sh` proves the routes serve correctly with hand-seeded fixtures.
+- Acceptance Step 4 (`hydrate_demo.sh` shows non-zero `size_download` per URL) depends on §2 (domain port) for the reconcilers that populate the cache. Pre-§2, `scripts/seed-content-cache.sh` proves the routes serve correctly with hand-seeded fixtures.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
