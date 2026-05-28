@@ -204,6 +204,56 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 	return r, nil
 }
 
+// ListEnvironments returns every live row in ns ordered by name ASC. Used by
+// the platform-api store (B1) and the forwarder envstore (C2) periodic
+// refresh. Rows with deletion_timestamp set are excluded (the steady-state
+// caller — platform-api environments list, forwarder precheck — wants the
+// not-draining set; the Content Service authz path uses GetEnvironmentByName
+// which deliberately surfaces drain-mode rows per CS-09).
+func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
+	const sql = `
+		SELECT namespace, name,
+		       authorized_teams, context_prompts, context_plugins, context_artifacts,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+		       available_condition, access_group_synced_condition,
+		       execution_resources_resolved_condition,
+		       deletion_timestamp, resource_version, updated_at
+		  FROM environments
+		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+	`
+	rows, err := pool.Query(ctx, sql, ns)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListEnvironments(%s): %w", ns, err)
+	}
+	defer rows.Close()
+	out := []EnvironmentRow{}
+	for rows.Next() {
+		var r EnvironmentRow
+		if err := rows.Scan(
+			&r.Namespace, &r.Name,
+			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
+			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
+			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
+			&r.ExecutionResourcesResolvedCondition,
+			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("db: ListEnvironments(%s) scan: %w", ns, err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListEnvironments(%s) iterate: %w", ns, err)
+	}
+	return out, nil
+}
+
 // SoftDeleteEnvironment sets deletion_timestamp = now() without removing the
 // row (CS-09 — Content Service serves until full removal). Idempotent: a
 // row already in drain-mode (deletion_timestamp IS NOT NULL) is left
