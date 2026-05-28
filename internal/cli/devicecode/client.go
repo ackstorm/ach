@@ -245,10 +245,25 @@ func decodeServerError(resp *http.Response) *httpclient.ServerError {
 	return sErr
 }
 
-// newHTTPClient returns a fresh stdlib *http.Client with httpTimeout.
-// Anonymous endpoints don't need cookie persistence — the bare client
-// is sufficient.
+// HTTPClient is the package-level *http.Client seam used by Init and
+// PollToken. Production code leaves it nil → newHTTPClient builds a
+// fresh stdlib client with httpTimeout. Tests targeting an
+// httptest.NewTLSServer override this with the test server's
+// http.Client (which trusts the ephemeral cert) so the login flow
+// can exercise the real wire path against a loopback HTTPS endpoint.
+//
+// The override is process-global, not per-call, because devicecode is
+// only invoked from `ach login` (single-shot per process) — adding a
+// per-call argument would bloat the API without benefit.
+var HTTPClient *http.Client
+
+// newHTTPClient returns the package-level HTTPClient when set, else
+// a fresh stdlib *http.Client with httpTimeout. Anonymous endpoints
+// don't need cookie persistence — the bare client is sufficient.
 func newHTTPClient() *http.Client {
+	if HTTPClient != nil {
+		return HTTPClient
+	}
 	return &http.Client{Timeout: httpTimeout}
 }
 
