@@ -26,9 +26,6 @@ spec:
     - jsonPath: .spec.forwardIdentityJWT
       name: ForwardJWT
       type: boolean
-    - jsonPath: .status.conditions[?(@.type=='Synced')].status
-      name: Synced
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

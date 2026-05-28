@@ -93,7 +93,6 @@ type BackendIdentityPolicyStatus struct {
 // +kubebuilder:printcolumn:name="Target-Kind",type=string,JSONPath=".spec.target.kind"
 // +kubebuilder:printcolumn:name="Target-Name",type=string,JSONPath=".spec.target.name"
 // +kubebuilder:printcolumn:name="ForwardJWT",type=boolean,JSONPath=".spec.forwardIdentityJWT"
-// +kubebuilder:printcolumn:name="Synced",type=string,JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // BackendIdentityPolicy is the Schema for the backendidentitypolicies API
