@@ -202,7 +202,10 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
 		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 		cr.Status.ObservedGeneration = cr.Generation
-		if statusErr := r.Status().Update(ctx, &cr); statusErr != nil {
+		desiredStatus := cr.Status
+		if statusErr := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Plugin) {
+			fresh.Status = desiredStatus
+		}); statusErr != nil {
 			logger.Error(statusErr, "status update failed", "reason", reason)
 		}
 		// Configuration-derived and terminal-upstream reasons won't change
@@ -261,12 +264,15 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, fmt.Errorf("db upsert plugin projection: %w", err)
 		}
 	}
-	if err := r.Status().Update(ctx, &cr); err != nil {
-		// WR-02: when the status update fails (typically a 409 conflict
-		// from a concurrent reconcile), cr.ResourceVersion is now stale.
-		// A follow-up r.Update would also fail with 409 and log noise;
-		// skip the annotation-clear step. The next reconcile cycle (or
-		// the requeue below) retries both writes from a fresh Get.
+	desiredStatus := cr.Status
+	if err := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Plugin) {
+		fresh.Status = desiredStatus
+	}); err != nil {
+		// WR-02: retry-on-conflict eliminates the 409-driven flake, but
+		// a non-409 Get/Update error (apiserver unreachable, NotFound)
+		// still surfaces here. A follow-up r.Update on the annotation
+		// would also fail; skip and let the next reconcile retry from
+		// a fresh Get.
 		logger.Error(err, "status update failed; skipping annotation-clear")
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}

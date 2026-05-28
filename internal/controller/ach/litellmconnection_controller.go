@@ -185,7 +185,10 @@ func (r *LiteLLMConnectionReconciler) writeStatus(
 		LastTransitionTime: metav1.Now(),
 	})
 	conn.Status.ObservedGeneration = conn.Generation
-	return r.Status().Update(ctx, conn)
+	desiredStatus := conn.Status
+	return retryStatusUpdate(ctx, r.Client, conn, func(fresh *achv1alpha1.LiteLLMConnection) {
+		fresh.Status = desiredStatus
+	})
 }
 
 func (r *LiteLLMConnectionReconciler) secretToConnection(ctx context.Context, obj client.Object) []ctrl.Request {

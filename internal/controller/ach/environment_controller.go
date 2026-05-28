@@ -195,7 +195,10 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := r.Status().Update(ctx, &env); err != nil {
+		desiredStatus := env.Status
+		if err := retryStatusUpdate(ctx, r.Client, &env, func(fresh *achv1alpha1.Environment) {
+			fresh.Status = desiredStatus
+		}); err != nil {
 			logger.Error(err, "status update failed")
 		}
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -313,7 +316,10 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.Status().Update(ctx, &env); err != nil {
+	desiredStatus := env.Status
+	if err := retryStatusUpdate(ctx, r.Client, &env, func(fresh *achv1alpha1.Environment) {
+		fresh.Status = desiredStatus
+	}); err != nil {
 		logger.Error(err, "status update failed")
 	}
 

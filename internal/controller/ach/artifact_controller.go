@@ -150,7 +150,10 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
 		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
 		cr.Status.ObservedGeneration = cr.Generation
-		if statusErr := r.Status().Update(ctx, &cr); statusErr != nil {
+		desiredStatus := cr.Status
+		if statusErr := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Artifact) {
+			fresh.Status = desiredStatus
+		}); statusErr != nil {
 			logger.Error(statusErr, "status update failed", "reason", reason)
 		}
 		switch reason {
@@ -183,7 +186,10 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.writeArtifactProjection(ctx, &cr, now.Time, spec.Refresh.MaxStaleness.Duration); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.Status().Update(ctx, &cr); err != nil {
+	desiredStatus := cr.Status
+	if err := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Artifact) {
+		fresh.Status = desiredStatus
+	}); err != nil {
 		// WR-02: see plugin_controller.go for rationale.
 		logger.Error(err, "status update failed; skipping annotation-clear")
 		return ctrl.Result{RequeueAfter: requeue}, nil
