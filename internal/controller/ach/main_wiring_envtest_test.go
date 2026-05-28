@@ -385,9 +385,11 @@ func TestMainWiring_PluginReconciler_EndToEndWithFakeFetcher(t *testing.T) {
 	// the fake fetcher. r.Namespace = nsName so Secret resolution
 	// targets the per-test namespace. Direct k8sClient (not cached)
 	// because nsName is outside the suite manager's DefaultNamespaces
-	// allow-list.
+	// allow-list. Body is a real gzipped Plugin tarball so the
+	// issue-#26 Step 5.5 pluginpack filter accepts it.
+	pluginBody := minimalPluginTarGz(t)
 	fake := &fakeFetcher{
-		body:        []byte("plugin-body-bytes"),
+		body:        pluginBody,
 		upstreamRev: "sha-wiring-e2e",
 	}
 	pr := &PluginReconciler{
@@ -412,14 +414,22 @@ func TestMainWiring_PluginReconciler_EndToEndWithFakeFetcher(t *testing.T) {
 		t.Fatalf("second Reconcile (steady-state): %v", err)
 	}
 
-	// Cached file MUST exist with the fake fetcher's bytes.
+	// Cached file MUST exist. Byte-equality with the fake fetcher body
+	// is NOT asserted anymore — the issue-#26 Step 5.5 pluginpack filter
+	// rewrites the Plugin tarball deterministically (see
+	// internal/sources/pluginpack); the wiring-test target is the
+	// reconciler state machine + status, not the filter behavior.
 	cachedPath := filepath.Join(cacheRoot, "plugin", name+".tar.gz")
-	got, err := os.ReadFile(cachedPath)
+	gotBytes, err := os.ReadFile(cachedPath)
 	if err != nil {
 		t.Fatalf("read cached plugin file: %v", err)
 	}
-	if string(got) != "plugin-body-bytes" {
-		t.Errorf("cached body = %q; want %q", got, "plugin-body-bytes")
+	if len(gotBytes) == 0 {
+		t.Errorf("cached body is empty; want a non-empty filtered tarball")
+	}
+	// Sanity: the cached file is a gzipped tarball (1f 8b 08 ...).
+	if len(gotBytes) < 3 || gotBytes[0] != 0x1f || gotBytes[1] != 0x8b || gotBytes[2] != 0x08 {
+		t.Errorf("cached body is not gzipped (first bytes %x); want gzip magic", gotBytes[:min(3, len(gotBytes))])
 	}
 
 	// Re-Get the CR (status was updated during Reconcile).

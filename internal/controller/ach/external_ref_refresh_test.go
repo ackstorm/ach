@@ -13,7 +13,9 @@
 package ach
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -65,6 +67,53 @@ func (f *fakeFetcher) Fetch(_ context.Context, _ sources.FetchRequest) (*sources
 // fake — production wires registry.For; tests inject here.
 func fakeFactory(f *fakeFetcher) FetcherFactory {
 	return func(_ sources.SourceSpec) (sources.Fetcher, error) { return f, nil }
+}
+
+// minimalPluginTarGz returns a tiny gzipped tar that survives the
+// Step 5.5 pluginpack.Filter (issue #26): it contains a valid
+// `.claude-plugin/plugin.json` plus a README.md so the filter emits
+// a non-empty filtered tarball. Used by envtest cases that exercise
+// the Plugin reconciler happy path with a fake fetcher.
+func minimalPluginTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	files := map[string]string{
+		".claude-plugin/plugin.json": `{"name":"test-plugin"}`,
+		"README.md":                  "# test plugin",
+	}
+	// Sort for deterministic output.
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	// Trivial sort (2 entries) — keep allocation-free.
+	if len(names) == 2 && names[0] > names[1] {
+		names[0], names[1] = names[1], names[0]
+	}
+	for _, name := range names {
+		body := files[name]
+		hdr := &tar.Header{
+			Name:     name,
+			Mode:     0o644,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("WriteHeader %q: %v", name, err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatalf("Write %q: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tw.Close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gz.Close: %v", err)
+	}
+	return buf.Bytes()
 }
 
 // newCacheRoot allocates a per-test isolated cache root with the
@@ -193,13 +242,18 @@ func TestExtractAuthSecretRef(t *testing.T) {
 func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	root := newCacheRoot(t)
 	fake := &fakeFetcher{body: []byte("hello"), upstreamRev: "sha-abc"}
-	finalPath := filepath.Join(root, "plugin", "mat-p1.tar.gz")
+	// Kind="prompt" so the body is taken verbatim — bypasses the
+	// Step 5.5 plugin content filter (issue #26) which only fires on
+	// Kind="plugin" and would reject the raw "hello" bytes as
+	// not-a-gzip. The test target here is the generic state machine
+	// (stage/rename/cleanup), not plugin-specific filtering.
+	finalPath := filepath.Join(root, "prompt", "mat-p1")
 
 	deps := ExternalRefRefreshDeps{
 		Client:    k8sClient,
 		Namespace: WatchNamespace,
 		CacheRoot: root,
-		Kind:      "plugin",
+		Kind:      "prompt",
 		Name:      "mat-p1",
 		FinalPath: finalPath,
 		Fetchers:  fakeFactory(fake),
@@ -269,13 +323,19 @@ func TestMaterializeExternalRef_NotModified(t *testing.T) {
 func TestMaterializeExternalRef_PluginTooLarge(t *testing.T) {
 	root := newCacheRoot(t)
 	fake := &fakeFetcher{body: bytes.Repeat([]byte("x"), 100), upstreamRev: "sha-big"}
-	finalPath := filepath.Join(root, "plugin", "mat-big.tar.gz")
+	// Kind="artifact" so the body bytes flow through unmodified —
+	// bypasses the Step 5.5 plugin content filter (issue #26) which
+	// only fires on Kind="plugin". The OversizeError -> ReasonPluginTooLarge
+	// mapping in classifyFetchError is kind-agnostic (it uses errors.As
+	// on the typed OversizeError), so the assertion still covers the
+	// size-cap state machine and reason classification.
+	finalPath := filepath.Join(root, "artifact", "mat-big")
 
 	deps := ExternalRefRefreshDeps{
 		Client:       k8sClient,
 		Namespace:    WatchNamespace,
 		CacheRoot:    root,
-		Kind:         "plugin",
+		Kind:         "artifact",
 		Name:         "mat-big",
 		FinalPath:    finalPath,
 		SizeCapBytes: 10,
@@ -464,7 +524,10 @@ func TestPluginReconciler_SteadyState_Success(t *testing.T) {
 	// fetcher. The suite-registered reconciler will trip on the missing
 	// auth-secret (it has no Fetchers set, so registry.For will run);
 	// our reconciler exercises the §10.3 happy path.
-	fake := &fakeFetcher{body: []byte("hello-plugin"), upstreamRev: "rev-hello"}
+	// Body is a real gzipped Plugin tarball so the Step 5.5 pluginpack
+	// content filter (issue #26) accepts it; the assertion target here
+	// is the reconciler state machine, not the filter behavior.
+	fake := &fakeFetcher{body: minimalPluginTarGz(t), upstreamRev: "rev-hello"}
 	r := &PluginReconciler{
 		Client:    k8sClient,
 		Scheme:    nil,
@@ -579,7 +642,10 @@ func TestPluginReconciler_ForceRefreshAnnotation_Cleared(t *testing.T) {
 		t.Fatalf("finalizer never added")
 	}
 
-	fake := &fakeFetcher{body: []byte("fr-body"), upstreamRev: "rev-fr"}
+	// Body must be a valid Plugin tarball so the issue-#26 Step 5.5
+	// filter accepts it; the assertion target is the force-refresh
+	// annotation lifecycle, not the filter content.
+	fake := &fakeFetcher{body: minimalPluginTarGz(t), upstreamRev: "rev-fr"}
 	r := &PluginReconciler{
 		Client:    k8sClient,
 		Namespace: WatchNamespace,
