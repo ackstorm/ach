@@ -48,6 +48,7 @@ import (
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/operator/refreshsignal"
 	"github.com/ackstorm/ach/internal/operator/resync"
 	"github.com/ackstorm/ach/internal/orphan"
 	"github.com/ackstorm/ach/internal/snapshot"
@@ -465,6 +466,31 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 	if err := mgr.Add(resyncRunnable); err != nil {
 		return fmt.Errorf("unable to add resync Runnable: %w", err)
+	}
+
+	// ─── Issue #34 A11: refreshsignal listener (LISTEN ach_refresh). ───
+	//
+	// Consumes ach_refresh NOTIFY events fired by the platform-api's
+	// /admin/refresh handler (db.SetForceRefresh) and pushes a
+	// GenericEvent for the named CR into the matching per-Kind
+	// source.Channel. Replaces the pre-issue-34 annotation-patching
+	// path on the platform-api side. Only the four "external-ref"
+	// Kinds — plugin, prompt, artifact, pluginmarketplace — receive
+	// signals; the listener silently drops payloads for any other kind.
+	refreshListener := &refreshsignal.Listener{
+		Pool:      dbPool,
+		Namespace: watchNS,
+		Log:       ctrl.Log.WithName("refresh-signal"),
+		Client:    mgr.GetClient(),
+		Channels: map[string]chan<- event.GenericEvent{
+			"plugin":            pluginCh,
+			"prompt":            promptCh,
+			"artifact":          artifactCh,
+			"pluginmarketplace": mpCh,
+		},
+	}
+	if err := mgr.Add(refreshListener); err != nil {
+		return fmt.Errorf("unable to add refresh-signal Runnable: %w", err)
 	}
 
 	if metricsCertWatcher != nil {
