@@ -43,24 +43,27 @@ func buildTarGz(t *testing.T, files map[string]string) []byte {
 }
 
 func TestVerifyPluginManifest_PresentAtRoot(t *testing.T) {
-	// Whole-repo tar (subtree=""): manifest at .claude-plugin/plugin.json.
+	// Real-world layout: git.tarSubtree always strips the subtree
+	// prefix, so the manifest, when present, is always at the tar root
+	// — regardless of whether the entry was git-subdir/url with a
+	// `path:` field or a whole-repo github/url with no path.
 	tgz := buildTarGz(t, map[string]string{
 		".claude-plugin/plugin.json": `{"name":"x"}`,
 		"README.md":                  "hi",
 	})
-	if err := verifyPluginManifest(bytes.NewReader(tgz), ""); err != nil {
+	if err := verifyPluginManifest(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil", err)
 	}
 }
 
-func TestVerifyPluginManifest_PresentInSubtree(t *testing.T) {
-	// Subtree tar: manifest at plugins/x/.claude-plugin/plugin.json.
+func TestVerifyPluginManifest_LeadingDotSlashTolerated(t *testing.T) {
+	// Some tar writers prefix entries with "./". The verifier must
+	// normalize that prefix before comparing.
 	tgz := buildTarGz(t, map[string]string{
-		"plugins/x/.claude-plugin/plugin.json": `{"name":"x"}`,
-		"plugins/x/README.md":                  "hi",
+		"./.claude-plugin/plugin.json": `{}`,
 	})
-	if err := verifyPluginManifest(bytes.NewReader(tgz), "plugins/x"); err != nil {
-		t.Errorf("verify: %v; want nil", err)
+	if err := verifyPluginManifest(bytes.NewReader(tgz)); err != nil {
+		t.Errorf("verify: %v; want nil with leading ./", err)
 	}
 }
 
@@ -68,7 +71,7 @@ func TestVerifyPluginManifest_Missing(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{
 		"README.md": "no manifest here",
 	})
-	err := verifyPluginManifest(bytes.NewReader(tgz), "")
+	err := verifyPluginManifest(bytes.NewReader(tgz))
 	if err == nil {
 		t.Fatal("expected error on missing manifest")
 	}
@@ -80,33 +83,28 @@ func TestVerifyPluginManifest_Missing(t *testing.T) {
 	}
 }
 
-func TestVerifyPluginManifest_SubtreeButOnlyRootManifest(t *testing.T) {
-	// Subtree=plugins/x; manifest only at top-level — should fail.
+func TestVerifyPluginManifest_BuriedInSubdirRejected(t *testing.T) {
+	// Manifest must be at the tar root — a tar that buries it under a
+	// subdirectory (which would happen if git.tarSubtree ever stopped
+	// stripping the subtree, or if the upstream repo nested the
+	// manifest one level too deep) MUST be rejected. This test pins
+	// the contract: only the tar-root location counts.
 	tgz := buildTarGz(t, map[string]string{
-		".claude-plugin/plugin.json": `{"name":"top"}`,
-		"plugins/x/README.md":        "no manifest in this subtree",
+		"plugins/x/.claude-plugin/plugin.json": `{"name":"x"}`,
 	})
-	err := verifyPluginManifest(bytes.NewReader(tgz), "plugins/x")
+	err := verifyPluginManifest(bytes.NewReader(tgz))
 	if err == nil {
-		t.Fatal("expected error: manifest in wrong location")
+		t.Fatal("expected error: manifest must be at tar root")
 	}
-}
-
-func TestVerifyPluginManifest_LeadingDotSlashSubtreeTolerated(t *testing.T) {
-	// local-path entries arrive with "./plugins/x" style paths — the
-	// verifier must normalize ./ prefixes so it doesn't double up.
-	tgz := buildTarGz(t, map[string]string{
-		"plugins/x/.claude-plugin/plugin.json": `{}`,
-	})
-	if err := verifyPluginManifest(bytes.NewReader(tgz), "./plugins/x"); err != nil {
-		t.Errorf("verify: %v; want nil with ./ prefix", err)
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("err = %v; want wrap of ErrUpstreamInvalid", err)
 	}
 }
 
 func TestVerifyPluginManifest_CorruptGzip(t *testing.T) {
 	// Non-gzip input must surface as wrapped ErrUpstreamInvalid (the
 	// gzip.NewReader failure branch).
-	err := verifyPluginManifest(bytes.NewReader([]byte("not gzip")), "")
+	err := verifyPluginManifest(bytes.NewReader([]byte("not gzip")))
 	if err == nil {
 		t.Fatal("expected error on corrupt gzip")
 	}

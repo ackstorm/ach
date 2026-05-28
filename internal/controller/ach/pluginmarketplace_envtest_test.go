@@ -316,19 +316,18 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 }
 
 // mustPluginTarGz returns a minimal tar.gz body containing
-// <subtree>/.claude-plugin/plugin.json so verifyPluginManifest (F4) is
-// satisfied. The return type is `string` rather than `[]byte` because
-// fakeGitFetcher's body field is `string` (the pre-F4 fake-fetcher
-// contract); binary safety is preserved by Go's untyped byte-string
-// semantics, so this is purely an ergonomic choice — callers feed the
-// result directly to strings.NewReader.
-func mustPluginTarGz(t *testing.T, subtree string) string {
+// `.claude-plugin/plugin.json` at the tar root, so verifyPluginManifest
+// (F4) is satisfied. The subtree parameter is retained for call-site
+// readability (it documents what subtree the fake fetcher is mimicking)
+// but is intentionally unused — production tars from git.tarSubtree
+// always strip the subtree prefix, so the manifest lives at the tar
+// root regardless of subtree. The return type is `string` rather than
+// `[]byte` because fakeGitFetcher's body field is `string` (the pre-F4
+// fake-fetcher contract); binary safety is preserved by Go's untyped
+// byte-string semantics.
+func mustPluginTarGz(t *testing.T, _ string) string {
 	t.Helper()
-	entryPath := ".claude-plugin/plugin.json"
-	if subtree != "" {
-		entryPath = subtree + "/" + entryPath
-	}
-	tgz := buildTarGz(t, map[string]string{entryPath: `{"name":"test"}`})
+	tgz := buildTarGz(t, map[string]string{".claude-plugin/plugin.json": `{"name":"test"}`})
 	return string(tgz)
 }
 
