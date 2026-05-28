@@ -400,6 +400,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		Scheme:    mgr.GetScheme(),
 		Namespace: watchNS,
 		Log:       ctrl.Log.WithName("controller").WithName("BackendIdentityPolicy"),
+		Pool:      dbPool,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
 	}
