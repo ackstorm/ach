@@ -11,16 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
@@ -28,12 +24,6 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
-
-// forceRefreshAnnotation is the ach.ackstorm.ai/force-refresh annotation
-// the Phase 2 reconciler reads + clears to trigger a refresh on the
-// target CR. This is Platform API's ONLY write surface to ACH CRDs
-// (MULTI-02 carve-out per Phase 1 plan 01-09 RBAC).
-const forceRefreshAnnotation = "ach.ackstorm.ai/force-refresh"
 
 // adminCacheKeyPrefix is the per-key-id namespace the admin revocation
 // handlers DEL on best-effort cache cleanup. The keystore Resolver
@@ -54,18 +44,21 @@ type redisDeleter interface {
 }
 
 // Deps is the dependency bag the admin handlers consume. Constructed by
-// cmd/platform-api/main.go (Plan 03-11) and threaded through
-// admin.Mount.
+// cmd/ach/cmd/platform_api.go and threaded through admin.Mount.
+//
+// Issue #34: K8sClient is gone. The /admin/refresh handler now signals
+// the operator via Postgres (force_refresh_requested_at column + NOTIFY
+// ach_refresh) rather than PATCH'ing a CR annotation, so platform-api
+// has no remaining K8s write surface.
 type Deps struct {
 	Pool      *pgxpool.Pool       // Postgres pool (threaded to the internal/db package helpers)
 	LiteLLM   litellm.Client      // LiteLLM REST client (revocation API)
 	Redis     redisDeleter        // *redis.Client in production; recording stub in tests.
-	K8sClient client.Client       // cached typed client for force-refresh PATCH
 	Allowlist map[string]struct{} // loaded via LoadAllowlist at process start
 	Audit     *slog.Logger        // audit.NewLogger handle (audit=true)
 	Logger    *slog.Logger        // operational logger (NOT audit)
 	Pepper    []byte              // kept for compositional parity; admin handlers don't directly hash
-	Namespace string              // POD_NAMESPACE — composed into actor strings + K8s GET/PATCH NamespacedName
+	Namespace string              // POD_NAMESPACE — composed into actor strings
 }
 
 // revokeRequest is the JSON body of POST /platform/admin/keys/revoke.
@@ -453,18 +446,24 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 	return nil
 }
 
-// ForceRefreshHandler patches the ach.ackstorm.ai/force-refresh
-// annotation onto the named external-reference CR. This is Platform
-// API's ONLY write surface to ACH CRDs (MULTI-02 carve-out). The Phase
-// 2 reconciler reads and clears the annotation on its next tick.
+// ForceRefreshHandler marks the named external-reference projection row
+// as pending-refresh in Postgres and fires NOTIFY ach_refresh '<kind>/<name>'.
+// The operator's refreshsignal listener (A11) picks up the notification and
+// enqueues the matching CR for reconcile; the periodic operator resync (A10,
+// ≤ 5 min) is the safety net for any dropped notification.
+//
+// Issue #34: replaces the pre-issue-34 CR-annotation PATCH path. Platform-api
+// no longer holds a K8s client — every refresh signal goes through Postgres.
 //
 // Body shape: {"kind":"plugin|prompt|artifact|pluginmarketplace","name":"..."}.
 // Returns 202 Accepted on success — the actual refresh is async.
 //
 // Error codes:
-//   - 400 invalid_argument on unknown kind / missing field / extra field
-//   - 404 not_found when the named CR is absent
-//   - 500 internal_error on any other K8s error (RBAC, conflict, etc.)
+//   - 400 invalid_argument                — unknown kind / missing field / extra field
+//   - 400 invalid_argument (UI origin)    — row exists with origin='ui' (UI-managed
+//                                            rows have no upstream to refresh)
+//   - 404 environment_not_found           — the named projection row is absent
+//   - 500 internal_error                  — any other DB failure
 func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -480,43 +479,40 @@ func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusBadRequest, audit.OutcomeInvalidKeyFormat, "kind and name are required", reqID)
 			return
 		}
-		obj := newACHObject(req.Kind)
-		if obj == nil {
+		if !isRefreshableKind(req.Kind) {
 			render.Error(w, http.StatusBadRequest, audit.OutcomeInvalidKeyFormat, "unknown kind", reqID)
 			return
 		}
 
-		if err := deps.K8sClient.Get(ctx,
-			types.NamespacedName{Namespace: deps.Namespace, Name: req.Name}, obj); err != nil {
-			if apierrors.IsNotFound(err) {
-				render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "resource not found", reqID)
-				return
-			}
-			if deps.Logger != nil {
-				deps.Logger.Error("admin.refresh: GET failed", "kind", req.Kind, "name", req.Name, "err", err)
-			}
+		err := db.SetForceRefresh(ctx, deps.Pool, deps.Namespace, req.Kind, req.Name)
+		switch {
+		case err == nil:
+			// fall through to success path
+		case errors.Is(err, db.ErrUIOriginRefreshUnsupported):
 			if deps.Audit != nil {
 				audit.EmitAudit(ctx, deps.Audit, audit.Event{
-					Action: audit.ActionAdminRefresh, Outcome: audit.OutcomeInternalError,
+					Action: audit.ActionAdminRefresh, Outcome: audit.OutcomeInvalidKeyFormat,
 					Actor: actor, RequestID: reqID,
 					Target: &audit.Target{Kind: req.Kind, Name: req.Name},
 				})
 			}
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+			render.Error(w, http.StatusBadRequest, audit.OutcomeInvalidKeyFormat,
+				"UI-managed resource has no upstream to refresh", reqID)
 			return
-		}
-
-		orig, _ := obj.DeepCopyObject().(client.Object)
-		ann := obj.GetAnnotations()
-		if ann == nil {
-			ann = map[string]string{}
-		}
-		ann[forceRefreshAnnotation] = time.Now().UTC().Format(time.RFC3339)
-		obj.SetAnnotations(ann)
-
-		if err := deps.K8sClient.Patch(ctx, obj, client.MergeFrom(orig)); err != nil {
+		case errors.Is(err, pgx.ErrNoRows):
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action: audit.ActionAdminRefresh, Outcome: audit.OutcomeEnvironmentNotFound,
+					Actor: actor, RequestID: reqID,
+					Target: &audit.Target{Kind: req.Kind, Name: req.Name},
+				})
+			}
+			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "resource not found", reqID)
+			return
+		default:
 			if deps.Logger != nil {
-				deps.Logger.Error("admin.refresh: PATCH failed", "kind", req.Kind, "name", req.Name, "err", err)
+				deps.Logger.Error("admin.refresh: SetForceRefresh failed",
+					"kind", req.Kind, "name", req.Name, "err", err)
 			}
 			if deps.Audit != nil {
 				audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -540,22 +536,15 @@ func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// newACHObject returns an empty typed object for the given kind, or nil
-// when the kind is outside the MULTI-02 RBAC carve-out's four-kind set
-// ("plugin", "prompt", "artifact", "pluginmarketplace"). Unknown kind
-// resolves to nil at the BAD-REQUEST gate before any K8s round trip.
-func newACHObject(kind string) client.Object {
+// isRefreshableKind gates the four kinds Platform API may force-refresh.
+// Unknown kind resolves to a 400 at the bad-request gate before any DB
+// round trip — same closed set as the pre-issue-34 newACHObject helper.
+func isRefreshableKind(kind string) bool {
 	switch kind {
-	case "plugin":
-		return &achv1alpha1.Plugin{}
-	case "prompt":
-		return &achv1alpha1.Prompt{}
-	case "artifact":
-		return &achv1alpha1.Artifact{}
-	case "pluginmarketplace":
-		return &achv1alpha1.PluginMarketplace{}
+	case "plugin", "prompt", "artifact", "pluginmarketplace":
+		return true
 	}
-	return nil
+	return false
 }
 
 // itoa is a tiny base-10 int-to-string formatter so we avoid pulling

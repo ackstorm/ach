@@ -60,7 +60,6 @@ func newTestDeps(t *testing.T, resolver keystore.Resolver) Deps {
 			ClientSecret: "test-secret",
 			RedirectURL:  "https://example.com/platform/auth/sso/callback",
 		},
-		K8sClient: nil,
 		Store:     &store.Store{},
 		Resolver:  resolver,
 		Audit:     logger,
