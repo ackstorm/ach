@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Plan TODO §7 — Environment AccessGroupSynced reconciler tests.
-// Asserts the steady-state Snapshotter-wired path emits the closed-set
-// AccessGroupSynced conditions (True/Synced, False/PartialBind,
-// False/AccessGroupCreateFailed) and obeys idempotency + drift contracts.
+// Plan TODO §7 — Environment AccessGroupSynced reconciler tests
+// (rewritten for issue #17: /v1/access_group surface).
+//
+// Asserts the closed-set AccessGroupSynced conditions emitted by the
+// desired-state reconciler:
+//   - True/Synced
+//   - False/UnresolvedReferences  (one or more env-spec names had no upstream ID)
+//   - False/AccessGroupCreateFailed
+//   - False/AccessGroupUpdateFailed
+//   - False/ResolveFailed
 
 package ach
 
@@ -17,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/litellm"
 )
 
 // agCondition returns the AccessGroupSynced entry or nil.
@@ -30,12 +37,24 @@ func agCondition(env *achv1alpha1.Environment) *metav1.Condition {
 	return nil
 }
 
-// TestAccessGroupSynced_True_WhenCreateAndBindSucceed is the §7 happy
-// path. Asserts AccessGroupSynced flips to True/Synced once the
-// reconciler creates the access group AND binds the authorized team.
-func TestAccessGroupSynced_True_WhenCreateAndBindSucceed(t *testing.T) {
+// emptyRuntimeBlock returns a RuntimeBlock with all three slices
+// non-nil and empty. Required because the new reconciler always
+// resolves env.Spec.Runtime.{Models,MCPServers,A2AAgents}.
+func emptyRuntimeBlock() achv1alpha1.RuntimeBlock {
+	return achv1alpha1.RuntimeBlock{
+		Models:     []string{},
+		MCPServers: []string{},
+		A2AAgents:  []string{},
+	}
+}
+
+// TestAccessGroupSynced_True_WhenCreateSucceeds is the §7 happy path
+// (issue #17: replaces the legacy bind-loop assertion with a
+// LastCreate.AssignedTeamIDs assertion).
+func TestAccessGroupSynced_True_WhenCreateSucceeds(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -44,7 +63,7 @@ func TestAccessGroupSynced_True_WhenCreateAndBindSucceed(t *testing.T) {
 		},
 		Spec: achv1alpha1.EnvironmentSpec{
 			AuthorizedTeams: []string{"default"},
-			Runtime:         achv1alpha1.RuntimeBlock{},
+			Runtime:         emptyRuntimeBlock(),
 			Context:         achv1alpha1.ContextBlock{},
 		},
 	}
@@ -68,25 +87,29 @@ func TestAccessGroupSynced_True_WhenCreateAndBindSucceed(t *testing.T) {
 	if got := accessGroupFake.CreateCallsFor("test-env-ag-happy"); got < 1 {
 		t.Errorf("create call count = %d; want >= 1", got)
 	}
-	if got := accessGroupFake.BindCallsFor("test-env-ag-happy", "default"); got < 1 {
-		t.Errorf("bind call count = %d; want >= 1", got)
+	last := accessGroupFake.LastCreate("test-env-ag-happy")
+	if len(last.AssignedTeamIDs) != 1 || last.AssignedTeamIDs[0] != "t-uuid-default" {
+		t.Errorf("LastCreate.AssignedTeamIDs = %v; want [t-uuid-default]", last.AssignedTeamIDs)
 	}
 }
 
-// TestAccessGroupSynced_False_OnBindFailure asserts the PartialBind path.
-func TestAccessGroupSynced_False_OnBindFailure(t *testing.T) {
+// TestAccessGroupSynced_False_OnUnresolvedTeam asserts the
+// UnresolvedReferences branch: a team in spec.authorizedTeams that
+// does not resolve via ListTeamsByAlias flips AccessGroupSynced to
+// False with the distinct UnresolvedReferences reason (issue #17).
+func TestAccessGroupSynced_False_OnUnresolvedTeam(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
-	accessGroupFake.InjectBindErr("test-env-ag-partialbind", "team-broken", errFakeBindFailed)
+	accessGroupFake.SeedTeam("team-ok", "t-uuid-ok")
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-env-ag-partialbind",
+			Name:      "test-env-ag-unresolved",
 			Namespace: WatchNamespace,
 		},
 		Spec: achv1alpha1.EnvironmentSpec{
-			AuthorizedTeams: []string{"team-ok", "team-broken"},
-			Runtime:         achv1alpha1.RuntimeBlock{},
+			AuthorizedTeams: []string{"team-ok", "team-missing"},
+			Runtime:         emptyRuntimeBlock(),
 			Context:         achv1alpha1.ContextBlock{},
 		},
 	}
@@ -101,22 +124,23 @@ func TestAccessGroupSynced_False_OnBindFailure(t *testing.T) {
 			return false
 		}
 		c := agCondition(&got)
-		return c != nil && c.Status == metav1.ConditionFalse && c.Reason == "PartialBind"
+		return c != nil && c.Status == metav1.ConditionFalse && c.Reason == "UnresolvedReferences"
 	}, 15*time.Second, 250*time.Millisecond) {
 		var got achv1alpha1.Environment
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
-		t.Fatalf("expected False/PartialBind, conditions = %+v", got.Status.Conditions)
+		t.Fatalf("expected False/UnresolvedReferences, conditions = %+v", got.Status.Conditions)
 	}
 }
 
-// TestAccessGroupSynced_Idempotent_NoExtraBindOnRereconcile asserts that
-// once the binding is in place, a subsequent reconcile triggered by
-// annotation touch does NOT re-issue the bind call. The fake's
-// ListAccessGroupBindings returns the already-recorded binding; the
-// reconciler's currentSet membership check skips the bind loop.
-func TestAccessGroupSynced_Idempotent_NoExtraBindOnRereconcile(t *testing.T) {
+// TestAccessGroupSynced_Idempotent_NoExtraUpdateOnRereconcile asserts
+// that once the access group is created in upstream state, a
+// re-reconcile (triggered by annotation touch) does NOT re-issue
+// either POST or PUT. With desired-state in sync, the reconciler
+// short-circuits at the no-drift check.
+func TestAccessGroupSynced_Idempotent_NoExtraUpdateOnRereconcile(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -125,7 +149,7 @@ func TestAccessGroupSynced_Idempotent_NoExtraBindOnRereconcile(t *testing.T) {
 		},
 		Spec: achv1alpha1.EnvironmentSpec{
 			AuthorizedTeams: []string{"default"},
-			Runtime:         achv1alpha1.RuntimeBlock{},
+			Runtime:         emptyRuntimeBlock(),
 			Context:         achv1alpha1.ContextBlock{},
 		},
 	}
@@ -140,15 +164,13 @@ func TestAccessGroupSynced_Idempotent_NoExtraBindOnRereconcile(t *testing.T) {
 			return false
 		}
 		c := agCondition(&got)
-		return c != nil && c.Status == metav1.ConditionTrue
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
 	}, 15*time.Second, 250*time.Millisecond) {
 		t.Fatalf("first reconcile did not flip AccessGroupSynced=True")
 	}
 
-	firstBindCount := accessGroupFake.BindCallsFor("test-env-ag-idemp", "default")
-	if firstBindCount < 1 {
-		t.Fatalf("expected >= 1 bind call after first reconcile, got %d", firstBindCount)
-	}
+	firstCreateCount := accessGroupFake.CreateCallsFor("test-env-ag-idemp")
+	firstUpdateCount := accessGroupFake.UpdateCallsFor("test-env-ag-idemp")
 
 	// Trigger re-reconcile via annotation touch.
 	var got achv1alpha1.Environment
@@ -164,19 +186,27 @@ func TestAccessGroupSynced_Idempotent_NoExtraBindOnRereconcile(t *testing.T) {
 	}
 
 	time.Sleep(3 * time.Second)
-	if grew := accessGroupFake.BindCallsFor("test-env-ag-idemp", "default"); grew != firstBindCount {
-		t.Errorf("bind call count = %d after re-reconcile; want unchanged (%d) — idempotency violated", grew, firstBindCount)
+	if grew := accessGroupFake.CreateCallsFor("test-env-ag-idemp"); grew != firstCreateCount {
+		t.Errorf("create call count = %d after re-reconcile; want unchanged (%d) — idempotency violated", grew, firstCreateCount)
+	}
+	if grew := accessGroupFake.UpdateCallsFor("test-env-ag-idemp"); grew != firstUpdateCount {
+		t.Errorf("update call count = %d after re-reconcile; want unchanged (%d) — drift-detection false positive", grew, firstUpdateCount)
 	}
 }
 
-// TestAccessGroupSynced_DriftDetection_OrphanLogged asserts the orphan
-// branch: ListAccessGroupBindings returns a team that's NOT in
-// spec.authorizedTeams. The reconciler logs the orphan but still emits
-// True/Synced (auto-removal is §10 scope).
-func TestAccessGroupSynced_DriftDetection_OrphanLogged(t *testing.T) {
+// TestAccessGroupSynced_DriftCorrected asserts that when the existing
+// access group has bindings that diverge from spec, the reconciler
+// emits PUT /v1/access_group/{id} to converge.
+func TestAccessGroupSynced_DriftCorrected(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
-	accessGroupFake.SeedBinding("test-env-ag-drift", "orphan-team")
+	accessGroupFake.SeedTeam("current-team", "t-uuid-current")
+	// Pre-seed a stored AG with a stale orphan team that's NOT in spec.
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   "ag-uuid-test-env-ag-drift",
+		AccessGroupName: "test-env-ag-drift",
+		AssignedTeamIDs: []string{"t-uuid-orphan"},
+	})
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -185,7 +215,7 @@ func TestAccessGroupSynced_DriftDetection_OrphanLogged(t *testing.T) {
 		},
 		Spec: achv1alpha1.EnvironmentSpec{
 			AuthorizedTeams: []string{"current-team"},
-			Runtime:         achv1alpha1.RuntimeBlock{},
+			Runtime:         emptyRuntimeBlock(),
 			Context:         achv1alpha1.ContextBlock{},
 		},
 	}
@@ -200,16 +230,12 @@ func TestAccessGroupSynced_DriftDetection_OrphanLogged(t *testing.T) {
 			return false
 		}
 		c := agCondition(&got)
-		return c != nil && c.Status == metav1.ConditionTrue
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
 	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatalf("orphan-present case did NOT reach True (orphans must NOT block sync)")
+		t.Fatalf("drift-correction did NOT reach True/Synced")
 	}
-
-	if got := accessGroupFake.BindCallsFor("test-env-ag-drift", "orphan-team"); got != 0 {
-		t.Errorf("orphan team bind count = %d; want 0 (orphans logged but untouched)", got)
-	}
-	if got := accessGroupFake.BindCallsFor("test-env-ag-drift", "current-team"); got != 1 {
-		t.Errorf("current-team bind count = %d; want 1", got)
+	if got := accessGroupFake.UpdateCallsFor("test-env-ag-drift"); got < 1 {
+		t.Errorf("update call count = %d; want >= 1 (PUT to correct drift)", got)
 	}
 }
 
@@ -218,6 +244,7 @@ func TestAccessGroupSynced_DriftDetection_OrphanLogged(t *testing.T) {
 func TestAccessGroupSynced_False_OnCreateFailure(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
 	accessGroupFake.InjectCreateErr("test-env-ag-createfail", errors.New("fake: create blew up"))
 
 	cr := &achv1alpha1.Environment{
@@ -227,7 +254,7 @@ func TestAccessGroupSynced_False_OnCreateFailure(t *testing.T) {
 		},
 		Spec: achv1alpha1.EnvironmentSpec{
 			AuthorizedTeams: []string{"default"},
-			Runtime:         achv1alpha1.RuntimeBlock{},
+			Runtime:         emptyRuntimeBlock(),
 			Context:         achv1alpha1.ContextBlock{},
 		},
 	}
@@ -247,8 +274,5 @@ func TestAccessGroupSynced_False_OnCreateFailure(t *testing.T) {
 		var got achv1alpha1.Environment
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
 		t.Fatalf("expected False/AccessGroupCreateFailed, conditions = %+v", got.Status.Conditions)
-	}
-	if got := accessGroupFake.BindCallsFor("test-env-ag-createfail", "default"); got != 0 {
-		t.Errorf("bind call count = %d after create failure; want 0 (no proceed past failed create)", got)
 	}
 }

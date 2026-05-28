@@ -413,104 +413,222 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 }
 
 // reconcileAccessGroup is the §7 implementation step: ensure the LiteLLM
-// access group <env.Name> exists AND every spec.authorizedTeams[i] team
-// is bound to it. Returns the metav1.Condition that the caller should
-// publish on env.Status.Conditions.
+// access group <env.Name> exists with the correct desired-state bindings
+// for env.Spec.Runtime.Models / .MCPServers / .A2AAgents and
+// env.Spec.AuthorizedTeams. Returns the metav1.Condition that the caller
+// should publish on env.Status.Conditions.
 //
-// Wire steps (Hub §6.4 / TODO §7):
+// Migration (issue #17): rewrites the legacy POST /access_group/new flow
+// (which required non-empty model_names per LiteLLM 1.83.x's hidden
+// validator, and bound teams via the magic team.models[] entry
+// "access_group/<name>") onto the /v1/access_group endpoints. Resolution
+// of MCP / A2A / Team names → LiteLLM IDs happens on demand each
+// reconcile (no Snapshotter changes per issue #17 plan §1); the access
+// group UUID is resolved by name each reconcile (no CRD status field
+// per issue #17 plan §2).
 //
-//  1. CreateAccessGroup(env.Name, nil). ErrAlreadyExists swallowed as
-//     idempotent success.
-//  2. ListAccessGroupBindings(env.Name) — drift baseline. Failure is
-//     non-fatal (fall back to empty current set; binds are idempotent).
-//  3. For each team in env.Spec.AuthorizedTeams: skip if already in
-//     CURRENT set; otherwise BindTeamToAccessGroup(env.Name, team).
-//     Collect failures into a partial-bind set.
-//  4. Orphan detection: log (do not auto-remove) bindings present in
-//     CURRENT but absent from spec.authorizedTeams. Auto-removal is
-//     §10 / TODO §10 scope.
-//  5. Closed-set condition emit:
-//     - True/Synced on full success
-//     - False/PartialBind on any bind failure (offending teams listed)
-//     - False/AccessGroupCreateFailed on create error (other than
-//     ErrAlreadyExists)
+// Closed-set conditions emitted (Hub §6.6, updated for issue #17):
+//   - True/Synced                  — desired state matches observed
+//   - False/UnresolvedReferences   — one or more env.Spec names had no
+//     matching LiteLLM ID. Distinct from
+//     ExecutionResourcesResolved=False because that condition is about
+//     the Snapshotter (cached, may be stale); this one is about the
+//     fresh-fetched resolver maps.
+//   - False/AccessGroupCreateFailed — POST /v1/access_group failed
+//   - False/AccessGroupUpdateFailed — PUT /v1/access_group/{id} failed
+//   - False/ResolveFailed          — one of ListMCPServers /
+//     ListA2AAgents / ListTeamsByAlias errored (LiteLLM unreachable
+//     mid-reconcile)
 func (r *EnvironmentReconciler) reconcileAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
 ) metav1.Condition {
 	logger := log.FromContext(ctx).WithValues("environment", env.Name)
 
-	// Step 1: ensure the access group exists.
-	if err := r.LiteLLM.CreateAccessGroup(ctx, env.Name, nil); err != nil && !errors.Is(err, litellm.ErrAlreadyExists) {
-		logger.Error(err, "CreateAccessGroup failed")
+	// Step 1: resolve names → IDs (on-demand each reconcile per #17 §1).
+	mcpEntries, mcpErr := r.LiteLLM.ListMCPServers(ctx)
+	if mcpErr != nil {
+		return resolveFailed(env, "ListMCPServers", mcpErr)
+	}
+	agentEntries, agentErr := r.LiteLLM.ListA2AAgents(ctx)
+	if agentErr != nil {
+		return resolveFailed(env, "ListA2AAgents", agentErr)
+	}
+
+	mcpMap := make(map[string]string, len(mcpEntries))
+	for _, e := range mcpEntries {
+		if e.ServerName != "" {
+			mcpMap[e.ServerName] = e.ServerID
+		}
+	}
+	agentMap := make(map[string]string, len(agentEntries))
+	for _, e := range agentEntries {
+		if e.AgentName != "" {
+			agentMap[e.AgentName] = e.AgentID
+		}
+	}
+
+	mcpIDs, mcpUnresolved := mapResolve(env.Spec.Runtime.MCPServers, mcpMap)
+	agentIDs, agentUnresolved := mapResolve(env.Spec.Runtime.A2AAgents, agentMap)
+
+	// Teams use the existing per-alias filtered endpoint. N small (1-3
+	// authorized teams per env) so per-alias round-trips are fine.
+	teamIDs := make([]string, 0, len(env.Spec.AuthorizedTeams))
+	var teamUnresolved []string
+	for _, alias := range env.Spec.AuthorizedTeams {
+		entries, terr := r.LiteLLM.ListTeamsByAlias(ctx, alias)
+		if terr != nil {
+			return resolveFailed(env, "ListTeamsByAlias", terr)
+		}
+		if len(entries) == 0 || entries[0].TeamID == "" {
+			teamUnresolved = append(teamUnresolved, alias)
+			continue
+		}
+		teamIDs = append(teamIDs, entries[0].TeamID)
+	}
+
+	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved) > 0 {
 		return metav1.Condition{
-			Type:               "AccessGroupSynced",
-			Status:             metav1.ConditionFalse,
-			Reason:             "AccessGroupCreateFailed",
-			Message:            fmt.Sprintf("LiteLLM CreateAccessGroup(%s) failed: %v", env.Name, err),
+			Type:   "AccessGroupSynced",
+			Status: metav1.ConditionFalse,
+			Reason: "UnresolvedReferences",
+			Message: fmt.Sprintf(
+				"unresolved: mcpServers=%v a2aAgents=%v authorizedTeams=%v",
+				mcpUnresolved, agentUnresolved, teamUnresolved,
+			),
 			ObservedGeneration: env.Generation,
 			LastTransitionTime: metav1.Now(),
 		}
 	}
 
-	// Step 2: discover CURRENT bindings (drift baseline).
-	current, err := r.LiteLLM.ListAccessGroupBindings(ctx, env.Name)
-	if err != nil {
-		logger.Info("ListAccessGroupBindings failed; proceeding without drift baseline", "err", err)
-		current = nil
-	}
-	currentSet := make(map[string]struct{}, len(current))
-	for _, t := range current {
-		currentSet[t] = struct{}{}
+	// Step 2: discover whether the access group already exists.
+	existing, gerr := r.LiteLLM.GetAccessGroupByName(ctx, env.Name)
+	if gerr != nil {
+		return resolveFailed(env, "GetAccessGroupByName", gerr)
 	}
 
-	// Step 3: bind every spec.authorizedTeams[i]. Skip teams already
-	// observed in the CURRENT set.
-	var failed []string
-	var lastErr error
-	for _, team := range env.Spec.AuthorizedTeams {
-		if _, ok := currentSet[team]; ok {
-			continue
-		}
-		if berr := r.LiteLLM.BindTeamToAccessGroup(ctx, env.Name, team); berr != nil {
-			logger.Error(berr, "BindTeamToAccessGroup failed", "team", team)
-			failed = append(failed, team)
-			lastErr = berr
-			continue
-		}
+	desiredModels := env.Spec.Runtime.Models
+	if desiredModels == nil {
+		desiredModels = []string{}
 	}
 
-	// Step 4: orphan detection (log only).
-	specSet := make(map[string]struct{}, len(env.Spec.AuthorizedTeams))
-	for _, t := range env.Spec.AuthorizedTeams {
-		specSet[t] = struct{}{}
-	}
-	for _, t := range current {
-		if _, ok := specSet[t]; !ok {
-			logger.Info("orphan team binding detected (not auto-removed; see TODO §10)",
-				"env", env.Name, "team", t)
+	// Step 3a: POST when absent.
+	if existing == nil {
+		created, cerr := r.LiteLLM.CreateAccessGroup(ctx, litellm.AccessGroupCreateRequest{
+			AccessGroupName:    env.Name,
+			AccessModelNames:   desiredModels,
+			AccessMCPServerIDs: mcpIDs,
+			AccessAgentIDs:     agentIDs,
+			AssignedTeamIDs:    teamIDs,
+		})
+		if cerr != nil {
+			logger.Error(cerr, "POST /v1/access_group failed")
+			return metav1.Condition{
+				Type:               "AccessGroupSynced",
+				Status:             metav1.ConditionFalse,
+				Reason:             "AccessGroupCreateFailed",
+				Message:            fmt.Sprintf("LiteLLM CreateAccessGroup(%s) failed: %v", env.Name, cerr),
+				ObservedGeneration: env.Generation,
+				LastTransitionTime: metav1.Now(),
+			}
 		}
+		logger.Info("created access group", "name", env.Name, "id", created.AccessGroupID)
+		return accessGroupSyncedCondition(env, created)
 	}
 
-	// Step 5: closed-set condition emit.
-	if len(failed) > 0 {
-		return metav1.Condition{
-			Type:               "AccessGroupSynced",
-			Status:             metav1.ConditionFalse,
-			Reason:             "PartialBind",
-			Message:            fmt.Sprintf("LiteLLM BindTeamToAccessGroup failed for %d team(s): %v (last err: %v)", len(failed), failed, lastErr),
-			ObservedGeneration: env.Generation,
-			LastTransitionTime: metav1.Now(),
+	// Step 3b: PUT when drifted.
+	if drift := computeAccessGroupDrift(existing, desiredModels, mcpIDs, agentIDs, teamIDs); drift {
+		updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+			AccessModelNames:   desiredModels,
+			AccessMCPServerIDs: mcpIDs,
+			AccessAgentIDs:     agentIDs,
+			AssignedTeamIDs:    teamIDs,
+		})
+		if uerr != nil {
+			logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
+			return metav1.Condition{
+				Type:               "AccessGroupSynced",
+				Status:             metav1.ConditionFalse,
+				Reason:             "AccessGroupUpdateFailed",
+				Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) failed: %v", env.Name, existing.AccessGroupID, uerr),
+				ObservedGeneration: env.Generation,
+				LastTransitionTime: metav1.Now(),
+			}
 		}
+		logger.Info("updated access group", "name", env.Name, "id", updated.AccessGroupID)
+		return accessGroupSyncedCondition(env, updated)
 	}
+
+	return accessGroupSyncedCondition(env, existing)
+}
+
+// resolveFailed packages a LiteLLM-unreachable failure during the
+// reconcileAccessGroup resolver phase into the closed-set condition.
+func resolveFailed(env *achv1alpha1.Environment, op string, err error) metav1.Condition {
+	return metav1.Condition{
+		Type:               "AccessGroupSynced",
+		Status:             metav1.ConditionFalse,
+		Reason:             "ResolveFailed",
+		Message:            fmt.Sprintf("LiteLLM %s failed: %v", op, err),
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+// accessGroupSyncedCondition is the True/Synced terminal condition shared by the
+// create and update branches.
+func accessGroupSyncedCondition(env *achv1alpha1.Environment, ag *litellm.AccessGroupResponse) metav1.Condition {
 	return metav1.Condition{
 		Type:               "AccessGroupSynced",
 		Status:             metav1.ConditionTrue,
 		Reason:             "Synced",
-		Message:            fmt.Sprintf("LiteLLM access group %q bound to %d team(s)", env.Name, len(env.Spec.AuthorizedTeams)),
+		Message:            fmt.Sprintf("access group %q (id=%s) bound to %d team(s), %d model(s), %d mcp, %d agent", ag.AccessGroupName, ag.AccessGroupID, len(ag.AssignedTeamIDs), len(ag.AccessModelNames), len(ag.AccessMCPServerIDs), len(ag.AccessAgentIDs)),
 		ObservedGeneration: env.Generation,
 		LastTransitionTime: metav1.Now(),
 	}
+}
+
+// mapResolve splits `names` into (resolvedIDs, unresolvedNames) by
+// looking each up in `m`. Empty names are skipped (defensive: should
+// not appear since the CRD validators reject empty list members).
+func mapResolve(names []string, m map[string]string) (ids []string, unresolved []string) {
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		if id, ok := m[n]; ok {
+			ids = append(ids, id)
+		} else {
+			unresolved = append(unresolved, n)
+		}
+	}
+	return ids, unresolved
+}
+
+// computeAccessGroupDrift returns true iff the existing access group's
+// stored bindings diverge from the desired state. Each dimension is
+// compared as a set (order-independent).
+func computeAccessGroupDrift(existing *litellm.AccessGroupResponse, models, mcps, agents, teams []string) bool {
+	return !sameSet(existing.AccessModelNames, models) ||
+		!sameSet(existing.AccessMCPServerIDs, mcps) ||
+		!sameSet(existing.AccessAgentIDs, agents) ||
+		!sameSet(existing.AssignedTeamIDs, teams)
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]struct{}, len(a))
+	for _, x := range a {
+		m[x] = struct{}{}
+	}
+	for _, x := range b {
+		if _, ok := m[x]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // requiredAvailableSubConditions is the closed set of condition types whose

@@ -313,36 +313,64 @@ type UserInfo struct {
 	Teams     []string `json:"teams,omitempty"`
 }
 
-// NewAccessGroupRequest is the POST /access_group/new request body
-// (LiteLLM v1.82.6 — schema NewModelGroupRequest). ACH passes
-// model_names=[] on first-create because Environment.spec.runtime.models
-// is empty by default; the Snapshotter-based model-binding flow lives in
-// the §2 domain-port plan (ExecutionResourcesResolved condition) and
-// updates the access-group's model_names list independently of §7.
-type NewAccessGroupRequest struct {
-	AccessGroup string   `json:"access_group"`
-	ModelNames  []string `json:"model_names,omitempty"`
-	ModelIDs    []string `json:"model_ids,omitempty"`
+// AccessGroupCreateRequest is the POST /v1/access_group request body
+// (ackstorm OpenAPI schema: AccessGroupCreateRequest). access_group_name
+// is the only required field; every other slice may be nil/empty. The
+// endpoint returns AccessGroupResponse with the assigned UUID.
+//
+// Migration note (issue #17): replaces NewAccessGroupRequest. The legacy
+// POST /access_group/new endpoint required at least one model_name OR
+// model_id; the /v1 endpoint accepts an empty-resource creation, so the
+// controller no longer needs an AwaitingModels short-circuit. Unresolved
+// MCP/A2A/Team names are still surfaced via the resolver layer in
+// reconcileAccessGroup (AccessGroupSynced=False reason=UnresolvedReferences).
+type AccessGroupCreateRequest struct {
+	AccessGroupName    string   `json:"access_group_name"`
+	Description        string   `json:"description,omitempty"`
+	AccessModelNames   []string `json:"access_model_names,omitempty"`
+	AccessMCPServerIDs []string `json:"access_mcp_server_ids,omitempty"`
+	AccessAgentIDs     []string `json:"access_agent_ids,omitempty"`
+	AssignedTeamIDs    []string `json:"assigned_team_ids,omitempty"`
+	AssignedKeyIDs     []string `json:"assigned_key_ids,omitempty"`
 }
 
-// AccessGroupInfo is the GET /access_group/{access_group}/info response
-// envelope. Only fields ACH actually reads are explicit; bound teams
-// live elsewhere (LiteLLM stores team→access-group binding on the team
-// row's `models` array, NOT on the access-group row), so ACH derives
-// "bound teams" by listing teams whose models include
-// "access_group/<env.Name>" (see ListAccessGroupBindings semantics below).
-type AccessGroupInfo struct {
-	AccessGroup string   `json:"access_group"`
-	ModelNames  []string `json:"model_names,omitempty"`
-	ModelIDs    []string `json:"model_ids,omitempty"`
+// AccessGroupUpdateRequest is the PUT /v1/access_group/{id} request body
+// (ackstorm OpenAPI schema: AccessGroupUpdateRequest). Every field is
+// optional; nil values are omitted, instructing the upstream to keep
+// the corresponding stored value. To CLEAR a list the caller must send
+// an explicit empty []string — use the json tag's non-omitempty form by
+// passing a non-nil zero-length slice through the marshaler. The
+// reconciler's desired-state sync always sends the full computed set
+// for every dimension, so the clear-via-empty semantics rarely matter
+// in practice.
+type AccessGroupUpdateRequest struct {
+	AccessGroupName    *string  `json:"access_group_name,omitempty"`
+	Description        *string  `json:"description,omitempty"`
+	AccessModelNames   []string `json:"access_model_names,omitempty"`
+	AccessMCPServerIDs []string `json:"access_mcp_server_ids,omitempty"`
+	AccessAgentIDs     []string `json:"access_agent_ids,omitempty"`
+	AssignedTeamIDs    []string `json:"assigned_team_ids,omitempty"`
+	AssignedKeyIDs     []string `json:"assigned_key_ids,omitempty"`
 }
 
-// TeamAccessGroupPrefix is the magic prefix LiteLLM uses in a team's
-// `models` list to grant the team access to a named access group. The
-// reconciler's BindTeamToAccessGroup helper computes
-// TeamAccessGroupPrefix + envName as the entry to append; drift
-// detection scans existing team.models for the same prefix.
-const TeamAccessGroupPrefix = "access_group/"
+// AccessGroupResponse is the body returned by POST /v1/access_group,
+// GET /v1/access_group, GET /v1/access_group/{id}, and PUT /v1/access_group/{id}.
+// access_group_id is the stable UUID the reconciler resolves by name on
+// each reconcile (per issue #17 decision: no status field, list-by-name).
+type AccessGroupResponse struct {
+	AccessGroupID      string   `json:"access_group_id"`
+	AccessGroupName    string   `json:"access_group_name"`
+	Description        string   `json:"description,omitempty"`
+	AccessModelNames   []string `json:"access_model_names"`
+	AccessMCPServerIDs []string `json:"access_mcp_server_ids"`
+	AccessAgentIDs     []string `json:"access_agent_ids"`
+	AssignedTeamIDs    []string `json:"assigned_team_ids"`
+	AssignedKeyIDs     []string `json:"assigned_key_ids"`
+	CreatedAt          string   `json:"created_at,omitempty"`
+	CreatedBy          string   `json:"created_by,omitempty"`
+	UpdatedAt          string   `json:"updated_at,omitempty"`
+	UpdatedBy          string   `json:"updated_by,omitempty"`
+}
 
 // TeamMember is the inner object on POST /team/member_add. LiteLLM uses
 // a nested {"member": {...}} shape (NOT a top-level user_id field) so

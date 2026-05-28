@@ -518,11 +518,14 @@ func (f *wiringFakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]lit
 	return nil, nil
 }
 
-// §7 stubs — interface satisfaction only.
-func (f *wiringFakeLiteLLM) CreateAccessGroup(_ context.Context, _ string, _ []string) error {
-	return nil
+// §7 stubs — interface satisfaction only (issue #17: /v1 surface).
+func (f *wiringFakeLiteLLM) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
+	return &litellm.AccessGroupResponse{AccessGroupID: "wiring-" + req.AccessGroupName, AccessGroupName: req.AccessGroupName}, nil
 }
-func (f *wiringFakeLiteLLM) BindTeamToAccessGroup(_ context.Context, _, _ string) error { return nil }
-func (f *wiringFakeLiteLLM) ListAccessGroupBindings(_ context.Context, _ string) ([]string, error) {
+func (f *wiringFakeLiteLLM) GetAccessGroupByName(_ context.Context, _ string) (*litellm.AccessGroupResponse, error) {
 	return nil, nil
 }
+func (f *wiringFakeLiteLLM) UpdateAccessGroup(_ context.Context, id string, _ litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	return &litellm.AccessGroupResponse{AccessGroupID: id}, nil
+}
+func (f *wiringFakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }

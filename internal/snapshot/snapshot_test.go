@@ -378,9 +378,14 @@ func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.T
 // EnsureDefaultTeam is a no-op shim — Client interface compliance.
 func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
-// §7 stubs — interface satisfaction only.
-func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ string, _ []string) error { return nil }
-func (f *fakeLiteLLM) BindTeamToAccessGroup(_ context.Context, _, _ string) error      { return nil }
-func (f *fakeLiteLLM) ListAccessGroupBindings(_ context.Context, _ string) ([]string, error) {
+// §7 stubs — interface satisfaction only (issue #17: /v1 surface).
+func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	return nil, nil
 }
+func (f *fakeLiteLLM) GetAccessGroupByName(_ context.Context, _ string) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }

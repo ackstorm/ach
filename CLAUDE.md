@@ -581,6 +581,47 @@ each fetch is now surfaced on the `SourceReachable=True` (Plugin/Prompt/
 Artifact) and `Synced=True` (PluginMarketplace) condition messages as
 `transport=<git|rest|n/a>`.
 
+### ❌ Environment stuck in `AccessGroupSynced=False reason=UnresolvedReferences`
+```bash
+kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.type=="AccessGroupSynced")]}'
+# {"type":"AccessGroupSynced","status":"False","reason":"UnresolvedReferences",
+#  "message":"unresolved: mcpServers=[demo-mcp] a2aAgents=[] authorizedTeams=[]"}
+```
+✅ The named MCP server / A2A agent / authorized team does not exist in
+LiteLLM. The reconciler resolves names on each reconcile via
+`ListMCPServers` / `ListA2AAgents` / `ListTeamsByAlias`; any unresolved
+entry flips the condition with the offending list in the message.
+
+Register the missing resource(s):
+```bash
+# MCP server
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/v1/mcp/server \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"server_name":"<name>","transport":"http","url":"http://<addr>"}'
+
+# A2A agent
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/v1/agents \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"agent_name":"<name>","agent_card_params":{"name":"<name>","url":"<addr>"}}'
+
+# Team
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/team/new \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"team_alias":"<alias>"}'
+```
+The next reconcile (or any spec-change touch) re-runs the resolvers and
+the condition flips to `True/Synced`.
+
+WHY IT FAILS: the legacy `POST /access_group/new` rejected empty
+`model_names` (issue #17). The `/v1/access_group` endpoint accepts
+empty resource sets, but every ID in `access_mcp_server_ids` /
+`access_agent_ids` / `assigned_team_ids` must exist upstream. The
+reconciler converts names → IDs on-demand each reconcile (no
+Snapshotter cache), so the condition reflects fresh upstream state.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that

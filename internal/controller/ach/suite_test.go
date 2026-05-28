@@ -95,17 +95,35 @@ func (c *countingNoopClient) DeleteTag(ctx context.Context, name string) error {
 }
 
 // §7 routing: forward access-group calls to the per-suite fake so tests
-// can assert call counts + inject errors.
-func (c *countingNoopClient) CreateAccessGroup(ctx context.Context, name string, modelNames []string) error {
-	return c.accessGroup.CreateAccessGroup(ctx, name, modelNames)
+// can assert call counts + inject errors. Issue #17: /v1 surface.
+func (c *countingNoopClient) CreateAccessGroup(ctx context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
+	return c.accessGroup.CreateAccessGroup(ctx, req)
 }
 
-func (c *countingNoopClient) BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error {
-	return c.accessGroup.BindTeamToAccessGroup(ctx, accessGroup, teamID)
+func (c *countingNoopClient) GetAccessGroupByName(ctx context.Context, name string) (*litellm.AccessGroupResponse, error) {
+	return c.accessGroup.GetAccessGroupByName(ctx, name)
 }
 
-func (c *countingNoopClient) ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error) {
-	return c.accessGroup.ListAccessGroupBindings(ctx, accessGroup)
+func (c *countingNoopClient) UpdateAccessGroup(ctx context.Context, id string, req litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	return c.accessGroup.UpdateAccessGroup(ctx, id, req)
+}
+
+func (c *countingNoopClient) DeleteAccessGroupByID(ctx context.Context, id string) error {
+	return c.accessGroup.DeleteAccessGroupByID(ctx, id)
+}
+
+// Resolver overrides — route ListMCPServers / ListA2AAgents /
+// ListTeamsByAlias to the per-suite fake so tests can seed entries.
+func (c *countingNoopClient) ListMCPServers(ctx context.Context) ([]litellm.MCPServerEntry, error) {
+	return c.accessGroup.ListMCPServers(ctx)
+}
+
+func (c *countingNoopClient) ListA2AAgents(ctx context.Context) ([]litellm.AgentEntry, error) {
+	return c.accessGroup.ListA2AAgents(ctx)
+}
+
+func (c *countingNoopClient) ListTeamsByAlias(ctx context.Context, alias string) ([]litellm.TeamListEntry, error) {
+	return c.accessGroup.ListTeamsByAlias(ctx, alias)
 }
 
 // Compile-time interface assertion — if litellm.Client grows a method, the
