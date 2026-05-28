@@ -47,7 +47,15 @@ package audit
 //
 // 9 constants — Hub §18.2 action enum verbatim.
 const (
-	ActionSSOLogin             = "platform.sso.login"
+	ActionSSOLogin = "platform.sso.login"
+	// ActionCliLogin is the Phase 6 device-code action emitted by
+	// /platform/auth/cli/token on a successful pk_ exchange (D-19).
+	// Additive per the §18.5 extension policy; mirrors the
+	// platform.<area>.<verb> convention so `action=platform.*` log
+	// filters continue to capture it alongside platform.sso.login.
+	// The emission carries key.id (pkid_…) and owner_email via Actor;
+	// NEVER the pk_ plaintext (Pattern S5 / Hub §16.1).
+	ActionCliLogin             = "platform.cli.login"
 	ActionEkCreate             = "platform.ek.create"
 	ActionEkRevoke             = "platform.ek.revoke"
 	ActionPkRevoke             = "platform.pk.revoke"
