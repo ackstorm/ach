@@ -164,9 +164,10 @@ type MaterializeResult struct {
 //  3. fetcher.Fetch(ctx, FetchRequest{Spec, Secret, PriorRev}).
 //  4. NotModified shortcut → return early without staging or UPSERT.
 //  5. Stage at deps.CacheRoot/.tmp/stg-<random> via os.CreateTemp.
-//  5.5. (plugin-only) Apply pluginpack.Filter to result.Body before
-//     the size-cap copy. The kind switch keeps Prompt/Artifact paths
-//     byte-identical to the pre-issue-26 behavior.
+//     (issue #26) When deps.Kind == "plugin", apply pluginpack.Filter
+//     to result.Body BEFORE the size-cap copy so the cap measures the
+//     filtered bytes. Prompt/Artifact paths are byte-identical to
+//     pre-issue-26 behavior.
 //  6. Wrap body in io.LimitReader when SizeCapBytes > 0; io.Copy; check
 //     overshoot (overshoot → delete staging file → OversizeError); fsync.
 //  7. Atomic rename(2) staging → deps.FinalPath.

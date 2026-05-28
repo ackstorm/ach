@@ -32,6 +32,16 @@ const pluginTarballMaxEntries = 50000
 // always sits at the tar root.
 const manifestRelPath = ".claude-plugin/plugin.json"
 
+// collectedEntry captures the bits of a source tar entry we need to
+// re-emit later. Regular file bodies are buffered in memory; dir
+// entries carry just the header metadata.
+type collectedEntry struct {
+	name     string
+	typeflag byte
+	hdr      tar.Header
+	body     []byte // regular files only
+}
+
 // Filter reads a gzipped tar (the upstream-fetched Plugin tarball
 // body) and returns a fresh gzipped tar containing only the runtime-
 // relevant subset (see the package doc for the whitelist edges).
@@ -49,114 +59,14 @@ const manifestRelPath = ".claude-plugin/plugin.json"
 //
 // The function is pure — no I/O outside the in-memory byte buffer.
 func Filter(in []byte) ([]byte, error) {
-	// First pass: decompress, walk the tar, collect every entry we
-	// might keep, locate plugin.json.
-	gz, err := gzip.NewReader(bytes.NewReader(in))
+	entries, manifestBytes, err := readTarballEntries(in)
 	if err != nil {
-		return nil, fmt.Errorf("pluginpack: gzip header: %v: %w", err, sources.ErrUpstreamInvalid)
+		return nil, err
 	}
-	defer func() { _ = gz.Close() }()
-
-	tr := tar.NewReader(gz)
-
-	// collected captures the bits of a source tar entry we need to
-	// re-emit later. Regular file bodies are buffered in memory; dir
-	// entries carry just the header metadata.
-	type collected struct {
-		name     string
-		typeflag byte
-		hdr      tar.Header
-		body     []byte // regular files only
-	}
-
-	var entries []collected
-	var manifestBytes []byte
-	manifestSeen := false
-
-	scanned := 0
-	for {
-		if scanned >= pluginTarballMaxEntries {
-			return nil, fmt.Errorf("pluginpack: exceeded %d tar entries: %w", pluginTarballMaxEntries, sources.ErrUpstreamInvalid)
-		}
-		hdr, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("pluginpack: tar header: %v: %w", err, sources.ErrUpstreamInvalid)
-		}
-		scanned++
-
-		// Reject `..`-bearing entries outright (TOCTOU-ish defense;
-		// we don't extract, but a `..`-name would never match the
-		// whitelist anyway).
-		if strings.Contains(hdr.Name, "..") {
-			continue
-		}
-		// Only regular files and directories are considered — drop
-		// symlinks, devices, FIFOs.
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeDir {
-			continue
-		}
-
-		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
-		// path.Clean strips trailing slashes; restore the explicit dir
-		// marker for TypeDir entries so the include predicate matches
-		// the prefix shape `<name>/`.
-		if hdr.Typeflag == tar.TypeDir && !strings.HasSuffix(name, "/") {
-			name += "/"
-		}
-
-		c := collected{
-			name:     name,
-			typeflag: hdr.Typeflag,
-			hdr: tar.Header{
-				Name:     name,
-				Mode:     hdr.Mode,
-				Size:     hdr.Size,
-				ModTime:  hdr.ModTime,
-				Typeflag: hdr.Typeflag,
-			},
-		}
-
-		if hdr.Typeflag == tar.TypeReg {
-			// Bound the per-entry read at manifestMaxBytes when this
-			// is the manifest file; otherwise read in full. The
-			// fetcher already capped the whole-tarball size via the
-			// git engine's MaxCloneBytes.
-			if name == manifestRelPath {
-				if hdr.Size < 0 || hdr.Size > manifestMaxBytes {
-					return nil, fmt.Errorf("pluginpack: %s header claims %d bytes (cap %d): %w",
-						manifestRelPath, hdr.Size, manifestMaxBytes, sources.ErrUpstreamInvalid)
-				}
-				body, readErr := io.ReadAll(io.LimitReader(tr, manifestMaxBytes+1))
-				if readErr != nil {
-					return nil, fmt.Errorf("pluginpack: read %s: %v: %w", manifestRelPath, readErr, sources.ErrUpstreamInvalid)
-				}
-				if int64(len(body)) > manifestMaxBytes {
-					return nil, fmt.Errorf("pluginpack: %s body exceeds cap %d: %w",
-						manifestRelPath, manifestMaxBytes, sources.ErrUpstreamInvalid)
-				}
-				manifestBytes = body
-				manifestSeen = true
-				c.body = body
-			} else {
-				body, readErr := io.ReadAll(tr)
-				if readErr != nil {
-					return nil, fmt.Errorf("pluginpack: read entry %q: %v: %w", name, readErr, sources.ErrUpstreamInvalid)
-				}
-				c.body = body
-			}
-		}
-
-		entries = append(entries, c)
-	}
-
-	if !manifestSeen {
+	if manifestBytes == nil {
 		return nil, fmt.Errorf("%w: %w", ErrManifestMissing, sources.ErrUpstreamInvalid)
 	}
 
-	// Parse the manifest + extract the parent-dir transitive set.
 	manifestTree, err := parsePluginJSON(manifestBytes)
 	if err != nil {
 		return nil, err
@@ -166,27 +76,180 @@ func Filter(in []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// Build the include predicate.
-	includeName := func(name string) bool {
-		// Whitelist exacts.
-		if name == manifestRelPath {
-			return true
+	includedDirs, includedFiles := computeIncludeSets(entries, parentDirs)
+	return emitFiltered(entries, includedDirs, includedFiles)
+}
+
+// readTarballEntries decompresses the input tar.gz and returns:
+//
+//   - the slice of regular-file + dir entries (normalized names,
+//     bodies buffered for regular files);
+//   - the raw bytes of `.claude-plugin/plugin.json` when present
+//     (nil when absent — the caller surfaces ErrManifestMissing).
+//
+// Symlink / device / FIFO entries and `..`-bearing names are silently
+// dropped from the entry list.
+func readTarballEntries(in []byte) ([]collectedEntry, []byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(in))
+	if err != nil {
+		return nil, nil, fmt.Errorf("pluginpack: gzip header: %v: %w", err, sources.ErrUpstreamInvalid)
+	}
+	defer func() { _ = gz.Close() }()
+
+	tr := tar.NewReader(gz)
+	var entries []collectedEntry
+	var manifestBytes []byte
+
+	for scanned := 0; ; scanned++ {
+		if scanned >= pluginTarballMaxEntries {
+			return nil, nil, fmt.Errorf("pluginpack: exceeded %d tar entries: %w", pluginTarballMaxEntries, sources.ErrUpstreamInvalid)
 		}
-		if name == "README.md" {
+		hdr, terr := tr.Next()
+		if errors.Is(terr, io.EOF) {
+			break
+		}
+		if terr != nil {
+			return nil, nil, fmt.Errorf("pluginpack: tar header: %v: %w", terr, sources.ErrUpstreamInvalid)
+		}
+		if !acceptableEntry(hdr) {
+			continue
+		}
+		name := normalizeEntryName(hdr)
+		c, mbody, perr := processEntry(hdr, tr, name)
+		if perr != nil {
+			return nil, nil, perr
+		}
+		if mbody != nil {
+			manifestBytes = mbody
+		}
+		entries = append(entries, c)
+	}
+	return entries, manifestBytes, nil
+}
+
+// acceptableEntry rejects `..`-bearing names plus any non-regular-file,
+// non-directory tar entry (symlinks, char/block devices, FIFOs).
+func acceptableEntry(hdr *tar.Header) bool {
+	if strings.Contains(hdr.Name, "..") {
+		return false
+	}
+	return hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeDir
+}
+
+// normalizeEntryName trims the optional `./` prefix and ensures dir
+// entries carry an explicit trailing slash so prefix tests downstream
+// work uniformly.
+func normalizeEntryName(hdr *tar.Header) string {
+	name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
+	if hdr.Typeflag == tar.TypeDir && !strings.HasSuffix(name, "/") {
+		name += "/"
+	}
+	return name
+}
+
+// processEntry consumes one tar entry's body (when regular), enforces
+// the manifest-size cap, and packages the metadata into a
+// collectedEntry. Returns the manifest bytes when this entry IS the
+// manifest, otherwise nil.
+func processEntry(hdr *tar.Header, tr *tar.Reader, name string) (collectedEntry, []byte, error) {
+	c := collectedEntry{
+		name:     name,
+		typeflag: hdr.Typeflag,
+		hdr: tar.Header{
+			Name:     name,
+			Mode:     hdr.Mode,
+			Size:     hdr.Size,
+			ModTime:  hdr.ModTime,
+			Typeflag: hdr.Typeflag,
+		},
+	}
+	if hdr.Typeflag != tar.TypeReg {
+		return c, nil, nil
+	}
+	if name == manifestRelPath {
+		body, err := readManifestBody(hdr, tr)
+		if err != nil {
+			return collectedEntry{}, nil, err
+		}
+		c.body = body
+		return c, body, nil
+	}
+	body, err := io.ReadAll(tr)
+	if err != nil {
+		return collectedEntry{}, nil, fmt.Errorf("pluginpack: read entry %q: %v: %w", name, err, sources.ErrUpstreamInvalid)
+	}
+	c.body = body
+	return c, nil, nil
+}
+
+// readManifestBody enforces the per-entry manifest size cap on read.
+func readManifestBody(hdr *tar.Header, tr *tar.Reader) ([]byte, error) {
+	if hdr.Size < 0 || hdr.Size > manifestMaxBytes {
+		return nil, fmt.Errorf("pluginpack: %s header claims %d bytes (cap %d): %w",
+			manifestRelPath, hdr.Size, manifestMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	body, err := io.ReadAll(io.LimitReader(tr, manifestMaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("pluginpack: read %s: %v: %w", manifestRelPath, err, sources.ErrUpstreamInvalid)
+	}
+	if int64(len(body)) > manifestMaxBytes {
+		return nil, fmt.Errorf("pluginpack: %s body exceeds cap %d: %w",
+			manifestRelPath, manifestMaxBytes, sources.ErrUpstreamInvalid)
+	}
+	return body, nil
+}
+
+// computeIncludeSets walks the collected entries and returns the set
+// of directories we must emit explicitly and the set of file names we
+// must include.
+func computeIncludeSets(entries []collectedEntry, parentDirs map[string]struct{}) (dirs map[string]struct{}, files map[string]bool) {
+	dirs = map[string]struct{}{}
+	files = map[string]bool{}
+	predicate := includePredicate(parentDirs)
+	for _, c := range entries {
+		test := strings.TrimSuffix(c.name, "/")
+		if test == "" {
+			continue
+		}
+		var pname string
+		if c.typeflag == tar.TypeDir {
+			pname = test + "/"
+		} else {
+			pname = test
+		}
+		if !predicate(pname) {
+			continue
+		}
+		if c.typeflag == tar.TypeDir {
+			dirs[test] = struct{}{}
+			continue
+		}
+		files[test] = true
+		// Synthesize the file's parent directory chain so the emitted
+		// tar always has the `parent/` headers preceding the file
+		// headers.
+		for d := path.Dir(test); d != "." && d != "/"; d = path.Dir(d) {
+			dirs[d] = struct{}{}
+		}
+	}
+	return dirs, files
+}
+
+// includePredicate returns the per-entry-name include test. A name is
+// included when it matches a whitelist edge OR sits under a manifest-
+// referenced parent directory.
+func includePredicate(parentDirs map[string]struct{}) func(string) bool {
+	return func(name string) bool {
+		if name == manifestRelPath || name == "README.md" {
 			return true
 		}
 		if isRootLicense(name) {
 			return true
 		}
-		// Root convention dirs (root-level only — `agents/foo` yes,
-		// `plugins/x/agents/foo` no).
 		if matchesRootConventionDir(name) {
 			return true
 		}
-		// Manifest-referenced parent dirs.
 		for parent := range parentDirs {
-			// Match parent itself (with or without trailing slash)
-			// or any descendant.
 			if name == parent ||
 				name == parent+"/" ||
 				strings.HasPrefix(name, parent+"/") {
@@ -195,100 +258,29 @@ func Filter(in []byte) ([]byte, error) {
 		}
 		return false
 	}
+}
 
-	// Determine the set of directories we need to emit as explicit
-	// tar.TypeDir entries (defensive — content-service streams via
-	// sendfile, but downstream consumers like CLI hydrate / debug
-	// tools may extract).
-	includedDirs := map[string]struct{}{}
-	includedFiles := map[string]bool{}
-	for _, c := range entries {
-		// Strip trailing slash from dir-names for inclusion testing.
-		test := strings.TrimSuffix(c.name, "/")
-		if test == "" {
-			continue
-		}
-		// Re-form the predicate input so that a dir entry tested via
-		// its with-slash form matches `<name>/`. Use the trailing-
-		// slash form for dirs (so prefix tests work) and the bare
-		// form for files.
-		var pname string
-		if c.typeflag == tar.TypeDir {
-			pname = test + "/"
-		} else {
-			pname = test
-		}
-		if !includeName(pname) {
-			continue
-		}
-		if c.typeflag == tar.TypeDir {
-			includedDirs[test] = struct{}{}
-		} else {
-			includedFiles[test] = true
-			// Synthesize the file's parent directory chain into the
-			// includedDirs set so the emitted tar always has the
-			// `parent/` headers preceding the file headers.
-			for d := path.Dir(test); d != "." && d != "/"; d = path.Dir(d) {
-				includedDirs[d] = struct{}{}
-			}
-		}
-	}
-
-	// Second pass: emit a fresh tar.gz. Directories first (sorted
-	// lexicographically so parents precede children), then files in
-	// the order they appeared in the source — keeps a deterministic
-	// output without sorting overhead on the file pass.
+// emitFiltered writes a fresh tar.gz containing the included dirs
+// (sorted lexicographically so parents precede children) followed by
+// the included files in source order.
+func emitFiltered(entries []collectedEntry, includedDirs map[string]struct{}, includedFiles map[string]bool) ([]byte, error) {
 	var outBuf bytes.Buffer
 	outGz := gzip.NewWriter(&outBuf)
 	outTw := tar.NewWriter(outGz)
 
-	// Emit explicit dir entries.
 	for _, d := range sortedKeys(includedDirs) {
-		hdr := &tar.Header{
-			Name:     d + "/",
-			Mode:     0o755,
-			Typeflag: tar.TypeDir,
-		}
-		// Try to mirror the source dir's mode + mtime when we saw an
-		// explicit entry for it.
-		for _, c := range entries {
-			if c.typeflag != tar.TypeDir {
-				continue
-			}
-			if strings.TrimSuffix(c.name, "/") == d {
-				hdr.Mode = c.hdr.Mode
-				hdr.ModTime = c.hdr.ModTime
-				break
-			}
-		}
-		if err := outTw.WriteHeader(hdr); err != nil {
-			return nil, fmt.Errorf("pluginpack: write dir header %q: %w", d, err)
+		if err := writeDirHeader(outTw, entries, d); err != nil {
+			return nil, err
 		}
 	}
-
-	// Emit regular files.
 	for _, c := range entries {
-		if c.typeflag != tar.TypeReg {
+		if c.typeflag != tar.TypeReg || !includedFiles[c.name] {
 			continue
 		}
-		if !includedFiles[c.name] {
-			continue
-		}
-		hdr := &tar.Header{
-			Name:     c.name,
-			Mode:     c.hdr.Mode,
-			Size:     int64(len(c.body)),
-			ModTime:  c.hdr.ModTime,
-			Typeflag: tar.TypeReg,
-		}
-		if err := outTw.WriteHeader(hdr); err != nil {
-			return nil, fmt.Errorf("pluginpack: write file header %q: %w", c.name, err)
-		}
-		if _, err := outTw.Write(c.body); err != nil {
-			return nil, fmt.Errorf("pluginpack: write file body %q: %w", c.name, err)
+		if err := writeFileEntry(outTw, c); err != nil {
+			return nil, err
 		}
 	}
-
 	if err := outTw.Close(); err != nil {
 		return nil, fmt.Errorf("pluginpack: close tar writer: %w", err)
 	}
@@ -296,6 +288,48 @@ func Filter(in []byte) ([]byte, error) {
 		return nil, fmt.Errorf("pluginpack: close gzip writer: %w", err)
 	}
 	return outBuf.Bytes(), nil
+}
+
+// writeDirHeader emits an explicit TypeDir header for dir, mirroring
+// the source dir's mode + mtime when a matching source entry exists.
+func writeDirHeader(tw *tar.Writer, entries []collectedEntry, dir string) error {
+	hdr := &tar.Header{
+		Name:     dir + "/",
+		Mode:     0o755,
+		Typeflag: tar.TypeDir,
+	}
+	for _, c := range entries {
+		if c.typeflag != tar.TypeDir {
+			continue
+		}
+		if strings.TrimSuffix(c.name, "/") == dir {
+			hdr.Mode = c.hdr.Mode
+			hdr.ModTime = c.hdr.ModTime
+			break
+		}
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("pluginpack: write dir header %q: %w", dir, err)
+	}
+	return nil
+}
+
+// writeFileEntry emits a TypeReg header + body for the file entry.
+func writeFileEntry(tw *tar.Writer, c collectedEntry) error {
+	hdr := &tar.Header{
+		Name:     c.name,
+		Mode:     c.hdr.Mode,
+		Size:     int64(len(c.body)),
+		ModTime:  c.hdr.ModTime,
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("pluginpack: write file header %q: %w", c.name, err)
+	}
+	if _, err := tw.Write(c.body); err != nil {
+		return fmt.Errorf("pluginpack: write file body %q: %w", c.name, err)
+	}
+	return nil
 }
 
 // isRootLicense reports whether name is a root-level LICENSE file.
