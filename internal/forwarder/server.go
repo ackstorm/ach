@@ -22,12 +22,19 @@ import (
 )
 
 // Deps wires the forwarder traffic handler's runtime dependencies.
+//
+// BIPResolver and EnvProvider are Postgres-backed caches (issue #34 C1
+// + C2) that replaced the controller-runtime informers. K8sClient is
+// retained ONLY for the ach-jwt-signing-keys Secret hot-reload watcher
+// wired in cmd/ach/cmd/forwarder.go — the traffic path no longer reads
+// from the cached k8s client.
 type Deps struct {
 	Pool             *pgxpool.Pool
 	Redis            *redis.Client
 	LiteLLM          litellm.Client
 	Pepper           []byte
 	K8sClient        client.Client
+	BIPResolver      proxy.BIPResolver
 	Resolver         keystore.Resolver
 	TeamsResolver    keystore.TeamsResolver
 	Signer           jwt.Signer
@@ -59,7 +66,8 @@ func New(deps Deps) http.Handler {
 			LiteLLMMasterKey: deps.LiteLLMMasterKey,
 			Logger:           deps.Logger,
 		},
-		Signer: deps.Signer,
+		Signer:      deps.Signer,
+		BIPResolver: deps.BIPResolver,
 		PrecheckDeps: precheck.Deps{
 			K8sClient:     deps.K8sClient,
 			TeamsResolver: deps.TeamsResolver,

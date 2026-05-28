@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/keys"
@@ -28,6 +29,28 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// fakeBIPResolver is a tiny in-memory BIPResolver for handler unit
+// tests. Keyed by (kind, name) → row pointer; returns nil for absent
+// keys mirroring bipcache.Cache.Resolve semantics.
+type fakeBIPResolver struct {
+	rows map[string]*db.BIPRow
+}
+
+func (f *fakeBIPResolver) Resolve(kind, name string) *db.BIPRow {
+	if f == nil {
+		return nil
+	}
+	return f.rows[kind+"/"+name]
+}
+
+func newBIPResolver(rows ...*db.BIPRow) *fakeBIPResolver {
+	f := &fakeBIPResolver{rows: map[string]*db.BIPRow{}}
+	for _, r := range rows {
+		f.rows[r.TargetKind+"/"+r.TargetName] = r
+	}
+	return f
+}
 
 type mockSigner struct {
 	mu          sync.Mutex
@@ -88,16 +111,13 @@ func makeEnv(name string, mcps, a2as, teams []string) *achv1alpha1.Environment {
 	}
 }
 
-func makeBIP(name, kind, target string, forwardJWT bool) *achv1alpha1.BackendIdentityPolicy {
-	return &achv1alpha1.BackendIdentityPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ach-system"},
-		Spec: achv1alpha1.BackendIdentityPolicySpec{
-			Target: achv1alpha1.BackendTargetRef{
-				Kind: kind,
-				Name: target,
-			},
-			ForwardIdentityJWT: forwardJWT,
-		},
+func makeBIPRow(name, kind, target string, forwardJWT bool) *db.BIPRow {
+	return &db.BIPRow{
+		Namespace:          "ach-system",
+		Name:               name,
+		TargetKind:         kind,
+		TargetName:         target,
+		ForwardIdentityJWT: forwardJWT,
 	}
 }
 
@@ -163,7 +183,7 @@ func (r *upstreamRec) LastBody() []byte {
 	return r.lastBody
 }
 
-func mkDeps(t *testing.T, upstream *httptest.Server, k8s client.Client, signer jwt.Signer, resolver precheck.Deps) HandlerDeps {
+func mkDeps(t *testing.T, upstream *httptest.Server, _ client.Client, signer jwt.Signer, resolver precheck.Deps, bipResolver BIPResolver) HandlerDeps {
 	t.Helper()
 	u := mustParseURL(t, upstream.URL)
 	return HandlerDeps{
@@ -173,6 +193,7 @@ func mkDeps(t *testing.T, upstream *httptest.Server, k8s client.Client, signer j
 			Logger:           slog.Default(),
 		},
 		Signer:       signer,
+		BIPResolver:  bipResolver,
 		PrecheckDeps: resolver,
 		BaseURL:      "https://ach.example.com",
 		Namespace:    "ach-system",
@@ -186,7 +207,7 @@ func TestHandlerV1_PkPassthrough(t *testing.T) {
 
 	k8s := fake.NewClientBuilder().WithScheme(handlerScheme(t)).Build()
 	signer := &mockSigner{}
-	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"}, newBIPResolver())
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	body := `{"model":"x","messages":[]}`
@@ -215,7 +236,7 @@ func TestHandlerV1_EkTagInjection(t *testing.T) {
 	defer upstream.Close()
 
 	k8s := fake.NewClientBuilder().WithScheme(handlerScheme(t)).Build()
-	deps := mkDeps(t, upstream, k8s, &mockSigner{}, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, &mockSigner{}, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"}, newBIPResolver())
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "prod"}
 	r := requestWithKC(t, http.MethodPost, "/v1/chat/completions", kc, `{"model":"x"}`)
@@ -245,18 +266,14 @@ func TestHandlerMCP_EkWithJWT(t *testing.T) {
 	defer upstream.Close()
 
 	env := makeEnv("demo", []string{"server-x"}, nil, nil)
-	bip := makeBIP("pol-a", "MCPServer", "server-x", true)
+	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
 	k8s := fake.NewClientBuilder().
 		WithScheme(handlerScheme(t)).
-		WithObjects(env, bip).
-		WithIndex(&achv1alpha1.BackendIdentityPolicy{}, "spec.target", func(o client.Object) []string {
-			p := o.(*achv1alpha1.BackendIdentityPolicy)
-			return []string{p.Spec.Target.Kind + "/" + p.Spec.Target.Name}
-		}).
+		WithObjects(env).
 		Build()
 
 	signer := &mockSigner{returnToken: "ACH-TOKEN"}
-	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"}, newBIPResolver(bipRow))
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, "")
@@ -295,13 +312,9 @@ func TestHandlerMCP_NoPolicyNoJWT(t *testing.T) {
 	k8s := fake.NewClientBuilder().
 		WithScheme(handlerScheme(t)).
 		WithObjects(env).
-		WithIndex(&achv1alpha1.BackendIdentityPolicy{}, "spec.target", func(o client.Object) []string {
-			p := o.(*achv1alpha1.BackendIdentityPolicy)
-			return []string{p.Spec.Target.Kind + "/" + p.Spec.Target.Name}
-		}).
 		Build()
 	signer := &mockSigner{}
-	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"}, newBIPResolver())
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
@@ -330,7 +343,7 @@ func TestHandlerMCP_PrecheckFail(t *testing.T) {
 
 	env := makeEnv("demo", []string{"server-x"}, nil, nil)
 	k8s := fake.NewClientBuilder().WithScheme(handlerScheme(t)).WithObjects(env).Build()
-	deps := mkDeps(t, upstream, k8s, &mockSigner{}, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, &mockSigner{}, precheck.Deps{K8sClient: k8s, TeamsResolver: &mockTeamsResolver{}, Namespace: "ach-system"}, newBIPResolver())
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-MISSING", kc, "")
@@ -366,17 +379,13 @@ func TestHandlerA2A_ClaimsShape(t *testing.T) {
 	defer upstream.Close()
 
 	env := makeEnv("demo", nil, []string{"agent-y"}, nil)
-	bip := makeBIP("pol-a", "A2AAgent", "agent-y", true)
+	bipRow := makeBIPRow("pol-a", "A2AAgent", "agent-y", true)
 	k8s := fake.NewClientBuilder().
 		WithScheme(handlerScheme(t)).
-		WithObjects(env, bip).
-		WithIndex(&achv1alpha1.BackendIdentityPolicy{}, "spec.target", func(o client.Object) []string {
-			p := o.(*achv1alpha1.BackendIdentityPolicy)
-			return []string{p.Spec.Target.Kind + "/" + p.Spec.Target.Name}
-		}).
+		WithObjects(env).
 		Build()
 	signer := &mockSigner{}
-	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"}, newBIPResolver(bipRow))
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/a2a/agent-y", kc, "")
@@ -398,17 +407,13 @@ func TestHandlerMCP_SigningFailure(t *testing.T) {
 	defer upstream.Close()
 
 	env := makeEnv("demo", []string{"server-x"}, nil, nil)
-	bip := makeBIP("pol-a", "MCPServer", "server-x", true)
+	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
 	k8s := fake.NewClientBuilder().
 		WithScheme(handlerScheme(t)).
-		WithObjects(env, bip).
-		WithIndex(&achv1alpha1.BackendIdentityPolicy{}, "spec.target", func(o client.Object) []string {
-			p := o.(*achv1alpha1.BackendIdentityPolicy)
-			return []string{p.Spec.Target.Kind + "/" + p.Spec.Target.Name}
-		}).
+		WithObjects(env).
 		Build()
 	signer := &mockSigner{returnErr: errors.New("signer down")}
-	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"})
+	deps := mkDeps(t, upstream, k8s, signer, precheck.Deps{K8sClient: k8s, Namespace: "ach-system"}, newBIPResolver(bipRow))
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
