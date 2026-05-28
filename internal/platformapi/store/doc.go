@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package store ships the informer-backed reader helpers for Platform API
-// handlers. Every Phase 3 read of an Environment / Plugin / Prompt / Artifact /
-// PluginMarketplace / BackendIdentityPolicy CR goes through this package so
-// the cache-served discipline (Hub §5.2) is observable in code review.
+// Package store ships the Postgres-backed reader helpers for Platform API
+// handlers (issue #34 / Phase B). Every platform-api read of an Environment
+// projection row goes through this package so the spec-v4 §5.2 cache-served
+// discipline is observable in one place.
 //
-// The constructor accepts a controller-runtime client.Client — the caller
-// (cmd/platform-api/main.go) MUST construct it via mgr.GetClient() AFTER
-// mgr.GetCache() has completed initial list-and-watch sync; otherwise reads
-// fall back to the API server, defeating the cache promise.
+// The constructor accepts a *pgxpool.Pool — the caller (cmd/ach/cmd/platform_api.go)
+// opens the pool via db.Open and threads it through. Reads bind the
+// namespace from the constructor as the first $-parameter (MULTI-01
+// invariant carried over from the informer-era Store).
 //
-// Namespace scope per MULTI-01: the constructor takes ns from POD_NAMESPACE;
-// all reads are scoped via client.InNamespace(ns).
-//
-// Read-only invariant: Store offers ONLY Get + List against the controller-
-// runtime client. It MUST NOT expose Create/Update/Delete/Patch — Platform API's
-// only K8s write surface is the force-refresh annotation patch (Plan 03-10
-// admin handler), which lives outside this package.
+// Read-only invariant: Store offers ONLY Get + List against the projection
+// tables. It MUST NOT expose Create/Update/Delete — platform-api's only
+// write surface that touches CR-owned state is the /admin/refresh helper
+// (see admin.ForceRefreshHandler), which sets the external_refs / marketplace_plugins
+// force_refresh_requested_at marker and fires NOTIFY ach_refresh for the
+// Operator's refreshsignal listener.
 package store
