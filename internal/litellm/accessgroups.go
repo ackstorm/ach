@@ -5,157 +5,121 @@ package litellm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 )
 
-// DeleteAccessGroup issues DELETE /access_group/<name>/delete (Pre-flight
-// F1: the prior URL "/access-groups/<name>" was incorrect per LiteLLM
-// v1.82.6 OpenAPI). Called from EnvironmentReconciler at Hub §6.5 step 2
-// — the runtime barrier. Once the LiteLLM access group named
-// <environment> is deleted, every ek_ still bound to the Environment
-// fails forwarding at LiteLLM regardless of ACH cache state, which is
-// the property the finalizer drain relies on.
+// CreateAccessGroup issues POST /v1/access_group. Returns the
+// AccessGroupResponse (UUID, name, current bindings). Replaces the
+// legacy POST /access_group/new flow whose validator rejected empty
+// model_names; the /v1 endpoint accepts an empty-resource creation.
 //
-// §7.7 idempotent-delete contract: makeRequest treats DELETE 404 as
-// success, so a re-reconcile after a partially-completed §6.5 sequence
-// does NOT generate a spurious error.
-func (c *RESTClient) DeleteAccessGroup(ctx context.Context, name string) error {
-	_, err := c.makeRequest(ctx, "DELETE", "/access_group/"+name+"/delete", nil)
+// The reconciler is expected to call GetAccessGroupByName first and only
+// POST when the result is nil — `already exists` semantics are owned at
+// the controller layer, not here (per issue-17 plan §4 decision:
+// list-first-then-create).
+func (c *RESTClient) CreateAccessGroup(ctx context.Context, req AccessGroupCreateRequest) (*AccessGroupResponse, error) {
+	if req.AccessGroupName == "" {
+		return nil, fmt.Errorf("litellm: CreateAccessGroup: empty access_group_name")
+	}
+	raw, err := c.makeRequest(ctx, "POST", "/v1/access_group", req)
+	if err != nil {
+		return nil, fmt.Errorf("litellm: POST /v1/access_group (name=%s): %w", req.AccessGroupName, err)
+	}
+	var resp AccessGroupResponse
+	if uerr := json.Unmarshal(raw, &resp); uerr != nil {
+		return nil, fmt.Errorf("litellm: decode POST /v1/access_group: %w", uerr)
+	}
+	return &resp, nil
+}
+
+// GetAccessGroupByName performs GET /v1/access_group and returns the
+// matching entry by access_group_name. (nil, nil) when not found — the
+// reconciler treats this as "needs POST to create".
+//
+// Decision (issue #17): no status field stores the UUID; we resolve by
+// name on every reconcile. The N here is small (O(10s) of access groups
+// in production per Hub §6.1), so a single list call per reconcile is
+// acceptable.
+func (c *RESTClient) GetAccessGroupByName(ctx context.Context, name string) (*AccessGroupResponse, error) {
+	if name == "" {
+		return nil, fmt.Errorf("litellm: GetAccessGroupByName: empty name")
+	}
+	raw, err := c.makeRequest(ctx, "GET", "/v1/access_group", nil)
+	if err != nil {
+		return nil, fmt.Errorf("litellm: GET /v1/access_group: %w", err)
+	}
+	var list []AccessGroupResponse
+	if uerr := json.Unmarshal(raw, &list); uerr != nil {
+		return nil, fmt.Errorf("litellm: decode GET /v1/access_group: %w", uerr)
+	}
+	for i := range list {
+		if list[i].AccessGroupName == name {
+			out := list[i]
+			return &out, nil
+		}
+	}
+	return nil, nil
+}
+
+// UpdateAccessGroup issues PUT /v1/access_group/{id}. Used by the
+// reconciler's drift-correction branch when GetAccessGroupByName found
+// an existing group with diverged bindings.
+func (c *RESTClient) UpdateAccessGroup(ctx context.Context, id string, req AccessGroupUpdateRequest) (*AccessGroupResponse, error) {
+	if id == "" {
+		return nil, fmt.Errorf("litellm: UpdateAccessGroup: empty id")
+	}
+	raw, err := c.makeRequest(ctx, "PUT", "/v1/access_group/"+id, req)
+	if err != nil {
+		return nil, fmt.Errorf("litellm: PUT /v1/access_group/%s: %w", id, err)
+	}
+	var resp AccessGroupResponse
+	if uerr := json.Unmarshal(raw, &resp); uerr != nil {
+		return nil, fmt.Errorf("litellm: decode PUT /v1/access_group/%s: %w", id, uerr)
+	}
+	return &resp, nil
+}
+
+// DeleteAccessGroupByID issues DELETE /v1/access_group/{id}. The
+// underlying makeRequest treats 404 as success per the existing §7.7
+// idempotent-delete contract, so a re-reconcile after a partially-
+// completed §6.5 sequence does NOT spurious-error.
+func (c *RESTClient) DeleteAccessGroupByID(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("litellm: DeleteAccessGroupByID: empty id")
+	}
+	_, err := c.makeRequest(ctx, "DELETE", "/v1/access_group/"+id, nil)
 	return err
 }
 
-// DeleteTag issues DELETE /tag/<name>. Called from EnvironmentReconciler
-// at Hub §6.5 step 3 — clears the budget tag LiteLLM uses for spend
-// attribution against the deleted Environment.
-//
-// Same §7.7 idempotent-delete contract as DeleteAccessGroup.
+// DeleteAccessGroup is the high-level helper the §6.5 finalizer path
+// calls. It list-by-name → DELETE-by-id, treating absent-name as the
+// idempotent-success branch (matches the §7.7 contract). The Environment
+// reconciler's existing r.LiteLLM.DeleteAccessGroup(ctx, env.Name) call
+// site does not change.
+func (c *RESTClient) DeleteAccessGroup(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("litellm: DeleteAccessGroup: empty name")
+	}
+	found, err := c.GetAccessGroupByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("litellm: DeleteAccessGroup(%s) lookup: %w", name, err)
+	}
+	if found == nil {
+		return nil // already gone — idempotent
+	}
+	if derr := c.DeleteAccessGroupByID(ctx, found.AccessGroupID); derr != nil {
+		return fmt.Errorf("litellm: DeleteAccessGroup(%s, id=%s): %w", name, found.AccessGroupID, derr)
+	}
+	return nil
+}
+
+// DeleteTag is preserved verbatim from the legacy file — §6.5 step 3
+// "delete tag" is orthogonal to the access-group migration.
 func (c *RESTClient) DeleteTag(ctx context.Context, name string) error {
 	_, err := c.makeRequest(ctx, "DELETE", "/tag/"+name, nil)
 	return err
 }
 
-// CreateAccessGroup issues POST /access_group/new. LiteLLM returns 400
-// with body containing "already exists" when the access group is already
-// registered; this method translates that into ErrAlreadyExists so
-// callers can treat it as the idempotent-success branch.
-func (c *RESTClient) CreateAccessGroup(ctx context.Context, name string, modelNames []string) error {
-	if name == "" {
-		return fmt.Errorf("litellm: CreateAccessGroup: empty name")
-	}
-	body := &NewAccessGroupRequest{
-		AccessGroup: name,
-		ModelNames:  modelNames,
-	}
-	_, err := c.makeRequest(ctx, "POST", "/access_group/new", body)
-	if err == nil {
-		return nil
-	}
-	// Peek at upstream message body to detect "already exists" → sentinel.
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		_, msg, _ := processLitellmError(apiErr.Body)
-		if strings.Contains(strings.ToLower(msg), "already exists") {
-			return ErrAlreadyExists
-		}
-	}
-	return err
-}
-
-// BindTeamToAccessGroup grants the named team access to the named access
-// group by appending the magic "access_group/<name>" entry to the
-// team's models[] array via POST /team/update. Idempotent: if the
-// entry is already present in team.models, this is a no-op (no upstream
-// call).
-//
-// Step-by-step:
-//
-//  1. GET /team/info?team_id=<id> to read current team state.
-//  2. Inspect the team's `models` array.
-//  3. If "access_group/<name>" is already present, return nil.
-//  4. Otherwise POST /team/update with team_id + the appended models[].
-func (c *RESTClient) BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error {
-	if accessGroup == "" || teamID == "" {
-		return fmt.Errorf("litellm: BindTeamToAccessGroup: empty accessGroup or teamID")
-	}
-	entry := TeamAccessGroupPrefix + accessGroup
-
-	raw, err := c.makeRequest(ctx, "GET", "/team/info?team_id="+teamID, nil)
-	if err != nil {
-		return fmt.Errorf("litellm: GET /team/info?team_id=%s: %w", teamID, err)
-	}
-	var info struct {
-		TeamInfo TeamListEntry `json:"team_info"`
-	}
-	if uerr := json.Unmarshal(raw, &info); uerr != nil || info.TeamInfo.TeamID == "" {
-		// Some LiteLLM versions return the TeamListEntry directly (no
-		// envelope). Fall back to bare-object decode.
-		var bare TeamListEntry
-		if err2 := json.Unmarshal(raw, &bare); err2 != nil {
-			return fmt.Errorf("litellm: decode /team/info: %v (fallback: %w)", uerr, err2)
-		}
-		info.TeamInfo = bare
-	}
-
-	for _, m := range info.TeamInfo.Models {
-		if m == entry {
-			return nil
-		}
-	}
-
-	newModels := append([]string{}, info.TeamInfo.Models...)
-	newModels = append(newModels, entry)
-	upd := &UpdateTeamRequest{
-		TeamID: teamID,
-		Models: newModels,
-	}
-	if _, err := c.makeRequest(ctx, "POST", "/team/update", upd); err != nil {
-		return fmt.Errorf("litellm: POST /team/update (team_id=%s, add access_group=%s): %w", teamID, accessGroup, err)
-	}
-	return nil
-}
-
-// ListAccessGroupBindings returns the team_ids whose .models array
-// contains "access_group/<name>". Used by §7 drift detection.
-//
-// Wire path: GET /v2/team/list?page=<n>&page_size=200 (no per-access-group
-// server-side filter exists on LiteLLM 1.82.6, so we list and filter
-// client-side; the operator owns at most O(10s) of teams in production
-// per Hub §6.1 — performance is acceptable).
-//
-// Pagination: iterates pages while page <= TotalPages. Stops at
-// maxAccessGroupListPages (50 — generous safety cap; exceeding this is
-// a config error, not a correctness condition).
-func (c *RESTClient) ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error) {
-	if accessGroup == "" {
-		return nil, fmt.Errorf("litellm: ListAccessGroupBindings: empty accessGroup")
-	}
-	entry := TeamAccessGroupPrefix + accessGroup
-	var out []string
-	for page := 1; page <= maxAccessGroupListPages; page++ {
-		path := fmt.Sprintf("/v2/team/list?page=%d&page_size=200", page)
-		raw, err := c.makeRequest(ctx, "GET", path, nil)
-		if err != nil {
-			return nil, fmt.Errorf("litellm: GET %s: %w", path, err)
-		}
-		var resp TeamListResponse
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			return nil, fmt.Errorf("litellm: decode %s: %w", path, err)
-		}
-		for _, t := range resp.Teams {
-			for _, m := range t.Models {
-				if m == entry {
-					out = append(out, t.TeamID)
-					break
-				}
-			}
-		}
-		if len(resp.Teams) == 0 || page >= resp.TotalPages {
-			break
-		}
-	}
-	return out, nil
-}
-
-const maxAccessGroupListPages = 50
+// Removed in issue #17:
+//   - BindTeamToAccessGroup (use AccessGroupCreateRequest.AssignedTeamIDs)
+//   - ListAccessGroupBindings (use AccessGroupResponse.AssignedTeamIDs)

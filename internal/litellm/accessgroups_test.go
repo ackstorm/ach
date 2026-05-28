@@ -5,7 +5,6 @@ package litellm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,153 +14,201 @@ import (
 	"github.com/go-logr/logr"
 )
 
-// TestCreateAccessGroup_HappyPath asserts the POST /access_group/new
-// wire shape: path, method, body.access_group, body.model_names.
-func TestCreateAccessGroup_HappyPath(t *testing.T) {
+// TestCreateAccessGroup_PostsV1Endpoint asserts the migrated wire shape:
+// POST /v1/access_group with access_group_name in the body, returning the
+// AccessGroupResponse (UUID + name + lists).
+func TestCreateAccessGroup_PostsV1Endpoint(t *testing.T) {
 	var gotMethod, gotPath string
-	var gotBody NewAccessGroupRequest
+	var gotBody AccessGroupCreateRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"access_group":"demo"}`))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{
+			"access_group_id":"ag-uuid-1",
+			"access_group_name":"demo",
+			"access_model_names":["gpt-4"],
+			"access_mcp_server_ids":["mcp-1"],
+			"access_agent_ids":[],
+			"assigned_team_ids":["t-1"],
+			"assigned_key_ids":[]
+		}`)
 	}))
 	t.Cleanup(srv.Close)
 
 	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
-	if err := c.CreateAccessGroup(context.Background(), "demo", []string{"gpt-4"}); err != nil {
+	resp, err := c.CreateAccessGroup(context.Background(), AccessGroupCreateRequest{
+		AccessGroupName:    "demo",
+		AccessModelNames:   []string{"gpt-4"},
+		AccessMCPServerIDs: []string{"mcp-1"},
+		AssignedTeamIDs:    []string{"t-1"},
+	})
+	if err != nil {
 		t.Fatalf("CreateAccessGroup: %v", err)
 	}
-	if gotMethod != "POST" || gotPath != "/access_group/new" {
-		t.Errorf("wire: want POST /access_group/new, got %s %s", gotMethod, gotPath)
+	if gotMethod != "POST" || gotPath != "/v1/access_group" {
+		t.Errorf("wire: want POST /v1/access_group, got %s %s", gotMethod, gotPath)
 	}
-	if gotBody.AccessGroup != "demo" {
-		t.Errorf("body.access_group = %q; want demo", gotBody.AccessGroup)
+	if gotBody.AccessGroupName != "demo" {
+		t.Errorf("body.access_group_name = %q; want demo", gotBody.AccessGroupName)
 	}
-	if len(gotBody.ModelNames) != 1 || gotBody.ModelNames[0] != "gpt-4" {
-		t.Errorf("body.model_names = %v; want [gpt-4]", gotBody.ModelNames)
+	if len(gotBody.AccessModelNames) != 1 || gotBody.AccessModelNames[0] != "gpt-4" {
+		t.Errorf("body.access_model_names = %v; want [gpt-4]", gotBody.AccessModelNames)
 	}
-}
-
-// TestCreateAccessGroup_AlreadyExists_ReturnsSentinel asserts the
-// idempotent-success branch: LiteLLM 400 "already exists" → ErrAlreadyExists.
-func TestCreateAccessGroup_AlreadyExists_ReturnsSentinel(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":{"message":"access group already exists","type":"invalid_request_error"}}`))
-	}))
-	t.Cleanup(srv.Close)
-
-	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
-	err := c.CreateAccessGroup(context.Background(), "demo", nil)
-	if !errors.Is(err, ErrAlreadyExists) {
-		t.Fatalf("CreateAccessGroup err = %v; want ErrAlreadyExists", err)
+	if resp == nil || resp.AccessGroupID != "ag-uuid-1" {
+		t.Fatalf("response access_group_id = %q; want ag-uuid-1", resp.AccessGroupID)
 	}
 }
 
-// TestBindTeamToAccessGroup_Idempotent_NoUpstreamUpdate asserts that
-// when the team's models[] already contains "access_group/<name>", no
-// POST /team/update fires.
-func TestBindTeamToAccessGroup_Idempotent_NoUpstreamUpdate(t *testing.T) {
-	var updateCalls int
+// TestGetAccessGroupByName_ListsAndFilters asserts the helper that
+// resolves a UUID by name. Used by reconcileAccessGroup to discover
+// whether to POST (create) or PUT (drift correction), and by the §6.5
+// finalizer to find the UUID to DELETE.
+func TestGetAccessGroupByName_ListsAndFilters(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/team/info"):
-			w.WriteHeader(200)
-			_, _ = w.Write([]byte(`{"team_info":{"team_id":"t-1","models":["access_group/demo","gpt-4"]}}`))
-		case r.Method == "POST" && r.URL.Path == "/team/update":
-			updateCalls++
-			w.WriteHeader(200)
-		default:
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(500)
-		}
-	}))
-	t.Cleanup(srv.Close)
-
-	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
-	if err := c.BindTeamToAccessGroup(context.Background(), "demo", "t-1"); err != nil {
-		t.Fatalf("BindTeamToAccessGroup: %v", err)
-	}
-	if updateCalls != 0 {
-		t.Errorf("/team/update calls = %d; want 0 (idempotent — already bound)", updateCalls)
-	}
-}
-
-// TestBindTeamToAccessGroup_AppendsToExistingModels asserts the
-// "team has other models, add the access_group/ entry" path.
-func TestBindTeamToAccessGroup_AppendsToExistingModels(t *testing.T) {
-	var updBody UpdateTeamRequest
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/team/info"):
-			w.WriteHeader(200)
-			_, _ = w.Write([]byte(`{"team_info":{"team_id":"t-1","models":["gpt-4","claude-3"]}}`))
-		case r.Method == "POST" && r.URL.Path == "/team/update":
-			_ = json.NewDecoder(r.Body).Decode(&updBody)
-			w.WriteHeader(200)
-		default:
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(500)
-		}
-	}))
-	t.Cleanup(srv.Close)
-
-	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
-	if err := c.BindTeamToAccessGroup(context.Background(), "demo", "t-1"); err != nil {
-		t.Fatalf("BindTeamToAccessGroup: %v", err)
-	}
-	if updBody.TeamID != "t-1" {
-		t.Errorf("update.team_id = %q; want t-1", updBody.TeamID)
-	}
-	if len(updBody.Models) != 3 {
-		t.Fatalf("update.models length = %d; want 3 (gpt-4, claude-3, access_group/demo)", len(updBody.Models))
-	}
-	want := "access_group/demo"
-	found := false
-	for _, m := range updBody.Models {
-		if m == want {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("update.models = %v; missing %q", updBody.Models, want)
-	}
-}
-
-// TestListAccessGroupBindings_FiltersByPrefix asserts pagination + the
-// "access_group/<name>" filter.
-func TestListAccessGroupBindings_FiltersByPrefix(t *testing.T) {
-	page1 := `{
-		"teams":[
-			{"team_id":"t-1","models":["access_group/demo"]},
-			{"team_id":"t-2","models":["gpt-4"]},
-			{"team_id":"t-3","models":["access_group/other","access_group/demo"]}
-		],
-		"total":3,"page":1,"page_size":200,"total_pages":1
-	}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || !strings.HasPrefix(r.URL.Path, "/v2/team/list") {
+		if r.Method != "GET" || r.URL.Path != "/v1/access_group" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(200)
-		_, _ = io.WriteString(w, page1)
+		_, _ = io.WriteString(w, `[
+			{"access_group_id":"ag-uuid-a","access_group_name":"alpha","access_model_names":[],"access_mcp_server_ids":[],"access_agent_ids":[],"assigned_team_ids":[],"assigned_key_ids":[]},
+			{"access_group_id":"ag-uuid-d","access_group_name":"demo","access_model_names":["gpt-4"],"access_mcp_server_ids":[],"access_agent_ids":[],"assigned_team_ids":[],"assigned_key_ids":[]}
+		]`)
 	}))
 	t.Cleanup(srv.Close)
 
 	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
-	got, err := c.ListAccessGroupBindings(context.Background(), "demo")
+	got, err := c.GetAccessGroupByName(context.Background(), "demo")
 	if err != nil {
-		t.Fatalf("ListAccessGroupBindings: %v", err)
+		t.Fatalf("GetAccessGroupByName: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d bindings; want 2 (t-1, t-3)", len(got))
+	if got == nil || got.AccessGroupID != "ag-uuid-d" {
+		t.Fatalf("got = %+v; want access_group_id=ag-uuid-d", got)
 	}
-	wantSet := map[string]bool{"t-1": true, "t-3": true}
-	for _, id := range got {
-		if !wantSet[id] {
-			t.Errorf("unexpected team_id %q", id)
+}
+
+// TestGetAccessGroupByName_AbsentReturnsNilNil asserts the "no row found"
+// contract: nil response, nil error. The reconciler treats this as "must
+// POST to create".
+func TestGetAccessGroupByName_AbsentReturnsNilNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
+	got, err := c.GetAccessGroupByName(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("got = %+v; want nil", got)
+	}
+}
+
+// TestUpdateAccessGroup_PutsByID asserts PUT /v1/access_group/{id} with
+// the AccessGroupUpdateRequest body.
+func TestUpdateAccessGroup_PutsByID(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotBody AccessGroupUpdateRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"access_group_id":"ag-uuid-1","access_group_name":"demo","access_model_names":["gpt-4","claude-3"],"access_mcp_server_ids":[],"access_agent_ids":[],"assigned_team_ids":["t-1"],"assigned_key_ids":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
+	_, err := c.UpdateAccessGroup(context.Background(), "ag-uuid-1", AccessGroupUpdateRequest{
+		AccessModelNames: []string{"gpt-4", "claude-3"},
+		AssignedTeamIDs:  []string{"t-1"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAccessGroup: %v", err)
+	}
+	if gotMethod != "PUT" || gotPath != "/v1/access_group/ag-uuid-1" {
+		t.Errorf("wire: want PUT /v1/access_group/ag-uuid-1, got %s %s", gotMethod, gotPath)
+	}
+	if len(gotBody.AccessModelNames) != 2 {
+		t.Errorf("body.access_model_names = %v; want 2 entries", gotBody.AccessModelNames)
+	}
+}
+
+// TestDeleteAccessGroupByID_DeletesByID asserts DELETE /v1/access_group/{id}.
+// 204 → nil. 404 → nil (idempotent §7.7 contract).
+func TestDeleteAccessGroupByID_DeletesByID(t *testing.T) {
+	cases := []int{204, 404}
+	for _, code := range cases {
+		t.Run("status"+strings.ReplaceAll(http.StatusText(code), " ", ""), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "DELETE" || r.URL.Path != "/v1/access_group/ag-uuid-1" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(code)
+			}))
+			t.Cleanup(srv.Close)
+
+			c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
+			if err := c.DeleteAccessGroupByID(context.Background(), "ag-uuid-1"); err != nil {
+				t.Fatalf("DeleteAccessGroupByID (status %d): %v", code, err)
+			}
+		})
+	}
+}
+
+// TestDeleteAccessGroup_LooksUpThenDeletes asserts the high-level helper
+// the §6.5 finalizer calls: GET /v1/access_group → find by name → DELETE
+// /v1/access_group/{id}. Absent name = idempotent success.
+func TestDeleteAccessGroup_LooksUpThenDeletes(t *testing.T) {
+	var deleteHit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/access_group":
+			w.WriteHeader(200)
+			_, _ = io.WriteString(w, `[{"access_group_id":"ag-uuid-1","access_group_name":"demo","access_model_names":[],"access_mcp_server_ids":[],"access_agent_ids":[],"assigned_team_ids":[],"assigned_key_ids":[]}]`)
+		case r.Method == "DELETE" && r.URL.Path == "/v1/access_group/ag-uuid-1":
+			deleteHit = true
+			w.WriteHeader(204)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
+	if err := c.DeleteAccessGroup(context.Background(), "demo"); err != nil {
+		t.Fatalf("DeleteAccessGroup: %v", err)
+	}
+	if !deleteHit {
+		t.Errorf("expected DELETE /v1/access_group/ag-uuid-1 to fire")
+	}
+}
+
+// TestDeleteAccessGroup_AbsentName_NoDelete asserts the §7.7 idempotent
+// branch: a §6.5 finalizer running after a partially-completed prior
+// delete must NOT error if the access group is already gone.
+func TestDeleteAccessGroup_AbsentName_NoDelete(t *testing.T) {
+	var deleteHit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/access_group":
+			w.WriteHeader(200)
+			_, _ = io.WriteString(w, `[]`)
+		case r.Method == "DELETE":
+			deleteHit = true
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewRESTClient(srv.URL, "sk-test", logr.Discard())
+	if err := c.DeleteAccessGroup(context.Background(), "missing"); err != nil {
+		t.Fatalf("DeleteAccessGroup (missing): %v", err)
+	}
+	if deleteHit {
+		t.Errorf("DELETE must NOT fire when name is absent")
 	}
 }

@@ -139,28 +139,23 @@ type Client interface {
 
 	// Phase 4 (TODO §7) — Environment AccessGroupSynced reconciler.
 
-	// CreateAccessGroup issues POST /access_group/new. Idempotent at the
-	// caller layer: LiteLLM returns 400 "already exists" for a duplicate;
-	// the RESTClient implementation classifies that response as success
-	// (errors.Is(err, ErrAlreadyExists)). Empty modelNames is the §7
-	// first-create shape (Environment.spec.runtime.models is empty
-	// initially; §2's ExecutionResourcesResolved reconciler grows the
-	// access group's model_names list separately).
-	CreateAccessGroup(ctx context.Context, name string, modelNames []string) error
+	// CreateAccessGroup issues POST /v1/access_group. The reconciler
+	// must call GetAccessGroupByName first; only POST when nil is
+	// returned (list-first-then-create per issue #17 plan §4).
+	CreateAccessGroup(ctx context.Context, req AccessGroupCreateRequest) (*AccessGroupResponse, error)
 
-	// BindTeamToAccessGroup grants the named team access to the named
-	// access group by appending "access_group/<name>" to the team's
-	// `models` array via POST /team/update. The implementation fetches
-	// the team first (preserving existing models[] entries) and MUST be
-	// idempotent — re-binding an already-bound team is a no-op.
-	BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error
+	// GetAccessGroupByName performs GET /v1/access_group and returns
+	// the matching entry by access_group_name. (nil, nil) when not
+	// found.
+	GetAccessGroupByName(ctx context.Context, name string) (*AccessGroupResponse, error)
 
-	// ListAccessGroupBindings returns the set of team_ids currently
-	// bound to the named access group (teams whose .models array
-	// contains "access_group/<name>"). Used by the §7 reconciler's
-	// drift-detection pass. Returns nil slice + nil error when no team
-	// is bound.
-	ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error)
+	// UpdateAccessGroup issues PUT /v1/access_group/{id}. Used by the
+	// reconciler's drift-correction branch.
+	UpdateAccessGroup(ctx context.Context, id string, req AccessGroupUpdateRequest) (*AccessGroupResponse, error)
+
+	// DeleteAccessGroupByID issues DELETE /v1/access_group/{id}. 404
+	// is treated as success (§7.7 idempotent-delete contract).
+	DeleteAccessGroupByID(ctx context.Context, id string) error
 
 	// EnsureDefaultTeam is the operator-side bootstrap call that
 	// guarantees LiteLLM has at least one Team with alias=default

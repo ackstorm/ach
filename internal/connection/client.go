@@ -142,28 +142,38 @@ func (c *Client) EnsureDefaultTeam(ctx context.Context) error {
 	return client.EnsureDefaultTeam(ctx)
 }
 
-func (c *Client) CreateAccessGroup(ctx context.Context, name string, modelNames []string) error {
-	client, err := c.current()
-	if err != nil {
-		return err
-	}
-	return client.CreateAccessGroup(ctx, name, modelNames)
-}
-
-func (c *Client) BindTeamToAccessGroup(ctx context.Context, accessGroup, teamID string) error {
-	client, err := c.current()
-	if err != nil {
-		return err
-	}
-	return client.BindTeamToAccessGroup(ctx, accessGroup, teamID)
-}
-
-func (c *Client) ListAccessGroupBindings(ctx context.Context, accessGroup string) ([]string, error) {
+// CreateAccessGroup proxies to the underlying RESTClient. See
+// internal/litellm/accessgroups.go for semantics.
+func (c *Client) CreateAccessGroup(ctx context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	client, err := c.current()
 	if err != nil {
 		return nil, err
 	}
-	return client.ListAccessGroupBindings(ctx, accessGroup)
+	return client.CreateAccessGroup(ctx, req)
+}
+
+func (c *Client) GetAccessGroupByName(ctx context.Context, name string) (*litellm.AccessGroupResponse, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.GetAccessGroupByName(ctx, name)
+}
+
+func (c *Client) UpdateAccessGroup(ctx context.Context, id string, req litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.UpdateAccessGroup(ctx, id, req)
+}
+
+func (c *Client) DeleteAccessGroupByID(ctx context.Context, id string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.DeleteAccessGroupByID(ctx, id)
 }
 
 var _ litellm.Client = (*Client)(nil)

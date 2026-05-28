@@ -144,27 +144,60 @@ func (c *NoopClient) EnsureDefaultTeam(_ context.Context) error {
 	return nil
 }
 
-// CreateAccessGroup is the §7 LiteLLM call. NoopClient logs and returns
-// nil — unit tests against NoopClient observe a no-op success and the
-// reconciler proceeds as if LiteLLM accepted the create.
-func (c *NoopClient) CreateAccessGroup(_ context.Context, name string, modelNames []string) error {
-	c.Log.Info("stub: would create LiteLLM access group", "name", name, "modelNames", modelNames)
-	return nil
+// CreateAccessGroup is the §7 LiteLLM call (issue #17: /v1/access_group).
+// NoopClient logs and returns a synthetic response with a deterministic
+// UUID so envtests that don't override the LiteLLM client can still
+// progress through reconcileAccessGroup without ID-resolution surprises.
+func (c *NoopClient) CreateAccessGroup(_ context.Context, req AccessGroupCreateRequest) (*AccessGroupResponse, error) {
+	c.Log.Info("stub: would create LiteLLM access group", "name", req.AccessGroupName, "modelNames", req.AccessModelNames)
+	return &AccessGroupResponse{
+		AccessGroupID:      "noop-" + req.AccessGroupName,
+		AccessGroupName:    req.AccessGroupName,
+		AccessModelNames:   req.AccessModelNames,
+		AccessMCPServerIDs: req.AccessMCPServerIDs,
+		AccessAgentIDs:     req.AccessAgentIDs,
+		AssignedTeamIDs:    req.AssignedTeamIDs,
+		AssignedKeyIDs:     req.AssignedKeyIDs,
+	}, nil
 }
 
-// BindTeamToAccessGroup is the §7 LiteLLM call. NoopClient logs and
-// returns nil.
-func (c *NoopClient) BindTeamToAccessGroup(_ context.Context, accessGroup, teamID string) error {
-	c.Log.Info("stub: would bind team to LiteLLM access group", "accessGroup", accessGroup, "teamID", teamID)
-	return nil
-}
-
-// ListAccessGroupBindings is the §7 LiteLLM call. NoopClient returns
-// (nil, nil) — no bindings reported. The reconciler treats this as
-// "no orphans to clean up, no pre-existing bindings to preserve".
-func (c *NoopClient) ListAccessGroupBindings(_ context.Context, accessGroup string) ([]string, error) {
-	c.Log.Info("stub: would list LiteLLM access group bindings", "accessGroup", accessGroup)
+// GetAccessGroupByName always returns (nil, nil) — the reconciler will
+// take the POST branch on every reconcile in noop mode, which is
+// harmless (the noop POST returns synthetic success).
+func (c *NoopClient) GetAccessGroupByName(_ context.Context, name string) (*AccessGroupResponse, error) {
+	c.Log.V(2).Info("stub: would lookup LiteLLM access group by name", "name", name)
 	return nil, nil
+}
+
+// UpdateAccessGroup logs and echoes the request back.
+func (c *NoopClient) UpdateAccessGroup(_ context.Context, id string, req AccessGroupUpdateRequest) (*AccessGroupResponse, error) {
+	c.Log.Info("stub: would update LiteLLM access group", "id", id)
+	resp := &AccessGroupResponse{AccessGroupID: id}
+	if req.AccessGroupName != nil {
+		resp.AccessGroupName = *req.AccessGroupName
+	}
+	if req.AccessModelNames != nil {
+		resp.AccessModelNames = req.AccessModelNames
+	}
+	if req.AccessMCPServerIDs != nil {
+		resp.AccessMCPServerIDs = req.AccessMCPServerIDs
+	}
+	if req.AccessAgentIDs != nil {
+		resp.AccessAgentIDs = req.AccessAgentIDs
+	}
+	if req.AssignedTeamIDs != nil {
+		resp.AssignedTeamIDs = req.AssignedTeamIDs
+	}
+	if req.AssignedKeyIDs != nil {
+		resp.AssignedKeyIDs = req.AssignedKeyIDs
+	}
+	return resp, nil
+}
+
+// DeleteAccessGroupByID is a no-op.
+func (c *NoopClient) DeleteAccessGroupByID(_ context.Context, id string) error {
+	c.Log.Info("stub: would delete LiteLLM access group by id", "id", id)
+	return nil
 }
 
 // Compile-time interface satisfaction. If a future edit to the Client
