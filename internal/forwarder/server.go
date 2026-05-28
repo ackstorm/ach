@@ -35,6 +35,7 @@ type Deps struct {
 	Pepper           []byte
 	K8sClient        client.Client
 	BIPResolver      proxy.BIPResolver
+	EnvProvider      precheck.EnvProvider
 	Resolver         keystore.Resolver
 	TeamsResolver    keystore.TeamsResolver
 	Signer           jwt.Signer
@@ -69,7 +70,7 @@ func New(deps Deps) http.Handler {
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,
 		PrecheckDeps: precheck.Deps{
-			K8sClient:     deps.K8sClient,
+			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 			Namespace:     deps.Namespace,
 		},

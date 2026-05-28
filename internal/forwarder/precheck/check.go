@@ -4,28 +4,40 @@ package precheck
 
 import (
 	"context"
-	"fmt"
 
-	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// EnvProvider is the narrow contract precheck consumes from the
+// Postgres-backed Environment store (internal/forwarder/envstore,
+// issue #34 C2). Tests substitute a tiny in-memory fake; production
+// wires envstore.Store.
+//
+// Get returns (nil, false) on absence — caller maps that to
+// ErrUnauthorizedResource per the D-15 narrow contract.
+// List returns every active Environment (envstore.Store.List excludes
+// drain-mode rows at the SQL layer per db.ListEnvironments).
+type EnvProvider interface {
+	Get(name string) (*db.EnvironmentRow, bool)
+	List() []db.EnvironmentRow
+}
+
 // Deps wires the precheck package's dependencies. Kept narrow so tests
-// can substitute fakes/mocks. The K8sClient is the cached client from
-// mgr.GetClient() (Plan 04-08 wires it).
+// can substitute fakes/mocks. EnvProvider replaces the previous
+// controller-runtime cached client per issue #34 C5; the projection
+// table is the source of truth and the cache reads from it.
 type Deps struct {
-	// K8sClient is the controller-runtime cached client. precheck only
-	// reads Environments via Get / List; no writes.
-	K8sClient client.Client
+	// EnvProvider is the Postgres-backed Environment cache (C2/C5).
+	EnvProvider EnvProvider
 	// TeamsResolver is the Redis-cached LiteLLM teams lookup (Plan 04-03).
 	TeamsResolver keystore.TeamsResolver
 	// Namespace scopes the Environment reads. Forwarder runs in a single
-	// tenant namespace per deployment (Hub §5.1).
+	// tenant namespace per deployment (Hub §5.1). The EnvProvider is
+	// constructed for this namespace at boot, so it is informational
+	// here (left for log fields + parity with the legacy Deps shape).
 	Namespace string
 }
 
@@ -58,12 +70,12 @@ func CheckA2A(ctx context.Context, kc middleware.KeyContext, name string, deps D
 }
 
 // runtimeList extracts the right resource slice per route family.
-func runtimeList(env *achv1alpha1.Environment, kind resourceKind) []string {
+func runtimeList(row *db.EnvironmentRow, kind resourceKind) []string {
 	switch kind {
 	case mcpResourceKind:
-		return env.Spec.Runtime.MCPServers
+		return row.RuntimeMCPServers
 	case a2aResourceKind:
-		return env.Spec.Runtime.A2AAgents
+		return row.RuntimeA2AAgents
 	}
 	return nil
 }
@@ -83,19 +95,20 @@ func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps
 // kc.Environment (resolved by Phase 3 keystore.EkResolve). Missing,
 // terminating, or name-not-in-list all fail closed as
 // ErrUnauthorizedResource per D-15 narrow error surface.
-func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) error {
-	env := &achv1alpha1.Environment{}
-	key := types.NamespacedName{Namespace: deps.Namespace, Name: kc.Environment}
-	if err := deps.K8sClient.Get(ctx, key, env); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
-		}
-		return fmt.Errorf("precheck.checkEk: get env %s: %w", kc.Environment, err)
+//
+// envstore.Store.List/Get already filter drain-mode rows out at the SQL
+// layer (db.ListEnvironments excludes deletion_timestamp IS NOT NULL),
+// so a Get miss here means "absent OR terminating" — both collapse to
+// the narrow ErrUnauthorizedResource outcome regardless.
+func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) error {
+	row, ok := deps.EnvProvider.Get(kc.Environment)
+	if !ok {
+		return ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
 	}
-	if !env.DeletionTimestamp.IsZero() {
+	if row.DeletionTimestamp != nil {
 		return ErrUnauthorizedResource // terminating env cannot grant access (D-15)
 	}
-	for _, n := range runtimeList(env, kind) {
+	for _, n := range runtimeList(row, kind) {
 		if n == name {
 			return nil
 		}
@@ -125,17 +138,20 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 		teamSet[t] = struct{}{}
 	}
 
-	var envList achv1alpha1.EnvironmentList
-	if err := deps.K8sClient.List(ctx, &envList, client.InNamespace(deps.Namespace)); err != nil {
-		return fmt.Errorf("precheck.checkPk: list envs: %w", err)
-	}
-	for i := range envList.Items {
-		env := &envList.Items[i]
-		if !env.DeletionTimestamp.IsZero() {
-			continue // PC14: terminating envs cannot grant access
+	// envstore.Store.List excludes drain-mode rows at the SQL layer
+	// (db.ListEnvironments filters deletion_timestamp IS NOT NULL), so
+	// PC14's "terminating envs cannot grant access" is enforced by the
+	// data layer; we still keep the in-row check below as defense in
+	// depth in case a future EnvProvider implementation surfaces
+	// drain-mode rows.
+	envs := deps.EnvProvider.List()
+	for i := range envs {
+		row := &envs[i]
+		if row.DeletionTimestamp != nil {
+			continue
 		}
 		hasName := false
-		for _, n := range runtimeList(env, kind) {
+		for _, n := range runtimeList(row, kind) {
 			if n == name {
 				hasName = true
 				break
@@ -144,7 +160,7 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 		if !hasName {
 			continue
 		}
-		for _, t := range env.Spec.AuthorizedTeams {
+		for _, t := range row.AuthorizedTeams {
 			if _, ok := teamSet[t]; ok {
 				return nil
 			}
