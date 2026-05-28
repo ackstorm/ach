@@ -17,7 +17,9 @@
 package ach
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -40,7 +42,57 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/sources"
 	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
+	"github.com/ackstorm/ach/internal/sources/registry"
 )
+
+// ─── Shared suite/per-test marketplace fetcher factory ────────────────
+//
+// The suite-level PluginMarketplaceReconciler (registered in suite_test.go
+// against the running manager) and the per-test reconciler invoked by
+// drainReconcileUntil both react to the same CR. Without a shared
+// fetcher factory, the suite-level reconciler falls back to the real
+// registry.For and tries live HTTPS against the fake "test/mkt-*"
+// upstreams — every attempt fails with a different reason than the
+// per-test fake produces. The two reconcilers then race on
+// Status().Update(), and Stage-1 / Stage-2 tests intermittently observe
+// the suite's overwrite instead of the per-test result. See GitHub
+// issue #18.
+//
+// suiteMarketplaceFactory is a FetcherFactory wired into the suite-level
+// PMR; when a per-test factory is installed via setSuiteMarketplaceFactory
+// (called by drainReconcileUntil), the suite reconciler routes through
+// the same per-test fakes — both reconcilers converge on identical status.
+// When no per-test factory is set, it falls through to the production
+// registry.For so the finalizer-only envtest spec keeps working.
+var (
+	sharedSuiteFactory   FetcherFactory
+	sharedSuiteFactoryMu sync.RWMutex
+)
+
+func suiteMarketplaceFactory(spec sources.SourceSpec) (sources.Fetcher, error) {
+	sharedSuiteFactoryMu.RLock()
+	f := sharedSuiteFactory
+	sharedSuiteFactoryMu.RUnlock()
+	if f != nil {
+		return f(spec)
+	}
+	return registry.For(spec)
+}
+
+// setSuiteMarketplaceFactory installs (or clears, when f is nil) the
+// per-test factory the suite-level PMR delegates to. Returns a reset
+// closure so the caller can restore the previous value via defer.
+func setSuiteMarketplaceFactory(f FetcherFactory) func() {
+	sharedSuiteFactoryMu.Lock()
+	prev := sharedSuiteFactory
+	sharedSuiteFactory = f
+	sharedSuiteFactoryMu.Unlock()
+	return func() {
+		sharedSuiteFactoryMu.Lock()
+		sharedSuiteFactory = prev
+		sharedSuiteFactoryMu.Unlock()
+	}
+}
 
 // ensureSecret creates a Secret in WatchNamespace; AlreadyExists is OK so
 // multiple tests can share the same auth Secret.
@@ -147,15 +199,134 @@ func keyFor(spec sources.SourceSpec) string {
 	return spec.Type
 }
 
-// mustMarketplaceJSON marshals a ClaudeCodeMarketplace into a body the
-// fake Stage-1 fetcher can return.
-func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
+// marshalMarketplaceSource returns the wire-format JSON for a
+// ClaudeCodeMarketplaceSource so that the resulting bytes round-trip
+// correctly through UnmarshalJSON.
+//
+// ClaudeCodeMarketplaceSource has no json struct tags (the fields use
+// custom discriminator logic in UnmarshalJSON) so a bare json.Marshal
+// produces capitalized field names that UnmarshalJSON doesn't parse —
+// all entries appear as Kind="" (UnsupportedPluginSource). This helper
+// emits the correct lowercase wire-format JSON instead.
+func marshalMarketplaceSource(s ClaudeCodeMarketplaceSource) json.RawMessage {
+	switch s.Kind {
+	case "git-subdir", "url":
+		type wireGitSubdir struct {
+			Source string `json:"source"`
+			URL    string `json:"url"`
+			Path   string `json:"path,omitempty"`
+			Ref    string `json:"ref,omitempty"`
+			SHA    string `json:"sha,omitempty"`
+		}
+		b, _ := json.Marshal(wireGitSubdir{Source: s.Kind, URL: s.URL, Path: s.Path, Ref: s.Ref, SHA: s.SHA})
+		return b
+	case "github":
+		type wireGitHub struct {
+			Source string `json:"source"`
+			Repo   string `json:"repo"`
+			Ref    string `json:"ref,omitempty"`
+			SHA    string `json:"sha,omitempty"`
+		}
+		b, _ := json.Marshal(wireGitHub{Source: "github", Repo: s.Repo, Ref: s.Ref, SHA: s.SHA})
+		return b
+	case "local-path":
+		// local-path is the bare-string form: "source": "./plugins/x"
+		b, _ := json.Marshal(s.Path)
+		return b
+	default:
+		// Unsupported / empty Kind → emit a recognizably-unsupported
+		// discriminator so UnmarshalJSON leaves Kind="".
+		b, _ := json.Marshal(map[string]string{"source": "unsupported"})
+		return b
+	}
+}
+
+// marshalMarketplaceWire serializes a ClaudeCodeMarketplace into the
+// wire-format JSON that parseClaudeCodeMarketplace / UnmarshalJSON
+// accept. Use this instead of json.Marshal(mkt) to ensure the source
+// discriminator survives the round-trip.
+func marshalMarketplaceWire(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 	t.Helper()
-	b, err := json.Marshal(mkt)
+	type wirePlugin struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description,omitempty"`
+		Source      json.RawMessage `json:"source"`
+	}
+	type wireMarketplace struct {
+		Name    string       `json:"name"`
+		Plugins []wirePlugin `json:"plugins"`
+	}
+	wm := wireMarketplace{Name: mkt.Name, Plugins: make([]wirePlugin, len(mkt.Plugins))}
+	for i, p := range mkt.Plugins {
+		wm.Plugins[i] = wirePlugin{
+			Name:        p.Name,
+			Description: p.Description,
+			Source:      marshalMarketplaceSource(p.Source),
+		}
+	}
+	b, err := json.Marshal(wm)
 	if err != nil {
-		t.Fatalf("marshal marketplace.json fixture: %v", err)
+		t.Fatalf("marshalMarketplaceWire: %v", err)
 	}
 	return b
+}
+
+// mustMarketplaceJSON marshals a ClaudeCodeMarketplace into a gzipped
+// tarball body the Stage-1 fake fetcher can return for github/gitlab/
+// bitbucket source types. The reconciler's stage-1 path calls
+// extractMarketplaceJSON for these tarball-typed sources, which walks
+// the archive looking for `.claude-plugin/marketplace.json` (matching
+// by suffix). Wrap the JSON in that path so the extract step succeeds
+// and the body reaches Stage-1 parse.
+func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
+	t.Helper()
+	return mustMarketplaceTarball(t, marshalMarketplaceWire(t, mkt))
+}
+
+// mustPluginTarGz returns a minimal gzipped tar that satisfies
+// verifyPluginManifest for the given subtree. The single entry inside
+// the archive is "<subtree>/.claude-plugin/plugin.json" (or
+// ".claude-plugin/plugin.json" when subtree is empty). Used by Stage-2
+// fakeGitFetcher bodies so they pass the F4 manifest-existence check.
+func mustPluginTarGz(t *testing.T, subtree string) string {
+	t.Helper()
+	entryPath := ".claude-plugin/plugin.json"
+	if subtree != "" {
+		entryPath = subtree + "/" + entryPath
+	}
+	tgz := buildTarGz(t, map[string]string{entryPath: `{"name":"test"}`})
+	return string(tgz)
+}
+
+// mustMarketplaceTarball wraps a raw marketplace.json body in a gzipped
+// tarball whose single entry is `repo-fffffff/.claude-plugin/
+// marketplace.json` — the same layout GitHub/GitLab/Bitbucket archive
+// APIs emit. Used to feed Stage-1 invalid-JSON / valid-JSON fixtures
+// into the github source-type extract path.
+func mustMarketplaceTarball(t *testing.T, body []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	hdr := &tar.Header{
+		Name:     "repo-fffffff/.claude-plugin/marketplace.json",
+		Mode:     0o644,
+		Size:     int64(len(body)),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
 }
 
 // mkGitSubdirPlugin builds a Claude Code real-schema git-subdir entry.
@@ -363,7 +534,18 @@ func waitForFinalizer(t *testing.T, ctx context.Context, cr *achv1alpha1.PluginM
 
 // drainReconcileUntil keeps calling our per-test reconciler's Reconcile()
 // in an Eventually loop until cond returns true. Returns false on timeout.
+//
+// Issue #18: the suite-level PMR also reconciles this CR in the manager
+// goroutine. To prevent a resourceVersion race between the two
+// reconcilers (which produce different Synced reasons whenever the
+// suite reconciler hits the real registry instead of the per-test fake),
+// install the per-test FetcherFactory into the shared suite holder for
+// the duration of this drain so the suite reconciler routes through the
+// same fakes and both converge on identical status.
 func drainReconcileUntil(ctx context.Context, r *PluginMarketplaceReconciler, cr *achv1alpha1.PluginMarketplace, cond func(*achv1alpha1.PluginMarketplace) bool) bool {
+	if r.Fetchers != nil {
+		defer setSuiteMarketplaceFactory(r.Fetchers)()
+	}
 	return Eventually(func() bool {
 		req := ctrlReq(cr)
 		_, _ = r.Reconcile(ctx, req)
@@ -428,8 +610,10 @@ func TestPMR_Stage1_ParseFails(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
+	// `{not json` wrapped in a tarball so the github extract step succeeds
+	// and the body reaches Stage-1 parse, which is what this test is for.
 	factory := newMarketplaceFakeFactory()
-	factory.register(stage1Key, &keyedFakeFetcher{body: []byte("{not json"), upstreamRev: "x"})
+	factory.register(stage1Key, &keyedFakeFetcher{body: mustMarketplaceTarball(t, []byte("{not json")), upstreamRev: "x"})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -526,9 +710,13 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
 	gitReg := withFakeGitFetcher(t)
-	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: "alpha-body", rev: shaForName("alpha")})
+	// F4: fake bodies must be valid tarballs with .claude-plugin/plugin.json
+	// at the entry's subtree path so verifyPluginManifest passes.
+	// mkGitSubdirPlugin sets Path="plugins/<name>", so the manifest lives at
+	// plugins/<name>/.claude-plugin/plugin.json inside the tarball.
+	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
 	gitReg.register(shaForName("beta"), &fakeGitFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
-	gitReg.register(shaForName("charlie"), &fakeGitFetcher{body: "charlie-body", rev: shaForName("charlie")})
+	gitReg.register(shaForName("charlie"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/charlie"), rev: shaForName("charlie")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -580,7 +768,8 @@ func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
 	gitReg := withFakeGitFetcher(t)
-	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: "alpha-body", rev: shaForName("alpha")})
+	// F4: alpha's body must be a valid tarball with .claude-plugin/plugin.json.
+	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,
@@ -619,7 +808,8 @@ func TestPMR_Stage2_Truncation(t *testing.T) {
 	for _, n := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7"} {
 		gitReg.register(shaForName(n), &fakeGitFetcher{err: fmt.Errorf("dial: %w", sources.ErrUnreachable)})
 	}
-	gitReg.register(shaForName("good"), &fakeGitFetcher{body: "good", rev: shaForName("good")})
+	// F4: "good" body must be a valid tarball with .claude-plugin/plugin.json.
+	gitReg.register(shaForName("good"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/good"), rev: shaForName("good")})
 
 	r := &PluginMarketplaceReconciler{
 		Client:    k8sClient,

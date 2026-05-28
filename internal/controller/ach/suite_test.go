@@ -280,6 +280,11 @@ func setupAndRun(m *testing.M) int {
 		Namespace: WatchNamespace,
 		Log:       logr.Discard(),
 		CacheRoot: testCacheRoot,
+		// Route through the shared per-test factory holder so the suite
+		// reconciler converges on the same status as drainReconcileUntil's
+		// per-test reconciler. Falls through to registry.For when no
+		// per-test factory is installed. See issue #18.
+		Fetchers: suiteMarketplaceFactory,
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(PluginMarketplace): %v\n", err)
 		return 1

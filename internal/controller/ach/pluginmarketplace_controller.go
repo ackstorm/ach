@@ -485,6 +485,21 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	}
 	closed = true
 
+	// ─── 6.5: post-fetch plugin.json existence check ───
+	// Stream the staged tar to verifyPluginManifest before rename(2).
+	// Subtree comes from entry.Source.Path (or "" for whole-repo Kinds).
+	stagedForVerify, openErr := os.Open(stagingPath)
+	if openErr != nil {
+		_ = os.Remove(stagingPath)
+		return fmt.Errorf("plugin %q: open staged tar: %w", entry.Name, openErr)
+	}
+	verifyErr := verifyPluginManifest(stagedForVerify, entry.Source.Path)
+	_ = stagedForVerify.Close()
+	if verifyErr != nil {
+		_ = os.Remove(stagingPath)
+		return verifyErr
+	}
+
 	// ─── 7: atomic rename(2) ───
 	if err := os.Rename(stagingPath, finalPath); err != nil {
 		_ = os.Remove(stagingPath)
