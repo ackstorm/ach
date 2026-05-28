@@ -393,6 +393,20 @@ hydrate_fixtures() {
   fi
 }
 
+hydrate_examples() {
+  # Apply the issue #17 demo Environments so a fresh `cluster.sh up` lands
+  # the cluster in a state the AccessGroupSynced contract can be eyeballed
+  # against without any further `kubectl apply`:
+  #   - examples/04-environment-demo.yaml      → AccessGroupSynced=True
+  #   - examples/04b-environment-unresolved.yaml → AccessGroupSynced=False
+  #     reason=UnresolvedReferences
+  # Both are namespaced to ach-system. Applied after wait_ach so the
+  # operator is Ready to reconcile on first observation.
+  echo "[cluster.sh] applying issue #17 demo Environments..."
+  kubectl apply -f examples/04-environment-demo.yaml
+  kubectl apply -f examples/04b-environment-unresolved.yaml
+}
+
 hydrate_all() {
   hydrate_postgres
   hydrate_valkey
@@ -402,6 +416,7 @@ hydrate_all() {
   hydrate_ach
   hydrate_fixtures
   wait_ach
+  hydrate_examples
 }
 
 print_status() (
