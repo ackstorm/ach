@@ -42,7 +42,7 @@ chart_version_of() {
 # valkey/valkey (TODO.md item 1a option c) or mirror to ghcr.io/ackstorm/mirror/*.
 
 # ach image coordinates used by hydrate_ach. CI builds the image with
-# `make docker-build IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
+# `make build-image IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
 # local developers can override either piece. The default tag `e2e` is
 # deliberately not `latest` so a stale cached `latest` cannot mask a
 # missing freshly-built image.
@@ -52,7 +52,7 @@ ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
 # ach-mcp-echo backend image (issue #35). Built + kind-loaded by hydrate_ach
 # when testMocks.mcpEcho.enabled is true in the ach values file. The tag MUST
-# match what the `e2e-mcp-echo-build` make target produces (ach-mcp-echo:e2e)
+# match what the `build-image-mcp-echo` make target produces (ach-mcp-echo:e2e)
 # and what the Helm chart's testMocks.mcpEcho default image resolves to — kind
 # load is given the exact tag the Deployment pulls (pullPolicy=IfNotPresent).
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
@@ -318,25 +318,25 @@ hydrate_ach() {
   echo "[cluster.sh] hydrating ach (image: ${ACH_IMAGE})..."
 
   # Build + kind-load the ach image (sister alitellm-operator pattern).
-  # `make docker-build` is idempotent — Docker layer cache makes repeat
+  # `make build-image` is idempotent — Docker layer cache makes repeat
   # runs cheap. Inlining the build here removes the implicit ordering
   # requirement that callers (local dev, CI workflow) must remember to
-  # run `make docker-build` first.
+  # run `make build-image` first.
   echo "[cluster.sh] building ${ACH_IMAGE}..."
-  make docker-build IMG="${ACH_IMAGE}"
+  make build-image IMG="${ACH_IMAGE}"
   echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
 
   # Build + kind-load the ach-mcp-echo backend image (issue #35) when the chart
   # will deploy it (testMocks.mcpEcho.enabled). Same rationale as the ach image
   # above: inline the build so callers never have to remember a separate
-  # `make e2e-mcp-echo-build` + manual kind load — otherwise the Deployment
+  # `make build-image-mcp-echo` + manual kind load — otherwise the Deployment
   # sits in ImagePullBackOff (the :e2e tag is never pushed to a registry).
   # Gated on the toggle so non-mcp-echo topologies don't pay the build cost.
   if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${VALUES_DIR}/ach.values.yaml" \
        | grep -qE '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
     echo "[cluster.sh] building ${MCP_ECHO_IMAGE} (testMocks.mcpEcho.enabled)..."
-    make e2e-mcp-echo-build
+    make build-image-mcp-echo
     echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
     kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
   else

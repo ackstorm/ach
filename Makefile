@@ -43,7 +43,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: build
+all: build-all
 
 ##@ General
 
@@ -92,16 +92,16 @@ shell: ## Interactive shell inside the devtools container.
 # controller-gen descends into verification/ and fails on its read-only
 # Go module cache. ./internal/... was added in plan 01-04 so the
 # NoOpReconciler's RBAC markers (+kubebuilder:rbac:...) are picked up.
-.PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+.PHONY: gen-manifests
+gen-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	# crd:allowDangerousTypes=true is required because Team.spec.budget.limit
 	# is *float64 (per spec §6.7 "Float64 precision is adopted for v1alpha1").
 	# controller-gen rejects float types by default; the spec explicitly chose
 	# this contract, so the flag is the documented kubebuilder escape hatch.
 	$(CONTROLLER_GEN) rbac:roleName=ach-manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
 
-.PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+.PHONY: gen-code
+gen-code: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile=hack/boilerplate.go.txt paths="./api/..."
 
 .PHONY: fmt
@@ -112,11 +112,15 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: test
-test: test-all ## Backward-compat alias for `make test-all` (unit + envtest-run). New code should use the explicit phase target.
+.PHONY: test-full
+test-full: ## All non-cluster tests (unit + envtest, race-enabled).
+	$(call container_target,_test-full)
+_test-full: _test-unit _test-envtest
 
-.PHONY: unit
-unit: fmt vet ## Phase 1 — pure-logic tests, no envtest, no cluster. ~10s warm.
+.PHONY: test-unit
+test-unit: ## Pure-logic unit tests (~10s warm).
+	$(call container_target,_test-unit)
+_test-unit: fmt vet
 	# `go test` defaults to -p=GOMAXPROCS across packages (speedup-ideas §5 confirmed).
 	# Exclusions: internal/controller (envtest), test/e2e (cluster).
 	# Anything else is pure-logic.
@@ -124,70 +128,88 @@ unit: fmt vet ## Phase 1 — pure-logic tests, no envtest, no cluster. ~10s warm
 		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e") \
 		-coverprofile cover-unit.out
 
-.PHONY: envtest-run
-envtest-run: envtest-race ## Phase 2 — controller envtest (race-enabled). Alias for envtest-race; CI gate.
-
-.PHONY: envtest-race
-envtest-race: manifests generate fmt vet setup-envtest ## Phase 2 — controller envtest with -race. Slower (~7m) but catches data races. CI gate.
+.PHONY: test-envtest
+test-envtest: ## Controller envtest with -race (CI gate, ~7m).
+	$(call container_target,_test-envtest)
+_test-envtest: gen-manifests gen-code fmt vet setup-envtest
 	@# Runs envtest packages concurrently. Green runs show package status
 	@# plus slow tests; failed packages dump their captured logs.
 	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
 	scripts/run-envtest-packages.sh --race --timeout 15m --coverprofile cover-envtest.out -- ./internal/controller/...
 
-.PHONY: envtest-fast
-envtest-fast: setup-envtest ## Phase 2 — controller envtest WITHOUT -race. Dev inner loop (~3m, ~3x faster than envtest-race). Not a CI gate.
+.PHONY: test-envtest-fast
+test-envtest-fast: ## Controller envtest WITHOUT -race (dev loop, ~3m).
+	$(call container_target,_test-envtest-fast)
+_test-envtest-fast: setup-envtest
 	@# Runs envtest packages concurrently. Green runs show package status
 	@# plus slow tests; failed packages dump their captured logs.
 	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
 	scripts/run-envtest-packages.sh --timeout 10m -- ./internal/controller/...
 
-.PHONY: test-all
-test-all: unit envtest-run ## All non-cluster tests (unit + envtest-run).
+.PHONY: test-integration
+test-integration: ## Integration tests (build tag: integration; testcontainers).
+	$(call container_target,_test-integration)
+_test-integration:
+	go test -tags=integration -count=1 -timeout=15m ./...
 
-.PHONY: unit-pkg
-unit-pkg: ## Phase 1 — run unit tests for one package. Usage: make unit-pkg PKG=./internal/litellm/...
+.PHONY: test-unit-pkg
+test-unit-pkg: ## Unit tests for one package. Usage: make test-unit-pkg PKG=./internal/litellm/...
+	$(call container_target,_test-unit-pkg)
+_test-unit-pkg:
 	@test -n "$(PKG)" || (echo "ERROR: PKG=... required" >&2; exit 1)
 	go test -v -race -count=1 $(PKG)
 
-.PHONY: envtest-pkg
-envtest-pkg: setup-envtest ## Phase 2 — run envtest for one package. Usage: make envtest-pkg PKG=./internal/controller/... [FOCUS=TestName] [TIMEOUT=10m]
+.PHONY: test-envtest-pkg
+test-envtest-pkg: ## envtest for one package. Usage: make test-envtest-pkg PKG=./internal/controller/... [FOCUS=TestX] [TIMEOUT=10m]
+	$(call container_target,_test-envtest-pkg)
+_test-envtest-pkg: setup-envtest
 	@test -n "$(PKG)" || (echo "ERROR: PKG=... required" >&2; exit 1)
 	# `script -q /dev/null -c "..."` fakes a TTY so -v output streams.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		script -q /dev/null -c "go test -v -count=1 -timeout $(or $(TIMEOUT),10m) $(if $(FOCUS),-run $(FOCUS),) $(PKG)"
 
-.PHONY: test-integration
-test-integration: ## Integration tests (build tag: integration). Requires Docker (testcontainers-go pulls real Postgres).
-	go test -tags=integration -count=1 -timeout=15m ./...
-
-.PHONY: smoke-idempotency
-smoke-idempotency: manifests generate fmt vet setup-envtest ## Run the accelerated AC-R1 idempotency smoke (10s window, 1s safety re-list).
+.PHONY: test-smoke-idempotency
+test-smoke-idempotency: ## Accelerated AC-R1 idempotency smoke (10s window).
+	$(call container_target,_test-smoke-idempotency)
+_test-smoke-idempotency: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 60s -run TestIdempotencyNoMutationSteadyState ./internal/controller/...
 
-.PHONY: smoke-idempotency-long
-smoke-idempotency-long: manifests generate fmt vet setup-envtest ## Run the real 35-min AC-R1 idempotency test (nightly cadence; longidempotency build tag).
+.PHONY: test-smoke-idempotency-long
+test-smoke-idempotency-long: ## Real 35-min AC-R1 idempotency test (nightly).
+	$(call container_target,_test-smoke-idempotency-long)
+_test-smoke-idempotency-long: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 40m -tags=longidempotency -run TestIdempotency35MinReal ./internal/controller/...
 
-.PHONY: leak-soak
-leak-soak: manifests generate fmt vet setup-envtest ## REL-03: run the 1000-reconcile leak harness (nightly cadence; longidempotency build tag).
+.PHONY: test-leak-soak
+test-leak-soak: ## REL-03 1000-reconcile leak harness (nightly).
+	$(call container_target,_test-leak-soak)
+_test-leak-soak: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 5m -tags=longidempotency -run TestLeakHarness_1000Reconciles ./internal/controller/...
 
-.PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+.PHONY: qa-lint
+qa-lint: ## golangci-lint full sweep.
+	$(call container_target,_qa-lint)
+_qa-lint: golangci-lint
 	$(GOLANGCI_LINT) run
 
-.PHONY: lint-fix
-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+.PHONY: qa-lint-fix
+qa-lint-fix: ## golangci-lint with --fix.
+	$(call container_target,_qa-lint-fix)
+_qa-lint-fix: golangci-lint
 	$(GOLANGCI_LINT) run --fix
 
-.PHONY: lint-config
-lint-config: golangci-lint ## Verify golangci-lint linter configuration
+.PHONY: qa-lint-config
+qa-lint-config: ## Verify golangci-lint config.
+	$(call container_target,_qa-lint-config)
+_qa-lint-config: golangci-lint
 	$(GOLANGCI_LINT) config verify
 
-.PHONY: lint-changed
-lint-changed: golangci-lint ## Lint only packages touched vs BASE_REF (default origin/main, fallback main). Inner-loop fast path (speedup-ideas §10).
+.PHONY: qa-lint-changed
+qa-lint-changed: ## Lint only packages touched vs BASE_REF (default origin/main).
+	$(call container_target,_qa-lint-changed)
+_qa-lint-changed: golangci-lint
 	@BASE=$${BASE_REF:-origin/main}; \
 	if ! git rev-parse --verify "$$BASE" >/dev/null 2>&1; then \
 		BASE=main; \
@@ -208,20 +230,26 @@ lint-changed: golangci-lint ## Lint only packages touched vs BASE_REF (default o
 FUZZ_TIME_SHORT ?= 60s
 FUZZ_TIME_LONG  ?= 10m
 
-.PHONY: fuzz-short
-fuzz-short: ## Phase 4 — Go fuzz targets with 60s budget per target (CI cadence).
-	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_SHORT) ./internal/substitution/...; else echo "fuzz-short: skip — ./internal/substitution absent (domain port pending)"; fi
-	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_SHORT) ./internal/normalize/...;    else echo "fuzz-short: skip — ./internal/normalize absent (domain port pending)";    fi
-
-.PHONY: fuzz-long
-fuzz-long: ## Go fuzz targets with 10-minute budget per target (nightly cadence).
-	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "fuzz-long: skip — ./internal/substitution absent (domain port pending)";  fi
-	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "fuzz-long: skip — ./internal/normalize absent (domain port pending)";     fi
-
-.PHONY: security
-security: lint ## Phase 4 — in-container security umbrella: gosec (via lint) + govulncheck (acknowledged-list aware) + fuzz-short. Target <=6min warm. Runs inside devtools (./scripts/dev.sh make security).
+.PHONY: qa-security
+qa-security: ## gosec (via lint) + govulncheck + fuzz-short.
+	$(call container_target,_qa-security)
+_qa-security: _qa-lint
 	bash scripts/govulncheck-gate.sh
-	$(MAKE) fuzz-short
+	$(MAKE) _qa-fuzz-short
+
+.PHONY: qa-fuzz-short
+qa-fuzz-short: ## Go fuzz targets, 60s budget each (CI cadence).
+	$(call container_target,_qa-fuzz-short)
+_qa-fuzz-short:
+	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_SHORT) ./internal/substitution/...; else echo "qa-fuzz-short: skip — ./internal/substitution absent"; fi
+	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_SHORT) ./internal/normalize/...;    else echo "qa-fuzz-short: skip — ./internal/normalize absent";    fi
+
+.PHONY: qa-fuzz-long
+qa-fuzz-long: ## Go fuzz targets, 10-minute budget each (nightly).
+	$(call container_target,_qa-fuzz-long)
+_qa-fuzz-long:
+	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "qa-fuzz-long: skip — ./internal/substitution absent";  fi
+	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
 
 .PHONY: pre-commit
 pre-commit: ## Host-only — fast local gate (lint-changed + unit). Runs automatically on `git commit` once `make hooks` is installed.
@@ -233,7 +261,7 @@ pre-push: ## Host-only — 17-gate pre-publication check (gitleaks + trufflehog 
 
 .PHONY: verify
 verify: ## Host-only — full pre-publication gate bundle: in-container security + host pre-push. Single command for all gates.
-	./scripts/dev.sh make security
+	$(MAKE) qa-security
 	$(MAKE) pre-push
 
 .PHONY: hooks
@@ -242,8 +270,8 @@ hooks: ## Install git hooks (pre-commit + pre-push).
 
 ##@ Release
 
-.PHONY: bump
-bump: ## Internal: bump version across all manifests. Used by release.yml. Prefer `make release VERSION=X.Y.Z` for local cuts.
+.PHONY: release-bump
+release-bump: ## Internal: bump version across all manifests. Used by release.yml. Prefer `make release-cut VERSION=X.Y.Z` for local cuts.
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -255,8 +283,8 @@ bump: ## Internal: bump version across all manifests. Used by release.yml. Prefe
 	@sed -i -E 's|^([[:space:]]+)newTag: v.*|\1newTag: v$(VERSION)|' deploy/kustomize/kustomization.yaml
 	@echo "Manifests bumped to v$(VERSION)."
 
-.PHONY: release
-release: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, push to main. Usage: make release VERSION=X.Y.Z
+.PHONY: release-cut
+release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, push to main. Usage: make release-cut VERSION=X.Y.Z
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -276,28 +304,32 @@ release: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, 
 
 ##@ Build
 
-.PHONY: build
-build: manifests generate fmt vet ## Build both ach (services) and ach-cli (user CLI) binaries
-	go build \
-	  -trimpath \
-	  -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" \
-	  -o bin/ach \
-	  ./cmd/ach
-	go build \
-	  -trimpath \
-	  -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" \
-	  -o bin/ach-cli \
-	  ./cmd/ach-cli
+.PHONY: build-all
+build-all: ## Build both binaries (ach services + ach-cli).
+	$(call container_target,_build-all)
+_build-all: _build-server _build-cli
+
+.PHONY: build-server
+build-server: ## Build bin/ach (services: operator/platform-api/forwarder/content-service/migrate).
+	$(call container_target,_build-server)
+_build-server: gen-manifests gen-code fmt vet
+	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" -o bin/ach ./cmd/ach
+
+.PHONY: build-cli
+build-cli: ## Build bin/ach-cli (user CLI).
+	$(call container_target,_build-cli)
+_build-cli:
+	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" -o bin/ach-cli ./cmd/ach-cli
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
+run: gen-manifests gen-code fmt vet ## Run a controller from your host.
 	go run ./cmd/ach
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-.PHONY: docker-build
-docker-build: ## Build docker image with the ach binary.
+.PHONY: build-image
+build-image: ## Build the ach services container image. Usage: make build-image IMG=ach:e2e
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
@@ -326,7 +358,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	rm Dockerfile.cross
 
 .PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+build-installer: gen-manifests gen-code kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	# Use controller:latest as the placeholder for kustomize-to-helm.sh to substitute
 	# into {{ .Values.image.repo }}:{{ .Values.image.tag }}. The actual image is set
@@ -341,15 +373,15 @@ ifndef ignore-not-found
 endif
 
 .PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: gen-manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: gen-manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: gen-manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
@@ -503,25 +535,40 @@ samples-audit: ## DEPLOY-02: fail the build if any sample manifest contains a TO
 
 ##@ E2E (cluster + mocks)
 
-.PHONY: e2e-mock-build
-e2e-mock-build: ## build the ach-mock:e2e image
+.PHONY: build-image-mock
+build-image-mock: ## Build the ach-mock:e2e image (LiteLLM-shaped chat-completion mock).
 	$(CONTAINER_TOOL) build -t ach-mock:e2e -f test/e2e/mock/Dockerfile test/e2e/mock/
 
-.PHONY: e2e-mcp-echo-build
-e2e-mcp-echo-build: ## build the ach-mcp-echo:e2e image (issue #35)
+.PHONY: build-image-mcp-echo
+build-image-mcp-echo: ## Build the ach-mcp-echo:e2e image (JWT-verifying MCP backend, issue #35).
 	$(CONTAINER_TOOL) build -t ach-mcp-echo:e2e -f test/e2e/mcp-echo/Dockerfile .
 
-.PHONY: cluster-up cluster-down cluster-hydrate cluster-keep cluster-status
-cluster-up:      ## bring up canonical kind cluster + hydration
+.PHONY: cluster-up cluster-down cluster-reset cluster-sync cluster-status cluster-image-load
+cluster-up: ## Bring up canonical kind cluster + hydration (transactional).
+	$(call container_target,_cluster-up)
+_cluster-up:
 	bash scripts/cluster.sh up
-cluster-down:    ## tear down canonical kind cluster
+cluster-down: ## Tear down canonical kind cluster.
+	$(call container_target,_cluster-down)
+_cluster-down:
 	bash scripts/cluster.sh down
-cluster-hydrate: ## re-apply hydration on an already-up cluster
-	bash scripts/cluster.sh hydrate
-cluster-keep:    ## same as cluster-up (kept for naming consistency with spec §5)
-	bash scripts/cluster.sh keep
-cluster-status:  ## print kubectl get on hydration fixtures
+cluster-reset: ## Tear down then bring up a clean cluster.
+	$(call container_target,_cluster-reset)
+_cluster-reset:
+	bash scripts/cluster.sh reset
+cluster-sync: ## Reconcile infra/fixtures on a RUNNING cluster (does NOT recreate).
+	$(call container_target,_cluster-sync)
+_cluster-sync:
+	bash scripts/cluster.sh sync
+cluster-status: ## Print status of hydration fixtures.
+	$(call container_target,_cluster-status)
+_cluster-status:
 	bash scripts/cluster.sh status
+cluster-image-load: ## Build + kind-load the ach image. Usage: make cluster-image-load IMG=ach:e2e
+	$(call container_target,_cluster-image-load)
+_cluster-image-load:
+	$(MAKE) build-image
+	kind load docker-image $(IMG) --name $${KIND_CLUSTER:-ach-e2e}
 
 ##@ Waiters (use these; never write ad-hoc until/while loops)
 
@@ -628,8 +675,10 @@ pf-kubeai-mock: ## port-forward kubeai-mock to localhost:8082
 mock-mode: ## flip a mock auth mode (usage: make mock-mode INSTANCE=openai-mock MODE=reject-401)
 	bash scripts/mock-set-mode.sh $(INSTANCE) $(MODE)
 
-.PHONY: e2e e2e-focus
-e2e:        ## Phase 3 — run full e2e suite against running cluster (assumes cluster-up already invoked).
+.PHONY: e2e-run e2e-focus e2e-full e2e-keep
+e2e-run: ## Run e2e suite against an already-up cluster.
+	$(call container_target,_e2e-run)
+_e2e-run:
 	# E2E_SKIP_SETUP=1 hands cluster lifecycle to scripts/cluster.sh; without
 	# it, test/e2e/e2e_suite_test.go's TestMain calls setupCluster() which
 	# tries `kind load docker-image ach-operator:latest` — a per-binary
@@ -637,25 +686,23 @@ e2e:        ## Phase 3 — run full e2e suite against running cluster (assumes c
 	# `ach` layout. cluster-up handles the actual image load.
 	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
 
-e2e-focus:  ## Run a focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
+e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
+	$(call container_target,_e2e-focus)
+_e2e-focus:
 	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
 	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	# E2E_SKIP_SETUP=1 export via bash -c so the value crosses the
-	# scripts/dev.sh container boundary (the wrapper does not forward
-	# arbitrary host env vars).
-	./scripts/dev.sh bash -c 'E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
+	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
 	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
-	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")'
+	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")
 
-.PHONY: e2e-full e2e-keep
-e2e-full: ## Phase 3 — cluster-up → e2e → cluster-down (trap-guaranteed teardown)
+e2e-full: ## cluster-up → e2e-run → cluster-down (trap-guaranteed teardown).
 	@bash -c '\
 	  set -e; \
 	  trap "$(MAKE) cluster-down || true" EXIT; \
 	  $(MAKE) cluster-up; \
-	  $(MAKE) e2e'
+	  $(MAKE) e2e-run'
 
-e2e-keep: ## Phase 3 — cluster-up (kept) → e2e (NO teardown — local iteration)
-	bash scripts/cluster.sh keep
-	$(MAKE) e2e
+e2e-keep: ## cluster-up (kept) → e2e-run (NO teardown — local iteration).
+	$(MAKE) cluster-up
+	$(MAKE) e2e-run
