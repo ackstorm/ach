@@ -113,4 +113,21 @@ type Opts struct {
 	// when nil (commit.go normalizes).
 	Stdout io.Writer
 	Stderr io.Writer
+
+	// --- DI seams (07-W5-01 gap closure) ---
+
+	// Extractor is the concrete extractor impl that drives steps 7-9
+	// of the §6.7 14-step commit sequence (FetchContent +
+	// StageAndPublish). Production callers (cmd/ach-cli/cmd/hydrate.go
+	// runHydrateEngine) supply hydrate.NewWiring's first return value;
+	// unit tests leave nil to exercise the W1 stub fall-through in
+	// commit.run().
+	Extractor Extractor
+
+	// AdapterDispatcher is the concrete dispatcher impl that drives
+	// step 10 of the §6.7 14-step commit sequence (Lookup + Render +
+	// SAFE-04 cascade). Production callers supply hydrate.NewWiring's
+	// second return value; unit tests leave nil to exercise the W1
+	// stub fall-through in commit.run().
+	AdapterDispatcher AdapterDispatcher
 }

@@ -154,6 +154,8 @@ func newCommit(opts Opts) (*commit, error) {
 		stateStore: defaultStateStore{},
 		locker:     lock.NewLocker(lock.Path(achDir)),
 		differ:     NewDiffer(),
+		extractor:  opts.Extractor,
+		adapter:    opts.AdapterDispatcher,
 		achDir:     achDir,
 		statePath:  statePath,
 		killFn:     defaultKillFn,

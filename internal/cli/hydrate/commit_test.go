@@ -77,6 +77,44 @@ type fakeLease struct{}
 
 func (fakeLease) Release() error { return nil }
 
+// fakeExtractor implements hydrate.Extractor for unit tests. Each
+// ExtractContent invocation increments calls and returns the canned
+// result (or err if non-nil). Default values produce a zero-byte
+// ExtractResult — useful for "did the orchestrator call me" assertions.
+type fakeExtractor struct {
+	calls  *int
+	result ExtractResult
+	err    error
+}
+
+func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string) (ExtractResult, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	if f.err != nil {
+		return ExtractResult{}, f.err
+	}
+	return f.result, nil
+}
+
+// fakeAdapterDispatcher implements hydrate.AdapterDispatcher for unit
+// tests. Render records call count + returns canned RenderResult.
+type fakeAdapterDispatcher struct {
+	calls  *int
+	result RenderResult
+	err    error
+}
+
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _ string) (RenderResult, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	if f.err != nil {
+		return RenderResult{}, f.err
+	}
+	return f.result, nil
+}
+
 // ---- builder ----
 
 // newTestCommit constructs a *commit with all fakes wired and an
@@ -402,6 +440,49 @@ func TestCommit_NewCommit_ReadsSigkillEnvVar(t *testing.T) {
 	}
 	if c.injectSigkillAfterStep != 7 {
 		t.Errorf("c.injectSigkillAfterStep = %d, want 7", c.injectSigkillAfterStep)
+	}
+}
+
+// TestNewCommit_PopulatesExtractorAndAdapter asserts that the
+// Extractor + AdapterDispatcher fields on Opts are read by newCommit
+// and assigned to the *commit struct's extractor / adapter slots
+// (07-W5-01 gap closure — the W1 stub fall-through is preserved when
+// the fields are nil, but production callers MUST be able to inject
+// real impls).
+func TestNewCommit_PopulatesExtractorAndAdapter(t *testing.T) {
+	fakeExt := fakeExtractor{}
+	fakeAd := fakeAdapterDispatcher{}
+
+	c, err := newCommit(Opts{
+		Output:            t.TempDir(),
+		Environment:       "demo",
+		Extractor:         fakeExt,
+		AdapterDispatcher: fakeAd,
+	})
+	if err != nil {
+		t.Fatalf("newCommit = %v, want nil", err)
+	}
+	if c.extractor == nil {
+		t.Errorf("c.extractor = nil; want non-nil (opts.Extractor was set)")
+	}
+	if c.adapter == nil {
+		t.Errorf("c.adapter = nil; want non-nil (opts.AdapterDispatcher was set)")
+	}
+
+	// Sanity: when both fields are zero on Opts, the W1 stub
+	// fall-through is preserved (c.extractor == nil + c.adapter == nil).
+	c2, err := newCommit(Opts{
+		Output:      t.TempDir(),
+		Environment: "demo",
+	})
+	if err != nil {
+		t.Fatalf("newCommit (nil seams) = %v, want nil", err)
+	}
+	if c2.extractor != nil {
+		t.Errorf("c2.extractor = %v; want nil (Opts.Extractor was zero)", c2.extractor)
+	}
+	if c2.adapter != nil {
+		t.Errorf("c2.adapter = %v; want nil (Opts.AdapterDispatcher was zero)", c2.adapter)
 	}
 }
 
