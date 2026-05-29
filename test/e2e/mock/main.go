@@ -112,9 +112,15 @@ func main() {
 	})
 
 	// Common reset endpoint — tests call this between scenarios.
+	//
+	// Reset the DATA fields in place; do NOT do `*cap = capture{}`, which would
+	// overwrite the embedded sync.Mutex with a fresh (unlocked) one while we
+	// hold the old one — the following Unlock then fires "fatal error: sync:
+	// unlock of unlocked mutex" and crashes the process (go vet copylocks).
 	mux.HandleFunc("/__capture/reset", func(w http.ResponseWriter, r *http.Request) {
 		cap.mu.Lock()
-		*cap = capture{}
+		cap.Method, cap.Path, cap.Headers = "", "", nil
+		cap.Body, cap.BodyRaw, cap.At = nil, "", time.Time{}
 		cap.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
