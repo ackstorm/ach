@@ -220,9 +220,14 @@ func testPhase6HydrateGoldenDiff(t *testing.T) {
 	baseURL := phase6PlatformAPIURL(t)
 	xdg := phase6WriteTempConfig(t, baseURL, pk)
 
+	// D-21: pass --raw to preserve the Phase 6 byte-for-byte POST+stream
+	// stdout contract under Phase 7's engine-default ach-cli binary. The
+	// hidden --raw flag short-circuits BEFORE any engine call so the
+	// golden-diff anchor at examples/hydrate.json continues to hold.
 	stdout, stderr, err := phase6RunAch(t, xdg,
 		"hydrate", "--environment", phase6DemoEnvironment,
 		"--no-warnings",
+		"--raw",
 	)
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
