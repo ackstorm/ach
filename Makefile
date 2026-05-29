@@ -700,6 +700,39 @@ logs-forwarder:    ## Tail forwarder logs.
 logs-litellm:      ## Tail LiteLLM logs.
 	kubectl -n litellm-system logs -f --timestamps deploy/litellm
 
+# --- E2E harness wiring ----------------------------------------------------
+# Everything reaches the synced cluster through the gateway (localhost:8080;
+# kind extraPortMapping + devtools --network=host). Data-plane URLs ARE the
+# gateway base (it routes /v1 /content /platform /mcp /a2a /.well-known /dex);
+# metrics get distinct /metrics/<svc> routes (a bare /metrics can't
+# disambiguate four services behind one base). Phase gates default ON — the
+# synced cluster closes the LiteLLM seed gap (TODO §16) and the alpine+git
+# operator image closes the git gap, so the formerly-pending tests run. All
+# overridable on the command line (e.g. `make e2e-focus ACH_E2E_PHASE9=0`).
+ACH_BASE_URL   ?= http://localhost:8080
+ACH_E2E_PHASE4 ?= 1
+ACH_E2E_PHASE5 ?= 1
+ACH_E2E_PHASE6 ?= 1
+ACH_E2E_PHASE9 ?= 1
+ACH_E2E_SC11C  ?= 1
+
+# Shared env block prefixed onto EVERY e2e go-test invocation (run + focus)
+# so URL-gated and phase-gated tests actually exercise the synced cluster.
+# Make variables are not exported to recipe shells unless referenced inline,
+# so both _e2e-run and _e2e-focus expand this explicitly.
+E2E_RUN_ENV = \
+	ACH_BASE_URL=$(ACH_BASE_URL) \
+	ACH_FORWARDER_URL=$(ACH_BASE_URL) \
+	ACH_CONTENT_SERVICE_URL=$(ACH_BASE_URL) \
+	ACH_PLATFORM_API_URL=$(ACH_BASE_URL) \
+	ACH_FORWARDER_METRICS_URL=$(ACH_BASE_URL)/metrics/forwarder \
+	ACH_CONTENT_METRICS_URL=$(ACH_BASE_URL)/metrics/content \
+	ACH_PLATFORM_METRICS_URL=$(ACH_BASE_URL)/metrics/platform \
+	ACH_OPERATOR_METRICS_URL=$(ACH_BASE_URL)/metrics/operator \
+	ACH_E2E_PHASE4=$(ACH_E2E_PHASE4) ACH_E2E_PHASE5=$(ACH_E2E_PHASE5) \
+	ACH_E2E_PHASE6=$(ACH_E2E_PHASE6) ACH_E2E_PHASE9=$(ACH_E2E_PHASE9) \
+	ACH_E2E_SC11C=$(ACH_E2E_SC11C)
+
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
 e2e-run: ## Run e2e suite against an already-up cluster.
 	$(call container_target,_e2e-run)
@@ -708,8 +741,10 @@ _e2e-run:
 	# it, test/e2e/e2e_suite_test.go's TestMain calls setupCluster() which
 	# tries `kind load docker-image ach-operator:latest` — a per-binary
 	# image name from ach-old that does not exist under the single-binary
-	# `ach` layout. cluster-up handles the actual image load.
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
+	# `ach` layout. cluster-up handles the actual image load. The synced
+	# cluster is reached entirely through the gateway — zero port-forwards.
+	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
+		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e/...
 
 e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
 	$(call container_target,_e2e-focus)
@@ -717,7 +752,10 @@ _e2e-focus:
 	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
 	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
+	# Same gateway-URL + phase-gate env as _e2e-run so focused runs of
+	# formerly-gated tests actually execute (not skip).
+	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
+	    go test -tags=e2e -v -count=1 -timeout 5m \
 	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
 	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")
 

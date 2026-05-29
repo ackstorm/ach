@@ -509,9 +509,12 @@ func testPhase5SC5MetricsTopology(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	forwarderURL := strings.TrimRight(envOrSkip(t, "ACH_FORWARDER_URL"), "/") + "/metrics"
-	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/") + "/metrics"
-	papiURL := strings.TrimRight(envOrSkip(t, "ACH_PLATFORM_API_URL"), "/") + "/metrics"
+	// Per-service metrics routes through the gateway (a bare /metrics
+	// can't disambiguate four services behind one base). The harness
+	// exports each as ACH_<svc>_METRICS_URL = <base>/metrics/<svc>.
+	forwarderURL := envOrSkip(t, "ACH_FORWARDER_METRICS_URL")
+	csURL := envOrSkip(t, "ACH_CONTENT_METRICS_URL")
+	papiURL := envOrSkip(t, "ACH_PLATFORM_METRICS_URL")
 	operatorURL := envOrSkip(t, "ACH_OPERATOR_METRICS_URL")
 
 	assertContains := func(t *testing.T, body string, names ...string) {

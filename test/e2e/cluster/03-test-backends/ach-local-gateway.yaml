@@ -70,6 +70,18 @@ data:
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
             }
+
+            # Per-service /metrics scrape routes. A bare /metrics can't
+            # disambiguate four services behind one gateway base, so each
+            # gets a distinct path that rewrites to the upstream's own
+            # /metrics. The e2e harness exports these as
+            # ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL.
+            # ach-operator-metrics is the Service added in the operator
+            # Helm template (the operator has no data-plane Service).
+            location /metrics/forwarder { proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/metrics; }
+            location /metrics/content   { proxy_pass http://ach-content-service.ach-system.svc.cluster.local:8082/metrics; }
+            location /metrics/platform  { proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/metrics; }
+            location /metrics/operator  { proxy_pass http://ach-operator-metrics.ach-system.svc.cluster.local:8080/metrics; }
         }
     }
 ---

@@ -176,4 +176,30 @@ spec:
               drop:
                 - ALL
         {{- end }}
+---
+# Operator metrics Service. The operator Deployment ships no Service of
+# its own (it is a controller, not a request server), so the :8080
+# metrics port had no stable cluster DNS name. This Service exposes it
+# for (a) the e2e gateway's /metrics/operator route and (b) the
+# ServiceMonitor in examples/prometheus-servicemonitor.yaml. The
+# selector MUST match the operator Deployment's pod selector labels
+# exactly (app.kubernetes.io/name=ach + component=operator); it lands on
+# the operator container's :8080 metrics port (NOT the co-located
+# content-service :8082, which has its own Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-operator-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
 {{- end }}
