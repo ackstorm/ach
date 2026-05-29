@@ -588,6 +588,26 @@ _Appears in:_
 | `exclude` _string array_ | Exclude is a list of anchored RE2 patterns dropped from the catalog<br />after Include is applied. |  |  |
 
 
+#### MarketplacePluginRef
+
+
+
+MarketplacePluginRef is the per-plugin entry surfaced on
+PluginMarketplace status — operators reading the CR need at-a-glance
+visibility into which plugin names the most recent reconcile
+materialized AND the upstream revision they pin against.
+
+
+
+_Appears in:_
+- [PluginMarketplaceStatus](#pluginmarketplacestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the plugin's identifier within the catalog<br />(marketplace.json plugins[].name). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty when the reconciler hasn't recorded a<br />per-plugin revision yet (e.g. dry-run paths). |  |  |
+
+
 #### Plugin
 
 
@@ -734,6 +754,8 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `plugins` _[MarketplacePluginRef](#marketplacepluginref) array_ | Plugins lists the entries in the upstream catalog that the most<br />recent reconcile successfully materialized into marketplace_plugins<br />(+ the per-marketplace cache). Ordered by Name. Entries that<br />failed Stage-2 are NOT included here — those surface in the<br />Synced condition's message field (`stage-2: <N> plugin(s)<br />failed: ...`). Empty before the first successful reconcile. |  |  |
+| `pluginsCount` _integer_ | PluginsCount is the size of Plugins, denormalized so the<br />kubectl print column can show it without a JSONPath length()<br />expression. Equal to len(Plugins). |  |  |
 
 
 #### PluginSpec
