@@ -77,14 +77,14 @@ Flow:
 
 Interactive prompts (skipped when --deployment / --base-url are set):
   Deployment name  DNS-1123 label, e.g. "prod"
-  URL              https://hub.example.com (https:// required)
+  URL              https://hub.example.com (http:// or https://; http:// warns)
 
 Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run
 with exit 1 per CLI spec §3.3.
 
 Flags:
   --deployment <name>   Skip the deployment-name prompt
-  --base-url <url>      Skip the URL prompt (https:// only)
+  --base-url <url>      Skip the URL prompt (http:// or https://)
   --no-browser          Print verification_url instead of opening browser
   --no-warnings         Suppress config-file file-mode warnings to stderr
 `,
@@ -94,7 +94,7 @@ Flags:
 	}
 
 	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Deployment name to write (DNS-1123 label)")
-	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (https:// only)")
+	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
 	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
 
@@ -127,11 +127,16 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 		return err
 	}
 
-	// Step 3 — resolve URL (flag or interactive prompt). Validate
-	// https://.
+	// Step 3 — resolve URL (flag or interactive prompt). Accepts
+	// http:// or https://.
 	url, err := resolveBaseURL(baseURL, stdin, stdout)
 	if err != nil {
 		return err
+	}
+	if !noWarnings && strings.HasPrefix(url, "http://") {
+		_, _ = fmt.Fprintf(stderr,
+			"warning: deployment %q uses plaintext http:// — credentials are sent "+
+				"unencrypted (safe only on trusted/internal networks)\n", url)
 	}
 
 	// Step 4 — load existing config (best effort; nil-on-absent OK).
@@ -234,7 +239,9 @@ func resolveDeploymentName(flagVal string, stdin io.Reader, stdout io.Writer) (s
 }
 
 // resolveBaseURL returns the flag value when set; otherwise prompts.
-// Validates the https:// prefix.
+// Accepts http:// or https://; rejects any other scheme. http:// is
+// allowed for local/internal hubs — runLogin emits a plaintext-transport
+// warning when the resolved URL is http://.
 func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
 	url := strings.TrimSpace(flagVal)
 	if url == "" {
@@ -244,10 +251,10 @@ func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, 
 			url = strings.TrimSpace(s.Text())
 		}
 	}
-	if !strings.HasPrefix(url, "https://") {
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
 		return "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  "url must be https:// (CLI-02 / D-04)",
+			Msg:  "url must be http:// or https://",
 		}
 	}
 	return url, nil

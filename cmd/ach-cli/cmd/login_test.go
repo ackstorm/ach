@@ -187,23 +187,25 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	}
 }
 
-// TestLogin_RejectNonHTTPS is Test 2: refuse non-https URL with exit 1.
-func TestLogin_RejectNonHTTPS(t *testing.T) {
+// TestLogin_RejectInvalidScheme refuses a URL that is neither http:// nor
+// https:// (here ftp://) with exit 1. http:// is now accepted (with a
+// plaintext-transport warning) — see resolveBaseURL + runLogin.
+func TestLogin_RejectInvalidScheme(t *testing.T) {
 	loginTestEnv(t)
 
 	_, _, code, err := executeLogin(t,
 		"--deployment", "prod",
-		"--base-url", "http://insecure",
+		"--base-url", "ftp://insecure",
 		"--no-browser",
 	)
 	if err == nil {
-		t.Fatal("login should have errored on http:// URL")
+		t.Fatal("login should have errored on ftp:// URL")
 	}
 	if code != exit.General {
 		t.Errorf("exit code = %d; want 1", code)
 	}
-	if !strings.Contains(err.Error(), "https") {
-		t.Errorf("err message missing 'https' hint; got %q", err.Error())
+	if !strings.Contains(err.Error(), "http:// or https://") {
+		t.Errorf("err message missing scheme hint; got %q", err.Error())
 	}
 }
 
