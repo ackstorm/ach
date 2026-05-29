@@ -766,6 +766,37 @@ filter miss returns `pgx.ErrNoRows` which the helper maps to `ErrOriginConflict`
 which the reconciler maps to `Synced=False reason=ConflictWithUIRow` and a 1-min
 requeue.
 
+### ❌ Code change rebuilt but the old container keeps serving after `cluster-up`
+```bash
+# edit Go code → make cluster-up → behavior unchanged; pod AGE is hours old
+kubectl -n ach-system get pod -l app.kubernetes.io/component=platform-api
+# ach-platform-api-... 1/1 Running 0 48m   ← NOT restarted
+```
+✅ `scripts/cluster.sh hydrate_ach` rebuilds + `kind load`s the image under
+the **fixed** tag `:e2e` with `pullPolicy=IfNotPresent`. A rebuilt image
+carries the same tag, so a plain `helm upgrade` renders a byte-identical
+Deployment spec and does NOT roll the pods — kubelet keeps the stale image
+running. `hydrate_ach` defeats this by passing
+`--set-string image.rebuildId=$(date +%s)`: the chart renders that value
+into an `ach.ackstorm.ai/rebuild-id` pod annotation on every ach
+Deployment, so the podTemplate changes each run and **Helm rolls all pods
+in the same upgrade** onto the freshly node-resident `:e2e` layer. The
+value defaults to `""` (annotation omitted) so **production never rolls
+pods spuriously**. If you redeploy by some other path (raw `helm upgrade`,
+manual image rebuild), either pass the same `--set-string` or force the
+roll yourself:
+```bash
+for d in ach-operator ach-platform-api ach-forwarder; do
+  ./scripts/dev.sh kubectl -n ach-system rollout restart deploy/"$d"
+done
+```
+WHY IT FAILS: `IfNotPresent` + a non-unique tag means the only signal that
+would trigger a rollout (a changed podTemplate) never changes across
+rebuilds. The image content under `:e2e` is new, but nothing tells kubelet
+to recreate the pod. `image.rebuildId` is the prod-safe knob that makes the
+podTemplate differ per build; a unique per-build image **tag** would also
+work but leaves orphan images on the node.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: `cmd/ach/main.go` is a thin wrapper that

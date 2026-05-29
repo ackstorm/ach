@@ -51,6 +51,9 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
       labels:
         {{- include "ach.commonLabels" . | nindent 8 }}
         app.kubernetes.io/component: platform-api

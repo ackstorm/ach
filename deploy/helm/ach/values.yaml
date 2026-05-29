@@ -28,6 +28,15 @@ image:
   repo: ghcr.io/ackstorm/ach
   tag: v0.1.0
   pullPolicy: IfNotPresent
+  # rebuildId: a unique value per build (e.g. a timestamp) rendered as the
+  # `ach.ackstorm.ai/rebuild-id` pod annotation on every ach Deployment.
+  # When set, the podTemplate changes each `helm upgrade`, so Helm rolls
+  # all pods — needed because the kind dev loop rebuilds the SAME tag
+  # (`:e2e`) with pullPolicy=IfNotPresent, which otherwise yields a
+  # byte-identical spec and no rollout. Empty default = annotation absent
+  # = no spurious rolls in production. scripts/cluster.sh sets it to
+  # `$(date +%s)` on each hydrate_ach.
+  rebuildId: ""
 
 # watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
 # Maps to WATCH_NAMESPACE env var on operator Deployment.
