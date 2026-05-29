@@ -222,9 +222,11 @@ func findPostgresPod(t *testing.T) string {
 	return ""
 }
 
-// SC#5 — RBAC inspection: only the Operator SA has write verbs on ACH
-// kinds. Other SAs have read-only. Platform API has `patch` on the four
-// external-ref kinds (MULTI-02 carve-out).
+// SC#5 — RBAC inspection under Postgres-as-SoT (#34): the Operator SA is the
+// SOLE writer/reader of ACH CRDs. platform-api and forwarder no longer touch
+// CRDs at all — they read projected rows from Postgres — so the legacy
+// MULTI-02 platform-api patch carve-out was removed. can-i for those verbs
+// must therefore return "no".
 func testSC5RBACMatrix(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -239,12 +241,17 @@ func testSC5RBACMatrix(t *testing.T) {
 		// Platform API SA can NOT create environments (MULTI-02: only patch carve-out for refresh).
 		{"platform-api cannot create environments", "create", "environments.ach.ackstorm.ai", "ach-platform-api", "no"},
 		{"platform-api cannot patch environments", "patch", "environments.ach.ackstorm.ai", "ach-platform-api", "no"},
-		// Platform API SA CAN patch plugins / prompts / artifacts / pluginmarketplaces (MULTI-02 carve-out).
-		{"platform-api can patch plugins", "patch", "plugins.ach.ackstorm.ai", "ach-platform-api", "yes"},
-		{"platform-api can patch prompts", "patch", "prompts.ach.ackstorm.ai", "ach-platform-api", "yes"},
-		// Forwarder SA: read-only on Environment + BackendIdentityPolicy.
+		// Postgres-as-SoT (#34): the legacy MULTI-02 patch carve-out (platform-api
+		// patching plugins / prompts / artifacts / pluginmarketplaces for refresh)
+		// was REMOVED. platform-api reads projected rows from Postgres and triggers
+		// refresh through the operator, never by patching CRDs — so these are DENIED.
+		{"platform-api cannot patch plugins", "patch", "plugins.ach.ackstorm.ai", "ach-platform-api", "no"},
+		{"platform-api cannot patch prompts", "patch", "prompts.ach.ackstorm.ai", "ach-platform-api", "no"},
+		// Forwarder SA: NO CRD access under Postgres-as-SoT (#34). It reads
+		// Environments + BackendIdentityPolicies from Postgres (LISTEN/NOTIFY +
+		// periodic refresh); its only k8s read is the ach-jwt-signing-keys Secret.
 		{"forwarder cannot create environments", "create", "environments.ach.ackstorm.ai", "ach-forwarder", "no"},
-		{"forwarder can get environments", "get", "environments.ach.ackstorm.ai", "ach-forwarder", "yes"},
+		{"forwarder cannot get environments", "get", "environments.ach.ackstorm.ai", "ach-forwarder", "no"},
 		// Content-service: co-located in the operator Pod (Phase 9 Helm
 		// chart refactor — shared RWO cache PVC mandates single Pod).
 		// Both containers run under the ach-operator SA; the dedicated
