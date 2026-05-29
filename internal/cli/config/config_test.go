@@ -81,21 +81,35 @@ func TestSave_ModeAndDir(t *testing.T) {
 	}
 }
 
-// TestSave_RefuseNonHTTPS asserts Test 3: Save refuses any Deployment
-// whose URL does not begin with "https://" — returns ErrNonHTTPSURL.
-func TestSave_RefuseNonHTTPS(t *testing.T) {
+// TestSave_RefuseInvalidScheme asserts Save refuses any Deployment whose
+// URL is neither http:// nor https:// (here ftp://) — returns
+// ErrInvalidURLScheme and writes nothing.
+func TestSave_RefuseInvalidScheme(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	f := &config.File{
 		Deployments: map[string]*config.Deployment{
-			"x": {URL: "http://insecure.test"},
+			"x": {URL: "ftp://insecure.test"},
 		},
 	}
 	err := config.Save(path, f)
-	if !errors.Is(err, config.ErrNonHTTPSURL) {
-		t.Fatalf("Save returned %v, want ErrNonHTTPSURL", err)
+	if !errors.Is(err, config.ErrInvalidURLScheme) {
+		t.Fatalf("Save returned %v, want ErrInvalidURLScheme", err)
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Errorf("file should not exist after refused save, stat err = %v", statErr)
+	}
+}
+
+// TestSave_AcceptsHTTPAndHTTPS asserts Save accepts both http:// and
+// https:// URLs (http:// is no longer rejected — the command layer warns
+// about plaintext transport instead).
+func TestSave_AcceptsHTTPAndHTTPS(t *testing.T) {
+	for _, url := range []string{"http://localhost:8080", "https://hub.example.com"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		f := &config.File{Deployments: map[string]*config.Deployment{"x": {URL: url}}}
+		if err := config.Save(path, f); err != nil {
+			t.Errorf("Save(%q) returned %v, want nil", url, err)
+		}
 	}
 }
 
@@ -154,47 +168,36 @@ func TestLoad_BadYAMLReturnsParseError(t *testing.T) {
 	}
 }
 
-// TestLoad_RefuseNonHTTPS asserts Test 6: Load refuses any deployment
-// whose URL is non-HTTPS — emits ErrNonHTTPSURL with the deployment
-// name in the message.
-func TestLoad_RefuseNonHTTPS(t *testing.T) {
+// TestLoad_RefuseInvalidScheme asserts Load refuses any deployment whose
+// URL is neither http:// nor https:// (here ftp://) — emits
+// ErrInvalidURLScheme with the deployment name in the message.
+func TestLoad_RefuseInvalidScheme(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("default: bad\ndeployments:\n  bad:\n    url: http://attacker.test\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("default: bad\ndeployments:\n  bad:\n    url: ftp://attacker.test\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	_, err := config.Load(path)
-	if !errors.Is(err, config.ErrNonHTTPSURL) {
-		t.Fatalf("Load returned %v, want ErrNonHTTPSURL", err)
+	if !errors.Is(err, config.ErrInvalidURLScheme) {
+		t.Fatalf("Load returned %v, want ErrInvalidURLScheme", err)
 	}
 	if !strings.Contains(err.Error(), "bad") {
 		t.Errorf("Load error %q does not name the offending deployment", err.Error())
 	}
 }
 
-// TestLoad_InsecureDeploymentURLOptIn asserts that
-// ACH_CLI_INSECURE_DEPLOYMENT_URL=1 makes Load accept http:// URLs.
-// Defends against accidental drift: production code paths MUST keep
-// rejecting http:// when the env var is unset.
-func TestLoad_InsecureDeploymentURLOptIn(t *testing.T) {
+// TestLoad_AcceptsHTTP asserts Load accepts an http:// deployment URL with
+// no env var required (the command layer warns about plaintext transport).
+func TestLoad_AcceptsHTTP(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("default: dev\ndeployments:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-
-	// Default (env unset) — must reject.
-	t.Setenv("ACH_CLI_INSECURE_DEPLOYMENT_URL", "")
-	if _, err := config.Load(path); !errors.Is(err, config.ErrNonHTTPSURL) {
-		t.Fatalf("env unset: Load returned %v, want ErrNonHTTPSURL", err)
-	}
-
-	// Opt-in — must accept.
-	t.Setenv("ACH_CLI_INSECURE_DEPLOYMENT_URL", "1")
 	f, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("opt-in: Load returned %v, want nil", err)
+		t.Fatalf("Load(http) returned %v, want nil", err)
 	}
 	if f.Deployments["dev"].URL != "http://localhost:8080" {
-		t.Errorf("opt-in: URL not preserved; got %q", f.Deployments["dev"].URL)
+		t.Errorf("URL not preserved; got %q", f.Deployments["dev"].URL)
 	}
 }
 

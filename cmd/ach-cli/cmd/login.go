@@ -147,7 +147,7 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	}
 	file, err := config.LoadWith(configPath, warn)
 	if err != nil {
-		// ErrNonHTTPSURL / ErrConfigParse / unreadable file → exit 8.
+		// ErrInvalidURLScheme / ErrConfigParse / unreadable file → exit 8.
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
 	if file == nil {
