@@ -379,7 +379,7 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 		// attribution. AccessGroups=[<environment>] +
 		// Tags=[<environment>] per §6.3 ek_ Environment tag;
 		// MaxBudget=nil per KEY-10.
-		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
+		keyReq := &litellm.KeyGenerateRequest{
 			UserID:       userInfo.UserID,
 			MaxBudget:    nil,
 			AccessGroups: []string{env.Name},
@@ -390,7 +390,21 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 				"ach_owner_email": keyCtx.OwnerEmail,
 				"ach_environment": env.Name,
 			},
-		})
+		}
+		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, keyReq)
+		if err != nil && isEnterpriseTagsRejection(err) {
+			// §6.3's `tags` is a LiteLLM Enterprise-only feature; an OSS
+			// LiteLLM rejects it with 403 "only available for LiteLLM
+			// Enterprise users: tags". Tags are best-effort attribution —
+			// the environment is also carried by AccessGroups and
+			// metadata.ach_environment — so degrade gracefully: drop tags
+			// and retry once. On Enterprise the first call succeeds and this
+			// retry never fires.
+			deps.Logger.Warn("envkeys.create: LiteLLM rejected Enterprise-only tags; retrying without tags",
+				"env", req.Environment)
+			keyReq.Tags = nil
+			keyResp, err = deps.LiteLLM.KeyGenerate(ctx, keyReq)
+		}
 		if err != nil {
 			st, oc, msg := classifyLitellmErr(err)
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -956,6 +970,20 @@ func isNotFound(err error) bool {
 // litellm_rejected, NOT the 503 litellm_unreachable that a connectivity
 // or 5xx failure warrants. Distinguishing the two stops the operator from
 // chasing a phantom outage when the real cause is a config/auth rejection.
+// isEnterpriseTagsRejection reports whether err is the LiteLLM OSS 403 that
+// rejects the Enterprise-only `tags` field on POST /key/generate. The
+// upstream body reads "This feature is only available for LiteLLM Enterprise
+// users: tags". Detection drives the drop-tags-and-retry degradation in the
+// env-keys create path — tags are best-effort attribution, so a missing
+// Enterprise license must not block key minting on an OSS deployment.
+func isEnterpriseTagsRejection(err error) bool {
+	var apiErr *litellm.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusForbidden {
+		return false
+	}
+	return strings.Contains(string(apiErr.Body), "LiteLLM Enterprise")
+}
+
 func classifyLitellmErr(err error) (status int, outcome, message string) {
 	var apiErr *litellm.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
