@@ -93,17 +93,25 @@ needs helm/kind/kubectl), so always drive it through `make cluster-*`.
 
 | Target | Semantics | Failure behavior |
 |--------|-----------|------------------|
-| `cluster-up` | create kind cluster + hydrate dependencies + wait Ready | If THIS run created the cluster and hydration fails, the half-created cluster is deleted. Opt out with `KEEP_ON_FAILURE=1` to keep it for forensics. |
-| `cluster-sync` | reconcile infra/fixtures on an ALREADY-running cluster (never recreates) | Leaves the cluster intact on failure. Opt in to teardown with `RESET_ON_FAILURE=1`. |
+| `cluster-up` | create kind cluster + reconcile dependencies + wait Ready | Keeps the half-created cluster by DEFAULT (forensics-friendly). Opt into teardown with `DELETE_ON_FAILURE=1` — and only if THIS run created the cluster. |
+| `cluster-sync` | reconcile infra/fixtures on an ALREADY-running cluster (never recreates) | NEVER deletes the cluster on failure — you are iterating on it. Use `cluster-down`/`cluster-reset` for a clean slate. |
 | `cluster-reset` | `cluster-down` then `cluster-up` (clean recreate) | Same as `cluster-up`. |
 | `cluster-down` | delete the kind cluster | — |
 | `cluster-status` | print kind/helm/pod state | — |
 | `cluster-image-load` | `build-image` + `kind load` the ach image (`IMG=...`) | — |
 
-Env knobs: `KEEP_ON_FAILURE=1` (keep a half-created cluster after a
-failed `cluster-up`), `RESET_ON_FAILURE=1` (tear down after a failed
-`cluster-sync`). `make doctor-cluster` runs a deep preflight (tooling,
-values files, chart pins, port 8080) before you mutate anything.
+Env knobs: `DELETE_ON_FAILURE=1` tears down a half-created cluster after a
+failed `cluster-up` (default is to KEEP it for forensics; only deletes a
+cluster THIS run created). `cluster-sync` has no failure knob — it never
+deletes. The knob is forwarded into the devtools container by
+`scripts/dev.sh` (a bare `VAR=1 make …` env-prefix does NOT otherwise cross
+the container boundary). `make doctor-cluster` runs a deep preflight
+(tooling, values files, chart pins, port 8080) before you mutate anything.
+
+> Note: the `cluster.sh` per-component reconcile functions are named
+> `reconcile_*` (`reconcile_all`, `reconcile_ach`, `reconcile_fixtures`, …) —
+> shared by both `cluster-up` and `cluster-sync`. Unrelated to `ach-cli
+> hydrate` / `/platform/hydrate`, which materialize workspace artifacts.
 
 ## Command vocabulary
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/cluster.sh — e2e cluster lifecycle.
 #
-# Brings up a kind cluster with ACH's runtime dependencies hydrated:
+# Brings up a kind cluster with ACH's runtime dependencies reconciled:
 #   - PostgreSQL (bitnami chart) — operator metadata + platform-api state
 #   - Valkey (bitnami chart) — forwarder cache
 #   - Dex (dexidp chart) — OIDC issuer for ach-platform-api
@@ -29,13 +29,13 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 # test/e2e/values/*.values.yaml + CHART_PINS.md once that infra exists.)
 # Per-component values files live under test/e2e/values/ — single source
 # of truth for chartVersion + image tag + chart config consumed by every
-# hydrate_* function. Mirrors sister alitellm-operator's
+# reconcile_* function. Mirrors sister alitellm-operator's
 # test/e2e/values/ layout. cluster.sh ONLY reads from these files;
 # changing a chart version or an image pin is a YAML edit, not a script
 # edit.
 VALUES_DIR="${VALUES_DIR:-test/e2e/values}"
 
-# Read the `chartVersion:` line from a values file. Used by hydrate_*
+# Read the `chartVersion:` line from a values file. Used by reconcile_*
 # functions so the chart-version pin and the chart-values themselves
 # live in one file. Helm tolerates the unknown top-level key.
 chart_version_of() {
@@ -49,7 +49,7 @@ chart_version_of() {
 # bitnamilegacy is also pruned, switch to upstream postgres:16-alpine +
 # valkey/valkey (TODO.md item 1a option c) or mirror to ghcr.io/ackstorm/mirror/*.
 
-# ach image coordinates used by hydrate_ach. CI builds the image with
+# ach image coordinates used by reconcile_ach. CI builds the image with
 # `make build-image IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
 # local developers can override either piece. The default tag `e2e` is
 # deliberately not `latest` so a stale cached `latest` cannot mask a
@@ -58,7 +58,7 @@ ACH_IMAGE_REPO="${ACH_IMAGE_REPO:-ghcr.io/ackstorm/ach}"
 ACH_IMAGE_TAG="${ACH_IMAGE_TAG:-e2e}"
 ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
-# ach-mcp-echo backend image (issue #35). Built + kind-loaded by hydrate_ach
+# ach-mcp-echo backend image (issue #35). Built + kind-loaded by reconcile_ach
 # when testMocks.mcpEcho.enabled is true in the ach values file. The tag MUST
 # match what the `build-image-mcp-echo` make target produces (ach-mcp-echo:e2e)
 # and what the Helm chart's testMocks.mcpEcho default image resolves to — kind
@@ -70,7 +70,7 @@ usage() {
 scripts/cluster.sh — e2e cluster lifecycle.
 
 Usage:
-  scripts/cluster.sh up         # create kind + hydrate dependencies + wait Ready (transactional)
+  scripts/cluster.sh up         # create kind + reconcile dependencies + wait Ready (transactional)
   scripts/cluster.sh sync       # reconcile infra/fixtures on an already-up cluster (no recreate)
   scripts/cluster.sh down       # delete kind cluster
   scripts/cluster.sh reset      # down then up (clean recreate)
@@ -84,18 +84,20 @@ USAGE
 cmd_up() {
   local created=0
   if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then created=1; fi
-  # Delete a half-created cluster on failure, but ONLY if this run created it
-  # and the caller did not opt out (KEEP_ON_FAILURE=1).
-  trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "'"$created"'" = "1" ] && [ "${KEEP_ON_FAILURE:-0}" != "1" ]; then echo "[cluster.sh] up failed (rc=$rc) — deleting half-created ${CLUSTER_NAME}" >&2; kind delete cluster --name "${CLUSTER_NAME}" || true; fi' EXIT
-  create_cluster; create_namespaces; hydrate_all
+  # Keep a half-created cluster on failure by DEFAULT (forensics-friendly: a
+  # failed bringup leaves the node + partial state to inspect). Opt into
+  # teardown with DELETE_ON_FAILURE=1, and only if THIS run created the
+  # cluster — never delete one that already existed before this invocation.
+  trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "'"$created"'" = "1" ] && [ "${DELETE_ON_FAILURE:-0}" = "1" ]; then echo "[cluster.sh] up failed (rc=$rc) + DELETE_ON_FAILURE=1 — deleting ${CLUSTER_NAME}" >&2; kind delete cluster --name "${CLUSTER_NAME}" || true; fi' EXIT
+  create_cluster; create_namespaces; reconcile_all
   trap - EXIT
 }
 cmd_sync() {
-  # Reconcile infra/fixtures on an EXISTING cluster. Never deletes it unless
-  # the caller explicitly opts in with RESET_ON_FAILURE=1.
-  trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${RESET_ON_FAILURE:-0}" = "1" ]; then echo "[cluster.sh] sync failed (rc=$rc) + RESET_ON_FAILURE=1 — deleting ${CLUSTER_NAME}" >&2; kind delete cluster --name "${CLUSTER_NAME}" || true; fi' EXIT
-  create_namespaces; hydrate_all
-  trap - EXIT
+  # Reconcile infra/fixtures on an EXISTING cluster. A failed sync NEVER
+  # deletes the cluster — you are actively iterating on it, so losing it on a
+  # transient hiccup would be hostile. Tear it down explicitly with
+  # `make cluster-down` (or `make cluster-reset`) when you want a clean slate.
+  create_namespaces; reconcile_all
 }
 cmd_down()  { kind delete cluster --name "${CLUSTER_NAME}" || true; }
 cmd_reset() { cmd_down; cmd_up; }
@@ -142,7 +144,7 @@ create_namespaces() {
   done
 }
 
-hydrate_postgres() {
+reconcile_postgres() {
   local version; version="$(chart_version_of "${VALUES_DIR}/postgres.values.yaml")"
   echo "[cluster.sh] installing postgres chart ${version}..."
   # Helm release name `ach-postgres` matches postgres.values.yaml's
@@ -156,7 +158,7 @@ hydrate_postgres() {
     --atomic --wait --timeout 5m
 }
 
-hydrate_valkey() {
+reconcile_valkey() {
   local version; version="$(chart_version_of "${VALUES_DIR}/valkey.values.yaml")"
   echo "[cluster.sh] installing valkey chart ${version}..."
   helm upgrade --install valkey oci://registry-1.docker.io/bitnamicharts/valkey \
@@ -166,7 +168,7 @@ hydrate_valkey() {
     --atomic --wait --timeout 5m
 }
 
-hydrate_dex() {
+reconcile_dex() {
   local version; version="$(chart_version_of "${VALUES_DIR}/dex.values.yaml")"
   echo "[cluster.sh] installing dex chart ${version}..."
   helm repo add dex https://charts.dexidp.io >/dev/null 2>&1 || true
@@ -197,7 +199,7 @@ hydrate_dex() {
   rm -f "${tmpvals}"
 }
 
-hydrate_litellm() {
+reconcile_litellm() {
   # Read chartVersion + image tag from the values file (single source of
   # truth — mirrors sister alitellm-operator/scripts/cluster.sh).
   local version image_tag image
@@ -218,7 +220,12 @@ hydrate_litellm() {
   kind load docker-image "${image}" --name "${CLUSTER_NAME}"
 
   local tmpdir; tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' EXIT
+  # Pre-expand ${tmpdir} into the trap string at set-time (double quotes), NOT
+  # at fire-time. The EXIT trap runs in global scope, where this function-local
+  # is out of scope; a deferred 'rm -rf "${tmpdir}"' would hit `set -u` and die
+  # with "tmpdir: unbound variable" whenever the function fails before the trap
+  # is re-armed below (e.g. the helm install fails). Matches the line-259 trap.
+  trap "rm -rf '${tmpdir}'" EXIT
   ( cd "${tmpdir}" && helm pull oci://docker.litellm.ai/berriai/litellm-helm --version "${version}" --untar )
 
   # Create ConfigMap with the custom auth script before installing/upgrading LiteLLM
@@ -322,7 +329,7 @@ hydrate_litellm() {
   trap - EXIT
 }
 
-hydrate_toolhive() {
+reconcile_toolhive() {
   # ToolHive CRDs and operator are on independent version streams (0.0.x
   # vs 0.5.x) — both pins live in test/e2e/values/toolhive.values.yaml.
   local crds_version operator_version
@@ -348,8 +355,8 @@ hydrate_toolhive() {
   echo "[cluster.sh] toolhive CRD versions: $(kubectl get crd mcpservers.toolhive.stacklok.dev -o jsonpath='{.spec.versions[*].name}' 2>/dev/null || echo 'crd-not-found')"
 }
 
-hydrate_ach() {
-  echo "[cluster.sh] hydrating ach (image: ${ACH_IMAGE})..."
+reconcile_ach() {
+  echo "[cluster.sh] reconciling ach (image: ${ACH_IMAGE})..."
 
   # Build + kind-load the ach image (sister alitellm-operator pattern).
   # `make build-image` is idempotent — Docker layer cache makes repeat
@@ -394,10 +401,10 @@ hydrate_ach() {
   #
   # NOTE: --wait is intentionally NOT passed here. The forwarder
   # Deployment depends on LiteLLMConnection/default existing at boot,
-  # but the CR is seeded by hydrate_fixtures which runs AFTER this
-  # function. If we --wait on helm, we deadlock: hydrate_fixtures
+  # but the CR is seeded by reconcile_fixtures which runs AFTER this
+  # function. If we --wait on helm, we deadlock: reconcile_fixtures
   # never gets to apply the CR. Instead, install without --wait,
-  # then run hydrate_fixtures, then explicitly wait for rollouts.
+  # then run reconcile_fixtures, then explicitly wait for rollouts.
   local helm_rc=0
   # image.rebuildId is set to a per-build timestamp so the
   # ach.ackstorm.ai/rebuild-id pod annotation changes on every run; that
@@ -423,7 +430,7 @@ hydrate_ach() {
   # NOTE: the pod roll onto the rebuilt image is driven by image.rebuildId
   # above (the ach.ackstorm.ai/rebuild-id annotation), so the upgrade
   # itself recreates the pods — no separate `kubectl rollout restart`
-  # needed. wait_ach (after hydrate_fixtures) blocks on readiness.
+  # needed. wait_ach (after reconcile_fixtures) blocks on readiness.
 }
 
 wait_ach() {
@@ -448,7 +455,7 @@ wait_ach() {
   fi
 }
 
-hydrate_fixtures() {
+reconcile_fixtures() {
   # Seed cluster-scoped CRs the e2e suite needs to assert ACH end-to-end:
   #   - litellm-master-key Secret: the LiteLLMConnection operator uses
   #     to authenticate against the LiteLLM upstream during reconcile +
@@ -471,7 +478,7 @@ hydrate_fixtures() {
 
   # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start
   # without it. Generated fresh per `cluster.sh up` invocation — kid is
-  # a timestamp so re-running hydration produces a new (kid, seed) pair
+  # a timestamp so re-running reconciliation produces a new (kid, seed) pair
   # instead of clobbering with a stale value. NOT the same as the
   # test/e2e/fixtures/*UNSAFE* known-plaintext seed: that one lives in
   # `default` for SC#4 JWKS-roundtrip asserts and must never land in
@@ -493,7 +500,7 @@ hydrate_fixtures() {
   kubectl apply -f test/e2e/fixtures/ach-local-gateway.yaml
 }
 
-hydrate_examples() {
+reconcile_examples() {
   # Apply the issue #17 demo Environments so a fresh `cluster.sh up` lands
   # the cluster in a state the AccessGroupSynced contract can be eyeballed
   # against without any further `kubectl apply`:
@@ -509,23 +516,23 @@ hydrate_examples() {
   # BIP closed-loop policies for the demo Environment's two MCP routes
   # (examples/11 + examples/16). The forwarder's bipcache picks them up on
   # its NOTIFY/refresh; demo-mcp-jwt mints+attaches the ACH JWT,
-  # demo-mcp-nojwt forwards without one. Applied here (not hydrate_fixtures)
+  # demo-mcp-nojwt forwards without one. Applied here (not reconcile_fixtures)
   # so they land alongside the Environment that references their targets.
   echo "[cluster.sh] applying demo BIP closed-loop (jwt + nojwt)..."
   kubectl apply -f examples/11-backendidentitypolicy-demo-mcp-jwt.yaml
   kubectl apply -f examples/16-backendidentitypolicy-demo-mcp-nojwt.yaml
 }
 
-hydrate_all() {
-  hydrate_postgres
-  hydrate_valkey
-  hydrate_dex
-  hydrate_litellm
-  hydrate_toolhive
-  hydrate_ach
-  hydrate_fixtures
+reconcile_all() {
+  reconcile_postgres
+  reconcile_valkey
+  reconcile_dex
+  reconcile_litellm
+  reconcile_toolhive
+  reconcile_ach
+  reconcile_fixtures
   wait_ach
-  hydrate_examples
+  reconcile_examples
 }
 
 print_status() (
@@ -545,7 +552,7 @@ print_status() (
   echo "== namespaces (e2e layout) =="
   kubectl get ns default ach-system litellm-system toolhive-system dex-system mocks dev prod 2>/dev/null
   echo
-  echo "== hydration =="
+  echo "== reconcile =="
   helm ls -A
   echo
   echo "== ach-system pods =="
