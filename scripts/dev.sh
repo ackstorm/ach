@@ -25,6 +25,20 @@ set -euo pipefail
 IMAGE="${ACH_DEVTOOLS_IMAGE:-ach-devtools:latest}"
 WORKSPACE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# If we are already inside the devtools container, run the command directly.
+# Auto-wrapping make targets (Makefile `container_target` macro) re-invoke
+# ./scripts/dev.sh from within; this prevents nested containers.
+if [[ "${ACH_IN_DEVTOOLS:-0}" == "1" ]]; then
+    exec "${@:-bash}"
+fi
+
+# Host requirement: docker only. Fail fast with a clear message rather than
+# letting a downstream `kind`/`helm` call die cryptically.
+if ! docker info >/dev/null 2>&1; then
+    echo "scripts/dev.sh: docker daemon not reachable — is Docker running and is your user in the docker group?" >&2
+    exit 1
+fi
+
 # Persisted caches (gitignored). Pre-create so docker doesn't mkdir them as root.
 mkdir -p "${WORKSPACE}/.gocache/gopath" \
          "${WORKSPACE}/.gocache/build" \
@@ -84,6 +98,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     -v "${WORKSPACE}:/workspace" \
     "${WORKTREE_GIT_MOUNT[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
+    -e ACH_IN_DEVTOOLS=1 \
     -e HOME=/workspace/.gocache \
     -e GOPATH=/workspace/.gocache/gopath \
     -e GOCACHE=/workspace/.gocache/build \
