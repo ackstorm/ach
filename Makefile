@@ -548,7 +548,7 @@ samples-audit: ## DEPLOY-02: fail the build if any sample manifest contains a TO
 
 .PHONY: build-image-mock
 build-image-mock: ## Build the ach-mock:e2e image (LiteLLM-shaped chat-completion mock).
-	$(CONTAINER_TOOL) build -t ach-mock:e2e -f test/e2e/mock/Dockerfile test/e2e/mock/
+	$(CONTAINER_TOOL) build -t ach-mock:e2e -f test/e2e/mock/Dockerfile .
 
 .PHONY: build-image-mcp-echo
 build-image-mcp-echo: ## Build the ach-mcp-echo:e2e image (JWT-verifying MCP backend, issue #35).
