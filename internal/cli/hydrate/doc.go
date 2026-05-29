@@ -93,9 +93,16 @@
 // without the timing flake `timeout --signal=KILL 0.5s` would produce
 // (D-22 close-criterion alignment).
 //
-// The env-var is read once at newCommit() entry; unset/empty/unparsable
-// → the seam is disabled (killFn never called, no syscall, no overhead
-// on the production path).
+// The env-var is read once at newCommit() entry via
+// readSigkillSeamFromEnv; unset/empty/unparsable → the seam is
+// disabled (killFn never called, no syscall, no overhead on the
+// production path).
+//
+// Compiled in ONLY under -tags=e2e; release builds receive a no-op
+// stub via sigkill_seam_prod.go (WR-01 production safety fix — the
+// env-var literal is not present in release-binary strings, closing
+// the code-injection vector for a misconfigured parent process or
+// hostile env that would otherwise crash ach-cli mid-hydrate).
 //
 // TODO(post-Phase-7-close): remove this seam once SC#2 stabilizes via a
 // less invasive mechanism. The TODO marker is duplicated above the

@@ -425,23 +425,13 @@ func TestCommit_SigkillSeam_FiresForEachKnownStep(t *testing.T) {
 	}
 }
 
-// TestCommit_NewCommit_ReadsSigkillEnvVar asserts that newCommit
-// reads ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP at construction
-// time. Setting the env var to "7" produces a *commit with
-// injectSigkillAfterStep == 7.
-func TestCommit_NewCommit_ReadsSigkillEnvVar(t *testing.T) {
-	t.Setenv(envSigkillStep, "7")
-	c, err := newCommit(Opts{
-		Output:      t.TempDir(),
-		Environment: "demo",
-	})
-	if err != nil {
-		t.Fatalf("newCommit = %v, want nil", err)
-	}
-	if c.injectSigkillAfterStep != 7 {
-		t.Errorf("c.injectSigkillAfterStep = %d, want 7", c.injectSigkillAfterStep)
-	}
-}
+// TestCommit_NewCommit_ReadsSigkillEnvVar (relocated to
+// commit_sigkill_seam_test.go behind //go:build e2e by 07-W5-04 Task
+// 2 — under the default release build the env var is not read at
+// all, so the test only makes sense under -tags=e2e). The
+// complementary release-build assertion that the env var is IGNORED
+// in release builds lives in commit_release_build_test.go behind
+// //go:build !e2e.
 
 // TestNewCommit_PopulatesExtractorAndAdapter asserts that the
 // Extractor + AdapterDispatcher fields on Opts are read by newCommit
@@ -486,22 +476,10 @@ func TestNewCommit_PopulatesExtractorAndAdapter(t *testing.T) {
 	}
 }
 
-// TestCommit_NewCommit_UnparsableSigkillEnvVar_LeavesZero asserts the
-// fail-soft path: a non-numeric env var value silently disables the
-// seam (zero, no panic).
-func TestCommit_NewCommit_UnparsableSigkillEnvVar_LeavesZero(t *testing.T) {
-	t.Setenv(envSigkillStep, "not-a-number")
-	c, err := newCommit(Opts{
-		Output:      t.TempDir(),
-		Environment: "demo",
-	})
-	if err != nil {
-		t.Fatalf("newCommit = %v, want nil", err)
-	}
-	if c.injectSigkillAfterStep != 0 {
-		t.Errorf("c.injectSigkillAfterStep = %d, want 0 (fail-soft on garbage)", c.injectSigkillAfterStep)
-	}
-}
+// TestCommit_NewCommit_UnparsableSigkillEnvVar_LeavesZero (relocated
+// to commit_sigkill_seam_test.go behind //go:build e2e by 07-W5-04
+// Task 2 — under the default release build the env var is not read
+// at all, so the test only makes sense under -tags=e2e).
 
 // TestCommit_Step4_PrunesMissingFiles seeds a state.File with an
 // entry whose Target does not exist on disk; assert the entry is

@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -27,14 +25,6 @@ import (
 // httpclient.Client; unit tests inject a fake that returns either a
 // canned *manifest.Manifest or a wrapped manifest.ErrSchemaMismatch.
 type manifestFetcher func(ctx context.Context, environment string) (*manifest.Manifest, error)
-
-// killFn is the function-typed test seam for the TEST-ONLY
-// ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP env-var seam. Production
-// defaults to a closure calling syscall.Kill(os.Getpid(),
-// syscall.SIGKILL); unit tests inject a recorder that captures the
-// step number into a *int so the seam can be verified reachable
-// without crashing the test runner.
-type killFn func(step int)
 
 // commit is the unexported orchestrator struct. Run constructs one via
 // newCommit(opts) and dispatches stepN methods sequentially. Every
@@ -57,16 +47,26 @@ type commit struct {
 
 	// TEST-ONLY SIGKILL injection seam consumed by 07-W4-01 sc2.
 	//
-	// injectSigkillAfterStep is read once from the env var
-	// ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP at newCommit() entry.
-	// Zero/unset/unparsable disables the seam (killFn never invoked,
-	// no syscall, no overhead on the production path).
+	// injectSigkillAfterStep is populated once by readSigkillSeamFromEnv
+	// at newCommit() entry. Under -tags=e2e the function reads
+	// ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP from the environment;
+	// under the default (release) build the function is a stub that
+	// always returns 0, so the env var is never read and the seam is
+	// disabled. Zero/unset/unparsable disables the seam (killFn never
+	// invoked, no syscall, no overhead on the production path).
 	//
-	// killFn defaults to syscall.Kill(os.Getpid(), syscall.SIGKILL)
-	// in production; tests override to a recorder that captures the
-	// would-be-killed step number without actually crashing the
-	// process. Without the killFn indirection there would be no way
-	// to assert the seam fires for a known step in a unit test.
+	// killFn defaults to the build-tag-resolved default — under
+	// -tags=e2e it invokes the OS-level SIGKILL syscall; under the
+	// default build it is a no-op. Tests override to a recorder that
+	// captures the would-be-killed step number without actually
+	// crashing the process. Without the killFn indirection there
+	// would be no way to assert the seam fires for a known step in
+	// a unit test.
+	//
+	// WR-01 (07-W5-04): the seam was split into
+	// sigkill_seam_{e2e,prod}.go behind //go:build {e2e,!e2e} so
+	// release binaries cannot honor the env var even if it is set.
+	// commit.go no longer references the env-var literal.
 	//
 	// TODO(post-Phase-7-close): remove this seam once SC#2 stabilizes
 	// via a less invasive mechanism (e.g. an in-process synchronous
@@ -75,21 +75,6 @@ type commit struct {
 	// "post-Phase-7-close" finds both touch points.
 	injectSigkillAfterStep int
 	killFn                 killFn
-}
-
-// envSigkillStep is the literal env-var the SIGKILL injection seam
-// reads at commit construction. Exported as a constant only so test
-// files in the same package can reference it without re-typing the
-// literal string.
-const envSigkillStep = "ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP"
-
-// defaultKillFn is the production killFn — it terminates the process
-// immediately via SIGKILL so the next step never runs. Defers do not
-// fire on SIGKILL; any cleanup the orchestrator relied on (e.g.
-// lease.Release) is the kernel's responsibility (POSIX flock is
-// released on fd-close, which the kernel does on process exit).
-func defaultKillFn(_ int) {
-	_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
 }
 
 // Run is the single public entry point of the Phase 7 hydrate engine
@@ -112,9 +97,13 @@ func Run(ctx context.Context, opts Opts) (Result, error) {
 // real instances by setting fields on the returned *commit before
 // dispatching to run().
 //
-// The TEST-ONLY SIGKILL seam env var is read here, exactly once. An
-// invalid (non-numeric) value silently disables the seam — fail-soft
-// is correct because the seam is for test infrastructure, not the
+// The TEST-ONLY SIGKILL seam value is sourced here via
+// readSigkillSeamFromEnv (build-tag-resolved). Under -tags=e2e the
+// function reads ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP from the
+// environment exactly once; under the default build the function is a
+// no-op stub that always returns 0. An invalid (non-numeric) env-var
+// value silently disables the seam in the e2e build — fail-soft is
+// correct because the seam is for test infrastructure, not the
 // production exit-code contract.
 func newCommit(opts Opts) (*commit, error) {
 	// Normalize Stdout/Stderr to os.* if zero.
@@ -158,7 +147,7 @@ func newCommit(opts Opts) (*commit, error) {
 		adapter:    opts.AdapterDispatcher,
 		achDir:     achDir,
 		statePath:  statePath,
-		killFn:     defaultKillFn,
+		killFn:     newDefaultKillFn(),
 	}
 
 	// Default fetcher closes over a Phase 6 httpclient.Client built
@@ -176,12 +165,12 @@ func newCommit(opts Opts) (*commit, error) {
 		return manifest.Fetch(ctx, hc, environment)
 	}
 
-	// Read the TEST-ONLY SIGKILL injection seam env var exactly once.
-	if raw := os.Getenv(envSigkillStep); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil {
-			c.injectSigkillAfterStep = n
-		}
-	}
+	// Read the TEST-ONLY SIGKILL injection seam value exactly once.
+	// Under -tags=e2e this reads ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP
+	// from the environment; under the default (release) build this is
+	// a no-op stub that always returns 0 — the env-var literal is not
+	// present in the release binary at all (WR-01).
+	c.injectSigkillAfterStep = readSigkillSeamFromEnv()
 
 	return c, nil
 }
@@ -349,10 +338,12 @@ var syncFn = Sync
 
 // maybeKill is the TEST-ONLY SIGKILL injection dispatch. It is called
 // after each stepN returns AND BEFORE stepN+1 begins. When
-// injectSigkillAfterStep matches N, c.killFn(N) fires — production
-// killFn calls syscall.Kill so the process dies before the next step;
-// test killFn records the step into a recorder so the test can assert
-// the seam fired at the expected boundary.
+// injectSigkillAfterStep matches N, c.killFn(N) fires — under
+// -tags=e2e c.killFn invokes the OS-level SIGKILL syscall so the
+// process dies before the next step; test killFn records the step
+// into a recorder so the test can assert the seam fired at the
+// expected boundary. Under the default (release) build c.killFn is
+// a no-op.
 //
 // Zero/unset injectSigkillAfterStep short-circuits before any call —
 // no overhead on the production path beyond the int comparison.
