@@ -9,7 +9,7 @@
 #       namespace transform because Secret stringData is opaque.
 #
 # DEV-ONLY. The string `sk-test-master-key` below matches
-# test/e2e/values/litellm.values.yaml and is not a production secret.
+# test/e2e/cluster/01-base/litellm.values.yaml and is not a production secret.
 # Production Helm chart (Phase 7) MUST NOT reference this overlay.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

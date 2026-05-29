@@ -5,7 +5,7 @@
 # one-shot bootstrap from a clean cluster.
 #
 # masterKeySecretRef.key MUST match the `masterkey` value in
-# test/e2e/values/litellm.values.yaml.
+# test/e2e/cluster/01-base/litellm.values.yaml.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: LiteLLMConnection
 metadata:

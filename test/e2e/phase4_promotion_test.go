@@ -53,18 +53,10 @@ func TestPhase4Promotion(t *testing.T) {
 func testSC11aForceRefreshCycle(t *testing.T) {
 	t.Helper()
 
-	// Pre-apply the examples bundle. kubectl apply is idempotent;
-	// applies are no-ops on an already-cluster-hydrated kept cluster.
-	for _, f := range []string{
-		"../../examples/01-litellmconnection.yaml",
-		"../../examples/06-plugin-caveman.yaml",
-		"../../examples/07-prompt-claudecode-leak.yaml",
-		"../../examples/08-artifact-openclaw-templates.yaml",
-	} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11a apply %s: %v\n%s", f, err, out)
-		}
-	}
+	// The LiteLLMConnection + plugin/prompt/artifact are pre-synced by
+	// cluster.sh (stage 04-objects) and verified healthy by the 06-verify gate.
+	// This subtest asserts against that synced state — it does NOT apply its own
+	// copies (that would mutate shared cluster state other specs depend on).
 
 	// Wait for each kind's first successful reconcile. Tolerant of
 	// GitHub anonymous-quota rate-limiting (60 req/h/IP): a freshly
@@ -98,6 +90,7 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	// + 2026-05-26-environment-available-uat.md), also force-refresh
 	// the Environment CR and assert both conditions stay True.
 }
+
 // testSC11bBIPAdmissionFinalizer asserts the BIP CRUD invariants:
 //  1. Both examples/09 + examples/10 are admitted (CRD validation
 //     passes on the same (target.kind, target.name) duplicate).
@@ -111,23 +104,19 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	t.Helper()
 
 	const (
-		bipA = "bip-context7-jwt-on"
-		bipB = "zz-bip-context7-jwt-off"
+		bipA = "bip-throwaway-jwt-on"
+		bipB = "zz-bip-throwaway-jwt-off"
 	)
-	const (
-		fA = "../../examples/09-backendidentitypolicy-context7.yaml"
-		fB = "../../examples/10-backendidentitypolicy-duplicate.yaml"
-	)
+	// THROWAWAY duplicate-target pair (test/e2e/fixtures) — NOT the synced
+	// bip-context7-jwt-on / zz-bip-context7-jwt-off, so applying + deleting them
+	// here never disturbs the synced state other specs assert against.
+	const dup = "../../test/e2e/fixtures/phase4_bip_duplicate.yaml"
 
-	// Apply both.
-	for _, f := range []string{fA, fB} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11b apply %s: %v\n%s", f, err, out)
-		}
+	if out, err := runCmd("kubectl", "apply", "-f", dup); err != nil {
+		t.Fatalf("§11b apply: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", fA, "--wait=false", "--ignore-not-found")
-		_, _ = runCmd("kubectl", "delete", "-f", fB, "--wait=false", "--ignore-not-found")
+		_, _ = runCmd("kubectl", "delete", "-f", dup, "--wait=false", "--ignore-not-found")
 	})
 
 	// Give the reconciler a tick to add finalizers. Phase 1 BIP
@@ -153,16 +142,13 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	// here (the helper polls, but kubectl delete with default --wait=true
 	// also blocks on finalizer removal — defensive double-check).
 	if out, err := runCmdLonger(60*time.Second,
-		"kubectl", "delete", "-f", fA, "--wait=true"); err != nil {
-		t.Fatalf("§11b delete %s: %v\n%s", fA, err, out)
-	}
-	if out, err := runCmdLonger(60*time.Second,
-		"kubectl", "delete", "-f", fB, "--wait=true"); err != nil {
-		t.Fatalf("§11b delete %s: %v\n%s", fB, err, out)
+		"kubectl", "delete", "-f", dup, "--wait=true"); err != nil {
+		t.Fatalf("§11b delete: %v\n%s", err, out)
 	}
 	waitForBIPDeleted(t, bipA, 30*time.Second)
 	waitForBIPDeleted(t, bipB, 30*time.Second)
 }
+
 // testSC11cMarketplaceInternalSchema drives examples/05b end-to-end:
 //
 //  1. applyPhase4MarketplaceServer: ConfigMap + nginx Deployment+Service.
@@ -195,7 +181,7 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 
 	applyPhase4MarketplaceServer(t)
 
-	const fixture = "../../examples/05b-pluginmarketplace-internal-http.yaml"
+	const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
 	if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
 		t.Fatalf("§11c apply marketplace CR: %v\n%s", err, out)
 	}
@@ -245,6 +231,7 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Fatalf("§11c: marketplace_plugins row not cleaned up within 30s; row count still=%q",
 		strings.TrimSpace(out))
 }
+
 // testSC11dOperatorRestart catches "wires-only-on-startup" bugs:
 //
 //  1. Snapshot the operator Pod's metadata.uid.
@@ -261,15 +248,8 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 func testSC11dOperatorRestart(t *testing.T) {
 	t.Helper()
 
-	// Defensive: apply plugin/caveman + LiteLLMConnection (idempotent).
-	for _, f := range []string{
-		"../../examples/01-litellmconnection.yaml",
-		"../../examples/06-plugin-caveman.yaml",
-	} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11d apply %s: %v\n%s", f, err, out)
-		}
-	}
+	// plugin/caveman + LiteLLMConnection are pre-synced by cluster.sh (stage 04);
+	// assert against that synced state, do not re-apply.
 	// Tolerant of GitHub rate-limit (see §11a comment).
 	skipIfRateLimited(t, "plugin", "caveman", 120*time.Second)
 
@@ -290,6 +270,7 @@ func testSC11dOperatorRestart(t *testing.T) {
 	// Reconciliation MUST fire after restart.
 	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
 }
+
 // testSC11eHydrateGolden is the highest-value §11 add: full /platform/
 // hydrate wire path asserted against a checked-in golden JSON.
 //
@@ -314,11 +295,15 @@ func testSC11eHydrateGolden(t *testing.T) {
 	// which requires LiteLLM to carry the 5 resources referenced by
 	// examples/04-environment-demo.yaml (gemini.gemini-flash-latest,
 	// openai.gpt-5-mini, vmcp-dev, vmcp-aws, test-noop-agent). The
-	// seed cluster ships only 2 sample models — see TODO §16. Flip
-	// ACH_E2E_PHASE9=1 once §16 lands the seed.
-	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skipf("§11e gated behind ACH_E2E_PHASE9=1 — hydrate-demo.sh blocks on Environment ExecutionResourcesResolved=True; LiteLLM lacks the 5 referenced resources (TODO §16 seed gap). Skipping (engineer-pending).")
-	}
+	// SUPERSEDED — skipped unconditionally. This subtest drove the now-removed
+	// examples/hydrate-demo.sh (collapsed into `ach-cli login` + `ach-cli
+	// hydrate`). The full hydrate wire path + golden-diff is now asserted by
+	// TestPhase6CLI (test/e2e/cli_login_hydrate_test.go), which drives the CLI
+	// directly. Kept as a skipped placeholder so the §11 promotion matrix stays
+	// complete; re-home or delete once the CLI-driven golden is the only path.
+	// (Decoupled from ACH_E2E_PHASE9 — that gate is now ON for the working
+	// Environment subtests, and must not resurrect the deleted shell driver.)
+	t.Skipf("§11e superseded by TestPhase6CLI (CLI-driven hydrate golden); examples/hydrate-demo.sh was removed. Skipping.")
 
 	actual := driveHydrateAndCapture(t)
 
@@ -347,6 +332,7 @@ func testSC11eHydrateGolden(t *testing.T) {
 	// Available=True (currently waits only on
 	// ExecutionResourcesResolved=True per FIX01 §C.1).
 }
+
 // testSC11fFinalizerCleanup extends phase3's finalizer coverage to:
 //   - Environment delete drives the §6.5 LiteLLM DeleteAccessGroup +
 //     DeleteTag calls (assert by side-effect on the Environment CR
@@ -372,33 +358,21 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 		if os.Getenv("ACH_E2E_PHASE9") != "1" {
 			t.Skipf("§11f.Environment gated behind ACH_E2E_PHASE9=1 — Environment ExecutionResourcesResolved=True requires LiteLLM seed (TODO §16). Skipping (engineer-pending).")
 		}
-		// Pre-apply the demo bundle (idempotent).
-		for _, f := range []string{
-			"../../examples/01-litellmconnection.yaml",
-			"../../examples/06-plugin-caveman.yaml",
-			"../../examples/07-prompt-claudecode-leak.yaml",
-			"../../examples/08-artifact-openclaw-templates.yaml",
-			"../../examples/04-environment-demo.yaml",
-		} {
-			if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-				t.Fatalf("§11f.Env apply %s: %v\n%s", f, err, out)
-			}
+		// Finalizer-drain on a THROWAWAY Environment — never touches the synced
+		// "demo" (other specs assert against it). The execution resources it
+		// references are pre-synced by cluster.sh (04-objects + reconcile_litellm).
+		const drain = "../../test/e2e/fixtures/phase4_drain_environment.yaml"
+		if out, err := runCmd("kubectl", "apply", "-f", drain); err != nil {
+			t.Fatalf("§11f.Env apply drain: %v\n%s", err, out)
 		}
-		waitForCondition(t, "environment", "demo",
+		waitForCondition(t, "environment", "demo-drain",
 			"ExecutionResourcesResolved", "True", 120*time.Second)
 
-		// Drive delete (wait=true blocks on finalizer).
+		// Drive delete (wait=true blocks on finalizer drain).
 		if out, err := runCmdLonger(120*time.Second,
-			"kubectl", "delete", "environment", "demo", "-n", namespace,
+			"kubectl", "delete", "environment", "demo-drain", "-n", namespace,
 			"--wait=true"); err != nil {
-			t.Fatalf("§11f.Env delete: %v\n%s", err, out)
-		}
-
-		// Re-apply for downstream subtests (§11a/d still rely on
-		// plugin/caveman; Environment delete doesn't cascade to them).
-		if out, err := runCmd("kubectl", "apply", "-f",
-			"../../examples/04-environment-demo.yaml"); err != nil {
-			t.Fatalf("§11f.Env re-apply: %v\n%s", err, out)
+			t.Fatalf("§11f.Env finalizer drain: %v\n%s", err, out)
 		}
 	})
 
@@ -411,7 +385,7 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 		// Same flow as §11c but bare-minimum (skip the count-1 assert
 		// — that's §11c's job; we only assert count-after-delete).
 		applyPhase4MarketplaceServer(t)
-		const fixture = "../../examples/05b-pluginmarketplace-internal-http.yaml"
+		const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
 		if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
 			t.Fatalf("§11f.Mkt apply: %v\n%s", err, out)
 		}
@@ -427,9 +401,11 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	})
 
 	t.Run("BIP", func(t *testing.T) {
+		// THROWAWAY BIP (test/e2e/fixtures) — never the synced bip-context7-jwt-on,
+		// so applying + deleting it here does not disturb the synced set.
 		const (
-			bipA = "bip-context7-jwt-on"
-			fA   = "../../examples/09-backendidentitypolicy-context7.yaml"
+			bipA = "bip-throwaway-drain"
+			fA   = "../../test/e2e/fixtures/phase4_bip_drain.yaml"
 		)
 		if out, err := runCmd("kubectl", "apply", "-f", fA); err != nil {
 			t.Fatalf("§11f.BIP apply: %v\n%s", err, out)

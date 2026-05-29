@@ -158,31 +158,44 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
-├── examples/                ← runnable CR fixtures + golden hydrate.json
-│   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
-│   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
-│   ├── 05-pluginmarketplace-anthropic.yaml  real upstream canary (5-Kind parser landed via #16)
-│   ├── 06-plugin-caveman.yaml     Plugin from JuliusBrussee/caveman
-│   ├── 07-prompt-claudecode-leak.yaml  Prompt from asgeirtj/system_prompts_leaks
-│   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)
-│   ├── 09-backendidentitypolicy-context7.yaml  BIP jwt-on
-│   ├── 10-backendidentitypolicy-duplicate.yaml  BIP duplicate-target demo
-│   └── hydrate.json               Golden /platform/hydrate output (CLI e2e diffs vs this)
+├── examples/                ← CURATED user-facing samples + golden hydrate.json
+│   │                          (independent of the synced fixtures below; NOT
+│   │                          auto-applied — copy/adapt by hand)
+│   ├── 12-15 *.yaml          legacy ToolHive (toolhive.stacklok.dev) samples
+│   ├── prometheus-servicemonitor.yaml  example metrics scrape config
+│   ├── test-mcp-jwt.sh        manual /mcp JWT trust-path helper
+│   └── hydrate.json           Golden /platform/hydrate output (CLI e2e diffs vs this)
 ├── hack/boilerplate.go.txt  ← SPDX one-liner, prepended to generated files
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
 │   └── security/govulncheck-acknowledged.md
 ├── scripts/                 ← dev.sh, cluster.sh, pre-push-check.sh, ...
 ├── test/                    ← e2e + utils
+│   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
+│       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
+│       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
+│       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved Envs
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE, PUBLISH.md
 ```
+
+**Synced fixtures vs examples (independent collections):**
+`test/e2e/cluster/{04-objects,05-environment}/` holds the **synced test
+fixtures** — the complete demo-ready ACH object set `scripts/cluster.sh`
+applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
+step). The e2e suite **asserts** against this synced state; tests do NOT apply
+their own copies of these objects. `examples/` holds **curated, user-facing
+samples** (legacy ToolHive 12-15, the ServiceMonitor, the manual JWT helper)
+plus the golden `hydrate.json`. The two are independent — moving or editing one
+does not touch the other.
 
 ## MANDATORY Reading Table
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
-| New CR fixtures / `ach-cli login` + `ach-cli hydrate` demo path | `examples/README.md`             |
+| Any `make` command / command organization | `references/makefile.md` (authoritative command list + 3-context model) |
+| New/changed SYNCED CR fixtures (the object set e2e asserts against) | `test/e2e/cluster/{04-objects,05-environment}/` + `verify_all` in `scripts/cluster.sh` |
+| Curated examples / `ach-cli login` + `ach-cli hydrate` demo path | `examples/README.md`             |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |
@@ -227,10 +240,10 @@ The host has no `go`, `kubebuilder`, `controller-gen`, `kustomize`,
 invocation goes through the devtools container via `./scripts/dev.sh`.
 
 ```bash
-./scripts/dev.sh go build ./...
-./scripts/dev.sh go test ./internal/controller/...
-./scripts/dev.sh make manifests
-./scripts/dev.sh bash            # interactive shell
+make build-all                   # build both binaries (auto-routes to devtools)
+make gen-manifests               # controller-gen CRDs/RBAC (auto-routes)
+make shell                       # interactive shell inside the devtools container
+./scripts/dev.sh go build ./...  # raw go, when no make target fits
 ```
 
 - Wrapper mounts repo at `/workspace`, mounts `/var/run/docker.sock`,
@@ -250,28 +263,35 @@ invocation goes through the devtools container via `./scripts/dev.sh`.
 - Versions are pinned in `Dockerfile.devtools` and `go.mod` — when in
   doubt, those files are authoritative.
 
-`make` targets shelling out to `go` MUST be prefixed `./scripts/dev.sh`.
-Targets that only call `kubectl`/`docker`/`helm`/`kind`/bash run on host
-(e.g. `make cluster-up`, `make operator-redeploy`, `make logs-*`).
+All `make` targets auto-route to the correct execution context — the
+host needs only docker. Targets needing the Go/helm toolchain wrap
+themselves into the devtools container via the `container_target` macro
+(`test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-all`,
+`cluster-*`, `e2e-run`); host+docker targets (`build-image*`, the gates)
+and `kubectl`-only targets (`wait-*`, `logs-*`) run on the host. You
+never need to type `./scripts/dev.sh` before a `make` target — see
+`references/makefile.md` for the full 3-context model.
 
 ## Test phases
 
-| Phase              | Command                                | When                                  |
-|--------------------|----------------------------------------|---------------------------------------|
-| `make unit`        | pure-logic, ~5s warm                   | every iteration                       |
-| `make lint-changed`| golangci-lint scoped to touched pkgs   | every iteration                       |
-| `make lint`        | golangci-lint full sweep               | before commit (pre-commit hook)       |
-| `make envtest-run` | controller-runtime envtest (race), ~7m | before commit on controller changes   |
-| `make envtest-fast`| envtest without -race, ~3m             | dev inner loop                        |
-| `make e2e-full`    | kind + Helm + stdlib testing, ~6m      | final gate before commit              |
-| `make e2e-focus`   | focused subtest. `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on a single sub-test |
-| `make security`    | gosec + govulncheck + fuzz-short, ≤6m  | in-container; before commit           |
-| `make pre-commit`  | lint-changed + unit                    | host-only; runs on every `git commit` once `make hooks` installed |
-| `make pre-push`    | gitleaks + trufflehog + 15 gates (incl. full lint + unit) | host-only; before push |
+See `references/makefile.md` for the authoritative command list. Common phases:
+
+| Phase                   | Command                                | When                                  |
+|-------------------------|----------------------------------------|---------------------------------------|
+| `make test-unit`        | pure-logic, ~10s warm                  | every iteration                       |
+| `make qa-lint-changed`  | golangci-lint scoped to touched pkgs   | every iteration                       |
+| `make qa-lint`          | golangci-lint full sweep               | before commit (pre-commit hook)       |
+| `make test-envtest`     | controller-runtime envtest (race), ~7m | before commit on controller changes   |
+| `make test-envtest-fast`| envtest without -race, ~3m             | dev inner loop                        |
+| `make e2e-full`         | kind + Helm + stdlib testing, ~6m      | final gate before commit              |
+| `make e2e-focus`        | focused subtest. `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on a single sub-test |
+| `make qa-security`      | gosec + govulncheck + fuzz-short, ≤6m  | in-container; before commit           |
+| `make pre-commit`       | qa-lint-changed + test-unit            | host-only; runs on every `git commit` once `make hooks` installed |
+| `make pre-push`         | gitleaks + trufflehog + 17 gates (incl. full lint + unit) | host-only; before push |
 
 Umbrella targets:
-- `make test-all` = `unit` + `envtest-run`
-- `make verify` = `./scripts/dev.sh make security` + `make pre-push`
+- `make test-full` = `test-unit` + `test-envtest`
+- `make verify` = `make qa-security` + `make pre-push`
 - `make hooks` installs `.git/hooks/pre-commit -> scripts/pre-commit-check.sh`
   AND `.git/hooks/pre-push -> scripts/pre-push-check.sh`
 
@@ -288,16 +308,16 @@ manual `make pre-push` is the right safety net — but that's the
 exception, not the rule.
 
 Inner-loop iteration helpers:
-- `make unit-pkg PKG=./internal/<service>/...`
-- `make envtest-pkg PKG=./internal/controller/... [FOCUS=TestX] [TIMEOUT=10m]`
-- `make lint-changed [BASE_REF=...]` (lints only packages touched vs `origin/main`)
+- `make test-unit-pkg PKG=./internal/<service>/...`
+- `make test-envtest-pkg PKG=./internal/controller/... [FOCUS=TestX] [TIMEOUT=10m]`
+- `make qa-lint-changed [BASE_REF=...]` (lints only packages touched vs `origin/main`)
 
 ## Documentation site (mkdocs)
 
 The public docs site at `docs/` is mkdocs-material based.
 
 ```bash
-./scripts/dev.sh make gen-crd-ref-docs   # regenerate docs/api-reference/ from CRDs
+make gen-crd-ref-docs                    # regenerate docs/api-reference/ from CRDs
 make docs-build                          # build site/ via docker (host)
 make docs-serve                          # local preview at :8000
 ```
@@ -327,10 +347,10 @@ Cutting a release (stable example, `v0.1.0`):
 
 ```bash
 # Most common — empty release commit (no manifest pre-bump).
-# `make release` runs preconditions (on main, clean tree, in-sync
+# `make release-cut` runs preconditions (on main, clean tree, in-sync
 # with origin/main), creates `chore(release): v0.1.0` as an empty
-# commit, runs the 15-gate pre-push, and pushes to main.
-make release VERSION=0.1.0
+# commit, runs the 17-gate pre-push, and pushes to main.
+make release-cut VERSION=0.1.0
 
 # Bundle the release intent with a real change:
 # (edit, then commit the change yourself, then:)
@@ -339,27 +359,28 @@ make pre-push
 git push origin main
 ```
 
-There is no need to `make bump` locally or to create the tag yourself.
-`make bump VERSION=X.Y.Z` is still available as the internal target
-release.yml invokes; it can also be run by hand if you want to pre-bump
-manifests in the same commit (the workflow detects the clean tree and
-skips its own bump step), but it is not the expected workflow.
+There is no need to `make release-bump` locally or to create the tag
+yourself. `make release-bump VERSION=X.Y.Z` is still available as the
+internal target release.yml invokes; it can also be run by hand if you
+want to pre-bump manifests in the same commit (the workflow detects the
+clean tree and skips its own bump step), but it is not the expected
+workflow.
 
 Per-release flow (after the `chore(release): v0.1.0` push):
 
 1. **parse** job (job-level `if` skips non-release pushes): pulls
    `X.Y.Z` from the head commit message via regex.
-2. **run-tests** job: `make test` (`unit` + `envtest-run` = race-enabled).
+2. **run-tests** job: `make test-unit` + `make test-envtest-fast`.
    Failures stop the pipeline here — no manifest mutation, no tag.
 3. **build-and-release** job:
    - Configures the github-actions[bot] identity.
-   - Runs `make bump VERSION=X.Y.Z`, commits the four bumped manifests
+   - Runs `make release-bump VERSION=X.Y.Z`, commits the four bumped manifests
      to `main` with a `[skip ci]` marker, and pushes the bot commit.
      If the tree is already clean (user pre-bumped), this is a no-op.
    - Picks the goreleaser config:
      - `vX.Y.Z`                  → `.goreleaser.yml`            (stable)
      - `vX.Y.Z-{alpha,beta,rc}*` → `.goreleaser.prerelease.yml`
-   - `make generate manifests` regenerates CRDs (sanity).
+   - `make gen-code gen-manifests` regenerates CRDs (sanity).
    - cosign + cyclonedx-gomod installed on PATH (HRD-09).
    - goreleaser runs with `GORELEASER_CURRENT_TAG=v<X.Y.Z>` (no git
      tag at HEAD yet). The GitHub release-create API call auto-creates
@@ -383,7 +404,7 @@ Orphan-tag posture: tag-creation is the LAST step. A failure in tests
 or bump or goreleaser leaves no tag on origin and no GH release
 attached to one. The bot bump commit may be on `main` if the failure
 happened in goreleaser — that is reversible by reverting the bot
-commit or by simply running the next release attempt, since `make bump`
+commit or by simply running the next release attempt, since `make release-bump`
 inside the workflow is idempotent.
 
 Snapshot builds (`.goreleaser.snapshot.yml`) are intentionally NOT
@@ -401,8 +422,8 @@ Remote: `git@github.com:ackstorm/ach.git`. The local gate strategy
 splits across two hook stages so the cost of "oops, CI failed lint"
 is paid locally before the commit even lands:
 
-- `pre-commit` (`make pre-commit`) — fast: `make lint-changed`
-  (golangci-lint scoped to touched packages) + `make unit`. Runs on
+- `pre-commit` (`make pre-commit`) — fast: `make qa-lint-changed`
+  (golangci-lint scoped to touched packages) + `make test-unit`. Runs on
   every `git commit` once `make hooks` is installed. Bypass with
   `--no-verify` only for justified WIP commits; the full lint sweep
   still fires on push.
@@ -423,8 +444,8 @@ Hard gates (17) — failure blocks push:
 - `go mod tidy` drift
 - Per-file SPDX license header
   (`// SPDX-License-Identifier: Apache-2.0`)
-- golangci-lint full sweep (`make lint` inside devtools container)
-- `make unit` (pure-logic regression — `./scripts/dev.sh make unit`)
+- golangci-lint full sweep (`make qa-lint` inside devtools container)
+- `make test-unit` (pure-logic regression — auto-routes to devtools)
 
 If a gate fails, fix the root cause — never `--no-verify` or otherwise
 bypass. Note: `--no-verify` skips ONLY the local hook; it does not
@@ -443,13 +464,13 @@ Use these Makefile targets instead:
 | Platform API Deployment Ready           | `make wait-platform-api`                            |
 | Forwarder Deployment Ready              | `make wait-forwarder`                               |
 | Content Service container Ready (co-located in operator Pod) | `make wait-content-service`             |
-| All ach Deployments (operator+platform-api+forwarder) Ready | `make wait-ach` (wraps `scripts/cluster.sh wait_ach`) |
+| All ach Deployments (operator+platform-api+forwarder) Ready | `make wait-ach` (wraps `scripts/cluster.sh wait_ach`; also waits on `ach-local-gateway` **when present** — it is a dev/test add-on applied by `hydrate_fixtures`, not a hard prerequisite) |
 | Postgres StatefulSet Ready              | `make wait-postgres`                                |
 | Redis (Valkey) StatefulSet Ready        | `make wait-redis`                                   |
 | Dex Deployment Ready                    | `make wait-dex`                                     |
 | Container exit + PASS/FAIL marker       | `make wait-container NAME=<container>`              |
 | Full cluster hydration                  | `make cluster-up` (synchronous; do not poll after)  |
-| Operator hot-reload + Ready             | `make operator-redeploy` (bounded `rollout status`) |
+| Reconcile infra/fixtures on running cluster | `make cluster-sync` (rebuilds + rolls ach pods via rebuild-id) |
 
 > Some of these `wait-*` targets are not yet defined in the Makefile —
 > add them on first use rather than introducing ad-hoc polling loops in
@@ -469,16 +490,22 @@ are the contract; ad-hoc loops aren't.
 
 ## Common failure modes
 
-### ❌ Running `make X` directly on host
+### ❌ Prefixing a `make` target with `./scripts/dev.sh` out of habit
 ```bash
-make unit
-# command not found: go
+./scripts/dev.sh make test-unit   # works, but the prefix is redundant
 ```
-✅ Prefix with `./scripts/dev.sh`:
+✅ Just run the target — it auto-routes into devtools:
 ```bash
-./scripts/dev.sh make unit
+make test-unit
 ```
-WHY IT FAILS: Host has no Go binary. The devtools container does.
+Toolchain targets (`test-*`, `qa-*`, `gen-*`, `build-server/-cli/-all`,
+`cluster-*`, `e2e-run`) wrap themselves into the devtools container via
+the `container_target` macro; the host needs only docker. If docker is
+down you get a clear preflight error
+(`scripts/dev.sh: docker daemon not reachable ...`), not a cryptic
+`command not found: go`. The explicit prefix still works (the
+`ACH_IN_DEVTOOLS` guard prevents a nested container), so CI may keep or
+drop it. See `references/makefile.md`.
 
 ### ❌ Naked polling loop
 ```bash
@@ -530,9 +557,9 @@ make e2e-full       # ~10 min from clean each time
 ```
 ✅ Use the dev loop:
 ```bash
-make cluster-keep                       # once
-./scripts/dev.sh make e2e-focus FOCUS="rateLimits"   # ~30s-2min per iter
-./scripts/dev.sh make operator-redeploy # hot-reload after code edit
+make cluster-up                         # once (kept; no teardown)
+make e2e-focus FOCUS="rateLimits"       # ~30s-2min per iter
+make cluster-sync                       # rebuild image + roll ach pods after a code edit
 ```
 WHY IT FAILS: `e2e-full` tears down and recreates the cluster every run.
 The kept-cluster loop reuses state across iterations.
@@ -547,7 +574,7 @@ make pre-push       # or rely on the installed git hook
 git push origin main
 ```
 WHY IT FAILS: Pushed secrets, license-header drift, govulncheck advisory
-regressions cannot be untrue-d from public history. The 15-gate script
+regressions cannot be untrue-d from public history. The 17-gate script
 is the contract.
 
 ### ❌ Kubectl from host against the kind cluster
@@ -722,7 +749,7 @@ load-bearing caller of `--raw`; any other golden-diff repro must pass
 The golden at `examples/hydrate.json` is stored against the literal base
 URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
 `ACH_BASE_URL` the `ach-local-gateway` serves (set in
-`test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
+`test/e2e/cluster/02-ach/ach.values.yaml`). When the kept cluster exposes the
 platform-api on a different externally-visible base (a custom Ingress, a
 different DNS name, an https prod host, etc.), the raw `diff -u` flags every
 `downloadUrl`/`endpoint` row even though the response shape is byte-identical.
@@ -965,7 +992,7 @@ unambiguous.
   `zz_generated*.go`, `mock_*.go` starts with
   `// SPDX-License-Identifier: Apache-2.0`. Pre-push gate enforces.
   `hack/boilerplate.go.txt` provides the header for controller-gen
-  output; `make generate` wires it in via `object:headerFile=`.
+  output; `make gen-code` wires it in via `object:headerFile=`.
 
 - **govulncheck ack-list**: stdlib HIGH advisories awaiting upstream Go
   fixes live in `references/security/govulncheck-acknowledged.md` (note:
@@ -985,25 +1012,25 @@ unambiguous.
 use the kept-cluster loop:
 
 ```bash
-# 1. Bring cluster up once (kept after run)
-./scripts/dev.sh make e2e-keep
-# = scripts/cluster.sh keep + make e2e (NO teardown after)
+# 1. Bring cluster up once (kept after run — cluster-up does not tear down)
+make e2e-keep
+# = make cluster-up + make e2e-run (NO teardown after)
 
 # 2. Diagnose live (cluster is up)
-./scripts/dev.sh bash -c "kubectl -n default logs deploy/ach --tail=200"
-./scripts/dev.sh bash -c "kubectl -n default describe team <name>"
+make logs-operator                       # or: make shell, then kubectl ...
+KUBECONFIG=$PWD/.gocache/kube/config kubectl -n ach-system describe team <name>
 
 # 3. Iterate with focused tests
-./scripts/dev.sh make e2e-focus FOCUS="rateLimits composite"
-./scripts/dev.sh make envtest-pkg PKG=./internal/controller/... FOCUS=TestTeamReconciler_AC_T4
+make e2e-focus FOCUS="rateLimits composite"
+make test-envtest-pkg PKG=./internal/controller/... FOCUS=TestTeamReconciler_AC_T4
 
-# 4. Code change → hot-reload → re-test (~30s)
-./scripts/dev.sh make operator-redeploy
-./scripts/dev.sh make e2e-focus FOCUS="..."
+# 4. Code change → rebuild image + roll ach pods → re-test (~30s)
+make cluster-sync
+make e2e-focus FOCUS="..."
 
 # 5. Final gate before commit (full suite from clean)
 make cluster-down
-./scripts/dev.sh make e2e-full
+make e2e-full
 ```
 
 Never push a change touching `internal/controller/`, `internal/platformapi/`,

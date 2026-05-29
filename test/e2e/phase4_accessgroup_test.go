@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
@@ -32,11 +31,9 @@ func TestAccessGroupSynced_Demo_HappyPath(t *testing.T) {
 	if os.Getenv("ACH_E2E_PHASE9") != "1" {
 		t.Skip("§17 e2e gated behind ACH_E2E_PHASE9=1")
 	}
-	mustKubectl(t, "apply", "-f", "../../examples/04-environment-demo.yaml")
-	t.Cleanup(func() {
-		_ = exec.Command("kubectl", "delete", "-f", "../../examples/04-environment-demo.yaml", "--ignore-not-found").Run()
-	})
-
+	// The "demo" Environment is pre-synced by cluster.sh (reconcile_examples).
+	// Tests assert against the live, already-synced cluster — they do NOT apply
+	// fixtures (that would mutate shared state other specs depend on).
 	if !waitForConditionTriple(t, "environment", "demo", "ach-system",
 		"AccessGroupSynced", "True", "Synced", 30*time.Second) {
 		dumpAGConditions(t, "demo")
@@ -50,24 +47,12 @@ func TestAccessGroupSynced_DemoUnresolved_FlipsToUnresolvedReferences(t *testing
 	if os.Getenv("ACH_E2E_PHASE9") != "1" {
 		t.Skip("§17 e2e gated behind ACH_E2E_PHASE9=1")
 	}
-	mustKubectl(t, "apply", "-f", "../../examples/04b-environment-unresolved.yaml")
-	t.Cleanup(func() {
-		_ = exec.Command("kubectl", "delete", "-f", "../../examples/04b-environment-unresolved.yaml", "--ignore-not-found").Run()
-	})
-
+	// The "demo-unresolved" Environment is pre-synced by cluster.sh
+	// (reconcile_examples). Assert against the live cluster; do not apply.
 	if !waitForConditionTriple(t, "environment", "demo-unresolved", "ach-system",
 		"AccessGroupSynced", "False", "UnresolvedReferences", 30*time.Second) {
 		dumpAGConditions(t, "demo-unresolved")
 		t.Fatalf("demo-unresolved Environment did NOT reach AccessGroupSynced=False/UnresolvedReferences within 30s")
-	}
-}
-
-// mustKubectl runs `kubectl <args...>` and fails the test on non-zero exit.
-func mustKubectl(t *testing.T, args ...string) {
-	t.Helper()
-	out, err := exec.Command("kubectl", args...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("kubectl %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 

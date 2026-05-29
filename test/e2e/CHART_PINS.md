@@ -1,6 +1,6 @@
 # E2E Chart Pins
 
-These versions are consumed by `scripts/cluster.sh` through `test/e2e/values`.
+These versions are consumed by `scripts/cluster.sh` through `test/e2e/cluster/01-base`.
 
 | Component | Chart | Version |
 | --- | --- | --- |

@@ -86,6 +86,20 @@ func New(deps Deps) *httputil.ReverseProxy {
 				// upstream never sees a misleading "x-litellm-key-id: ".
 				req.Header.Del("X-Litellm-Key-Id")
 			}
+			if deps.LiteLLMMasterKey == "" {
+				// Same defense for the master key: never forward an empty
+				// "x-litellm-api-key:" header (misconfig caught by precheck,
+				// but keep the Director symmetric with the key-id guard).
+				req.Header.Del("X-Litellm-Api-Key")
+			}
+			// MCP route only: LiteLLM's MCP key parser
+			// (user_api_key_auth_mcp.py) nullifies any x-litellm-api-key
+			// lacking a "Bearer " prefix. /v1, /gemini, and /a2a validate
+			// the bare master key, so the prefix is scoped to /mcp here
+			// rather than baked into the shared StripAndRewrite (#41).
+			if deps.LiteLLMMasterKey != "" && routeFor(req.URL.Path) == "/mcp" {
+				req.Header.Set("X-Litellm-Api-Key", "Bearer "+deps.LiteLLMMasterKey)
+			}
 
 			// JWT write LAST — strip just cleared any client Authorization.
 			if token, present := jwtFromCtx(req.Context()); present {

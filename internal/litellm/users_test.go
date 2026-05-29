@@ -182,6 +182,45 @@ func TestUserInfoByEmailLiteLLM183Fallback(t *testing.T) {
 	}
 }
 
+// TestUserInfoByEmailByIDPlaceholderGuard — issue #36.
+// In the /user/list fallback path the second /user/info?user_id= call may
+// ALSO return the default_user_id placeholder. The authoritative user_id
+// from /user/list must win; only the team-alias mapping is taken from the
+// by-id response.
+func TestUserInfoByEmailByIDPlaceholderGuard(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			if strings.Contains(r.URL.RawQuery, "user_id") {
+				// by-id path ALSO returns the placeholder (the #36 bug
+				// scenario) but carries a usable team alias.
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","teams":[{"team_id":"t-uuid-001","team_alias":"default"}]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+			}
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			_, _ = w.Write([]byte(`{"users":[{"user_id":"u-real","user_email":"existing@example.com","teams":["default"]}]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "existing@example.com")
+	if err != nil {
+		t.Fatalf("UserInfoByEmail: %v", err)
+	}
+	if got == nil || got.UserID != "u-real" {
+		t.Errorf("UserID = %+v; want authoritative u-real (not default_user_id)", got)
+	}
+	if len(got.Teams) != 1 || got.Teams[0] != "default" {
+		t.Errorf("Teams = %v; want [default] from by-id alias mapping", got.Teams)
+	}
+}
+
 // TestUserInfoByEmailEscapesPlus asserts that the email url-escape uses
 // QueryEscape semantics — the `+` in `a+tag@b.c` MUST become `%2B`, not
 // stay literal (literal `+` in a query string decodes as space).

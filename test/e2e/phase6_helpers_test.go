@@ -69,7 +69,7 @@ const (
 	// phase6DefaultBaseURL is the base URL the golden (examples/hydrate.json)
 	// is stored against — the literal scheme+host the standard kind+Helm
 	// cluster emits (the ach-local-gateway speaks plain http on localhost:8080
-	// via ACH_BASE_URL in test/e2e/values/ach.values.yaml). Also the default
+	// via ACH_BASE_URL in test/e2e/cluster/02-ach/ach.values.yaml). Also the default
 	// when ACH_E2E_PHASE6_BASE_URL is unset. phase6NormalizeHydrate rewrites
 	// this to the live base before the byte-for-byte compare — a no-op on the
 	// standard fixture, a real rewrite only against an exotic-host cluster.

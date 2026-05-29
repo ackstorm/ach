@@ -1,0 +1,80 @@
+# ach-mock-a2a — SKELETON A2A (agent-to-agent) backend (Phase 4).
+#
+# Test-only scaffolding kept OUT of the user-facing Helm chart. Intentionally a
+# minimal placeholder for now: captures the last request at /__capture/last and
+# replies 200 with a minimal JSON-RPC envelope. Gives demo-agent a reachable
+# backend instead of a 404; the full A2A surface (agent card, message/send,
+# tasks) is a TODO. Built + kind-loaded as ach-mock:e2e (make build-image-mock),
+# run with args ["a2a"], applied post-ach as a stage-03 test backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mock-a2a
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-a2a
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-a2a
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mock-a2a
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-a2a
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-a2a
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ach
+        app.kubernetes.io/component: mock-a2a
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock
+          image: ach-mock:e2e
+          imagePullPolicy: IfNotPresent
+          args: ["a2a"]
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

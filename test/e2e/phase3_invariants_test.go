@@ -67,14 +67,14 @@ func TestPhase3Invariants(t *testing.T) {
 // ACH never sets default `max_budget`.
 //
 // e2e probe shape (engineer-pending — gated on phase3SuiteGuard):
-//   1. POST /platform/auth/login → 302 redirect to Dex authorize URL.
-//   2. Follow the (mockCallback) Dex flow to obtain ?code=&state=.
-//   3. GET /platform/auth/sso/callback → 200 JSON
-//      {"key_id":"pkid_...","plaintext":"pk_...","owner_email":"..."}.
-//   4. Capture Platform API logs; assert exactly ONE
-//      action=platform.sso.login outcome=created event.
-//   5. Assert NO pk_<plaintext> substring in any captured audit line
-//      (OBS-02 no-leak invariant).
+//  1. POST /platform/auth/login → 302 redirect to Dex authorize URL.
+//  2. Follow the (mockCallback) Dex flow to obtain ?code=&state=.
+//  3. GET /platform/auth/sso/callback → 200 JSON
+//     {"key_id":"pkid_...","plaintext":"pk_...","owner_email":"..."}.
+//  4. Capture Platform API logs; assert exactly ONE
+//     action=platform.sso.login outcome=created event.
+//  5. Assert NO pk_<plaintext> substring in any captured audit line
+//     (OBS-02 no-leak invariant).
 //
 // Unit coverage for the SSO flow already ships in Plan 03-07's 23
 // table-driven tests in internal/platformapi/auth/sso_test.go — those
@@ -144,12 +144,12 @@ func testPhase3SC1SSO(t *testing.T) {
 // present (`[]` when empty), never `pk_`/`ek_` plaintext.
 //
 // e2e probe shape (engineer-pending — gated on phase3SuiteGuard):
-//   1. Apply environment_prod.yaml + environment_staging.yaml; wait
-//      for AccessGroupSynced=True on both (operator reconciles).
-//   2. Skip the live HTTP probes for missing bearers — those require
-//      a real pk_ (SC#1 successful end-to-end) which is the live UAT
-//      path; assert only the no-plaintext invariant on the captured
-//      audit buffer.
+//  1. Apply environment_prod.yaml + environment_staging.yaml; wait
+//     for AccessGroupSynced=True on both (operator reconciles).
+//  2. Skip the live HTTP probes for missing bearers — those require
+//     a real pk_ (SC#1 successful end-to-end) which is the live UAT
+//     path; assert only the no-plaintext invariant on the captured
+//     audit buffer.
 //
 // Full happy-path coverage (table-driven across all four shape
 // branches: pk_ with env, pk_ missing env, ek_ matched, ek_ wrong
@@ -195,19 +195,19 @@ func testPhase3SC2Hydrate(t *testing.T) {
 // directly from the DB.
 //
 // e2e probe shape (engineer-pending):
-//   1. Drive SSO + env-keys create via scripts/uat-phase3.sh OR
-//      assume a prior live UAT run populated the DB.
-//   2. Query db.ListActiveACHKeyTokens via kubectl exec against the
-//      ach-postgres Pod using the migrate binary as a psql proxy:
-//      `kubectl exec deploy/ach-postgres -n ach-system -c postgres --
-//      psql -U ach -d ach -c "SELECT litellm_token FROM
-//      personal_keys WHERE status='active' UNION SELECT
-//      litellm_token FROM environment_keys WHERE status='active';"`
-//   3. Assert at least one row returned (the live UAT created keys);
-//      OR t.Skipf when DB is empty (engineer hasn't run uat-phase3.sh
-//      yet — the integration coverage IS in Plan 03-03's
-//      active_keys_test.go which exercises the helper directly under
-//      testcontainers-go Postgres).
+//  1. Drive SSO + env-keys create via scripts/uat-phase3.sh OR
+//     assume a prior live UAT run populated the DB.
+//  2. Query db.ListActiveACHKeyTokens via kubectl exec against the
+//     ach-postgres Pod using the migrate binary as a psql proxy:
+//     `kubectl exec deploy/ach-postgres -n ach-system -c postgres --
+//     psql -U ach -d ach -c "SELECT litellm_token FROM
+//     personal_keys WHERE status='active' UNION SELECT
+//     litellm_token FROM environment_keys WHERE status='active';"`
+//  3. Assert at least one row returned (the live UAT created keys);
+//     OR t.Skipf when DB is empty (engineer hasn't run uat-phase3.sh
+//     yet — the integration coverage IS in Plan 03-03's
+//     active_keys_test.go which exercises the helper directly under
+//     testcontainers-go Postgres).
 //
 // Direct unit coverage for the helper itself lives in Plan 03-03's
 // active_keys_test.go (testcontainers-go Postgres + UNION query
@@ -281,12 +281,12 @@ func testPhase3SC3EnvKeysCreate(t *testing.T) {
 // returns 204 only after LiteLLM ack.
 //
 // e2e probe shape (engineer-pending):
-//   1. Drive SSO + env-keys create (via uat-phase3.sh) to mint a pk_
-//      + an ek_.
-//   2. Drive `/platform/admin/keys/revoke` with the pk_; query DB
-//      directly: status='revoked' on the row.
-//   3. Drive `DELETE /platform/env-keys/{ekid_}` with the pk_; assert
-//      204.
+//  1. Drive SSO + env-keys create (via uat-phase3.sh) to mint a pk_
+//     + an ek_.
+//  2. Drive `/platform/admin/keys/revoke` with the pk_; query DB
+//     directly: status='revoked' on the row.
+//  3. Drive `DELETE /platform/env-keys/{ekid_}` with the pk_; assert
+//     204.
 //
 // The static line-ordering assertion (Plan 03-10's awk gate proving
 // `db.RevokePersonalKey` line < `deps.LiteLLM.RevokeKey` line in
@@ -331,12 +331,12 @@ func testPhase3SC4AsymmetricRevocation(t *testing.T) {
 // `202 Accepted`.
 //
 // e2e probe shape (engineer-pending):
-//   1. POST /platform/admin/refresh without a key → 401/403 (Authn
-//      middleware enforces).
-//   2. Live UAT (scripts/uat-phase3.sh) drives the full SSO →
-//      allowlist → admin/refresh path against an applied Plugin CR;
-//      asserts the `ach.ackstorm.ai/force-refresh` annotation lands
-//      on the CR via `kubectl get plugin <name> -o jsonpath`.
+//  1. POST /platform/admin/refresh without a key → 401/403 (Authn
+//     middleware enforces).
+//  2. Live UAT (scripts/uat-phase3.sh) drives the full SSO →
+//     allowlist → admin/refresh path against an applied Plugin CR;
+//     asserts the `ach.ackstorm.ai/force-refresh` annotation lands
+//     on the CR via `kubectl get plugin <name> -o jsonpath`.
 //
 // Detailed branch coverage (ek_ rejection, non-admin rejection,
 // allowlisted-success, unknown-kind rejection, conflict-on-Patch)
@@ -379,11 +379,11 @@ func testPhase3SC5AdminGate(t *testing.T) {
 // (hydrate calls trigger PkCheckAndExtend; no audit event emitted).
 //
 // e2e probe shape:
-//   1. Capture the last N audit lines from the deployed Platform API
-//      Pod stdout via `kubectl logs --tail=500`.
-//   2. Parse each line into phase3AuditRecord.
-//   3. Run phase3AssertAuditOBS02 on every record.
-//   4. Assert zero records with action="platform.pk.extend" (OBS-01).
+//  1. Capture the last N audit lines from the deployed Platform API
+//     Pod stdout via `kubectl logs --tail=500`.
+//  2. Parse each line into phase3AuditRecord.
+//  3. Run phase3AssertAuditOBS02 on every record.
+//  4. Assert zero records with action="platform.pk.extend" (OBS-01).
 //
 // This is THE load-bearing assertion of Plan 03-12: every captured
 // audit line satisfies the OBS-02 schema invariant.

@@ -95,7 +95,7 @@ func filterAndCopyHeaders(in http.Header) map[string][]string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ach-mock <litellm|mcp>")
+		fmt.Fprintln(os.Stderr, "usage: ach-mock <model|mcp|a2a>")
 		os.Exit(2)
 	}
 	mode := os.Args[1]
@@ -126,12 +126,14 @@ func main() {
 	})
 
 	switch mode {
-	case "litellm":
-		mountLiteLLM(mux, cap)
+	case "model":
+		mountModel(mux, cap)
 	case "mcp":
 		mountMCP(mux, cap)
+	case "a2a":
+		mountA2A(mux, cap)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown mode %q (want litellm | mcp)\n", mode)
+		fmt.Fprintf(os.Stderr, "unknown mode %q (want model | mcp | a2a)\n", mode)
 		os.Exit(2)
 	}
 
@@ -149,36 +151,80 @@ func main() {
 	}
 }
 
-// mountLiteLLM wires the LiteLLM-shaped chat-completion + embeddings
-// routes. Captures the request and replies with a minimal chat
-// completion envelope so the Forwarder's pass-through is observable.
-func mountLiteLLM(mux *http.ServeMux, cap *capture) {
+// mountModel wires the OpenAI-compatible chat-completion + embeddings routes
+// for the ach-mock-model echo backend. Captures the request (/__capture/last)
+// and replies with a chat-completion envelope whose assistant content ECHOES
+// the last user message — a "parrot" model, so e2e can assert keys work and
+// the full data-plane round-trips (forwarder → LiteLLM → ach-mock-model → echo).
+func mountModel(mux *http.ServeMux, cap *capture) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
 		cap.record(r, raw)
 
-		// Refuse when x-litellm-api-key is absent — same shape as real
-		// LiteLLM so SC#1 can detect header-rewrite failure via 401.
-		if r.Header.Get("x-litellm-api-key") == "" {
-			http.Error(w, `{"error":{"code":"unauthorized","message":"missing x-litellm-api-key"}}`,
+		// Require SOME upstream credential so a header-rewrite/auth failure
+		// surfaces as 401. Accept either header: x-litellm-api-key (forwarder→mock
+		// direct position) OR Authorization: Bearer (LiteLLM→mock model-backend
+		// position, where LiteLLM forwards the model api_key as a Bearer token).
+		if r.Header.Get("x-litellm-api-key") == "" && r.Header.Get("Authorization") == "" {
+			http.Error(w, `{"error":{"code":"unauthorized","message":"missing upstream credential"}}`,
 				http.StatusUnauthorized)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-  "id": "chatcmpl-mock-001",
-  "object": "chat.completion",
-  "model": "mock-model",
-  "choices": [{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
-  "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":     "chatcmpl-mock-001",
+			"object": "chat.completion",
+			"model":  "ach-mock-model",
+			"choices": []any{map[string]any{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": echoContent(raw)},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]any{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+		})
 	}
 	mux.HandleFunc("/v1/chat/completions", handler)
 	mux.HandleFunc("/v1/embeddings", handler)
 	mux.HandleFunc("/v1/", handler)
 	mux.HandleFunc("/gemini/", handler)
+}
+
+// echoContent extracts the last message's content from an OpenAI
+// chat-completion request body, for the parrot reply. Falls back to "ok"
+// when the body has no parseable messages.
+func echoContent(raw []byte) string {
+	var req struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &req); err == nil && len(req.Messages) > 0 {
+		if c := req.Messages[len(req.Messages)-1].Content; c != "" {
+			return c
+		}
+	}
+	return "ok"
+}
+
+// mountA2A wires a SKELETON A2A (agent-to-agent) backend — captures the
+// request (/__capture/last) and replies 200 with a minimal JSON-RPC envelope.
+// Intentionally empty for now (full A2A surface — agent card, message/send,
+// tasks — is a TODO); this just gives a deployable, reachable skeleton so
+// demo-agent points at a real backend instead of a 404.
+func mountA2A(mux *http.ServeMux, cap *capture) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		cap.record(r, raw)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"result":  map[string]any{"mock_a2a": true},
+		})
+	}
+	mux.HandleFunc("/", handler)
 }
 
 // mountMCP wires the MCP echo handler. Records the request and replies

@@ -3,7 +3,7 @@
 Stdlib `testing` Go files behind build tag `e2e`. No Ginkgo
 (per memory `feedback_023_tier_framework_rejected`).
 
-Activation: `make e2e` (assumes `make cluster-up` already invoked).
+Activation: `make e2e-run` (assumes `make cluster-up` already invoked).
 
 ## Suite map
 
@@ -28,7 +28,7 @@ Activation: `make e2e` (assumes `make cluster-up` already invoked).
 ## Focused dev loop
 
 ```bash
-make cluster-keep                                  # idempotent bring-up
+make cluster-up                                    # idempotent bring-up (kept)
 make e2e-focus RUN='TestPhase4Promotion/SC11a'     # stdlib -run pattern
 make e2e-focus RUN='TestPhase4Promotion'           # full §11 sub-suite
 make e2e-focus FOCUS='registers via POST /model/new'   # legacy ginkgo
@@ -52,10 +52,10 @@ lands), re-capture the golden via the Phase 6 CLI binary (replaces the
 previous shell-driver workflow):
 
 ```bash
-make cluster-keep
-./scripts/dev.sh make build
-ach login                                                    # one-time SSO
-ach hydrate --environment demo > examples/hydrate.json
+make cluster-up
+make build-all
+./bin/ach-cli login                                          # one-time SSO
+./bin/ach-cli hydrate --environment demo > examples/hydrate.json
 cp examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
 git add examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
 git commit -m "test(e2e): refresh §11e hydrate golden (<reason>)"

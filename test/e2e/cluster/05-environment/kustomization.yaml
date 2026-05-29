@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Stage 05 — Environments LAST. demo references the 04-objects (plugins/prompts/
+# artifacts) + LiteLLM-seeded models/mcp/agents; it can only resolve once those
+# exist. demo-unresolved is the intentional negative-path fixture.
+resources:
+  - demo.yaml
+  - demo-unresolved.yaml

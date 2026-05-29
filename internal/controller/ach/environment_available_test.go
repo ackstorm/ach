@@ -211,6 +211,12 @@ func contains(s, sub string) bool {
 func TestEnvironmentAvailableConditionEmitted(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
+	// Seed the authorized team so ListTeamsByAlias("default") resolves —
+	// without it AccessGroupSynced stays False (UnresolvedReferences) and the
+	// Available rollup never reaches True. Mirrors the sibling tests in
+	// environment_accessgroup_test.go. (Bug predates this change; never caught
+	// because envtest CI was unavailable.)
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
