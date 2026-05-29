@@ -109,9 +109,12 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 (tooling, values files, chart pins, port 8080) before you mutate anything.
 
 > Note: the `cluster.sh` per-component reconcile functions are named
-> `reconcile_*` (`reconcile_all`, `reconcile_ach`, `reconcile_fixtures`, …) —
-> shared by both `cluster-up` and `cluster-sync`. Unrelated to `ach-cli
-> hydrate` / `/platform/hydrate`, which materialize workspace artifacts.
+> `reconcile_*` (`reconcile_all`, `reconcile_ach`, `reconcile_fixtures`,
+> `reconcile_objects` [stage 04], `reconcile_environments` [stage 05], …) and
+> `reconcile_all` ends with `verify_all` [stage 06], which blocks until every
+> synced object is healthy — shared by both `cluster-up` and `cluster-sync`.
+> Unrelated to `ach-cli hydrate` / `/platform/hydrate`, which materialize
+> workspace artifacts.
 
 ## Command vocabulary
 

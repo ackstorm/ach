@@ -30,8 +30,15 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #   00-namespaces/  kustomize base — the namespace layout (apply -k, pre-helm)
 #   01-base/        helm values for the 5 deps (postgres/valkey/dex/litellm/
 #                   toolhive) + dex-config.yaml + auth_user_map.py
-#   02-ach/         ach.values.yaml (the ach chart)
-#   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo (post-ach)
+#   02-ach/         ach.values.yaml (the ach chart) + secrets/ (secretGenerator)
+#   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo +
+#                   ach-mock-litellm (apply -k, post-ach)
+#   04-objects/     kustomize base — all non-Environment ACH CRs (apply -k,
+#                   post-ach; LiteLLMConnection/plugins/prompts/artifacts/BIPs/
+#                   marketplaces) sourced from their real upstreams (option B)
+#   05-environment/ kustomize base — the demo Environments LAST (reference 04)
+#   06-verify       NOT a directory — the verify_all step that blocks until
+#                   every synced object reaches its healthy condition
 # Each values file carries its own `chartVersion:` pin (single source of
 # truth for chart version + image tag + chart config). cluster.sh ONLY reads
 # from these files; changing a chart version or image pin is a YAML edit, not
