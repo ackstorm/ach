@@ -270,7 +270,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: docker-load
 docker-load: ## Load IMG into the kind cluster (no push). Usage: make docker-load IMG=ach:e2e
-	kind load docker-image $(IMG) --name $${KIND_CLUSTER:-ach-test}
+	kind load docker-image $(IMG) --name $${KIND_CLUSTER:-ach-e2e}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -557,7 +557,7 @@ wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make
 .PHONY: operator-redeploy
 operator-redeploy: ## rebuild operator image, kind-load, restart deploy (~20s inner loop)
 	$(MAKE) docker-build IMG=ach:e2e
-	kind load docker-image ach:e2e --name ach-test
+	kind load docker-image ach:e2e --name ach-e2e
 	kubectl -n default rollout restart deploy/ach
 	kubectl -n default rollout status  deploy/ach --timeout=60s
 

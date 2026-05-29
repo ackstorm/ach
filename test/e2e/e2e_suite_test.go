@@ -13,7 +13,7 @@
 // to kubectl/psql for observable state.
 //
 // Activation: ./scripts/dev.sh make test-e2e — sets KIND_CLUSTER and the
-// OPERATOR_IMAGE env vars; defaults are ach-phase1-e2e + ach-operator:latest.
+// OPERATOR_IMAGE env vars; defaults are ach-e2e + ach-operator:latest.
 package e2e
 
 import (
@@ -29,7 +29,7 @@ import (
 // Defaults for kind-cluster name, namespace, and image tags. Overridable
 // via env vars so a CI matrix can re-tag the images and reuse the suite.
 const (
-	defaultKindCluster   = "ach-phase1-e2e"
+	defaultKindCluster   = "ach-e2e"
 	defaultNamespace     = "ach-system"
 	defaultOperatorImage = "ach-operator:latest"
 )
