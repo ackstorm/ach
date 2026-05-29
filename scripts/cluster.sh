@@ -463,72 +463,53 @@ wait_ach() {
 }
 
 reconcile_fixtures() {
-  # Seed cluster-scoped CRs the e2e suite needs to assert ACH end-to-end:
-  #   - litellm-master-key Secret: the LiteLLMConnection operator uses
-  #     to authenticate against the LiteLLM upstream during reconcile +
-  #     §6.5 finalizer drain. Value must match LiteLLM chart's
-  #     `masterkey` (test/e2e/cluster/01-base/litellm.values.yaml).
-  #   - LiteLLMConnection/default: the CR that wires the operator's
-  #     litellm-rest client to the in-cluster LiteLLM Service. Without
-  #     it, every Environment finalizer drain stalls on
-  #     "§6.5 step 2 DeleteAccessGroup: litellm connection not ready".
+  # JWT signing keys Secret (FWD-09) + the stage-03 test backends.
   #
-  # The LiteLLM `default` Team is NOT seeded here. The operator's
-  # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a
-  # successful probe (idempotent — list-first, create-on-empty). That
-  # way production deployments converge without cluster.sh / hand-curl.
-  echo "[cluster.sh] seeding e2e fixtures (LiteLLMConnection + JWT signing keys)..."
-  kubectl apply -f config/samples/ach_v1alpha1_litellmconnection.yaml
+  # The LiteLLMConnection/default CR + litellm-master-key Secret are NO LONGER
+  # seeded here: the Secret is a stage-02 kustomize secretGenerator (reconcile_ach)
+  # and the LiteLLMConnection is a stage-04 object (reconcile_objects). The
+  # LiteLLM `default` Team is NOT seeded anywhere — the operator's
+  # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a successful
+  # probe (idempotent), so production converges without cluster.sh / hand-curl.
 
-  # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start
-  # without it. Generated fresh per `cluster.sh up` invocation — kid is
-  # a timestamp so re-running reconciliation produces a new (kid, seed) pair
-  # instead of clobbering with a stale value. NOT the same as the
-  # test/e2e/fixtures/*UNSAFE* known-plaintext seed: that one lives in
-  # `default` for SC#4 JWKS-roundtrip asserts and must never land in
-  # `ach-system`.
+  # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start without it.
+  # Generated fresh per run — kid is a timestamp so re-running reconciliation
+  # produces a new (kid, seed) pair instead of clobbering with a stale value.
+  # NOT the same as the test/e2e/fixtures/*UNSAFE* known-plaintext seed: that
+  # one lives in `default` for SC#4 JWKS-roundtrip asserts and must never land
+  # in `ach-system`.
   if ! kubectl -n ach-system get secret ach-jwt-signing-keys >/dev/null 2>&1; then
     local jwttmp; jwttmp="$(mktemp -d)"
+    trap "rm -rf '${jwttmp}'" RETURN
     openssl rand 32 > "${jwttmp}/current.seed"
     printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
-     kubectl -n ach-system create secret generic ach-jwt-signing-keys \
+    kubectl -n ach-system create secret generic ach-jwt-signing-keys \
       --from-file=current.kid="${jwttmp}/current.kid" \
       --from-file=current.seed="${jwttmp}/current.seed"
-    rm -rf "${jwttmp}"
   else
     echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
   fi
 
-  # Stage 03: local test backends (nginx gateway + ach-mcp-echo). Applied here
-  # (post-reconcile_ach) because the gateway's static proxy_pass upstreams
-  # (ach-platform-api/forwarder/content-service, dex) are resolved by nginx at
-  # startup and ach-mcp-echo polls the forwarder JWKS — the Services must
-  # already exist.
-  echo "[cluster.sh] applying test backends — gateway + mcp-echo (stage 03)..."
+  # Stage 03 — test backends: nginx gateway + ach-mcp-echo + ach-mock-litellm
+  # (post-ach; the gateway's static proxy_pass upstreams and mcp-echo's JWKS
+  # verify both need the ach Services already up).
+  echo "[cluster.sh] applying test backends (stage 03)..."
   kubectl apply -k "${CLUSTER_DIR}/03-test-backends"
 }
 
-reconcile_examples() {
-  # Apply the issue #17 demo Environments so a fresh `cluster.sh up` lands
-  # the cluster in a state the AccessGroupSynced contract can be eyeballed
-  # against without any further `kubectl apply`:
-  #   - examples/04-environment-demo.yaml      → AccessGroupSynced=True
-  #   - examples/04b-environment-unresolved.yaml → AccessGroupSynced=False
-  #     reason=UnresolvedReferences
-  # Both are namespaced to ach-system. Applied after wait_ach so the
-  # operator is Ready to reconcile on first observation.
-  echo "[cluster.sh] applying issue #17 demo Environments..."
-  kubectl apply -f examples/04-environment-demo.yaml
-  kubectl apply -f examples/04b-environment-unresolved.yaml
+reconcile_objects() {
+  # Stage 04 — all non-Environment ACH objects (CRDs from the 02 chart exist now;
+  # Environments in 05 reference these by name). Includes LiteLLMConnection/default.
+  echo "[cluster.sh] applying objects (stage 04)..."
+  kubectl apply -k "${CLUSTER_DIR}/04-objects"
+}
 
-  # BIP closed-loop policies for the demo Environment's two MCP routes
-  # (examples/11 + examples/16). The forwarder's bipcache picks them up on
-  # its NOTIFY/refresh; demo-mcp-jwt mints+attaches the ACH JWT,
-  # demo-mcp-nojwt forwards without one. Applied here (not reconcile_fixtures)
-  # so they land alongside the Environment that references their targets.
-  echo "[cluster.sh] applying demo BIP closed-loop (jwt + nojwt)..."
-  kubectl apply -f examples/11-backendidentitypolicy-demo-mcp-jwt.yaml
-  kubectl apply -f examples/16-backendidentitypolicy-demo-mcp-nojwt.yaml
+reconcile_environments() {
+  # Stage 05 — Environments last (reference the 04 objects + LiteLLM-seeded
+  # models/mcp/agents). demo → Available=True; demo-unresolved → intentional
+  # AccessGroupSynced=False/UnresolvedReferences negative path.
+  echo "[cluster.sh] applying Environments (stage 05)..."
+  kubectl apply -k "${CLUSTER_DIR}/05-environment"
 }
 
 reconcile_all() {
@@ -537,10 +518,12 @@ reconcile_all() {
   reconcile_dex
   reconcile_litellm
   reconcile_toolhive
-  reconcile_ach
-  reconcile_fixtures
+  reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-litellm (Task 2)
+  reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-litellm, stage 03)
+  reconcile_objects      # stage 04
+  reconcile_environments # stage 05
   wait_ach
-  reconcile_examples
+  verify_all             # stage 06 (Task 6)
 }
 
 print_status() (
