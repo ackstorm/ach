@@ -20,11 +20,14 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPhase4Invariants exercises Phase 4 SC#1..SC#5. Each SC is one t.Run
@@ -127,7 +130,11 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 		t.Fatalf("expected error.code=unauthorized_resource; got %q", env.Error.Code)
 	}
 
-	reqAllowed, _ := http.NewRequest(http.MethodGet, forwarderURL+"/mcp/allowed/", nil)
+	// demo-mcp-jwt IS in the synced demo Environment's runtime.mcpServers
+	// (test/e2e/cluster/05-environment/demo.yaml), so the precheck must
+	// pass. LiteLLM may still 404 the path — the comment above notes
+	// that's fine; we only assert the precheck does NOT 403.
+	reqAllowed, _ := http.NewRequest(http.MethodGet, forwarderURL+"/mcp/demo-mcp-jwt/", nil)
 	reqAllowed.Header.Set("x-ach-key", ek)
 	respAllowed, err := http.DefaultClient.Do(reqAllowed)
 	if err != nil {
@@ -139,11 +146,133 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 	}
 }
 
-// testPhase4SC2EkTagInjection — FWD-06 v1alpha1 scope. POST /v1 with ek_
-// must reach the LiteLLM mock with metadata.tags containing
-// "environment:<name>". pk_ traffic must not carry the tag.
+// testPhase4SC2EkTagInjection — FWD-06 v1alpha1 scope. The forwarder injects
+// "environment:<name>" into the /v1 request body's metadata.tags for ek_
+// traffic only, and mirrors it into the X-Ach-Tags header on the SAME
+// success path (internal/forwarder/proxy/tags.go). LiteLLM consumes and
+// strips metadata.tags before the model backend, so we assert at the backend
+// (ach-mock-model "loro") on the mirror header — which the TEST cluster
+// forwards to the demo-model group via forward_client_headers_to_llm_api
+// (test/e2e/cluster/01-base/litellm.values.yaml; not enabled in prod). Header
+// presence is a faithful proxy for body-tag injection since both are set on
+// the one success path.
+//
+//   - ek_ bound to demo → loro sees X-Ach-Tags: environment:demo
+//   - pk_               → loro sees no X-Ach-Tags (no env binding, no inject)
 func testPhase4SC2EkTagInjection(t *testing.T) {
-	t.Skip("Phase 4 SC2-tag (FWD-06) deferred to the SC2 forwarder data-plane decoupling work (separate plan, not yet written). The ach-mock-litellm /__capture backend now exists; what is missing is the test wiring that drives ek_ traffic through the forwarder to that backend and asserts metadata.tags contains environment:<name>.")
+	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
+	if forwarderURL == "" {
+		t.Skipf("ACH_FORWARDER_URL not set — see CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).")
+	}
+	if err := waitDeploymentReady(t, phase4Namespace, mockModelDeployment, 15*time.Second); err != nil {
+		t.Skipf("ach-mock-model not Ready (%v) — run `make cluster-up`. Skipping.", err)
+	}
+	mockLocal := strconv.Itoa(startPortForward(t, phase4Namespace, "svc/"+mockModelService, mockModelSvcPort))
+
+	// Positive: ek_ bound to demo → forwarder injects + mirrors the tag.
+	ek := mustAcquireEkBoundToEnv(t, "demo")
+	ekSnap := driveV1ToBackend(t, forwarderURL, ek, fmt.Sprintf("sc2-ek-%d", time.Now().UnixNano()), mockLocal)
+	if got := headerValue(ekSnap.Headers, headerTagsName); got != tagEnvDemo {
+		t.Fatalf("ek_ traffic: backend %s=%q; want %q — forwarder must tag ek_ traffic. capture=%+v",
+			headerTagsName, got, tagEnvDemo, ekSnap)
+	}
+
+	// Negative: pk_ → no environment binding → no tag injection, no header.
+	pk := mustAcquirePk(t)
+	pkSnap := driveV1ToBackend(t, forwarderURL, pk, fmt.Sprintf("sc2-pk-%d", time.Now().UnixNano()), mockLocal)
+	if got := headerValue(pkSnap.Headers, headerTagsName); got != "" {
+		t.Fatalf("pk_ traffic: backend %s=%q; want empty — pk_ must NOT be tagged. capture=%+v",
+			headerTagsName, got, pkSnap)
+	}
+}
+
+const (
+	mockModelDeployment = "ach-mock-model"
+	mockModelService    = "ach-mock-model"
+	mockModelSvcPort    = 80
+	// headerTagsName mirrors internal/forwarder/proxy.headerTags. NOT "x-ach-*":
+	// the forwarder's D-06 strip drops that prefix before upstream, so the
+	// mirror header lives outside it (still x-* so LiteLLM forwards it).
+	headerTagsName = "X-Achtest-Tags"
+	tagEnvDemo     = "environment:demo"
+)
+
+// modelCaptureSnap is the subset of ach-mock-model's /__capture/last we assert
+// on — the generic ach-mock capture shape (distinct from mcp-echo's captureSnap).
+type modelCaptureSnap struct {
+	Method  string              `json:"method"`
+	Path    string              `json:"path"`
+	Headers map[string][]string `json:"headers"`
+	BodyRaw string              `json:"body_raw"`
+}
+
+// headerValue returns the first value of a header by case-insensitive name
+// (the mock stores headers under Go's canonical keys, e.g. X-Ach-Tags).
+func headerValue(h map[string][]string, name string) string {
+	for k, v := range h {
+		if strings.EqualFold(k, name) && len(v) > 0 {
+			return v[0]
+		}
+	}
+	return ""
+}
+
+func resetModelMockCapture(t *testing.T, localPort string) {
+	t.Helper()
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/__capture/reset", localPort), "", nil) //nolint:gosec // localhost PF
+	if err != nil {
+		t.Fatalf("POST /__capture/reset: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
+func readModelMockCapture(t *testing.T, localPort string) modelCaptureSnap {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%s/__capture/last", localPort)) //nolint:gosec // localhost PF
+	if err != nil {
+		t.Fatalf("GET /__capture/last: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var snap modelCaptureSnap
+	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		t.Fatalf("decode /__capture/last: %v", err)
+	}
+	return snap
+}
+
+// driveV1ToBackend resets the loro's capture, POSTs a /v1 chat-completion with
+// a unique marker through the forwarder, and returns the backend's capture
+// once the marker round-trips. Retries on the transient LiteLLM→backend
+// connection 500 (bounded, 30s) so a flaky hop never fails the assertion.
+func driveV1ToBackend(t *testing.T, forwarderURL, key, marker, mockLocal string) modelCaptureSnap {
+	t.Helper()
+	body := fmt.Sprintf(`{"model":"demo-model","messages":[{"role":"user","content":%q}]}`, marker)
+	var snap modelCaptureSnap
+	deadline := time.Now().Add(30 * time.Second)
+	for attempt := 1; time.Now().Before(deadline); attempt++ {
+		resetModelMockCapture(t, mockLocal)
+		req, err := http.NewRequest(http.MethodPost, forwarderURL+"/v1/chat/completions", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-ach-key", key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("forwarder POST: %v", err)
+		}
+		_, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		// The request reached the loro iff the capture body carries our marker.
+		if snap = readModelMockCapture(t, mockLocal); strings.Contains(snap.BodyRaw, marker) {
+			return snap
+		}
+		t.Logf("attempt %d: marker %q not at backend yet (forwarder status %d) — retry transient hop",
+			attempt, marker, resp.StatusCode)
+		time.Sleep(2 * time.Second)
+	}
+	t.Fatalf("request never reached ach-mock-model with marker %q within 30s; last capture=%+v", marker, snap)
+	return snap
 }
 
 // testPhase4SC3JwtMintAndBipAlphaLast — two BIPs targeting the same
