@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -142,10 +143,24 @@ func phase4StartGatewayPortForward(t *testing.T, localPort string) func() {
 		t.Skipf("phase4StartGatewayPortForward: cannot start port-forward: %v", err)
 		return func() {}
 	}
-	time.Sleep(3 * time.Second)
-	return func() {
-		_ = cmd.Process.Kill()
+	// cmd.Start() only fails on fork/exec errors — it returns nil even when
+	// kubectl exits milliseconds later (port in use, RBAC denial, missing
+	// Service). Probe the local end with a bounded TCP dial so a dead
+	// port-forward skips cleanly instead of failing a downstream HTTP call
+	// with a confusing "connection refused". Mirrors startPortForward in
+	// phase2_sc5_orphan_test.go.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+localPort, 500*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return func() { _ = cmd.Process.Kill() }
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
+	_ = cmd.Process.Kill()
+	t.Skipf("phase4StartGatewayPortForward: port-forward never listened on 127.0.0.1:%s within 30s", localPort)
+	return func() {}
 }
 
 func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
