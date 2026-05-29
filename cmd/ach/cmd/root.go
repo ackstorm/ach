@@ -13,7 +13,7 @@ var Version = "dev"
 var rootCmd = &cobra.Command{
 	Use:   "ach",
 	Short: "ACH — Agent Configuration Hub",
-	Long: `ach is the unified binary for the ACH control plane and CLI.
+	Long: `ach is the service-mode binary for the ACH control plane.
 
 Run a long-running service:
   ach operator
@@ -24,7 +24,8 @@ Run a long-running service:
 Run a one-shot job:
   ach migrate
 
-Run as CLI: invoke without a subcommand (CLI surface lands in Phase 6).`,
+For the user-facing CLI (login/whoami/logout/config/env/env-keys/
+hydrate/admin), use the sibling 'ach-cli' binary.`,
 	Version: Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
