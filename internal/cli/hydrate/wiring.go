@@ -176,7 +176,10 @@ type adapterDispatcherImpl struct {
 //  2. Call ad.RenderRuntime(ctx, m, s) — returns []adapter.FileWrite.
 //  3. For each FileWrite:
 //     a. Compute the absolute final path: filepath.Join(achDir, fw.Path).
-//     b. extract.Classify(finalPath, s) — three-value outcome.
+//     b. extract.Classify(finalPath, achDir, s) — three-value outcome.
+//     The achDir argument lets Classify normalize the workspace-
+//     relative state.FileEntry.Target values to absolute before
+//     comparing against finalAbs (CR-03 / 07-W5-03).
 //     c. CollisionExistsUnowned → extract.Cascade with eagerBytes =
 //     fw.Content, resolver = adapterContentResolver{adapter, manifest}
 //     (so the Tier-2 ResolveOutputContent path is reachable). On
@@ -207,7 +210,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	for _, fw := range fws {
 		finalAbs := filepath.Join(achDir, fw.Path)
 
-		class, err := extract.Classify(finalAbs, s)
+		class, err := extract.Classify(finalAbs, achDir, s)
 		if err != nil {
 			return RenderResult{}, fmt.Errorf("adapter %s classify %s: %w", d.platformID, finalAbs, err)
 		}

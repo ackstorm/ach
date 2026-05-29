@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/state"
@@ -106,6 +108,17 @@ type CascadeOutcome struct {
 // runs because the orchestrator always supplies at least one tier.
 var ErrCascadeNoTier = errors.New("autoclaim: no tier supplied — orchestrator bug")
 
+// ErrTargetNotRelative is the sentinel error Classify returns when a
+// state.FileEntry.Target value is an absolute path. CLI spec §8.2
+// mandates that every Target is workspace-relative; an absolute value
+// is a malformed state.json entry (a tampered file, an out-of-tree
+// writer, or a schema-incompatible state.json from a future version).
+//
+// The sentinel is exported so callers can branch on errors.Is — the
+// cobra layer maps this to exit 1 (General) like any other malformed-
+// state error per CLI spec §9.3.
+var ErrTargetNotRelative = errors.New("autoclaim: state.FileEntry.Target is absolute (must be workspace-relative per spec §8.2)")
+
 // Classify maps a final target path + the current state.File to one of
 // the three CollisionClass values per SAFE-04.
 //
@@ -115,9 +128,29 @@ var ErrCascadeNoTier = errors.New("autoclaim: no tier supplied — orchestrator 
 // otherwise an existing file is "unowned" (CollisionExistsUnowned) and the
 // SAFE-04 cascade must run.
 //
+// Path-comparison contract (CR-03 fix per 07-VERIFICATION.md gaps[2]):
+//
+//   - `finalPath` is absolute (constructed by the caller as
+//     `filepath.Join(achDir, fw.Path)` in wiring.go).
+//   - `entry.Target` is workspace-relative per CLI spec §8.2. The two
+//     strings cannot be compared directly. Classify normalizes
+//     `entry.Target` to absolute via `filepath.Join(achDir, entry.Target)`
+//     (Join already calls Clean) and then compares.
+//   - An absolute `entry.Target` is REJECTED with ErrTargetNotRelative —
+//     spec §8.2 mandates relative; an absolute value is malformed
+//     state.json and must not be allowed to bypass the achDir-relative
+//     comparison.
+//   - A `..`-escaping `entry.Target` (e.g. `../../etc/passwd`) is
+//     defended against via a containment check after Join: if the
+//     normalized path is NOT under `achDir`, the entry is treated as a
+//     non-match (the loop continues without flagging Owned). This
+//     preserves the autoclaim cascade's protective default of "unknown
+//     file → refuse" rather than letting a tampered state.json pivot
+//     the classification (T-07-W5-03-02).
+//
 // Errors from os.Stat that are NOT IsNotExist are wrapped and returned —
 // the caller maps them to exit 1 (General) per CLI spec §9.3.
-func Classify(finalPath string, stateFile *state.File) (CollisionClass, error) {
+func Classify(finalPath string, achDir string, stateFile *state.File) (CollisionClass, error) {
 	if _, err := os.Stat(finalPath); err != nil {
 		if os.IsNotExist(err) {
 			return CollisionNone, nil
@@ -127,8 +160,40 @@ func Classify(finalPath string, stateFile *state.File) (CollisionClass, error) {
 
 	// File exists — is it referenced by the current state?
 	if stateFile != nil {
+		// Normalize achDir for the containment check below. filepath.Clean
+		// strips trailing separators and collapses redundant slashes so the
+		// HasPrefix containment test is robust against caller formatting.
+		achDirClean := filepath.Clean(achDir)
+
 		for _, entry := range walkAllEntries(stateFile) {
-			if entry.Target == finalPath {
+			// Reject absolute Target — spec §8.2 mandates relative. An
+			// absolute value is malformed; surface to the caller via the
+			// sentinel so the cobra layer can render a clear error rather
+			// than silently mis-comparing.
+			if filepath.IsAbs(entry.Target) {
+				return 0, fmt.Errorf("%w: target=%q", ErrTargetNotRelative, entry.Target)
+			}
+
+			// Normalize the workspace-relative Target to absolute using
+			// achDir as the base. filepath.Join calls filepath.Clean,
+			// which handles `..` segments syntactically — but a Target
+			// like "../../etc/passwd" would still resolve to a path
+			// outside achDir. The containment check below catches that.
+			entryAbs := filepath.Join(achDirClean, entry.Target)
+
+			// Containment check (T-07-W5-03-02 mitigation): refuse to
+			// flag Owned when the normalized Target escapes achDir. Use
+			// filepath.Rel — a result starting with ".." (or "..") means
+			// entryAbs is NOT under achDirClean.
+			rel, relErr := filepath.Rel(achDirClean, entryAbs)
+			if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+				// Escaped achDir — treat as non-match, continue scanning
+				// the rest of the state. Do NOT flip to Owned on a
+				// tampered Target.
+				continue
+			}
+
+			if entryAbs == finalPath {
 				return CollisionOwnedByCurrent, nil
 			}
 		}
