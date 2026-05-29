@@ -386,15 +386,9 @@ reconcile_ach() {
     echo "[cluster.sh] skip ach-mcp-echo image (testMocks.mcpEcho.enabled != true)"
   fi
 
-  # Required Secrets. Plain --from-literal because dev/e2e accepts dev
-  # values; production deployments mount their own Secrets (the chart
-  # references them by name only). Idempotent via dry-run-pipe-apply.
-  kubectl -n ach-system create secret generic ach-credential-hash-pepper \
-    --from-literal=pepper="dev-pepper-32-bytes-minimum-for-hmac-do-not-reuse" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n ach-system create secret generic ach-db-url \
-    --from-literal=url="postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
-    --dry-run=client -o yaml | kubectl apply -f -
+  # Dev secrets (chart prerequisites) — declarative, applied before helm so the
+  # pods find them at boot. ach-jwt-signing-keys stays generated below (random).
+  kubectl apply -k "${CLUSTER_DIR}/02-ach/secrets"
 
   # extraEnv + chart config live in test/e2e/cluster/02-ach/ach.values.yaml.
   # Image coordinates come from the ACH_IMAGE_REPO / ACH_IMAGE_TAG env
@@ -472,10 +466,7 @@ reconcile_fixtures() {
   # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a
   # successful probe (idempotent — list-first, create-on-empty). That
   # way production deployments converge without cluster.sh / hand-curl.
-  echo "[cluster.sh] seeding e2e fixtures (litellm-master-key + LiteLLMConnection + JWT signing keys)..."
-  kubectl -n ach-system create secret generic litellm-master-key \
-    --from-literal=masterKey="sk-test-master-key" \
-    --dry-run=client -o yaml | kubectl apply -f -
+  echo "[cluster.sh] seeding e2e fixtures (LiteLLMConnection + JWT signing keys)..."
   kubectl apply -f config/samples/ach_v1alpha1_litellmconnection.yaml
 
   # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start
