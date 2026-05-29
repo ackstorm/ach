@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Stage 04 — all non-Environment ACH objects, applied post-ach (CRDs exist),
+# pre-Environment (Environments in 05 reference these by name). Sources are the
+# real upstreams (option B); each CR pins refresh.interval=1h so steady-state
+# stays under any anonymous GitHub quota (default git transport, no REST limit).
+resources:
+  - litellmconnection.yaml
+  - marketplace-anthropic.yaml
+  - marketplace-caveman.yaml
+  - plugin-caveman.yaml
+  - prompt-claude-code.yaml
+  - artifact-openclaw.yaml
+  - bip-context7.yaml
+  - bip-duplicate.yaml
+  - bip-demo-mcp-jwt.yaml
+  - bip-demo-mcp-nojwt.yaml
