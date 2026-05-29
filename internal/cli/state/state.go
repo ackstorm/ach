@@ -87,9 +87,35 @@ var (
 // unknown top-level field is present (DisallowUnknownFields gate —
 // strict §8.2 schema discipline).
 //
-// The DisallowUnknownFields check catches both v1 leftover fields
-// (`contentHashes`) and forward-compat drift; either path correctly
-// exits 5 at the caller layer.
+// Two-phase parse (WR-03 / 07-W5-06):
+//
+//   - Phase 1: best-effort schemaVersion check. A non-strict
+//     json.Unmarshal extracts only the top-level `schemaVersion` field.
+//     If present and != "2", Load returns ErrSchemaMismatch immediately
+//     — without attempting the strict decode. This is the load-bearing
+//     branch for the user-facing `--force` recovery contract documented
+//     in CLAUDE.md's "schemaVersion != \"2\"" failure-mode entry: a
+//     v1 state.json (carrying the removed `contentHashes` field, or
+//     any other non-"2" schemaVersion) maps to exit 5, which the
+//     caller (`hydrate/commit.go:step3ReadState`) bypasses with
+//     `--force` to overwrite the stale file. If the strict decode ran
+//     first, a v1 file's unknown fields would surface as ErrStateParse
+//     (exit 1, no `--force` escape hatch) — the wrong recovery posture.
+//
+//   - Phase 2: strict DisallowUnknownFields decode. Runs only after
+//     phase 1 admits the file. Catches the legitimate "corrupt v2
+//     state.json" arm: a CURRENT-version file with an unknown top-
+//     level field (forward-compat drift, internal corruption). Returns
+//     ErrStateParse — exit 1 with NO `--force` escape. This is
+//     correctness-preserving: an unknown field in a current-version
+//     state file is a bug, not a user-recoverable migration, and the
+//     engine refuses to silently rewrite it.
+//
+// The final schemaVersion check on the decoded *File covers the edge
+// case where phase 1's best-effort Unmarshal failed to populate sv
+// (e.g. JSON malformed outside the schemaVersion field) and phase 2's
+// strict decode subsequently saw an empty SchemaVersion. Belt-and-
+// braces against a phase-1 false negative.
 func Load(path string) (*File, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -99,6 +125,25 @@ func Load(path string) (*File, error) {
 		return nil, err
 	}
 
+	// Phase 1: best-effort schemaVersion gate. Run BEFORE the strict
+	// decode so a v1 file (legacy `contentHashes`) returns
+	// ErrSchemaMismatch (exit 5, --force bypass) instead of
+	// ErrStateParse (exit 1, no bypass). Ignoring the Unmarshal error
+	// is intentional — phase 2's strict decode is the authoritative
+	// parse, and we only need a probable schemaVersion value here.
+	var sv struct {
+		SchemaVersion string `json:"schemaVersion"`
+	}
+	_ = json.Unmarshal(raw, &sv)
+	if sv.SchemaVersion != "" && sv.SchemaVersion != "2" {
+		return nil, fmt.Errorf("%w: got %q, want \"2\"", ErrSchemaMismatch, sv.SchemaVersion)
+	}
+
+	// Phase 2: strict DisallowUnknownFields decode. Reached only when
+	// phase 1 admitted the file. Catches v2-with-unknown-field (forward-
+	// compat drift, corruption) — returns ErrStateParse (exit 1, no
+	// --force escape, the correctness-preserving posture for a bug in
+	// a current-version state file).
 	var f File
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
