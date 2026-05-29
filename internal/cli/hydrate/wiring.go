@@ -227,7 +227,14 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
 			return RenderResult{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
 		}
-		if err := state.WriteAtomic(finalAbs, fw.Content); err != nil {
+		// 0o600 — adapter runtime configs embed plaintext x-ach-key
+		// bearer credentials in headers maps; refuse world-readable
+		// per CR-01 (07-W5-02 / T-07-W5-02-01). Same mode is passed
+		// at the three Sync inverse-merge call sites below
+		// (syncComposite / syncDeepJSON / syncDeepTOML) — they rewrite
+		// the same credential-bearing files and must preserve the
+		// mode contract.
+		if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
 			return RenderResult{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
 		}
 
@@ -456,7 +463,9 @@ func syncComposite(_ state.FileEntry, abs string, opts SyncOptions) (bool, error
 		return true, nil
 	}
 	updated := achMarkerRE.ReplaceAll(body, nil)
-	if err := state.WriteAtomic(abs, updated); err != nil {
+	// 0o600 — composite inverse-merge rewrites the same credential-
+	// bearing adapter runtime-config file (CR-01).
+	if err := state.WriteAtomic(abs, updated, 0o600); err != nil {
 		return false, fmt.Errorf("sync write composite %s: %w", abs, err)
 	}
 	return false, nil
@@ -514,7 +523,9 @@ func syncDeepJSON(e state.FileEntry, abs string, _ SyncOptions) (bool, error) {
 	if err := enc.Encode(root); err != nil {
 		return false, fmt.Errorf("sync encode JSON %s: %w", abs, err)
 	}
-	if err := state.WriteAtomic(abs, buf.Bytes()); err != nil {
+	// 0o600 — deep-merge JSON inverse rewrites the same credential-
+	// bearing adapter runtime-config file (CR-01).
+	if err := state.WriteAtomic(abs, buf.Bytes(), 0o600); err != nil {
 		return false, fmt.Errorf("sync write JSON %s: %w", abs, err)
 	}
 	return false, nil
@@ -545,7 +556,9 @@ func syncDeepTOML(e state.FileEntry, abs string, _ SyncOptions) (bool, error) {
 	if err := enc.Encode(root); err != nil {
 		return false, fmt.Errorf("sync encode TOML %s: %w", abs, err)
 	}
-	if err := state.WriteAtomic(abs, buf.Bytes()); err != nil {
+	// 0o600 — deep-merge TOML inverse rewrites the same credential-
+	// bearing adapter runtime-config file (CR-01).
+	if err := state.WriteAtomic(abs, buf.Bytes(), 0o600); err != nil {
 		return false, fmt.Errorf("sync write TOML %s: %w", abs, err)
 	}
 	return false, nil

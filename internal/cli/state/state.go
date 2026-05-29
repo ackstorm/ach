@@ -115,9 +115,13 @@ func Load(path string) (*File, error) {
 
 // Save serializes f to JSON and publishes atomically at path via
 // WriteAtomic (tmp + fsync(fd) + rename + fsync(parent_dir) per
-// STATE-07 / spec §8.7). Rejects a nil File defensively. Does NOT
-// enforce a mode tighter than 0644: state.json carries no plaintext
-// secrets, unlike ~/.config/ach/config.yaml which is 0600.
+// STATE-07 / spec §8.7). Rejects a nil File defensively. Passes
+// 0o644 to WriteAtomic: state.json carries no plaintext secrets per
+// spec §8.2 — unlike `~/.config/ach/config.yaml` (0o600) and the
+// adapter runtime-config files written by internal/cli/hydrate
+// (0o600 per CR-01 / 07-W5-02). Save is the SOLE legitimate
+// 0o644-mode WriteAtomic caller in the tree; every other call site
+// (all four in internal/cli/hydrate/wiring.go) must pass 0o600.
 //
 // The JSON is rendered with 2-space indent for human diffability —
 // downstream `git diff` against a checked-in (or sample) state file
@@ -137,5 +141,5 @@ func Save(path string, f *File) error {
 		return err
 	}
 
-	return WriteAtomic(path, buf.Bytes())
+	return WriteAtomic(path, buf.Bytes(), 0o644)
 }

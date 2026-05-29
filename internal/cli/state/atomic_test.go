@@ -20,7 +20,7 @@ func TestWriteAtomic_TargetExistsAfterWrite(t *testing.T) {
 	path := filepath.Join(dir, "state.json")
 	payload := []byte(`{"schemaVersion":"2","environment":"e","deployment":"d"}`)
 
-	if err := state.WriteAtomic(path, payload); err != nil {
+	if err := state.WriteAtomic(path, payload, 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestWriteAtomic_NoTmpRemnant(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
-	if err := state.WriteAtomic(path, []byte(`{}`)); err != nil {
+	if err := state.WriteAtomic(path, []byte(`{}`), 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestWriteAtomic_NonexistentParentDir_TargetUntouched(t *testing.T) {
 		t.Fatalf("pre-condition: target should be absent; stat err = %v", err)
 	}
 
-	err := state.WriteAtomic(path, []byte(`{}`))
+	err := state.WriteAtomic(path, []byte(`{}`), 0o644)
 	if err == nil {
 		t.Fatalf("WriteAtomic on nonexistent parent dir: err = nil; want non-nil")
 	}
@@ -92,7 +92,7 @@ func TestWriteAtomic_OverwritesExistingTarget(t *testing.T) {
 	}
 
 	newPayload := []byte(`{"new":true}`)
-	if err := state.WriteAtomic(path, newPayload); err != nil {
+	if err := state.WriteAtomic(path, newPayload, 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)
 	}
 
@@ -105,8 +105,9 @@ func TestWriteAtomic_OverwritesExistingTarget(t *testing.T) {
 	}
 }
 
-// TestWriteAtomic_FileMode asserts the chmod-to-0644 step. Skipped
-// on Windows (no POSIX mode bits) and root (which bypasses checks).
+// TestWriteAtomic_FileMode asserts the chmod-to-0644 step honors the
+// mode argument passed by state.Save callers. Skipped on Windows (no
+// POSIX mode bits) and root (which bypasses checks).
 func TestWriteAtomic_FileMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mode bits not POSIX on Windows")
@@ -121,7 +122,7 @@ func TestWriteAtomic_FileMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
-	if err := state.WriteAtomic(path, []byte(`{}`)); err != nil {
+	if err := state.WriteAtomic(path, []byte(`{}`), 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)
 	}
 
@@ -131,5 +132,42 @@ func TestWriteAtomic_FileMode(t *testing.T) {
 	}
 	if got := st.Mode().Perm(); got != 0o644 {
 		t.Errorf("file mode = %#o, want 0644", got)
+	}
+}
+
+// TestWriteAtomic_Mode0600_HonoredOnCredentialFile asserts that the
+// per-caller mode parameter is honored end-to-end on credential-
+// bearing writes: adapter runtime-config files embed plaintext
+// x-ach-key bearer credentials in headers maps and MUST be written
+// at 0o600 so other local UIDs on multi-user hosts cannot read the
+// bearer (CR-01 / 07-W5-02 / T-07-W5-02-01). The on-disk mode after
+// publication MUST be 0o600 — not 0o644, not anything umask-derived
+// because the Chmod runs on the temp file before rename and the
+// rename does not alter mode bits.
+//
+// Skipped on Windows (no POSIX mode bits) and root (which bypasses
+// the POSIX permission check).
+func TestWriteAtomic_Mode0600_HonoredOnCredentialFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits not POSIX on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses POSIX file mode")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+	payload := []byte(`{"mcpServers":{"demo":{"headers":{"x-ach-key":"pk_secret"}}}}`)
+
+	if err := state.WriteAtomic(path, payload, 0o600); err != nil {
+		t.Fatalf("WriteAtomic: %v", err)
+	}
+
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := st.Mode().Perm(); got != 0o600 {
+		t.Errorf("credential-file mode = %#o, want 0o600 — credential-bearing writes must refuse world-readable per CR-01", got)
 	}
 }

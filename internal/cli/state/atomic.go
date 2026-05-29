@@ -18,7 +18,7 @@ import (
 //     internal/cli/config.Save which omits it; spec §8.7 mandates it
 //     so a kernel crash between Write and Rename cannot leave a tmp
 //     file whose bytes are not yet on disk.
-//  3. Chmod(0644) + Close + os.Rename(tmp, path) — POSIX rename is
+//  3. Chmod(mode) + Close + os.Rename(tmp, path) — POSIX rename is
 //     atomic on the same filesystem, so an observer either sees the
 //     prior state.json or the new one, never a partial.
 //  4. Open(parent_dir) + Sync — fsync(parent_dir) ensures the
@@ -26,10 +26,24 @@ import (
 //     durable. Skipped on Windows where NTFS does not honor fsync on
 //     directories (best-effort posture).
 //
+// File mode is an explicit per-caller policy. The `mode` parameter is
+// required (no package default) because WriteAtomic is the
+// publication primitive for BOTH `state.json` (no secrets — 0o644 is
+// correct) AND adapter runtime-config files (`.claude/.mcp.json`,
+// `.codex/config.toml`, `.gemini/settings.json`, `.opencode/opencode.json`)
+// that embed plaintext `x-ach-key` bearer credentials in headers
+// maps. Credential-bearing callers MUST pass 0o600 so other local
+// UIDs on multi-user hosts cannot read the bearer; only callers
+// publishing non-secret files (state.Save) pass 0o644. The signature
+// is required-mode (not a default + variant) so a future
+// credential-bearing caller cannot silently regress to 0o644 by
+// omitting the arg — see CR-01 in 07-REVIEW.md and verifier finding
+// gaps[1] in 07-VERIFICATION.md.
+//
 // Cleanup: every error path after CreateTemp removes the tmp file so
 // no `.state-*.json.tmp` orphans accumulate in <ach-dir>/. The
 // hydrate-startup `SweepTmp` is the long-term safety net (D-02).
-func WriteAtomic(path string, data []byte) error {
+func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, ".state-*.json.tmp")
@@ -56,10 +70,15 @@ func WriteAtomic(path string, data []byte) error {
 		return err
 	}
 
-	// state.json has no secrets — 0644 is the right mode (vs config's
-	// 0600). Chmod before Close so the rename publishes the correct
-	// mode atomically.
-	if err := tmp.Chmod(0o644); err != nil {
+	// Per-caller mode policy: callers writing credential-bearing
+	// adapter runtime-config files pass 0o600 (refuse world-readable
+	// on multi-user hosts per CR-01); state.Save passes 0o644 for the
+	// no-secret state.json. Chmod before Close so the rename
+	// publishes the correct mode atomically (the temp file is the
+	// rename source — by the instant rename(2) completes the final
+	// path is already at the target mode, closing T-07-W5-02-02's
+	// TOCTOU window between rename and the next caller's open).
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		cleanup()
 		return err
