@@ -554,8 +554,38 @@ build-image-mock: ## Build the ach-mock:e2e image (LiteLLM-shaped chat-completio
 build-image-mcp-echo: ## Build the ach-mcp-echo:e2e image (JWT-verifying MCP backend, issue #35).
 	$(CONTAINER_TOOL) build -t ach-mcp-echo:e2e -f test/e2e/mcp-echo/Dockerfile .
 
+# --- inotify preflight (host-only) -----------------------------------------
+# kind runs each Kubernetes node as a docker container; kubelet, containerd,
+# and the API server each consume fs.inotify instances. The common distro
+# default (max_user_instances=128) gets exhausted partway through hydration
+# and the API server crashes with "connection refused" mid-bringup (e.g. while
+# helm installs valkey, right after postgres). These are HOST kernel knobs
+# (not namespaced), so they must be raised on the host BEFORE cluster-up
+# routes into the devtools container — hence a plain prerequisite, not a
+# container_target. Override the thresholds with INOTIFY_MIN_* if needed.
+INOTIFY_MIN_INSTANCES ?= 512
+INOTIFY_MIN_WATCHES   ?= 524288
+
+.PHONY: ensure-inotify
+ensure-inotify: ## Host-only: raise fs.inotify limits if below kind's needs (best-effort, non-fatal).
+	@if [ "$(ACH_IN_DEVTOOLS)" = "1" ]; then exit 0; fi; \
+	cur_i=$$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0); \
+	cur_w=$$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0); \
+	if [ "$$cur_i" -ge "$(INOTIFY_MIN_INSTANCES)" ] && [ "$$cur_w" -ge "$(INOTIFY_MIN_WATCHES)" ]; then \
+	  echo "OK   inotify limits sufficient (instances=$$cur_i watches=$$cur_w)"; \
+	else \
+	  echo "INFO raising inotify limits for kind (instances=$$cur_i->$(INOTIFY_MIN_INSTANCES), watches=$$cur_w->$(INOTIFY_MIN_WATCHES))"; \
+	  if sudo -n sysctl -w fs.inotify.max_user_instances=$(INOTIFY_MIN_INSTANCES) fs.inotify.max_user_watches=$(INOTIFY_MIN_WATCHES) >/dev/null 2>&1; then \
+	    echo "OK   inotify limits raised (live only; add an /etc/sysctl.d drop-in to persist across reboots)"; \
+	  else \
+	    echo "WARN could not raise inotify limits (no passwordless sudo). kind may die mid-bringup with 'connection refused'."; \
+	    echo "WARN raise them manually, then re-run:"; \
+	    echo "       sudo sysctl -w fs.inotify.max_user_instances=$(INOTIFY_MIN_INSTANCES) fs.inotify.max_user_watches=$(INOTIFY_MIN_WATCHES)"; \
+	  fi; \
+	fi
+
 .PHONY: cluster-up cluster-down cluster-reset cluster-sync cluster-status cluster-image-load
-cluster-up: ## Bring up canonical kind cluster + hydration (transactional).
+cluster-up: ensure-inotify ## Bring up canonical kind cluster + hydration (transactional).
 	$(call container_target,_cluster-up)
 _cluster-up:
 	bash scripts/cluster.sh up
@@ -563,7 +593,7 @@ cluster-down: ## Tear down canonical kind cluster.
 	$(call container_target,_cluster-down)
 _cluster-down:
 	bash scripts/cluster.sh down
-cluster-reset: ## Tear down then bring up a clean cluster.
+cluster-reset: ensure-inotify ## Tear down then bring up a clean cluster.
 	$(call container_target,_cluster-reset)
 _cluster-reset:
 	bash scripts/cluster.sh reset
@@ -622,9 +652,21 @@ wait-platform-api: ## Wait for platform-api Deployment Available
 wait-forwarder: ## Wait for forwarder Deployment Available
 	kubectl rollout status deploy/ach-forwarder -n ach-system --timeout=$(WAIT_TIMEOUT)
 
+# Context C (host kubectl), consistent with the sibling wait-* targets.
+# Mirrors scripts/cluster.sh wait_ach but does NOT shell into cluster.sh,
+# which refuses to run outside the devtools container — calling it here made
+# `make wait-ach` fail with "run via 'make cluster-up'... not directly".
 .PHONY: wait-ach
-wait-ach: ## Wait for all ach Deployments (operator+platform-api+forwarder) Ready.
-	bash scripts/cluster.sh wait_ach
+wait-ach: ## Wait for all ach Deployments (operator+platform-api+forwarder+local-gateway) Ready.
+	@rc=0; \
+	for d in ach-operator ach-platform-api ach-forwarder ach-local-gateway; do \
+	  kubectl -n ach-system rollout status deploy/"$$d" --timeout=$(WAIT_TIMEOUT) || rc=$$?; \
+	done; \
+	if [ "$$rc" -ne 0 ]; then \
+	  echo "one or more ach Deployments failed to become Ready — dumping pods:" >&2; \
+	  kubectl -n ach-system get pods >&2 || true; \
+	  exit "$$rc"; \
+	fi
 
 .PHONY: wait-content-service
 wait-content-service: ## Wait for content-service container (co-located in operator Pod) Ready (bounded).
