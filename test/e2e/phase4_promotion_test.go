@@ -295,11 +295,15 @@ func testSC11eHydrateGolden(t *testing.T) {
 	// which requires LiteLLM to carry the 5 resources referenced by
 	// examples/04-environment-demo.yaml (gemini.gemini-flash-latest,
 	// openai.gpt-5-mini, vmcp-dev, vmcp-aws, test-noop-agent). The
-	// seed cluster ships only 2 sample models — see TODO §16. Flip
-	// ACH_E2E_PHASE9=1 once §16 lands the seed.
-	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skipf("§11e gated behind ACH_E2E_PHASE9=1 — hydrate-demo.sh blocks on Environment ExecutionResourcesResolved=True; LiteLLM lacks the 5 referenced resources (TODO §16 seed gap). Skipping (engineer-pending).")
-	}
+	// SUPERSEDED — skipped unconditionally. This subtest drove the now-removed
+	// examples/hydrate-demo.sh (collapsed into `ach-cli login` + `ach-cli
+	// hydrate`). The full hydrate wire path + golden-diff is now asserted by
+	// TestPhase6CLI (test/e2e/cli_login_hydrate_test.go), which drives the CLI
+	// directly. Kept as a skipped placeholder so the §11 promotion matrix stays
+	// complete; re-home or delete once the CLI-driven golden is the only path.
+	// (Decoupled from ACH_E2E_PHASE9 — that gate is now ON for the working
+	// Environment subtests, and must not resurrect the deleted shell driver.)
+	t.Skipf("§11e superseded by TestPhase6CLI (CLI-driven hydrate golden); examples/hydrate-demo.sh was removed. Skipping.")
 
 	actual := driveHydrateAndCapture(t)
 

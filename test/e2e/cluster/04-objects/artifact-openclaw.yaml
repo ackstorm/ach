@@ -21,5 +21,13 @@ spec:
     maxStaleness: 24h
   github:
     repo: openclaw/openclaw
-    ref: main
+    # Pinned to an IMMUTABLE release tag (NOT the moving `main` branch).
+    # openclaw/openclaw commits to main every few minutes, which made SC11a's
+    # force-refresh rev-stability assertion race the live upstream. A synced
+    # TEST fixture must be reproducible. A bare commit SHA can't be resolved by
+    # the git transport (it resolves `ref` via `git ls-remote`, which only
+    # advertises refs, not arbitrary SHAs) — a tag is the immutable,
+    # ls-remote-resolvable equivalent. docs/reference/templates exists at this
+    # tag. Bump deliberately, never to "latest"/a branch.
+    ref: v2026.5.7
     path: docs/reference/templates
