@@ -53,18 +53,10 @@ func TestPhase4Promotion(t *testing.T) {
 func testSC11aForceRefreshCycle(t *testing.T) {
 	t.Helper()
 
-	// Pre-apply the examples bundle. kubectl apply is idempotent;
-	// applies are no-ops on an already-cluster-hydrated kept cluster.
-	for _, f := range []string{
-		"../../examples/01-litellmconnection.yaml",
-		"../../examples/06-plugin-caveman.yaml",
-		"../../examples/07-prompt-claudecode-leak.yaml",
-		"../../examples/08-artifact-openclaw-templates.yaml",
-	} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11a apply %s: %v\n%s", f, err, out)
-		}
-	}
+	// The LiteLLMConnection + plugin/prompt/artifact are pre-synced by
+	// cluster.sh (stage 04-objects) and verified healthy by the 06-verify gate.
+	// This subtest asserts against that synced state — it does NOT apply its own
+	// copies (that would mutate shared cluster state other specs depend on).
 
 	// Wait for each kind's first successful reconcile. Tolerant of
 	// GitHub anonymous-quota rate-limiting (60 req/h/IP): a freshly
@@ -112,23 +104,19 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	t.Helper()
 
 	const (
-		bipA = "bip-context7-jwt-on"
-		bipB = "zz-bip-context7-jwt-off"
+		bipA = "bip-throwaway-jwt-on"
+		bipB = "zz-bip-throwaway-jwt-off"
 	)
-	const (
-		fA = "../../examples/09-backendidentitypolicy-context7.yaml"
-		fB = "../../examples/10-backendidentitypolicy-duplicate.yaml"
-	)
+	// THROWAWAY duplicate-target pair (test/e2e/fixtures) — NOT the synced
+	// bip-context7-jwt-on / zz-bip-context7-jwt-off, so applying + deleting them
+	// here never disturbs the synced state other specs assert against.
+	const dup = "../../test/e2e/fixtures/phase4_bip_duplicate.yaml"
 
-	// Apply both.
-	for _, f := range []string{fA, fB} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11b apply %s: %v\n%s", f, err, out)
-		}
+	if out, err := runCmd("kubectl", "apply", "-f", dup); err != nil {
+		t.Fatalf("§11b apply: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", fA, "--wait=false", "--ignore-not-found")
-		_, _ = runCmd("kubectl", "delete", "-f", fB, "--wait=false", "--ignore-not-found")
+		_, _ = runCmd("kubectl", "delete", "-f", dup, "--wait=false", "--ignore-not-found")
 	})
 
 	// Give the reconciler a tick to add finalizers. Phase 1 BIP
@@ -154,12 +142,8 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	// here (the helper polls, but kubectl delete with default --wait=true
 	// also blocks on finalizer removal — defensive double-check).
 	if out, err := runCmdLonger(60*time.Second,
-		"kubectl", "delete", "-f", fA, "--wait=true"); err != nil {
-		t.Fatalf("§11b delete %s: %v\n%s", fA, err, out)
-	}
-	if out, err := runCmdLonger(60*time.Second,
-		"kubectl", "delete", "-f", fB, "--wait=true"); err != nil {
-		t.Fatalf("§11b delete %s: %v\n%s", fB, err, out)
+		"kubectl", "delete", "-f", dup, "--wait=true"); err != nil {
+		t.Fatalf("§11b delete: %v\n%s", err, out)
 	}
 	waitForBIPDeleted(t, bipA, 30*time.Second)
 	waitForBIPDeleted(t, bipB, 30*time.Second)
@@ -197,7 +181,7 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 
 	applyPhase4MarketplaceServer(t)
 
-	const fixture = "../../examples/05b-pluginmarketplace-internal-http.yaml"
+	const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
 	if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
 		t.Fatalf("§11c apply marketplace CR: %v\n%s", err, out)
 	}
@@ -264,15 +248,8 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 func testSC11dOperatorRestart(t *testing.T) {
 	t.Helper()
 
-	// Defensive: apply plugin/caveman + LiteLLMConnection (idempotent).
-	for _, f := range []string{
-		"../../examples/01-litellmconnection.yaml",
-		"../../examples/06-plugin-caveman.yaml",
-	} {
-		if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-			t.Fatalf("§11d apply %s: %v\n%s", f, err, out)
-		}
-	}
+	// plugin/caveman + LiteLLMConnection are pre-synced by cluster.sh (stage 04);
+	// assert against that synced state, do not re-apply.
 	// Tolerant of GitHub rate-limit (see §11a comment).
 	skipIfRateLimited(t, "plugin", "caveman", 120*time.Second)
 
@@ -404,7 +381,7 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 		// Same flow as §11c but bare-minimum (skip the count-1 assert
 		// — that's §11c's job; we only assert count-after-delete).
 		applyPhase4MarketplaceServer(t)
-		const fixture = "../../examples/05b-pluginmarketplace-internal-http.yaml"
+		const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
 		if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
 			t.Fatalf("§11f.Mkt apply: %v\n%s", err, out)
 		}
@@ -420,9 +397,11 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	})
 
 	t.Run("BIP", func(t *testing.T) {
+		// THROWAWAY BIP (test/e2e/fixtures) — never the synced bip-context7-jwt-on,
+		// so applying + deleting it here does not disturb the synced set.
 		const (
-			bipA = "bip-context7-jwt-on"
-			fA   = "../../examples/09-backendidentitypolicy-context7.yaml"
+			bipA = "bip-throwaway-drain"
+			fA   = "../../test/e2e/fixtures/phase4_bip_drain.yaml"
 		)
 		if out, err := runCmd("kubectl", "apply", "-f", fA); err != nil {
 			t.Fatalf("§11f.BIP apply: %v\n%s", err, out)
