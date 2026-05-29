@@ -20,6 +20,26 @@ cluster. The kubeconfig is written to `./.gocache/kube/config`:
 
 This is OPTIONAL and not required by any `make` target or by `make doctor`.
 
+### Host kernel: inotify limits (kind)
+
+kind runs each Kubernetes node as a docker container; kubelet,
+containerd, and the API server each consume `fs.inotify` instances. The
+common distro default (`fs.inotify.max_user_instances=128`) gets
+exhausted partway through hydration and the API server crashes with
+`connection refused` MID-bringup (e.g. while helm installs valkey or
+litellm, right after postgres). `make cluster-up` / `make cluster-reset`
+run an `ensure-inotify` prerequisite (context B, host) that raises the
+limits to `INOTIFY_MIN_INSTANCES=512` / `INOTIFY_MIN_WATCHES=524288`
+via `sudo -n sysctl -w` if they are below threshold. It is best-effort
+and non-fatal: with no passwordless sudo it prints the manual command
+and continues. Because inotify is a HOST kernel knob (not namespaced),
+this MUST run on the host before cluster-up routes into the devtools
+container — hence a plain prerequisite, not a `container_target`. To
+persist across reboots, add a drop-in:
+
+    echo -e 'fs.inotify.max_user_instances=512\nfs.inotify.max_user_watches=524288' \
+      | sudo tee /etc/sysctl.d/99-kind-inotify.conf && sudo sysctl --system
+
 ## The 3-context model
 
 Every target runs in exactly one of three contexts. The Makefile picks
@@ -92,6 +112,7 @@ values files, chart pins, port 8080) before you mutate anything.
 |--------|-----|-------------|
 | `doctor` | B | Fast local preflight: docker, devtools image, cache paths, in-container tools, kubeconfig. No network. |
 | `doctor-cluster` | A | Deep cluster preflight: tooling, values files, chart pins, free ports. |
+| `ensure-inotify` | B | Raise host `fs.inotify` limits if below kind's needs (best-effort, non-fatal). Auto-run as a prerequisite of `cluster-up`/`cluster-reset`. |
 | `shell` | A | Interactive shell inside the devtools container. |
 
 ### Build (`build-`)
