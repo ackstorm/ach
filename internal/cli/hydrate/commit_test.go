@@ -537,6 +537,99 @@ func TestCommit_Step4_PrunesMissingFiles(t *testing.T) {
 	}
 }
 
+// TestRun_InvokesExtractorPerDiffTarget seeds a manifest with two
+// context Prompts so step6Diff produces 2 diffTargets; injects a
+// fakeExtractor (calls counter) and a fakeAdapterDispatcher (calls
+// counter, returns one FileWrite). Asserts: extractor invoked exactly
+// 2 times, adapter invoked exactly 1 time, Result.FilesWritten == 3
+// (2 from extract + 1 from render), Result.PlatformID matches the
+// caller-supplied opts.Platform value.
+func TestRun_InvokesExtractorPerDiffTarget(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime:       &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{
+				Prompts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+					{ID: "p2", DownloadURL: "http://local/content/prompt/p2"},
+				},
+			},
+		}, nil
+	}
+	var extCalls, adCalls int
+	c.extractor = fakeExtractor{
+		calls: &extCalls,
+		result: ExtractResult{
+			WrittenFiles: []FileWrite{{Target: "x", Hash: "xxh3:00"}},
+		},
+	}
+	c.adapter = fakeAdapterDispatcher{
+		calls: &adCalls,
+		result: RenderResult{
+			WrittenFiles: []FileWrite{{Target: "y", Hash: "xxh3:01"}},
+		},
+	}
+
+	result, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if extCalls != 2 {
+		t.Errorf("extractor calls = %d, want 2 (one per diffTarget)", extCalls)
+	}
+	if adCalls != 1 {
+		t.Errorf("adapter calls = %d, want 1 (once after extraction)", adCalls)
+	}
+	// 2 extract + 1 render = 3 file writes recorded.
+	if result.FilesWritten != 3 {
+		t.Errorf("result.FilesWritten = %d, want 3", result.FilesWritten)
+	}
+	if result.PlatformID != "claude-code" {
+		t.Errorf("result.PlatformID = %q, want %q", result.PlatformID, "claude-code")
+	}
+}
+
+// TestRun_DryRun_SkipsExtractorAndAdapter asserts that --dry-run gates
+// every disk-touching call site introduced in 07-W5-01: extractor +
+// adapter MUST NOT be invoked. Result.FilesWritten stays at zero.
+func TestRun_DryRun_SkipsExtractorAndAdapter(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.DryRun = true
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime:       &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{
+				Prompts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+				},
+			},
+		}, nil
+	}
+	var extCalls, adCalls int
+	c.extractor = fakeExtractor{calls: &extCalls}
+	c.adapter = fakeAdapterDispatcher{calls: &adCalls}
+
+	result, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("c.run --dry-run = %v, want nil", err)
+	}
+	if extCalls != 0 {
+		t.Errorf("extractor calls under --dry-run = %d, want 0", extCalls)
+	}
+	if adCalls != 0 {
+		t.Errorf("adapter calls under --dry-run = %d, want 0", adCalls)
+	}
+	if result.FilesWritten != 0 {
+		t.Errorf("result.FilesWritten under --dry-run = %d, want 0", result.FilesWritten)
+	}
+}
+
 // TestCommit_Step6Diff_OnlyRuntime_SkipsContext seeds a manifest with
 // both runtime and context entries; asserts step6Diff under
 // OnlyRuntime emits ONLY runtime targets and the context iteration

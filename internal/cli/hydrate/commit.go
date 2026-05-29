@@ -196,6 +196,11 @@ func newCommit(opts Opts) (*commit, error) {
 func (c *commit) run(ctx context.Context) (Result, error) {
 	var result Result
 
+	// Record PlatformID up-front so the field is populated even on
+	// early-exit paths (T-07-W5-01-02 — caller-supplied value reflected
+	// in --verbose stderr only; residual log-spoofing accepted).
+	result.PlatformID = c.opts.Platform
+
 	// Step 1: lock.
 	lease, err := c.step1Lock(ctx)
 	if err != nil {
@@ -229,34 +234,97 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 
 	// Step 6: scope-aware diff.
 	diffTargets := c.step6Diff(m)
-	_ = diffTargets // W1: not consumed further; W2 wires.
 	c.maybeKill(6)
 
-	// Steps 7-10: fetch / extract / hash+classify / adapter run.
+	// Steps 7-9: fetch / extract / hash+classify. The W3-05 concrete
+	// extractorImpl folds Steps 8 + 9 (StageAndPublish + per-file hash
+	// classification) into ExtractContent, so the maybeKill(8) and
+	// maybeKill(9) hooks bracket "after extract" boundaries with no
+	// per-step intermediate work — that is the intended W3-05 design.
 	//
-	// W1 STUBS: when extractor + adapter are nil (the W1 default —
-	// 07-W2 + 07-W3 supply concrete impls), each step is a no-op.
-	// Once the W3-05 cobra wiring lands, every concrete dependency
-	// becomes non-nil and the dispatch hooks below light up — the
-	// step-by-step maybeKill calls remain in the same positions.
-	if c.extractor != nil {
-		// TODO 07-W2-01..02 wires the real extract → state.FileEntry
-		// flow here. The interface call shape lives at this seam so
-		// commit.go does not need to change when W2 ships.
-		_ = c.extractor // referenced for W3-05 wiring.
+	// T-07-W5-01-03 — gate each disk-touching call on !c.opts.DryRun
+	// so --dry-run remains a true read-only path.
+	if c.extractor != nil && !c.opts.DryRun {
+		for _, dt := range diffTargets {
+			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir)
+			if err != nil {
+				// adapter / extractor errors that already carry a
+				// CodedError envelope (e.g. exit.CollisionRefuse) flow
+				// through unwrapped so the cobra layer maps the exit
+				// code correctly. Non-coded transport failures get
+				// wrapped as exit.General.
+				var ce *exit.CodedError
+				if errors.As(err, &ce) {
+					return result, err
+				}
+				return result, &exit.CodedError{
+					Code:    exit.General,
+					Msg:     fmt.Sprintf("extract content (%s): %v", dt.Kind, err),
+					Wrapped: err,
+				}
+			}
+			result.FilesWritten += len(extractResult.WrittenFiles)
+		}
 	}
 	c.maybeKill(7)
 	c.maybeKill(8)
 	c.maybeKill(9)
-	if c.adapter != nil {
-		// TODO 07-W3-01..05 wires the real adapter dispatch + the
-		// ADAPT-07 silent-drop accumulation into Result.DroppedComponents.
-		_ = c.adapter // referenced for W3-05 wiring.
+
+	// Step 10: adapter dispatch. RenderRuntime + per-FileWrite SAFE-04
+	// cascade + atomic publish all live inside adapterDispatcherImpl;
+	// the orchestrator just calls Render once after the extraction
+	// loop completes.
+	if c.adapter != nil && !c.opts.DryRun {
+		renderResult, err := c.adapter.Render(ctx, m, existingState, c.achDir)
+		if err != nil {
+			// Preserve any *exit.CodedError produced by the dispatcher
+			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
+			// so the exit code survives. Non-coded errors get wrapped.
+			var ce *exit.CodedError
+			if errors.As(err, &ce) {
+				return result, err
+			}
+			return result, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("adapter render: %v", err),
+				Wrapped: err,
+			}
+		}
+		result.FilesWritten += len(renderResult.WrittenFiles)
+		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
 	}
 	c.maybeKill(10)
 
-	// Step 11: sync (W1 stub — 07-W2/W3 lands the inverse-merge).
+	// Step 11: STATE-05 / D-16 inverse-merge sync. maybeKill(11)
+	// fires BEFORE the syncFn call so the SIGKILL injection point
+	// remains at the step-11 boundary as advertised by
+	// sc2_commit_sequence_sigkill. T-07-W5-01-03 — gated on !DryRun.
 	c.maybeKill(11)
+	if c.opts.Sync && !c.opts.DryRun {
+		// TODO(STATE-05 composition): newFile arg is the composed
+		// next-state once step12 builds it from
+		// ExtractResult/RenderResult — for now, pass existingState as
+		// a safe no-op until the composition follow-up plan lands.
+		// Sync is wired so future composition automatically activates
+		// STATE-05 inverse-merge.
+		stats, err := syncFn(existingState, existingState, c.achDir, SyncOptions{
+			Force:  c.opts.Force,
+			Stderr: c.opts.Stderr,
+		})
+		if err != nil {
+			var ce *exit.CodedError
+			if errors.As(err, &ce) {
+				return result, err
+			}
+			return result, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("sync inverse-merge: %v", err),
+				Wrapped: err,
+			}
+		}
+		result.FilesPruned += stats.Pruned
+		result.FilesPreserved += stats.Preserved
+	}
 
 	// Step 12: atomic state write.
 	if err := c.step12WriteState(existingState, m); err != nil {
@@ -271,6 +339,13 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// Step 14: return is implicit.
 	return result, nil
 }
+
+// syncFn is the package-level test seam wrapping Sync. Production
+// callers leave it at its default (= Sync); unit tests in this package
+// swap it for a recorder to verify the step-11 wiring fires (or does
+// not fire) under the expected conditions. Restoring the default is
+// the test's responsibility (t.Cleanup).
+var syncFn = Sync
 
 // maybeKill is the TEST-ONLY SIGKILL injection dispatch. It is called
 // after each stepN returns AND BEFORE stepN+1 begins. When
