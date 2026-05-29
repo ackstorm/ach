@@ -33,7 +33,7 @@ import (
 // post-§7+§9 validation gate.
 func TestEnvironmentAvailableE2E(t *testing.T) {
 	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skipf("TODO §9 e2e gated behind ACH_E2E_PHASE9=1 — example fixture's LiteLLM resources are absent today (see TODO §16 seed gap). Skipping (engineer-pending).")
+		t.Skip("§9 e2e gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`); opt-out for focused dev. The synced cluster seeds the demo LiteLLM resources, so the former TODO §16 seed gap is closed.")
 	}
 
 	const (

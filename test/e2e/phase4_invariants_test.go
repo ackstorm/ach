@@ -143,14 +143,14 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 // must reach the LiteLLM mock with metadata.tags containing
 // "environment:<name>". pk_ traffic must not carry the tag.
 func testPhase4SC2EkTagInjection(t *testing.T) {
-	t.Skipf("Phase 4 SC2-tag (FWD-06) requires a LiteLLM mock with request-body capture endpoint; not yet provisioned in the kind cluster. Skipping (engineer-pending).")
+	t.Skip("Phase 4 SC2-tag (FWD-06) deferred to the SC2 forwarder data-plane decoupling work (separate plan, not yet written). The ach-mock-litellm /__capture backend now exists; what is missing is the test wiring that drives ek_ traffic through the forwarder to that backend and asserts metadata.tags contains environment:<name>.")
 }
 
 // testPhase4SC3JwtMintAndBipAlphaLast — two BIPs targeting the same
 // MCPServer/<name> with different forwardIdentityJWT values; rename
 // shifts the alpha-LAST winner.
 func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
-	t.Skipf("Phase 4 SC3 requires a Pod-side JWT capture (mock MCP backend echoes Authorization header back to the client). Wait for fixture provisioning. Skipping (engineer-pending).")
+	t.Skip("Phase 4 SC3 (BIP alpha-last JWT mint) deferred to the SC2 forwarder data-plane decoupling work (separate plan, not yet written). Asserting which BIP won requires capturing the forwarder-minted JWT at the MCP backend; ach-mcp-echo verifies the JWT but does not echo the Authorization header back to the client, so the capture path is not yet wired.")
 }
 
 // testPhase4SC4JwksAndSecretRbac — anonymous JWKS GET + non-forwarder

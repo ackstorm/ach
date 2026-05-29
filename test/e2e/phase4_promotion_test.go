@@ -166,17 +166,15 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Helper()
 
-	// Engineer-pending — gated behind ACH_E2E_SC11C=1. Stage-2 dispatches
-	// the per-entry fetch via internal/sources/git, which exec's the
-	// system `git` binary. The current operator runtime image
-	// (gcr.io/distroless/static:nonroot) carries no `git` binary, so
-	// every real-schema entry resolves to UpstreamInvalid. Flip
-	// ACH_E2E_SC11C=1 once the runtime image is hydrated with git (see
-	// docs/plans/TBD — Dockerfile upgrade to debian-slim or static
-	// git+busybox). Documented in TODO entry "operator runtime image
-	// lacks git binary" added by this suite's PR.
+	// Gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`). Stage-2
+	// dispatches the per-entry fetch via internal/sources/git, which
+	// exec's the system `git` binary. The operator runtime image now
+	// ships git (Dockerfile: alpine + `apk add git`), so the former
+	// git-gap is closed; the gate now only scopes the
+	// GitHub-reachability-dependent marketplace fetch out of focused
+	// dev runs.
 	if os.Getenv("ACH_E2E_SC11C") != "1" {
-		t.Skipf("§11c gated behind ACH_E2E_SC11C=1 — operator runtime image (distroless/static) lacks the `git` binary that internal/sources/git/Fetcher exec's. Stage-2 resolves every git-Kind entry to UpstreamInvalid until the image is rebuilt with git in PATH. Skipping (engineer-pending).")
+		t.Skip("§11c gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`); opt-out for focused dev.")
 	}
 
 	applyPhase4MarketplaceServer(t)
@@ -350,13 +348,13 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	t.Helper()
 
 	t.Run("Environment", func(t *testing.T) {
-		// Engineer-pending — gated behind ACH_E2E_PHASE9=1 (shared with
-		// §11e + phase4_environment_available_test.go). The Environment
-		// CR requires LiteLLM to carry the 5 referenced resources, which
-		// today's seed cluster does not provide (see TODO §16). Flip
-		// ACH_E2E_PHASE9=1 once §16 lands the seed.
+		// Gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`; shared
+		// with phase4_environment_available_test.go). The synced cluster
+		// seeds the LiteLLM resources the Environment references, so the
+		// former TODO §16 seed gap is closed; the gate now just scopes
+		// the heavier Environment flow out of focused dev runs.
 		if os.Getenv("ACH_E2E_PHASE9") != "1" {
-			t.Skipf("§11f.Environment gated behind ACH_E2E_PHASE9=1 — Environment ExecutionResourcesResolved=True requires LiteLLM seed (TODO §16). Skipping (engineer-pending).")
+			t.Skip("§11f.Environment gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`); opt-out for focused dev.")
 		}
 		// Finalizer-drain on a THROWAWAY Environment — never touches the synced
 		// "demo" (other specs assert against it). The execution resources it
@@ -377,10 +375,12 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	})
 
 	t.Run("PluginMarketplace", func(t *testing.T) {
-		// Gated for the same reason as §11c — see operator-image git
-		// binary gap. Flip ACH_E2E_SC11C=1 once resolved.
+		// Gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`), same as
+		// §11c. The operator image now ships git, so the former git-gap
+		// is closed; the gate only scopes the GitHub-dependent fetch out
+		// of focused dev runs.
 		if os.Getenv("ACH_E2E_SC11C") != "1" {
-			t.Skipf("§11f.PluginMarketplace gated behind ACH_E2E_SC11C=1 — operator runtime image lacks `git`. Skipping (engineer-pending).")
+			t.Skip("§11f.PluginMarketplace gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`); opt-out for focused dev.")
 		}
 		// Same flow as §11c but bare-minimum (skip the count-1 assert
 		// — that's §11c's job; we only assert count-after-delete).
