@@ -31,7 +31,7 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #   01-base/        helm values for the 5 deps (postgres/valkey/dex/litellm/
 #                   toolhive) + dex-config.yaml + auth_user_map.py
 #   02-ach/         ach.values.yaml (the ach chart)
-#   03-gateway/     kustomize base — local nginx gateway (apply -k, post-ach)
+#   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo (post-ach)
 # Each values file carries its own `chartVersion:` pin (single source of
 # truth for chart version + image tag + chart config). cluster.sh ONLY reads
 # from these files; changing a chart version or image pin is a YAML edit, not
@@ -61,12 +61,19 @@ ACH_IMAGE_REPO="${ACH_IMAGE_REPO:-ghcr.io/ackstorm/ach}"
 ACH_IMAGE_TAG="${ACH_IMAGE_TAG:-e2e}"
 ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
-# ach-mcp-echo backend image (issue #35). Built + kind-loaded by reconcile_ach
-# when testMocks.mcpEcho.enabled is true in the ach values file. The tag MUST
-# match what the `build-image-mcp-echo` make target produces (ach-mcp-echo:e2e)
-# and what the Helm chart's testMocks.mcpEcho default image resolves to — kind
-# load is given the exact tag the Deployment pulls (pullPolicy=IfNotPresent).
+# ach-mcp-echo backend image (issue #35). Built + kind-loaded unconditionally
+# by reconcile_ach (e2e always needs it). The tag MUST match what the
+# `build-image-mcp-echo` make target produces (ach-mcp-echo:e2e) and what the
+# test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml Deployment pulls
+# (pullPolicy=IfNotPresent) — kind load is given that exact tag.
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
+
+# ach-mock LiteLLM-shaped data-plane capture backend. Built + kind-loaded
+# unconditionally by reconcile_ach (e2e always needs it for ek_ tag-injection
+# asserts). The tag MUST match what `make build-image-mock` produces
+# (ach-mock:e2e) and what test/e2e/cluster/03-test-backends/ach-mock-litellm.yaml
+# pulls (pullPolicy=IfNotPresent).
+MOCK_IMAGE="${MOCK_IMAGE:-ach-mock:e2e}"
 
 usage() {
   cat <<'USAGE' >&2
@@ -370,21 +377,25 @@ reconcile_ach() {
   echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
 
-  # Build + kind-load the ach-mcp-echo backend image (issue #35) when the chart
-  # will deploy it (testMocks.mcpEcho.enabled). Same rationale as the ach image
-  # above: inline the build so callers never have to remember a separate
+  # Build + kind-load the ach-mcp-echo backend image (issue #35). e2e ALWAYS
+  # needs this backend — it is applied unconditionally as a stage-03 test
+  # backend (test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml), no longer a
+  # chart toggle. Inline the build so callers never have to remember a separate
   # `make build-image-mcp-echo` + manual kind load — otherwise the Deployment
   # sits in ImagePullBackOff (the :e2e tag is never pushed to a registry).
-  # Gated on the toggle so non-mcp-echo topologies don't pay the build cost.
-  if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${CLUSTER_DIR}/02-ach/ach.values.yaml" \
-       | grep -qE '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
-    echo "[cluster.sh] building ${MCP_ECHO_IMAGE} (testMocks.mcpEcho.enabled)..."
-    make build-image-mcp-echo
-    echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
-    kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
-  else
-    echo "[cluster.sh] skip ach-mcp-echo image (testMocks.mcpEcho.enabled != true)"
-  fi
+  echo "[cluster.sh] building ${MCP_ECHO_IMAGE}..."
+  make build-image-mcp-echo
+  echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
+  kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
+
+  # Build + kind-load the ach-mock LiteLLM-shaped capture backend (ach-mock:e2e).
+  # Applied unconditionally as a stage-03 test backend
+  # (test/e2e/cluster/03-test-backends/ach-mock-litellm.yaml), same rationale as
+  # mcp-echo above (the :e2e tag is never pushed to a registry).
+  echo "[cluster.sh] building ${MOCK_IMAGE}..."
+  make build-image-mock
+  echo "[cluster.sh] kind load ${MOCK_IMAGE} into '${CLUSTER_NAME}'..."
+  kind load docker-image "${MOCK_IMAGE}" --name "${CLUSTER_NAME}"
 
   # Dev secrets (chart prerequisites) — declarative, applied before helm so the
   # pods find them at boot. ach-jwt-signing-keys stays generated below (random).
@@ -488,12 +499,13 @@ reconcile_fixtures() {
     echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
   fi
 
-  # Apply local unified gateway for dev/testing on Kind
-  # Stage 03: local nginx gateway. Applied here (post-reconcile_ach) because
-  # its static proxy_pass upstreams (ach-platform-api/forwarder/content-service,
-  # dex) are resolved by nginx at startup — the Services must already exist.
-  echo "[cluster.sh] applying ach-local-gateway (stage 03)..."
-  kubectl apply -k "${CLUSTER_DIR}/03-gateway"
+  # Stage 03: local test backends (nginx gateway + ach-mcp-echo). Applied here
+  # (post-reconcile_ach) because the gateway's static proxy_pass upstreams
+  # (ach-platform-api/forwarder/content-service, dex) are resolved by nginx at
+  # startup and ach-mcp-echo polls the forwarder JWKS — the Services must
+  # already exist.
+  echo "[cluster.sh] applying test backends — gateway + mcp-echo (stage 03)..."
+  kubectl apply -k "${CLUSTER_DIR}/03-test-backends"
 }
 
 reconcile_examples() {
