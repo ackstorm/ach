@@ -51,11 +51,14 @@ const (
 	mcpEchoDeployment = "ach-mcp-echo"
 	mcpEchoService    = "ach-mcp-echo"
 	mcpEchoSvcPort    = "80"
-	mcpEchoBareName   = "demo-mcp-echo"
+	// mcpEchoBareName is the JWT-validated route into the shared ach-mcp-echo
+	// backend (BIP bip-demo-mcp-jwt, forwardIdentityJWT: true). The nojwt
+	// sibling route (demo-mcp-nojwt) is exercised by TestPhase4BIPClosedLoop.
+	mcpEchoBareName = "demo-mcp-jwt"
 	// LiteLLM prefixes tool names with `<server>.` when proxying through
 	// the MCP gateway, so the wire name for the echo tool is
 	// `<server>.<tool>`.
-	mcpEchoToolFQN = "demo-mcp-echo.echo"
+	mcpEchoToolFQN = "demo-mcp-jwt.echo"
 
 	jwtSecretName = "ach-jwt-signing-keys"
 )
@@ -76,6 +79,7 @@ type captureSnap struct {
 	Method            string           `json:"method"`
 	Path              string           `json:"path"`
 	AuthorizationSeen string           `json:"authorization_seen"`
+	JWTPresent        bool             `json:"jwt_present"`
 	JWTClaims         jwtClaimsCapture `json:"jwt_claims"`
 }
 

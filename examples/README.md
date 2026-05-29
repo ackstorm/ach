@@ -15,7 +15,9 @@ output the CLI e2e suite diffs against.
 | `06-plugin-caveman.yaml`              | `Plugin`             | Third-party `JuliusBrussee/caveman` — directory-bundle plugin. |
 | `07-prompt-claudecode-leak.yaml`      | `Prompt`             | Single-file fetch from `asgeirtj/system_prompts_leaks`. |
 | `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. Repo is ~261 MiB depth-1; the 512 MiB default git-clone cap accommodates it. |
-| `hydrate.json`                        | json                 | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach hydrate --environment demo` stdout against this file (normalized for the live cluster's platform-api host). |
+| `09-…context7.yaml` / `10-…duplicate.yaml` | `BackendIdentityPolicy` | Illustrative-only (NOT applied by `cluster.sh`): a JWT-on policy and a duplicate `(kind,name)` resolved last-by-`metadata.name`. Document the dup-resolution rule; target `context7` need not exist. |
+| `11-…demo-mcp-jwt.yaml` / `16-…demo-mcp-nojwt.yaml` | `BackendIdentityPolicy` | The demo Environment's BIP closed-loop. `11` attaches the ACH JWT for `/mcp/demo-mcp-jwt`; `16` forwards without one for `/mcp/demo-mcp-nojwt`. Both target the single `ach-mcp-echo` backend; applied by `scripts/cluster.sh`. |
+| `hydrate.json`                        | json                 | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach hydrate --environment demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo
 

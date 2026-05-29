@@ -238,22 +238,22 @@ func testPhase6HydrateGoldenDiff(t *testing.T) {
 	if gErr != nil {
 		t.Fatalf("read golden %s: %v", phase6GoldenPath, gErr)
 	}
-	clusterHost := phase6PlatformAPIHost(t)
-	expected := phase6NormalizeHydrate(golden, clusterHost)
+	liveBaseURL := phase6PlatformAPIURL(t)
+	expected := phase6NormalizeHydrate(golden, liveBaseURL)
 
 	if !bytes.Equal(stdout, expected) {
-		t.Errorf("ach hydrate output != golden (normalized for clusterHost=%s):\n"+
+		t.Errorf("ach hydrate output != golden (normalized for baseURL=%s):\n"+
 			"want=%s\ngot=%s\n"+
-			"NOTE: the golden uses %q as the host; the live cluster uses %q. "+
-			"phase6NormalizeHydrate rewrites the golden before compare; if the "+
-			"diff persists, the cluster is emitting a structurally-different "+
-			"response body (Phase 7 schemaVersion bump? new field? whitespace "+
-			"drift in the server's render.JSON?) — re-capture the golden via "+
-			"./bin/ach hydrate --environment demo > examples/hydrate.json and "+
-			"audit the diff. See CLAUDE.md \"Common failure modes\" entry "+
-			"\"Hydrate output != examples/hydrate.json\" for the gotcha "+
-			"documentation.",
-			clusterHost, expected, stdout,
-			phase6DefaultClusterHost, clusterHost)
+			"NOTE: the golden uses %q as the base URL; the live cluster uses %q. "+
+			"phase6NormalizeHydrate rewrites scheme+host in the golden before "+
+			"compare; if the diff persists, the cluster is emitting a "+
+			"structurally-different response body (Phase 7 schemaVersion bump? "+
+			"new field? whitespace drift in the server's render.JSON?) — "+
+			"re-capture the golden via ./bin/ach hydrate --environment demo, "+
+			"rewrite the live base back to %q, and audit the diff. See CLAUDE.md "+
+			"\"Common failure modes\" entry \"Hydrate output != "+
+			"examples/hydrate.json\" for the gotcha documentation.",
+			liveBaseURL, expected, stdout,
+			phase6DefaultBaseURL, liveBaseURL, phase6DefaultBaseURL)
 	}
 }

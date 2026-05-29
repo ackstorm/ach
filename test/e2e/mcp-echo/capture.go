@@ -22,6 +22,7 @@ type capture struct {
 	BodyRaw           string
 	Body              json.RawMessage
 	AuthorizationSeen string
+	JWTPresent        bool
 	JWTClaims         echojwt.Verified
 	At                time.Time
 }
@@ -33,19 +34,25 @@ type captureView struct {
 	Body              json.RawMessage     `json:"body"`
 	BodyRaw           string              `json:"body_raw"`
 	AuthorizationSeen string              `json:"authorization_seen"`
-	JWTClaims         echojwt.Verified    `json:"jwt_claims"`
-	At                time.Time           `json:"at"`
+	// JWTPresent is true when the request carried a Bearer token the
+	// verifier accepted; false on the optional-mode no-JWT path
+	// (ACH_REQUIRE_JWT=false). The BIP closed-loop e2e asserts it is true
+	// on the forwardIdentityJWT=true route and false on the =false route.
+	JWTPresent bool             `json:"jwt_present"`
+	JWTClaims  echojwt.Verified `json:"jwt_claims"`
+	At         time.Time        `json:"at"`
 }
 
 func newCapture() *capture { return &capture{} }
 
-func (c *capture) record(r *http.Request, body []byte, v echojwt.Verified) {
+func (c *capture) record(r *http.Request, body []byte, v echojwt.Verified, jwtPresent bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Method = r.Method
 	c.Path = r.URL.Path
 	c.Headers = copyHeaders(r.Header)
 	c.AuthorizationSeen = r.Header.Get("Authorization")
+	c.JWTPresent = jwtPresent
 	c.JWTClaims = v
 	c.BodyRaw = string(body)
 	c.Body = nil
@@ -67,6 +74,7 @@ func (c *capture) reset() {
 	c.BodyRaw = ""
 	c.Body = nil
 	c.AuthorizationSeen = ""
+	c.JWTPresent = false
 	c.JWTClaims = echojwt.Verified{}
 	c.At = time.Time{}
 }
@@ -81,6 +89,7 @@ func (c *capture) snapshot() captureView {
 		Body:              append(json.RawMessage(nil), c.Body...),
 		BodyRaw:           c.BodyRaw,
 		AuthorizationSeen: c.AuthorizationSeen,
+		JWTPresent:        c.JWTPresent,
 		JWTClaims:         c.JWTClaims,
 		At:                c.At,
 	}

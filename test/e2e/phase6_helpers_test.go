@@ -66,15 +66,14 @@ const (
 	// phase6GoldenPath is the golden hydrate.json relative to the
 	// test/e2e working directory (Go `go test` cwd is the package dir).
 	phase6GoldenPath = "../../examples/hydrate.json"
-	// phase6DefaultClusterHost is the standard kind+Helm fixture host
-	// the golden was captured against (see deploy/helm/ach/values.yaml
-	// `ACH_BASE_URL: https://ach.local.test` + examples/hydrate.json
-	// `downloadUrl` host).
-	phase6DefaultClusterHost = "ach.local.test"
-	// phase6DefaultBaseURL is the default base URL used when the engineer
-	// did not export ACH_E2E_PHASE6_BASE_URL. Matches the standard
-	// fixture's externally-visible URL.
-	phase6DefaultBaseURL = "https://ach.local.test"
+	// phase6DefaultBaseURL is the base URL the golden (examples/hydrate.json)
+	// is stored against — the literal scheme+host the standard kind+Helm
+	// cluster emits (the ach-local-gateway speaks plain http on localhost:8080
+	// via ACH_BASE_URL in test/e2e/values/ach.values.yaml). Also the default
+	// when ACH_E2E_PHASE6_BASE_URL is unset. phase6NormalizeHydrate rewrites
+	// this to the live base before the byte-for-byte compare — a no-op on the
+	// standard fixture, a real rewrite only against an exotic-host cluster.
+	phase6DefaultBaseURL = "http://localhost:8080"
 	// phase6DemoEnvironment is the Environment name from
 	// examples/04-environment-demo.yaml — the standard cluster fixture
 	// that the golden was captured against.
@@ -89,9 +88,9 @@ const (
 //
 // Optional env vars (defaulted to the standard kind+Helm fixture):
 //   - ACH_E2E_PHASE6_BASE_URL:  externally-visible platform-api URL
-//     (default: https://ach.local.test).
-//   - ACH_E2E_PHASE6_CLUSTER_HOST: host (no scheme) used for the
-//     hydrate-golden normalization (default: ach.local.test).
+//     (default: https://ach.local.test). Doubles as the hydrate-golden
+//     normalization target — phase6NormalizeHydrate rewrites the golden's
+//     canonical https://ach.local.test base to this scheme+host.
 //
 // Also requires:
 //   - ./bin/ach binary exists + is executable (built by
@@ -156,38 +155,21 @@ func phase6PlatformAPIURL(t *testing.T) string {
 	return phase6DefaultBaseURL
 }
 
-// phase6PlatformAPIHost returns the externally-visible host (without
-// scheme) for the kept cluster's platform-api. Used by
-// phase6NormalizeHydrate to rewrite the golden's "ach.local.test" host.
-// Defaults to "ach.local.test" — the host the golden was captured against.
+// phase6NormalizeHydrate substitutes every occurrence of the golden's
+// stored base URL (phase6DefaultBaseURL = "http://localhost:8080") with the
+// live cluster's base URL. The golden is stored against the literal host the
+// standard kind+Helm fixture emits, so this is a no-op there; it only does
+// real work against an exotic-host cluster (override ACH_E2E_PHASE6_BASE_URL).
+// Replacing the full scheme://host prefix (not just the host) keeps it
+// correct across an http↔https topology change. The hydrate command emits
+// the response body verbatim via io.Copy (no re-encoding); this rewrite is
+// the only intentional transform. Idempotent when liveBaseURL ==
+// phase6DefaultBaseURL.
 //
-// Override via ACH_E2E_PHASE6_CLUSTER_HOST when running against a
-// cluster topology that exposes platform-api on a different external
-// host (e.g. NodePort + 127.0.0.1, an Ingress on a different DNS name,
-// etc.). The override is the cluster-host substitution target — the
-// CLI itself dials whatever ACH_E2E_PHASE6_BASE_URL is set to.
-func phase6PlatformAPIHost(t *testing.T) string {
-	t.Helper()
-	if v := os.Getenv("ACH_E2E_PHASE6_CLUSTER_HOST"); v != "" {
-		return v
-	}
-	return phase6DefaultClusterHost
-}
-
-// phase6NormalizeHydrate substitutes every "ach.local.test" occurrence
-// in the supplied golden bytes with the supplied clusterHost. Idempotent
-// when clusterHost is "ach.local.test" (the default). Returns the
-// rewritten bytes — the test never compares against the raw golden,
-// always against the normalized form.
-//
-// Per W4 — the host-substitution decision is LOCKED here, not deferred
-// to SUMMARY. The 06-06 hydrate command emits the response body
-// verbatim via io.Copy (no re-encoding); the only intentional transform
-// happens in this helper. Documented as an unconditional invariant in
-// CLAUDE.md "Common failure modes" (added by Task 2 of this plan).
-func phase6NormalizeHydrate(golden []byte, clusterHost string) []byte {
+// See CLAUDE.md "Common failure modes" → "Hydrate output != hydrate.json".
+func phase6NormalizeHydrate(golden []byte, liveBaseURL string) []byte {
 	return bytes.ReplaceAll(golden,
-		[]byte(phase6DefaultClusterHost), []byte(clusterHost))
+		[]byte(phase6DefaultBaseURL), []byte(liveBaseURL))
 }
 
 // phase6WriteTempConfig writes a synthetic ~/.config/ach/config.yaml

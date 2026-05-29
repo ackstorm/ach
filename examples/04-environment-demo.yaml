@@ -1,11 +1,22 @@
-# Environment — happy-path projection unit (issue #17).
+# Environment — happy-path projection unit (issue #17) + BIP closed-loop.
 #
 # Every name in spec.runtime.* and spec.authorizedTeams resolves
 # against the seeds added by scripts/cluster.sh hydrate_litellm:
 #   - Model:   demo-model
-#   - MCP:     demo-mcp
+#   - MCP:     demo-mcp-jwt, demo-mcp-nojwt
 #   - A2A:     demo-agent
 #   - Team:    default (created by LiteLLMConnection.EnsureDefaultTeam)
+#
+# The two MCP servers are BOTH registered against the single ach-mcp-echo
+# backend, but each carries a different BackendIdentityPolicy so the demo
+# exercises the full forwardIdentityJWT toggle end-to-end:
+#   - demo-mcp-jwt   → BIP bip-demo-mcp-jwt   (forwardIdentityJWT: true)
+#                      forwarder mints + attaches the ACH JWT; the backend
+#                      verifies it (example 11).
+#   - demo-mcp-nojwt → BIP bip-demo-mcp-nojwt (forwardIdentityJWT: false)
+#                      forwarder forwards with no Authorization header; the
+#                      backend (ACH_REQUIRE_JWT=false) records its absence
+#                      (example 16).
 #
 # Expected after apply: AccessGroupSynced=True reason=Synced within
 # ~10s on a freshly-bootstrapped cluster.
@@ -21,7 +32,8 @@ spec:
     models:
       - demo-model
     mcpServers:
-      - demo-mcp
+      - demo-mcp-jwt
+      - demo-mcp-nojwt
     a2aAgents:
       - demo-agent
   context:

@@ -50,9 +50,9 @@ func newSignedTokenFor(t *testing.T, iss, aud string) (jwksURL string, token str
 
 func TestRequireJWT_RejectsMissingHeader(t *testing.T) {
 	sink := newCapture()
-	mw := requireJWT(echojwt.NewVerifier(echojwt.NewKeyCache("http://unused"), echojwt.Expectations{
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache("http://unused"), echojwt.Expectations{
 		Issuer: "i", Audience: []string{"a"},
-	}), sink)
+	}), sink, true)
 
 	inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatalf("inner handler should not be invoked")
@@ -75,10 +75,10 @@ func TestRequireJWT_AcceptsValidToken(t *testing.T) {
 	defer cleanup()
 
 	sink := newCapture()
-	mw := requireJWT(echojwt.NewVerifier(echojwt.NewKeyCache(jwksURL), echojwt.Expectations{
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache(jwksURL), echojwt.Expectations{
 		Issuer:   "https://hub.example",
 		Audience: []string{"mcp:demo-mcp-echo"},
-	}), sink)
+	}), sink, true)
 
 	var sawClaims echojwt.Verified
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,9 +111,9 @@ func TestRequireJWT_AcceptsValidToken(t *testing.T) {
 
 func TestRequireJWT_RejectsMalformedBearer(t *testing.T) {
 	sink := newCapture()
-	mw := requireJWT(echojwt.NewVerifier(echojwt.NewKeyCache("http://unused"), echojwt.Expectations{
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache("http://unused"), echojwt.Expectations{
 		Issuer: "i", Audience: []string{"a"},
-	}), sink)
+	}), sink, true)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -129,5 +129,70 @@ func TestRequireJWT_RejectsMalformedBearer(t *testing.T) {
 func TestClaimsFromContext_AbsentReturnsFalse(t *testing.T) {
 	if _, ok := claimsFromContext(context.Background()); ok {
 		t.Fatalf("expected absent claims to return false")
+	}
+}
+
+// TestJWTMiddleware_OptionalAcceptsMissingHeader covers the BIP
+// forwardIdentityJWT=false (nojwt) path: with require=false a tokenless
+// request is accepted, reaches the inner handler, and is recorded with
+// jwt_present=false so the closed-loop e2e can assert the absence.
+func TestJWTMiddleware_OptionalAcceptsMissingHeader(t *testing.T) {
+	sink := newCapture()
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache("http://unused"), echojwt.Expectations{
+		Issuer: "i", Audience: []string{"a"},
+	}), sink, false)
+
+	called := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"hello":"nojwt"}`))
+	w := httptest.NewRecorder()
+	mw(inner).ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (optional mode must accept no-JWT)", w.Code)
+	}
+	if !called {
+		t.Fatalf("inner handler not invoked on optional no-JWT path")
+	}
+	snap := sink.snapshot()
+	if snap.JWTPresent {
+		t.Fatalf("jwt_present must be false on no-JWT path: %+v", snap)
+	}
+	if snap.AuthorizationSeen != "" {
+		t.Fatalf("authorization_seen must be empty on no-JWT path: %q", snap.AuthorizationSeen)
+	}
+	if snap.BodyRaw != `{"hello":"nojwt"}` {
+		t.Fatalf("body not captured on no-JWT path: %q", snap.BodyRaw)
+	}
+}
+
+// TestJWTMiddleware_OptionalStillRejectsBadToken proves optional mode only
+// tolerates the ABSENCE of a token — a present-but-invalid token is still a
+// hard 401 (wrong issuer here), never silently accepted.
+func TestJWTMiddleware_OptionalStillRejectsBadToken(t *testing.T) {
+	jwksURL, signed, cleanup := newSignedTokenFor(t, "https://wrong-issuer", "mcp:demo-mcp-nojwt")
+	defer cleanup()
+
+	sink := newCapture()
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache(jwksURL), echojwt.Expectations{
+		Issuer:   "https://hub.example",
+		Audience: []string{"mcp:demo-mcp-nojwt"},
+	}), sink, false)
+
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatalf("inner handler must not run for an invalid token even in optional mode")
+	})
+
+	r := httptest.NewRequest("POST", "/", strings.NewReader("{}"))
+	r.Header.Set("Authorization", "Bearer "+signed)
+	w := httptest.NewRecorder()
+	mw(inner).ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d want 401 (bad token must 401 even in optional mode)", w.Code)
 	}
 }

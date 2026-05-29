@@ -194,6 +194,8 @@ spec:
               value: {{ .Values.testMocks.mcpEcho.expectedIss | quote }}
             - name: ACH_EXPECTED_AUD
               value: {{ .Values.testMocks.mcpEcho.expectedAud | quote }}
+            - name: ACH_REQUIRE_JWT
+              value: {{ .Values.testMocks.mcpEcho.requireJwt | default false | quote }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 1

@@ -237,37 +237,30 @@ hydrate_litellm() {
       }' 2>&1)"
   echo "[cluster.sh]   model 'demo-model' → ${seed_out}"
 
-  # 2) Seed MCP server.
-  seed_out="$(curl -s -X POST http://localhost:4001/v1/mcp/server \
-      -H 'Authorization: Bearer sk-test-master-key' \
-      -H 'Content-Type: application/json' \
-      -d '{
-        "server_name": "demo-mcp",
-        "transport": "http",
-        "url": "http://localhost:4000/mock-mcp"
-      }' 2>&1)"
-  echo "[cluster.sh]   mcp server 'demo-mcp' → ${seed_out}"
-
-  # 2b) Seed JWT-validating MCP server (issue #35).
+  # 2) Seed the demo Environment's two MCP servers (BIP closed-loop).
   #
-  # extra_headers: ["authorization"] is REQUIRED for the JWT round-trip
-  # to work end-to-end. By default LiteLLM's MCP gateway drops the
-  # caller's Authorization header before forwarding to the backend.
-  # Listing "authorization" in extra_headers tells LiteLLM to propagate
-  # the forwarder-minted ACH JWT through to ach-mcp-echo, which then
-  # verifies it via the JWKS published at
-  # http://ach-forwarder.ach-system.svc/.well-known/jwks.json.
-  seed_out="$(kubectl -n litellm-system exec deploy/litellm -c litellm -- \
-    curl -s -X POST http://localhost:4000/v1/mcp/server \
-      -H 'Authorization: Bearer sk-test-master-key' \
-      -H 'Content-Type: application/json' \
-      -d '{
-        "server_name": "demo-mcp-echo",
-        "transport": "http",
-        "url": "http://ach-mcp-echo.ach-system.svc",
-        "extra_headers": ["authorization"]
-      }' 2>&1)"
-  echo "[cluster.sh]   mcp server 'demo-mcp-echo' → ${seed_out}"
+  # Both point at the SAME ach-mcp-echo backend; the only difference is the
+  # BackendIdentityPolicy applied to each (examples/11 + examples/16):
+  #   - demo-mcp-jwt   → BIP forwardIdentityJWT: true  (forwarder mints JWT)
+  #   - demo-mcp-nojwt → BIP forwardIdentityJWT: false (no Authorization)
+  #
+  # extra_headers: ["authorization"] is REQUIRED on BOTH so LiteLLM's MCP
+  # gateway propagates whatever Authorization the forwarder sends (a JWT on
+  # the jwt route, nothing on the nojwt route) instead of dropping it. The
+  # backend runs with ACH_REQUIRE_JWT=false (testMocks.mcpEcho.requireJwt)
+  # so the tokenless nojwt route is accepted and recorded jwt_present=false.
+  for srv in demo-mcp-jwt demo-mcp-nojwt; do
+    seed_out="$(curl -s -X POST http://localhost:4001/v1/mcp/server \
+        -H 'Authorization: Bearer sk-test-master-key' \
+        -H 'Content-Type: application/json' \
+        -d "{
+          \"server_name\": \"${srv}\",
+          \"transport\": \"http\",
+          \"url\": \"http://ach-mcp-echo.ach-system.svc\",
+          \"extra_headers\": [\"authorization\"]
+        }" 2>&1)"
+    echo "[cluster.sh]   mcp server '${srv}' → ${seed_out}"
+  done
 
   # 3) Seed A2A agent.
   seed_out="$(curl -s -X POST http://localhost:4001/v1/agents \
@@ -434,6 +427,15 @@ hydrate_examples() {
   echo "[cluster.sh] applying issue #17 demo Environments..."
   kubectl apply -f examples/04-environment-demo.yaml
   kubectl apply -f examples/04b-environment-unresolved.yaml
+
+  # BIP closed-loop policies for the demo Environment's two MCP routes
+  # (examples/11 + examples/16). The forwarder's bipcache picks them up on
+  # its NOTIFY/refresh; demo-mcp-jwt mints+attaches the ACH JWT,
+  # demo-mcp-nojwt forwards without one. Applied here (not hydrate_fixtures)
+  # so they land alongside the Environment that references their targets.
+  echo "[cluster.sh] applying demo BIP closed-loop (jwt + nojwt)..."
+  kubectl apply -f examples/11-backendidentitypolicy-demo-mcp-jwt.yaml
+  kubectl apply -f examples/16-backendidentitypolicy-demo-mcp-nojwt.yaml
 }
 
 hydrate_all() {

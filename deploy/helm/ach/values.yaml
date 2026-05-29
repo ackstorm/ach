@@ -210,5 +210,14 @@ testMocks:
     # iss the backend requires on every JWT. MUST match the Forwarder's
     # ACH_BASE_URL (HTTPS-only per FWD-10).
     expectedIss: "https://ach.local.test"
-    # Comma-separated list of accepted aud claims.
-    expectedAud: "mcp:demo-mcp-echo"
+    # Comma-separated list of accepted aud claims. The demo Environment
+    # registers two routes against this one backend — demo-mcp-jwt
+    # (forwardIdentityJWT=true) and demo-mcp-nojwt (forwardIdentityJWT=
+    # false) — so both audiences must be accepted for the jwt route.
+    expectedAud: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt"
+    # requireJwt=true keeps the strict production posture (401 on a
+    # tokenless request). Set false so this single deployment also serves
+    # the BIP forwardIdentityJWT=false (nojwt) route: a tokenless request
+    # is accepted and recorded jwt_present=false, while a present-but-
+    # invalid token still 401s. Drives the BIP closed-loop e2e.
+    requireJwt: false

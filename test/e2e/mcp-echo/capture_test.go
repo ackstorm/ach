@@ -20,11 +20,14 @@ func TestCapture_RecordAndSnapshot(t *testing.T) {
 		Kid: "k1",
 		Iat: 1,
 		Exp: 121,
-	})
+	}, true)
 
 	snap := c.snapshot()
 	if snap.AuthorizationSeen != "Bearer xxx" {
 		t.Fatalf("authorization not captured: %q", snap.AuthorizationSeen)
+	}
+	if !snap.JWTPresent {
+		t.Fatalf("jwt_present should be true when a token was recorded")
 	}
 	if snap.JWTClaims.Iss != "https://hub.example" {
 		t.Fatalf("claims not captured: %+v", snap.JWTClaims)
@@ -37,9 +40,12 @@ func TestCapture_RecordAndSnapshot(t *testing.T) {
 func TestCapture_Reset(t *testing.T) {
 	c := newCapture()
 	req, _ := http.NewRequest("GET", "/", nil)
-	c.record(req, nil, echojwt.Verified{Sub: "x"})
+	c.record(req, nil, echojwt.Verified{Sub: "x"}, true)
 	c.reset()
 	if c.snapshot().JWTClaims.Sub != "" {
 		t.Fatalf("reset did not clear claims")
+	}
+	if c.snapshot().JWTPresent {
+		t.Fatalf("reset did not clear jwt_present")
 	}
 }

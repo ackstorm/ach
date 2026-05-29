@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,12 @@ func main() {
 	jwksURL := mustEnv("ACH_JWKS_URL")
 	expectIss := mustEnv("ACH_EXPECTED_ISS")
 	expectAud := splitCSV(mustEnv("ACH_EXPECTED_AUD"))
+	// ACH_REQUIRE_JWT (default true) keeps the strict production posture:
+	// a request with no Bearer token is 401'd. Set false to also serve the
+	// BIP forwardIdentityJWT=false (nojwt) route from this same deployment —
+	// a tokenless request is then accepted and recorded jwt_present=false
+	// (a present-but-invalid token still 401s regardless).
+	requireJWT := envBool("ACH_REQUIRE_JWT", true)
 
 	keys := echojwt.NewKeyCache(jwksURL)
 	verifier := echojwt.NewVerifier(keys, echojwt.Expectations{
@@ -54,7 +61,7 @@ func main() {
 			return ctx
 		}),
 	)
-	guarded := requireJWT(verifier, sink)(streamable)
+	guarded := jwtMiddleware(verifier, sink, requireJWT)(streamable)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", guarded)
@@ -80,8 +87,8 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	log.Printf("ach-mcp-echo listening addr=%s jwks=%s iss=%s aud=%v",
-		addr, jwksURL, expectIss, expectAud)
+	log.Printf("ach-mcp-echo listening addr=%s jwks=%s iss=%s aud=%v requireJWT=%t",
+		addr, jwksURL, expectIss, expectAud, requireJWT)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
 	}
@@ -100,6 +107,21 @@ func mustEnv(key string) string {
 		log.Fatalf("ach-mcp-echo: required env %q not set", key)
 	}
 	return v
+}
+
+// envBool parses a boolean env var, returning fallback when unset/empty.
+// Accepts the strconv.ParseBool vocabulary (1/t/true/0/f/false, any case);
+// an unparseable value falls back rather than failing the boot.
+func envBool(key string, fallback bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 func splitCSV(s string) []string {

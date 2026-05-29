@@ -675,50 +675,51 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
 
-### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster host
+### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
 ./bin/ach hydrate --environment demo > /tmp/hydrate-test.json
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
 # -        "downloadUrl": "https://kind.cluster.local/content/prompt/..."
-# +        "downloadUrl": "https://ach.local.test/content/prompt/..."
+# +        "downloadUrl": "http://localhost:8080/content/prompt/..."
 ```
-✅ The golden at `examples/hydrate.json` captures the standard kind+Helm
-fixture topology where the externally-visible platform-api host is
-`ach.local.test` (the `ACH_BASE_URL` baked into `deploy/helm/ach/values.yaml`
-+ `test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
-platform-api on a different externally-visible host (NodePort + 127.0.0.1,
-a custom Ingress on a different DNS name, etc.), the raw `diff -u` will
-flag every `downloadUrl` row even though the underlying response shape is
-byte-identical.
+✅ The golden at `examples/hydrate.json` is stored against the literal base
+URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
+`ACH_BASE_URL` the `ach-local-gateway` serves (set in
+`test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
+platform-api on a different externally-visible base (a custom Ingress, a
+different DNS name, an https prod host, etc.), the raw `diff -u` flags every
+`downloadUrl`/`endpoint` row even though the response shape is byte-identical.
 
 Two remedies, in preference order:
 
 1. **Normalize the golden in-test** (CLI e2e suite does this automatically):
-   the canonical helper is `phase6NormalizeHydrate(golden, clusterHost)` in
-   `test/e2e/phase6_helpers_test.go`, which rewrites every `ach.local.test`
-   occurrence to the live cluster's host. The `TestPhase6CLI` umbrella's
-   `hydrate_golden_diff` subtest uses this to compare against the normalized
-   form. Manual repro:
+   the canonical helper is `phase6NormalizeHydrate(golden, liveBaseURL)` in
+   `test/e2e/phase6_helpers_test.go`, which rewrites the golden's stored base
+   URL (`http://localhost:8080`, scheme + host) to the live cluster's base.
+   It is a no-op on the standard fixture; it only does real work against an
+   exotic-host cluster (set `ACH_E2E_PHASE6_BASE_URL`). The `TestPhase6CLI`
+   umbrella's `hydrate_golden_diff` subtest uses it. Manual repro:
    ```bash
-   sed 's/ach.local.test/<your-cluster-host>/g' examples/hydrate.json | \
+   sed 's#http://localhost:8080#<your-cluster-base-url>#g' examples/hydrate.json | \
      diff -u - /tmp/hydrate-test.json
    ```
-2. **Re-capture the golden** against the current cluster's host (only when
-   the host change is permanent):
+2. **Re-capture the golden** against the standard fixture (only when the
+   response shape legitimately changed — new field, schemaVersion bump, an
+   Environment fixture edit):
    ```bash
    ./bin/ach hydrate --environment demo > examples/hydrate.json
-   git diff examples/hydrate.json   # audit the diff — should be host-only
+   git diff examples/hydrate.json   # audit — should be the intended shape change
    ```
 
-WHY IT FAILS: the 06-06 hydrate command emits the response body verbatim
-via `io.Copy` (no re-encoding); the only intentional cross-cluster
-transform is the platform-api host on each `downloadUrl`. A raw byte-for-
-byte compare without normalization will trip on any cluster topology that
-isn't the standard `ach.local.test` fixture — and the failure mode is
-identical to a real schema drift (`schemaVersion` bump, new field, etc.),
-so getting the gotcha documented protects future debuggers from chasing a
+WHY IT FAILS: the hydrate command emits the response body verbatim via
+`io.Copy` (no re-encoding); the only intentional cross-cluster transform is
+the base URL (scheme + host) on each `downloadUrl`/`endpoint`. A raw
+byte-for-byte compare without normalization trips on any cluster topology
+that isn't the standard `http://localhost:8080` fixture — and the failure
+mode is identical to a real schema drift (`schemaVersion` bump, new field,
+etc.), so documenting the gotcha protects future debuggers from chasing a
 phantom regression.
 ### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
 ```bash

@@ -62,3 +62,20 @@ extraEnv:
   # as the secure default per cmd/ach/cmd/platform_api.go).
   - name: ACH_SSO_INSECURE_COOKIE
     value: "1"
+
+# ach-mcp-echo backend (issue #35 + BIP closed-loop). The demo Environment
+# registers TWO routes against this single deployment:
+#   - demo-mcp-jwt   (BIP forwardIdentityJWT=true)  → forwarder mints a JWT
+#   - demo-mcp-nojwt (BIP forwardIdentityJWT=false) → forwarder sends none
+# requireJwt=false lets one deployment serve both: the jwt route's token is
+# validated, the nojwt route is accepted and recorded jwt_present=false.
+#
+# expectedIss MUST equal the forwarder's ACH_BASE_URL (the `iss` it stamps).
+# On this kind cluster that is the plain http://localhost:8080 gateway host
+# (NOT the chart default https://ach.local.test), so we override it here.
+testMocks:
+  mcpEcho:
+    enabled: true
+    expectedIss: "http://localhost:8080"
+    expectedAud: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt"
+    requireJwt: false
