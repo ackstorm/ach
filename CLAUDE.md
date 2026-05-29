@@ -443,7 +443,7 @@ Use these Makefile targets instead:
 | Platform API Deployment Ready           | `make wait-platform-api`                            |
 | Forwarder Deployment Ready              | `make wait-forwarder`                               |
 | Content Service container Ready (co-located in operator Pod) | `make wait-content-service`             |
-| All ach Deployments (operator+platform-api+forwarder) Ready | `make wait-ach` (wraps `scripts/cluster.sh wait_ach`) |
+| All ach Deployments (operator+platform-api+forwarder) Ready | `make wait-ach` (wraps `scripts/cluster.sh wait_ach`; also waits on `ach-local-gateway` **when present** — it is a dev/test add-on applied by `hydrate_fixtures`, not a hard prerequisite) |
 | Postgres StatefulSet Ready              | `make wait-postgres`                                |
 | Redis (Valkey) StatefulSet Ready        | `make wait-redis`                                   |
 | Dex Deployment Ready                    | `make wait-dex`                                     |
