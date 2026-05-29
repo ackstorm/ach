@@ -253,6 +253,21 @@ build: manifests generate fmt vet ## Build both ach (services) and ach-cli (user
 	  -o bin/ach-cli \
 	  ./cmd/ach-cli
 
+.PHONY: build-e2e
+build-e2e: manifests generate fmt vet ## Build ach + ach-cli binaries with -tags=e2e (required for TestPhase7CLIEngine/sc2_commit_sequence_sigkill per 07-W5-04 WR-01)
+	go build \
+	  -trimpath \
+	  -tags=e2e \
+	  -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" \
+	  -o bin/ach \
+	  ./cmd/ach
+	go build \
+	  -trimpath \
+	  -tags=e2e \
+	  -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" \
+	  -o bin/ach-cli \
+	  ./cmd/ach-cli
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/ach

@@ -354,9 +354,15 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 // testPhase7Sc2SigkillRecovery exercises the §6.7 commit-sequence
 // crash-recovery contract via the deterministic SIGKILL seam
 // ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP=11 (declared in 07-W1-06
-// Task 2 — see internal/cli/hydrate/commit.go envSigkillStep). The
-// seam fires syscall.Kill(SIGKILL) on the engine's own pid after step
-// 11 returns and BEFORE step 12 (atomic state write).
+// Task 2 — see internal/cli/hydrate/sigkill_seam_e2e.go envSigkillStep
+// post-07-W5-04 WR-01 split). The seam fires syscall.Kill(SIGKILL)
+// on the engine's own pid after step 11 returns and BEFORE step 12
+// (atomic state write).
+//
+// PREREQ: the ./bin/ach-cli binary MUST be built with -tags=e2e
+// (`make build-e2e`) or the seam is stubbed out (release builds
+// receive a no-op via sigkill_seam_prod.go per WR-01) and sc2
+// would false-pass — phase7RequireSigkillSeam below catches this.
 //
 // Flow:
 //
@@ -375,6 +381,9 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 func testPhase7Sc2SigkillRecovery(t *testing.T) {
 	t.Helper()
 	phase7SuiteGuard(t)
+	// Post-07-W5-04 (WR-01): seam is build-tag-gated. Skip cleanly
+	// if the binary lacks the seam — see phase7RequireSigkillSeam.
+	phase7RequireSigkillSeam(t)
 	pk := phase7AcquirePk(t)
 	baseURL := phase7BaseURL()
 	xdg := phase7SeedXdgConfig(t, baseURL, pk)
@@ -419,10 +428,15 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 	if codeKill != -1 {
 		t.Fatalf("sc2 sigkill hydrate: exit %d (want -1, SIGKILL termination)\n"+
 			"stdout=%s\nstderr=%s\n"+
-			"HINT: re-check 07-W1-06 Task 2 — `grep -n %q internal/cli/hydrate/commit.go` "+
-			"must show the env-var read at newCommit() entry AND maybeKill(11) "+
-			"in the 14-step dispatch AND defaultKillFn calling syscall.Kill on SIGKILL.",
-			codeKill, stdoutKill, stderrKill, phase7SigkillEnvVar)
+			"HINT: post-07-W5-04 the seam lives in "+
+			"internal/cli/hydrate/sigkill_seam_e2e.go (envSigkillStep + "+
+			"readSigkillSeamFromEnv + defaultKillFn). Verify the binary was "+
+			"built with -tags=e2e via `strings %s | grep -q %q` (true under "+
+			"-tags=e2e, false under release); verify "+
+			"`grep -n c.maybeKill(11) internal/cli/hydrate/commit.go` still "+
+			"sits between step 11 and step 12 of the 14-step dispatch.",
+			codeKill, stdoutKill, stderrKill,
+			phase7BinaryPath, phase7SigkillEnvVar)
 	}
 
 	// Step 3 — state.json bytes intact (step 12 never ran).

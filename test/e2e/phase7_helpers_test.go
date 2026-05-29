@@ -14,11 +14,20 @@
 // action. Activation:
 //
 //	make cluster-keep
-//	./scripts/dev.sh make build
+//	./scripts/dev.sh make build-e2e   # ← MUST use -tags=e2e for sc2 (07-W5-04)
 //	ACH_E2E_PHASE7=1 \
 //	  ACH_E2E_PHASE7_PK=pk_<26-base32-lower> \
 //	  ACH_E2E_PHASE7_BASE_URL=http://localhost:8080 \
 //	  ./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine
+//
+// IMPORTANT (07-W5-04 WR-01): the binary at ./bin/ach-cli MUST be
+// built with -tags=e2e for sc2_commit_sequence_sigkill to fire. A
+// release-tagged binary stubs out the SIGKILL seam (env var is
+// never read; syscall.Kill is never invoked) so a release binary
+// will run to completion instead of crashing mid-step. The
+// phase7SuiteGuard skips sc2 cleanly with a descriptive message
+// when the binary's strings do not contain the seam env-var
+// literal — see the guard's binary-introspection block.
 //
 // D-18 bypass mechanism (carried forward from Phase 6): the suite stages
 // a synthetic XDG_CONFIG_HOME/ach/config.yaml with `default: demo` +
@@ -118,11 +127,13 @@ func phase7SuiteGuard(t *testing.T) {
 		t.Skipf(
 			"Phase 7 CLI engine e2e suite gated behind ACH_E2E_PHASE7=1 + live " +
 				"kind+Helm cluster + ./bin/ach-cli built (engineer-pending). " +
-				"Run: make cluster-keep && ./scripts/dev.sh make build && " +
+				"Run: make cluster-keep && ./scripts/dev.sh make build-e2e && " +
 				"ACH_E2E_PHASE7=1 ACH_E2E_PHASE7_PK=pk_<26-base32-lower> " +
 				"./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine. " +
 				"See CLAUDE.md \"E2E debug loop\" + test/e2e/phase7_helpers_test.go " +
-				"file header for the full activation contract.",
+				"file header for the full activation contract. " +
+				"NOTE (07-W5-04): make build-e2e supersedes make build for this suite — " +
+				"-tags=e2e is required for sc2_commit_sequence_sigkill.",
 		)
 		return
 	}
@@ -130,7 +141,7 @@ func phase7SuiteGuard(t *testing.T) {
 	if _, err := os.Stat(phase7BinaryPath); err != nil {
 		t.Skipf(
 			"Phase 7 suite guard: %s not found (build it via "+
-				"`./scripts/dev.sh make build`): %v",
+				"`./scripts/dev.sh make build-e2e`): %v",
 			phase7BinaryPath, err,
 		)
 		return
@@ -145,6 +156,46 @@ func phase7SuiteGuard(t *testing.T) {
 				"%v\n%s",
 			phase7PlatformAPIDeployment, phase7Namespace, err, out)
 		return
+	}
+}
+
+// phase7RequireSigkillSeam introspects the ./bin/ach-cli binary for
+// the ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP env-var literal and
+// skips the calling subtest cleanly with a descriptive message when
+// the literal is absent. This is the post-07-W5-04 (WR-01) guard:
+// the SIGKILL injection seam is build-tag-gated behind //go:build
+// e2e, so a binary built without -tags=e2e (i.e. `make build`
+// instead of `make build-e2e`) compiles in the no-op stub from
+// sigkill_seam_prod.go — the env var is never read and sc2 would
+// false-pass (the engine completes normally; no SIGKILL ever
+// fires).
+//
+// Symbol introspection is intentionally string-based rather than
+// `nm`-based: the env-var literal is preserved verbatim in the
+// .rodata section under -tags=e2e (via the envSigkillStep const
+// in sigkill_seam_e2e.go) and is absent under -tags=!e2e (the
+// readSigkillSeamFromEnv stub never references it). A simple byte-
+// containment check on the binary's file bytes is sufficient and
+// avoids the dependency on platform-specific nm/objdump tooling.
+//
+// Called by testPhase7Sc2SigkillRecovery before the SIGKILL-
+// injecting hydrate run. Other Phase 7 subtests (sc1_*, sc3_*,
+// sc4_*) do not depend on the seam and do not call this helper.
+func phase7RequireSigkillSeam(t *testing.T) {
+	t.Helper()
+	bin, err := os.ReadFile(phase7BinaryPath)
+	if err != nil {
+		t.Fatalf("phase7RequireSigkillSeam: read %s: %v "+
+			"(precondition: phase7SuiteGuard should have caught a missing binary)",
+			phase7BinaryPath, err)
+	}
+	if !bytes.Contains(bin, []byte(phase7SigkillEnvVar)) {
+		t.Skipf(
+			"phase7RequireSigkillSeam: %s does not contain the SIGKILL seam env-var "+
+				"literal %q — binary was built without -tags=e2e (07-W5-04 WR-01: "+
+				"the seam is build-tag-gated; sc2 cannot fire against a release-tagged "+
+				"binary). Rebuild via `./scripts/dev.sh make build-e2e` and re-run.",
+			phase7BinaryPath, phase7SigkillEnvVar)
 	}
 }
 
