@@ -100,11 +100,41 @@ func TestDirector_RewriteAndStrip(t *testing.T) {
 	if got := req.Header.Get("x-ach-key"); got != "" {
 		t.Errorf("x-ach-key = %q; want stripped", got)
 	}
-	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared-secret" {
-		t.Errorf("x-litellm-api-key = %q; want Bearer shared-secret", got)
+	if got := req.Header.Get("x-litellm-api-key"); got != "shared-secret" {
+		t.Errorf("x-litellm-api-key = %q; want bare shared-secret on /v1", got)
 	}
 	if got := req.Header.Get("x-litellm-key-id"); got != litellmToken {
 		t.Errorf("x-litellm-key-id = %q; want %s", got, litellmToken)
+	}
+}
+
+// Issue #41: the "Bearer " prefix on x-litellm-api-key is MCP-only. /mcp
+// gets "Bearer <masterKey>"; /v1 gets the bare key (asserted in
+// TestDirector_RewriteAndStrip).
+func TestDirector_McpBearerPrefix(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		LiteLLMMasterKey: "shared-secret",
+		Logger:           slog.Default(),
+	}
+	rp := New(deps)
+
+	litellmToken := "lt-token-123"
+	kc := middleware.KeyContext{
+		KeyType:      keys.PrefixPk,
+		OwnerEmail:   "u@example.com",
+		LiteLLMToken: &litellmToken,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp/some-server", strings.NewReader("{}"))
+	req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
+
+	rp.Director(req)
+
+	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared-secret" {
+		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer shared-secret", got)
+	}
+	if got := req.Header.Get("x-litellm-key-id"); got != litellmToken {
+		t.Errorf("x-litellm-key-id = %q; want %s (LiteLLM token forwarded on /mcp)", got, litellmToken)
 	}
 }
 
@@ -127,6 +157,9 @@ func TestDirector_JWTWrittenLast(t *testing.T) {
 
 	if got := req.Header.Get("Authorization"); got != "Bearer ACH-JWT-TOKEN" {
 		t.Errorf("Authorization = %q; want Bearer ACH-JWT-TOKEN (strip first, JWT last)", got)
+	}
+	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared" {
+		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer shared (MCP prefix survives JWT-last write)", got)
 	}
 }
 

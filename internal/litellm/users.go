@@ -111,11 +111,11 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 						Teams:     u.Teams,
 					}, nil
 				}
+				// The by-id /user/info call exists ONLY to recover the
+				// team-alias mapping. Its user_id is NOT authoritative —
+				// LiteLLM v1.83 can return the "default_user_id" placeholder
+				// here too (issue #36). Always keep u.UserID from /user/list.
 				var idEnv struct {
-					UserID   string `json:"user_id"`
-					UserInfo struct {
-						UserEmail string `json:"user_email"`
-					} `json:"user_info"`
 					Teams []struct {
 						TeamID    string `json:"team_id"`
 						TeamAlias string `json:"team_alias"`
@@ -137,7 +137,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 					}
 				}
 				return &UserInfo{
-					UserID:    idEnv.UserID,
+					UserID:    u.UserID,
 					UserEmail: u.UserEmail,
 					Teams:     outTeams,
 				}, nil

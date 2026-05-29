@@ -429,7 +429,15 @@ hydrate_ach() {
 wait_ach() {
   echo "[cluster.sh] waiting for ach Deployments to be Ready..."
   local rc=0
-  for d in ach-operator ach-platform-api ach-forwarder ach-local-gateway; do
+  # ach-local-gateway is a dev/test add-on applied by hydrate_fixtures(),
+  # NOT by the ach Helm install. Treat it as optional: only wait on it when
+  # it is actually present, so standalone `make wait-ach` succeeds on a
+  # partial bring-up instead of failing with a misleading rollout error.
+  local deps=(ach-operator ach-platform-api ach-forwarder)
+  if kubectl -n ach-system get deploy/ach-local-gateway >/dev/null 2>&1; then
+    deps+=(ach-local-gateway)
+  fi
+  for d in "${deps[@]}"; do
     kubectl -n ach-system rollout status deploy/"${d}" --timeout=5m || rc=$?
   done
   if [ "${rc}" -ne 0 ]; then
