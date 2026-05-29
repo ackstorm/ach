@@ -36,7 +36,7 @@ jobs:
       - name: Generate API docs
         run: |
           echo "📚 Generating API documentation..."
-          make docs
+          make docs-build
           echo "✅ API documentation generated successfully"
 
       - name: Validate semver tag
