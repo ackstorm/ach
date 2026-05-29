@@ -50,6 +50,13 @@ ACH_IMAGE_REPO="${ACH_IMAGE_REPO:-ghcr.io/ackstorm/ach}"
 ACH_IMAGE_TAG="${ACH_IMAGE_TAG:-e2e}"
 ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
+# ach-mcp-echo backend image (issue #35). Built + kind-loaded by hydrate_ach
+# when testMocks.mcpEcho.enabled is true in the ach values file. The tag MUST
+# match what the `e2e-mcp-echo-build` make target produces (ach-mcp-echo:e2e)
+# and what the Helm chart's testMocks.mcpEcho default image resolves to — kind
+# load is given the exact tag the Deployment pulls (pullPolicy=IfNotPresent).
+MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
+
 usage() {
   cat <<'USAGE' >&2
 scripts/cluster.sh — e2e cluster lifecycle.
@@ -319,6 +326,22 @@ hydrate_ach() {
   make docker-build IMG="${ACH_IMAGE}"
   echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
+
+  # Build + kind-load the ach-mcp-echo backend image (issue #35) when the chart
+  # will deploy it (testMocks.mcpEcho.enabled). Same rationale as the ach image
+  # above: inline the build so callers never have to remember a separate
+  # `make e2e-mcp-echo-build` + manual kind load — otherwise the Deployment
+  # sits in ImagePullBackOff (the :e2e tag is never pushed to a registry).
+  # Gated on the toggle so non-mcp-echo topologies don't pay the build cost.
+  if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${VALUES_DIR}/ach.values.yaml" \
+       | grep -qE '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
+    echo "[cluster.sh] building ${MCP_ECHO_IMAGE} (testMocks.mcpEcho.enabled)..."
+    make e2e-mcp-echo-build
+    echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
+    kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
+  else
+    echo "[cluster.sh] skip ach-mcp-echo image (testMocks.mcpEcho.enabled != true)"
+  fi
 
   # Required Secrets. Plain --from-literal because dev/e2e accepts dev
   # values; production deployments mount their own Secrets (the chart
