@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+// Version is overridden via -ldflags at build time (see Makefile build target).
+var Version = "dev"
+
+var rootCmd = &cobra.Command{
+	Use:   "ach-cli",
+	Short: "ACH CLI — operator/developer client for the ACH control plane",
+	Long: `ach-cli is the user-facing client for the ACH (Agent Configuration Hub)
+control plane. Subcommands:
+
+  login        Authenticate against the platform-api
+  logout       Revoke local session
+  whoami       Show current identity
+  config       Inspect / mutate local config
+  env          List + switch environments
+  env-keys     Create / list / revoke environment keys
+  hydrate      Materialize workspace artifacts
+  admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
+
+For service-mode commands (operator, platform-api, forwarder,
+content-service, migrate), use the 'ach' binary instead.`,
+	Version: Version,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
+}
+
+func Execute() error { return rootCmd.Execute() }
+
+func init() {
+	rootCmd.SetVersionTemplate(fmt.Sprintf("ach-cli %s\n", Version))
+}
