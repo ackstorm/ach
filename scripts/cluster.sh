@@ -512,6 +512,45 @@ reconcile_environments() {
   kubectl apply -k "${CLUSTER_DIR}/05-environment"
 }
 
+# Wait for a BackendIdentityPolicy to be reconciled. The BIP controller emits
+# NO positive condition on the happy path (TODO.md §6 / OP-16 keep the closed
+# condition set minimal) — `status.observedGeneration == metadata.generation`
+# is itself the "reconciled OK" signal; the only condition it ever writes is
+# Synced=False/ConflictWithUIRow. So we cannot `kubectl wait --for=condition`;
+# instead bound-wait on observedGeneration matching the live generation.
+wait_bip_reconciled() {
+  local name="$1" to="$2" gen
+  gen="$(kubectl -n ach-system get backendidentitypolicy "${name}" -o jsonpath='{.metadata.generation}')"
+  kubectl -n ach-system wait --for=jsonpath="{.status.observedGeneration}=${gen}" \
+    --timeout="${to}" backendidentitypolicy/"${name}"
+}
+
+verify_all() {
+  # Stage 06 — block until every synced object reaches its healthy state. This
+  # is the "everything is OK before we run tests" gate the e2e suite relies on
+  # (tests assert, they do not apply). VERIFY_TIMEOUT default 300s per resource.
+  #
+  # Excluded on purpose (intentional negative/edge fixtures — never reach the
+  # happy state): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
+  # demo) and environment/demo-unresolved (UnresolvedReferences).
+  local to="${VERIFY_TIMEOUT:-300s}"
+  echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
+  # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
+  kubectl -n ach-system rollout status deploy/ach-mcp-echo     --timeout="${to}"
+  kubectl -n ach-system rollout status deploy/ach-mock-litellm --timeout="${to}"
+  kubectl -n ach-system wait --for=condition=Ready           --timeout="${to}" litellmconnection/default
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" plugin/caveman
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/claude-code-system-prompt
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/openclaw-templates
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/anthropic-code
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/caveman
+  for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
+    wait_bip_reconciled "${b}" "${to}"
+  done
+  kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo
+  echo "[cluster.sh] all synced objects healthy."
+}
+
 reconcile_all() {
   reconcile_postgres
   reconcile_valkey
@@ -556,5 +595,6 @@ print_status() (
 case "${1:-}" in
   up|sync|down|reset|status|preflight) "cmd_${1}" ;;
   wait_ach) wait_ach ;;
+  verify_all) verify_all ;;
   *) usage ;;
 esac
