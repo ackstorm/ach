@@ -59,10 +59,10 @@ const (
 	// phase6PlatformAPIDeployment is the Phase 3 / Helm-chart Deployment
 	// name that the CLI suite drives through.
 	phase6PlatformAPIDeployment = "ach-platform-api"
-	// phase6BinaryPath is the compiled `ach` binary the suite exec's.
-	// Built by `./scripts/dev.sh make build` (Makefile target writes to
-	// bin/ach).
-	phase6BinaryPath = "../../bin/ach"
+	// phase6BinaryPath is the compiled `ach-cli` binary the suite exec's.
+	// The user-facing CLI ships as a separate binary post-split; built by
+	// `./scripts/dev.sh make build` (Makefile target writes to bin/ach-cli).
+	phase6BinaryPath = "../../bin/ach-cli"
 	// phase6GoldenPath is the golden hydrate.json relative to the
 	// test/e2e working directory (Go `go test` cwd is the package dir).
 	phase6GoldenPath = "../../examples/hydrate.json"
