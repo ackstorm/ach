@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
 
@@ -173,6 +174,61 @@ func TestClient_Do_MalformedEnvelope(t *testing.T) {
 	}
 	if !errors.Is(err, httpclient.ErrEnvelopeDecode) {
 		t.Errorf("error chain missing ErrEnvelopeDecode: %v", err)
+	}
+}
+
+// TestClient_Do_AdditiveEnvelopeField (CR-01) asserts that an error
+// envelope carrying an UNKNOWN additive field (e.g. retry_after) still
+// decodes into a fully-populated *ServerError — not an opaque
+// ErrEnvelopeDecode — and that exit.MapServerError maps the 403 to AuthN.
+// Guards the removal of decodeServerError's DisallowUnknownFields.
+func TestClient_Do_AdditiveEnvelopeField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":"unauthorized_team","message":"no intersection"},"request_id":"req_x","retry_after":30}`))
+	}))
+	defer srv.Close()
+
+	c := &httpclient.Client{BaseURL: srv.URL, APIKey: "pk_x"}
+	err := c.Do(context.Background(), http.MethodGet, "/", nil, nil)
+	var sErr *httpclient.ServerError
+	if !errors.As(err, &sErr) {
+		t.Fatalf("Do returned %v, want *ServerError", err)
+	}
+	if errors.Is(err, httpclient.ErrEnvelopeDecode) {
+		t.Fatalf("additive field must not trip ErrEnvelopeDecode: %v", err)
+	}
+	if sErr.Code != "unauthorized_team" || sErr.Status != 403 || sErr.RequestID != "req_x" {
+		t.Errorf("ServerError %+v, want {403 unauthorized_team ... req_x}", sErr)
+	}
+	if got := exit.MapServerError(sErr); got != exit.AuthN {
+		t.Errorf("MapServerError = %d, want AuthN (%d)", got, exit.AuthN)
+	}
+}
+
+// TestClient_Do_AdditiveSuccessField is the env-list root-cause guard:
+// a 2xx body carrying fields beyond the lean decode target must NOT error
+// (the /platform/environments payload carries authorizedTeams / context /
+// runtime / conditions / origin / locked beyond name+namespace+status).
+func TestClient_Do_AdditiveSuccessField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"name":"demo","namespace":"ach-system","status":"Available","authorizedTeams":["default"],"origin":"cr","locked":true}`))
+	}))
+	defer srv.Close()
+
+	c := &httpclient.Client{BaseURL: srv.URL, APIKey: "pk_x"}
+	var lean struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+		Status    string `json:"status"`
+	}
+	if err := c.Do(context.Background(), http.MethodGet, "/", nil, &lean); err != nil {
+		t.Fatalf("Do with additive success fields returned %v, want nil", err)
+	}
+	if lean.Name != "demo" || lean.Namespace != "ach-system" || lean.Status != "Available" {
+		t.Errorf("lean decode = %+v, want {demo ach-system Available}", lean)
 	}
 }
 

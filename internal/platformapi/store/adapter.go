@@ -15,9 +15,13 @@
 // access_group_synced_condition, execution_resources_resolved_condition) the
 // Operator dual-writes into a single []metav1.Condition slice, and projects
 // the seven authorization-surface arrays plus the deletion timestamp into the
-// nested {Runtime, Context} bundles. The output is byte-stable with the
-// pre-issue-34 informer-projected EnvironmentView shape so the JSON wire on
-// /platform/environments and /platform/hydrate does not drift.
+// nested {Runtime, Context} bundles.
+//
+// The issue-34 projection FLATTENED the pre-issue-34 nested shape (which put
+// the spec under a `spec` sub-object) into the top-level fields below, and
+// added the Postgres-SoT coexistence fields (namespace, origin, locked,
+// resourceVersion). That structural change is intentional; the JSON wire
+// casing stays camelCase (see EnvironmentView).
 package store
 
 import (
@@ -29,9 +33,10 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 )
 
-// EnvironmentView is the platform-api projection of an environments row.
-// Field shape preserves the pre-issue-34 EnvironmentView JSON wire so
-// /platform/environments and /platform/hydrate responses do not drift.
+// EnvironmentView is the platform-api projection of an environments row,
+// serialized on GET /platform/environments (list + get). The shape is
+// flat (issue-34 Postgres SoT) — NOT the pre-issue-34 nested {spec:{...}}
+// shape — and the JSON wire casing is camelCase (see the tag block below).
 //
 //   - Namespace / Name             — projection PK (db.EnvironmentRow PK).
 //   - AuthorizedTeams              — spec.authorizedTeams projected
@@ -58,17 +63,31 @@ import (
 //     deduced from origin per the
 //     cr_locked_chk constraint
 //     (origin='cr' ⇒ locked=true).
+//
+// JSON wire casing is camelCase, consistent with the hydrate response
+// (schemaVersion / mcpServers / a2aAgents / downloadUrl) and the nested
+// RuntimeBlock / ContextBlock CRD types this view embeds. The issue-34
+// pgxpool port (commit dc4cf20) accidentally dropped these tags, which
+// silently flipped the wire to PascalCase (Go's zero-tag default) and
+// broke `ach env list`. The flattened shape + the new namespace / origin
+// / locked / resourceVersion fields are intentional (Postgres SoT); only
+// the missing tags were a regression.
 type EnvironmentView struct {
-	Namespace         string
-	Name              string
-	AuthorizedTeams   []string
-	Context           achv1alpha1.ContextBlock
-	Runtime           achv1alpha1.RuntimeBlock
-	Conditions        []metav1.Condition
-	DeletionTimestamp *metav1.Time
-	ResourceVersion   string
-	Origin            string
-	Locked            bool
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	// Status is a derived, human-facing collapse of the Available
+	// composite condition (see deriveStatus). Surfaced as a flat string
+	// so the CLI's lean render.EnvView can render the STATUS column
+	// without importing metav1.Condition (k8s.io/*).
+	Status            string                   `json:"status,omitempty"`
+	AuthorizedTeams   []string                 `json:"authorizedTeams,omitempty"`
+	Context           achv1alpha1.ContextBlock `json:"context"`
+	Runtime           achv1alpha1.RuntimeBlock `json:"runtime"`
+	Conditions        []metav1.Condition       `json:"conditions,omitempty"`
+	DeletionTimestamp *metav1.Time             `json:"deletionTimestamp,omitempty"`
+	ResourceVersion   string                   `json:"resourceVersion,omitempty"`
+	Origin            string                   `json:"origin,omitempty"`
+	Locked            bool                     `json:"locked"`
 }
 
 // RowToView maps a flat db.EnvironmentRow into the nested EnvironmentView.
@@ -113,7 +132,29 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 		r.AccessGroupSyncedCondition,
 		r.ExecutionResourcesResolvedCondition,
 	)
+	view.Status = deriveStatus(view.Conditions)
 	return view
+}
+
+// deriveStatus collapses the condition set into a single status string for
+// the `ach env list` STATUS column. Available=True → "Available"; an
+// Available=False/Unknown surfaces its reason (e.g. "UnresolvedReferences")
+// so the operator sees why; no Available condition yet → "" (not-yet-
+// reconciled, rendered as a blank cell).
+func deriveStatus(conds []metav1.Condition) string {
+	for _, c := range conds {
+		if c.Type != "Available" {
+			continue
+		}
+		if c.Status == metav1.ConditionTrue {
+			return "Available"
+		}
+		if c.Reason != "" {
+			return c.Reason
+		}
+		return "NotAvailable"
+	}
+	return ""
 }
 
 // mergeConditionColumns decodes each non-empty JSONB column into a

@@ -124,8 +124,14 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
+	// No DisallowUnknownFields: callers decode into lean local views
+	// (e.g. render.EnvView projects only name/namespace/status from the
+	// richer /platform/environments payload, which also carries
+	// authorizedTeams/context/runtime/conditions/origin/locked). Rejecting
+	// unknown fields would couple every CLI view to the full server shape
+	// and break on any additive server field — the opposite of forward
+	// compatibility.
 	dec := json.NewDecoder(resp.Body)
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
 		return fmt.Errorf("httpclient: decode response body: %w", err)
 	}
@@ -225,8 +231,11 @@ func decodeServerError(resp *http.Response) *ServerError {
 		} `json:"error"`
 		RequestID string `json:"request_id"`
 	}
+	// No DisallowUnknownFields (CR-01): tolerate additive server error
+	// envelope fields (e.g. a future retry_after). The envelope decode
+	// extracts only code/message/request_id; an unknown field must not
+	// turn a structured server error into an opaque ErrEnvelopeDecode.
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(&envelope); err != nil {
 		sErr.Underlying = fmt.Errorf("%w: %v", ErrEnvelopeDecode, err)
 		return sErr
