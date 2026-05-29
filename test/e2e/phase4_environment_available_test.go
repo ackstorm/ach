@@ -37,7 +37,10 @@ func TestEnvironmentAvailableE2E(t *testing.T) {
 	}
 
 	const (
-		namespace = "default"
+		// The synced "demo" Environment lives in ach-system (see
+		// test/e2e/cluster/05-environment/demo.yaml); the suite asserts
+		// against the synced fixture rather than applying its own.
+		namespace = "ach-system"
 		envName   = "demo"
 	)
 

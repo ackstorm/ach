@@ -64,30 +64,68 @@ func waitForwarderReady(t *testing.T, deadline time.Duration) error {
 	return nil
 }
 
-// mustAcquirePk acquires a pk_ via the Phase 3 SSO flow.
-func mustAcquirePk(t *testing.T) string {
+// phase4GatewayPort returns the port of the gateway base (ACH_BASE_URL,
+// default http://localhost:8080). All SSO acquisition reaches platform-api
+// + Dex entirely through this gateway port — NO kubectl port-forward
+// (this plan's zero-port-forward architecture; the gateway already routes
+// /platform and /dex). The acquisition helpers build http://localhost:<port>,
+// so this assumes the standard localhost gateway fixture.
+func phase4GatewayPort(t *testing.T) string {
 	t.Helper()
-	pk := os.Getenv("ACH_E2E_PK_FIXTURE")
-	if pk == "" {
-		// Use automatic SSO acquisition
-		return phase4AcquirePkAutomatically(t, "8084")
+	base := os.Getenv("ACH_BASE_URL")
+	if base == "" {
+		base = "http://localhost:8080"
 	}
-	return pk
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("parse ACH_BASE_URL %q: %v", base, err)
+	}
+	if p := u.Port(); p != "" {
+		return p
+	}
+	return "80"
 }
 
-// mustAcquireEkBoundToEnv acquires an ek_ bound to the given Environment.
+// pk_/ek_ acquisition is expensive (a full device-code SSO round-trip),
+// so cache across the package's sequentially-run tests. Keyed plainly
+// (top-level go tests run serially unless t.Parallel, which this suite
+// does not use).
+var (
+	cachedPk string
+	cachedEk = map[string]string{}
+)
+
+// mustAcquirePk acquires a pk_ via the Phase 3 SSO flow (through the
+// gateway), or returns the ACH_E2E_PK_FIXTURE override if set.
+func mustAcquirePk(t *testing.T) string {
+	t.Helper()
+	if pk := os.Getenv("ACH_E2E_PK_FIXTURE"); pk != "" {
+		return pk
+	}
+	if cachedPk != "" {
+		return cachedPk
+	}
+	cachedPk = phase4AcquirePkAutomatically(t, phase4GatewayPort(t))
+	return cachedPk
+}
+
+// mustAcquireEkBoundToEnv acquires an ek_ bound to the given Environment
+// (through the gateway), or returns the ACH_E2E_EK_FIXTURE_<ENV> override.
 func mustAcquireEkBoundToEnv(t *testing.T, env string) string {
 	t.Helper()
-	key := os.Getenv("ACH_E2E_EK_FIXTURE_" + strings.ToUpper(env))
-	if key == "" {
-		pk := mustAcquirePk(t)
-		ek, err := phase4AcquireEkBoundToEnvAutomatically(t, "8084", pk, env)
-		if err != nil {
-			t.Skipf("Skipping: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
-		}
+	if key := os.Getenv("ACH_E2E_EK_FIXTURE_" + strings.ToUpper(env)); key != "" {
+		return key
+	}
+	if ek, ok := cachedEk[env]; ok {
 		return ek
 	}
-	return key
+	pk := mustAcquirePk(t)
+	ek, err := phase4AcquireEkBoundToEnvAutomatically(t, phase4GatewayPort(t), pk, env)
+	if err != nil {
+		t.Skipf("Skipping: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
+	}
+	cachedEk[env] = ek
+	return ek
 }
 
 // phase4AssertSecretAccessible verifies that the forwarder ServiceAccount
