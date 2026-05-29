@@ -100,6 +100,71 @@ func TestLoad_UnknownField_ReturnsErrStateParse(t *testing.T) {
 	}
 }
 
+// TestLoad_V1FileReturnsErrSchemaMismatch is the WR-03 closure:
+// a v1 state.json carrying the legacy `contentHashes` field MUST
+// return ErrSchemaMismatch (exit 5 at caller) — NOT ErrStateParse
+// (exit 1). Before 07-W5-06, `dec.DisallowUnknownFields()` ran first
+// and the unknown `contentHashes` triggered ErrStateParse, leaving
+// the user with no documented recovery path: the caller's --force
+// arm in commit.go:step3ReadState only gates on
+// errors.Is(err, state.ErrSchemaMismatch).
+//
+// This test pins the new two-phase ordering: phase 1's best-effort
+// schemaVersion gate catches non-"2" files BEFORE the strict decode
+// runs, so a v1 file with legacy fields maps to exit 5 and `--force`
+// overrides correctly. The integration contract is documented in
+// internal/cli/hydrate/commit.go:step3ReadState.
+func TestLoad_V1FileReturnsErrSchemaMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	body := `{"schemaVersion":"1","environment":"demo","contentHashes":{"foo":"bar"}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := state.Load(path)
+	if err == nil {
+		t.Fatalf("Load(v1 file): err = nil, want non-nil")
+	}
+	if !errors.Is(err, state.ErrSchemaMismatch) {
+		t.Fatalf("Load(v1 file): err = %v, want errors.Is(..., ErrSchemaMismatch)", err)
+	}
+	if errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(v1 file): err = %v, must NOT be ErrStateParse (would deny --force recovery)", err)
+	}
+	if f != nil {
+		t.Fatalf("Load(v1 file): f = %+v, want nil", f)
+	}
+}
+
+// TestLoad_V2FileWithUnknownFieldReturnsErrStateParse pins the other
+// arm of the 07-W5-06 two-phase ordering: a CURRENT-version state.json
+// with an unknown top-level field is NOT a user-recoverable migration;
+// it is a bug (corruption, forward-compat drift, out-of-tree writer).
+// The strict-decode arm fires after phase 1 admits the schemaVersion,
+// and ErrStateParse (exit 1, no --force escape) is the correct
+// posture. `--force` does NOT have special handling for this arm —
+// see commit.go:step3ReadState, which only gates --force on
+// ErrSchemaMismatch.
+func TestLoad_V2FileWithUnknownFieldReturnsErrStateParse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	body := `{"schemaVersion":"2","environment":"demo","futureField":"x"}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := state.Load(path)
+	if err == nil {
+		t.Fatalf("Load(v2+unknown): err = nil, want non-nil")
+	}
+	if !errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(v2+unknown): err = %v, want errors.Is(..., ErrStateParse)", err)
+	}
+	if errors.Is(err, state.ErrSchemaMismatch) {
+		t.Fatalf("Load(v2+unknown): err = %v, must NOT be ErrSchemaMismatch (would silently allow --force overwrite of corrupt v2 file)", err)
+	}
+	if f != nil {
+		t.Fatalf("Load(v2+unknown): f = %+v, want nil", f)
+	}
+}
+
 // TestLoad_CorruptJSON_ReturnsErrStateParse asserts the parse
 // failure path: non-JSON bytes wrap ErrStateParse so callers can
 // distinguish "file is broken" from "schema is wrong".
