@@ -377,33 +377,21 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 		if os.Getenv("ACH_E2E_PHASE9") != "1" {
 			t.Skipf("§11f.Environment gated behind ACH_E2E_PHASE9=1 — Environment ExecutionResourcesResolved=True requires LiteLLM seed (TODO §16). Skipping (engineer-pending).")
 		}
-		// Pre-apply the demo bundle (idempotent).
-		for _, f := range []string{
-			"../../examples/01-litellmconnection.yaml",
-			"../../examples/06-plugin-caveman.yaml",
-			"../../examples/07-prompt-claudecode-leak.yaml",
-			"../../examples/08-artifact-openclaw-templates.yaml",
-			"../../examples/04-environment-demo.yaml",
-		} {
-			if out, err := runCmd("kubectl", "apply", "-f", f); err != nil {
-				t.Fatalf("§11f.Env apply %s: %v\n%s", f, err, out)
-			}
+		// Finalizer-drain on a THROWAWAY Environment — never touches the synced
+		// "demo" (other specs assert against it). The execution resources it
+		// references are pre-synced by cluster.sh (04-objects + reconcile_litellm).
+		const drain = "../../test/e2e/fixtures/phase4_drain_environment.yaml"
+		if out, err := runCmd("kubectl", "apply", "-f", drain); err != nil {
+			t.Fatalf("§11f.Env apply drain: %v\n%s", err, out)
 		}
-		waitForCondition(t, "environment", "demo",
+		waitForCondition(t, "environment", "demo-drain",
 			"ExecutionResourcesResolved", "True", 120*time.Second)
 
-		// Drive delete (wait=true blocks on finalizer).
+		// Drive delete (wait=true blocks on finalizer drain).
 		if out, err := runCmdLonger(120*time.Second,
-			"kubectl", "delete", "environment", "demo", "-n", namespace,
+			"kubectl", "delete", "environment", "demo-drain", "-n", namespace,
 			"--wait=true"); err != nil {
-			t.Fatalf("§11f.Env delete: %v\n%s", err, out)
-		}
-
-		// Re-apply for downstream subtests (§11a/d still rely on
-		// plugin/caveman; Environment delete doesn't cascade to them).
-		if out, err := runCmd("kubectl", "apply", "-f",
-			"../../examples/04-environment-demo.yaml"); err != nil {
-			t.Fatalf("§11f.Env re-apply: %v\n%s", err, out)
+			t.Fatalf("§11f.Env finalizer drain: %v\n%s", err, out)
 		}
 	})
 
