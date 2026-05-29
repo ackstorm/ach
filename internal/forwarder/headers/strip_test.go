@@ -31,10 +31,11 @@ func TestStripAndRewrite(t *testing.T) {
 	// that explicitly override the masterKey/litellmToken) ends up with as
 	// the two written headers — written via h.Set, which canonicalizes the
 	// key to X-Litellm-Api-Key / X-Litellm-Key-Id.
-	// We add "Bearer " prefix to satisfy LiteLLM's internal MCP key parser.
+	// The bare master key is written here; the MCP-only "Bearer " prefix is
+	// the Director's job.
 	twoWritten := func() http.Header {
 		h := http.Header{}
-		h.Set("x-litellm-api-key", "Bearer "+masterKey)
+		h.Set("x-litellm-api-key", masterKey)
 		h.Set("x-litellm-key-id", litellmToken)
 		return h
 	}
@@ -377,7 +378,7 @@ func TestStripAndRewrite(t *testing.T) {
 			litellmToken: "",
 			want: func() http.Header {
 				h := http.Header{}
-				h.Set("x-litellm-api-key", "Bearer ")
+				h.Set("x-litellm-api-key", "")
 				h.Set("x-litellm-key-id", "")
 				return h
 			}(),

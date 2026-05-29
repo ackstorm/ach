@@ -114,8 +114,10 @@ func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
 	}
 
 	// 3. Write pass. h.Set canonicalizes the keys.
-	// We add "Bearer " prefix to satisfy LiteLLM's internal MCP key parser
-	// which nullifies any key that doesn't start with "Bearer " (user_api_key_auth_mcp.py).
-	h.Set("x-litellm-api-key", "Bearer "+masterKey)
+	// The bare master key is written here for ALL routes. The "Bearer "
+	// prefix that LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
+	// requires is applied ONLY on the /mcp route by the proxy Director —
+	// /v1, /gemini, and /a2a validate the bare master key.
+	h.Set("x-litellm-api-key", masterKey)
 	h.Set("x-litellm-key-id", litellmToken)
 }
