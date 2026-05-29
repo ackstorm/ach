@@ -472,34 +472,32 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		HTTPClient: hydrateHTTPClient,
 	}
 
-	opts := hydrate.Opts{
-		Environment:    effectiveEnv,
-		Platform:       platformID,
-		Global:         in.global,
-		IncludeRuntime: in.includeRuntime,
-		OnlyRuntime:    in.onlyRuntime,
-		Sync:           in.sync,
-		Force:          in.force,
-		DryRun:         in.dryRun,
-		AllowSymlinks:  in.allowSymlinks,
-		Output:         in.output,
-		Wait:           in.wait,
-		LockTimeout:    in.lockTimeout,
-		BaseURL:        baseURL,
-		Bearer:         bearer,
-		Verbose:        in.verbose,
-		Stdout:         cmd.OutOrStdout(),
-		Stderr:         cmd.ErrOrStderr(),
-	}
+	// NewWiring constructs the default Extractor + AdapterDispatcher;
+	// both are threaded into Opts so commit.run()'s steps 7-10 invoke
+	// real impls (07-W5-01 gap closure).
+	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force)
 
-	// NewWiring constructs the default Extractor + AdapterDispatcher.
-	// The W1-06 orchestrator stub-fed surface accepts these via
-	// interface fields on commit; once W2/W3 are fully wired into the
-	// commit-sequence step methods, this is the only code path that
-	// supplies them. For now, hydrate.Run does not yet thread these
-	// into the orchestrator (W1 stub), but constructing them here
-	// closes the contract loop.
-	_, _ = hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force)
+	opts := hydrate.Opts{
+		Environment:       effectiveEnv,
+		Platform:          platformID,
+		Global:            in.global,
+		IncludeRuntime:    in.includeRuntime,
+		OnlyRuntime:       in.onlyRuntime,
+		Sync:              in.sync,
+		Force:             in.force,
+		DryRun:            in.dryRun,
+		AllowSymlinks:     in.allowSymlinks,
+		Output:            in.output,
+		Wait:              in.wait,
+		LockTimeout:       in.lockTimeout,
+		BaseURL:           baseURL,
+		Bearer:            bearer,
+		Verbose:           in.verbose,
+		Stdout:            cmd.OutOrStdout(),
+		Stderr:            cmd.ErrOrStderr(),
+		Extractor:         ext,
+		AdapterDispatcher: ad,
+	}
 
 	if _, err := hydrateRunFn(cmd.Context(), opts); err != nil {
 		return err
