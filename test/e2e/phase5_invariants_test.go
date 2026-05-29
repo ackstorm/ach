@@ -164,14 +164,14 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
 
 	type call struct {
-		name           string
-		path           string
-		key            string
-		envHeader      string
-		wantStatus     int
-		wantCode       string
-		extraHeaders   map[string]string
-		skipReason     string
+		name         string
+		path         string
+		key          string
+		envHeader    string
+		wantStatus   int
+		wantCode     string
+		extraHeaders map[string]string
+		skipReason   string
 	}
 
 	calls := []call{

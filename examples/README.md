@@ -44,9 +44,9 @@ kubectl apply -f examples/01-litellmconnection.yaml \
 make wait-cr-ready KIND=environment NAME=demo NS=ach-system
 
 # 3. Build the CLI + run the demo.
-./scripts/dev.sh make build
-ach-cli login                                   # device-code SSO (browser opens)
-ach-cli hydrate --environment demo > hydrate.json   # POST /platform/hydrate
+make build-all
+./bin/ach-cli login                                 # device-code SSO (browser opens)
+./bin/ach-cli hydrate --environment demo > hydrate.json   # POST /platform/hydrate
 ```
 
 The `hydrate.json` output should match `examples/hydrate.json`

@@ -198,4 +198,3 @@ func testPhase4SC4JwksAndSecretRbac(t *testing.T) {
 		t.Errorf("forwarder secret access: %v", err)
 	}
 }
-

@@ -14,6 +14,14 @@
 
 set -euo pipefail
 
+# cluster.sh is internal plumbing invoked by `make cluster-*`, which routes
+# through scripts/dev.sh (where helm/kind/kubectl live). Refuse to run on a
+# bare host that may lack these tools — that is the half-created-cluster bug.
+if [[ "${ACH_IN_DEVTOOLS:-0}" != "1" ]]; then
+    echo "scripts/cluster.sh: run via 'make cluster-up' (must be inside devtools), not directly." >&2
+    exit 1
+fi
+
 CLUSTER_NAME="${CLUSTER_NAME:-ach-e2e}"
 KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 
@@ -42,7 +50,7 @@ chart_version_of() {
 # valkey/valkey (TODO.md item 1a option c) or mirror to ghcr.io/ackstorm/mirror/*.
 
 # ach image coordinates used by hydrate_ach. CI builds the image with
-# `make docker-build IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
+# `make build-image IMG=${ACH_IMAGE}` before invoking `cluster.sh up`;
 # local developers can override either piece. The default tag `e2e` is
 # deliberately not `latest` so a stale cached `latest` cannot mask a
 # missing freshly-built image.
@@ -52,7 +60,7 @@ ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
 # ach-mcp-echo backend image (issue #35). Built + kind-loaded by hydrate_ach
 # when testMocks.mcpEcho.enabled is true in the ach values file. The tag MUST
-# match what the `e2e-mcp-echo-build` make target produces (ach-mcp-echo:e2e)
+# match what the `build-image-mcp-echo` make target produces (ach-mcp-echo:e2e)
 # and what the Helm chart's testMocks.mcpEcho default image resolves to — kind
 # load is given the exact tag the Deployment pulls (pullPolicy=IfNotPresent).
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
@@ -62,21 +70,47 @@ usage() {
 scripts/cluster.sh — e2e cluster lifecycle.
 
 Usage:
-  scripts/cluster.sh up        # create kind + hydrate dependencies + wait Ready
-  scripts/cluster.sh hydrate   # re-apply hydration on an already-up cluster
-  scripts/cluster.sh down      # delete kind cluster
-  scripts/cluster.sh keep      # same as up but no EXIT trap (local iteration)
-  scripts/cluster.sh status    # print kubectl + helm state
-  scripts/cluster.sh wait_ach  # wait for ach Deployments (operator+platform-api+forwarder) Ready
+  scripts/cluster.sh up         # create kind + hydrate dependencies + wait Ready (transactional)
+  scripts/cluster.sh sync       # reconcile infra/fixtures on an already-up cluster (no recreate)
+  scripts/cluster.sh down       # delete kind cluster
+  scripts/cluster.sh reset      # down then up (clean recreate)
+  scripts/cluster.sh status     # print kubectl + helm state
+  scripts/cluster.sh preflight  # check tooling, values files, chart pins, ports
+  scripts/cluster.sh wait_ach   # wait for ach Deployments (operator+platform-api+forwarder) Ready
 USAGE
   exit 1
 }
 
-cmd_up()      { create_cluster; create_namespaces; hydrate_all; }
-cmd_hydrate() { create_namespaces; hydrate_all; }
-cmd_down()    { kind delete cluster --name "${CLUSTER_NAME}" || true; }
-cmd_keep()    { cmd_up; }
-cmd_status()  { print_status; }
+cmd_up() {
+  local created=0
+  if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then created=1; fi
+  # Delete a half-created cluster on failure, but ONLY if this run created it
+  # and the caller did not opt out (KEEP_ON_FAILURE=1).
+  trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "'"$created"'" = "1" ] && [ "${KEEP_ON_FAILURE:-0}" != "1" ]; then echo "[cluster.sh] up failed (rc=$rc) — deleting half-created ${CLUSTER_NAME}" >&2; kind delete cluster --name "${CLUSTER_NAME}" || true; fi' EXIT
+  create_cluster; create_namespaces; hydrate_all
+  trap - EXIT
+}
+cmd_sync() {
+  # Reconcile infra/fixtures on an EXISTING cluster. Never deletes it unless
+  # the caller explicitly opts in with RESET_ON_FAILURE=1.
+  trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${RESET_ON_FAILURE:-0}" = "1" ]; then echo "[cluster.sh] sync failed (rc=$rc) + RESET_ON_FAILURE=1 — deleting ${CLUSTER_NAME}" >&2; kind delete cluster --name "${CLUSTER_NAME}" || true; fi' EXIT
+  create_namespaces; hydrate_all
+  trap - EXIT
+}
+cmd_down()  { kind delete cluster --name "${CLUSTER_NAME}" || true; }
+cmd_reset() { cmd_down; cmd_up; }
+cmd_status(){ print_status; }
+
+cmd_preflight() {
+  echo "== cluster preflight =="
+  for t in kind kubectl helm jq openssl; do command -v "$t" >/dev/null 2>&1 && echo "OK   $t" || { echo "FAIL $t MISSING"; exit 1; }; done
+  docker info >/dev/null 2>&1 && echo "OK   docker daemon reachable" || { echo "FAIL docker unreachable"; exit 1; }
+  test -d "${VALUES_DIR}" && echo "OK   values dir ${VALUES_DIR}" || { echo "FAIL ${VALUES_DIR} missing"; exit 1; }
+  for f in postgres valkey dex litellm; do test -f "${VALUES_DIR}/$f.values.yaml" && echo "OK   values/$f" || echo "WARN values/$f.values.yaml missing"; done
+  echo "OK   chart pins: postgres=$(chart_version_of "${VALUES_DIR}/postgres.values.yaml") litellm=$(chart_version_of "${VALUES_DIR}/litellm.values.yaml")"
+  # Ports the kind extraPortMappings expose on the host (gateway 8080).
+  for p in 8080; do (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && { echo "WARN port $p already in use"; exec 3>&- ; } || echo "OK   port $p free"; done
+}
 
 create_cluster() {
   if kind get clusters | grep -qx "${CLUSTER_NAME}"; then
@@ -119,7 +153,7 @@ hydrate_postgres() {
     --version "${version}" \
     --namespace ach-system \
     --values "${VALUES_DIR}/postgres.values.yaml" \
-    --wait --timeout 5m
+    --atomic --wait --timeout 5m
 }
 
 hydrate_valkey() {
@@ -129,7 +163,7 @@ hydrate_valkey() {
     --version "${version}" \
     --namespace ach-system \
     --values "${VALUES_DIR}/valkey.values.yaml" \
-    --wait --timeout 5m
+    --atomic --wait --timeout 5m
 }
 
 hydrate_dex() {
@@ -159,7 +193,7 @@ hydrate_dex() {
     --version "${version}" \
     --namespace dex-system \
     --values "${tmpvals}" \
-    --wait --timeout 3m
+    --atomic --wait --timeout 3m
   rm -f "${tmpvals}"
 }
 
@@ -196,7 +230,7 @@ hydrate_litellm() {
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
     --values "${VALUES_DIR}/litellm.values.yaml" \
-    --wait --timeout 5m
+    --atomic --wait --timeout 5m
 
   # helm --wait covers Deployment readiness + PreSync hook completion,
   # but a Job stuck in ImagePullBackOff can let helm time out silently
@@ -299,14 +333,14 @@ hydrate_toolhive() {
   helm upgrade --install toolhive-operator-crds \
     oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds \
     --version "${crds_version}" \
-    --wait --timeout 60s
+    --atomic --wait --timeout 60s
 
   echo "[cluster.sh] installing toolhive-operator @ ${operator_version}..."
   helm upgrade --install toolhive-operator \
     oci://ghcr.io/stacklok/toolhive/toolhive-operator \
     --version "${operator_version}" \
     --namespace toolhive-system \
-    --wait --timeout 90s
+    --atomic --wait --timeout 90s
 
   # Step 2.5 — add v1beta1 versions to ToolHive CRDs (not yet in
   # published charts). Since we upgraded to 0.28.3, this is natively supported.
@@ -318,25 +352,25 @@ hydrate_ach() {
   echo "[cluster.sh] hydrating ach (image: ${ACH_IMAGE})..."
 
   # Build + kind-load the ach image (sister alitellm-operator pattern).
-  # `make docker-build` is idempotent — Docker layer cache makes repeat
+  # `make build-image` is idempotent — Docker layer cache makes repeat
   # runs cheap. Inlining the build here removes the implicit ordering
   # requirement that callers (local dev, CI workflow) must remember to
-  # run `make docker-build` first.
+  # run `make build-image` first.
   echo "[cluster.sh] building ${ACH_IMAGE}..."
-  make docker-build IMG="${ACH_IMAGE}"
+  make build-image IMG="${ACH_IMAGE}"
   echo "[cluster.sh] kind load ${ACH_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${ACH_IMAGE}" --name "${CLUSTER_NAME}"
 
   # Build + kind-load the ach-mcp-echo backend image (issue #35) when the chart
   # will deploy it (testMocks.mcpEcho.enabled). Same rationale as the ach image
   # above: inline the build so callers never have to remember a separate
-  # `make e2e-mcp-echo-build` + manual kind load — otherwise the Deployment
+  # `make build-image-mcp-echo` + manual kind load — otherwise the Deployment
   # sits in ImagePullBackOff (the :e2e tag is never pushed to a registry).
   # Gated on the toggle so non-mcp-echo topologies don't pay the build cost.
   if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${VALUES_DIR}/ach.values.yaml" \
        | grep -qE '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
     echo "[cluster.sh] building ${MCP_ECHO_IMAGE} (testMocks.mcpEcho.enabled)..."
-    make e2e-mcp-echo-build
+    make build-image-mcp-echo
     echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
     kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
   else
@@ -514,7 +548,7 @@ print_status() (
 )
 
 case "${1:-}" in
-  up|hydrate|down|keep|status) "cmd_${1}" ;;
+  up|sync|down|reset|status|preflight) "cmd_${1}" ;;
   wait_ach) wait_ach ;;
   *) usage ;;
 esac
