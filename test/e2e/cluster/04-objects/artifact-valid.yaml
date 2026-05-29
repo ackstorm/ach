@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 content-service exercise — VALID artifact with scope=object
+# (single-file verbatim delivery), exercising the CS handler's object-scope
+# path (distinct from openclaw-templates' directory-scope tar.gz path). Part
+# of the SYNCED set (cluster.sh applies it; verify_all gates it
+# SourceReachable=True); the e2e suite asserts against it.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Artifact
+metadata:
+  name: artifact-valid
+  namespace: ach-system
+spec:
+  type: github
+  scope: object
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: asgeirtj/system_prompts_leaks
+    ref: main
+    path: Anthropic/claude-code.md

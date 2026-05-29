@@ -16,3 +16,13 @@ resources:
   - bip-duplicate.yaml
   - bip-demo-mcp-jwt.yaml
   - bip-demo-mcp-nojwt.yaml
+  # Phase 5 content-service exercise matrix — valid + invalid of each CR
+  # kind (referenced by Environment env-valid in stage 05). The e2e suite
+  # asserts against these; it no longer applies its own copies. The
+  # *-invalid fixtures settle at SourceReachable=False (negative path).
+  - plugin-valid.yaml
+  - plugin-invalid.yaml
+  - prompt-valid.yaml
+  - prompt-invalid.yaml
+  - artifact-valid.yaml
+  - artifact-invalid.yaml

@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 content-service exercise — VALID prompt. Serves a text/markdown
+# file verbatim (SC#1 Content-Type assertion + SC#2 error matrix). Part of
+# the SYNCED set (cluster.sh applies it; verify_all gates it
+# SourceReachable=True); the e2e suite asserts against it.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: prompt-valid
+  namespace: ach-system
+spec:
+  type: github
+  contentType: text/markdown
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: asgeirtj/system_prompts_leaks
+    ref: main
+    path: Anthropic/claude-code.md

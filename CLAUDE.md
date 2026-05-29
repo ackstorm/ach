@@ -174,7 +174,9 @@ ach/
 │   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
 │       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
-│       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved Envs
+│       │                    (incl. the phase5 CS-exercise valid/invalid
+│       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
+│       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE, PUBLISH.md
 ```
@@ -184,7 +186,15 @@ ach/
 fixtures** — the complete demo-ready ACH object set `scripts/cluster.sh`
 applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
 step). The e2e suite **asserts** against this synced state; tests do NOT apply
-their own copies of these objects. `examples/` holds **curated, user-facing
+their own copies of these objects. The set includes a **valid/invalid matrix**
+for the content-service exercise (`plugin-valid`/`plugin-invalid`,
+`prompt-valid`/`prompt-invalid`, `artifact-valid`/`artifact-invalid`,
+`env-valid`): `verify_all` gates the valid half to its healthy condition
+(`SourceReachable`/`Available`) and the invalid half to its **expected failure
+state** (`SourceReachable=False`, nonexistent upstream), so "everything is in
+its known state" before tests run. Tests only create/delete throwaways for
+mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
+`examples/` holds **curated, user-facing
 samples** (legacy ToolHive 12-15, the ServiceMonitor, the manual JWT helper)
 plus the golden `hydrate.json`. The two are independent — moving or editing one
 does not touch the other.
