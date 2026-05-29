@@ -72,6 +72,20 @@ func NewForwarderCollectors(reg *prometheus.Registry) *ForwarderCollectors {
 	return c
 }
 
+// PreInitZeroSeries materializes one representative child series per
+// collector at value 0 so the metric FAMILY is present on /metrics from
+// process start — before any traffic — making the §18.5 exposition
+// contract scrapeable immediately (and rate() gap-free). Production
+// wiring (cmd/ach/cmd/forwarder.go) calls this once at startup; unit
+// tests do NOT, so per-test series assertions stay unaffected. Label
+// values are drawn from the §18.5 enums; the 0 counts are harmless.
+func (c *ForwarderCollectors) PreInitZeroSeries() {
+	c.requests.WithLabelValues("/v1", "pk", "forwarded").Add(0)
+	c.duration.WithLabelValues("/v1", "pk", "2xx") // creates the 0-count histogram child
+	c.jwtSigned.WithLabelValues("mcp").Add(0)
+	c.jwtSuppressed.WithLabelValues("mcp", "no_bip").Add(0)
+}
+
 // IncRequest increments forwarder_requests_total{route, key_type, outcome}
 // per Hub §18.5 normative label-value enums:
 //

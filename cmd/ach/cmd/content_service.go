@@ -227,8 +227,11 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	//     shared litellm_unreachable_total (caller="content_service" Inc
 	//     happens inside enforceTeams in internal/contentservice/authz.go).
 	reg := metrics.NewRegistry()
+	registerRuntimeCollectors(reg)
 	csCollectors := metrics.NewContentServiceCollectors(reg)
+	csCollectors.PreInitZeroSeries()
 	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
+	litellmUnreachable.WithLabelValues("content_service").Add(0) // expose family at 0 (§18.5)
 
 	// ─── Deps wiring (Plan 05-05 D-16 surface) ───
 	deps := contentservice.Deps{

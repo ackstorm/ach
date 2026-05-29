@@ -29,6 +29,7 @@ The gateway unifies the entire data and control plane under a single localhost p
 * **SSO (Dex):** accessible under `http://localhost:8080/dex/`
 * **Content Service:** accessible under `http://localhost:8080/content/`
 * **LLM Forwarder:** accessible under `http://localhost:8080/v1/`, `http://localhost:8080/mcp/`, `http://localhost:8080/a2a/`
+* **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — distinct routes because a bare `/metrics` can't disambiguate four services behind one base. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`. `/metrics/operator` is backed by the `ach-operator-metrics` Service (the operator has no data-plane Service of its own).
 
 ---
 

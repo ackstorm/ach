@@ -188,7 +188,9 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	//     Phase 5; see Plan 05-06 spec_divergence) and any future
 	//     additive metrics that land here.
 	out.metricsReg = metrics.NewRegistry()
+	registerRuntimeCollectors(out.metricsReg)
 	out.litellmUnreachable = metrics.MustRegisterLitellmUnreachable(out.metricsReg)
+	out.litellmUnreachable.WithLabelValues("platform_api").Add(0) // expose family at 0 (§18.5)
 	// /metrics is unauthenticated on the main traffic listener (D-10);
 	// internal cluster network only — see Helm values.yaml metricsAuth
 	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted.
