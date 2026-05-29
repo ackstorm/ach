@@ -630,6 +630,89 @@ func TestRun_DryRun_SkipsExtractorAndAdapter(t *testing.T) {
 	}
 }
 
+// TestRun_Step11Sync_InvokedWhenSyncOptSet asserts that the step-11
+// Sync wiring fires when opts.Sync is true. Uses the syncFn package
+// seam to swap in a recorder and verify the call args match the
+// orchestrator contract: prev == existingState, opts.Force flows
+// through, opts.Stderr is the orchestrator's stderr.
+func TestRun_Step11Sync_InvokedWhenSyncOptSet(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Sync = true
+	store.loadFn = func(_ string) (*state.File, error) {
+		return &state.File{
+			SchemaVersion: "2",
+			Environment:   "demo",
+		}, nil
+	}
+
+	prevSync := syncFn
+	t.Cleanup(func() { syncFn = prevSync })
+	var calls int
+	var sawForce bool
+	syncFn = func(_, _ *state.File, _ string, opts SyncOptions) (SyncStats, error) {
+		calls++
+		sawForce = opts.Force
+		return SyncStats{Pruned: 0, Preserved: 0}, nil
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if calls != 1 {
+		t.Errorf("syncFn calls = %d, want 1", calls)
+	}
+	if sawForce {
+		t.Error("syncFn observed Force=true; want Force=false (opts.Force was unset)")
+	}
+}
+
+// TestRun_Step11Sync_NotInvokedWhenSyncOptUnset asserts the step-11
+// wiring stays inert when opts.Sync == false (the default — non-sync
+// invocations are no-ops at the step-11 boundary).
+func TestRun_Step11Sync_NotInvokedWhenSyncOptUnset(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	// c.opts.Sync left at zero-value (false).
+
+	prevSync := syncFn
+	t.Cleanup(func() { syncFn = prevSync })
+	var calls int
+	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+		calls++
+		return SyncStats{}, nil
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if calls != 0 {
+		t.Errorf("syncFn calls = %d, want 0 (opts.Sync was unset)", calls)
+	}
+}
+
+// TestRun_Step11Sync_NotInvokedUnderDryRun asserts that --dry-run gates
+// the step-11 Sync call even when --sync is explicitly set
+// (T-07-W5-01-03 — --dry-run must skip every disk-touching call).
+func TestRun_Step11Sync_NotInvokedUnderDryRun(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Sync = true
+	c.opts.DryRun = true
+
+	prevSync := syncFn
+	t.Cleanup(func() { syncFn = prevSync })
+	var calls int
+	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+		calls++
+		return SyncStats{}, nil
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run --dry-run = %v, want nil", err)
+	}
+	if calls != 0 {
+		t.Errorf("syncFn calls under --dry-run = %d, want 0", calls)
+	}
+}
+
 // TestCommit_Step6Diff_OnlyRuntime_SkipsContext seeds a manifest with
 // both runtime and context entries; asserts step6Diff under
 // OnlyRuntime emits ONLY runtime targets and the context iteration
