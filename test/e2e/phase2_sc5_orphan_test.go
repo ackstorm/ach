@@ -41,7 +41,7 @@ const (
 	sc5LiteLLMSvc   = "svc/litellm"
 	sc5LiteLLMDBSvc = "svc/litellm-postgresql"
 	sc5ACHPgSvc     = "svc/ach-postgres"
-	// sc5MasterKey matches test/e2e/values/litellm.values.yaml and
+	// sc5MasterKey matches test/e2e/cluster/01-base/litellm.values.yaml and
 	// config/e2e/litellm_connection.yaml (Secret litellm-master-key).
 	sc5MasterKey = "sk-test-master-key"
 )
