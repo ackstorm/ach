@@ -548,12 +548,16 @@ func copyFile(srcPath, dstPath string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = out.Close() }()
 
+	// Per 07-W5-05 (WR-02): explicit close to surface buffered-write
+	// errors that surface only at close(2) (EIO/ENOSPC). A deferred
+	// `_ = out.Close()` would silently drop those errors, recording a
+	// truncated file as successfully written.
 	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
 		return err
 	}
-	return nil
+	return out.Close()
 }
 
 // MergeStrategies returns the per-target merge classification per
