@@ -440,10 +440,8 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.markSyncedFalse(ctx, &cr, ReasonNameConflict, msg, requeue, nil)
 	}
 
-	// Compose the success message: transport= prefix lets operators see
-	// the wire path; the partial-failure summary (msg) follows when
-	// non-empty so per-plugin failures stay visible alongside.
-	finalMsg := sourceReachableMessage(sourceSpec)
+	// transport=<…> plugins=<N> [stage-2 partial-failure summary]
+	finalMsg := fmt.Sprintf("%s plugins=%d", sourceReachableMessage(sourceSpec), len(successful))
 	if msg != "" {
 		finalMsg = finalMsg + " " + msg
 	}

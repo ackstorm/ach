@@ -866,6 +866,16 @@ func TestPMR_Stage2_StatusPluginsPopulated(t *testing.T) {
 	if len(wantRev) != 0 {
 		t.Errorf("status.plugins missing expected entries: %v", wantRev)
 	}
+
+	// Issue #53 acceptance #2: the synced count is surfaced in the
+	// Synced=True message alongside transport=.
+	if c := syncedCondition(&got); c == nil || !strings.Contains(c.Message, "plugins=2") {
+		var m string
+		if c != nil {
+			m = c.Message
+		}
+		t.Errorf("Synced message = %q, want it to contain %q", m, "plugins=2")
+	}
 }
 
 func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {
