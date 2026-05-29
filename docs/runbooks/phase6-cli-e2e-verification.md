@@ -29,18 +29,21 @@ docker info >/dev/null      # expect no error
 
 ---
 
-## CHECK 1 — `./bin/ach --help` shows all 8 user-facing subcommands
+## CHECK 1 — surface separation: `ach-cli` (user CLI) vs `ach` (services)
 
-**Why human:** the binary compiles inside CI, but a runtime smoke confirms the
-cobra tree is fully wired across all 9 Phase 6 plans.
+**Why human:** both binaries compile inside CI, but a runtime smoke confirms
+the cobra trees are fully wired AND that the user CLI / service-mode split
+landed (the 8 user subcommands live on `ach-cli`; the 5 service modes on
+`ach`). `make build` writes both `bin/ach` and `bin/ach-cli`.
 
 ```bash
 ./scripts/dev.sh make build
-./bin/ach --help
+./bin/ach-cli --help    # user CLI
+./bin/ach --help        # services
 echo "EXIT=$?"
 ```
 
-**Expected:** exit `0` and the help output lists every one of:
+**Expected:** `./bin/ach-cli --help` exits `0` and lists every one of:
 
 ```
   login         Authenticate against the platform-api
@@ -53,14 +56,18 @@ echo "EXIT=$?"
   admin         Admin subcommands (keys revoke, users revoke-keys, refresh)
 ```
 
-PLUS the 5 service modes already shipped pre-Phase-6:
+AND `./bin/ach --help` lists only the 5 service modes:
 
 ```
   operator, platform-api, forwarder, content-service, migrate
 ```
 
-**If any user-facing subcommand is missing:** capture the full `--help` output
-and tag this check as FAIL.
+Cross-check the split: `./bin/ach login` and `./bin/ach-cli operator` must
+each fail with "unknown command".
+
+**If any user-facing subcommand is missing from `ach-cli`, or a service mode
+is missing from `ach`, or the cross-check passes when it should fail:**
+capture the full `--help` output and tag this check as FAIL.
 
 ---
 

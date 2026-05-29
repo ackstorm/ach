@@ -36,9 +36,12 @@ that revealed the staleness. Drift is a bug, not tech debt.
 
 ACH — Agent Configuration Hub. Multi-service Kubernetes control plane for
 declarative agent configuration management: operator + platform API +
-forwarder + content service + CLI. All shipped as a **single Go binary**
-(`ach`) with cobra subcommands selected at process start. Written in Go
-(controller-runtime, k8s.io/* per `go.mod`).
+forwarder + content service + CLI. The long-running services ship as a
+**single Go binary** (`ach`) with cobra subcommands selected at process
+start; the user-facing CLI ships as a **separate `ach-cli` binary**
+(login/logout/whoami/config/env/env-keys/hydrate/admin) that drops the
+k8s.io/* + controller-runtime deps. Both share `internal/cli/*`. Written
+in Go (controller-runtime, k8s.io/* per `go.mod`).
 
 Selected release plumbing + CI scaffolding grafted from
 [ackstorm/alitellm-operator](https://github.com/ackstorm/alitellm-operator)
@@ -99,10 +102,25 @@ as `args:`:
 | content-service  | `ach content-service` | Artifact streaming via `sendfile(2)`  |
 | migrate          | `ach migrate`       | Postgres schema migrations              |
 
+The user-facing CLI ships as a separate binary, `ach-cli` (NOT in the
+service container image — distributed as goreleaser archives). It drops
+the k8s.io/* + controller-runtime deps, so it is ~10% the size of `ach`:
+
+| Subcommand         | Owns                                            |
+|--------------------|-------------------------------------------------|
+| `ach-cli login`    | Device-code SSO login                           |
+| `ach-cli logout`   | Revoke local session                            |
+| `ach-cli whoami`   | Display current identity                        |
+| `ach-cli config`   | Inspect / mutate local config                   |
+| `ach-cli env`      | List + switch environments                      |
+| `ach-cli env-keys` | Create / list / revoke env keys                 |
+| `ach-cli hydrate`  | Materialize workspace artifacts                 |
+| `ach-cli admin`    | Admin keys revoke / users revoke-keys / refresh |
+
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition update
-- `ach login` → platform-api → Dex SSO → `provisionUser` (LiteLLM user/team mint) → `pk_` issuance
-- `ach hydrate` → platform-api `/platform/hydrate` → content-service sidecar (`/content/{prompt,plugin,artifact}` routes) → workspace materialization
+- `ach-cli login` → platform-api → Dex SSO → `provisionUser` (LiteLLM user/team mint) → `pk_` issuance
+- `ach-cli hydrate` → platform-api `/platform/hydrate` → content-service sidecar (`/content/{prompt,plugin,artifact}` routes) → workspace materialization
 - Environment reconcile → resolve `mcpServers` / `a2aAgents` / `authorizedTeams` against LiteLLM → `POST /v1/access_group` → `AccessGroupSynced=True`
 - Environment status → composite `Available=True` rollup over `ExecutionResourcesResolved` + `AccessGroupSynced`
 - BackendIdentityPolicy apply → operator writes RBAC for forwarder → forwarder watches BIPs (read-path cache) → JWT mint uses per-target identity
@@ -123,11 +141,16 @@ ach/
 ├── Dockerfile.devtools      ← devtools container (scripts/dev.sh)
 ├── Dockerfile.goreleaser    ← release image, consumed by goreleaser
 ├── api/                     ← CRD Go types (ach.ackstorm.ai/v1alpha1)
-├── cmd/ach/main.go          ← single-binary entrypoint
-├── cmd/ach/cmd/              ← cobra root + per-mode subcommands
-│   ├── root.go               (Version, root cmd)
+├── cmd/ach/main.go          ← service-mode entrypoint (exit.DispatchAndRender)
+├── cmd/ach/cmd/              ← cobra root + service-mode subcommands
+│   ├── root.go               (Version, services root cmd)
 │   ├── operator.go, platform_api.go, forwarder.go,
 │   ├── content_service.go, migrate.go
+├── cmd/ach-cli/main.go      ← user-CLI entrypoint (shares exit.DispatchAndRender)
+├── cmd/ach-cli/cmd/          ← cobra root + user-facing subcommands
+│   ├── root.go               (Version, cli root cmd)
+│   ├── login.go, logout.go, whoami.go, config.go,
+│   ├── env.go, env_keys.go, hydrate.go, admin.go
 ├── internal/                ← controllers + service implementations
 │   ├── controller/           controller-runtime reconcilers
 │   ├── platformapi/, forwarder/, contentservice/   service-mode code
@@ -159,7 +182,7 @@ ach/
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
-| New CR fixtures / `ach login` + `ach hydrate` demo path | `examples/README.md`                     |
+| New CR fixtures / `ach-cli login` + `ach-cli hydrate` demo path | `examples/README.md`             |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |
@@ -677,7 +700,7 @@ Snapshotter cache), so the condition reflects fresh upstream state.
 
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
-./bin/ach hydrate --environment demo > /tmp/hydrate-test.json
+./bin/ach-cli hydrate --environment demo > /tmp/hydrate-test.json
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
@@ -709,7 +732,7 @@ Two remedies, in preference order:
    response shape legitimately changed — new field, schemaVersion bump, an
    Environment fixture edit):
    ```bash
-   ./bin/ach hydrate --environment demo > examples/hydrate.json
+   ./bin/ach-cli hydrate --environment demo > examples/hydrate.json
    git diff examples/hydrate.json   # audit — should be the intended shape change
    ```
 
@@ -830,7 +853,7 @@ work but leaves orphan images on the node.
   resolves names → IDs on each reconcile via
   `ListMCPServers` / `ListA2AAgents` / `ListTeamsByAlias`, then
   `POST /v1/access_group`). The composite `Available=True` rolls both
-  up — that is what `ach hydrate` / the demo script gate on, not
+  up — that is what `ach-cli hydrate` / the demo script gate on, not
   individual sub-conditions.
 
 - **BackendIdentityPolicy + Environment forwarder read-path**
