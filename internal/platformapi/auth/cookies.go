@@ -15,12 +15,13 @@ import (
 // closing the CSRF + script-exfiltration attack surface on the SSO bridge.
 const cookieNameSecure = "__Host-ach_sso"
 
-// cookieNameInsecure is the dev-mode cookie name used when
-// ACH_SSO_INSECURE_COOKIE=1. The __Host- prefix is dropped because it
-// is only valid with Secure=true (browsers reject __Host- cookies that
-// lack Secure). The dev-mode flag exists for local HTTP-only fixtures
-// where the entire SSO chain rides plain http://localhost — production
-// MUST run with the Secure variant.
+// cookieNameInsecure is the cookie name used when the deployment's
+// externally-visible base URL (ACH_BASE_URL) is plain http:// — internal
+// or dev topologies such as the kind gateway on http://localhost:8080.
+// The __Host- prefix is dropped because it is only valid with Secure=true
+// (browsers reject __Host- cookies that lack Secure), and a Secure cookie
+// would be discarded by the client over plain http. The choice is DERIVED
+// from the scheme, not a flag: an https base auto-uses the Secure variant.
 const cookieNameInsecure = "ach_sso"
 
 // cookieTTL is the maximum lifetime of the SSO state cookie. 10 minutes is
