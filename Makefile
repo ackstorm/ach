@@ -344,10 +344,6 @@ build-image: ## Build the ach services container image. Usage: make build-image 
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
-.PHONY: docker-load
-docker-load: ## Load IMG into the kind cluster (no push). Usage: make docker-load IMG=ach:e2e
-	kind load docker-image $(IMG) --name $${KIND_CLUSTER:-ach-e2e}
-
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -645,43 +641,15 @@ wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make
 		| grep -m1 -E "PASS|FAIL|ok\s+github|--- FAIL|Ginkgo ran" \
 		|| { echo "FAIL: marker not seen within $${TIMEOUT:-600}s (container may have exited early)" >&2; exit 1; }
 
-.PHONY: operator-redeploy
-operator-redeploy: ## rebuild operator image, kind-load, restart deploy (~20s inner loop)
-	$(MAKE) docker-build IMG=ach:e2e
-	kind load docker-image ach:e2e --name ach-e2e
-	kubectl -n default rollout restart deploy/ach
-	kubectl -n default rollout status  deploy/ach --timeout=60s
-
-.PHONY: logs-operator logs-litellm logs-mocks
-logs-operator: ## tail operator logs with timestamps
-	kubectl -n default logs -f --timestamps deploy/ach
-logs-litellm:  ## tail LiteLLM logs with timestamps
+.PHONY: logs-operator logs-platform-api logs-forwarder logs-litellm
+logs-operator:     ## Tail operator logs.
+	kubectl -n ach-system logs -f --timestamps deploy/ach-operator
+logs-platform-api: ## Tail platform-api logs.
+	kubectl -n ach-system logs -f --timestamps deploy/ach-platform-api
+logs-forwarder:    ## Tail forwarder logs.
+	kubectl -n ach-system logs -f --timestamps deploy/ach-forwarder
+logs-litellm:      ## Tail LiteLLM logs.
 	kubectl -n litellm-system logs -f --timestamps deploy/litellm
-logs-mocks:    ## tail openai-mock + kubeai-mock logs in parallel (uses stern if present, else kubectl)
-	@if command -v stern >/dev/null 2>&1; then \
-	  stern -n mocks --timestamps . ; \
-	else \
-	  kubectl -n mocks logs -f --timestamps -l app=openai-mock & \
-	  kubectl -n mocks logs -f --timestamps -l app=kubeai-mock ; wait ; \
-	fi
-
-.PHONY: watch-crs
-watch-crs: ## kubectl get -w across all 7 in-scope kinds in default
-	kubectl -n default get \
-	  litellmconnections,models,modeldiscoveries,mcpservers,mcpserverdiscoveries,a2aagents,teams \
-	  -w
-
-.PHONY: pf-litellm pf-openai-mock pf-kubeai-mock
-pf-litellm:     ## port-forward litellm svc to localhost:4000
-	kubectl -n litellm-system port-forward svc/litellm 4000:4000
-pf-openai-mock: ## port-forward openai-mock to localhost:8081
-	kubectl -n mocks port-forward svc/openai-mock 8081:8080
-pf-kubeai-mock: ## port-forward kubeai-mock to localhost:8082
-	kubectl -n mocks port-forward svc/kubeai-mock 8082:8080
-
-.PHONY: mock-mode
-mock-mode: ## flip a mock auth mode (usage: make mock-mode INSTANCE=openai-mock MODE=reject-401)
-	bash scripts/mock-set-mode.sh $(INSTANCE) $(MODE)
 
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
 e2e-run: ## Run e2e suite against an already-up cluster.
