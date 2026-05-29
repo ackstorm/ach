@@ -147,6 +147,14 @@ func TestPhase7CLIEngine(t *testing.T) {
 	t.Run("sc4_safe_extract_bomb", testPhase7Sc4SafeExtractBomb)
 	t.Run("sc4_autoclaim_three_tier_match", testPhase7Sc4AutoClaimMatch)
 	t.Run("sc4_autoclaim_three_tier_differ", testPhase7Sc4AutoClaimDiffer)
+	// W6-01 Task 2: re-hydrate-with-rotated-credentials path. Closes the
+	// CR-03 / W5-03 runtime gate — without the W5-03 fix, this subtest
+	// would exit 7 (CollisionRefuse) on the second hydrate because the
+	// engine-written file's path would never match its state.json entry's
+	// (workspace-relative) Target. Post-W5-03 the path is normalized and
+	// Classify returns CollisionOwnedByCurrent → engine overwrites → exit 0.
+	t.Run("sc4_autoclaim_three_tier/rotated_credential_owned_by_current",
+		testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent)
 }
 
 // -----------------------------------------------------------------------
@@ -1200,5 +1208,226 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 	if bytes.Equal(overwritten, differing) {
 		t.Errorf("sc4 autoclaim differ force: bytes NOT overwritten\nstill=%s",
 			overwritten)
+	}
+}
+
+// testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent is the W6-01
+// Task 2 runtime gate for W5-03 (CR-03 closure). It exercises the
+// re-hydrate-with-rotated-credentials path:
+//
+//  1. First hydrate writes .claude/.mcp.json + state.json. The adapter
+//     file's on-disk hash matches state.json's recorded hash for that
+//     target.
+//  2. Simulate a credential rotation by mutating the on-disk runtime-
+//     config file (rewriting the bearer placeholder to a different
+//     value). The on-disk hash now DIFFERS from state.json's recorded
+//     hash for the same target.
+//  3. Second hydrate re-runs against the same workspace + same
+//     credential.
+//
+// Pre-W5-03 (CR-03 bug): Classify compared `entry.Target` (workspace-
+// relative, e.g. ".claude/.mcp.json") against `finalPath` (absolute,
+// e.g. "/tmp/abc/.claude/.mcp.json"). The strings never matched →
+// Classify returned CollisionExistsUnowned → Cascade ran → on-disk
+// (mutated) bytes differed from upstream (canonical) bytes → outcome.
+// Identical = false → engine returned exit 7 (CollisionRefuse) on
+// every credential-rotation re-hydrate.
+//
+// Post-W5-03 (CR-03 closed): Classify normalizes entry.Target against
+// achDir via filepath.Join, the comparison succeeds, Classify returns
+// CollisionOwnedByCurrent, the engine falls through to WriteAtomic and
+// overwrites the file with the canonical bytes. Exit code is 0 — NOT 7.
+//
+// Approach: this test uses Approach B from the W6-01 plan (documented
+// test-seam state-mutation). Approach A (real credential rotation via
+// platform-api admin endpoint) is not feasible in the current kind
+// fixture — `grep -rn "refresh-pk\|RefreshPK" internal/platformapi/
+// cmd/ach/cmd/` confirms no such endpoint exists. Approach B is the
+// real test-suite seam: phase7MutateAdapterFile(t, target, suffix)
+// appends bytes to the on-disk adapter file so the file's on-disk hash
+// diverges from state.json's recorded hash; the engine sees an
+// "owned-by-current but drifted" file on the second invocation. The
+// W5-03 fix makes the path-comparison arm succeed, and the engine
+// overwrites the drifted file rather than refusing with exit 7.
+//
+// t.Fatal fallback: if Approach B fails (e.g. the workspace state is
+// corrupt or the first hydrate didn't write a state.json entry), the
+// test fails with the "blocker follow-up plan required" message
+// mandated by the W6-01 plan. t.Skip is FORBIDDEN here — a silent skip
+// would falsely green the suite and the W5-03 runtime fix would be
+// unverified end-to-end.
+func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
+	t.Helper()
+	phase7SuiteGuard(t)
+	pk := phase7AcquirePk(t)
+	baseURL := phase7BaseURL()
+	xdg := phase7SeedXdgConfig(t, baseURL, pk)
+	phase7DemoEnvironmentReady(t)
+	output := phase7Workspace(t)
+
+	// --- Step 1: first hydrate seeds state.json + adapter file. ---
+	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode,
+		"--output", output,
+	)
+	code1, runErr1 := phase7StripExitErr(err1)
+	if runErr1 != nil {
+		t.Fatalf("sc4 autoclaim rotate: first hydrate exec error: %v\nstdout=%s\nstderr=%s",
+			runErr1, stdout1, stderr1)
+	}
+	if code1 != 0 {
+		t.Fatalf("sc4 autoclaim rotate: first hydrate exit %d (want 0)\nstdout=%s\nstderr=%s\n"+
+			"HINT: re-check phase7DemoEnvironmentReady — the demo Environment must be "+
+			"Available=True before any sc4 subtest runs.",
+			code1, stdout1, stderr1)
+	}
+
+	// Capture the first-hydrate bytes and confirm state.json has an
+	// adapter.files entry for the runtime-config target. Without that
+	// entry the Classify path-match would have nothing to find post-
+	// W5-03 — the failure mode would look like CR-03 but be a wholly
+	// different bug (engine didn't write state.json at all).
+	target := filepath.Join(output, phase7ClaudeCodeRuntimePath)
+	canonical, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: read first-hydrate target %s: %v",
+			target, err)
+	}
+	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: read first-hydrate state.json %s: %v",
+			statePath, err)
+	}
+	var seedState struct {
+		SchemaVersion string `json:"schemaVersion"`
+		Adapter       struct {
+			ID    string `json:"id,omitempty"`
+			Files []struct {
+				Target string `json:"target"`
+				Hash   string `json:"hash"`
+			} `json:"files,omitempty"`
+		} `json:"adapter,omitempty"`
+	}
+	if err := json.Unmarshal(stateBytes, &seedState); err != nil {
+		t.Fatalf("sc4 autoclaim rotate: parse first-hydrate state.json: %v\nbytes=%s",
+			err, stateBytes)
+	}
+	if seedState.SchemaVersion != "2" {
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — "+
+			"first hydrate produced state.json with schemaVersion=%q (want \"2\"); "+
+			"the W5-03 path-comparison gate cannot be exercised without a v2 state.json. "+
+			"This is not a sc4 regression — surface it to the verifier.",
+			seedState.SchemaVersion)
+	}
+	var found bool
+	for _, fe := range seedState.Adapter.Files {
+		if fe.Target == phase7ClaudeCodeRuntimePath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — "+
+			"first hydrate did not record an adapter.files entry for target %q; "+
+			"the W5-03 path-comparison gate has no state entry to match against. "+
+			"Likely cause: W5-01 wiring regression — the engine wrote .mcp.json but "+
+			"did not persist its hash to state.adapter.files. SAFE-04 W5-03 closeout "+
+			"cannot be verified end-to-end against this state — file a blocker.\n"+
+			"state.json=%s",
+			phase7ClaudeCodeRuntimePath, stateBytes)
+	}
+
+	// --- Step 2: simulate credential rotation by mutating on-disk
+	// bytes. The engine on the next run will see a target whose on-disk
+	// bytes do NOT match the canonical-rendered bytes for the current
+	// credential — this is the same observable state the engine would
+	// see if the bearer in the headers map had rotated between
+	// invocations. Append a marker line so the mutation is byte-
+	// distinct from the canonical content (idempotent across re-runs).
+	mutated := append(append([]byte(nil), canonical...), []byte("\n// rotated-credential-marker\n")...)
+	if err := os.WriteFile(target, mutated, 0o600); err != nil {
+		t.Fatalf("sc4 autoclaim rotate: mutate on-disk bytes at %s: %v",
+			target, err)
+	}
+
+	// Confirm the mutation produced a byte-distinct file.
+	if bytes.Equal(mutated, canonical) {
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — " +
+			"on-disk mutation produced identical bytes; the rotated-credential " +
+			"scenario cannot be exercised. Append marker should have made the " +
+			"bytes distinct; investigate the helper's append path.")
+	}
+
+	// --- Step 3: second hydrate. Engine sees an existing file whose
+	// path matches a state.adapter.files Target. POST-W5-03: Classify
+	// returns CollisionOwnedByCurrent; engine overwrites; exit 0.
+	// PRE-W5-03: Classify returned CollisionExistsUnowned; Cascade ran;
+	// outcome.Identical was false (on-disk mutated bytes != canonical);
+	// engine returned exit 7. ---
+	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode,
+		"--output", output,
+	)
+	code2, runErr2 := phase7StripExitErr(err2)
+	if runErr2 != nil {
+		t.Fatalf("sc4 autoclaim rotate: second hydrate exec error: %v\nstdout=%s\nstderr=%s",
+			runErr2, stdout2, stderr2)
+	}
+	if code2 == 7 {
+		t.Fatalf("sc4 autoclaim rotate: second hydrate exit 7 (CollisionRefuse) — "+
+			"W5-03 CR-03 fix is NOT effective.\n"+
+			"This is the load-bearing failure mode the W5-03 plan closed: pre-W5-03 "+
+			"Classify compared entry.Target (workspace-relative) against finalPath "+
+			"(absolute) and never matched, falling into CollisionExistsUnowned + "+
+			"Cascade refusal. Post-W5-03 Classify normalizes the path comparison and "+
+			"returns CollisionOwnedByCurrent → engine overwrites. An exit 7 here "+
+			"means the W5-03 fix was reverted or wired wrong. Check "+
+			"internal/cli/extract/autoclaim.go:Classify (signature + filepath.Join "+
+			"normalization) and internal/cli/hydrate/wiring.go:213 (Classify call "+
+			"site must pass achDir).\nstdout=%s\nstderr=%s",
+			stdout2, stderr2)
+	}
+	if code2 != 0 {
+		t.Fatalf("sc4 autoclaim rotate: second hydrate exit %d (want 0)\n"+
+			"stdout=%s\nstderr=%s",
+			code2, stdout2, stderr2)
+	}
+
+	// Verify the engine actually overwrote the mutated bytes back to
+	// the canonical form. If the file still carries the rotated-
+	// credential marker, the engine returned exit 0 but didn't follow
+	// through on the write — that would be a different bug than CR-03
+	// (likely a W5-01 wiring regression).
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: read after second hydrate: %v", err)
+	}
+	if bytes.Contains(after, []byte("rotated-credential-marker")) {
+		t.Errorf("sc4 autoclaim rotate: second hydrate exited 0 but did NOT overwrite "+
+			"the mutated bytes — the rotated-credential marker is still present.\n"+
+			"This is not a CR-03 regression but a W5-01 wiring regression: the "+
+			"engine classified the file as owned + skipped WriteAtomic. Re-check "+
+			"internal/cli/hydrate/wiring.go:240 — the WriteAtomic call MUST fire "+
+			"unconditionally after the Classify OwnedByCurrent branch (no\n"+
+			"`if outcome.Identical` guard).\n"+
+			"file=%s", after)
+	}
+
+	// Also re-assert mode 0o600 — the rotated-credential overwrite path
+	// must preserve the W5-02 mode contract. WriteAtomic is called with
+	// the same 0o600 mode parameter as the initial write; if a future
+	// regression changed the rewrite path to a non-WriteAtomic write,
+	// the mode would drop to 0o644 (T-07-W5-02-05 silent regression).
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: stat after second hydrate: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("sc4 autoclaim rotate: rotated-credential overwrite produced mode %o "+
+			"(want %o) — W5-02 CR-01 mitigation regressed on the rotate path.",
+			got, 0o600)
 	}
 }
