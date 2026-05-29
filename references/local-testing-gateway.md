@@ -43,8 +43,21 @@ To apply or update the gateway manually:
 kubectl apply -f test/e2e/fixtures/ach-local-gateway.yaml
 ```
 
-### Starting the Port-Forward
-To expose the entire platform on your host machine, run a **single port-forward**:
+### Reaching the Gateway on `localhost:8080`
+
+The gateway Service is **`type: NodePort` (nodePort `30080`)** and
+`scripts/kind-config.yaml` publishes it via an `extraPortMapping`
+(hostPort `8080` → node containerPort `30080`). So on any cluster created
+with the current kind-config, the whole platform is reachable at
+`http://localhost:8080` **with no port-forward** — the unified SSO +
+`/platform` + `/content` + `/v1` paths all route through nginx.
+
+> The `extraPortMapping` only binds at `kind create`. A cluster created
+> **before** this change won't have it — recreate it
+> (`make cluster-down && make cluster-up`) to publish `:8080`, or use the
+> port-forward fallback below in the meantime.
+
+**Fallback (cluster without the mapping):**
 ```bash
 kubectl -n ach-system port-forward svc/ach-local-gateway 8080:80
 ```

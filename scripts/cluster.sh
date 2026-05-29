@@ -342,18 +342,31 @@ hydrate_ach() {
   # never gets to apply the CR. Instead, install without --wait,
   # then run hydrate_fixtures, then explicitly wait for rollouts.
   local helm_rc=0
+  # image.rebuildId is set to a per-build timestamp so the
+  # ach.ackstorm.ai/rebuild-id pod annotation changes on every run; that
+  # makes `helm upgrade` roll EVERY ach Deployment onto the freshly
+  # kind-loaded image in a single transaction. Without it, the fixed
+  # :e2e tag + pullPolicy=IfNotPresent render a byte-identical spec and
+  # Helm leaves the stale pods running (a code change looks deployed but
+  # the old container keeps serving). --set-string keeps the numeric
+  # timestamp a string so the template's `quote` is well-defined.
   helm upgrade --install ach deploy/helm/ach \
     --namespace ach-system \
     --values "${VALUES_DIR}/ach.values.yaml" \
     --set "image.repo=${ACH_IMAGE_REPO}" \
     --set "image.tag=${ACH_IMAGE_TAG}" \
-    --set "image.pullPolicy=IfNotPresent" || helm_rc=$?
+    --set "image.pullPolicy=IfNotPresent" \
+    --set-string "image.rebuildId=$(date +%s)" || helm_rc=$?
   if [ "${helm_rc}" -ne 0 ]; then
     echo "[cluster.sh] ach helm install failed (rc=${helm_rc}) — dumping pods for forensics:" >&2
     kubectl -n ach-system get pods >&2 || true
     kubectl -n ach-system describe pods >&2 || true
     return "${helm_rc}"
   fi
+  # NOTE: the pod roll onto the rebuilt image is driven by image.rebuildId
+  # above (the ach.ackstorm.ai/rebuild-id annotation), so the upgrade
+  # itself recreates the pods — no separate `kubectl rollout restart`
+  # needed. wait_ach (after hydrate_fixtures) blocks on readiness.
 }
 
 wait_ach() {

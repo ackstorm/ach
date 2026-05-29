@@ -3,11 +3,22 @@
 # Single-node cluster pinned to kindest/node:v1.31.0 — this matches the
 # envtest k8s version (suite_test.go uses ENVTEST_K8S_VERSION=1.31)
 # so the envtest pass and the kind pass share the same control-plane
-# minor. No extraPortMappings — the metrics endpoint is reached via
-# `kubectl port-forward`, not host-published.
+# minor.
+#
+# extraPortMappings publishes the unified local gateway on host
+# http://localhost:8080: hostPort 8080 -> node containerPort 30080 ->
+# Service ach-local-gateway (type NodePort, nodePort 30080) -> nginx
+# :8080. This removes the need for a manual
+# `kubectl port-forward svc/ach-local-gateway 8080:80` to drive the
+# SSO + /platform + /content + /v1 paths. (Metrics endpoints are still
+# reached via `kubectl port-forward`, not host-published.)
 apiVersion: kind.x-k8s.io/v1alpha4
 kind: Cluster
 name: ach-e2e
 nodes:
   - role: control-plane
     image: kindest/node:v1.31.0
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
