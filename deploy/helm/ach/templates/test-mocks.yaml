@@ -149,6 +149,14 @@ spec:
     - name: http
       port: 80
       targetPort: 9090
+{{- end }}
+{{/*
+  ach-mcp-echo is gated on its OWN toggle (testMocks.mcpEcho.enabled),
+  independent of the parent testMocks.enabled. The e2e suite needs the
+  JWT-validating echo backend WITHOUT the mock-litellm / mock-mcp pair
+  (it drives the real LiteLLM), so enabling testMocks.enabled just to get
+  mcp-echo would pull two unused mocks (and their ImagePullBackOff noise).
+*/}}
 {{- if .Values.testMocks.mcpEcho.enabled }}
 ---
 apiVersion: apps/v1
@@ -227,5 +235,4 @@ spec:
     - name: http
       port: 80
       targetPort: 9090
-{{- end }}
 {{- end }}
