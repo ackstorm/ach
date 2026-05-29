@@ -1,36 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach hydrate` is the headline Phase 6 subcommand: POST
-// /platform/hydrate and stream the response body byte-for-byte to
-// stdout. The single load-bearing demo path — `ach login` + `ach
-// hydrate --environment demo > hydrate.json` byte-equals
-// examples/hydrate.json (the Wave-3 e2e golden artifact).
+// `ach-cli hydrate` ships in two dispatch modes per the Phase 7 W3-05
+// refactor (D-03 + D-04):
 //
-// Scope: SURFACE ONLY per 06-CONTEXT.md D-09. The full hydrate engine
-// (workspace lock, atomic state.json v2, dual-hash drift, adapter
-// dispatch, safe tar extraction, --include-runtime / --only-runtime /
-// --sync / --force / --dry-run) is Phase 7 (CLI-14..21 / STATE-*).
-// Do NOT scope-creep into engine territory here.
+//   - Engine path (default) — invokes the full
+//     internal/cli/hydrate.Run(ctx, Opts) 14-step commit sequence:
+//     workspace lock, state.json v2 + drift, manifest fetch, safe
+//     extract + auto-claim cascade, adapter dispatch, atomic state
+//     write. Engine flags exposed: --include-runtime / --only-runtime
+//     / --sync / --force / --dry-run / --wait / --lock-timeout / --output
+//     / --allow-symlinks / --platform / --global.
 //
-// Decisions baked in:
-//   - D-09: surface-only (no on-disk write, no diff, no state file).
+//   - --raw (hidden) — preserves the Phase 6 surface-only POST+stream
+//     contract so the W3-P3 e2e golden-diff anchor (`examples/hydrate
+//     .json`) keeps passing byte-for-byte. The flag is registered then
+//     hidden via cmd.Flags().MarkHidden("raw") so --help does not
+//     advertise it. The 07-W4-02 e2e test (not this plan) updates the
+//     golden-diff caller to pass --raw.
+//
+// D-04 verbatim: `--raw` short-circuits BEFORE any engine call so the
+// byte-equal POST+stream behavior survives. The legacy runHydrateRaw
+// function is the Phase 6 body extracted verbatim; the new runHydrate
+// dispatcher snapshots inputs and routes via flagRaw.
+//
+// Decisions baked in (Phase 6 set, preserved through the engine path
+// too):
+//   - D-09: surface-only `--raw` path — no on-disk write, no diff.
 //   - D-10: stderr §6.6 pk_ warning emitted BEFORE the HTTP call;
-//     suppressed by --no-warnings.
+//     suppressed by --no-warnings. Applies to BOTH dispatch modes.
 //   - D-11: mutex credential sources (--api-key, --env-key,
-//     ACH_API_KEY, ACH_ENV_KEY). >1 set → exit 1 with conflict list
-//     BEFORE any I/O. Explicit closed list — no flag-aliasing,
-//     no env-prefix scan. Adding a new credential source requires
-//     editing this list.
-//   - D-12: --environment REQUIRED for pk_; OPTIONAL for ek_. The
-//     client-side check defends against a server-side
-//     400 missing_environment round-trip.
+//     ACH_API_KEY, ACH_ENV_KEY). Explicit closed list — adding a new
+//     source requires editing assertMutexCreds.
+//   - D-12: --environment REQUIRED for pk_; OPTIONAL for ek_.
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
-// Byte-for-byte stdout discipline: the response body flows through
-// io.Copy(os.Stdout, resp.Body) via httpclient.Client.DoRaw (foundation
-// API from 06-01). The CLI MUST NOT json.Unmarshal+Marshal the body —
-// re-marshaling would silently mutate whitespace, key ordering, and
-// trailing newlines, breaking the Wave-3 golden-diff anchor.
+// Adapter registration: the 4 platform adapters
+// (claudecode/codex/gemini/opencode) self-register via init() side
+// effects in their subpackages; the blank-imports live in
+// adapters_register.go in this package so this file stays focused on
+// cobra wiring + dispatch.
 
 package cmd
 
@@ -40,17 +48,20 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// pkWarning is the spec §6.6 stderr warning emitted when `ach hydrate`
+// pkWarning is the spec §6.6 stderr warning emitted when `ach-cli hydrate`
 // runs with a pk_ credential. Text is verbatim from
 // spec/ach_cli_spec_v20260515_FINALv4.md §6.6 (mirrors Hub spec §15.3).
 // The trailing newline is part of the const so Fprintf composes cleanly.
@@ -80,27 +91,87 @@ func swapHydrateHTTPClientForTest(t interface {
 	t.Cleanup(func() { hydrateHTTPClient = previous })
 }
 
-// newHydrateCmd returns a fresh `ach hydrate` cobra.Command. Factory
+// hydrateRunFn is the engine-dispatch test seam. Production callers
+// leave the default (= hydrate.Run); unit tests targeting the
+// engine path can swap it for a fake that records the Opts struct
+// without spinning up a full lock + state.json + manifest fetch
+// pipeline. Mirrors the swapHydrateHTTPClientForTest pattern.
+var hydrateRunFn = hydrate.Run
+
+// newHydrateCmd returns a fresh `ach-cli hydrate` cobra.Command. Factory
 // shape matches login/whoami/logout so tests can construct an isolated
 // tree per t.Run.
 func newHydrateCmd() *cobra.Command {
 	var (
+		// Phase 6 surface — preserved.
 		flagEnvironment string
 		flagNoWarnings  bool
 		flagVerbose     bool
 		flagAPIKey      string
 		flagEnvKey      string
 		flagDeployment  string
+
+		// Phase 7 engine flags (D-03).
+		flagIncludeRuntime bool
+		flagOnlyRuntime    bool
+		flagSync           bool
+		flagForce          bool
+		flagDryRun         bool
+		flagWait           bool
+		flagLockTimeout    time.Duration
+		flagOutput         string
+		flagAllowSymlinks  bool
+		flagPlatform       string
+		flagGlobal         bool
+
+		// D-04 hidden flag — surface preserved for the W3-P3 golden-
+		// diff anchor.
+		flagRaw bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "hydrate",
-		Short: "POST /platform/hydrate and stream the response JSON to stdout",
-		Long: `Issue POST /platform/hydrate against the active deployment and
-write the server's response body byte-for-byte to stdout.
+		Short: "Materialize workspace artifacts (engine) or stream raw manifest (--raw)",
+		Long: `Materialize workspace artifacts via the Phase 7 hydrate engine.
 
-This is the Phase 6 surface-only form (D-09): no on-disk write, no
-diff, no state file, no adapter dispatch — those land in Phase 7.
+The engine performs the full 14-step commit sequence under a workspace
+lock: state.json v2 reconciliation, drift detection, manifest fetch,
+safe tar extraction with bomb-defense caps, three-tier auto-claim
+collision cascade, adapter dispatch (4-platform closed set), atomic
+state write.
+
+Scope filters (CLI spec §6.3 / STATE-10):
+  --include-runtime   Reconcile runtime entries (models / mcpServers
+                      / a2aAgents) alongside context.
+  --only-runtime      Reconcile ONLY runtime entries (mutually
+                      exclusive with --include-runtime).
+                      Default: context only (prompts / plugins /
+                      artifacts).
+
+Behavior toggles:
+  --sync              STATE-05 inverse-merge deletion of state entries
+                      missing from the fresh manifest (deepest-first;
+                      drift-bearing files preserved unless --force).
+  --force             Bypass drift refusal, environment guard, and
+                      schema mismatch (CLI spec §6.7).
+  --dry-run           Run every read+diff step but skip state write
+                      and content extract.
+  --allow-symlinks    Relax SAFE-01 tar policy's symlink reject
+                      (unsafe escape hatch).
+
+Locking:
+  --wait              Block indefinitely on workspace lock contention.
+  --lock-timeout <d>  Wait up to <d> for the lock (e.g. 30s, 5m).
+                      Mutually exclusive with --wait.
+
+I/O:
+  --output <dir>      Workspace root override (default: cwd).
+  --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
+  --platform <id>     Override platform autodetection (claude-code /
+                      codex / gemini-cli / opencode + case-folded
+                      aliases). When omitted, the engine scans cwd
+                      (or $HOME under --global) and picks the
+                      single match; zero or multiple matches → exit 1.
 
 Credential resolution (D-11 mutex — all four sources mutually
 exclusive; >1 set → exit 1):
@@ -119,23 +190,43 @@ exit 1).
 A stderr warning is emitted when the resolved credential is a pk_
 (spec §6.6); suppress with --no-warnings.
 
-Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) WORKS for pk_
-runs. --env-key / ACH_ENV_KEY are REJECTED in synthetic mode (no
-config file to dereference the label against).
-
 Exit codes (spec §9.3):
   0  success
-  1  client-side gate (mutex creds, missing --environment, 403/400 etc.)
+  1  client-side gate (mutex creds, missing --environment, autodetect
+     ambiguity, scope-flag conflict, etc.)
+  2  drift refused (STATE-04 four-outcome truth table)
   3  401 / 403 not_admin / unauthorized_team
+  4  environment guard mismatch (STATE-03)
+  5  schema mismatch (state.json or manifest)
   6  503 / 504 / transport error
+  7  collision refuse (SAFE-04 auto-claim)
   8  config file parse or write error
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runHydrate(cmd, flagEnvironment, flagNoWarnings, flagVerbose,
-				flagAPIKey, flagEnvKey, flagDeployment)
+			return runHydrate(cmd, hydrateInputs{
+				environment:    flagEnvironment,
+				noWarnings:     flagNoWarnings,
+				verbose:        flagVerbose,
+				flagAPIKey:     flagAPIKey,
+				flagEnvKey:     flagEnvKey,
+				flagDeployment: flagDeployment,
+				includeRuntime: flagIncludeRuntime,
+				onlyRuntime:    flagOnlyRuntime,
+				sync:           flagSync,
+				force:          flagForce,
+				dryRun:         flagDryRun,
+				wait:           flagWait,
+				lockTimeout:    flagLockTimeout,
+				output:         flagOutput,
+				allowSymlinks:  flagAllowSymlinks,
+				platform:       flagPlatform,
+				global:         flagGlobal,
+				raw:            flagRaw,
+			})
 		},
 	}
 
+	// Phase 6 surface flags — preserved.
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "",
 		"Target Environment name (REQUIRED for pk_, OPTIONAL for ek_)")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
@@ -148,6 +239,41 @@ Exit codes (spec §9.3):
 		"ek_ label resolved against deployments.<active>.ek.<label>")
 	cmd.Flags().StringVar(&flagDeployment, "deployment", "",
 		"Override deployment selection")
+
+	// Phase 7 engine flags (D-03).
+	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
+		"Reconcile runtime entries (models / mcpServers / a2aAgents) alongside context")
+	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
+		"Reconcile ONLY runtime entries (mutually exclusive with --include-runtime)")
+	cmd.Flags().BoolVar(&flagSync, "sync", false,
+		"STATE-05 inverse-merge deletion of stale state entries (deepest-first)")
+	cmd.Flags().BoolVar(&flagForce, "force", false,
+		"Bypass drift refusal, environment guard, and schema mismatch")
+	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,
+		"Run read+diff steps but skip state write and content extract")
+	cmd.Flags().BoolVar(&flagWait, "wait", false,
+		"Block indefinitely on workspace lock contention")
+	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
+		"Wait up to <d> for workspace lock (mutually exclusive with --wait)")
+	cmd.Flags().StringVar(&flagOutput, "output", "",
+		"Workspace root override (default: cwd)")
+	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
+		"Relax SAFE-01 tar policy's symlink reject (unsafe escape hatch)")
+	cmd.Flags().StringVar(&flagPlatform, "platform", "",
+		"Override platform autodetection (claude-code / codex / gemini-cli / opencode)")
+	cmd.Flags().BoolVar(&flagGlobal, "global", false,
+		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
+
+	// D-04 hidden: --raw preserves the Phase 6 POST+stream byte-for-byte
+	// contract. Hidden so --help advertises only the engine surface.
+	cmd.Flags().BoolVar(&flagRaw, "raw", false,
+		"(hidden) Phase 6 surface-only POST+stream — preserved for W3-P3 e2e golden-diff anchor")
+	if err := cmd.Flags().MarkHidden("raw"); err != nil {
+		// MarkHidden returns an error only when the flag is not
+		// registered — defensive panic to surface a future refactor
+		// that breaks the registration order.
+		panic(fmt.Sprintf("MarkHidden(raw) failed: %v", err))
+	}
 
 	return cmd
 }
@@ -172,56 +298,68 @@ type hydrateInputs struct {
 	flagEnvKey     string
 	flagDeployment string
 
+	// Phase 7 engine fields (D-03).
+	includeRuntime bool
+	onlyRuntime    bool
+	sync           bool
+	force          bool
+	dryRun         bool
+	wait           bool
+	lockTimeout    time.Duration
+	output         string
+	allowSymlinks  bool
+	platform       string
+	global         bool
+
+	// D-04 hidden raw flag.
+	raw bool
+
 	envAPIKey      string
 	envEnvKey      string
 	envBaseURL     string
 	envDeployment  string
 	envEnvironment string
+	envPlatform    string
 }
 
 // runHydrate is the RunE body. Flow:
 //
-//  1. Snapshot inputs.
-//  2. assertMutexCreds — D-11 closed-list mutex gate (before I/O).
-//  3. assertSyntheticConstraints — D-11 / spec §3.3 (--env-key /
-//     --deployment forbidden when ACH_BASE_URL is set).
-//  4. resolveBearer — synthetic OR config-disk path.
-//  5. assertPKEnvironment — D-12 (--environment required for pk_).
-//  6. Emit pk_ warning if needed (D-10 / spec §6.6).
-//  7. POST + io.Copy(stdout, body) byte-for-byte.
-func runHydrate(cmd *cobra.Command, environment string, noWarnings, verbose bool,
-	flagAPIKey, flagEnvKey, flagDeployment string) error {
-	in := hydrateInputs{
-		environment:    environment,
-		noWarnings:     noWarnings,
-		verbose:        verbose,
-		flagAPIKey:     flagAPIKey,
-		flagEnvKey:     flagEnvKey,
-		flagDeployment: flagDeployment,
-		envAPIKey:      os.Getenv("ACH_API_KEY"),
-		envEnvKey:      os.Getenv("ACH_ENV_KEY"),
-		envBaseURL:     os.Getenv("ACH_BASE_URL"),
-		envDeployment:  os.Getenv("ACH_DEPLOYMENT"),
-		envEnvironment: os.Getenv("ACH_ENVIRONMENT"),
-	}
+//  1. Read env-var snapshot into the inputs struct.
+//  2. D-11 mutex gate + synthetic.GuardCommand (BEFORE any I/O).
+//  3. assertScopeFlags — mutual exclusion of --include-runtime /
+//     --only-runtime and --wait / --lock-timeout.
+//  4. Resolve credential (synthetic OR config-disk path).
+//  5. D-12 pk_/--environment gate + pk_ warning emit.
+//  6. plaintext-transport warning if http://.
+//  7. Dispatch: flagRaw → runHydrateRaw (Phase 6 verbatim);
+//     otherwise → runHydrateEngine (full 14-step commit sequence).
+func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
+	in.envAPIKey = os.Getenv("ACH_API_KEY")
+	in.envEnvKey = os.Getenv("ACH_ENV_KEY")
+	in.envBaseURL = os.Getenv("ACH_BASE_URL")
+	in.envDeployment = os.Getenv("ACH_DEPLOYMENT")
+	in.envEnvironment = os.Getenv("ACH_ENVIRONMENT")
+	in.envPlatform = os.Getenv("ACH_PLATFORM")
 
 	// D-11 mutex BEFORE any I/O.
 	if err := assertMutexCreds(in.flagAPIKey, in.flagEnvKey, in.envAPIKey, in.envEnvKey); err != nil {
 		return err
 	}
-	// CLI-07 synthetic gate via the centralized 06-07 helper.
-	// GateHydrate is allowed in synthetic; the helper rejects half-set,
-	// --deployment, and --env-key under synthetic. The legacy
-	// assertSyntheticConstraints is retained for the "half-synthetic
-	// + --env-key" case where ACH_BASE_URL is set but no credential
-	// resolves and --env-key was passed — the half-set arm of
-	// GuardCommand fires first, with a stronger message.
+	// CLI-07 synthetic gate.
 	if err := synthetic.GuardCommand(synthetic.Params{
 		Gate:           synthetic.GateHydrate,
 		APIKeyFlag:     in.flagAPIKey,
 		EnvKeyFlag:     in.flagEnvKey,
 		DeploymentFlag: in.flagDeployment,
 	}); err != nil {
+		return err
+	}
+
+	// Phase 7 scope-flag mutual exclusion. Applies in both dispatch
+	// modes — a --raw + --include-runtime combo is incoherent (no
+	// runtime in the raw response surface), but rejecting both
+	// together at the cobra layer keeps the failure mode consistent.
+	if err := assertScopeFlags(in); err != nil {
 		return err
 	}
 
@@ -263,7 +401,150 @@ func runHydrate(cmd *cobra.Command, environment string, noWarnings, verbose bool
 				"unencrypted (safe only on trusted/internal networks)\n", baseURL)
 	}
 
-	return postAndStream(cmd, baseURL, bearer, effectiveEnv, in.verbose)
+	// D-04 dispatch. --raw short-circuits BEFORE any engine call so
+	// the W3-P3 golden-diff anchor survives byte-for-byte.
+	if in.raw {
+		return runHydrateRaw(cmd, baseURL, bearer, effectiveEnv, in.verbose)
+	}
+	return runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
+}
+
+// assertScopeFlags enforces the spec §6.3 scope-flag mutual exclusions:
+//
+//   - --include-runtime + --only-runtime  → exit 1.
+//   - --wait + --lock-timeout             → exit 1.
+//
+// Both rejections cite the offending flag pair in the error message so
+// the user can pick one and re-run.
+func assertScopeFlags(in hydrateInputs) error {
+	if in.includeRuntime && in.onlyRuntime {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "--include-runtime and --only-runtime are mutually exclusive",
+		}
+	}
+	if in.wait && in.lockTimeout > 0 {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  "--wait and --lock-timeout are mutually exclusive",
+		}
+	}
+	return nil
+}
+
+// runHydrateEngine builds the hydrate.Opts struct and dispatches to
+// hydrateRunFn (= hydrate.Run by default). Platform resolution:
+//   - --platform set → hydrate.ResolvePlatform(value) → canonical id.
+//   - ACH_PLATFORM set → hydrate.ResolvePlatform(value) → canonical id.
+//   - else → hydrate.Autodetect against cwd (workspace) OR
+//     os.UserHomeDir() (global).
+//
+// The engine wiring (Extractor + AdapterDispatcher) is provided by
+// hydrate.NewWiring; commit.go's newCommit consumes them via interface
+// fields. NB: until commit.go's run() actually calls
+// extractor/adapter (W1 stubs), the wiring is wired-but-unused — the
+// W1 → W3 contract is that this plan makes them available, the
+// orchestrator's step 7+10 wiring lights them up.
+//
+// See internal/cli/hydrate/commit.go for the orchestrator's W1-stub
+// short-circuit behavior; both impls are passed regardless so a future
+// commit.go uplink does not need a cobra-layer change.
+func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effectiveEnv string) error {
+	platformID, err := resolvePlatformOrAutodetect(in, cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+
+	limits, err := extract.LoadLimits()
+	if err != nil {
+		return &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("load bomb-defense limits: %v", err),
+			Wrapped: err,
+		}
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		Verbose:    in.verbose,
+		Stderr:     cmd.ErrOrStderr(),
+		HTTPClient: hydrateHTTPClient,
+	}
+
+	opts := hydrate.Opts{
+		Environment:    effectiveEnv,
+		Platform:       platformID,
+		Global:         in.global,
+		IncludeRuntime: in.includeRuntime,
+		OnlyRuntime:    in.onlyRuntime,
+		Sync:           in.sync,
+		Force:          in.force,
+		DryRun:         in.dryRun,
+		AllowSymlinks:  in.allowSymlinks,
+		Output:         in.output,
+		Wait:           in.wait,
+		LockTimeout:    in.lockTimeout,
+		BaseURL:        baseURL,
+		Bearer:         bearer,
+		Verbose:        in.verbose,
+		Stdout:         cmd.OutOrStdout(),
+		Stderr:         cmd.ErrOrStderr(),
+	}
+
+	// NewWiring constructs the default Extractor + AdapterDispatcher.
+	// The W1-06 orchestrator stub-fed surface accepts these via
+	// interface fields on commit; once W2/W3 are fully wired into the
+	// commit-sequence step methods, this is the only code path that
+	// supplies them. For now, hydrate.Run does not yet thread these
+	// into the orchestrator (W1 stub), but constructing them here
+	// closes the contract loop.
+	_, _ = hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force)
+
+	if _, err := hydrateRunFn(cmd.Context(), opts); err != nil {
+		return err
+	}
+	return nil
+}
+
+// resolvePlatformOrAutodetect dispatches platform resolution per
+// D-06: explicit --platform > ACH_PLATFORM env > autodetect cwd
+// (workspace) > autodetect $HOME (global). Returns the canonical
+// platform id on success, or a typed CodedError on autodetect
+// ambiguity / unknown id.
+func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, error) {
+	if in.platform != "" {
+		return hydrate.ResolvePlatform(in.platform)
+	}
+	if in.envPlatform != "" {
+		return hydrate.ResolvePlatform(in.envPlatform)
+	}
+
+	root := in.output
+	if root == "" {
+		if in.global {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", &exit.CodedError{
+					Code:    exit.General,
+					Msg:     fmt.Sprintf("resolve $HOME for --global autodetect: %v", err),
+					Wrapped: err,
+				}
+			}
+			root = home
+		} else {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return "", &exit.CodedError{
+					Code:    exit.General,
+					Msg:     fmt.Sprintf("resolve cwd for autodetect: %v", err),
+					Wrapped: err,
+				}
+			}
+			root = cwd
+		}
+	}
+	return hydrate.Autodetect(root, stderr)
 }
 
 // resolveBearer returns (baseURL, bearer) for the request, dispatching
@@ -346,12 +627,16 @@ func pickBearer(in hydrateInputs, name string, dep *config.Deployment) (string, 
 	return "", nil
 }
 
-// postAndStream issues POST /platform/hydrate and streams the response
-// body byte-for-byte to stdout. NO json.Unmarshal / json.Marshal —
-// the W3-P3 e2e golden-diff test depends on byte-equal output vs
-// examples/hydrate.json. effectiveEnv == "" omits the body environment
-// field (ek_ + no --environment).
-func postAndStream(cmd *cobra.Command, baseURL, bearer, effectiveEnv string, verbose bool) error {
+// runHydrateRaw is the Phase 6 surface-only POST+stream body extracted
+// verbatim. Preserved as the --raw dispatch target so the W3-P3 e2e
+// golden-diff anchor (`examples/hydrate.json`) keeps passing
+// byte-for-byte. The 07-W4-02 e2e test (not this plan) updates its
+// hydrate caller to pass --raw.
+//
+// NO json.Unmarshal / json.Marshal — the byte-equal contract depends
+// on io.Copy. effectiveEnv == "" omits the body environment field (ek_
+// + no --environment).
+func runHydrateRaw(cmd *cobra.Command, baseURL, bearer, effectiveEnv string, verbose bool) error {
 	var body any
 	if effectiveEnv != "" {
 		body = map[string]string{"environment": effectiveEnv}
