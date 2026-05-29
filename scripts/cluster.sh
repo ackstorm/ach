@@ -32,7 +32,7 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #                   toolhive) + dex-config.yaml + auth_user_map.py
 #   02-ach/         ach.values.yaml (the ach chart) + secrets/ (secretGenerator)
 #   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo +
-#                   ach-mock-litellm (apply -k, post-ach)
+#                   ach-mock-model (apply -k, post-ach)
 #   04-objects/     kustomize base — all non-Environment ACH CRs (apply -k,
 #                   post-ach; LiteLLMConnection/plugins/prompts/artifacts/BIPs/
 #                   marketplaces) sourced from their real upstreams (option B)
@@ -78,7 +78,7 @@ MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
 # ach-mock LiteLLM-shaped data-plane capture backend. Built + kind-loaded
 # unconditionally by reconcile_ach (e2e always needs it for ek_ tag-injection
 # asserts). The tag MUST match what `make build-image-mock` produces
-# (ach-mock:e2e) and what test/e2e/cluster/03-test-backends/ach-mock-litellm.yaml
+# (ach-mock:e2e) and what test/e2e/cluster/03-test-backends/ach-mock-model.yaml
 # pulls (pullPolicy=IfNotPresent).
 MOCK_IMAGE="${MOCK_IMAGE:-ach-mock:e2e}"
 
@@ -285,9 +285,22 @@ reconcile_litellm() {
     sleep 2
   done
 
-  # 1) Seed Model — points at LiteLLM's openai mock backend, no upstream creds needed.
+  # 1) Seed Model — points at the ach-mock-model echo backend.
   set +e
   local seed_out
+  # /model/new ADDS a deployment on every call (it does NOT update an existing
+  # one), so re-running cluster-sync accumulates stale demo-model deployments
+  # with the old api_base — LiteLLM round-robins onto the broken ones → 404.
+  # Make it idempotent: delete every existing demo-model deployment first, then
+  # create exactly one pointing at ach-mock-model.
+  local mid mk="sk-test-master-key"
+  for mid in $(curl -s http://localhost:4001/v1/model/info \
+        -H "Authorization: Bearer ${mk}" \
+      | jq -r '.data[] | select(.model_name=="demo-model") | .model_info.id'); do
+    curl -s -X POST http://localhost:4001/model/delete \
+      -H "Authorization: Bearer ${mk}" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"${mid}\"}" >/dev/null
+  done
   seed_out="$(curl -s -X POST http://localhost:4001/model/new \
       -H 'Authorization: Bearer sk-test-master-key' \
       -H 'Content-Type: application/json' \
@@ -295,7 +308,7 @@ reconcile_litellm() {
         "model_name": "demo-model",
         "litellm_params": {
           "model": "openai/demo-model",
-          "api_base": "http://localhost:4000/mock",
+          "api_base": "http://ach-mock-model.ach-system.svc/v1",
           "api_key": "sk-mock"
         }
       }' 2>&1)"
@@ -334,7 +347,7 @@ reconcile_litellm() {
         "agent_name": "demo-agent",
         "agent_card_params": {
           "name": "demo-agent",
-          "url": "http://localhost:4000/mock-agent"
+          "url": "http://ach-mock-a2a.ach-system.svc/"
         }
       }' 2>&1)"
   echo "[cluster.sh]   a2a agent 'demo-agent' → ${seed_out}"
@@ -397,7 +410,7 @@ reconcile_ach() {
 
   # Build + kind-load the ach-mock LiteLLM-shaped capture backend (ach-mock:e2e).
   # Applied unconditionally as a stage-03 test backend
-  # (test/e2e/cluster/03-test-backends/ach-mock-litellm.yaml), same rationale as
+  # (test/e2e/cluster/03-test-backends/ach-mock-model.yaml), same rationale as
   # mcp-echo above (the :e2e tag is never pushed to a registry).
   echo "[cluster.sh] building ${MOCK_IMAGE}..."
   make build-image-mock
@@ -497,7 +510,7 @@ reconcile_fixtures() {
     echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
   fi
 
-  # Stage 03 — test backends: nginx gateway + ach-mcp-echo + ach-mock-litellm
+  # Stage 03 — test backends: nginx gateway + ach-mcp-echo + ach-mock-model
   # (post-ach; the gateway's static proxy_pass upstreams and mcp-echo's JWKS
   # verify both need the ach Services already up).
   echo "[cluster.sh] applying test backends (stage 03)..."
@@ -544,7 +557,8 @@ verify_all() {
   echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
   kubectl -n ach-system rollout status deploy/ach-mcp-echo     --timeout="${to}"
-  kubectl -n ach-system rollout status deploy/ach-mock-litellm --timeout="${to}"
+  kubectl -n ach-system rollout status deploy/ach-mock-model   --timeout="${to}"
+  kubectl -n ach-system rollout status deploy/ach-mock-a2a     --timeout="${to}"
   kubectl -n ach-system wait --for=condition=Ready           --timeout="${to}" litellmconnection/default
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" plugin/caveman
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/claude-code-system-prompt
@@ -564,8 +578,8 @@ reconcile_all() {
   reconcile_dex
   reconcile_litellm
   reconcile_toolhive
-  reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-litellm (Task 2)
-  reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-litellm, stage 03)
+  reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a (Task 2)
+  reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a, stage 03)
   reconcile_objects      # stage 04
   reconcile_environments # stage 05
   wait_ach
