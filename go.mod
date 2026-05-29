@@ -8,6 +8,7 @@ godebug default=go1.23
 
 require (
 	cloud.google.com/go/storage v1.62.2
+	github.com/BurntSushi/toml v1.6.0
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.18
