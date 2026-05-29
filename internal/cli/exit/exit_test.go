@@ -108,3 +108,49 @@ func TestMapServerError_504_Network(t *testing.T) {
 		t.Errorf("MapServerError(504) = %d, want Network (6)", got)
 	}
 }
+
+// TestPhase7Codes asserts the four Phase 7 additive constants from
+// 07-W1-01 land at the §9.3 row numbers — Drift=2, EnvironmentMismatch=4,
+// SchemaMismatch=5, CollisionRefuse=7. The expected values are spelled
+// out as literal ints (not constants) so a future renumber of either
+// the typed constants OR this test trips the gate at the call site.
+func TestPhase7Codes(t *testing.T) {
+	cases := []struct {
+		name string
+		got  exit.Code
+		want int
+	}{
+		{"Drift", exit.Drift, 2},
+		{"EnvironmentMismatch", exit.EnvironmentMismatch, 4},
+		{"SchemaMismatch", exit.SchemaMismatch, 5},
+		{"CollisionRefuse", exit.CollisionRefuse, 7},
+	}
+	for _, tc := range cases {
+		if int(tc.got) != tc.want {
+			t.Errorf("exit.%s = %d, want %d", tc.name, int(tc.got), tc.want)
+		}
+	}
+}
+
+// TestPhase6CodesUnchanged is the regression gate against accidental
+// renumbering of the Phase 6 set when Phase 7 codes were slotted in.
+// Same value assertions as TestExitCodeConstants but factored as a
+// named gate so the intent is obvious in `go test -v` output.
+func TestPhase6CodesUnchanged(t *testing.T) {
+	cases := []struct {
+		name string
+		got  exit.Code
+		want int
+	}{
+		{"OK", exit.OK, 0},
+		{"General", exit.General, 1},
+		{"AuthN", exit.AuthN, 3},
+		{"Network", exit.Network, 6},
+		{"ConfigFile", exit.ConfigFile, 8},
+	}
+	for _, tc := range cases {
+		if int(tc.got) != tc.want {
+			t.Errorf("exit.%s = %d, want %d (Phase 6 regression)", tc.name, int(tc.got), tc.want)
+		}
+	}
+}

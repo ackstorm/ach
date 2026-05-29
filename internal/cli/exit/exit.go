@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package exit defines the closed exit-code set the CLI emits per CLI
-// spec §9.3. Phase 6 ships codes 0/1/3/6/8 — codes 2 (drift), 4
-// (state mismatch), 5 (schema mismatch), and 7 (local I/O) are
-// hydrate-engine territory (Phase 7) and stay absent here so a future
-// extension is purely additive (no rename, no renumber).
+// spec §9.3. Codes 2 (Drift), 4 (EnvironmentMismatch), 5 (SchemaMismatch),
+// and 7 (CollisionRefuse) are Phase 7 additions per
+// STATE-02/STATE-03/STATE-04/STATE-09/SAFE-04. The Phase 6 set
+// (0/1/3/6/8) is unchanged — every renumber would be a wire-format break.
 //
 // MapServerError is the single chokepoint that translates an HTTP
 // response into an exit code. cmd/ach/main.go calls it once at the
@@ -20,7 +20,8 @@ import (
 // below cannot be silently re-typed.
 type Code int
 
-// §9.3 exit-code matrix (Phase 6 subset).
+// §9.3 exit-code matrix. Phase 6 ships codes 0/1/3/6/8; Phase 7 adds
+// 2/4/5/7 (additive, no renumber).
 const (
 	// OK is success (0).
 	OK Code = 0
@@ -31,14 +32,42 @@ const (
 	// the other arms.
 	General Code = 1
 
+	// Drift (2) — STATE-04 four-outcome truth table: both the
+	// local-edit-preserve and conflict-preserve outcomes surface as
+	// Drift (per D-14/D-16). Hydrate refuses to overwrite on-disk
+	// state that has diverged from `state.json`'s recorded hash,
+	// unless --force is passed. Emitted from the hydrate engine via
+	// *exit.CodedError, never via MapServerError.
+	Drift Code = 2
+
 	// AuthN (3) covers HTTP 401, 403 not_admin, and 403
 	// unauthorized_team. The asymmetric whoami --verify (D-13) also
 	// emits this when a key fails its prefix-specific probe.
 	AuthN Code = 3
 
+	// EnvironmentMismatch (4) — STATE-03 guard. When `state.json`'s
+	// recorded `environment` differs from the current `--environment`
+	// flag in the same <ach-dir>, hydrate aborts with this code (per
+	// CLI spec §8.3) unless --force is passed.
+	EnvironmentMismatch Code = 4
+
+	// SchemaMismatch (5) — two trigger paths, same code:
+	// (a) STATE-09 — the POST /platform/hydrate manifest's
+	//     `schemaVersion` is not "v1alpha1" (CLI spec §6.2);
+	// (b) STATE-02 — the on-disk `state.json` `schemaVersion` is
+	//     not "2" (CLI spec §8.2).
+	// Hydrate aborts before writing any files unless --force is passed.
+	SchemaMismatch Code = 5
+
 	// Network (6) covers transport errors (server unreachable) and
 	// HTTP 503/504 (server admitted unavailability).
 	Network Code = 6
+
+	// CollisionRefuse (7) — SAFE-04. Auto-claim final-rename detects
+	// an existing-unowned target whose bytes differ from the engine's
+	// expected output, and --force is not passed (CLI spec §6.4).
+	// Hydrate refuses to clobber the foreign content.
+	CollisionRefuse Code = 7
 
 	// ConfigFile (8) covers ~/.config/ach/config.yaml parse or
 	// write failures (CLI-02 / D-04). Distinct from General so an
