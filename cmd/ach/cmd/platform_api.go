@@ -80,6 +80,7 @@ type platformAPIConfig struct {
 	AllowlistPath    string
 	BindAddr         string
 	Namespace        string
+	InsecureCookie   bool
 }
 
 func validatePlatformAPIConfig() (*platformAPIConfig, error) {
@@ -130,6 +131,11 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	cfg.AllowlistPath = config.EnvOr("ACH_ADMIN_ALLOWLIST_PATH", "/etc/ach/admins/admins.txt")
 	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8080")
+	// ACH_SSO_INSECURE_COOKIE=1 drops the __Host- prefix + Secure flag
+	// from the SSO state cookie so local HTTP-only kind+Helm fixtures
+	// (ACH_BASE_URL=http://localhost:8080) can complete the SSO
+	// round-trip. Production MUST leave this unset.
+	cfg.InsecureCookie = config.EnvBool("ACH_SSO_INSECURE_COOKIE", false)
 	return cfg, nil
 }
 
@@ -246,6 +252,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Logger:          logger,
 		BaseURL:         cfg.BaseURL,
 		Namespace:       cfg.Namespace,
+		InsecureCookie:  cfg.InsecureCookie,
 	}
 	return out, nil
 }

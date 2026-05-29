@@ -231,14 +231,24 @@ func ResolveActive(f *File, flagDeployment, envDeployment string) (string, *Depl
 // validateDeployments enforces HTTPS-only on every entry. The error
 // names the offending deployment but omits the URL itself (the URL
 // can carry secrets in some pathological misconfigurations).
+//
+// Dev-mode opt-in: when ACH_CLI_INSECURE_DEPLOYMENT_URL=1 is set, http://
+// URLs are also accepted. The flag exists for local kind+Helm fixtures
+// whose ach-local-gateway nginx speaks plain http://localhost:8080.
+// Production CLI invocations MUST leave this unset.
 func validateDeployments(f *File) error {
+	allowHTTP := os.Getenv("ACH_CLI_INSECURE_DEPLOYMENT_URL") == "1"
 	for name, dep := range f.Deployments {
 		if dep == nil {
 			continue
 		}
-		if !strings.HasPrefix(dep.URL, "https://") {
-			return fmt.Errorf("%w: deployment %q (CLI-02 / D-04)", ErrNonHTTPSURL, name)
+		if strings.HasPrefix(dep.URL, "https://") {
+			continue
 		}
+		if allowHTTP && strings.HasPrefix(dep.URL, "http://") {
+			continue
+		}
+		return fmt.Errorf("%w: deployment %q (CLI-02 / D-04)", ErrNonHTTPSURL, name)
 	}
 	return nil
 }

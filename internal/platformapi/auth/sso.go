@@ -99,6 +99,13 @@ type Deps struct {
 	// (defaulting to time.Now); tests inject a fixed clock so the
 	// expires_at column value is deterministic.
 	NowFn func() time.Time
+
+	// InsecureCookie, when true, drops the __Host- prefix and Secure flag
+	// from the SSO state cookie so local HTTP-only fixtures (kind+Helm
+	// with ACH_BASE_URL=http://localhost:8080) can complete the SSO
+	// round-trip via curl. Production MUST leave this false — sourced
+	// from ACH_SSO_INSECURE_COOKIE in cmd/ach/cmd/platform_api.go.
+	InsecureCookie bool
 }
 
 // IDTokenVerifier abstracts oidc.IDTokenVerifier so unit tests can
@@ -178,8 +185,11 @@ func LoginHandler(deps Deps) http.HandlerFunc {
 		challengeSum := sha256.Sum256([]byte(verifier))
 		challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
 
-		// Step 3: persist (state, verifier) in the __Host-ach_sso cookie.
-		setSSOCookie(w, state, verifier)
+		// Step 3: persist (state, verifier) in the SSO state cookie.
+		// Default: __Host-ach_sso with Secure=true. Dev-mode (deps.
+		// InsecureCookie=true via ACH_SSO_INSECURE_COOKIE): ach_sso with
+		// Secure=false so local HTTP fixtures can round-trip.
+		setSSOCookie(w, state, verifier, deps.InsecureCookie)
 
 		// Step 4: build Dex authorize URL with PKCE params and redirect.
 		// urlState includes the optional session_id suffix (D-20);
@@ -261,8 +271,8 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 
 		// Step 1: read state cookie and clear it BEFORE further processing
 		// so single-use semantics hold even on the failure branches (BLK-05).
-		state, verifier, cookieErr := readSSOCookie(r)
-		clearSSOCookie(w)
+		state, verifier, cookieErr := readSSOCookie(r, deps.InsecureCookie)
+		clearSSOCookie(w, deps.InsecureCookie)
 		if cookieErr != nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionSSOLogin,

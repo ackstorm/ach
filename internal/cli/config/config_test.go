@@ -171,6 +171,33 @@ func TestLoad_RefuseNonHTTPS(t *testing.T) {
 	}
 }
 
+// TestLoad_InsecureDeploymentURLOptIn asserts that
+// ACH_CLI_INSECURE_DEPLOYMENT_URL=1 makes Load accept http:// URLs.
+// Defends against accidental drift: production code paths MUST keep
+// rejecting http:// when the env var is unset.
+func TestLoad_InsecureDeploymentURLOptIn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("default: dev\ndeployments:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Default (env unset) — must reject.
+	t.Setenv("ACH_CLI_INSECURE_DEPLOYMENT_URL", "")
+	if _, err := config.Load(path); !errors.Is(err, config.ErrNonHTTPSURL) {
+		t.Fatalf("env unset: Load returned %v, want ErrNonHTTPSURL", err)
+	}
+
+	// Opt-in — must accept.
+	t.Setenv("ACH_CLI_INSECURE_DEPLOYMENT_URL", "1")
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("opt-in: Load returned %v, want nil", err)
+	}
+	if f.Deployments["dev"].URL != "http://localhost:8080" {
+		t.Errorf("opt-in: URL not preserved; got %q", f.Deployments["dev"].URL)
+	}
+}
+
 // TestMask asserts Test 7: the three branches of Mask.
 func TestMask(t *testing.T) {
 	cases := []struct {

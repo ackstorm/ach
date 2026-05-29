@@ -68,7 +68,7 @@ func (io_Discard) Write(p []byte) (int, error) { return len(p), nil }
 // 10-minute Max-Age — the invariant the __Host- prefix requires.
 func TestSSOCookieSetShape(t *testing.T) {
 	w := httptest.NewRecorder()
-	setSSOCookie(w, "s1", "v1")
+	setSSOCookie(w, "s1", "v1", false)
 
 	headers := w.Result().Header.Values("Set-Cookie")
 	if len(headers) != 1 {
@@ -101,18 +101,85 @@ func TestSSOCookieSetShape(t *testing.T) {
 	}
 }
 
+// TestSSOCookieInsecureShape verifies the dev-mode (insecure=true) cookie
+// drops the __Host- prefix and the Secure flag — the two attributes that
+// make local http://localhost SSO unrecoverable under curl. Path, HttpOnly,
+// SameSite, and Max-Age stay identical.
+func TestSSOCookieInsecureShape(t *testing.T) {
+	w := httptest.NewRecorder()
+	setSSOCookie(w, "s1", "v1", true)
+
+	headers := w.Result().Header.Values("Set-Cookie")
+	if len(headers) != 1 {
+		t.Fatalf("expected exactly 1 Set-Cookie header, got %d: %v", len(headers), headers)
+	}
+	got := headers[0]
+	if !strings.HasPrefix(got, "ach_sso=") {
+		t.Errorf("expected cookie name ach_sso, got header: %q", got)
+	}
+	if strings.HasPrefix(got, "__Host-") {
+		t.Errorf("__Host- prefix MUST be absent in insecure mode, got header: %q", got)
+	}
+	// Secure is a bare attribute (no =value) — match on a word boundary to
+	// avoid spurious matches in the value.
+	if strings.Contains(got, "; Secure") || strings.HasSuffix(got, "Secure") {
+		t.Errorf("Secure MUST be absent in insecure mode, got header: %q", got)
+	}
+	if !strings.Contains(got, "Path=/") {
+		t.Errorf("expected Path=/, got header: %q", got)
+	}
+	if !strings.Contains(got, "HttpOnly") {
+		t.Errorf("expected HttpOnly, got header: %q", got)
+	}
+	if !strings.Contains(got, "SameSite=Strict") {
+		t.Errorf("expected SameSite=Strict, got header: %q", got)
+	}
+	if !strings.Contains(got, "Max-Age=600") {
+		t.Errorf("expected Max-Age=600 (10min TTL), got header: %q", got)
+	}
+}
+
+// TestSSOCookieInsecureRoundTrip verifies that the insecure-mode cookie
+// also round-trips state+verifier correctly under setSSOCookie(..., true)
+// + readSSOCookie(req, true).
+func TestSSOCookieInsecureRoundTrip(t *testing.T) {
+	w := httptest.NewRecorder()
+	setSSOCookie(w, "state-insec", "verifier-insec", true)
+
+	cookie := w.Result().Cookies()[0]
+	if cookie.Name != cookieNameInsecure {
+		t.Fatalf("insecure cookie name: got %q, want %q", cookie.Name, cookieNameInsecure)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+
+	state, verifier, err := readSSOCookie(req, true)
+	if err != nil {
+		t.Fatalf("readSSOCookie(req, true): unexpected error: %v", err)
+	}
+	if state != "state-insec" || verifier != "verifier-insec" {
+		t.Errorf("round-trip: got (%q, %q), want (state-insec, verifier-insec)", state, verifier)
+	}
+
+	// readSSOCookie(req, false) MUST NOT find the insecure-named cookie —
+	// the name selector is what decides which cookie applies in each mode.
+	if _, _, err := readSSOCookie(req, false); !errors.Is(err, ErrCookieMissing) {
+		t.Errorf("readSSOCookie(req, false) on insecure cookie: got %v, want ErrCookieMissing", err)
+	}
+}
+
 // TestSSOCookieRoundTrip verifies that setSSOCookie + readSSOCookie round-trip
 // the (state, verifier) pair faithfully.
 func TestSSOCookieRoundTrip(t *testing.T) {
 	w := httptest.NewRecorder()
-	setSSOCookie(w, "state-value-123", "verifier-value-XYZ_with-special.chars")
+	setSSOCookie(w, "state-value-123", "verifier-value-XYZ_with-special.chars", false)
 
 	// Construct a request carrying the cookie that was just set.
 	cookie := w.Result().Cookies()[0]
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 
-	state, verifier, err := readSSOCookie(req)
+	state, verifier, err := readSSOCookie(req, false)
 	if err != nil {
 		t.Fatalf("readSSOCookie: unexpected error: %v", err)
 	}
@@ -128,7 +195,7 @@ func TestSSOCookieRoundTrip(t *testing.T) {
 // when no Cookie header is present on the request.
 func TestSSOCookieMissing(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	state, verifier, err := readSSOCookie(req)
+	state, verifier, err := readSSOCookie(req, false)
 	if !errors.Is(err, ErrCookieMissing) {
 		t.Errorf("err: got %v, want ErrCookieMissing", err)
 	}
@@ -151,8 +218,8 @@ func TestSSOCookieMalformed(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: tc.value})
-			state, verifier, err := readSSOCookie(req)
+			req.AddCookie(&http.Cookie{Name: cookieNameSecure, Value: tc.value})
+			state, verifier, err := readSSOCookie(req, false)
 			if !errors.Is(err, ErrCookieMalformed) {
 				t.Errorf("err: got %v, want ErrCookieMalformed", err)
 			}
@@ -167,7 +234,7 @@ func TestSSOCookieMalformed(t *testing.T) {
 // with Max-Age=0 (deletion semantics) preserving the security attributes.
 func TestSSOCookieClear(t *testing.T) {
 	w := httptest.NewRecorder()
-	clearSSOCookie(w)
+	clearSSOCookie(w, false)
 
 	headers := w.Result().Header.Values("Set-Cookie")
 	if len(headers) != 1 {
@@ -258,12 +325,12 @@ func TestLoginHandlerCookieSet(t *testing.T) {
 	}
 	var ssoCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == cookieName {
+		if c.Name == cookieNameSecure {
 			ssoCookie = c
 		}
 	}
 	if ssoCookie == nil {
-		t.Fatalf("expected %s cookie, got: %v", cookieName, cookies)
+		t.Fatalf("expected %s cookie, got: %v", cookieNameSecure, cookies)
 	}
 	if ssoCookie.Path != "/" {
 		t.Errorf("Path: got %q, want /", ssoCookie.Path)
@@ -334,12 +401,12 @@ func TestLoginHandlerCookiePayloadFormat(t *testing.T) {
 
 	var ssoCookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
-		if c.Name == cookieName {
+		if c.Name == cookieNameSecure {
 			ssoCookie = c
 		}
 	}
 	if ssoCookie == nil {
-		t.Fatalf("%s cookie missing", cookieName)
+		t.Fatalf("%s cookie missing", cookieNameSecure)
 	}
 	raw, err := base64.URLEncoding.DecodeString(ssoCookie.Value)
 	if err != nil {
@@ -717,7 +784,7 @@ func runCallback(t *testing.T, tc *callbackTestCase) *httptest.ResponseRecorder 
 	if !tc.skipCookie && tc.stateCookie != "" {
 		// Construct an explicit cookie via setSSOCookie.
 		w := httptest.NewRecorder()
-		setSSOCookie(w, tc.stateCookie, "verifier-"+tc.stateCookie)
+		setSSOCookie(w, tc.stateCookie, "verifier-"+tc.stateCookie, false)
 		cookieHeader = w.Result().Header.Get("Set-Cookie")
 	}
 
@@ -865,12 +932,12 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	setCookieHeaders := resp.Header.Values("Set-Cookie")
 	foundClear := false
 	for _, h := range setCookieHeaders {
-		if strings.Contains(h, cookieName+"=") && (strings.Contains(h, "Max-Age=0") || strings.Contains(h, "Max-Age=-1")) {
+		if strings.Contains(h, cookieNameSecure+"=") && (strings.Contains(h, "Max-Age=0") || strings.Contains(h, "Max-Age=-1")) {
 			foundClear = true
 		}
 	}
 	if !foundClear {
-		t.Errorf("expected cleared %s cookie in response, got: %v", cookieName, setCookieHeaders)
+		t.Errorf("expected cleared %s cookie in response, got: %v", cookieNameSecure, setCookieHeaders)
 	}
 
 	// Audit event.
@@ -1257,7 +1324,7 @@ func TestCallbackHandler_URLStateEmpty(t *testing.T) {
 	// Build a URL with literal ?state= (empty value, NOT absent).
 	target := "/platform/auth/sso/callback?state=&code=cc"
 	cookieW := httptest.NewRecorder()
-	setSSOCookie(cookieW, "s1", "verifier-s1")
+	setSSOCookie(cookieW, "s1", "verifier-s1", false)
 	cookieHeader := cookieW.Result().Header.Get("Set-Cookie")
 
 	auditBuf := &bytes.Buffer{}
@@ -1587,13 +1654,13 @@ func TestLoginHandlerPacksSessionIDIntoState(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	var found *http.Cookie
 	for _, c := range cookies {
-		if c.Name == cookieName {
+		if c.Name == cookieNameSecure {
 			found = c
 			break
 		}
 	}
 	if found == nil {
-		t.Fatalf("missing %s cookie", cookieName)
+		t.Fatalf("missing %s cookie", cookieNameSecure)
 	}
 	raw, decErr := base64.URLEncoding.DecodeString(found.Value)
 	if decErr != nil {
@@ -1713,7 +1780,7 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 
 	// Drive the cookie + URL state with the packed session_id suffix.
 	cookieRecorder := httptest.NewRecorder()
-	setSSOCookie(cookieRecorder, "state-d20", "verifier-state-d20")
+	setSSOCookie(cookieRecorder, "state-d20", "verifier-state-d20", false)
 	cookieHeader := cookieRecorder.Result().Header.Get("Set-Cookie")
 
 	target := "/platform/auth/sso/callback?state=" + url.QueryEscape("state-d20|sess-d20-id") + "&code=code-d20"

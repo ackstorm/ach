@@ -81,6 +81,12 @@ type Deps struct {
 	// Namespace is POD_NAMESPACE (downward API) — used to compose the
 	// audit `actor` field and as the namespace for K8s reads/writes.
 	Namespace string
+
+	// InsecureCookie, when true, drops the __Host- prefix and Secure flag
+	// from the SSO state cookie. Sourced from ACH_SSO_INSECURE_COOKIE
+	// (Phase 6 dev-mode opt-in for local kind+Helm fixtures that speak
+	// http://localhost:8080). Production MUST leave this false.
+	InsecureCookie bool
 }
 
 // envKeysStoreAdapter wraps a *store.Store so it satisfies the
@@ -130,6 +136,7 @@ func New(deps Deps) http.Handler {
 		Audit:           deps.Audit,
 		Logger:          deps.Logger,
 		Namespace:       deps.Namespace,
+		InsecureCookie:  deps.InsecureCookie,
 	}
 	r.Get("/platform/auth/login", auth.LoginHandler(authDeps))
 	r.Get("/platform/auth/sso/callback", auth.CallbackHandler(authDeps))
