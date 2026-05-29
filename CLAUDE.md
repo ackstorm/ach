@@ -177,24 +177,25 @@ ach/
 
 | Event                                 | lint | unit | envtest | security | e2e |
 |---------------------------------------|------|------|---------|----------|-----|
-| push: feature branch                  |  ✓   |  ✓   |   -     |    -     |  -  |
 | pull_request → main                   |  ✓   |  ✓   |   ✓     |    ✓     |  ✓  |
-| push: main (non-release)              |  ✓   |  ✓   |   ✓     |    ✓     |  -  |
-| push: main `chore(release): v*`       |  -   |  -   |   -     |    -     |  -  (release.yml owns it) |
 
-E2E runs once per change: on the PR. Post-merge skips it (already
-green on the PR ref). Docs-only commits (paths-ignore: `**/*.md`,
-`docs/**`, `.planning/**`, `references/**`, `FIX*.txt`, `LICENSE`,
-`NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml` entirely.
+`ci.yml` is **PR-only** — the `pull_request → main` event is the single
+trigger (aligned with sister project alitellm-operator). There is no
+`push:` trigger; pushes to feature branches or `main` do not run
+`ci.yml`. Release commits (`chore(release): v*`) are handled by
+`release.yml`; nightly soak/leak/fuzz by `nightly.yml`. E2E runs on the
+PR unless the PR is a draft (`if: !draft`). Docs-only PRs (paths-ignore:
+`**/*.md`, `docs/**`, `.planning/**`, `references/**`, `FIX*.txt`,
+`LICENSE`, `NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml` entirely.
 
-**Why ach keeps push CI on main** (vs sister project alitellm-operator,
-which is PR-only): GitHub branch protection on a private repo requires
-a paid plan (Pro/Team/Enterprise) or making the repo public. Until
-either condition is met, main can in principle accept direct pushes,
-so post-merge CI on push:main is the defensive gate that catches a
-direct push that bypassed PR review. Once protection is enabled, this
-workflow can be trimmed to PR-only the same way alitellm-operator's
-ci.yml is.
+**⚠ PR-only is only a real gate if branch protection on `main` is
+enabled.** Without it, a direct push to `main` bypasses CI completely
+(there is no `push:` trigger to catch it). GitHub branch protection on a
+private repo requires a paid plan (Pro/Team/Enterprise) or making the
+repo public. Enable branch protection before relying on this posture;
+until then, direct pushes to `main` are unguarded. (The earlier
+`push:main` defensive net was removed when ach aligned its CI trigger
+model with alitellm-operator.)
 
 ## Toolchain — host has NO Go (always Docker)
 

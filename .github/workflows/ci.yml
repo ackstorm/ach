@@ -1,22 +1,17 @@
 name: ci
 
 # Tiered gating policy + rationale: references/docs/workflow.md.
-# Per-job `if:` filters below are the authoritative trigger surface.
-# Each test job mirrors a local `make` target via ./scripts/dev.sh.
+# PR-only: the pull_request event is the single CI trigger (aligned with
+# sister project alitellm-operator). Each test job mirrors a local `make`
+# target via ./scripts/dev.sh.
+#
+# NOTE: PR-only is only a safe gate if branch protection on `main` is
+# enabled — otherwise a direct push to main bypasses CI entirely. Enable
+# branch protection (requires a paid plan on a private repo, or making the
+# repo public) before relying on this. Until then, direct pushes to main
+# are unguarded.
 
 on:
-  push:
-    branches-ignore: []
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.planning/**'
-      - 'references/**'
-      - 'FIX*.txt'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'CODEOWNERS'
-      - '.gitignore'
   pull_request:
     branches: [main]
     paths-ignore:
@@ -30,16 +25,18 @@ on:
       - 'CODEOWNERS'
       - '.gitignore'
 
+# main is PR-only. Post-merge content equals PR head content, so re-running
+# on push main is redundant. Release commits are handled by release.yml.
+# Nightly soak/leak/fuzz lives in nightly.yml.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v6  # v4.3.1
 
@@ -53,7 +50,6 @@ jobs:
     name: Unit
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v6  # v4.3.1
 
@@ -76,9 +72,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit
     timeout-minutes: 25
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release): v'))
     steps:
       - uses: actions/checkout@v6  # v4.3.1
 
@@ -100,15 +93,17 @@ jobs:
     name: Security
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release): v'))
     permissions:
       contents: read
       security-events: write
       actions: read
     steps:
       - uses: actions/checkout@v6  # v4.3.1
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v5  # v4.9.0
+        with:
+          fail-on-severity: high
 
       - name: Set up devtools (pull or build)
         uses: ./.github/actions/setup-devtools
@@ -127,7 +122,7 @@ jobs:
       - name: Upload gosec SARIF to GitHub Security tab
         if: always()
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4.36.0
         with:
           sarif_file: gosec-results.sarif
           category: gosec
@@ -139,9 +134,7 @@ jobs:
     # 40m budget — ach hydrates postgres + redis + dex + litellm + toolhive
     # before the suite runs (vs alitellm's lean kind+operator-only setup).
     timeout-minutes: 40
-    if: |
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft
+    if: "!github.event.pull_request.draft"
     steps:
       - uses: actions/checkout@v6  # v4.3.1
 
