@@ -28,12 +28,19 @@ CONTAINER_TOOL ?= docker
 # the devtools container, unless we are already inside it. Each public target
 # that needs the Go/helm toolchain calls this explicitly, so `make help` stays
 # honest and a future host-only target is never auto-wrapped by accident.
+#
+# $(MAKEOVERRIDES) forwards the caller's command-line variable assignments
+# (e.g. PKG=… FOCUS=… RUN=… TIMEOUT=… BASE_REF=…). It is REQUIRED on the
+# dev.sh path: scripts/dev.sh only forwards an explicit -e allowlist into the
+# container, so MAKEFLAGS (which normally carries command-line overrides to a
+# sub-make) does NOT cross the docker boundary. Without this, arg-taking
+# wrappers like test-envtest-pkg/e2e-focus would see empty $(PKG)/$(RUN).
 ACH_IN_DEVTOOLS ?= 0
 define container_target
 	@if [ "$(ACH_IN_DEVTOOLS)" = "1" ]; then \
-		$(MAKE) --no-print-directory $(1); \
+		$(MAKE) --no-print-directory $(1) $(MAKEOVERRIDES); \
 	else \
-		./scripts/dev.sh $(MAKE) --no-print-directory $(1); \
+		./scripts/dev.sh $(MAKE) --no-print-directory $(1) $(MAKEOVERRIDES); \
 	fi
 endef
 
