@@ -58,6 +58,7 @@ func TestEventConstantsAreStable(t *testing.T) {
 		// or missing URL state. Documented in 03-02-SUMMARY.md so future
 		// Hub-spec revisions can adopt it back into §18.2 if desired.
 		{"OutcomeStateInvalid", audit.OutcomeStateInvalid, "state_invalid"},
+		{"OutcomeLitellmRejected", audit.OutcomeLitellmRejected, "litellm_rejected"},
 	}
 	for _, tc := range tests {
 		tc := tc

@@ -106,6 +106,14 @@ const (
 	// in the original enum.
 	OutcomeStateInvalid = "state_invalid"
 
+	// OutcomeLitellmRejected distinguishes an upstream LiteLLM 4xx
+	// rejection (e.g. 403 from a misconfigured master key, 422 validation)
+	// from genuine unreachability (OutcomeLitellmUnreachable). A rejection
+	// means LiteLLM answered and refused — surfaced as 502 Bad Gateway, not
+	// 503 — so the operator does not chase a phantom connectivity outage.
+	// Phase-3-internal additive extension to Hub §18.2.
+	OutcomeLitellmRejected = "litellm_rejected"
+
 	// Content Service additive extensions (Phase 5 / Plan 05-05). Each
 	// of these is one row in the §15.6 D-03 outcome table that did not
 	// previously exist in the Phase 3 vocabulary. Additive per §18.5

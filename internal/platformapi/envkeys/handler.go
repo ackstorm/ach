@@ -263,15 +263,16 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 		// 03-05 Task 3). NO inline lookupCallerTeams definition here.
 		callerTeams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
 		if err != nil {
+			st, oc, msg := classifyLitellmErr(err)
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeLitellmUnreachable,
+				Outcome:   oc,
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
 			})
 			deps.Logger.Error("envkeys.create: team lookup failed", "owner", keyCtx.OwnerEmail, "err", err)
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
+			render.Error(w, st, oc, msg, reqID)
 			return
 		}
 		if !hasIntersect(env.AuthorizedTeams, callerTeams) {
@@ -295,15 +296,16 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 		// cached lookup will collapse the two calls.
 		userInfo, err := deps.LiteLLM.UserInfoByEmail(ctx, keyCtx.OwnerEmail)
 		if err != nil && !isNotFound(err) {
+			st, oc, msg := classifyLitellmErr(err)
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeLitellmUnreachable,
+				Outcome:   oc,
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
 			})
 			deps.Logger.Error("envkeys.create: UserInfoByEmail failed", "owner", keyCtx.OwnerEmail, "err", err)
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
+			render.Error(w, st, oc, msg, reqID)
 			return
 		}
 		if userInfo == nil {
@@ -313,15 +315,16 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 				Teams:     []string{defaultTeam},
 			})
 			if err != nil {
+				st, oc, msg := classifyLitellmErr(err)
 				audit.EmitAudit(ctx, deps.Audit, audit.Event{
 					Action:    audit.ActionEkCreate,
-					Outcome:   audit.OutcomeLitellmUnreachable,
+					Outcome:   oc,
 					Actor:     actor,
 					RequestID: reqID,
 					Target:    &audit.Target{Kind: "environment", Name: req.Environment},
 				})
 				deps.Logger.Error("envkeys.create: UserNew failed", "owner", keyCtx.OwnerEmail, "err", err)
-				render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
+				render.Error(w, st, oc, msg, reqID)
 				return
 			}
 			userInfo = newInfo
@@ -389,15 +392,16 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			},
 		})
 		if err != nil {
+			st, oc, msg := classifyLitellmErr(err)
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeLitellmUnreachable,
+				Outcome:   oc,
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
 			})
 			deps.Logger.Error("envkeys.create: KeyGenerate failed", "env", req.Environment, "err", err)
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
+			render.Error(w, st, oc, msg, reqID)
 			return
 		}
 		llToken := keyResp.Token
@@ -643,16 +647,17 @@ func RevokeHandler(deps Deps) http.HandlerFunc {
 			llToken = *row.LiteLLMToken
 		}
 		if err := deps.LiteLLM.RevokeKey(ctx, llToken); err != nil {
+			st, oc, msg := classifyLitellmErr(err)
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkRevoke,
-				Outcome:   audit.OutcomeLitellmUnreachable,
+				Outcome:   oc,
 				Actor:     actor,
 				RequestID: reqID,
 				KeyID:     keyID,
 				Target:    &audit.Target{Kind: "environment", Name: row.Environment},
 			})
 			deps.Logger.Error("envkeys.revoke: LiteLLM RevokeKey failed", "token", llToken, "err", err)
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable", reqID)
+			render.Error(w, st, oc, msg, reqID)
 			return
 		}
 
@@ -941,4 +946,24 @@ func isNotFound(err error) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), "404")
+}
+
+// classifyLitellmErr maps a LiteLLM client error to the (HTTP status,
+// audit outcome, client message) triple the envkeys handlers should
+// surface. An upstream 4xx — a typed *litellm.APIError with a 4xx status,
+// or a *litellm.Auth401Error — means LiteLLM answered and REFUSED (bad
+// master key, validation, permission), which is a 502 Bad Gateway +
+// litellm_rejected, NOT the 503 litellm_unreachable that a connectivity
+// or 5xx failure warrants. Distinguishing the two stops the operator from
+// chasing a phantom outage when the real cause is a config/auth rejection.
+func classifyLitellmErr(err error) (status int, outcome, message string) {
+	var apiErr *litellm.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
+		return http.StatusBadGateway, audit.OutcomeLitellmRejected, "litellm rejected the request"
+	}
+	var auth401 *litellm.Auth401Error
+	if errors.As(err, &auth401) {
+		return http.StatusBadGateway, audit.OutcomeLitellmRejected, "litellm rejected the request"
+	}
+	return http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "litellm unreachable"
 }
