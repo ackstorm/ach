@@ -131,11 +131,16 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	cfg.AllowlistPath = config.EnvOr("ACH_ADMIN_ALLOWLIST_PATH", "/etc/ach/admins/admins.txt")
 	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8080")
-	// ACH_SSO_INSECURE_COOKIE=1 drops the __Host- prefix + Secure flag
-	// from the SSO state cookie so local HTTP-only kind+Helm fixtures
-	// (ACH_BASE_URL=http://localhost:8080) can complete the SSO
-	// round-trip. Production MUST leave this unset.
-	cfg.InsecureCookie = config.EnvBool("ACH_SSO_INSECURE_COOKIE", false)
+	// The SSO state cookie's hardening is DERIVED from the externally-
+	// visible scheme (ACH_BASE_URL) — no separate flag. An https base
+	// (production / TLS-terminating ingress) gets the hardened
+	// __Host-/Secure cookie; a plain-http base (internal or dev, e.g. the
+	// kind gateway on http://localhost:8080) gets a working non-Secure
+	// cookie. ACH_BASE_URL is the scheme the BROWSER sees on the SSO
+	// round-trip, which is exactly what governs whether a Secure cookie
+	// survives — so it is the single correct source of truth (the
+	// platform-api itself always listens plain http behind the ingress).
+	cfg.InsecureCookie = !strings.HasPrefix(cfg.BaseURL, "https://")
 	return cfg, nil
 }
 

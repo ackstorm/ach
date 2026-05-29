@@ -101,10 +101,10 @@ type Deps struct {
 	NowFn func() time.Time
 
 	// InsecureCookie, when true, drops the __Host- prefix and Secure flag
-	// from the SSO state cookie so local HTTP-only fixtures (kind+Helm
-	// with ACH_BASE_URL=http://localhost:8080) can complete the SSO
-	// round-trip via curl. Production MUST leave this false — sourced
-	// from ACH_SSO_INSECURE_COOKIE in cmd/ach/cmd/platform_api.go.
+	// from the SSO state cookie so a plain-http deployment (internal/dev,
+	// e.g. ACH_BASE_URL=http://localhost:8080) can complete the SSO
+	// round-trip. DERIVED from the ACH_BASE_URL scheme in
+	// cmd/ach/cmd/platform_api.go (https base ⇒ false ⇒ hardened cookie).
 	InsecureCookie bool
 }
 
@@ -186,9 +186,9 @@ func LoginHandler(deps Deps) http.HandlerFunc {
 		challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
 
 		// Step 3: persist (state, verifier) in the SSO state cookie.
-		// Default: __Host-ach_sso with Secure=true. Dev-mode (deps.
-		// InsecureCookie=true via ACH_SSO_INSECURE_COOKIE): ach_sso with
-		// Secure=false so local HTTP fixtures can round-trip.
+		// https base ⇒ __Host-ach_sso with Secure=true; plain-http base
+		// (deps.InsecureCookie, derived from ACH_BASE_URL) ⇒ ach_sso with
+		// Secure=false so an internal/dev HTTP round-trip works.
 		setSSOCookie(w, state, verifier, deps.InsecureCookie)
 
 		// Step 4: build Dex authorize URL with PKCE params and redirect.

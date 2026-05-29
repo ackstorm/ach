@@ -83,9 +83,9 @@ type Deps struct {
 	Namespace string
 
 	// InsecureCookie, when true, drops the __Host- prefix and Secure flag
-	// from the SSO state cookie. Sourced from ACH_SSO_INSECURE_COOKIE
-	// (Phase 6 dev-mode opt-in for local kind+Helm fixtures that speak
-	// http://localhost:8080). Production MUST leave this false.
+	// from the SSO state cookie. DERIVED from the ACH_BASE_URL scheme in
+	// cmd/ach/cmd/platform_api.go: a plain-http base (internal/dev) ⇒ true,
+	// an https base ⇒ false (hardened cookie).
 	InsecureCookie bool
 }
 

@@ -53,15 +53,11 @@ extraEnv:
     value: "http://localhost:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
-  # Phase 6 dev-mode opt-in: drop __Host- prefix + Secure flag on the SSO
-  # state cookie so the kept kind+Helm cluster — which speaks plain
-  # http://localhost:8080 via the ach-local-gateway nginx — can complete
-  # the /platform/auth/login → /platform/auth/sso/callback round-trip
-  # under curl. Production Helm values MUST NOT set this (the default in
-  # deploy/helm/ach/values.yaml is unset; the platform-api treats unset
-  # as the secure default per cmd/ach/cmd/platform_api.go).
-  - name: ACH_SSO_INSECURE_COOKIE
-    value: "1"
+  # No ACH_SSO_INSECURE_COOKIE here: the SSO cookie hardening is derived
+  # from the ACH_BASE_URL scheme. ACH_BASE_URL=http://localhost:8080
+  # (above) makes the platform-api emit the non-Secure `ach_sso` cookie
+  # automatically, so the kind gateway's plain-http SSO round-trip works
+  # without a flag. An https base would auto-harden to __Host-/Secure.
 
 # ach-mcp-echo backend (issue #35 + BIP closed-loop). The demo Environment
 # registers TWO routes against this single deployment:
