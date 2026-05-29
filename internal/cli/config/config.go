@@ -19,7 +19,9 @@
 //     seam injected through LoadWith.
 //   - 0700 parent dir / 0600 file mode invariants on every Save.
 //   - Atomic publication via tmp+rename in the same dir (TOCTOU-safe).
-//   - HTTPS-only `url:` refused on BOTH Load AND Save (D-04 / CLI-02).
+//   - `url:` must be http:// or https:// — validated on BOTH Load AND
+//     Save. http:// is accepted; the command layer warns about plaintext
+//     transport when the active deployment is http://.
 package config
 
 import (
@@ -51,11 +53,12 @@ type Deployment struct {
 
 // Sentinel errors. Callers gate behavior via errors.Is.
 var (
-	// ErrNonHTTPSURL is returned by Load and Save when any
-	// deployment's `url:` does not start with "https://" (CLI-02 /
-	// T-06-01-05). The error string includes the offending deployment
-	// name so the operator can fix it; the URL itself is omitted.
-	ErrNonHTTPSURL = errors.New("config: deployment url must use https://")
+	// ErrInvalidURLScheme is returned by Load and Save when any
+	// deployment's `url:` is neither http:// nor https:// (empty, ftp,
+	// etc.). The error string includes the offending deployment name so
+	// the operator can fix it; the URL itself is omitted. http:// is
+	// accepted (the command layer warns about plaintext transport).
+	ErrInvalidURLScheme = errors.New("config: deployment url must be http:// or https://")
 
 	// ErrConfigParse wraps yaml.v3 decode failures so callers can
 	// distinguish "file is corrupt" from "deployment is misconfigured".
@@ -87,7 +90,7 @@ func Path() (string, error) {
 // Load reads + parses the config file. Returns (nil, nil) when the
 // file is absent (fresh install / synthetic mode). Returns
 // ErrConfigParse-wrapped error on yaml decode failure. Returns
-// ErrNonHTTPSURL when any deployment carries a non-https URL.
+// ErrInvalidURLScheme when any deployment's URL is neither http:// nor https://.
 //
 // Warns to stderr via a default logger seam when the file mode is
 // more permissive than 0600 — see LoadWith for a test-friendly
@@ -135,7 +138,7 @@ func LoadWith(path string, warn func(format string, args ...any)) (*File, error)
 // Save writes the file to `path` atomically: encode to a sibling
 // tmp file in the same dir, chmod 0600, then os.Rename onto the
 // target. Ensures the parent dir exists with mode 0700. Refuses to
-// write any deployment whose URL is non-HTTPS.
+// write any deployment whose URL is neither http:// nor https://.
 func Save(path string, f *File) error {
 	if f == nil {
 		return errors.New("config: Save called with nil File")
@@ -228,27 +231,22 @@ func ResolveActive(f *File, flagDeployment, envDeployment string) (string, *Depl
 	return "", nil, ErrNoDeployment
 }
 
-// validateDeployments enforces HTTPS-only on every entry. The error
-// names the offending deployment but omits the URL itself (the URL
-// can carry secrets in some pathological misconfigurations).
-//
-// Dev-mode opt-in: when ACH_CLI_INSECURE_DEPLOYMENT_URL=1 is set, http://
-// URLs are also accepted. The flag exists for local kind+Helm fixtures
-// whose ach-local-gateway nginx speaks plain http://localhost:8080.
-// Production CLI invocations MUST leave this unset.
+// validateDeployments accepts http:// and https:// on every entry and
+// rejects any other scheme (empty, ftp://, ...). http:// is permitted so
+// the CLI can target local/internal deployments (e.g. the kind+Helm
+// ach-local-gateway on http://localhost:8080); the command layer emits a
+// plaintext-transport warning when the active deployment is http://. The
+// error names the offending deployment but omits the URL itself (it can
+// carry secrets in some pathological misconfigurations).
 func validateDeployments(f *File) error {
-	allowHTTP := os.Getenv("ACH_CLI_INSECURE_DEPLOYMENT_URL") == "1"
 	for name, dep := range f.Deployments {
 		if dep == nil {
 			continue
 		}
-		if strings.HasPrefix(dep.URL, "https://") {
+		if strings.HasPrefix(dep.URL, "https://") || strings.HasPrefix(dep.URL, "http://") {
 			continue
 		}
-		if allowHTTP && strings.HasPrefix(dep.URL, "http://") {
-			continue
-		}
-		return fmt.Errorf("%w: deployment %q (CLI-02 / D-04)", ErrNonHTTPSURL, name)
+		return fmt.Errorf("%w: deployment %q (must be http:// or https://)", ErrInvalidURLScheme, name)
 	}
 	return nil
 }

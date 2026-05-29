@@ -24,6 +24,22 @@ builds:
     ldflags:
       - -s -w
       - -X github.com/ackstorm/ach/cmd/ach/cmd.Version={{.Version}}
+  - id: ach-cli
+    main: ./cmd/ach-cli
+    binary: ach-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version={{.Version}}
 
 archives:
   - id: binaries
@@ -34,6 +50,14 @@ archives:
       - CHANGELOG.md
     ids:
       - ach
+  - id: cli-binaries
+    name_template: "ach-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+    ids:
+      - ach-cli
 
 dockers:
   - id: ach-amd64

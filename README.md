@@ -1,8 +1,10 @@
 # ACH — Agent Configuration Hub
 
 Multi-service Kubernetes control plane for managing AI agent configurations:
-operator + platform API + forwarder + content service + CLI. All shipped as a
-single Go binary (`ach`) with cobra subcommands.
+operator + platform API + forwarder + content service + CLI. The long-running
+services ship as a single Go binary (`ach`) with cobra subcommands; the
+user-facing CLI ships as a separate `ach-cli` binary (login/whoami/logout/
+config/env/env-keys/hydrate/admin).
 
 ## Quick start
 
@@ -12,8 +14,8 @@ the `ACH_BASE_URL` default and `examples/04-environment-demo.yaml` for
 the `demo` Environment the example uses):
 
 ```bash
-ach login                                      # one-time device-code SSO
-ach hydrate --environment demo > hydrate.json
+ach-cli login                                  # one-time device-code SSO
+ach-cli hydrate --environment demo > hydrate.json
 ```
 
 The `hydrate.json` byte output reproduces `examples/hydrate.json`

@@ -254,6 +254,14 @@ func runHydrate(cmd *cobra.Command, environment string, noWarnings, verbose bool
 	if prefix == keys.PrefixPk && !in.noWarnings {
 		_, _ = fmt.Fprint(stderr, pkWarning)
 	}
+	// Plaintext-transport warning: http:// deployment URLs are accepted
+	// (config.validateDeployments no longer rejects them), but credentials
+	// ride unencrypted. Emit a one-line stderr warning unless suppressed.
+	if !in.noWarnings && strings.HasPrefix(baseURL, "http://") {
+		_, _ = fmt.Fprintf(stderr,
+			"warning: deployment %q uses plaintext http:// — credentials are sent "+
+				"unencrypted (safe only on trusted/internal networks)\n", baseURL)
+	}
 
 	return postAndStream(cmd, baseURL, bearer, effectiveEnv, in.verbose)
 }

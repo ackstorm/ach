@@ -17,7 +17,7 @@ output the CLI e2e suite diffs against.
 | `08-artifact-openclaw-templates.yaml` | `Artifact`           | Directory-scope tarball of `openclaw/openclaw` `docs/reference/templates`. Repo is ~261 MiB depth-1; the 512 MiB default git-clone cap accommodates it. |
 | `09-…context7.yaml` / `10-…duplicate.yaml` | `BackendIdentityPolicy` | Illustrative-only (NOT applied by `cluster.sh`): a JWT-on policy and a duplicate `(kind,name)` resolved last-by-`metadata.name`. Document the dup-resolution rule; target `context7` need not exist. |
 | `11-…demo-mcp-jwt.yaml` / `16-…demo-mcp-nojwt.yaml` | `BackendIdentityPolicy` | The demo Environment's BIP closed-loop. `11` attaches the ACH JWT for `/mcp/demo-mcp-jwt`; `16` forwards without one for `/mcp/demo-mcp-nojwt`. Both target the single `ach-mcp-echo` backend; applied by `scripts/cluster.sh`. |
-| `hydrate.json`                        | json                 | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach hydrate --environment demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
+| `hydrate.json`                        | json                 | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli hydrate --environment demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo
 
@@ -45,8 +45,8 @@ make wait-cr-ready KIND=environment NAME=demo NS=ach-system
 
 # 3. Build the CLI + run the demo.
 ./scripts/dev.sh make build
-ach login                                       # device-code SSO (browser opens)
-ach hydrate --environment demo > hydrate.json   # POST /platform/hydrate
+ach-cli login                                   # device-code SSO (browser opens)
+ach-cli hydrate --environment demo > hydrate.json   # POST /platform/hydrate
 ```
 
 The `hydrate.json` output should match `examples/hydrate.json`

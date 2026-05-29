@@ -23,33 +23,12 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"os"
 
 	"github.com/ackstorm/ach/cmd/ach/cmd"
 	"github.com/ackstorm/ach/internal/cli/exit"
-	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
 
 func main() {
-	err := cmd.Execute()
-	if err == nil {
-		os.Exit(int(exit.OK))
-	}
-
-	var sErr *httpclient.ServerError
-	if errors.As(err, &sErr) {
-		_, _ = fmt.Fprintln(os.Stderr, sErr.Error())
-		os.Exit(int(exit.MapServerError(sErr)))
-	}
-
-	var cErr *exit.CodedError
-	if errors.As(err, &cErr) {
-		_, _ = fmt.Fprintln(os.Stderr, cErr.Error())
-		os.Exit(int(cErr.Code))
-	}
-
-	_, _ = fmt.Fprintln(os.Stderr, err)
-	os.Exit(int(exit.General))
+	os.Exit(int(exit.DispatchAndRender(cmd.Execute(), os.Stderr)))
 }
