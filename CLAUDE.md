@@ -158,32 +158,44 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
-├── examples/                ← runnable CR fixtures + golden hydrate.json
-│   ├── 01-litellmconnection.yaml  LiteLLMConnection seed
-│   ├── 04-environment-demo.yaml   Environment referencing the ext-ref CRs
-│   ├── 05-pluginmarketplace-anthropic.yaml  real upstream canary (5-Kind parser landed via #16)
-│   ├── 06-plugin-caveman.yaml     Plugin from JuliusBrussee/caveman
-│   ├── 07-prompt-claudecode-leak.yaml  Prompt from asgeirtj/system_prompts_leaks
-│   ├── 08-artifact-openclaw-templates.yaml  Artifact (directory scope)
-│   ├── 09-backendidentitypolicy-context7.yaml  BIP jwt-on
-│   ├── 10-backendidentitypolicy-duplicate.yaml  BIP duplicate-target demo
-│   └── hydrate.json               Golden /platform/hydrate output (CLI e2e diffs vs this)
+├── examples/                ← CURATED user-facing samples + golden hydrate.json
+│   │                          (independent of the synced fixtures below; NOT
+│   │                          auto-applied — copy/adapt by hand)
+│   ├── 12-15 *.yaml          legacy ToolHive (toolhive.stacklok.dev) samples
+│   ├── prometheus-servicemonitor.yaml  example metrics scrape config
+│   ├── test-mcp-jwt.sh        manual /mcp JWT trust-path helper
+│   └── hydrate.json           Golden /platform/hydrate output (CLI e2e diffs vs this)
 ├── hack/boilerplate.go.txt  ← SPDX one-liner, prepended to generated files
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
 │   └── security/govulncheck-acknowledged.md
 ├── scripts/                 ← dev.sh, cluster.sh, pre-push-check.sh, ...
 ├── test/                    ← e2e + utils
+│   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
+│       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
+│       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
+│       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved Envs
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE, PUBLISH.md
 ```
+
+**Synced fixtures vs examples (independent collections):**
+`test/e2e/cluster/{04-objects,05-environment}/` holds the **synced test
+fixtures** — the complete demo-ready ACH object set `scripts/cluster.sh`
+applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
+step). The e2e suite **asserts** against this synced state; tests do NOT apply
+their own copies of these objects. `examples/` holds **curated, user-facing
+samples** (legacy ToolHive 12-15, the ServiceMonitor, the manual JWT helper)
+plus the golden `hydrate.json`. The two are independent — moving or editing one
+does not touch the other.
 
 ## MANDATORY Reading Table
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
 | Any `make` command / command organization | `references/makefile.md` (authoritative command list + 3-context model) |
-| New CR fixtures / `ach-cli login` + `ach-cli hydrate` demo path | `examples/README.md`             |
+| New/changed SYNCED CR fixtures (the object set e2e asserts against) | `test/e2e/cluster/{04-objects,05-environment}/` + `verify_all` in `scripts/cluster.sh` |
+| Curated examples / `ach-cli login` + `ach-cli hydrate` demo path | `examples/README.md`             |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI gating matrix in this file |
 | Release tooling (goreleaser, signing)  | `.goreleaser.yml` + `release.yml` workflow |
