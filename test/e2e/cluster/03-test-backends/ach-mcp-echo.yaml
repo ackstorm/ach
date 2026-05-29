@@ -1,0 +1,89 @@
+# ach-mcp-echo — JWT-validating MCP echo backend (issue #35).
+#
+# Test-only scaffolding kept OUT of the user-facing Helm chart (the chart's
+# templates/test-mocks.yaml was removed). cluster.sh builds the image
+# (make build-image-mcp-echo) + kind-loads ach-mcp-echo:e2e, then applies this
+# stage post-ach (the backend polls the forwarder JWKS, so the ach Services
+# must exist first). LiteLLM registers it as demo-mcp-jwt / demo-mcp-nojwt and
+# the BIPs bip-demo-mcp-jwt / bip-demo-mcp-nojwt drive the JWT closed loop.
+#
+# Env values are literals captured from the prior chart render against the
+# ach-system deploy: iss = the http://localhost:8080 gateway host, aud covers
+# both demo routes, requireJwt=false so the nojwt route's tokenless request is
+# accepted (jwt_present=false) while a present-but-invalid token still 401s.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mcp-echo
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-mcp-echo
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-mcp-echo
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mcp-echo
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-mcp-echo
+    test.ach.ackstorm.ai/phase: "4"
+    test.ach.ackstorm.ai/issue: "35"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-mcp-echo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ach
+        app.kubernetes.io/component: mock-mcp-echo
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp-echo
+          image: ach-mcp-echo:e2e
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+            - name: ACH_JWKS_URL
+              value: "http://ach-forwarder.ach-system.svc/.well-known/jwks.json"
+            - name: ACH_EXPECTED_ISS
+              value: "http://localhost:8080"
+            - name: ACH_EXPECTED_AUD
+              value: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt"
+            - name: ACH_REQUIRE_JWT
+              value: "false"
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

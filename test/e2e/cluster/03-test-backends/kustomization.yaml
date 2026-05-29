@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Stage 03 — local test backends (post-ach; all need the ach Services). The
+# nginx gateway resolves STATIC proxy_pass hostnames (ach-platform-api/
+# forwarder/content-service, dex) at startup; ach-mcp-echo polls the forwarder
+# JWKS to verify incoming JWTs; ach-mock-litellm captures forwarded data-plane
+# traffic (/v1/* + /__capture) for ek_ tag-injection asserts. All three are
+# test-only scaffolding kept OUT of the user-facing Helm chart. Applied by
+# scripts/cluster.sh (reconcile_fixtures) via `kubectl apply -k` AFTER
+# reconcile_ach helm-installs the ach Services.
+resources:
+  - ach-local-gateway.yaml
+  - ach-mcp-echo.yaml
+  - ach-mock-litellm.yaml
