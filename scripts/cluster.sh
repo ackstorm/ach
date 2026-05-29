@@ -354,7 +354,7 @@ hydrate_ach() {
     --values "${VALUES_DIR}/ach.values.yaml" \
     --set "image.repo=${ACH_IMAGE_REPO}" \
     --set "image.tag=${ACH_IMAGE_TAG}" \
-    --set "image.pullPolicy=Always" || helm_rc=$?
+    --set "image.pullPolicy=IfNotPresent" || helm_rc=$?
   if [ "${helm_rc}" -ne 0 ]; then
     echo "[cluster.sh] ach helm install failed (rc=${helm_rc}) — dumping pods for forensics:" >&2
     kubectl -n ach-system get pods >&2 || true

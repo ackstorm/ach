@@ -18,10 +18,16 @@
 installCRDs: true
 
 # image: the single ach binary, with per-mode args on each Deployment.
+# pullPolicy default is IfNotPresent so the kind workflow (cluster.sh /
+# `kind load docker-image`) uses the locally-loaded image — kind nodes
+# have no ghcr.io/ackstorm/* credentials, so `Always` would force an
+# anonymous pull that 401s into ImagePullBackOff (issue #38). Production
+# deploys that want re-tag hygiene override to `Always` via a values
+# overlay or `--set image.pullPolicy=Always`.
 image:
   repo: ghcr.io/ackstorm/ach
   tag: v0.1.0
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 # watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
 # Maps to WATCH_NAMESPACE env var on operator Deployment.
