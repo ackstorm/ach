@@ -25,15 +25,18 @@ fi
 CLUSTER_NAME="${CLUSTER_NAME:-ach-e2e}"
 KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 
-# Pinned chart versions — bump deliberately. (Phase 11+ will move these to
-# test/e2e/values/*.values.yaml + CHART_PINS.md once that infra exists.)
-# Per-component values files live under test/e2e/values/ — single source
-# of truth for chartVersion + image tag + chart config consumed by every
-# reconcile_* function. Mirrors sister alitellm-operator's
-# test/e2e/values/ layout. cluster.sh ONLY reads from these files;
-# changing a chart version or an image pin is a YAML edit, not a script
-# edit.
-VALUES_DIR="${VALUES_DIR:-test/e2e/values}"
+# All cluster bring-up config lives under CLUSTER_DIR, organized by bring-up
+# STAGE (mirrors the reconcile_all order):
+#   00-namespaces/  kustomize base — the namespace layout (apply -k, pre-helm)
+#   01-base/        helm values for the 5 deps (postgres/valkey/dex/litellm/
+#                   toolhive) + dex-config.yaml + auth_user_map.py
+#   02-ach/         ach.values.yaml (the ach chart)
+#   03-gateway/     kustomize base — local nginx gateway (apply -k, post-ach)
+# Each values file carries its own `chartVersion:` pin (single source of
+# truth for chart version + image tag + chart config). cluster.sh ONLY reads
+# from these files; changing a chart version or image pin is a YAML edit, not
+# a script edit.
+CLUSTER_DIR="${CLUSTER_DIR:-test/e2e/cluster}"
 
 # Read the `chartVersion:` line from a values file. Used by reconcile_*
 # functions so the chart-version pin and the chart-values themselves
@@ -44,7 +47,7 @@ chart_version_of() {
 
 # Bitnami pruned all pinned image tags from docker.io/bitnami/* in 2025 and
 # moved the snapshots to docker.io/bitnamilegacy/*. The bitnamilegacy/* repo
-# overrides are inlined in test/e2e/values/{postgres,valkey,litellm}.values.yaml
+# overrides are inlined in test/e2e/cluster/01-base/{postgres,valkey,litellm}.values.yaml
 # (single source of truth — no env-var indirection from cluster.sh). If
 # bitnamilegacy is also pruned, switch to upstream postgres:16-alpine +
 # valkey/valkey (TODO.md item 1a option c) or mirror to ghcr.io/ackstorm/mirror/*.
@@ -107,9 +110,9 @@ cmd_preflight() {
   echo "== cluster preflight =="
   for t in kind kubectl helm jq openssl; do command -v "$t" >/dev/null 2>&1 && echo "OK   $t" || { echo "FAIL $t MISSING"; exit 1; }; done
   docker info >/dev/null 2>&1 && echo "OK   docker daemon reachable" || { echo "FAIL docker unreachable"; exit 1; }
-  test -d "${VALUES_DIR}" && echo "OK   values dir ${VALUES_DIR}" || { echo "FAIL ${VALUES_DIR} missing"; exit 1; }
-  for f in postgres valkey dex litellm; do test -f "${VALUES_DIR}/$f.values.yaml" && echo "OK   values/$f" || echo "WARN values/$f.values.yaml missing"; done
-  echo "OK   chart pins: postgres=$(chart_version_of "${VALUES_DIR}/postgres.values.yaml") litellm=$(chart_version_of "${VALUES_DIR}/litellm.values.yaml")"
+  test -d "${CLUSTER_DIR}" && echo "OK   values dir ${CLUSTER_DIR}" || { echo "FAIL ${CLUSTER_DIR} missing"; exit 1; }
+  for f in postgres valkey dex litellm; do test -f "${CLUSTER_DIR}/01-base/$f.values.yaml" && echo "OK   01-base/$f" || echo "WARN 01-base/$f.values.yaml missing"; done
+  echo "OK   chart pins: postgres=$(chart_version_of "${CLUSTER_DIR}/01-base/postgres.values.yaml") litellm=$(chart_version_of "${CLUSTER_DIR}/01-base/litellm.values.yaml")"
   # Ports the kind extraPortMappings expose on the host (gateway 8080).
   for p in 8080; do (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && { echo "WARN port $p already in use"; exec 3>&- ; } || echo "OK   port $p free"; done
 }
@@ -138,14 +141,13 @@ create_cluster() {
 }
 
 create_namespaces() {
-  local ns
-  for ns in default ach-system litellm-system toolhive-system dex-system mocks dev prod; do
-    kubectl get ns "${ns}" >/dev/null 2>&1 || kubectl create ns "${ns}"
-  done
+  # Stage 00: the e2e namespace layout, applied declaratively before any helm
+  # install so every chart's target namespace exists. `default` is built-in.
+  kubectl apply -k "${CLUSTER_DIR}/00-namespaces"
 }
 
 reconcile_postgres() {
-  local version; version="$(chart_version_of "${VALUES_DIR}/postgres.values.yaml")"
+  local version; version="$(chart_version_of "${CLUSTER_DIR}/01-base/postgres.values.yaml")"
   echo "[cluster.sh] installing postgres chart ${version}..."
   # Helm release name `ach-postgres` matches postgres.values.yaml's
   # fullnameOverride so every k8s object the chart renders carries that
@@ -154,27 +156,27 @@ reconcile_postgres() {
   helm upgrade --install ach-postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
     --version "${version}" \
     --namespace ach-system \
-    --values "${VALUES_DIR}/postgres.values.yaml" \
+    --values "${CLUSTER_DIR}/01-base/postgres.values.yaml" \
     --atomic --wait --timeout 5m
 }
 
 reconcile_valkey() {
-  local version; version="$(chart_version_of "${VALUES_DIR}/valkey.values.yaml")"
+  local version; version="$(chart_version_of "${CLUSTER_DIR}/01-base/valkey.values.yaml")"
   echo "[cluster.sh] installing valkey chart ${version}..."
   helm upgrade --install valkey oci://registry-1.docker.io/bitnamicharts/valkey \
     --version "${version}" \
     --namespace ach-system \
-    --values "${VALUES_DIR}/valkey.values.yaml" \
+    --values "${CLUSTER_DIR}/01-base/valkey.values.yaml" \
     --atomic --wait --timeout 5m
 }
 
 reconcile_dex() {
-  local version; version="$(chart_version_of "${VALUES_DIR}/dex.values.yaml")"
+  local version; version="$(chart_version_of "${CLUSTER_DIR}/01-base/dex.values.yaml")"
   echo "[cluster.sh] installing dex chart ${version}..."
   helm repo add dex https://charts.dexidp.io >/dev/null 2>&1 || true
   helm repo update dex >/dev/null
   # The dex chart expects raw Dex YAML under a top-level `config:` key.
-  # scripts/dex-config.yaml ships with `issuer: http://localhost:5556/dex`
+  # test/e2e/cluster/01-base/dex-config.yaml ships with `issuer: http://localhost:5556/dex`
   # for the `docker run` local UAT path documented in its header. For
   # in-cluster Dex, the issuer MUST be the cluster-internal URL the
   # platform-api uses so OIDC discovery's issuer-claim match succeeds
@@ -185,11 +187,11 @@ reconcile_dex() {
   # pin still lives in YAML.
   local tmpvals; tmpvals="$(mktemp)"
   {
-    cat "${VALUES_DIR}/dex.values.yaml"
+    cat "${CLUSTER_DIR}/01-base/dex.values.yaml"
     echo ""
     echo "config:"
     sed -e 's|^issuer: http://localhost:5556/dex|issuer: http://dex.dex-system.svc.cluster.local:5556/dex|' \
-        -e 's/^/  /' scripts/dex-config.yaml
+        -e 's/^/  /' "${CLUSTER_DIR}/01-base/dex-config.yaml"
   } > "${tmpvals}"
   helm upgrade --install dex dex/dex \
     --version "${version}" \
@@ -203,8 +205,8 @@ reconcile_litellm() {
   # Read chartVersion + image tag from the values file (single source of
   # truth — mirrors sister alitellm-operator/scripts/cluster.sh).
   local version image_tag image
-  version="$(awk '/^chartVersion:/ {print $2; exit}' "${VALUES_DIR}/litellm.values.yaml")"
-  image_tag="$(awk '/^[[:space:]]*tag:/ {gsub(/[[:space:]]+#.*/,""); print $2; exit}' "${VALUES_DIR}/litellm.values.yaml")"
+  version="$(awk '/^chartVersion:/ {print $2; exit}' "${CLUSTER_DIR}/01-base/litellm.values.yaml")"
+  image_tag="$(awk '/^[[:space:]]*tag:/ {gsub(/[[:space:]]+#.*/,""); print $2; exit}' "${CLUSTER_DIR}/01-base/litellm.values.yaml")"
   image="ghcr.io/berriai/litellm-database:${image_tag}"
 
   echo "[cluster.sh] installing litellm chart ${version} (image: ${image})..."
@@ -231,12 +233,12 @@ reconcile_litellm() {
   # Create ConfigMap with the custom auth script before installing/upgrading LiteLLM
   echo "[cluster.sh] creating/updating ackstorm-litellm-extras ConfigMap..."
   kubectl -n litellm-system create configmap ackstorm-litellm-extras \
-    --from-file=auth_user_map.py="test/e2e/fixtures/auth_user_map.py" \
+    --from-file=auth_user_map.py="${CLUSTER_DIR}/01-base/auth_user_map.py" \
     -o yaml --dry-run=client | kubectl apply -f -
 
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
-    --values "${VALUES_DIR}/litellm.values.yaml" \
+    --values "${CLUSTER_DIR}/01-base/litellm.values.yaml" \
     --atomic --wait --timeout 5m
 
   # helm --wait covers Deployment readiness + PreSync hook completion,
@@ -331,10 +333,10 @@ reconcile_litellm() {
 
 reconcile_toolhive() {
   # ToolHive CRDs and operator are on independent version streams (0.0.x
-  # vs 0.5.x) — both pins live in test/e2e/values/toolhive.values.yaml.
+  # vs 0.5.x) — both pins live in test/e2e/cluster/01-base/toolhive.values.yaml.
   local crds_version operator_version
-  crds_version="$(awk '/^crdsChartVersion:/ {print $2}' "${VALUES_DIR}/toolhive.values.yaml")"
-  operator_version="$(awk '/^operatorChartVersion:/ {print $2}' "${VALUES_DIR}/toolhive.values.yaml")"
+  crds_version="$(awk '/^crdsChartVersion:/ {print $2}' "${CLUSTER_DIR}/01-base/toolhive.values.yaml")"
+  operator_version="$(awk '/^operatorChartVersion:/ {print $2}' "${CLUSTER_DIR}/01-base/toolhive.values.yaml")"
 
   echo "[cluster.sh] installing toolhive-operator-crds @ ${crds_version}..."
   helm upgrade --install toolhive-operator-crds \
@@ -374,7 +376,7 @@ reconcile_ach() {
   # `make build-image-mcp-echo` + manual kind load — otherwise the Deployment
   # sits in ImagePullBackOff (the :e2e tag is never pushed to a registry).
   # Gated on the toggle so non-mcp-echo topologies don't pay the build cost.
-  if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${VALUES_DIR}/ach.values.yaml" \
+  if grep -A3 -E '^[[:space:]]*mcpEcho:[[:space:]]*$' "${CLUSTER_DIR}/02-ach/ach.values.yaml" \
        | grep -qE '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
     echo "[cluster.sh] building ${MCP_ECHO_IMAGE} (testMocks.mcpEcho.enabled)..."
     make build-image-mcp-echo
@@ -394,7 +396,7 @@ reconcile_ach() {
     --from-literal=url="postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach?sslmode=disable" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  # extraEnv + chart config live in test/e2e/values/ach.values.yaml.
+  # extraEnv + chart config live in test/e2e/cluster/02-ach/ach.values.yaml.
   # Image coordinates come from the ACH_IMAGE_REPO / ACH_IMAGE_TAG env
   # vars (CI sets them before invoking cluster.sh; default to dev tag
   # `e2e`) so the same chart can target prod registries too.
@@ -416,7 +418,7 @@ reconcile_ach() {
   # timestamp a string so the template's `quote` is well-defined.
   helm upgrade --install ach deploy/helm/ach \
     --namespace ach-system \
-    --values "${VALUES_DIR}/ach.values.yaml" \
+    --values "${CLUSTER_DIR}/02-ach/ach.values.yaml" \
     --set "image.repo=${ACH_IMAGE_REPO}" \
     --set "image.tag=${ACH_IMAGE_TAG}" \
     --set "image.pullPolicy=IfNotPresent" \
@@ -460,7 +462,7 @@ reconcile_fixtures() {
   #   - litellm-master-key Secret: the LiteLLMConnection operator uses
   #     to authenticate against the LiteLLM upstream during reconcile +
   #     §6.5 finalizer drain. Value must match LiteLLM chart's
-  #     `masterkey` (test/e2e/values/litellm.values.yaml).
+  #     `masterkey` (test/e2e/cluster/01-base/litellm.values.yaml).
   #   - LiteLLMConnection/default: the CR that wires the operator's
   #     litellm-rest client to the in-cluster LiteLLM Service. Without
   #     it, every Environment finalizer drain stalls on
@@ -496,8 +498,11 @@ reconcile_fixtures() {
   fi
 
   # Apply local unified gateway for dev/testing on Kind
-  echo "[cluster.sh] applying ach-local-gateway..."
-  kubectl apply -f test/e2e/fixtures/ach-local-gateway.yaml
+  # Stage 03: local nginx gateway. Applied here (post-reconcile_ach) because
+  # its static proxy_pass upstreams (ach-platform-api/forwarder/content-service,
+  # dex) are resolved by nginx at startup — the Services must already exist.
+  echo "[cluster.sh] applying ach-local-gateway (stage 03)..."
+  kubectl apply -k "${CLUSTER_DIR}/03-gateway"
 }
 
 reconcile_examples() {

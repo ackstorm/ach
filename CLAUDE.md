@@ -725,7 +725,7 @@ diff -u /tmp/hydrate-test.json examples/hydrate.json
 ✅ The golden at `examples/hydrate.json` is stored against the literal base
 URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
 `ACH_BASE_URL` the `ach-local-gateway` serves (set in
-`test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
+`test/e2e/cluster/02-ach/ach.values.yaml`). When the kept cluster exposes the
 platform-api on a different externally-visible base (a custom Ingress, a
 different DNS name, an https prod host, etc.), the raw `diff -u` flags every
 `downloadUrl`/`endpoint` row even though the response shape is byte-identical.
