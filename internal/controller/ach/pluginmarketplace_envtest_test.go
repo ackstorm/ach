@@ -790,6 +790,84 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	}
 }
 
+// TestPMR_Stage2_StatusPluginsPopulated proves issue #53's acceptance
+// criterion #1: a successful multi-plugin reconcile must surface the
+// materialized set on status.plugins[] + status.pluginsCount so an
+// operator running `kubectl get pluginmarketplace -o yaml` can see what
+// the catalog actually resolved to.
+//
+// REGRESSION GUARD: commit 2035908 ("surface materialized plugins on
+// status.plugins[]") wired these fields and persisted them via
+// `r.Status().Update(ctx, cr)`. The issue #18 conflict-retry refactor
+// (c28eeff) then rewrote markSynced{True,False} to Get a FRESH CR and
+// copy ONLY Conditions/ObservedGeneration/LastSuccessfulRefresh onto it
+// before Update — silently dropping the caller-set Plugins/PluginsCount
+// on every write. On that regressed code this test fails with
+// pluginsCount=0 and an empty plugins list.
+func TestPMR_Stage2_StatusPluginsPopulated(t *testing.T) {
+	ctx := context.Background()
+	cr := pmrCR("s2-status-plugins", nil, nil)
+	root := newCacheRoot(t)
+
+	stage1Key := applyMarketplaceCR(t, ctx, cr)
+	waitForFinalizer(t, ctx, cr)
+
+	// Two plugins, BOTH succeed → status.plugins must list both.
+	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+		Name:    "m",
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
+	})
+	factory := newMarketplaceFakeFactory()
+	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
+	gitReg := withFakeGitFetcher(t)
+	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
+	gitReg.register(shaForName("beta"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/beta"), rev: shaForName("beta")})
+
+	r := &PluginMarketplaceReconciler{
+		Client:    k8sClient,
+		Namespace: WatchNamespace,
+		Log:       logr.Discard(),
+		CacheRoot: root,
+		Fetchers:  factory.factory(),
+	}
+
+	// Drain until Synced=True lands. In correct code the plugins list is
+	// written in the SAME Status().Update as the Synced condition, so once
+	// Synced=True is observed the fields are at their final value (the
+	// within-interval gate then skips subsequent fetches, freezing status).
+	ok := drainReconcileUntil(ctx, r, cr, func(got *achv1alpha1.PluginMarketplace) bool {
+		c := syncedCondition(got)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonSynced
+	})
+	if !ok {
+		t.Fatalf("never observed Synced=True")
+	}
+
+	// THE ASSERTION issue #53 is about.
+	var got achv1alpha1.PluginMarketplace
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+		t.Fatalf("get CR: %v", err)
+	}
+	if got.Status.PluginsCount != 2 {
+		t.Errorf("status.pluginsCount = %d, want 2", got.Status.PluginsCount)
+	}
+	if len(got.Status.Plugins) != 2 {
+		t.Fatalf("len(status.plugins) = %d, want 2 (entries: %+v)", len(got.Status.Plugins), got.Status.Plugins)
+	}
+	// Entries are sorted by Name → [alpha, beta], each carrying its
+	// resolved UpstreamRev.
+	wantRev := map[string]string{"alpha": shaForName("alpha"), "beta": shaForName("beta")}
+	for _, p := range got.Status.Plugins {
+		if wantRev[p.Name] != p.UpstreamRev {
+			t.Errorf("status.plugins[%q].upstreamRev = %q, want %q", p.Name, p.UpstreamRev, wantRev[p.Name])
+		}
+		delete(wantRev, p.Name)
+	}
+	if len(wantRev) != 0 {
+		t.Errorf("status.plugins missing expected entries: %v", wantRev)
+	}
+}
+
 func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {
 	ctx := context.Background()
 	cr := pmrCR("s2-npm", nil, nil)
