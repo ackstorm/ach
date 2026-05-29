@@ -700,14 +700,26 @@ Snapshotter cache), so the condition reflects fresh upstream state.
 
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
-./bin/ach-cli hydrate --environment demo > /tmp/hydrate-test.json
+./bin/ach-cli hydrate --raw --environment demo > /tmp/hydrate-test.json
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
 # -        "downloadUrl": "https://kind.cluster.local/content/prompt/..."
 # +        "downloadUrl": "http://localhost:8080/content/prompt/..."
 ```
-✅ The golden at `examples/hydrate.json` is stored against the literal base
+✅ **Phase 7 changed the default `ach-cli hydrate` behavior**: the engine
+path materializes content to disk (see `internal/cli/hydrate/`), NOT to
+stdout. The byte-for-byte golden-diff anchor at `examples/hydrate.json`
+lives behind the hidden `--raw` flag (D-04 / 07-W3-05) —
+`./bin/ach-cli hydrate --raw --environment demo > /tmp/hydrate-test.json`
+reproduces the Phase 6 POST+stream stdout contract verbatim. Without
+`--raw`, the engine path produces filesystem writes under `<ach-dir>/`
+and a human-readable summary on stderr; no manifest body is ever printed
+to stdout. The W3-P3 e2e (`test/e2e/cli_login_hydrate_test.go`) is the
+load-bearing caller of `--raw`; any other golden-diff repro must pass
+`--raw` too.
+
+The golden at `examples/hydrate.json` is stored against the literal base
 URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
 `ACH_BASE_URL` the `ach-local-gateway` serves (set in
 `test/e2e/values/ach.values.yaml`). When the kept cluster exposes the
@@ -819,6 +831,84 @@ rebuilds. The image content under `:e2e` is new, but nothing tells kubelet
 to recreate the pod. `image.rebuildId` is the prod-safe knob that makes the
 podTemplate differ per build; a unique per-build image **tag** would also
 work but leaves orphan images on the node.
+
+### ❌ `ach-cli hydrate` exits 5 with `state: schemaVersion != "2"`
+```bash
+./bin/ach-cli hydrate --environment demo
+# fatal: state: schemaVersion "1" is not supported (want "2") — per spec §8.2
+# exit status 5
+```
+✅ This is the v1alpha1 **state.json clean-break** per spec §8.2 + D-13.
+The state file at `<ach-dir>/state.json` (workspace: `<cwd>/.ach/state.json`;
+global: `~/.ach/<environment>/state.json`) carries `schemaVersion: "2"`. A
+non-`"2"` value means the on-disk state was written by an out-of-tree CLI
+build OR a future v2-incompatible schema; Phase 7 ships NO v1 reader code
+(intentional — see CONTEXT.md D-13). No files have been written to disk —
+the schema gate fires BEFORE the manifest fetch + atomic-commit sequence,
+so the workspace is unmodified. Two recoveries, in preference order:
+
+1. **Delete the stale state file** (preferred for the v1 → v2 clean break,
+   since no v1 reader exists to migrate):
+   ```bash
+   rm <ach-dir>/state.json   # workspace
+   # OR
+   rm ~/.ach/<environment>/state.json   # --global
+   ./bin/ach-cli hydrate --environment demo   # re-hydrate from scratch
+   ```
+2. **Pass `--force` to overwrite** (use only when you understand the
+   trade-off):
+   ```bash
+   ./bin/ach-cli hydrate --environment demo --force
+   ```
+   `--force` discards any state about prior hydrations AND makes ALL drift
+   detection inert for this invocation. Subsequent invocations resume
+   drift checks against the newly-written state.
+
+WHY IT FAILS: STATE-02 forbids silent migration. Crashing on schemaVersion
+drift is the only safe posture — a v1 reader could mis-interpret v2 dual-
+hash fields (`hash` + `sourceHash`, both xxh3) and trigger spurious
+overwrites of locally-edited files. The exit-5 refusal is the contract
+that protects the on-disk state from semantic corruption.
+
+### ❌ `ach-cli hydrate` exits 4 with `state: same <ach-dir> bound to a different Environment`
+```bash
+./bin/ach-cli hydrate --environment prod
+# fatal: state: same <ach-dir> ./.ach bound to a different Environment
+#   ("demo" on disk, "prod" requested) — per STATE-03 / spec §8.3
+# exit status 4
+```
+✅ This is the **workspace-scope guard** per STATE-03 + spec §8.3. The
+`.ach/` directory you ran from previously hydrated against Environment X
+and you're now requesting Environment Y. The guard ONLY fires in workspace
+scope (no `--global`); global scope's namespacing (`~/.ach/<environment>/`)
+makes the conflict impossible by construction. Three recoveries:
+
+1. **`cd` into a different workspace** (preferred — each Environment gets
+   its own `<ach-dir>`):
+   ```bash
+   cd ../prod-workspace      # or `mkdir prod-workspace && cd prod-workspace`
+   ./bin/ach-cli hydrate --environment prod
+   ```
+2. **Use `--global`** (each Environment is namespaced by directory under
+   `~/.ach/<environment>/`, so the conflict cannot fire):
+   ```bash
+   ./bin/ach-cli hydrate --environment prod --global
+   ```
+3. **Pass `--force` to overwrite** (use only when you intentionally want
+   the same workspace re-bound to a new Environment — this discards prior
+   hydration state for the previous Environment):
+   ```bash
+   ./bin/ach-cli hydrate --environment prod --force
+   ```
+
+WHY IT FAILS: STATE-03 is the load-bearing barrier against mixing
+Environment-bound credentials in the same on-disk runtime config. Without
+the guard, a `claude-code` workspace bound to `prod` could silently be
+relabeled to `staging` mid-session — the runtime-config files
+(`.claude/.mcp.json`, `.codex/config.toml`, etc.) would gain `prod` URLs
++ keys while the user believed the workspace was still on `staging`. The
+exit-4 refusal is the contract that keeps workspace ↔ Environment binding
+unambiguous.
 
 ## Repository-specific patterns
 
