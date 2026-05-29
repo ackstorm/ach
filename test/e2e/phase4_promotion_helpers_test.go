@@ -26,9 +26,9 @@ import (
 //  1. Snapshot status.upstreamRev and status.lastSuccessfulRefresh.
 //  2. kubectl annotate <kind>/<name> ach.ackstorm.ai/force-refresh=now --overwrite
 //  3. Poll until BOTH:
-//       a) annotation absent (reconciler cleared it per D-07)
-//       b) status.lastSuccessfulRefresh > snapshot (RFC3339 string compare
-//          works because ISO-8601 lex-sorts correctly).
+//     a) annotation absent (reconciler cleared it per D-07)
+//     b) status.lastSuccessfulRefresh > snapshot (RFC3339 string compare
+//     works because ISO-8601 lex-sorts correctly).
 //  4. Assert status.upstreamRev is UNCHANGED (upstream didn't move, so
 //     no re-publish; UpsertExternalRef returns NotModified=true).
 //

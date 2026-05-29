@@ -98,6 +98,7 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	// + 2026-05-26-environment-available-uat.md), also force-refresh
 	// the Environment CR and assert both conditions stay True.
 }
+
 // testSC11bBIPAdmissionFinalizer asserts the BIP CRUD invariants:
 //  1. Both examples/09 + examples/10 are admitted (CRD validation
 //     passes on the same (target.kind, target.name) duplicate).
@@ -163,6 +164,7 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	waitForBIPDeleted(t, bipA, 30*time.Second)
 	waitForBIPDeleted(t, bipB, 30*time.Second)
 }
+
 // testSC11cMarketplaceInternalSchema drives examples/05b end-to-end:
 //
 //  1. applyPhase4MarketplaceServer: ConfigMap + nginx Deployment+Service.
@@ -245,6 +247,7 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Fatalf("§11c: marketplace_plugins row not cleaned up within 30s; row count still=%q",
 		strings.TrimSpace(out))
 }
+
 // testSC11dOperatorRestart catches "wires-only-on-startup" bugs:
 //
 //  1. Snapshot the operator Pod's metadata.uid.
@@ -290,6 +293,7 @@ func testSC11dOperatorRestart(t *testing.T) {
 	// Reconciliation MUST fire after restart.
 	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
 }
+
 // testSC11eHydrateGolden is the highest-value §11 add: full /platform/
 // hydrate wire path asserted against a checked-in golden JSON.
 //
@@ -347,6 +351,7 @@ func testSC11eHydrateGolden(t *testing.T) {
 	// Available=True (currently waits only on
 	// ExecutionResourcesResolved=True per FIX01 §C.1).
 }
+
 // testSC11fFinalizerCleanup extends phase3's finalizer coverage to:
 //   - Environment delete drives the §6.5 LiteLLM DeleteAccessGroup +
 //     DeleteTag calls (assert by side-effect on the Environment CR

@@ -112,6 +112,14 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: fmt-check
+fmt-check: ## Fail if any Go file is not gofmt-clean (no mutation).
+	$(call container_target,_fmt-check)
+_fmt-check:
+	@out=$$(gofmt -l $$(git ls-files '*.go' | grep -v -E 'zz_generated|/vendor/')); \
+	if [ -n "$$out" ]; then echo "Not gofmt-clean:"; echo "$$out"; exit 1; fi; \
+	echo "OK gofmt-clean"
+
 .PHONY: test-full
 test-full: ## All non-cluster tests (unit + envtest, race-enabled).
 	$(call container_target,_test-full)
@@ -120,7 +128,7 @@ _test-full: _test-unit _test-envtest
 .PHONY: test-unit
 test-unit: ## Pure-logic unit tests (~10s warm).
 	$(call container_target,_test-unit)
-_test-unit: fmt vet
+_test-unit: _fmt-check vet
 	# `go test` defaults to -p=GOMAXPROCS across packages (speedup-ideas §5 confirmed).
 	# Exclusions: internal/controller (envtest), test/e2e (cluster).
 	# Anything else is pure-logic.

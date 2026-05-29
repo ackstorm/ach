@@ -152,7 +152,7 @@ func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
-		Jar: jar,
+		Jar:     jar,
 		Timeout: 10 * time.Second,
 		Transport: &noSecureCookieTransport{
 			underlying: http.DefaultTransport,

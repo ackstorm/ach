@@ -73,7 +73,7 @@ fi
 
 # --- 1. gitleaks ---
 hdr "1. gitleaks ($SCAN_LABEL)"
-if docker run --rm -v "$REPO_ROOT:/repo:ro" zricethezav/gitleaks:latest \
+if docker run --rm -v "$REPO_ROOT:/repo:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
      detect --source=/repo --redact --no-banner \
      --config=/repo/.gitleaks.toml $GITLEAKS_LOG_OPTS; then
   ok "no leaks detected"
@@ -83,7 +83,7 @@ fi
 
 # --- 2. trufflehog ---
 hdr "2. trufflehog ($SCAN_LABEL)"
-if docker run --rm -v "$REPO_ROOT:/pwd:ro" trufflesecurity/trufflehog:latest \
+if docker run --rm -v "$REPO_ROOT:/pwd:ro" trufflesecurity/trufflehog:3.95.3@sha256:9cc33bb080cac0efbbf228a17667172875b529eeeab01efcc4697adfb55f568a \
      git file:///pwd --only-verified --fail --no-update $TRUFFLEHOG_SINCE; then
   ok "no verified live secrets"
 else
@@ -249,18 +249,27 @@ hdr "14. go mod tidy drift"
 # manifests as a phantom 'No newline at end of file' diff on the next
 # run. The original file lives in /tmp until the gate exits.
 SNAP_DIR=$(mktemp -d)
-trap 'rm -rf "$SNAP_DIR"' EXIT
 cp go.mod "$SNAP_DIR/go.mod" 2>/dev/null || true
 cp go.sum "$SNAP_DIR/go.sum" 2>/dev/null || true
+# Restore go.mod/go.sum on EVERY exit path — the drift branch, the
+# tidy-exited-non-zero branch, or any later-gate failure — so pre-push never
+# leaves the working tree mutated. Combined with snapshot cleanup in ONE EXIT
+# trap (bash keeps only one trap per signal; a second `trap ... EXIT` would
+# clobber the cleanup and leak $SNAP_DIR).
+restore_gomod() {
+  [[ -f "$SNAP_DIR/go.mod" ]] && cp "$SNAP_DIR/go.mod" go.mod
+  [[ -f "$SNAP_DIR/go.sum" ]] && cp "$SNAP_DIR/go.sum" go.sum
+  rm -rf "$SNAP_DIR"
+}
+trap restore_gomod EXIT
 if ./scripts/dev.sh go mod tidy >/tmp/gomod-tidy.txt 2>&1; then
   if git diff --quiet -- go.mod go.sum 2>/dev/null; then
     ok "go.mod / go.sum are tidy"
   else
     fail "go mod tidy produced uncommitted drift in go.mod / go.sum"
     git --no-pager diff -- go.mod go.sum | head -40
-    # Restore byte-for-byte so the pre-push check does not leave dirty state.
-    [[ -f "$SNAP_DIR/go.mod" ]] && cp "$SNAP_DIR/go.mod" go.mod
-    [[ -f "$SNAP_DIR/go.sum" ]] && cp "$SNAP_DIR/go.sum" go.sum
+    # Working tree restored by the restore_gomod EXIT trap (covers this
+    # branch AND the tidy-exited-non-zero branch below).
   fi
 else
   fail "go mod tidy exited non-zero (see /tmp/gomod-tidy.txt)"
