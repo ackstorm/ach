@@ -43,13 +43,13 @@ func TestPhase4Invariants(t *testing.T) {
 		pk := phase4AcquirePkAutomatically(t, localPort)
 		ek, err := phase4AcquireEkBoundToEnvAutomatically(t, localPort, pk, "demo")
 		if err == nil {
-			os.Setenv("ACH_E2E_EK_FIXTURE_DEMO", ek)
+			t.Setenv("ACH_E2E_EK_FIXTURE_DEMO", ek)
 		} else {
 			t.Logf("Warning: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
 		}
 
-		os.Setenv("ACH_FORWARDER_URL", "http://localhost:"+localPort)
-		os.Setenv("ACH_E2E_PK_FIXTURE", pk)
+		t.Setenv("ACH_FORWARDER_URL", "http://localhost:"+localPort)
+		t.Setenv("ACH_E2E_PK_FIXTURE", pk)
 	}
 
 	t.Run("SC1_HeaderRewrite", testPhase4SC1HeaderRewrite)
