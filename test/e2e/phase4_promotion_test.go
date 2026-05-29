@@ -33,7 +33,9 @@ func TestPhase4Promotion(t *testing.T) {
 	t.Run("SC11b_BIPAdmissionFinalizerDuplicate", testSC11bBIPAdmissionFinalizer)
 	t.Run("SC11c_PluginMarketplaceInternalSchema", testSC11cMarketplaceInternalSchema)
 	t.Run("SC11d_OperatorRestartInformerResync", testSC11dOperatorRestart)
-	t.Run("SC11e_HydrateGoldenJSON", testSC11eHydrateGolden)
+	// SC11e (HydrateGoldenJSON) removed (#58): the hydrate wire-path golden is
+	// covered by TestPhase6CLI (CLI-driven), and its driver examples/hydrate-demo.sh
+	// was deleted. No coverage loss.
 	t.Run("SC11f_FinalizerCleanupMatrix", testSC11fFinalizerCleanup)
 }
 
@@ -42,8 +44,8 @@ func TestPhase4Promotion(t *testing.T) {
 // testSC11aForceRefreshCycle drives the force-refresh annotation
 // round-trip across the three external-reference kinds the demo
 // fixture set already exercises (examples/06, 07, 08). Each kind:
-//  1. is pre-applied by examples/hydrate-demo.sh OR this subtest
-//     (hydrate-demo.sh idempotent re-apply path).
+//  1. is already applied as a synced cluster fixture (cluster.sh
+//     stage 04-objects); the subtest asserts against it, never re-applies.
 //  2. has its force-refresh annotation cycled once.
 //
 // Total wall-clock: 3 kinds × ≤30s = ≤90s on a cold reconcile; ≤6s on
@@ -269,67 +271,11 @@ func testSC11dOperatorRestart(t *testing.T) {
 	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
 }
 
-// testSC11eHydrateGolden is the highest-value §11 add: full /platform/
-// hydrate wire path asserted against a checked-in golden JSON.
-//
-// Wire path: examples/hydrate-demo.sh drives:
-//  1. LiteLLM team seed
-//  2. kubectl apply -f examples/{01,06,07,08,04}
-//  3. wait Environment/demo ExecutionResourcesResolved=True
-//  4. port-forward platform-api + dex
-//  5. Dex SSO → pk_
-//  6. POST /platform/hydrate environment=demo
-//
-// Golden lives at test/e2e/fixtures/hydrate-golden.json (Task 12).
-// Diff tolerates no drift today — every leaf value matches. If future
-// fields legitimately drift (timestamps, hashes), extend the tolerated
-// map below.
-func testSC11eHydrateGolden(t *testing.T) {
-	t.Helper()
-
-	// Engineer-pending — gated behind ACH_E2E_PHASE9=1 (shared gate
-	// with phase4_environment_available_test.go). hydrate-demo.sh
-	// step 3 blocks on Environment/demo ExecutionResourcesResolved=True,
-	// which requires LiteLLM to carry the 5 resources referenced by
-	// examples/04-environment-demo.yaml (gemini.gemini-flash-latest,
-	// openai.gpt-5-mini, vmcp-dev, vmcp-aws, test-noop-agent). The
-	// SUPERSEDED — skipped unconditionally. This subtest drove the now-removed
-	// examples/hydrate-demo.sh (collapsed into `ach-cli login` + `ach-cli
-	// hydrate`). The full hydrate wire path + golden-diff is now asserted by
-	// TestPhase6CLI (test/e2e/cli_login_hydrate_test.go), which drives the CLI
-	// directly. Kept as a skipped placeholder so the §11 promotion matrix stays
-	// complete; re-home or delete once the CLI-driven golden is the only path.
-	// (Decoupled from ACH_E2E_PHASE9 — that gate is now ON for the working
-	// Environment subtests, and must not resurrect the deleted shell driver.)
-	t.Skipf("§11e superseded by TestPhase6CLI (CLI-driven hydrate golden); examples/hydrate-demo.sh was removed. Skipping.")
-
-	actual := driveHydrateAndCapture(t)
-
-	golden, err := os.ReadFile("../../test/e2e/fixtures/hydrate-golden.json")
-	if err != nil {
-		t.Fatalf("§11e: read golden: %v", err)
-	}
-
-	tolerated := map[string]struct{}{
-		// Add drift paths here when discovered. Example:
-		//   "$.context.plugins[0].downloadUrl": {}, // when host varies
-	}
-
-	diffs := compareJSONShape(actual, golden, tolerated)
-	if len(diffs) > 0 {
-		t.Fatalf("§11e hydrate response differs from golden:\n  %s\n\n"+
-			"If the drift is legitimate, either (a) re-capture the golden "+
-			"(bash examples/hydrate-demo.sh && cp examples/hydrate.json "+
-			"test/e2e/fixtures/hydrate-golden.json) and commit, OR (b) add "+
-			"the drifting JSON path to the `tolerated` map in this test.",
-			strings.Join(diffs, "\n  "))
-	}
-
-	// TODO(§16): once Environment Available + AccessGroupSynced
-	// conditions land, also assert hydrate-demo.sh waits on
-	// Available=True (currently waits only on
-	// ExecutionResourcesResolved=True per FIX01 §C.1).
-}
+// SC11e (testSC11eHydrateGolden) was removed in #58. The full /platform/hydrate
+// wire path + golden-diff is now asserted by TestPhase6CLI (CLI-driven, via
+// ach-cli hydrate); its old driver examples/hydrate-demo.sh was deleted, so
+// there is no coverage loss. The compareJSONShape/walkJSON helpers it used were
+// removed alongside it (they had no other caller).
 
 // testSC11fFinalizerCleanup extends phase3's finalizer coverage to:
 //   - Environment delete drives the §6.5 LiteLLM DeleteAccessGroup +

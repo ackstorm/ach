@@ -46,9 +46,9 @@ extraEnv:
     value: "dev-secret-not-for-prod"
   - name: ACH_DEX_REDIRECT_URL
     # Must match a redirectURI registered in scripts/dex-config.yaml's
-    # staticClient. examples/hydrate-demo.sh drives the SSO flow over a
-    # kubectl port-forward to localhost:8080, so we use the same URL
-    # Dex has on file. In a real deployment this would be the public
+    # staticClient. The SSO flow (ach-cli login / the phase4 e2e helpers)
+    # reaches platform-api on localhost:8080 via the gateway, so we use the
+    # same URL Dex has on file. In a real deployment this would be the public
     # platform-api callback URL behind ingress.
     value: "http://localhost:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR

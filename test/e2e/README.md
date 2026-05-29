@@ -19,7 +19,7 @@ Activation: `make e2e-run` (assumes `make cluster-up` already invoked).
 | `phase4_helpers_test.go`              | Phase 04 Forwarder helpers (SSO key acquisition, JWKS probe, BIP fixture seed)                                         |
 | `phase4_environment_available_test.go`| TODO §9 acceptance — Environment Available composite condition (gated behind `ACH_E2E_PHASE9=1`)                       |
 | `phase4_promotion_test.go`            | §11 UAT promotion: force-refresh, BIP, marketplace, restart, hydrate-golden, finalizer matrix                          |
-| `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, `compareJSONShape`, BIP probes, fixture-server bring-up, DB-count helpers, hydrate driver     |
+| `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, fixture-server bring-up, DB-count helpers     |
 | `phase5_invariants_test.go`           | Phase 05 SCs (content-service sendfile path, env-cache observability, hydrate URL surface)                            |
 | `phase5_helpers_test.go`              | Phase 05 helpers (port-forward, kubectl exec into pods, strace seam)                                                  |
 | `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — login (env-var-injected pk_) + whoami --verify + env list + env-keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
@@ -42,28 +42,25 @@ make e2e-focus FOCUS='registers via POST /model/new'   # legacy ginkgo
 | `fixtures/plugin_*.yaml`                          | phase 2 SC#1 + SC#4                                    |
 | `fixtures/marketplace_fixture_server.yaml`        | phase 2 fixture server (applied by `applyFixtureServer`) |
 | `fixtures/phase4_marketplace_internal.json`       | §11c (served by `applyPhase4MarketplaceServer`)         |
-| `fixtures/hydrate-golden.json`                    | §11e golden diff                                       |
 | `phase3_fixtures/environment_*.yaml`              | phase 3 SCs #2/#3                                      |
 
-## Re-capturing the §11e hydrate golden
+## Re-capturing the hydrate golden
 
-When the hydrate response shape legitimately changes (e.g. a new field
-lands), re-capture the golden via the Phase 6 CLI binary (replaces the
-previous shell-driver workflow):
+The hydrate wire-path golden is `examples/hydrate.json`, asserted by
+`TestPhase6CLI` (CLI-driven). When the hydrate response shape
+legitimately changes (e.g. a new field lands), re-capture it:
 
 ```bash
 make cluster-up
 make build-all
 ./bin/ach-cli login                                          # one-time SSO
 ./bin/ach-cli hydrate --environment demo > examples/hydrate.json
-cp examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
-git add examples/hydrate.json test/e2e/fixtures/hydrate-golden.json
-git commit -m "test(e2e): refresh §11e hydrate golden (<reason>)"
+git add examples/hydrate.json
+git commit -m "test(e2e): refresh hydrate golden (<reason>)"
 ```
 
-If the change is intentional drift on a single path (e.g.
-`downloadUrl` host changes per cluster), prefer adding the path to the
-`tolerated` map in `testSC11eHydrateGolden` over re-capturing. The
-Phase 6 CLI suite's `phase6NormalizeHydrate` helper handles the
-platform-api host substitution automatically; see CLAUDE.md "Common
-failure modes" entry "Hydrate output != examples/hydrate.json".
+If the change is just a per-cluster host difference (e.g. the
+`downloadUrl` host), no re-capture is needed: the Phase 6 CLI suite's
+`phase6NormalizeHydrate` helper handles the platform-api host
+substitution automatically; see CLAUDE.md "Common failure modes" entry
+"Hydrate output != examples/hydrate.json".
