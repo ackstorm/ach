@@ -108,9 +108,17 @@ metadata:
   name: ach-local-gateway
   namespace: ach-system
 spec:
+  # NodePort so the gateway is reachable from the host without a manual
+  # `kubectl port-forward`. Paired with scripts/kind-config.yaml's
+  # extraPortMapping (hostPort 8080 -> containerPort 30080), host
+  # http://localhost:8080 routes straight to this gateway. NOTE: the
+  # extraPortMapping only takes effect on `kind create` — an already-up
+  # cluster must be recreated (cluster-down && cluster-up) to publish it.
+  type: NodePort
   ports:
   - port: 80
     targetPort: 8080
+    nodePort: 30080
     name: http
   selector:
     app: ach-local-gateway
