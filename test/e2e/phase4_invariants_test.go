@@ -36,24 +36,13 @@ import (
 func TestPhase4Invariants(t *testing.T) {
 	phase4SuiteGuard(t)
 
-	// Automatically spin up the local-gateway port-forward, run SSO, and
-	// mint E2E pk_ and ek_ keys to allow fully automated headless testing!
-	if os.Getenv("ACH_FORWARDER_URL") == "" || os.Getenv("ACH_E2E_PK_FIXTURE") == "" {
-		localPort := "8084"
-		cleanup := phase4StartGatewayPortForward(t, localPort)
-		defer cleanup()
-
-		pk := phase4AcquirePkAutomatically(t, localPort)
-		ek, err := phase4AcquireEkBoundToEnvAutomatically(t, localPort, pk, "demo")
-		if err == nil {
-			t.Setenv("ACH_E2E_EK_FIXTURE_DEMO", ek)
-		} else {
-			t.Logf("Warning: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
-		}
-
-		t.Setenv("ACH_FORWARDER_URL", "http://localhost:"+localPort)
-		t.Setenv("ACH_E2E_PK_FIXTURE", pk)
-	}
+	// pk_/ek_ keys are acquired on demand through the always-on gateway
+	// (mustAcquirePk / mustAcquireEkBoundToEnv → phase4GatewayPort, which
+	// derives the port from ACH_BASE_URL and needs no dedicated port-forward)
+	// and cached per-process. The harness exports ACH_FORWARDER_URL=<gateway
+	// base>, which the subtests read directly — so there is no longer a
+	// dedicated :8084 port-forward + ACH_FORWARDER_URL override here (it only
+	// shadowed the gateway env on every focused run; see #63).
 
 	t.Run("SC1_HeaderRewrite", testPhase4SC1HeaderRewrite)
 	t.Run("SC2_McpA2aPrecheck", testPhase4SC2McpA2aPrecheck)
