@@ -227,11 +227,22 @@ func testPhase7BaselineNoOp(t *testing.T) {
 
 // phase7Sc1AssertRunOutputs is the shared assertion body for every
 // sc1_* subtest: exit 0, expected runtime-config file present, state.json
-// present with schemaVersion="2".
+// present with schemaVersion="2", and runtime-config file MODE == 0o600
+// per W5-02 CR-01 mitigation (credential-bearing adapter files MUST NOT
+// be world-readable on multi-user hosts).
 //
 // stdout / stderr are passed through verbatim into the failure message
 // so any first-failure debug session has full context — no
 // re-invocation required.
+//
+// Mode-0o600 assertion is load-bearing for the W5-02 close. The
+// runtime-config file (.claude/.mcp.json / .codex/config.toml /
+// .gemini/settings.json / .opencode/opencode.json) embeds plaintext
+// `x-ach-key` bearer credentials in its headers map; a 0o644 mode would
+// leak the bearer to any other local UID. Pre-W5-02 the engine called
+// state.WriteAtomic with no mode parameter (hardcoded 0o644); post-W5-02
+// the signature is required-mode and adapterDispatcherImpl.Render passes
+// 0o600. This assertion is the end-to-end proof.
 func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, runtimePath string, code int, stdout, stderr []byte) {
 	t.Helper()
 	if code != 0 {
@@ -240,10 +251,21 @@ func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, runtimePath st
 	}
 	// Runtime-config file landed at the expected canonical path.
 	fullRuntimePath := filepath.Join(output, runtimePath)
-	if _, err := os.Stat(fullRuntimePath); err != nil {
-		t.Errorf("sc1: expected runtime-config at %s not found: %v\n"+
+	info, err := os.Stat(fullRuntimePath)
+	if err != nil {
+		t.Fatalf("sc1: expected runtime-config at %s not found: %v\n"+
 			"stdout=%s\nstderr=%s",
 			fullRuntimePath, err, stdout, stderr)
+	}
+	// Mode 0o600 assertion — W5-02 CR-01 mitigation. Anything other
+	// than 0o600 means WriteAtomic was called with the wrong mode
+	// (the adapter file is leaking bearer credentials to other UIDs).
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("sc1: adapter file %s mode = %o, want %o (W5-02 CR-01 mitigation — "+
+			"adapter runtime-config files embed plaintext x-ach-key bearer in headers; "+
+			"0o600 prevents read by other local UIDs on multi-user hosts)\n"+
+			"stdout=%s\nstderr=%s",
+			fullRuntimePath, got, 0o600, stdout, stderr)
 	}
 	// state.json present and asserts schemaVersion=2.
 	statePath := phase7StatePath(output, environment)
