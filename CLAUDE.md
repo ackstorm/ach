@@ -49,7 +49,7 @@ Selected release plumbing + CI scaffolding grafted from
 surfaces: CI workflows, goreleaser configs, mkdocs site scaffold,
 community files. All Go code, CRDs, and Helm chart values are original
 ackstorm material (CRD set and reconciler shape derived from the ach-old
-planning corpus at `/home/jcm/Projects/ach-old`).
+planning corpus).
 
 ## Architecture
 
@@ -482,9 +482,11 @@ Use these Makefile targets instead:
 | Full cluster hydration                  | `make cluster-up` (synchronous; do not poll after)  |
 | Reconcile infra/fixtures on running cluster | `make cluster-sync` (rebuilds + rolls ach pods via rebuild-id) |
 
-> Some of these `wait-*` targets are not yet defined in the Makefile —
-> add them on first use rather than introducing ad-hoc polling loops in
-> scripts or tests. Targets are the contract; ad-hoc loops aren't.
+> All `wait-*` targets listed above are defined in the Makefile (plus
+> `wait-litellm`, `wait-mcp-echo`, `wait-mocks` for the test backends). If a
+> *new* wait need arises that none of them cover, add a new `wait-*` target
+> rather than introducing ad-hoc polling loops in scripts or tests. Targets
+> are the contract; ad-hoc loops aren't.
 
 Default `WAIT_TIMEOUT=300s` (override per call). `wait-container` takes
 `TIMEOUT=<seconds>` (default 600).
@@ -605,8 +607,9 @@ has no context for the kind cluster.
 cat > internal/controller/scope_ac_n4_test.go <<EOF ...
 # silently writes to a sibling repo if that is cwd
 ```
-✅ Always use absolute paths for Edit/Write, and `cd /home/jcm/Projects/ach`
-before bash operations. Verify with `pwd && git log --oneline | head -3`.
+✅ Always use absolute paths for Edit/Write, and `cd` to the repo root (this
+working directory) before bash operations. Verify you are in the right tree
+with `pwd && git remote -v` (expect `ackstorm/ach`).
 WHY IT FAILS: Sibling repos with similar layouts (e.g. `ach-old/`,
 `alitellm-operator/`) live next to this one. Relative-path edits to the
 wrong tree leave this repo unchanged while appearing to "succeed."
@@ -922,7 +925,7 @@ work but leaves orphan images on the node.
   in either direction blocks push.
 
 - **Upstream-sync ledger**: `references/upstream-sync.md` records every
-  file or directory grafted from `/home/jcm/Projects/alitellm-operator`
+  file or directory grafted from the upstream `alitellm-operator` repo
   with the adaptations applied (sed renames, path rewrites, single-
   binary refactors). New grafts MUST add a row.
 
