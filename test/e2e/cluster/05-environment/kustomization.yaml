@@ -7,3 +7,6 @@ kind: Kustomization
 resources:
   - demo.yaml
   - demo-unresolved.yaml
+  # Phase 5 content-service exercise Environment (empty runtime; context
+  # references the valid plugin/prompt/artifact from stage 04).
+  - env-valid.yaml

@@ -74,19 +74,30 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # controller-gen, kustomize, setup-envtest via go install -> /usr/local/bin (GOBIN)
 RUN go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_VERSION} \
     && go install sigs.k8s.io/kustomize/kustomize/v5@${KUSTOMIZE_VERSION} \
-    && go install sigs.k8s.io/controller-runtime/tools/setup-envtest@${SETUP_ENVTEST_VERSION}
+    && go install sigs.k8s.io/controller-runtime/tools/setup-envtest@${SETUP_ENVTEST_VERSION} \
+    && go clean -cache -modcache
+# ^ The installed binaries land in /usr/local/bin (GOBIN); the Go build +
+#   module caches under /go and /root/.cache are dead weight in the image
+#   (scripts/dev.sh overrides GOCACHE/GOMODCACHE to /workspace/.gocache at
+#   runtime, so the baked-in caches are never read). Clean them in the SAME
+#   layer so the saving actually lands — a later `RUN clean` cannot shrink an
+#   earlier layer.
 
 # govulncheck — installed straight under the image's pinned toolchain.
 # (Previously needed GOTOOLCHAIN=auto when the base image was Go 1.24
 # because v1.3.0 of golang.org/x/vuln requires Go >= 1.25. With the base
 # bumped to golang:1.26-bookworm the bootstrap toolchain already satisfies
 # the requirement, so the workaround is dropped.)
-RUN go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+RUN go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
+    && go clean -cache -modcache
 
 # Pre-download envtest assets for k8s 1.31.0 so test runs don't fetch them on first use.
 # Path is content-addressed under /opt/envtest; setup-envtest -p path resolves it.
 RUN mkdir -p /opt/envtest \
-    && setup-envtest use ${ENVTEST_K8S_VERSION} --bin-dir /opt/envtest
+    && setup-envtest use ${ENVTEST_K8S_VERSION} --bin-dir /opt/envtest \
+    && go clean -cache -modcache
+# ^ Keep the k8s control-plane binaries under /opt/envtest; only the Go
+#   build/module caches are cleaned (go clean never touches /opt/envtest).
 
 ENV ENVTEST_K8S_VERSION=${ENVTEST_K8S_VERSION} \
     ENVTEST_BIN_DIR=/opt/envtest

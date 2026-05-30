@@ -440,10 +440,8 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.markSyncedFalse(ctx, &cr, ReasonNameConflict, msg, requeue, nil)
 	}
 
-	// Compose the success message: transport= prefix lets operators see
-	// the wire path; the partial-failure summary (msg) follows when
-	// non-empty so per-plugin failures stay visible alongside.
-	finalMsg := sourceReachableMessage(sourceSpec)
+	// transport=<…> plugins=<N> [stage-2 partial-failure summary]
+	finalMsg := fmt.Sprintf("%s plugins=%d", sourceReachableMessage(sourceSpec), len(successful))
 	if msg != "" {
 		finalMsg = finalMsg + " " + msg
 	}
@@ -690,6 +688,11 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 		applyReconcileConditions(&fresh.Status.Conditions, ReasonSynced, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		fresh.Status.LastSuccessfulRefresh = &now
+		// Carry the caller-computed discovery set onto the fresh copy —
+		// the Reconcile body set these on `cr` and the fresh Get would
+		// otherwise drop them (issue #53 regression introduced by c28eeff).
+		fresh.Status.Plugins = cr.Status.Plugins
+		fresh.Status.PluginsCount = cr.Status.PluginsCount
 		if u := r.Status().Update(ctx, &fresh); u != nil {
 			return u
 		}
@@ -728,6 +731,12 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 		}
 		applyReconcileConditions(&fresh.Status.Conditions, reason, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
+		// Carry the caller's discovery set (issue #53 regression: c28eeff).
+		// The marketplace-loser branch zeroes cr.Status.Plugins before
+		// calling this so the stale set is cleared; other failure paths
+		// pass through the prior value loaded at the top of Reconcile.
+		fresh.Status.Plugins = cr.Status.Plugins
+		fresh.Status.PluginsCount = cr.Status.PluginsCount
 		if u := r.Status().Update(ctx, &fresh); u != nil {
 			return u
 		}

@@ -36,8 +36,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/prometheus/common/expfmt"
 )
 
 // errEnvelope is the §15.5 error response shape returned by the
@@ -51,8 +49,9 @@ type errEnvelope struct {
 }
 
 // reqIDPattern is the ULID-style request_id format. CS handler emits
-// `req_<26-char-base32>` per §15.5 + the audit handler convention.
-var reqIDPattern = regexp.MustCompile(`^req_[A-Z0-9]{26}$`)
+// `req_<26-char-base32>` per §15.5 + the audit handler convention. The
+// encoder emits lowercase Crockford base32, so match case-insensitively.
+var reqIDPattern = regexp.MustCompile(`^req_[0-9a-zA-Z]{26}$`)
 
 func TestPhase5Invariants(t *testing.T) {
 	phase5SuiteGuard(t)
@@ -61,6 +60,56 @@ func TestPhase5Invariants(t *testing.T) {
 	t.Run("SC3_PluginPrecedence", testPhase5SC3PluginPrecedence)
 	t.Run("SC4_StalenessAndRename", testPhase5SC4StalenessAndInFlightRename)
 	t.Run("SC5_MetricsTopology", testPhase5SC5MetricsTopology)
+	t.Run("SC6_InvalidSyncedFixtures", testPhase5SC6InvalidSyncedFixtures)
+}
+
+// testPhase5SC6InvalidSyncedFixtures asserts the negative-path half of the
+// synced content-service matrix: plugin-invalid / prompt-invalid /
+// artifact-invalid each settle at SourceReachable=False (their git source
+// is a nonexistent repo). They are pre-synced by cluster.sh and gated to
+// this failure state by verify_all, so the live condition is already
+// settled; the suite asserts both the CR condition AND that the Postgres
+// projection reflects the failure (no successful refresh recorded).
+func testPhase5SC6InvalidSyncedFixtures(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	invalid := []struct{ kind, name, table string }{
+		{"plugin", "plugin-invalid", "plugins"},
+		{"prompt", "prompt-invalid", "prompts"},
+		{"artifact", "artifact-invalid", "artifacts"},
+	}
+	for _, inv := range invalid {
+		inv := inv
+		t.Run(inv.name, func(t *testing.T) {
+			// CR-level: SourceReachable must be False.
+			out, err := exec.CommandContext(ctx, "kubectl", "-n", phase5Namespace,
+				"get", inv.kind+"/"+inv.name,
+				"-o", `jsonpath={.status.conditions[?(@.type=="SourceReachable")].status}`,
+			).CombinedOutput()
+			if err != nil {
+				t.Fatalf("kubectl get %s/%s: %v output=%s", inv.kind, inv.name, err, strings.TrimSpace(string(out)))
+			}
+			if got := strings.TrimSpace(string(out)); got != "False" {
+				t.Fatalf("%s/%s SourceReachable=%q want=False", inv.kind, inv.name, got)
+			}
+
+			// DB-level: the projection row (if the operator wrote one for a
+			// never-fetched source) must carry NO successful refresh. A NULL
+			// last_successful_refresh OR no row at all both satisfy "never
+			// successfully materialized" — assert the COUNT of rows with a
+			// non-NULL last_successful_refresh is 0.
+			q := `SELECT COUNT(*) FROM ` + inv.table +
+				` WHERE name='` + inv.name + `' AND last_successful_refresh IS NOT NULL;`
+			stdout, stderr, err := psqlExec(ctx, q)
+			if err != nil {
+				t.Skipf("psql projection check (engineer-pending postgres harness): %v stderr=%s", err, strings.TrimSpace(stderr))
+			}
+			if got := strings.TrimSpace(stdout); got != "0" {
+				t.Errorf("%s row name=%s has %s successfully-refreshed projection rows; want 0 (source is invalid)", inv.table, inv.name, got)
+			}
+		})
+	}
 }
 
 // testPhase5SC1ContentSendfile verifies the D-01 streaming discipline:
@@ -73,14 +122,14 @@ func testPhase5SC1ContentSendfile(t *testing.T) {
 	pk, _, env := seedPhase5Fixtures(t, ctx)
 
 	// Sendfile syscall assertion (live via strace under kubectl debug).
-	if !straceCSSendfile(t, ctx, "/content/plugin/foo", pk, env) {
+	if !straceCSSendfile(t, ctx, "/content/plugin/plugin-valid", pk, env) {
 		t.Fatalf("expected ≥1 sendfile/sendfile64 syscall during CS GET — none observed (CS-06 zero-copy violated)")
 	}
 
 	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
 	baseReq := func(t *testing.T, extraHeaders map[string]string) *http.Response {
 		t.Helper()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/foo", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
 		if err != nil {
 			t.Fatalf("NewRequest: %v", err)
 		}
@@ -177,7 +226,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 	calls := []call{
 		{
 			name:       "MissingEnvironment",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        pk,
 			envHeader:  "", // explicit empty — header NOT set below
 			wantStatus: http.StatusBadRequest,
@@ -185,7 +234,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "InvalidKeyFormat_NoPrefix",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        "garbage-no-prefix",
 			envHeader:  env,
 			wantStatus: http.StatusBadRequest,
@@ -193,7 +242,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "InvalidKeyFormat_Empty",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        "",
 			envHeader:  env,
 			wantStatus: http.StatusBadRequest,
@@ -201,7 +250,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "ExpiredOrRevoked",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        "pk_DEADBEEFDEADBEEFDEADBEEFDEADBEEF",
 			envHeader:  env,
 			wantStatus: http.StatusUnauthorized,
@@ -209,7 +258,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "UnauthorizedTeam",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        pk,
 			envHeader:  env,
 			wantStatus: http.StatusForbidden,
@@ -218,8 +267,8 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "WrongEnvironment",
-			path:       "/content/plugin/foo",
-			key:        ek, // ek bound to env=prod
+			path:       "/content/plugin/plugin-valid",
+			key:        ek, // ek bound to env=env-valid
 			envHeader:  "staging",
 			wantStatus: http.StatusForbidden,
 			wantCode:   "wrong_environment",
@@ -240,7 +289,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "EnvironmentNotFound",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        pk,
 			envHeader:  "nonexistent-env",
 			wantStatus: http.StatusNotFound,
@@ -248,7 +297,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "ContentNotFound",
-			path:       "/content/plugin/foo",
+			path:       "/content/plugin/plugin-valid",
 			key:        pk,
 			envHeader:  env,
 			wantStatus: http.StatusNotFound,
@@ -324,12 +373,11 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 	// wins over any marketplace_plugins row with the same name.
 	t.Run("CRDWinsOverMarketplace", func(t *testing.T) {
 		// Pre-seed a marketplace_plugins row with the same name as the
-		// existing Plugin CRD (foo) but distinct marketplace_name.
+		// existing Plugin CRD (plugin-valid) but distinct marketplace_name.
 		query := `INSERT INTO marketplace_plugins ` +
-			`(marketplace_name, name, source_url, storage_location, updated_at) ` +
-			`VALUES ('aaa-precedence-test-mkt', 'foo', ` +
-			`'https://example.invalid/foo.tar.gz', ` +
-			`'/var/cache/ach/plugin/foo.precedence-test', NOW()) ` +
+			`(marketplace_name, name, storage_location, max_staleness_seconds, origin, locked) ` +
+			`VALUES ('aaa-precedence-test-mkt', 'plugin-valid', ` +
+			`'/var/cache/ach/plugin/plugin-valid.precedence-test', 86400, 'cr', true) ` +
 			`ON CONFLICT DO NOTHING;`
 		if _, stderr, err := psqlExec(ctx, query); err != nil {
 			t.Skipf("psql seed (engineer-pending postgres harness): %v stderr=%s", err, strings.TrimSpace(stderr))
@@ -338,10 +386,10 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cleanCancel()
 			_, _, _ = psqlExec(cleanCtx,
-				`DELETE FROM marketplace_plugins WHERE marketplace_name='aaa-precedence-test-mkt' AND name='foo';`)
+				`DELETE FROM marketplace_plugins WHERE marketplace_name='aaa-precedence-test-mkt' AND name='plugin-valid';`)
 		})
 		// CS request resolves via §12.3 CTE — CRD branch must win.
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/foo", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
 		req.Header.Set("x-ach-key", pk)
 		req.Header.Set("x-ach-environment", env)
 		resp, err := http.DefaultClient.Do(req)
@@ -369,10 +417,9 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 		for _, m := range mkts {
 			q := fmt.Sprintf(
 				`INSERT INTO marketplace_plugins `+
-					`(marketplace_name, name, source_url, storage_location, updated_at) `+
+					`(marketplace_name, name, storage_location, max_staleness_seconds, origin, locked) `+
 					`VALUES ('%s', 'mktshared', `+
-					`'https://example.invalid/mktshared.tar.gz', `+
-					`'/var/cache/ach/plugin/mktshared.%s', NOW()) `+
+					`'/var/cache/ach/plugin/mktshared.%s', 86400, 'cr', true) `+
 					`ON CONFLICT DO NOTHING;`, m, m)
 			if _, stderr, err := psqlExec(ctx, q); err != nil {
 				t.Skipf("psql seed %s (engineer-pending): %v stderr=%s", m, err, strings.TrimSpace(stderr))
@@ -426,17 +473,20 @@ spec:
 			_, _ = exec.CommandContext(cleanCtx, "kubectl", "delete", "plugin", "drainable",
 				"-n", phase5Namespace, "--ignore-not-found").CombinedOutput()
 		})
-		// Best-effort wait for projection row (writes happen via
-		// reconciler under the WAIT_TIMEOUT budget of make wait-cr-ready).
-		_, _ = exec.CommandContext(ctx, "make", "wait-cr-ready",
-			"KIND=plugin", "NAME=drainable", "NS="+phase5Namespace).CombinedOutput()
+		// Best-effort wait for the projection row (the reconciler writes
+		// it once the Plugin reaches SourceReachable). kubectl wait
+		// directly — see seedPhase5Fixtures for why `make wait-cr-ready`
+		// is not usable from the test binary's cwd.
+		_, _ = exec.CommandContext(ctx, "kubectl", "-n", phase5Namespace,
+			"wait", "--for=condition=SourceReachable", "plugin/drainable",
+			"--timeout=120s").CombinedOutput()
 		// Now delete and probe.
 		if out, err := exec.CommandContext(ctx, "kubectl", "delete", "plugin", "drainable",
 			"-n", phase5Namespace).CombinedOutput(); err != nil {
 			t.Fatalf("kubectl delete: %v output=%s", err, strings.TrimSpace(string(out)))
 		}
 		// Engineer-pending: a CS GET here requires drainable in
-		// env.context.plugins (Environment "prod" doesn't include it).
+		// env.context.plugins (Environment "env-valid" doesn't include it).
 		// SC#9 grace window coverage at integration-test layer.
 		t.Logf("DeletionDrainStillServes: CRD delete issued; CS-09 grace verification deferred to Plan 05-05 integration test (Environment fixture omits drainable from context.plugins)")
 	})
@@ -454,7 +504,7 @@ func testPhase5SC4StalenessAndInFlightRename(t *testing.T) {
 		// Force the foo plugin's projection row into stale-expired by
 		// setting last_successful_refresh 24h ago + max_staleness=300s.
 		q := `UPDATE plugins SET last_successful_refresh = NOW() - INTERVAL '24 hours', ` +
-			`max_staleness_seconds = 300 WHERE name='foo';`
+			`max_staleness_seconds = 300 WHERE name='plugin-valid';`
 		if _, stderr, err := psqlExec(ctx, q); err != nil {
 			t.Skipf("psql staleness patch (engineer-pending): %v stderr=%s", err, strings.TrimSpace(stderr))
 		}
@@ -462,13 +512,13 @@ func testPhase5SC4StalenessAndInFlightRename(t *testing.T) {
 			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cleanCancel()
 			_, _, _ = psqlExec(cleanCtx,
-				`UPDATE plugins SET last_successful_refresh = NOW(), max_staleness_seconds = 86400 WHERE name='foo';`)
+				`UPDATE plugins SET last_successful_refresh = NOW(), max_staleness_seconds = 86400 WHERE name='plugin-valid';`)
 		})
 		// Invalidate envcache so the loader rebuilds from the patched row.
 		// 60s TTL means we may need to wait or trigger eviction — for
 		// the E2E run, sleep 60s+ to ensure cache miss. Bounded.
 		time.Sleep(65 * time.Second)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/foo", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
 		req.Header.Set("x-ach-key", pk)
 		req.Header.Set("x-ach-environment", env)
 		resp, err := http.DefaultClient.Do(req)
@@ -509,9 +559,12 @@ func testPhase5SC5MetricsTopology(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	forwarderURL := strings.TrimRight(envOrSkip(t, "ACH_FORWARDER_URL"), "/") + "/metrics"
-	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/") + "/metrics"
-	papiURL := strings.TrimRight(envOrSkip(t, "ACH_PLATFORM_API_URL"), "/") + "/metrics"
+	// Per-service metrics routes through the gateway (a bare /metrics
+	// can't disambiguate four services behind one base). The harness
+	// exports each as ACH_<svc>_METRICS_URL = <base>/metrics/<svc>.
+	forwarderURL := envOrSkip(t, "ACH_FORWARDER_METRICS_URL")
+	csURL := envOrSkip(t, "ACH_CONTENT_METRICS_URL")
+	papiURL := envOrSkip(t, "ACH_PLATFORM_METRICS_URL")
 	operatorURL := envOrSkip(t, "ACH_OPERATOR_METRICS_URL")
 
 	assertContains := func(t *testing.T, body string, names ...string) {
@@ -571,27 +624,23 @@ func testPhase5SC5MetricsTopology(t *testing.T) {
 	})
 
 	t.Run("NoForbiddenLabels_ContentService", func(t *testing.T) {
-		// OBS-06 cardinality discipline lock-in: parse the CS metrics
-		// body and assert NO content_service_* family carries a label
-		// named request_id or owner_email. Both would explode the
-		// per-series cardinality budget.
+		// OBS-06 cardinality discipline lock-in: NO content_service_*
+		// series may carry a request_id or owner_email label — either
+		// would explode the per-series cardinality budget. Scan the
+		// exposition line-by-line rather than via expfmt.TextParser: the
+		// zero-value parser in prometheus/common v0.67 panics ("name
+		// validation scheme unset"), and a substring scan is sufficient
+		// and faithful for the forbidden-label invariant.
 		body := getMetricsBody(t, ctx, csURL)
-		var parser expfmt.TextParser
-		families, err := parser.TextToMetricFamilies(strings.NewReader(body))
-		if err != nil {
-			t.Fatalf("expfmt.TextToMetricFamilies: %v", err)
-		}
-		forbidden := map[string]struct{}{"request_id": {}, "owner_email": {}}
-		for name, fam := range families {
-			if !strings.HasPrefix(name, "content_service_") {
+		for _, line := range strings.Split(body, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || !strings.HasPrefix(line, "content_service_") {
 				continue
 			}
-			for _, m := range fam.GetMetric() {
-				for _, lp := range m.GetLabel() {
-					if _, bad := forbidden[lp.GetName()]; bad {
-						t.Errorf("forbidden label %q present on metric family %q (OBS-06 cardinality discipline violated)",
-							lp.GetName(), name)
-					}
+			for _, bad := range []string{"request_id=", "owner_email="} {
+				if strings.Contains(line, bad) {
+					t.Errorf("forbidden label %q present on a content_service_* series (OBS-06 cardinality discipline violated): %s",
+						strings.TrimSuffix(bad, "="), line)
 				}
 			}
 		}

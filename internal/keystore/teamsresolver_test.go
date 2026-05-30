@@ -196,6 +196,12 @@ func TestRedisCachedTeamsResolver_EmptySliceCached(t *testing.T) {
 	if raw != "[]" {
 		t.Fatalf("expected cache wire format `[]`, got %q", raw)
 	}
+	// Empty results use the short negative TTL (not the 60s ceiling) so a
+	// transient empty (post-provisioning consistency window) self-heals fast
+	// instead of poisoning the per-email entry and 403'ing for a full minute.
+	if ttl := mr.TTL("ach:teams:" + email); ttl != negativeTeamsTTL {
+		t.Fatalf("expected empty-result TTL == negativeTeamsTTL (%v), got %v", negativeTeamsTTL, ttl)
+	}
 	// Second Resolve hits cache.
 	got2, err := r.Resolve(context.Background(), email)
 	if err != nil {

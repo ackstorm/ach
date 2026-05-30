@@ -161,3 +161,46 @@ func TestInjectEnvironmentTag_TG13_NilBody(t *testing.T) {
 		t.Errorf("err = %v; want nil", err)
 	}
 }
+
+// TG14: success path also sets the X-Ach-Tags mirror header to the injected
+// tag value (backend-observable proxy used by the SC2 e2e).
+func TestInjectEnvironmentTag_TG14_HeaderSetOnSuccess(t *testing.T) {
+	req := newJSONRequest(t, `{"metadata":{"tags":["existing"]}}`)
+	if err := InjectEnvironmentTag(req, "demo"); err != nil {
+		t.Fatalf("err = %v; want nil", err)
+	}
+	if got := req.Header.Get(headerTags); got != "environment:demo" {
+		t.Errorf("%s = %q; want environment:demo", headerTags, got)
+	}
+}
+
+// TG15: fail-open paths must NOT set the mirror header — header presence
+// must stay coupled to body-tag injection (malformed JSON + non-array tags).
+func TestInjectEnvironmentTag_TG15_HeaderAbsentOnFailOpen(t *testing.T) {
+	cases := map[string]string{
+		"malformed":      `{not json`,
+		"tags_not_array": `{"metadata":{"tags":"oldformat"}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			req := newJSONRequest(t, body)
+			if err := InjectEnvironmentTag(req, "demo"); err == nil {
+				t.Fatal("expected fail-open error")
+			}
+			if got := req.Header.Get(headerTags); got != "" {
+				t.Errorf("%s = %q; want empty on fail-open", headerTags, got)
+			}
+		})
+	}
+}
+
+// TG16: empty environmentName → no header (mirrors errEmptyEnvironment).
+func TestInjectEnvironmentTag_TG16_HeaderAbsentOnEmptyEnv(t *testing.T) {
+	req := newJSONRequest(t, `{}`)
+	if err := InjectEnvironmentTag(req, ""); !errors.Is(err, errEmptyEnvironment) {
+		t.Fatalf("err = %v; want errEmptyEnvironment", err)
+	}
+	if got := req.Header.Get(headerTags); got != "" {
+		t.Errorf("%s = %q; want empty", headerTags, got)
+	}
+}

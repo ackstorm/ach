@@ -195,8 +195,11 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	//     internal/forwarder/{proxy,bip} start emitting real samples
 	//     without any signature change (D-19 thin-shim invariant).
 	reg := metrics.NewRegistry()
+	registerRuntimeCollectors(reg)
 	fwdCollectors := metrics.NewForwarderCollectors(reg)
+	fwdCollectors.PreInitZeroSeries()
 	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
+	litellmUnreachable.WithLabelValues("forwarder").Add(0) // expose family at 0 (§18.5)
 	forwardermetrics.InitCollectors(fwdCollectors, litellmUnreachable)
 	// /metrics is unauthenticated on the main traffic listener (D-10);
 	// internal cluster network only — see Helm values.yaml metricsAuth

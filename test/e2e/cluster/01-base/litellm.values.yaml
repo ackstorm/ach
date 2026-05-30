@@ -110,3 +110,18 @@ volumeMounts:
 service:
   type: ClusterIP
   port: 4000
+
+# proxy_config is rendered verbatim into the proxy's config.yaml. The chart
+# default already supplies general_settings.master_key + an example model_list;
+# Helm deep-merges maps, so adding litellm_settings here keeps those defaults.
+#
+# SC2 / FWD-06 verification: forward client x-* headers (except x-stainless-*)
+# to the LLM backend, SCOPED to the test echo model group only. This lets the
+# ach-mock-model (loro) observe the forwarder-set `x-ach-environment` header so
+# the SC2 e2e can assert at the backend instead of log-scraping LiteLLM. Scoped
+# to demo-model so prod LLM groups never leak ACH-internal env names upstream.
+proxy_config:
+  litellm_settings:
+    model_group_settings:
+      forward_client_headers_to_llm_api:
+        - demo-model

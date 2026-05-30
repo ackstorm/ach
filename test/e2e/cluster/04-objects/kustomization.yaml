@@ -9,6 +9,11 @@ resources:
   - litellmconnection.yaml
   - marketplace-anthropic.yaml
   - marketplace-caveman.yaml
+  # Phase 02 SC#3 alphabetical name-conflict pair — both point at the real
+  # anthropic catalogue filtered to `feature-dev`; conflict-mkt-a wins
+  # (Synced=True), conflict-mkt-b loses (Synced=False reason=NameConflict).
+  - marketplace-conflict-a.yaml
+  - marketplace-conflict-b.yaml
   - plugin-caveman.yaml
   - prompt-claude-code.yaml
   - artifact-openclaw.yaml
@@ -16,3 +21,13 @@ resources:
   - bip-duplicate.yaml
   - bip-demo-mcp-jwt.yaml
   - bip-demo-mcp-nojwt.yaml
+  # Phase 5 content-service exercise matrix — valid + invalid of each CR
+  # kind (referenced by Environment env-valid in stage 05). The e2e suite
+  # asserts against these; it no longer applies its own copies. The
+  # *-invalid fixtures settle at SourceReachable=False (negative path).
+  - plugin-valid.yaml
+  - plugin-invalid.yaml
+  - prompt-valid.yaml
+  - prompt-invalid.yaml
+  - artifact-valid.yaml
+  - artifact-invalid.yaml

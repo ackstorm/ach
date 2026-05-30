@@ -75,11 +75,13 @@ ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 # (pullPolicy=IfNotPresent) — kind load is given that exact tag.
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
 
-# ach-mock LiteLLM-shaped data-plane capture backend. Built + kind-loaded
-# unconditionally by reconcile_ach (e2e always needs it for ek_ tag-injection
-# asserts). The tag MUST match what `make build-image-mock` produces
-# (ach-mock:e2e) and what test/e2e/cluster/03-test-backends/ach-mock-model.yaml
-# pulls (pullPolicy=IfNotPresent).
+# ach-mock — OpenAI chat-completion + a2a echo/capture backend that sits BEHIND
+# the real LiteLLM as the model upstream (it is NOT a LiteLLM mock). Built +
+# kind-loaded unconditionally by reconcile_ach (e2e always needs it for ek_
+# tag-injection asserts). The tag MUST match what `make build-image-mock`
+# produces (ach-mock:e2e) and what
+# test/e2e/cluster/03-test-backends/ach-mock-model.yaml pulls
+# (pullPolicy=IfNotPresent).
 MOCK_IMAGE="${MOCK_IMAGE:-ach-mock:e2e}"
 
 usage() {
@@ -151,7 +153,20 @@ create_cluster() {
   # in lock-step.
   local kube_dir="${GOCACHE_KUBE_DIR:-.gocache/kube}"
   mkdir -p "${kube_dir}"
-  kind get kubeconfig --name "${CLUSTER_NAME}" > "${kube_dir}/config"
+  # Atomic + validated write. A bare `kind get kubeconfig > config` truncates
+  # the file BEFORE kind runs, so a failed read (cluster mid-teardown, kind
+  # error) leaves an empty/skeleton config — which makes in-container kubectl
+  # silently fall back to its legacy http://localhost:8080 default and 404
+  # ("the server could not find the requested resource"). Write to a temp
+  # file, require it non-empty, then mv into place.
+  if kind get kubeconfig --name "${CLUSTER_NAME}" > "${kube_dir}/config.tmp" 2>/dev/null \
+     && [[ -s "${kube_dir}/config.tmp" ]]; then
+    mv -f "${kube_dir}/config.tmp" "${kube_dir}/config"
+  else
+    rm -f "${kube_dir}/config.tmp"
+    echo "[cluster.sh] ERROR: 'kind get kubeconfig --name ${CLUSTER_NAME}' produced no output" >&2
+    return 1
+  fi
 }
 
 create_namespaces() {
@@ -408,7 +423,8 @@ reconcile_ach() {
   echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
 
-  # Build + kind-load the ach-mock LiteLLM-shaped capture backend (ach-mock:e2e).
+  # Build + kind-load the ach-mock echo/capture backend (ach-mock:e2e) — the
+  # OpenAI chat-completion + a2a upstream that sits behind the real LiteLLM.
   # Applied unconditionally as a stage-03 test backend
   # (test/e2e/cluster/03-test-backends/ach-mock-model.yaml), same rationale as
   # mcp-echo above (the :e2e tag is never pushed to a registry).
@@ -550,9 +566,12 @@ verify_all() {
   # is the "everything is OK before we run tests" gate the e2e suite relies on
   # (tests assert, they do not apply). VERIFY_TIMEOUT default 300s per resource.
   #
-  # Excluded on purpose (intentional negative/edge fixtures — never reach the
-  # happy state): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
-  # demo) and environment/demo-unresolved (UnresolvedReferences).
+  # Excluded from the happy-state gate on purpose (intentional negative/edge
+  # fixtures): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
+  # demo) and environment/demo-unresolved (UnresolvedReferences). The Phase 5
+  # *-invalid fixtures AND the Phase 02 SC#3 loser pluginmarketplace/conflict-mkt-b
+  # ARE gated below — on their EXPECTED failure state (SourceReachable=False /
+  # Synced=False) — so "everything is in its known state" still holds.
   local to="${VERIFY_TIMEOUT:-300s}"
   echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
@@ -565,10 +584,28 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/openclaw-templates
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/anthropic-code
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/caveman
+  # Phase 02 SC#3 alphabetical name-conflict pair (both filter the real
+  # anthropic catalogue to `feature-dev`): conflict-mkt-a is the alphabetical
+  # winner (Synced=True); conflict-mkt-b is the loser, gated on its EXPECTED
+  # failure state (Synced=False reason=NameConflict). Their 1m refresh.interval
+  # makes the loser converge well inside this timeout even if it wins the
+  # initial apply-race.
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-a
+  kubectl -n ach-system wait --for=condition=Synced=false    --timeout="${to}" pluginmarketplace/conflict-mkt-b
   for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
     wait_bip_reconciled "${b}" "${to}"
   done
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo
+  # Phase 5 content-service exercise matrix — valid half healthy.
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" plugin/plugin-valid
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/prompt-valid
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/artifact-valid
+  kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
+  # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
+  # has fetched + failed). kubectl wait supports condition=<type>=false.
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
   echo "[cluster.sh] all synced objects healthy."
 }
 

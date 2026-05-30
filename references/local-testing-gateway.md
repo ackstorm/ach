@@ -29,18 +29,20 @@ The gateway unifies the entire data and control plane under a single localhost p
 * **SSO (Dex):** accessible under `http://localhost:8080/dex/`
 * **Content Service:** accessible under `http://localhost:8080/content/`
 * **LLM Forwarder:** accessible under `http://localhost:8080/v1/`, `http://localhost:8080/mcp/`, `http://localhost:8080/a2a/`
+* **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — distinct routes because a bare `/metrics` can't disambiguate four services behind one base. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`. `/metrics/operator` is backed by the `ach-operator-metrics` Service (the operator has no data-plane Service of its own).
+* **Gateway health:** `http://localhost:8080/healthz` returns `200 ok` directly from nginx (no upstream). It backs the gateway pod's readiness/liveness probes, so `make wait-ach` only reports `ach-local-gateway` Ready once nginx is actually serving. It is gateway-local — not a proxy to any service's health endpoint.
 
 ---
 
 ## 2. Deploying & Starting the Gateway
 
 ### Deployment Manifest
-The gateway is packaged in `test/e2e/fixtures/ach-local-gateway.yaml`.
+The gateway is packaged in `test/e2e/cluster/03-test-backends/ach-local-gateway.yaml`.
 The cluster hydration script (`scripts/cluster.sh`) automatically deploys and rolls out this gateway as part of the `hydrate_all` loop.
 
 To apply or update the gateway manually:
 ```bash
-kubectl apply -f test/e2e/fixtures/ach-local-gateway.yaml
+kubectl apply -f test/e2e/cluster/03-test-backends/ach-local-gateway.yaml
 ```
 
 ### Reaching the Gateway on `localhost:8080`

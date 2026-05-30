@@ -157,8 +157,15 @@ jobs:
         with:
           version: v3.12.0
 
-      - name: Regenerate CRDs (sanity)
-        run: make gen-code gen-manifests
+      # Issue #44: regenerate code + CRDs, then HARD-FAIL if anything drifts
+      # from what's committed. helm-sync-check covers the chart's crd-sources/;
+      # the trailing `git diff --exit-code` also catches gen-code (zz_generated)
+      # and config/crd/bases drift, so a release can never ship stale generated
+      # artifacts. (Previously this step only regenerated and never gated.)
+      - name: Regenerate code + CRDs and gate on drift
+        run: |
+          make gen-code helm-sync-check
+          git diff --exit-code
 
       # HRD-09: install cosign for keyless OIDC signing of release artifacts.
       - name: Install cosign

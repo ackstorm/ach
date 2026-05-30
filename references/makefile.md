@@ -125,6 +125,17 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `doctor-cluster` | A | Deep cluster preflight: tooling, values files, chart pins, free ports. |
 | `ensure-inotify` | B | Raise host `fs.inotify` limits if below kind's needs (best-effort, non-fatal). Auto-run as a prerequisite of `cluster-up`/`cluster-reset`. |
 | `shell` | A | Interactive shell inside the devtools container. |
+| `clean-cache` | B | Remove `./.gocache`, first `chmod -R u+w` to unlock Go's read-only modcache. Host-only — runs on the host filesystem as your UID (the dir is yours, not root's). Re-created on next `scripts/dev.sh` use. |
+| `clean` | B | Full clean: `bin/` + `dist/` + `testbin/` + `cover*.out`, then `clean-cache`. Host-only. Tool + service binaries are re-fetched/rebuilt on next `make`. |
+
+> **Per-worktree `.gocache` & "Permission denied" on delete.** `scripts/dev.sh`
+> roots every cache under `./.gocache` relative to the workspace, so each git
+> worktree gets its own. Go marks the module cache read-only (`0444` files /
+> `0555` dirs) by design; since you can't unlink entries from a non-writable
+> dir, `rm -rf <worktree>` (or `rm -rf .gocache`) fails with `Permission denied`
+> even though every file is owned by **you, not root**. Fix: `make clean-cache`
+> (or `chmod -R u+w .gocache && rm -rf .gocache`, or `./scripts/dev.sh go clean
+> -modcache -cache`) before removing the worktree.
 
 ### Build (`build-`)
 | Target | Ctx | Description |
@@ -160,8 +171,8 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 ### E2E (`e2e-`)
 | Target | Ctx | Description |
 |--------|-----|-------------|
-| `e2e-full` | B | `cluster-up` → `e2e-run` → `cluster-down` (trap-guaranteed teardown). |
-| `e2e-keep` | B | `cluster-up` (kept) → `e2e-run` (no teardown — local iteration). |
+| `e2e-full` | B | `cluster-up` → `e2e-run`; cluster **kept up** after the run (pass or fail). `make cluster-down` to reclaim. CI does NOT use this target (it tears down via its own `if: always()` step). |
+| `e2e-keep` | B | Alias of `e2e-full` (kept cluster — local iteration). |
 | `e2e-run` | A | Run the e2e suite against an already-up cluster. |
 | `e2e-focus RUN=… / FOCUS=…` | A | Focused subtest (stdlib `-run` or ginkgo focus). |
 

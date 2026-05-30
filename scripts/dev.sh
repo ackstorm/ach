@@ -45,6 +45,26 @@ mkdir -p "${WORKSPACE}/.gocache/gopath" \
          "${WORKSPACE}/.gocache/envtest" \
          "${WORKSPACE}/.gocache/kube"
 
+# Keep the container-mounted kubeconfig (.gocache/kube/config, exported as
+# KUBECONFIG below) in lock-step with the live kind cluster. kind binds a
+# fresh random API-server port per `up` and writes only the host's
+# ~/.kube/config; our container copy can go stale, or end up the empty
+# skeleton kind leaves on a failed read — in which case kubectl silently
+# falls back to its legacy http://localhost:8080 default and 404s. The
+# authoritative sync lives in scripts/cluster.sh (create_cluster); this is the
+# safety net for clusters created out-of-band (e.g. `kind create cluster` by
+# hand). Best-effort, atomic, and a no-op when no kind cluster exists, so
+# non-k8s commands (go build, lint) are unaffected.
+KIND_CLUSTER="${ACH_KIND_CLUSTER:-ach-e2e}"
+if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER}"; then
+    if kind get kubeconfig --name "${KIND_CLUSTER}" > "${WORKSPACE}/.gocache/kube/config.tmp" 2>/dev/null \
+       && [[ -s "${WORKSPACE}/.gocache/kube/config.tmp" ]]; then
+        mv -f "${WORKSPACE}/.gocache/kube/config.tmp" "${WORKSPACE}/.gocache/kube/config"
+    else
+        rm -f "${WORKSPACE}/.gocache/kube/config.tmp"
+    fi
+fi
+
 DOCKER_GID="$(getent group docker 2>/dev/null | cut -d: -f3 || true)"
 DOCKER_GROUP_ADD=()
 if [[ -n "${DOCKER_GID}" ]]; then

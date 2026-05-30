@@ -22,6 +22,17 @@ data:
         server {
             listen 8080;
 
+            # Gateway health — returns 200 locally without touching any
+            # upstream, so kubelet probes (and `make wait-ach`) report the
+            # gateway Ready only once nginx is actually serving. Exact match
+            # (`= /healthz`) so it never shadows a proxied route, and
+            # access_log off keeps probe traffic out of the logs.
+            location = /healthz {
+                access_log off;
+                add_header Content-Type text/plain;
+                return 200 "ok\n";
+            }
+
             # Platform API Routing
             location /platform/ {
                 proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/platform/;
@@ -70,6 +81,18 @@ data:
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
             }
+
+            # Per-service /metrics scrape routes. A bare /metrics can't
+            # disambiguate four services behind one gateway base, so each
+            # gets a distinct path that rewrites to the upstream's own
+            # /metrics. The e2e harness exports these as
+            # ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL.
+            # ach-operator-metrics is the Service added in the operator
+            # Helm template (the operator has no data-plane Service).
+            location /metrics/forwarder { proxy_pass http://ach-forwarder.ach-system.svc.cluster.local:80/metrics; }
+            location /metrics/content   { proxy_pass http://ach-content-service.ach-system.svc.cluster.local:8082/metrics; }
+            location /metrics/platform  { proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/metrics; }
+            location /metrics/operator  { proxy_pass http://ach-operator-metrics.ach-system.svc.cluster.local:8080/metrics; }
         }
     }
 ---
@@ -93,6 +116,20 @@ spec:
         image: nginx:alpine
         ports:
         - containerPort: 8080
+        # Probes hit the local /healthz return-200 (no upstream dependency),
+        # so the gateway is only marked Ready when nginx is serving config.
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
         volumeMounts:
         - name: config
           mountPath: /etc/nginx/nginx.conf

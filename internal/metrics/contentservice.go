@@ -70,6 +70,19 @@ func NewContentServiceCollectors(reg *prometheus.Registry) *ContentServiceCollec
 	return c
 }
 
+// PreInitZeroSeries materializes one representative child series per
+// collector at value 0 so the metric FAMILY is present on /metrics from
+// process start — before any traffic — making the §18.5 exposition
+// contract scrapeable immediately. Production wiring
+// (cmd/ach/cmd/content_service.go) calls this once at startup; unit tests
+// do NOT, so per-test series assertions stay unaffected. Label values are
+// drawn from the §15.6/§18.5 enums; the 0 counts are harmless.
+func (c *ContentServiceCollectors) PreInitZeroSeries() {
+	c.requests.WithLabelValues("plugin", "ok").Add(0)
+	c.duration.WithLabelValues("plugin") // creates the 0-count histogram child
+	c.bytes.WithLabelValues("plugin").Add(0)
+}
+
 // IncRequest increments content_service_requests_total{kind, outcome}
 // per Hub §18.5 normative label-value enums:
 //
