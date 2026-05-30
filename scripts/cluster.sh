@@ -151,7 +151,20 @@ create_cluster() {
   # in lock-step.
   local kube_dir="${GOCACHE_KUBE_DIR:-.gocache/kube}"
   mkdir -p "${kube_dir}"
-  kind get kubeconfig --name "${CLUSTER_NAME}" > "${kube_dir}/config"
+  # Atomic + validated write. A bare `kind get kubeconfig > config` truncates
+  # the file BEFORE kind runs, so a failed read (cluster mid-teardown, kind
+  # error) leaves an empty/skeleton config — which makes in-container kubectl
+  # silently fall back to its legacy http://localhost:8080 default and 404
+  # ("the server could not find the requested resource"). Write to a temp
+  # file, require it non-empty, then mv into place.
+  if kind get kubeconfig --name "${CLUSTER_NAME}" > "${kube_dir}/config.tmp" 2>/dev/null \
+     && [[ -s "${kube_dir}/config.tmp" ]]; then
+    mv -f "${kube_dir}/config.tmp" "${kube_dir}/config"
+  else
+    rm -f "${kube_dir}/config.tmp"
+    echo "[cluster.sh] ERROR: 'kind get kubeconfig --name ${CLUSTER_NAME}' produced no output" >&2
+    return 1
+  fi
 }
 
 create_namespaces() {

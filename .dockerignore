@@ -12,3 +12,16 @@ bin/
 .gocache/
 # Git metadata: large, churny, and never needed by the builder or runtime.
 .git/
+# Claude Code per-project session/cache data (transcripts, agent worktrees —
+# multi-GB). gitignored, and never an input to any Dockerfile; excluding it
+# stops `docker build` from shipping GBs of session/cache state to the daemon
+# on every build.
+.claude/
+# Build / release / coverage / log artifacts — outputs, never build inputs.
+dist/
+site/
+cover-*.out
+*.log
+*.tmp
+# Planning + agent-facing scratch are not consumed by any Dockerfile COPY.
+.planning/
