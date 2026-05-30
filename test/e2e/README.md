@@ -11,7 +11,7 @@ Activation: `make e2e-run` (assumes `make cluster-up` already invoked).
 |---------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | `e2e_suite_test.go`                   | `TestMain` bootstrap (cluster setup unless `E2E_SKIP_SETUP=1`), shared `runCmd`/`runCmdLonger`/`envOr` helpers          |
 | `phase1_invariants_test.go`           | Phase 01 ROADMAP SCs                                                                                                   |
-| `phase2_invariants_test.go`           | Phase 02 SCs #1–#4 + shared `applyFixtureServer`/`waitForCondition`/`getConditionField`/`dumpOperatorLogs` helpers      |
+| `phase2_invariants_test.go`           | Phase 02 SCs #1–#3 asserted against the real synced `04-objects` (caveman plugin/marketplace + `conflict-mkt-a/-b`); SC#4 size-cap lives in unit+envtest. Shared `waitForCondition`/`getConditionField`/`dumpOperatorLogs` helpers |
 | `phase2_sc5_orphan_test.go`           | Phase 02 SC#5 — orphan-cleanup interval-floor + live revocation                                                         |
 | `phase3_invariants_test.go`           | Phase 03 SCs #1–#6 (Platform API SSO + hydrate + revocation + audit)                                                   |
 | `phase3_helpers_test.go`              | Port-forward + HTTP-client + audit-line parser helpers                                                                 |
