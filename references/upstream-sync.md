@@ -15,7 +15,9 @@ and should be sync-back PR'd to alitellm-operator.
 
 Ported `Makefile` and `docs/Makefile` verbatim from alitellm with sed renames
 (`alitellm-operator` → `ach`, `litellm-devtools` → `ach-devtools`,
-`litellm.ackstorm.ai` → `ach.ackstorm.ai`, `litellm-mock` → `ach-mock`).
+`litellm.ackstorm.ai` → `ach.ackstorm.ai`). (The e2e capture backend `ach-mock`
+is original ackstorm code — `test/e2e/mock/`, three modes `model|mcp|a2a` behind
+the real LiteLLM — not a graft, so it is not part of this rename ledger.)
 Added `VERSION ?= dev`, `IMG ?= ghcr.io/ackstorm/ach:$(VERSION)`, and `MODES :=
 operator platform-api forwarder content-service migrate` for ach's single-binary
 multi-mode service model. Added 6 new waiter targets: `wait-postgres`,

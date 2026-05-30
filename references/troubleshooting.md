@@ -257,3 +257,31 @@ rebuilds. The image content under `:e2e` is new, but nothing tells kubelet
 to recreate the pod. `image.rebuildId` is the prod-safe knob that makes the
 podTemplate differ per build; a unique per-build image **tag** would also
 work but leaves orphan images on the node.
+
+### ❌ E2E capture test fails with `/__capture/reset: ... EOF`; mock container crashed
+```bash
+# e.g. TestPhase4Invariants/SC2_EkTagInjection:
+#   phase4_invariants_test.go:163: POST /__capture/reset: ... EOF
+./scripts/dev.sh kubectl -n ach-system get pod -l app.kubernetes.io/component=mock-model \
+  -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{"\n"}'   # ≥ 1
+./scripts/dev.sh kubectl -n ach-system logs <pod> --previous   # panic / fatal error
+```
+An `EOF` on a freshly-established port-forward almost always means the
+**backend container died**, not a test-logic bug. `ach-mock` and `ach-mcp-echo`
+are applied via kustomize (stage-03 backends, NOT the ach Helm chart), so the
+`image.rebuildId` roll above does **not** touch them — and the deeper trap is
+the image **build**, not the rollout: a stale `COPY` layer can rebuild the mock
+to a **byte-identical** pre-fix image, so `kind load` reports *"already present
+… skipping"* and the old (crashing) binary keeps serving even after a pod roll.
+This once shipped a pre-fix `ach-mock` binary that crashed with
+`fatal error: sync: unlock of unlocked mutex` on every `/__capture/reset`.
+✅ Confirm the crash from `--previous` logs, then force a clean rebuild and roll:
+```bash
+docker build --no-cache -t ach-mock:e2e -f test/e2e/mock/Dockerfile .
+kind load docker-image ach-mock:e2e --name ach-e2e
+./scripts/dev.sh kubectl -n ach-system rollout restart deploy/ach-mock-model
+```
+The structural fix is already in: both mock Dockerfiles use **explicit
+allow-list `COPY`** (never `COPY . .`), so a source edit busts the layer cache
+deterministically. Re-validate with `make e2e-run` (NOT `e2e-full`, whose
+`cluster-up` rebuild could re-cache a stale layer on an unchanged tree).
