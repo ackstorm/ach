@@ -157,9 +157,20 @@ make shell                       # interactive shell in the devtools container
 ```
 
 `scripts/dev.sh` mounts the repo + docker socket, preserves host UID:GID, and
-persists Go caches under `.gocache/`. CI uses a pre-baked GHCR image keyed by
+persists Go caches under `.gocache/` (per-workspace, so **each git worktree gets
+its own**). CI uses a pre-baked GHCR image keyed by
 `sha256(Dockerfile.devtools)[:12]` (local-build fallback on miss). Tool versions
 pinned in `Dockerfile.devtools` + `go.mod`.
+
+**Keep the environment clean — `make clean-cache` after each feature.** Go marks
+its module cache read-only (`0444`/`0555`), so a plain `rm -rf .gocache` (or
+`git worktree remove`) fails with `Permission denied` — the files are owned by
+**you, not root**; you just can't unlink from a non-writable dir. `make
+clean-cache` (host-only: `chmod -R u+w` then `rm -rf ./.gocache`) clears it
+safely. Recommended once a feature/worktree is done so stale per-worktree caches
+don't pile up; re-created on next `scripts/dev.sh` use. (`make clean` is the
+broader umbrella — also drops `bin/`/`dist/`/`testbin/`/coverage on top of the
+cache.)
 
 ## Test phases
 
