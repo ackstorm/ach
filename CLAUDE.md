@@ -176,7 +176,7 @@ pinned in `Dockerfile.devtools` + `go.mod`.
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on one sub-test |
 | `make qa-security`      | gosec + govulncheck + fuzz-short, ≤6m | in-container; before commit |
 | `make pre-commit`       | qa-lint-changed + test-unit | host-only; every `git commit` once `make hooks` installed |
-| `make pre-push`         | gitleaks + trufflehog + 17 gates | host-only; before push |
+| `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
   `qa-security` + `pre-push`; `make hooks` installs both git hooks. Inner loop:
@@ -215,16 +215,18 @@ lint" is paid locally before the commit lands:
 - `pre-commit` (fast): `qa-lint-changed` + `test-unit`, every `git commit` once
   `make hooks` installed. `--no-verify` only for justified WIP; the full sweep
   still fires on push.
-- `pre-push` (full): **17-gate** publication check. lint + unit live INSIDE the
-  17 (gates 16+17), so push is safe even if pre-commit was bypassed.
+- `pre-push` (full): **18-gate** publication check. lint + unit live INSIDE the
+  18 (gates 16+17), so push is safe even if pre-commit was bypassed.
 
-The 17 hard gates (failure blocks push): gitleaks + trufflehog
+The 18 hard gates (failure blocks push): gitleaks + trufflehog
 (`origin/main..HEAD`; allowlist `.gitleaks.toml`) · large files >2 MB ·
 sensitive patterns (`.env`, `*.pem`, `*.key`, kubeconfig) · LICENSE + README ·
 origin-remote match · govulncheck ack-list 1:1 (`scripts/govulncheck-gate.sh`,
 list at `references/security/govulncheck-acknowledged.md`) · `go mod tidy` drift
-· per-file SPDX header · full golangci-lint · `make test-unit`. Fix the root
-cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the gates).
+· per-file SPDX header · full golangci-lint · `make test-unit` · chart CRD drift
+(`make helm-sync-check` — `crd-sources/` vs `config/crd/bases`, #44). Fix the
+root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
+gates).
 
 ## Common failure modes (generic / workflow)
 
@@ -264,7 +266,7 @@ CrashLoopBackOffs / silently restarts.
 `git push --no-verify` bypasses the local hook ONLY (CI still runs it). ✅ Let
 the installed hook gate (`make hooks`), or `make pre-push` then push. WHY:
 pushed secrets / license-header drift / govulncheck regressions cannot be
-un-true'd from public history. The 17-gate script is the contract.
+un-true'd from public history. The 18-gate script is the contract.
 
 ### ❌ Kubectl from host against the kind cluster
 `kubectl get pods` → context not found. ✅ Go through devtools:
