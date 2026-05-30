@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// ach-mock is the e2e mock-backend binary. Two subcommands:
+// ach-mock is the e2e mock-backend binary. Three subcommands:
 //
-//	ach-mock litellm   — LiteLLM-shaped chat-completion / embeddings mock
-//	                     Captures the last request body + headers for tests
-//	                     to inspect via GET /__capture/last
-//	ach-mock mcp       — MCP server echo backend
-//	                     Echoes Authorization header (JWT) in response and
-//	                     captures it for tests via GET /__capture/last
+//	ach-mock model — OpenAI-compatible chat-completion / embeddings echo
+//	                 backend. Sits BEHIND the real LiteLLM as the model
+//	                 upstream (it is NOT a LiteLLM mock); "parrots" the last
+//	                 user message so tests can assert the full
+//	                 forwarder → LiteLLM → model round-trip.
+//	ach-mock mcp   — MCP server echo backend. Echoes the Authorization header
+//	                 (JWT) in the response and captures it for tests.
+//	ach-mock a2a   — Agent-to-Agent echo backend.
 //
-// Both modes share the same in-memory capture surface and listen on
+// All three modes share the same in-memory capture surface and listen on
 // MOCK_BIND_ADDRESS (default :9090). Tests reach into the mock via
 // /__capture/last after driving traffic through the Forwarder.
 //

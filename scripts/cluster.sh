@@ -75,11 +75,13 @@ ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 # (pullPolicy=IfNotPresent) — kind load is given that exact tag.
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
 
-# ach-mock LiteLLM-shaped data-plane capture backend. Built + kind-loaded
-# unconditionally by reconcile_ach (e2e always needs it for ek_ tag-injection
-# asserts). The tag MUST match what `make build-image-mock` produces
-# (ach-mock:e2e) and what test/e2e/cluster/03-test-backends/ach-mock-model.yaml
-# pulls (pullPolicy=IfNotPresent).
+# ach-mock — OpenAI chat-completion + a2a echo/capture backend that sits BEHIND
+# the real LiteLLM as the model upstream (it is NOT a LiteLLM mock). Built +
+# kind-loaded unconditionally by reconcile_ach (e2e always needs it for ek_
+# tag-injection asserts). The tag MUST match what `make build-image-mock`
+# produces (ach-mock:e2e) and what
+# test/e2e/cluster/03-test-backends/ach-mock-model.yaml pulls
+# (pullPolicy=IfNotPresent).
 MOCK_IMAGE="${MOCK_IMAGE:-ach-mock:e2e}"
 
 usage() {
@@ -421,7 +423,8 @@ reconcile_ach() {
   echo "[cluster.sh] kind load ${MCP_ECHO_IMAGE} into '${CLUSTER_NAME}'..."
   kind load docker-image "${MCP_ECHO_IMAGE}" --name "${CLUSTER_NAME}"
 
-  # Build + kind-load the ach-mock LiteLLM-shaped capture backend (ach-mock:e2e).
+  # Build + kind-load the ach-mock echo/capture backend (ach-mock:e2e) — the
+  # OpenAI chat-completion + a2a upstream that sits behind the real LiteLLM.
   # Applied unconditionally as a stage-03 test backend
   # (test/e2e/cluster/03-test-backends/ach-mock-model.yaml), same rationale as
   # mcp-echo above (the :e2e tag is never pushed to a registry).
