@@ -46,6 +46,12 @@ jobs:
       - name: Run linter
         run: make qa-lint
 
+      # Issue #44: fail if the chart's generated CRDs (crd-sources/) drift from
+      # config/crd/bases. helm-sync-check regenerates + diffs; a stale chart CRD
+      # would ship an old schema to `helm install/upgrade` users.
+      - name: CRD chart drift gate
+        run: make helm-sync-check
+
   unit:
     name: Unit
     runs-on: ubuntu-latest

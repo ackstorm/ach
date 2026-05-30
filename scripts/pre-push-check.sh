@@ -14,6 +14,7 @@
 #  15. license-header SPDX gate (every in-scope *.go starts with SPDX line)
 #  16. golangci-lint full sweep (defensive — pre-commit runs qa-lint-changed)
 #  17. make test-unit (pure-logic regression — ~5-10s warm)
+#  18. helm chart CRD drift (crd-sources/ vs config/crd/bases — helm-sync-check)
 #
 # Soft checks (warnings only):
 #   7. internal hostnames / private IPv4 in tracked files
@@ -327,6 +328,30 @@ if [[ -x scripts/dev.sh ]]; then
   fi
 else
   warn "scripts/dev.sh missing — skipping unit gate (rebuild devtools image)"
+fi
+
+# --- 18. helm chart CRD drift (crd-sources/ vs config/crd/bases) ---
+# `make helm-sync-check` runs controller-gen, copies the regenerated CRDs into
+# deploy/helm/ach/crd-sources/ (the chart's ONLY generated surface — per-mode
+# Deployments are hand-authored), and fails if that leaves a diff. WHY: if a
+# contributor edits a CRD in api/ but forgets `make helm-sync`, the published
+# Helm chart ships a STALE CRD schema while the operator binary expects the new
+# one — a `helm upgrade` then silently drops/refuses the new field (issue #44).
+hdr "18. helm chart CRD drift (crd-sources/ vs config/crd/bases)"
+if [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make helm-sync-check >/tmp/pre-push-helm-sync.log 2>&1; then
+    ok "chart CRDs in sync with config/crd/bases"
+  else
+    fail "chart CRD drift — run \`make helm-sync\` and commit (see /tmp/pre-push-helm-sync.log)"
+    sed -n '1,30p' /tmp/pre-push-helm-sync.log
+  fi
+  # helm-sync regenerates the tracked crd-sources/*.yaml in place; restore them
+  # to HEAD so the gate never mutates the working tree (mirrors gate 14's go.mod
+  # discipline). Non-destructive: `git checkout --` only touches tracked files,
+  # so a contributor's in-progress untracked new CRD is left alone.
+  git checkout -- deploy/helm/ach/crd-sources/ 2>/dev/null || true
+else
+  warn "scripts/dev.sh missing — skipping CRD-drift gate (rebuild devtools image)"
 fi
 
 # --- Summary ---
