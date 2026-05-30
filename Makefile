@@ -49,6 +49,20 @@ endef
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# Host-only kubectl targets (wait-*, logs-*) must resolve the kind
+# cluster's API server through the kubeconfig scripts/cluster.sh writes
+# (.gocache/kube/config), NOT the host's ambient ~/.kube/config: a stale
+# same-named context there points at a dead API-server loopback port and
+# yields "connection refused" against a perfectly healthy cluster
+# (observed: wait-ach reaching :43541 after a cluster recreate moved the
+# port to :37325). Only pin when the file exists, so a no-cluster host
+# falls back to its ambient config. Container targets are unaffected:
+# scripts/dev.sh hardcodes -e KUBECONFIG=/workspace/.gocache/kube/config
+# in `docker run`, overriding this inherited value.
+ifneq (,$(wildcard $(CURDIR)/.gocache/kube/config))
+export KUBECONFIG := $(CURDIR)/.gocache/kube/config
+endif
+
 .PHONY: all
 all: build-all
 
@@ -351,7 +365,9 @@ _build-cli:
 	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" -o bin/ach-cli ./cmd/ach-cli
 
 .PHONY: build-e2e
-build-e2e: manifests generate fmt vet ## Build ach + ach-cli binaries with -tags=e2e (required for TestPhase7CLIEngine/sc2_commit_sequence_sigkill per 07-W5-04 WR-01)
+build-e2e: ## Build ach + ach-cli binaries with -tags=e2e (required for TestPhase7CLIEngine/sc2_commit_sequence_sigkill per 07-W5-04 WR-01)
+	$(call container_target,_build-e2e)
+_build-e2e: gen-manifests gen-code fmt vet
 	go build \
 	  -trimpath \
 	  -tags=e2e \
