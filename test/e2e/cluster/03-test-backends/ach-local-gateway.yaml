@@ -22,6 +22,17 @@ data:
         server {
             listen 8080;
 
+            # Gateway health — returns 200 locally without touching any
+            # upstream, so kubelet probes (and `make wait-ach`) report the
+            # gateway Ready only once nginx is actually serving. Exact match
+            # (`= /healthz`) so it never shadows a proxied route, and
+            # access_log off keeps probe traffic out of the logs.
+            location = /healthz {
+                access_log off;
+                add_header Content-Type text/plain;
+                return 200 "ok\n";
+            }
+
             # Platform API Routing
             location /platform/ {
                 proxy_pass http://ach-platform-api.ach-system.svc.cluster.local:80/platform/;
@@ -105,6 +116,20 @@ spec:
         image: nginx:alpine
         ports:
         - containerPort: 8080
+        # Probes hit the local /healthz return-200 (no upstream dependency),
+        # so the gateway is only marked Ready when nginx is serving config.
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
         volumeMounts:
         - name: config
           mountPath: /etc/nginx/nginx.conf
