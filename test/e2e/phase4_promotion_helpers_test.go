@@ -10,9 +10,7 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -142,82 +140,8 @@ func getCRJSONPath(t *testing.T, kind, name, jsonpath string) string {
 	return strings.TrimSpace(out)
 }
 
-// compareJSONShape diffs an actual JSON document against a golden one
-// with tolerated paths (dotted JSON path strings). On any path in
-// `tolerated`, the helper checks only that the field is PRESENT and has
-// the same type; the value is not compared. For every other path the
-// values must match exactly.
-//
-// Returns a slice of human-readable error strings. Empty slice means
-// equal (under tolerance).
-//
-// Used by §11e to ignore timestamp/storageLocation hash drift while
-// still asserting the JSON shape + leaf values that matter
-// (schemaVersion, environment, name, id, downloadUrl).
-func compareJSONShape(actual, golden []byte, tolerated map[string]struct{}) []string {
-	var a, g any
-	if err := json.Unmarshal(actual, &a); err != nil {
-		return []string{fmt.Sprintf("actual not JSON: %v", err)}
-	}
-	if err := json.Unmarshal(golden, &g); err != nil {
-		return []string{fmt.Sprintf("golden not JSON: %v", err)}
-	}
-	var diffs []string
-	walkJSON("$", a, g, tolerated, &diffs)
-	return diffs
-}
-
-func walkJSON(path string, a, g any, tolerated map[string]struct{}, out *[]string) {
-	if _, ok := tolerated[path]; ok {
-		// Only require type-match at this path.
-		if fmt.Sprintf("%T", a) != fmt.Sprintf("%T", g) {
-			*out = append(*out, fmt.Sprintf("%s: type drift actual=%T golden=%T", path, a, g))
-		}
-		return
-	}
-	switch gv := g.(type) {
-	case map[string]any:
-		av, ok := a.(map[string]any)
-		if !ok {
-			*out = append(*out, fmt.Sprintf("%s: golden is object, actual is %T", path, a))
-			return
-		}
-		for k, gvv := range gv {
-			avv, present := av[k]
-			if !present {
-				*out = append(*out, fmt.Sprintf("%s.%s: missing in actual", path, k))
-				continue
-			}
-			walkJSON(path+"."+k, avv, gvv, tolerated, out)
-		}
-		for k := range av {
-			if _, present := gv[k]; !present {
-				*out = append(*out, fmt.Sprintf("%s.%s: unexpected in actual (not in golden)", path, k))
-			}
-		}
-	case []any:
-		av, ok := a.([]any)
-		if !ok {
-			*out = append(*out, fmt.Sprintf("%s: golden is array, actual is %T", path, a))
-			return
-		}
-		if len(av) != len(gv) {
-			*out = append(*out, fmt.Sprintf("%s: length actual=%d golden=%d", path, len(av), len(gv)))
-			return
-		}
-		for i := range gv {
-			walkJSON(fmt.Sprintf("%s[%d]", path, i), av[i], gv[i], tolerated, out)
-		}
-	default:
-		if !jsonScalarEqual(a, g) {
-			*out = append(*out, fmt.Sprintf("%s: value actual=%v golden=%v", path, a, g))
-		}
-	}
-}
-
-func jsonScalarEqual(a, b any) bool {
-	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
-}
+// (compareJSONShape / walkJSON / jsonScalarEqual were removed in #58 — their
+// only caller was the deleted SC11e hydrate-golden subtest.)
 
 // bipFinalizer is the canonical BIP finalizer name. Mirrors
 // internal/controller/ach/finalizers.go.
@@ -401,45 +325,9 @@ func runCmdStdin(cmdline, stdin string) (string, error) {
 	return string(out), err
 }
 
-// driveHydrateAndCapture runs examples/hydrate-demo.sh as a sub-process
-// against the current kept cluster and returns the captured hydrate
-// response JSON. The script is the canonical wire-path stand-in for the
-// not-yet-built `ach login` + `ach hydrate` CLI.
-//
-// Design note (§11e cross-plan ref): when the CLI lands (ROADMAP Phase
-// 6+7), flip the implementation to call the CLI binary, gated by
-// ACH_HYDRATE_DRIVER=cli|shell (default shell). Same wire path either
-// way; same golden.
-//
-// Returns the bytes the script wrote to examples/hydrate.json.
-func driveHydrateAndCapture(t *testing.T) []byte {
-	t.Helper()
-
-	driver := envOr("ACH_HYDRATE_DRIVER", "shell")
-	if driver != "shell" {
-		t.Skipf("§11e: ACH_HYDRATE_DRIVER=%q not supported yet "+
-			"(only 'shell' implemented; CLI driver pending Phase 6+7)", driver)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "../../examples/hydrate-demo.sh")
-	cmd.Env = append(cmd.Env, "PATH="+envOr("PATH", "/usr/bin:/bin"))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("§11e: hydrate-demo.sh failed: %v\n%s\n\n"+
-			"This is the canonical wire-path test. If FIX01.md §A is still "+
-			"blocking the SSO path, the test correctly surfaces the regression.",
-			err, out)
-	}
-
-	body, err := os.ReadFile("../../examples/hydrate.json")
-	if err != nil {
-		t.Fatalf("§11e: read examples/hydrate.json: %v\n--- script stdout ---\n%s",
-			err, out)
-	}
-	return body
-}
+// (driveHydrateAndCapture removed in #58 — it shelled out to the deleted
+// examples/hydrate-demo.sh; the hydrate wire-path golden is covered by
+// TestPhase6CLI via `ach-cli hydrate`.)
 
 // queryACHPostgresCount runs a `SELECT count(*) ...` against the
 // ach-postgres pod and returns the integer. The whereClause MUST NOT

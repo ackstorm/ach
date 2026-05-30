@@ -222,7 +222,7 @@ _qa-lint-config: golangci-lint
 	$(GOLANGCI_LINT) config verify
 
 .PHONY: qa-lint-changed
-qa-lint-changed: ## Lint only packages touched vs BASE_REF (default origin/main).
+qa-lint-changed: ## Lint packages touched vs BASE_REF (default origin/main), incl. untracked *.go.
 	$(call container_target,_qa-lint-changed)
 _qa-lint-changed: golangci-lint
 	@BASE=$${BASE_REF:-origin/main}; \
@@ -231,7 +231,8 @@ _qa-lint-changed: golangci-lint
 		git rev-parse --verify "$$BASE" >/dev/null 2>&1 || { \
 			echo "ERROR: neither origin/main nor main exists; pass BASE_REF=<ref>" >&2; exit 1; }; \
 	fi; \
-	CHANGED=$$(git diff --name-only "$$BASE...HEAD" -- '*.go' \
+	CHANGED=$$( { git diff --name-only "$$BASE...HEAD" -- '*.go'; \
+		git ls-files --others --exclude-standard -- '*.go'; } \
 		| xargs -r -n1 dirname | sort -u | sed 's|^|./|; s|$$|/...|'); \
 	if [ -z "$$CHANGED" ]; then \
 		echo "No Go changes vs $$BASE"; \
@@ -386,9 +387,9 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: gen-manifests gen-code kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	# Use controller:latest as the placeholder for kustomize-to-helm.sh to substitute
-	# into {{ .Values.image.repo }}:{{ .Values.image.tag }}. The actual image is set
-	# at runtime by Helm values, not at kustomize build time.
+	# Standalone kustomize install bundle (kubectl apply -f dist/install.yaml).
+	# The image override is a no-op when config/manager already pins
+	# ghcr.io/ackstorm/ach; kept for kubebuilder-convention parity.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=controller:latest
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
@@ -504,8 +505,7 @@ endef
 # --- helm / chart packaging ---
 
 .PHONY: helm-sync
-helm-sync: build-installer ## Plan 07-02: regenerate deploy/helm/ach/templates/install.yaml from dist/install.yaml per D-01 (kustomize canonical, Helm veneer).
-	bash scripts/kustomize-to-helm.sh dist/install.yaml deploy/helm/ach/templates/install.yaml
+helm-sync: gen-manifests ## Sync generated CRDs into the Helm chart's crd-sources/ (the chart's ONLY generated surface — per-mode Deployments are hand-authored templates).
 	# CRDs land in crd-sources/ (NOT the reserved crds/ dir name) so the
 	# templates/crds.yaml loop can range over them and emit each one as a
 	# Helm-managed template. helm-inject-crd-annotation.py adds
@@ -515,10 +515,10 @@ helm-sync: build-installer ## Plan 07-02: regenerate deploy/helm/ach/templates/i
 	python3 scripts/helm-inject-crd-annotation.py deploy/helm/ach/crd-sources/*.yaml
 
 .PHONY: helm-sync-check
-helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` produced uncommitted diff (drift between kustomize and chart).
-	@if ! git diff --quiet deploy/helm/ach/; then \
-	  echo "CHART DRIFT: deploy/helm/ach/ is out of sync with kustomize. Run \`make helm-sync\` and commit."; \
-	  git diff deploy/helm/ach/; \
+helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD drift in the chart.
+	@if ! git diff --quiet deploy/helm/ach/crd-sources/; then \
+	  echo "CHART CRD DRIFT: deploy/helm/ach/crd-sources/ is out of sync with config/crd/bases. Run \`make helm-sync\` and commit."; \
+	  git --no-pager diff --stat deploy/helm/ach/crd-sources/; \
 	  exit 1; \
 	fi
 
@@ -715,6 +715,39 @@ logs-forwarder:    ## Tail forwarder logs.
 logs-litellm:      ## Tail LiteLLM logs.
 	kubectl -n litellm-system logs -f --timestamps deploy/litellm
 
+# --- E2E harness wiring ----------------------------------------------------
+# Everything reaches the synced cluster through the gateway (localhost:8080;
+# kind extraPortMapping + devtools --network=host). Data-plane URLs ARE the
+# gateway base (it routes /v1 /content /platform /mcp /a2a /.well-known /dex);
+# metrics get distinct /metrics/<svc> routes (a bare /metrics can't
+# disambiguate four services behind one base). Phase gates default ON — the
+# synced cluster closes the LiteLLM seed gap (TODO §16) and the alpine+git
+# operator image closes the git gap, so the formerly-pending tests run. All
+# overridable on the command line (e.g. `make e2e-focus ACH_E2E_PHASE9=0`).
+ACH_BASE_URL   ?= http://localhost:8080
+ACH_E2E_PHASE4 ?= 1
+ACH_E2E_PHASE5 ?= 1
+ACH_E2E_PHASE6 ?= 1
+ACH_E2E_PHASE9 ?= 1
+ACH_E2E_SC11C  ?= 1
+
+# Shared env block prefixed onto EVERY e2e go-test invocation (run + focus)
+# so URL-gated and phase-gated tests actually exercise the synced cluster.
+# Make variables are not exported to recipe shells unless referenced inline,
+# so both _e2e-run and _e2e-focus expand this explicitly.
+E2E_RUN_ENV = \
+	ACH_BASE_URL=$(ACH_BASE_URL) \
+	ACH_FORWARDER_URL=$(ACH_BASE_URL) \
+	ACH_CONTENT_SERVICE_URL=$(ACH_BASE_URL) \
+	ACH_PLATFORM_API_URL=$(ACH_BASE_URL) \
+	ACH_FORWARDER_METRICS_URL=$(ACH_BASE_URL)/metrics/forwarder \
+	ACH_CONTENT_METRICS_URL=$(ACH_BASE_URL)/metrics/content \
+	ACH_PLATFORM_METRICS_URL=$(ACH_BASE_URL)/metrics/platform \
+	ACH_OPERATOR_METRICS_URL=$(ACH_BASE_URL)/metrics/operator \
+	ACH_E2E_PHASE4=$(ACH_E2E_PHASE4) ACH_E2E_PHASE5=$(ACH_E2E_PHASE5) \
+	ACH_E2E_PHASE6=$(ACH_E2E_PHASE6) ACH_E2E_PHASE9=$(ACH_E2E_PHASE9) \
+	ACH_E2E_SC11C=$(ACH_E2E_SC11C)
+
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
 e2e-run: ## Run e2e suite against an already-up cluster.
 	$(call container_target,_e2e-run)
@@ -723,8 +756,10 @@ _e2e-run:
 	# it, test/e2e/e2e_suite_test.go's TestMain calls setupCluster() which
 	# tries `kind load docker-image ach-operator:latest` — a per-binary
 	# image name from ach-old that does not exist under the single-binary
-	# `ach` layout. cluster-up handles the actual image load.
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 15m ./test/e2e/...
+	# `ach` layout. cluster-up handles the actual image load. The synced
+	# cluster is reached entirely through the gateway — zero port-forwards.
+	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
+		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e/...
 
 e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
 	$(call container_target,_e2e-focus)
@@ -732,7 +767,10 @@ _e2e-focus:
 	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
 	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	E2E_SKIP_SETUP=1 go test -tags=e2e -v -count=1 -timeout 5m \
+	# Same gateway-URL + phase-gate env as _e2e-run so focused runs of
+	# formerly-gated tests actually execute (not skip).
+	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
+	    go test -tags=e2e -v -count=1 -timeout 5m \
 	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
 	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")
 

@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,8 +38,9 @@ const (
 	// phase5CSContainer is the second container in the operator Pod
 	// (see deploy/helm/ach/templates/operator-deployment.yaml).
 	phase5CSContainer = "content-service"
-	// phase5EnvFixtureName matches test/e2e/phase5_fixtures/environment.yaml.
-	phase5EnvFixtureName = "prod"
+	// phase5EnvFixtureName matches the synced Environment fixture
+	// test/e2e/cluster/05-environment/env-valid.yaml.
+	phase5EnvFixtureName = "env-valid"
 )
 
 // phase5SuiteGuard skips when prerequisites aren't met.
@@ -96,51 +96,19 @@ func waitOperatorReady(t *testing.T, deadline time.Duration) error {
 //
 // Idempotent — re-applying the same fixtures on a populated cluster
 // returns success.
-func seedPhase5Fixtures(t *testing.T, ctx context.Context) (pk, ek, env string) {
+func seedPhase5Fixtures(t *testing.T, _ context.Context) (pk, ek, env string) {
 	t.Helper()
-	fixturesDir := phase5FixtureDir(t)
-	files := []string{
-		"environment.yaml",
-		"plugin-foo.yaml",
-		"prompt-bar.yaml",
-		"artifact-baz.yaml",
-	}
-	for _, f := range files {
-		path := filepath.Join(fixturesDir, f)
-		cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", path)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("kubectl apply %s: %v output=%s", path, err, strings.TrimSpace(string(out)))
-		}
-	}
-	// Wait each CR Ready via the blessed Makefile target. Each wait is
-	// bounded by WAIT_TIMEOUT (default 300s in Makefile).
-	waits := []struct{ kind, name string }{
-		{"environment", "prod"},
-		{"plugin", "foo"},
-		{"prompt", "bar"},
-		{"artifact", "baz"},
-	}
-	for _, w := range waits {
-		cmd := exec.CommandContext(ctx, "make", "wait-cr-ready",
-			"KIND="+w.kind, "NAME="+w.name, "NS="+phase5Namespace)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("wait-cr-ready %s/%s: %v output=%s", w.kind, w.name, err, strings.TrimSpace(string(out)))
-		}
-	}
+	// The fixtures this helper used to apply (Environment prod + Plugin
+	// foo / Prompt bar / Artifact baz) are now part of the SYNCED set
+	// (test/e2e/cluster/{04-objects,05-environment}): scripts/cluster.sh
+	// applies them at bring-up and verify_all gates them healthy before
+	// any test runs. The suite asserts against that synced state rather
+	// than hydrating its own copies, so this helper only mints the
+	// pk_/ek_ identity the content-service assertions need.
 	pk = mustAcquirePk(t)
 	ek = mustAcquireEkBoundToEnv(t, phase5EnvFixtureName)
 	env = phase5EnvFixtureName
 	return pk, ek, env
-}
-
-// phase5FixtureDir resolves the test/e2e/phase5_fixtures absolute path.
-func phase5FixtureDir(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("os.Getwd: %v", err)
-	}
-	return filepath.Join(wd, "phase5_fixtures")
 }
 
 // straceCSSendfile attaches strace to the content-service container's
@@ -251,9 +219,14 @@ func kubectlExec(ctx context.Context, namespace, deployment, container string, c
 // kubectl exec into the postgres pod. Used by SC#4 staleness subtest
 // to mutate projection rows directly.
 func psqlExec(ctx context.Context, query string) (string, string, error) {
-	args := []string{"-n", phase5Namespace, "exec", "deploy/ach-postgres",
+	// postgres runs as a StatefulSet (ach-postgres-0), NOT a Deployment.
+	// Exec into it and supply the e2e fixture password via PGPASSWORD (psql
+	// prompts and fails non-interactively otherwise). The query is passed as
+	// a positional arg ($1) to sh -c so its embedded quotes/semicolons need
+	// no extra escaping.
+	args := []string{"-n", phase5Namespace, "exec", "statefulset/ach-postgres",
 		"--request-timeout=30s", "--",
-		"psql", "-U", "ach", "-d", "ach", "-t", "-A", "-c", query}
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "$1"`, "sh", query}
 	c := exec.CommandContext(ctx, "kubectl", args...)
 	var stdout, stderr strings.Builder
 	c.Stdout = &stdout

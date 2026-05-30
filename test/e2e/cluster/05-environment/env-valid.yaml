@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 content-service exercise — VALID Environment. Empty runtime (no
+# models/mcp/a2a) so AccessGroupSynced resolves trivially; context names
+# the three valid synced CR fixtures (plugin-valid, prompt-valid,
+# artifact-valid) so the projection layer populates the read cache the
+# content-service handler hits per request. Part of the SYNCED set
+# (cluster.sh applies it LAST, after 04-objects; verify_all gates it
+# Available); the e2e suite asserts against it.
+#
+# authorizedTeams="default" — the team EnsureDefaultTeam mints and the
+# SSO-provisioned test user joins (same team the demo Environment
+# authorizes), so an acquired pk_/ek_ is authorized for this Environment.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: env-valid
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    plugins:
+      - plugin-valid
+    prompts:
+      - prompt-valid
+    artifacts:
+      - artifact-valid

@@ -550,9 +550,11 @@ verify_all() {
   # is the "everything is OK before we run tests" gate the e2e suite relies on
   # (tests assert, they do not apply). VERIFY_TIMEOUT default 300s per resource.
   #
-  # Excluded on purpose (intentional negative/edge fixtures — never reach the
-  # happy state): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
-  # demo) and environment/demo-unresolved (UnresolvedReferences).
+  # Excluded from the happy-state gate on purpose (intentional negative/edge
+  # fixtures): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
+  # demo) and environment/demo-unresolved (UnresolvedReferences). The Phase 5
+  # *-invalid fixtures ARE gated below — on their EXPECTED failure state
+  # (SourceReachable=False) — so "everything is in its known state" still holds.
   local to="${VERIFY_TIMEOUT:-300s}"
   echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
@@ -569,6 +571,16 @@ verify_all() {
     wait_bip_reconciled "${b}" "${to}"
   done
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo
+  # Phase 5 content-service exercise matrix — valid half healthy.
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" plugin/plugin-valid
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/prompt-valid
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/artifact-valid
+  kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
+  # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
+  # has fetched + failed). kubectl wait supports condition=<type>=false.
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
   echo "[cluster.sh] all synced objects healthy."
 }
 

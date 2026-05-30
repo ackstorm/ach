@@ -26,10 +26,10 @@
 // the test writes a synthetic config file under a temp XDG_CONFIG_HOME
 // directory with `default: demo` + `deployments.demo.{url,pk}` populated
 // from ACH_E2E_PHASE6_PK + ACH_E2E_PHASE6_BASE_URL. The pk_ itself is
-// expected to be acquired by the operator out-of-band (the canonical
-// path is scripts/uat-phase3.sh + the existing examples/hydrate-demo.sh
-// flow — though hydrate-demo.sh is deleted in this plan, the underlying
-// Phase 3 SSO endpoints remain reachable for one-off pk_ acquisition).
+// expected to be acquired by the operator out-of-band (canonical path
+// is scripts/uat-phase3.sh, or the gateway-based SSO the phase4 helpers
+// use; the Phase 3 SSO endpoints remain reachable for one-off pk_
+// acquisition).
 //
 // The hydrate-golden-diff subtest (the headline assertion) is the
 // load-bearing assertion: bytes.Equal(stdout, phase6NormalizeHydrate(

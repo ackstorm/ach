@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 — INVALID prompt (negative-path fixture). Nonexistent repo →
+# SourceReachable=False. SYNCED but EXCLUDED from the happy-state gate;
+# verify_all asserts the expected FAILURE state instead.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: prompt-invalid
+  namespace: ach-system
+spec:
+  type: github
+  contentType: text/markdown
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: ackstorm/ach-nonexistent-fixture-repo
+    ref: main
+    path: does/not/exist.md
