@@ -472,6 +472,19 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		HTTPClient: hydrateHTTPClient,
 	}
 
+	// CLI-03: pk_ content GETs must carry the target Environment in an
+	// x-ach-environment header so the Content Service can resolve scope
+	// (resolveEnv in internal/contentservice/authz.go returns 400
+	// missing_environment for a pk_ request without it). An ek_ binds its
+	// own Environment, so the header is omitted — see the credential-
+	// agnostic contract documented on internal/cli/extract.FetchContent.
+	// The surface manifest POST carries the Environment in its body; only
+	// these per-artifact content GETs rely on the header. effectiveEnv is
+	// guaranteed non-empty for pk_ by the D-12 gate in runHydrate.
+	if prefix, perr := keys.ClassifyBearer(bearer); perr == nil && prefix == keys.PrefixPk {
+		hc.ExtraHeaders = http.Header{"x-ach-environment": {effectiveEnv}}
+	}
+
 	// NewWiring constructs the default Extractor + AdapterDispatcher;
 	// both are threaded into Opts so commit.run()'s steps 7-10 invoke
 	// real impls (07-W5-01 gap closure).

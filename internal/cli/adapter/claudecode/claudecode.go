@@ -41,7 +41,11 @@ import (
 // Target paths emitted by this adapter. Centralized as constants so
 // the test assertions and the production code stay in lock-step.
 const (
-	mcpJSONPath = ".claude/.mcp.json"
+	// settingsJSONPath is where claude-code MCP server definitions are
+	// written (user-directed; see the surgical-merge redesign plan). The
+	// adapter merges its mcpServers entries into this file surgically,
+	// preserving the user's other settings/servers.
+	settingsJSONPath = ".claude/settings.json"
 
 	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
 	// alias contract (plan must_haves: ["claude", "cc"]).
@@ -239,7 +243,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 
 	return []adapter.FileWrite{
 		{
-			Path:    mcpJSONPath,
+			Path:    settingsJSONPath,
 			Content: content,
 			Merge:   adapter.MergeDeep,
 			Keys:    keys,
@@ -342,7 +346,7 @@ func copyFile(srcPath, dstPath string) error {
 // the runtime-config one via deep-merge).
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
-		mcpJSONPath: adapter.MergeDeep,
+		settingsJSONPath: adapter.MergeDeep,
 	}
 }
 
@@ -355,7 +359,7 @@ func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 // plugin files (claudecode's TransformPlugin already emits source bytes
 // verbatim).
 func (a *Adapter) ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error) {
-	if target != mcpJSONPath {
+	if target != settingsJSONPath {
 		return nil, nil
 	}
 	if m == nil || m.Runtime == nil {

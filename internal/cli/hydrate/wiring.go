@@ -19,15 +19,13 @@
 //     back to KindArtifact when the URL is unparseable so bomb-defense
 //     caps remain enforced even for malformed manifests.
 //
-//   - adapterDispatcherImpl wraps adapter.Lookup + RenderRuntime +
-//     TransformPlugin + the SAFE-04 cascade from 07-W2-03 autoclaim.
-//     For each adapter.FileWrite, classify the final path; on
-//     CollisionExistsUnowned, run extract.Cascade with eagerBytes =
-//     fw.Content + resolver = the adapter itself (via
-//     ResolveOutputContent). Identical → auto-claim (the file becomes
-//     a state entry); not-identical + !force → wrap as
-//     exit.CollisionRefuse (exit 7); !force-bypass is the SAFE-04
-//     refusal posture.
+//   - adapterDispatcherImpl wraps adapter.Lookup + RenderRuntime. Each
+//     adapter.FileWrite is published under toolRoot (the tool's native
+//     config dir — workspace root, or $HOME under --global; NOT achDir)
+//     via SURGICAL forward-merge: only ACH's keys are upserted into the
+//     user's existing JSON/TOML config, preserving the user's other
+//     servers/settings. A user edit to one of OUR keys is caught by the
+//     per-key §8.4 drift check → exit.Drift unless --force.
 //
 //   - Sync implements STATE-05 / D-16 verbatim: collect targets in
 //     `prev` but missing from `new`; sort deepest-first by path depth;
@@ -70,6 +68,12 @@ import (
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
+)
+
+// File-extension discriminators for adapter runtime-config merge/sync.
+const (
+	extJSON = ".json"
+	extTOML = ".toml"
 )
 
 // extractorImpl satisfies the hydrate.Extractor interface declared in
@@ -162,8 +166,8 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 // adapterDispatcherImpl satisfies the hydrate.AdapterDispatcher
 // interface declared in result.go. platformID is bound at
 // construction (the cobra layer resolves it via ResolvePlatform or
-// Autodetect). force gates the SAFE-04 collision-refuse path; when
-// true, byte mismatches are written anyway.
+// Autodetect). force bypasses the per-key drift refusal (publishRuntimeFile)
+// so a user edit to OUR key is overwritten rather than preserved.
 type adapterDispatcherImpl struct {
 	platformID string
 	force      bool
@@ -174,23 +178,18 @@ type adapterDispatcherImpl struct {
 //  1. Lookup the adapter by platformID. Miss → typed CodedError
 //     (General) so the cobra error envelope stays consistent.
 //  2. Call ad.RenderRuntime(ctx, m, s) — returns []adapter.FileWrite.
-//  3. For each FileWrite:
-//     a. Compute the absolute final path: filepath.Join(achDir, fw.Path).
-//     b. extract.Classify(finalPath, achDir, s) — three-value outcome.
-//     The achDir argument lets Classify normalize the workspace-
-//     relative state.FileEntry.Target values to absolute before
-//     comparing against finalAbs (CR-03 / 07-W5-03).
-//     c. CollisionExistsUnowned → extract.Cascade with eagerBytes =
-//     fw.Content, resolver = adapterContentResolver{adapter, manifest}
-//     (so the Tier-2 ResolveOutputContent path is reachable). On
-//     Identical=false AND !force → wrap as exit.CollisionRefuse (7).
-//     d. Write the content via state.WriteAtomic. Record the FileWrite
-//     in RenderResult.WrittenFiles + the Merge/Keys metadata.
+//  3. For each FileWrite, publishRuntimeFile resolves the target under
+//     toolRoot (the tool's native config location, NOT achDir),
+//     surgically merges ONLY our keys into the user's existing config,
+//     and enforces the per-key §8.4 drift truth table (a user edit to
+//     OUR key → exit.Drift unless --force). The user's other keys are
+//     preserved untouched.
 //
-// DroppedComponents stays nil for the runtime path (TransformPlugin
-// is the source of drops); the orchestrator will accumulate drops from
-// per-plugin transforms separately when it wires step 8.
-func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir string) (RenderResult, error) {
+// State records the canonical hash of OUR contribution (not the merged
+// file) so --sync inverse-merge and subsequent drift checks operate on
+// our keys only. DroppedComponents stays nil for the runtime path
+// (TransformPlugin is the source of drops).
+func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string) (RenderResult, error) {
 	ad, ok := adapter.Lookup(d.platformID)
 	if !ok {
 		return RenderResult{}, &exit.CodedError{
@@ -204,75 +203,327 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
 	}
 
-	resolver := &adapterContentResolver{ad: ad, m: m, ctx: ctx}
-
 	var result RenderResult
 	for _, fw := range fws {
-		finalAbs := filepath.Join(achDir, fw.Path)
-
-		class, err := extract.Classify(finalAbs, achDir, s)
+		entry, err := d.publishRuntimeFile(fw, s, toolRoot)
 		if err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s classify %s: %w", d.platformID, finalAbs, err)
+			return RenderResult{}, err
 		}
-
-		if class == extract.CollisionExistsUnowned {
-			outcome, cerr := extract.Cascade(ctx, finalAbs, nil, fw.Content, resolver, nil)
-			if cerr != nil {
-				return RenderResult{}, fmt.Errorf("adapter %s cascade %s: %w", d.platformID, finalAbs, cerr)
-			}
-			if !outcome.Identical && !d.force {
-				return RenderResult{}, extract.WrapCollisionRefuseError(finalAbs, outcome.Tier)
-			}
-			// Identical OR force → fall through to write.
-		}
-
-		// Ensure parent dir exists before atomic publish.
-		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
-		}
-		// 0o600 — adapter runtime configs embed plaintext x-ach-key
-		// bearer credentials in headers maps; refuse world-readable
-		// per CR-01 (07-W5-02 / T-07-W5-02-01). Same mode is passed
-		// at the three Sync inverse-merge call sites below
-		// (syncComposite / syncDeepJSON / syncDeepTOML) — they rewrite
-		// the same credential-bearing files and must preserve the
-		// mode contract.
-		if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
-		}
-
-		h, err := hash.Hash(bytes.NewReader(fw.Content))
-		if err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s hash %s: %w", d.platformID, finalAbs, err)
-		}
-
-		result.WrittenFiles = append(result.WrittenFiles, FileWrite{
-			Target:     fw.Path,
-			Hash:       h,
-			SourceHash: h, // for adapter-rendered files the hash IS the source
-			Merge:      mergeKindToString(fw.Merge),
-			Keys:       append([]string(nil), fw.Keys...),
-		})
+		result.WrittenFiles = append(result.WrittenFiles, entry)
 	}
 
 	return result, nil
 }
 
-// adapterContentResolver bridges adapter.Adapter into the
-// extract.ContentResolver interface used by the SAFE-04 cascade
-// Tier-2. The adapter's ResolveOutputContent signature is
-// (ctx, *manifest.Manifest, target) → ([]byte, error); ContentResolver
-// is (ctx, target) → ([]byte, error). The bridge closes over the
-// manifest at dispatcher construction so the cascade can ask "what
-// WOULD this target's bytes be?" without re-threading the manifest.
-type adapterContentResolver struct {
-	ad  adapter.Adapter
-	m   *manifest.Manifest
-	ctx context.Context
+// publishRuntimeFile writes one adapter runtime-config FileWrite via
+// SURGICAL MERGE + PER-KEY DRIFT.
+//
+// Target resolution: fw.Path joins toolRoot (workspace root in project
+// scope, $HOME in --global) — the tool's native config location — NOT
+// achDir. ACH's private state/cache stay under achDir.
+//
+// Per-key drift (§8.4 truth table, applied to OUR keys only): we compare
+// the hash of our contributed subtree as it currently sits on disk
+// (onDisk) against the prior state record (Hash/SourceHash) and the fresh
+// render (source). A user edit to OUR key surfaces as LocalEditPreserve /
+// ConflictPreserve → exit 2 (preserve), unless --force. The user's OTHER
+// keys are invisible to this comparison and are never claimed, refused, or
+// removed — only merged around. A no-op (disk + upstream both unchanged)
+// skips the rewrite so the file's bytes stay byte-identical (sc3 no-op).
+//
+// 0o600 — these files embed the plaintext x-ach-key bearer (CR-01).
+func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *state.File, toolRoot string) (FileWrite, error) {
+	finalAbs := filepath.Join(toolRoot, fw.Path)
+	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
+
+	// Canonical hash of our freshly-rendered contribution (parsed → map →
+	// deterministic re-encode) so it is directly comparable to the on-disk
+	// subtree regardless of struct-vs-map field ordering.
+	oursMap, err := parseDoc(fw.Content, isTOML)
+	if err != nil {
+		return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
+	}
+	freshHash, err := subtreeHash(oursMap)
+	if err != nil {
+		return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
+	}
+
+	// Hash of our keys as they currently sit on disk (empty when the file
+	// or our keys are absent — first hydrate / user removed them).
+	onDiskHash := ""
+	if fw.Merge == adapter.MergeDeep {
+		diskMap, ok, derr := readParseDoc(finalAbs, isTOML)
+		if derr != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, derr)
+		}
+		if ok {
+			sub, found := extractByKeys(diskMap, fw.Keys)
+			if found {
+				if onDiskHash, err = subtreeHash(sub); err != nil {
+					return FileWrite{}, fmt.Errorf("adapter %s hash on-disk %s: %w", d.platformID, finalAbs, err)
+				}
+			}
+		}
+	}
+
+	prior := findAdapterEntry(s, fw.Path)
+	outcome := NewDiffer().Compare(prior, onDiskHash, freshHash)
+
+	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
+	// prior == nil (fresh hydrate) never refuses — there is nothing of ours
+	// to preserve yet.
+	if prior != nil && ShouldExit2(outcome) && !d.force {
+		return FileWrite{}, WrapDriftError(outcome, finalAbs)
+	}
+
+	// Skip the rewrite only on a true no-op (prior exists; disk + upstream
+	// unchanged) so byte-for-byte stability holds. Otherwise publish.
+	skip := prior != nil && outcome == NoOp
+	if !skip {
+		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
+		}
+		switch fw.Merge {
+		case adapter.MergeDeep:
+			if _, err := mergeForward(finalAbs, fw.Content, 0o600); err != nil {
+				return FileWrite{}, fmt.Errorf("adapter %s merge %s: %w", d.platformID, finalAbs, err)
+			}
+		default:
+			if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
+				return FileWrite{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
+			}
+		}
+	}
+
+	// State records the canonical hash of OUR contribution (not the merged
+	// file) so --sync inverse-merge (via Keys[]) and the next drift check
+	// operate on our keys only, never the user's other entries.
+	return FileWrite{
+		Target:     fw.Path,
+		Hash:       freshHash,
+		SourceHash: freshHash, // adapter-rendered: the hash IS the source
+		Merge:      mergeKindToString(fw.Merge),
+		Keys:       append([]string(nil), fw.Keys...),
+	}, nil
 }
 
-func (r *adapterContentResolver) Resolve(_ context.Context, target string) ([]byte, error) {
-	return r.ad.ResolveOutputContent(r.ctx, r.m, target)
+// mergeForward reads the existing file at abs (JSON or TOML by extension),
+// deep-merges the keys from `ours` (an adapter-rendered document carrying
+// ONLY ACH's contributed entries) into it, and atomic-writes the result at
+// the given mode. When abs does not exist, the result is just `ours`. The
+// user's pre-existing keys are preserved; ACH's keys upsert same-named
+// entries. Returns the merged bytes (for hashing/state if the caller wants
+// them). This is the forward counterpart to syncDeep{JSON,TOML}'s removal.
+func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	switch strings.ToLower(filepath.Ext(abs)) {
+	case extJSON:
+		return mergeForwardJSON(abs, ours, mode)
+	case extTOML:
+		return mergeForwardTOML(abs, ours, mode)
+	default:
+		// No structured merge for an unknown extension — write verbatim.
+		if err := state.WriteAtomic(abs, ours, mode); err != nil {
+			return nil, fmt.Errorf("mergeForward write %s: %w", abs, err)
+		}
+		return ours, nil
+	}
+}
+
+// mergeForwardJSON deep-merges `ours` into the existing JSON document at
+// abs. A missing file is treated as an empty object. A pre-existing file
+// MUST be valid JSON (we never silently discard a user's config).
+func mergeForwardJSON(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	var oursMap map[string]any
+	if err := json.Unmarshal(ours, &oursMap); err != nil {
+		return nil, fmt.Errorf("mergeForward decode rendered JSON: %w", err)
+	}
+	existing := map[string]any{}
+	if body, err := os.ReadFile(abs); err == nil {
+		if len(bytes.TrimSpace(body)) > 0 {
+			if derr := json.Unmarshal(body, &existing); derr != nil {
+				return nil, fmt.Errorf("mergeForward decode existing JSON %s: %w", abs, derr)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
+	}
+	deepMergeInto(existing, oursMap)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(existing); err != nil {
+		return nil, fmt.Errorf("mergeForward encode JSON %s: %w", abs, err)
+	}
+	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
+		return nil, fmt.Errorf("mergeForward write JSON %s: %w", abs, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// mergeForwardTOML mirrors mergeForwardJSON for TOML files.
+func mergeForwardTOML(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	var oursMap map[string]any
+	if err := toml.Unmarshal(ours, &oursMap); err != nil {
+		return nil, fmt.Errorf("mergeForward decode rendered TOML: %w", err)
+	}
+	existing := map[string]any{}
+	if body, err := os.ReadFile(abs); err == nil {
+		if len(bytes.TrimSpace(body)) > 0 {
+			if derr := toml.Unmarshal(body, &existing); derr != nil {
+				return nil, fmt.Errorf("mergeForward decode existing TOML %s: %w", abs, derr)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
+	}
+	deepMergeInto(existing, oursMap)
+	var buf bytes.Buffer
+	enc := toml.NewEncoder(&buf)
+	if err := enc.Encode(existing); err != nil {
+		return nil, fmt.Errorf("mergeForward encode TOML %s: %w", abs, err)
+	}
+	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
+		return nil, fmt.Errorf("mergeForward write TOML %s: %w", abs, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// deepMergeInto recursively merges src into dst: when both sides hold a
+// nested object at the same key, recurse; otherwise src's value overwrites
+// dst's. This preserves the user's sibling keys (e.g. their other MCP
+// servers and unrelated settings) while upserting ACH's entries.
+func deepMergeInto(dst, src map[string]any) {
+	for k, sv := range src {
+		if svMap, ok := sv.(map[string]any); ok {
+			if dvMap, ok := dst[k].(map[string]any); ok {
+				deepMergeInto(dvMap, svMap)
+				continue
+			}
+		}
+		dst[k] = sv
+	}
+}
+
+// parseDoc unmarshals a JSON or TOML document into a generic map. An
+// empty/whitespace body yields an empty map (not an error).
+func parseDoc(content []byte, isTOML bool) (map[string]any, error) {
+	out := map[string]any{}
+	if len(bytes.TrimSpace(content)) == 0 {
+		return out, nil
+	}
+	if isTOML {
+		if err := toml.Unmarshal(content, &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	if err := json.Unmarshal(content, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// readParseDoc reads + parses abs. Returns (nil, false, nil) when the file
+// is absent or empty (no prior on-disk document).
+func readParseDoc(abs string, isTOML bool) (map[string]any, bool, error) {
+	body, err := os.ReadFile(abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, false, nil
+	}
+	m, perr := parseDoc(body, isTOML)
+	if perr != nil {
+		return nil, false, perr
+	}
+	return m, true, nil
+}
+
+// subtreeHash returns the xxh3 of a deterministic (sorted-key) JSON
+// encoding of m. Encoding via json.Marshal regardless of the source
+// format makes the hash independent of struct-vs-map field ordering and
+// of JSON-vs-TOML provenance, so the freshly-rendered and on-disk subtrees
+// are directly comparable.
+func subtreeHash(m map[string]any) (string, error) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return hash.Hash(bytes.NewReader(b))
+}
+
+// extractByKeys builds a document containing ONLY the dotted `keys` lifted
+// from src (preserving nesting). found reports whether at least one key was
+// present — used to distinguish "our keys absent on disk" from "present".
+func extractByKeys(src map[string]any, keys []string) (map[string]any, bool) {
+	out := map[string]any{}
+	found := false
+	for _, k := range keys {
+		if v, ok := getDottedKey(src, k); ok {
+			setDottedKey(out, k, v)
+			found = true
+		}
+	}
+	return out, found
+}
+
+// getDottedKey reads the value at a dotted path from a nested map. Returns
+// (nil, false) when any segment is missing or a non-map intermediate is hit.
+func getDottedKey(root map[string]any, path string) (any, bool) {
+	parts := strings.Split(path, ".")
+	cur := root
+	for i, p := range parts {
+		v, ok := cur[p]
+		if !ok {
+			return nil, false
+		}
+		if i == len(parts)-1 {
+			return v, true
+		}
+		next, ok := v.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	return nil, false
+}
+
+// setDottedKey sets val at a dotted path, creating intermediate maps.
+func setDottedKey(root map[string]any, path string, val any) {
+	parts := strings.Split(path, ".")
+	cur := root
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			cur[p] = val
+			return
+		}
+		next, ok := cur[p].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			cur[p] = next
+		}
+		cur = next
+	}
+}
+
+// findAdapterEntry locates the prior state.FileEntry for target under
+// s.Adapter.Files, or nil when absent (fresh hydrate).
+func findAdapterEntry(s *state.File, target string) *state.FileEntry {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Adapter.Files {
+		if s.Adapter.Files[i].Target == target {
+			return &s.Adapter.Files[i]
+		}
+	}
+	return nil
 }
 
 // mergeKindToString translates adapter.MergeKind into the state.json
@@ -487,9 +738,9 @@ func syncComposite(_ state.FileEntry, abs string, opts SyncOptions) (bool, error
 func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	ext := strings.ToLower(filepath.Ext(abs))
 	switch ext {
-	case ".json":
+	case extJSON:
 		return syncDeepJSON(e, abs, opts)
-	case ".toml":
+	case extTOML:
 		return syncDeepTOML(e, abs, opts)
 	}
 	warnPreserved(opts.Stderr, abs,

@@ -105,7 +105,7 @@ type fakeAdapterDispatcher struct {
 	err    error
 }
 
-func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _ string) (RenderResult, error) {
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string) (RenderResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}

@@ -153,8 +153,8 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 		t.Fatalf("RenderRuntime returned %d FileWrites, want 1", len(writes))
 	}
 	w := writes[0]
-	if w.Path != ".claude/.mcp.json" {
-		t.Errorf("FileWrite.Path = %q, want %q", w.Path, ".claude/.mcp.json")
+	if w.Path != ".claude/settings.json" {
+		t.Errorf("FileWrite.Path = %q, want %q", w.Path, ".claude/settings.json")
 	}
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
@@ -368,8 +368,8 @@ func TestTransformPlugin_EmptyPaths_Errors(t *testing.T) {
 func TestMergeStrategies_DotMcpJsonIsDeep(t *testing.T) {
 	a := &Adapter{}
 	got := a.MergeStrategies()
-	if got[".claude/.mcp.json"] != adapter.MergeDeep {
-		t.Errorf("MergeStrategies()[\".claude/.mcp.json\"] = %v, want MergeDeep", got[".claude/.mcp.json"])
+	if got[".claude/settings.json"] != adapter.MergeDeep {
+		t.Errorf("MergeStrategies()[\".claude/settings.json\"] = %v, want MergeDeep", got[".claude/settings.json"])
 	}
 }
 
@@ -387,7 +387,7 @@ func TestResolveOutputContent_McpJson_RoundTrips(t *testing.T) {
 
 	// ResolveOutputContent must return byte-identical content for the
 	// matched target — that is the SAFE-04 cascade Tier 2 contract.
-	gotBytes, err := a.ResolveOutputContent(ctx, m, ".claude/.mcp.json")
+	gotBytes, err := a.ResolveOutputContent(ctx, m, ".claude/settings.json")
 	if err != nil {
 		t.Fatalf("ResolveOutputContent: %v", err)
 	}

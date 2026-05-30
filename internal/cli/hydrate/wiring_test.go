@@ -5,6 +5,7 @@ package hydrate_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -97,17 +98,18 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	res, err := disp.Render(context.Background(), m, nil, achDir)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if len(res.WrittenFiles) == 0 {
 		t.Fatalf("RenderResult.WrittenFiles empty")
 	}
-	// File should be written at <achDir>/.claude/.mcp.json.
-	mcpPath := filepath.Join(achDir, ".claude", ".mcp.json")
-	if _, err := os.Stat(mcpPath); err != nil {
-		t.Errorf(".claude/.mcp.json missing after Render: %v", err)
+	// File should be written at <achDir>/.claude/settings.json (the
+	// surgical-merge target; toolRoot == achDir in this test).
+	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Errorf(".claude/settings.json missing after Render: %v", err)
 	}
 }
 
@@ -132,7 +134,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	}
 
 	// Pre-render to obtain the canonical bytes claudecode would emit.
-	firstRes, err := disp.Render(context.Background(), m, nil, achDir)
+	firstRes, err := disp.Render(context.Background(), m, nil, achDir, achDir)
 	if err != nil {
 		t.Fatalf("initial Render: %v", err)
 	}
@@ -144,7 +146,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	// (so the existing .mcp.json is "unowned"). The cascade should
 	// detect Identical (bytes match what Render would emit) and
 	// auto-claim — no error.
-	res, err := disp.Render(context.Background(), m, nil, achDir)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir)
 	if err != nil {
 		t.Fatalf("re-Render with unowned-but-identical bytes: %v", err)
 	}
@@ -153,63 +155,112 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	}
 }
 
-// TestAdapterDispatcherImpl_CollisionCascade_Differ_Force seeds the
-// final path with bytes that DIFFER from RenderRuntime output, runs
-// with force=true, and asserts the write proceeds without exit 7.
-func TestAdapterDispatcherImpl_CollisionCascade_Differ_Force(t *testing.T) {
-	withCleanHome(t)
-	achDir := t.TempDir()
-
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true)
-
-	m := &manifest.Manifest{
-		SchemaVersion: "v1alpha1",
-		Environment:   "demo",
-		Runtime: &manifest.RuntimeBlock{
-			MCPServers: []manifest.ContentRef{
-				{ID: "demo-mcp", Endpoint: "http://localhost:8080/mcp/demo-mcp"},
-			},
-		},
-		Context: &manifest.ContextBlock{},
-	}
-
-	mcpPath := filepath.Join(achDir, ".claude", ".mcp.json")
-	if err := os.MkdirAll(filepath.Dir(mcpPath), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(mcpPath, []byte("WRONG BYTES"), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	// Run with force=true — the SAFE-04 collision-refuse arm is bypassed.
-	res, err := disp.Render(context.Background(), m, nil, achDir)
-	if err != nil {
-		t.Fatalf("Render with --force: %v", err)
-	}
-	if len(res.WrittenFiles) == 0 {
-		t.Fatalf("Render with --force produced no files")
-	}
-	// The file's bytes should now equal RenderRuntime output (force
-	// overwrote).
-	got, err := os.ReadFile(mcpPath)
-	if err != nil {
-		t.Fatalf("read post-force: %v", err)
-	}
-	if bytes.Equal(got, []byte("WRONG BYTES")) {
-		t.Errorf("--force did not overwrite; file still contains stale bytes")
-	}
-}
-
-// TestAdapterDispatcherImpl_CollisionCascade_Differ_NoForce seeds
-// the final path with differing bytes and runs WITHOUT --force.
-// Asserts the dispatcher returns exit.CollisionRefuse (7).
-func TestAdapterDispatcherImpl_CollisionCascade_Differ_NoForce(t *testing.T) {
+// TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys seeds the
+// target config with a user-authored MCP server plus an unrelated setting
+// and asserts both SURVIVE alongside ACH's entries after Render — the
+// redesign's core coexistence guarantee (we never clobber a config we do
+// not own).
+func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	m := dispMiniManifest()
 
-	m := &manifest.Manifest{
+	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	const seed = `{"mcpServers":{"user-srv":{"type":"http","url":"https://user"}},"permissions":{"allow":["Read"]}}`
+	if err := os.WriteFile(settingsPath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := disp.Render(context.Background(), m, nil, achDir, achDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	body, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read merged: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode merged: %v", err)
+	}
+	ms, _ := got["mcpServers"].(map[string]any)
+	if _, ok := ms["user-srv"]; !ok {
+		t.Errorf("user server clobbered; want preserved. mcpServers=%v", ms)
+	}
+	if _, ok := ms["demo-mcp"]; !ok {
+		t.Errorf("ACH server not merged in. mcpServers=%v", ms)
+	}
+	if _, ok := got["permissions"]; !ok {
+		t.Errorf("user 'permissions' key clobbered; want preserved")
+	}
+}
+
+// TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey renders
+// once (establishing prior state), then simulates a user hand-edit of OUR
+// key on disk. Re-rendering with that prior state and NO --force must
+// refuse with exit.Drift (§8.4 LocalEditPreserve, applied per-key). With
+// --force the edit is overwritten. The user's OTHER keys are never the
+// subject of this comparison.
+func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	m := dispMiniManifest()
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	if err != nil {
+		t.Fatalf("first Render: %v", err)
+	}
+	prior := dispPriorState("demo", first)
+
+	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	body, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read after first: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	doc["mcpServers"].(map[string]any)["demo-mcp"].(map[string]any)["url"] = "https://EDITED"
+	edited, _ := json.Marshal(doc)
+	if err := os.WriteFile(settingsPath, edited, 0o644); err != nil {
+		t.Fatalf("write edit: %v", err)
+	}
+
+	// No --force → drift refuse (exit 2).
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir); err == nil {
+		t.Fatal("re-render after user edit of our key: want drift error, got nil")
+	} else {
+		var ce *exit.CodedError
+		if !errors.As(err, &ce) || ce.Code != exit.Drift {
+			t.Fatalf("want exit.Drift, got %v (%T)", err, err)
+		}
+	}
+
+	// --force → overwrite our key (edit gone).
+	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true)
+	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir); err != nil {
+		t.Fatalf("force re-render: %v", err)
+	}
+	after, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read after force: %v", err)
+	}
+	if bytes.Contains(after, []byte("EDITED")) {
+		t.Errorf("--force did not overwrite our edited key")
+	}
+}
+
+// dispMiniManifest is a minimal one-MCP-server manifest for the dispatcher
+// tests.
+func dispMiniManifest() *manifest.Manifest {
+	return &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Environment:   "demo",
 		Runtime: &manifest.RuntimeBlock{
@@ -219,25 +270,25 @@ func TestAdapterDispatcherImpl_CollisionCascade_Differ_NoForce(t *testing.T) {
 		},
 		Context: &manifest.ContextBlock{},
 	}
+}
 
-	mcpPath := filepath.Join(achDir, ".claude", ".mcp.json")
-	if err := os.MkdirAll(filepath.Dir(mcpPath), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+// dispPriorState converts a RenderResult into the *state.File a subsequent
+// hydrate would load (Adapter.Files mirror the just-written entries).
+func dispPriorState(env string, r hydrate.RenderResult) *state.File {
+	files := make([]state.FileEntry, 0, len(r.WrittenFiles))
+	for _, w := range r.WrittenFiles {
+		files = append(files, state.FileEntry{
+			Target:     w.Target,
+			Hash:       w.Hash,
+			SourceHash: w.SourceHash,
+			Merge:      w.Merge,
+			Keys:       w.Keys,
+		})
 	}
-	if err := os.WriteFile(mcpPath, []byte("WRONG BYTES"), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	_, err := disp.Render(context.Background(), m, nil, achDir)
-	if err == nil {
-		t.Fatal("Render with unowned+different bytes: want CollisionRefuse, got nil")
-	}
-	var ce *exit.CodedError
-	if !errors.As(err, &ce) {
-		t.Fatalf("not *exit.CodedError: %T (%v)", err, err)
-	}
-	if ce.Code != exit.CollisionRefuse {
-		t.Errorf("Code = %d; want CollisionRefuse (7)", ce.Code)
+	return &state.File{
+		SchemaVersion: "2",
+		Environment:   env,
+		Adapter:       state.AdapterSection{ID: "claude-code", Files: files},
 	}
 }
 

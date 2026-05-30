@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/lock"
@@ -44,6 +45,10 @@ type commit struct {
 	// Resolved paths from step 0/1.
 	achDir    string
 	statePath string
+	// toolRoot is the base for adapter runtime-config writes (the tools'
+	// native config files): the workspace root in project scope, $HOME in
+	// --global scope. Distinct from achDir (ACH's private .ach/ cache).
+	toolRoot string
 
 	// TEST-ONLY SIGKILL injection seam consumed by 07-W4-01 sc2.
 	//
@@ -138,6 +143,25 @@ func newCommit(opts Opts) (*commit, error) {
 	}
 	achDir := filepath.Dir(statePath)
 
+	// Resolve toolRoot — the base for adapter runtime-config writes. In
+	// project scope it is the workspace root (the dir that CONTAINS
+	// .ach/). In --global scope adapter configs go under $HOME (the tools'
+	// user-level config dirs, e.g. ~/.claude/settings.json), NOT under
+	// ~/.ach/<env>/. This decouples the tool config location from achDir
+	// so the tools actually read what we write.
+	toolRoot := workspaceCwd
+	if opts.Global {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("resolve $HOME for --global adapter config: %v", herr),
+				Wrapped: herr,
+			}
+		}
+		toolRoot = home
+	}
+
 	c := &commit{
 		opts:       opts,
 		stateStore: defaultStateStore{},
@@ -147,6 +171,7 @@ func newCommit(opts Opts) (*commit, error) {
 		adapter:    opts.AdapterDispatcher,
 		achDir:     achDir,
 		statePath:  statePath,
+		toolRoot:   toolRoot,
 		killFn:     newDefaultKillFn(),
 	}
 
@@ -264,7 +289,13 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// the orchestrator just calls Render once after the extraction
 	// loop completes.
 	if c.adapter != nil && !c.opts.DryRun {
-		renderResult, err := c.adapter.Render(ctx, m, existingState, c.achDir)
+		// ADAPT-03: propagate the bearer credential to the adapter via
+		// ctx so RenderRuntime can embed it as the x-ach-key header.
+		// Without this the rendered MCP config carries an empty credential
+		// and the agent cannot authenticate to the forwarder. Credentials
+		// travel by context key only (never env/param) per adapter.go.
+		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
+		renderResult, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)

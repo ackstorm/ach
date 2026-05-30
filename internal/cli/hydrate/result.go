@@ -127,7 +127,12 @@ type AdapterDispatcher interface {
 	// the dispatcher autodetects), invokes that adapter's
 	// RenderRuntime + TransformPlugin, and returns FileWrites +
 	// DroppedComponents.
-	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir string) (RenderResult, error)
+	// toolRoot is the base the adapter's workspace-relative FileWrite
+	// paths join against: the workspace root in project scope, $HOME in
+	// --global scope. It is DISTINCT from achDir (ACH's private state +
+	// content cache) so adapter runtime-config (e.g. .claude/settings.json)
+	// lands where the tool actually reads it, not buried under .ach/.
+	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string) (RenderResult, error)
 }
 
 // DriftOutcome is the typed-int enum returned by Differ.Compare for the
