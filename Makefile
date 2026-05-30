@@ -372,9 +372,9 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: gen-manifests gen-code kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	# Use controller:latest as the placeholder for kustomize-to-helm.sh to substitute
-	# into {{ .Values.image.repo }}:{{ .Values.image.tag }}. The actual image is set
-	# at runtime by Helm values, not at kustomize build time.
+	# Standalone kustomize install bundle (kubectl apply -f dist/install.yaml).
+	# The image override is a no-op when config/manager already pins
+	# ghcr.io/ackstorm/ach; kept for kubebuilder-convention parity.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=controller:latest
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
@@ -490,8 +490,7 @@ endef
 # --- helm / chart packaging ---
 
 .PHONY: helm-sync
-helm-sync: build-installer ## Plan 07-02: regenerate deploy/helm/ach/templates/install.yaml from dist/install.yaml per D-01 (kustomize canonical, Helm veneer).
-	bash scripts/kustomize-to-helm.sh dist/install.yaml deploy/helm/ach/templates/install.yaml
+helm-sync: gen-manifests ## Sync generated CRDs into the Helm chart's crd-sources/ (the chart's ONLY generated surface — per-mode Deployments are hand-authored templates).
 	# CRDs land in crd-sources/ (NOT the reserved crds/ dir name) so the
 	# templates/crds.yaml loop can range over them and emit each one as a
 	# Helm-managed template. helm-inject-crd-annotation.py adds
@@ -501,10 +500,10 @@ helm-sync: build-installer ## Plan 07-02: regenerate deploy/helm/ach/templates/i
 	python3 scripts/helm-inject-crd-annotation.py deploy/helm/ach/crd-sources/*.yaml
 
 .PHONY: helm-sync-check
-helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` produced uncommitted diff (drift between kustomize and chart).
-	@if ! git diff --quiet deploy/helm/ach/; then \
-	  echo "CHART DRIFT: deploy/helm/ach/ is out of sync with kustomize. Run \`make helm-sync\` and commit."; \
-	  git diff deploy/helm/ach/; \
+helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD drift in the chart.
+	@if ! git diff --quiet deploy/helm/ach/crd-sources/; then \
+	  echo "CHART CRD DRIFT: deploy/helm/ach/crd-sources/ is out of sync with config/crd/bases. Run \`make helm-sync\` and commit."; \
+	  git --no-pager diff --stat deploy/helm/ach/crd-sources/; \
 	  exit 1; \
 	fi
 
