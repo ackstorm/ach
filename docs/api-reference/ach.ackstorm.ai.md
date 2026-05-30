@@ -605,7 +605,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the plugin's identifier within the catalog<br />(marketplace.json plugins[].name). |  |  |
-| `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty when the reconciler hasn't recorded a<br />per-plugin revision yet (e.g. dry-run paths). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision for this entry. |  |  |
 
 
 #### Plugin
@@ -739,8 +739,8 @@ PluginMarketplaceStatus defines the observed state of PluginMarketplace.
 
 In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
 Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
-InvalidConfig, UnsupportedPluginSource. Phase 1 ships the field
-surface; Phase 2 fills the reconciler logic.
+InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+(Plugins / PluginsCount) populated on each successful reconcile.
 
 
 

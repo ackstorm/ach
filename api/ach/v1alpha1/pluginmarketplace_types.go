@@ -107,8 +107,8 @@ type MarketplacePluginRef struct {
 	// UpstreamRev is the resolved revision the materialized tarball
 	// was fetched at — a 40-hex commit SHA for git-backed sources, an
 	// S3 ETag for S3, a generation for GCS, an ETag|Last-Modified
-	// composite for HTTP. Empty when the reconciler hasn't recorded a
-	// per-plugin revision yet (e.g. dry-run paths).
+	// composite for HTTP. Empty only when the upstream fetcher did not
+	// report a revision for this entry.
 	//
 	// +optional
 	UpstreamRev string `json:"upstreamRev,omitempty"`
@@ -118,8 +118,8 @@ type MarketplacePluginRef struct {
 //
 // In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
 // Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
-// InvalidConfig, UnsupportedPluginSource. Phase 1 ships the field
-// surface; Phase 2 fills the reconciler logic.
+// InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+// (Plugins / PluginsCount) populated on each successful reconcile.
 type PluginMarketplaceStatus struct {
 	ExternalRefStatus `json:",inline"`
 
