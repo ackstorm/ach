@@ -2,11 +2,29 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-// Phase 2 invariants e2e suite. Asserts the four Phase 02 ROADMAP Success
-// Criteria #1–#4 against the running kind cluster set up by
-// scripts/cluster.sh. SC#5 (orphan cleanup) lives in phase2_sc5_orphan_test.go
-// — split out because it requires kubectl port-forwards against in-cluster
-// LiteLLM + Postgres and scales the operator deployment to 0 while it runs.
+// Phase 2 invariants e2e suite. Asserts Phase 02 ROADMAP Success Criteria
+// #1–#3 against the REAL synced objects that scripts/cluster.sh applies
+// (test/e2e/cluster/04-objects/) and that verify_all gates healthy before
+// the suite runs. These subtests ASSERT; they do NOT apply their own
+// ephemeral fixtures — the synthetic in-cluster fixture-server (nginx +
+// dd-generated tarballs) was retired in #57 because it fed the operator's
+// pluginpack content filter (issue #26) /dev/zero garbage, which the filter
+// correctly rejects as UpstreamInvalid before any SC-specific behavior is
+// reached. Real github-backed objects exercise the same paths the cluster
+// actually ships.
+//
+// SC mapping (ROADMAP §"Phase 2"):
+//   - SC#1 PluginPublish        → plugin/caveman (real public plugin repo)
+//   - SC#2 MarketplaceThreeStage→ pluginmarketplace/caveman
+//   - SC#3 AlphabeticalConflict → pluginmarketplace/{conflict-mkt-a,conflict-mkt-b}
+//   - SC#4 SizeCap              → NOT re-asserted here. The size cap is
+//     deterministic logic already verified where the byte size can be
+//     injected exactly: TestMaterializeExternalRef_PluginTooLarge (unit) and
+//     TestPMR_Stage2_PluginTooLarge (envtest); the operator-refuses-to-start
+//     guard is covered by the cmd/ach config tests. No real third-party
+//     plugin reliably exceeds the 1 MiB minimum cap once the pluginpack
+//     filter strips it, so e2e cannot host a stable oversize fixture.
+//   - SC#5 (orphan cleanup) lives in phase2_sc5_orphan_test.go.
 //
 // Hard-failure discipline: every failure mode is a t.Fatalf. There is
 // NO t.Skipf path in any subtest — a SKIP would silently pass
@@ -21,50 +39,40 @@ import (
 	"time"
 )
 
-// fixturesDir is the test/e2e/fixtures path relative to this test file.
-const fixturesDir = "../../test/e2e/fixtures"
-
 // TestPhase2Invariants is the single top-level e2e test. Each Success
-// Criterion is one t.Run subtest so a failed SC#1 doesn't abort SC#2..4.
-// Subtests run sequentially against the shared cluster.
+// Criterion is one t.Run subtest so a failed SC#1 doesn't abort SC#2..3.
+// Subtests run sequentially against the shared cluster and only READ
+// status off the synced objects.
 func TestPhase2Invariants(t *testing.T) {
 	t.Run("SC1_PluginPublish", testSC1PluginPublish)
 	t.Run("SC2_MarketplaceThreeStage", testSC2MarketplaceThreeStage)
 	t.Run("SC3_AlphabeticalConflict", testSC3AlphabeticalConflict)
-	t.Run("SC4_SizeCap", testSC4SizeCap)
 }
 
 // testSC1PluginPublish — Phase 02 SC#1.
 //
-// Apply a Plugin CR (type: http) pointing at sc1-plugin.tar.gz on the
-// fixture-server. Assert (a) Synced=True, (b) the file appears at
-// /var/cache/ach/plugin/e2e-plugin-sc1.tar.gz inside the operator
-// manager container with non-zero size.
+// The synced plugin/caveman (JuliusBrussee/caveman, a real public Claude
+// Code plugin shipping `.claude-plugin/plugin.json`) must reach the
+// terminal positive state: SourceReachable=True reason=Synced, Synced=True,
+// and a non-empty status.storageLocation pointing at the published tarball.
+// The reconciler only sets storageLocation after rename(2) succeeds, so a
+// non-empty path proves the tarball is on the cache PVC.
 func testSC1PluginPublish(t *testing.T) {
 	t.Helper()
-	applyFixtureServer(t)
 
-	pluginFixture := fixturesDir + "/plugin_github_basic.yaml"
-	if out, err := runCmd("kubectl", "apply", "-f", pluginFixture); err != nil {
-		t.Fatalf("SC#1 apply plugin CR: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", pluginFixture, "--wait=false", "--ignore-not-found")
-	})
+	waitForCondition(t, "plugin", "caveman", "SourceReachable", "True", 120*time.Second)
 
-	waitForCondition(t, "plugin", "e2e-plugin-sc1", "SourceReachable", "True", 120*time.Second)
-
-	reason := getConditionField(t, "plugin", "e2e-plugin-sc1", "SourceReachable", "reason")
+	reason := getConditionField(t, "plugin", "caveman", "SourceReachable", "reason")
 	if reason != "Synced" {
 		dumpOperatorLogs(t)
 		t.Fatalf("SC#1: SourceReachable.reason = %q; want %q", reason, "Synced")
 	}
+	if syncedStatus := getConditionField(t, "plugin", "caveman", "Synced", "status"); syncedStatus != "True" {
+		dumpOperatorLogs(t)
+		t.Fatalf("SC#1: Synced.status = %q; want True", syncedStatus)
+	}
 
-	// The operator runs from a distroless image (no shell, no stat/ls).
-	// Verify the file landed by reading status.storageLocation off the CR —
-	// the reconciler only sets it after rename(2) succeeds, so a non-empty
-	// path is proof the tarball is on the PVC.
-	out, err := runCmd("kubectl", "get", "plugin", "e2e-plugin-sc1", "-n", namespace,
+	out, err := runCmd("kubectl", "get", "plugin", "caveman", "-n", namespace,
 		"-o", "jsonpath={.status.storageLocation}")
 	if err != nil {
 		t.Fatalf("SC#1: get storageLocation: %v\n%s", err, out)
@@ -74,177 +82,68 @@ func testSC1PluginPublish(t *testing.T) {
 		dumpOperatorLogs(t)
 		t.Fatalf("SC#1: status.storageLocation is empty; reconciler did not publish the tarball")
 	}
-	if !strings.Contains(loc, "plugin/e2e-plugin-sc1") {
-		t.Fatalf("SC#1: status.storageLocation = %q; want substring 'plugin/e2e-plugin-sc1'", loc)
+	if !strings.Contains(loc, "plugin/caveman") {
+		t.Fatalf("SC#1: status.storageLocation = %q; want substring 'plugin/caveman'", loc)
 	}
 }
 
 // testSC2MarketplaceThreeStage — Phase 02 SC#2.
 //
-// Deploy the in-cluster fixture-server, apply alpha-mkt PluginMarketplace,
-// assert Synced=True. Per-plugin status (status.message or per-plugin DB
-// rows) reflects three-stage execution: marketplace.json fetched →
-// per-plugin Stage-2 dispatch → Stage-3 vanished-name sweep. We probe the
-// observable contract (Conditions + on-disk files) only.
+// The synced pluginmarketplace/caveman (the caveman repo also ships
+// `.claude-plugin/marketplace.json`) must reach Synced=True reason=Synced.
+// Synced=True is the §12.4 terminal-positive outcome the operator only sets
+// after Stage 1 (fetch+parse+filter+conflict-resolve), Stage 2 (per-plugin
+// materialize), and Stage 3 (vanished-name sweep) all complete. We probe the
+// contractually-defined observable (the Synced condition); the operator
+// image is distroless so we cannot ls the PVC.
 func testSC2MarketplaceThreeStage(t *testing.T) {
 	t.Helper()
-	applyFixtureServer(t)
 
-	alphaFixture := fixturesDir + "/marketplace_alpha_conflict.yaml"
-	if out, err := runCmd("kubectl", "apply", "-f", alphaFixture); err != nil {
-		t.Fatalf("SC#2 apply alpha-mkt: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", alphaFixture, "--wait=false", "--ignore-not-found")
-	})
+	waitForCondition(t, "pluginmarketplace", "caveman", "Synced", "True", 120*time.Second)
 
-	waitForCondition(t, "pluginmarketplace", "alpha-mkt", "Synced", "True", 120*time.Second)
-
-	// Synced=True is the §12.4 terminal-positive outcome — the operator
-	// only sets it after Stage 1 (fetch+parse+filter+conflict-resolve),
-	// Stage 2 (per-plugin materialize), and Stage 3 (vanished-name sweep)
-	// all complete. We cannot ls the PVC (operator image is distroless,
-	// no shell), but the Synced condition is the contractually-defined
-	// observable for three-stage execution.
-	syncedReason := getConditionField(t, "pluginmarketplace", "alpha-mkt", "Synced", "reason")
+	syncedReason := getConditionField(t, "pluginmarketplace", "caveman", "Synced", "reason")
 	if syncedReason != "Synced" {
 		dumpOperatorLogs(t)
-		t.Fatalf("SC#2: alpha-mkt Synced.reason = %q; want %q", syncedReason, "Synced")
+		t.Fatalf("SC#2: caveman Synced.reason = %q; want %q", syncedReason, "Synced")
 	}
 }
 
 // testSC3AlphabeticalConflict — Phase 02 SC#3.
 //
-// Apply alpha-mkt + beta-mkt both claiming `shared-plugin-name`. Assert
-// alpha-mkt keeps Synced=True; beta-mkt flips to Synced=False
-// reason=NameConflict.
+// conflict-mkt-a and conflict-mkt-b both expose the same plugin name
+// (`feature-dev`, filtered out of the real anthropic catalogue). The
+// alphabetically-lowest metadata.name wins: conflict-mkt-a keeps Synced=True;
+// conflict-mkt-b flips to Synced=False reason=NameConflict.
+//
+// Both marketplaces carry a 1m refresh.interval so the loser re-resolves
+// promptly even if it wins the initial apply-race — see
+// test/e2e/cluster/04-objects/marketplace-conflict-a.yaml. The generous
+// timeout here covers that convergence window (verify_all already gates both
+// to their terminal state, so by suite time these reads are immediate).
 func testSC3AlphabeticalConflict(t *testing.T) {
 	t.Helper()
-	applyFixtureServer(t)
 
-	alphaFixture := fixturesDir + "/marketplace_alpha_conflict.yaml"
-	betaFixture := fixturesDir + "/marketplace_beta_conflict.yaml"
+	waitForCondition(t, "pluginmarketplace", "conflict-mkt-a", "Synced", "True", 180*time.Second)
+	waitForCondition(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "False", 180*time.Second)
 
-	if out, err := runCmd("kubectl", "apply", "-f", alphaFixture); err != nil {
-		t.Fatalf("SC#3 apply alpha-mkt: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", alphaFixture, "--wait=false", "--ignore-not-found")
-	})
-	if out, err := runCmd("kubectl", "apply", "-f", betaFixture); err != nil {
-		t.Fatalf("SC#3 apply beta-mkt: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", betaFixture, "--wait=false", "--ignore-not-found")
-	})
-
-	// Wait for both to settle (any Synced status populated).
-	waitForConditionSet(t, "pluginmarketplace", "alpha-mkt", "Synced", 120*time.Second)
-	waitForConditionSet(t, "pluginmarketplace", "beta-mkt", "Synced", 120*time.Second)
-
-	alphaStatus := getConditionField(t, "pluginmarketplace", "alpha-mkt", "Synced", "status")
-	if alphaStatus != "True" {
+	if alphaReason := getConditionField(t, "pluginmarketplace", "conflict-mkt-a", "Synced", "reason"); alphaReason != "Synced" {
 		dumpOperatorLogs(t)
-		t.Fatalf("SC#3: alpha-mkt Synced.status = %q; want True (alphabetical winner)", alphaStatus)
+		t.Fatalf("SC#3: conflict-mkt-a Synced.reason = %q; want %q (alphabetical winner)", alphaReason, "Synced")
 	}
 
-	betaStatus := getConditionField(t, "pluginmarketplace", "beta-mkt", "Synced", "status")
-	if betaStatus != "False" {
-		dumpOperatorLogs(t)
-		t.Fatalf("SC#3: beta-mkt Synced.status = %q; want False (alphabetical loser)", betaStatus)
-	}
-	betaReason := getConditionField(t, "pluginmarketplace", "beta-mkt", "Synced", "reason")
+	betaReason := getConditionField(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "reason")
 	if !strings.Contains(betaReason, "NameConflict") {
 		dumpOperatorLogs(t)
-		t.Fatalf("SC#3: beta-mkt Synced.reason = %q; want substring %q", betaReason, "NameConflict")
-	}
-}
-
-// testSC4SizeCap — Phase 02 SC#4.
-//
-// kubectl-patch the operator Deployment env ACH_PLUGIN_MAX_SIZE_MIB=1,
-// wait for the new Pod, apply a Plugin CR pointing at the 2 MiB fixture
-// tarball, assert SourceReachable=False reason=PluginTooLarge AND no
-// file landed at /var/cache/ach/plugin/e2e-plugin-sc4-too-large.tar.gz.
-func testSC4SizeCap(t *testing.T) {
-	t.Helper()
-	applyFixtureServer(t)
-
-	if out, err := runCmd("kubectl", "set", "env", "-n", namespace,
-		"deployment/ach-operator", "-c", "manager",
-		"ACH_PLUGIN_MAX_SIZE_MIB=1"); err != nil {
-		t.Fatalf("SC#4 set env: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "set", "env", "-n", namespace,
-			"deployment/ach-operator", "-c", "manager",
-			"ACH_PLUGIN_MAX_SIZE_MIB=50")
-		_, _ = runCmdLonger(120*time.Second, "kubectl", "rollout", "status", "-n", namespace,
-			"deployment/ach-operator", "--timeout=120s")
-	})
-
-	if out, err := runCmdLonger(180*time.Second, "kubectl", "rollout", "status", "-n", namespace,
-		"deployment/ach-operator", "--timeout=180s"); err != nil {
-		dumpOperatorLogs(t)
-		t.Fatalf("SC#4 wait operator rollout after env patch: %v\n%s", err, out)
-	}
-
-	pluginFixture := fixturesDir + "/plugin_too_large.yaml"
-	if out, err := runCmd("kubectl", "apply", "-f", pluginFixture); err != nil {
-		t.Fatalf("SC#4 apply oversized plugin CR: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", pluginFixture, "--wait=false", "--ignore-not-found")
-	})
-
-	waitForCondition(t, "plugin", "e2e-plugin-sc4-too-large", "SourceReachable", "False", 120*time.Second)
-
-	reason := getConditionField(t, "plugin", "e2e-plugin-sc4-too-large", "SourceReachable", "reason")
-	if !strings.Contains(reason, "PluginTooLarge") {
-		dumpOperatorLogs(t)
-		t.Fatalf("SC#4: SourceReachable.reason = %q; want substring %q", reason, "PluginTooLarge")
-	}
-
-	// The PluginTooLarge code path explicitly Removes the staging file
-	// before returning (internal/controller/ach/external_ref_refresh.go),
-	// so no file ever reaches the published path. The status.storageLocation
-	// field stays empty (or carries a prior successful path that we can
-	// rule out because this CR has no prior reconcile). Verify by reading
-	// status.storageLocation rather than shell-exec (operator image is
-	// distroless, no `test` binary).
-	out, err := runCmd("kubectl", "get", "plugin", "e2e-plugin-sc4-too-large", "-n", namespace,
-		"-o", "jsonpath={.status.storageLocation}")
-	if err != nil {
-		t.Fatalf("SC#4: get storageLocation: %v\n%s", err, out)
-	}
-	if strings.TrimSpace(out) != "" {
-		dumpOperatorLogs(t)
-		t.Fatalf("SC#4: oversized plugin SHOULD have empty storageLocation; got %q", out)
+		t.Fatalf("SC#3: conflict-mkt-b Synced.reason = %q; want substring %q", betaReason, "NameConflict")
 	}
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-
-// applyFixtureServer applies marketplace_fixture_server.yaml and waits for
-// the nginx Deployment to roll out. Idempotent across subtests because
-// `kubectl apply` is repeated-apply-safe. Registers cleanup once per
-// subtest via t.Cleanup; subsequent applies in the same TestPhase2Invariants
-// run no-op at the K8s API level.
-func applyFixtureServer(t *testing.T) {
-	t.Helper()
-	yaml := fixturesDir + "/marketplace_fixture_server.yaml"
-	if out, err := runCmd("kubectl", "apply", "-f", yaml); err != nil {
-		t.Fatalf("apply fixture-server: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", yaml, "--wait=false", "--ignore-not-found")
-	})
-	if out, err := runCmdLonger(120*time.Second, "kubectl", "rollout", "status", "-n", namespace,
-		"deployment/marketplace-fixture", "--timeout=120s"); err != nil {
-		dumpFixtureServerLogs(t)
-		t.Fatalf("fixture-server rollout: %v\n%s", err, out)
-	}
-}
+//
+// waitForCondition / getConditionField / dumpOperatorLogs are shared across
+// the e2e suite (phase4_* also call waitForCondition and dumpOperatorLogs).
+// They live here for historical reasons; keep them even if the Phase 2
+// subtests stop using one.
 
 // waitForCondition polls until the named CR has the given condition.type
 // matching the expected status. t.Fatalf on timeout.
@@ -262,26 +161,6 @@ func waitForCondition(t *testing.T, kind, name, condType, expectedStatus string,
 	dumpOperatorLogs(t)
 	t.Fatalf("waitForCondition %s/%s type=%s want %q: timeout after %s",
 		kind, name, condType, expectedStatus, timeout)
-}
-
-// waitForConditionSet polls until the named CR has the given condition.type
-// populated with either True or False (any non-empty status). t.Fatalf on timeout.
-func waitForConditionSet(t *testing.T, kind, name, condType string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	jsonpath := fmt.Sprintf(`jsonpath={.status.conditions[?(@.type=="%s")].status}`, condType)
-	for time.Now().Before(deadline) {
-		out, err := runCmd("kubectl", "get", kind, name, "-n", namespace, "-o", jsonpath)
-		if err == nil {
-			s := strings.TrimSpace(out)
-			if s == "True" || s == "False" {
-				return
-			}
-		}
-		time.Sleep(3 * time.Second)
-	}
-	dumpOperatorLogs(t)
-	t.Fatalf("waitForConditionSet %s/%s type=%s: timeout after %s", kind, name, condType, timeout)
 }
 
 // getConditionField reads a single jsonpath-selectable field off the named
@@ -304,16 +183,5 @@ func dumpOperatorLogs(t *testing.T) {
 		"deployment/ach-operator", "-c", "manager", "--tail=200")
 	if err == nil {
 		t.Logf("=== operator logs (tail=200) ===\n%s\n=== end operator logs ===", out)
-	}
-}
-
-// dumpFixtureServerLogs prints recent fixture-server logs for postmortem
-// visibility. Best-effort.
-func dumpFixtureServerLogs(t *testing.T) {
-	t.Helper()
-	out, err := runCmd("kubectl", "logs", "-n", namespace,
-		"deployment/marketplace-fixture", "--tail=100")
-	if err == nil {
-		t.Logf("=== fixture-server logs (tail=100) ===\n%s\n=== end fixture-server logs ===", out)
 	}
 }

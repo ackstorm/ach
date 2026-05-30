@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# PluginMarketplace — Phase 02 SC#3 (alphabetical name-conflict) WINNER.
+#
+# conflict-mkt-a and conflict-mkt-b BOTH point at the real upstream
+# anthropics/claude-plugins-official catalogue, filtered to the single
+# `feature-dev` plugin. Two marketplaces therefore expose the SAME plugin
+# name, which is exactly the §12.3 cross-marketplace conflict: the
+# alphabetically-lowest metadata.name wins. "conflict-mkt-a" < "conflict-mkt-b",
+# so THIS CR is the winner and settles Synced=True; conflict-mkt-b loses and
+# settles Synced=False reason=NameConflict.
+#
+# Why feature-dev: its source in the catalogue is `./plugins/feature-dev`
+# (a same-repo subdir that ships `.claude-plugin/plugin.json`), so the winner
+# materializes it reliably from the marketplace repo's own tarball and writes
+# its marketplace_plugins row — which is what the loser's conflict resolver
+# reads. feature-dev is NOT a `code-*` plugin (so it does not collide with the
+# existing anthropic-code marketplace) and no Plugin CRD owns the name (so the
+# §12.3 Plugin-CRD-precedence rule does not pre-empt the alphabetical rule).
+#
+# refresh.interval is deliberately short (1m): the conflict resolver reads
+# peer plugin names from marketplace_plugins rows written on the OTHER
+# marketplace's last successful reconcile, so a loser that wins the initial
+# apply-race must re-resolve quickly to converge to Synced=False. The within-
+# interval gate window equals refresh.interval, so 1m keeps convergence well
+# inside cluster.sh verify_all's 300s budget. (The long-interval convergence
+# gap — no peer re-enqueue when a marketplace's plugin set changes — is
+# tracked as #72.)
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: conflict-mkt-a
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: anthropics/claude-plugins-official
+    ref: main
+  refresh:
+    interval: 1m
+    maxStaleness: 24h
+  filters:
+    include:
+      - "^feature-dev$"
