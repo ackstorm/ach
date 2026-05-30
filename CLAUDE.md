@@ -314,15 +314,20 @@ unchanged. ✅ Use absolute paths; verify with `pwd && git remote -v` (expect
 
 ## E2E debug loop
 
-`make e2e-full` is the clean-room final gate (~10 min). Iterate with the
-kept-cluster loop (full diagnosis recipe in `test/e2e/README.md`):
+`make e2e-full` is the full-suite final gate (~10 min). It **keeps the cluster
+up** after the run — pass OR fail — so a red run can be diagnosed live; reclaim
+with `make cluster-down`. (`e2e-keep` is now just an alias of `e2e-full`.) CI
+does NOT use this target — it runs `cluster-up`/`e2e-run`/`cluster-down` as
+separate steps with an `if: always()` teardown, so CI never leaks a cluster.
+Iterate with the kept-cluster loop (full diagnosis recipe in
+`test/e2e/README.md`):
 
 ```bash
-make e2e-keep                                 # cluster-up + e2e-run, NO teardown
+make e2e-full                                 # cluster-up + e2e-run, cluster KEPT (pass or fail)
 make logs-operator                            # diagnose live
 make e2e-focus FOCUS="rateLimits composite"   # focused subtest
 make cluster-sync                             # after a code edit: rebuild image + roll ach pods
-make cluster-down && make e2e-full            # final gate from clean
+make cluster-down && make e2e-full            # clean-room start; cluster kept after
 ```
 
 Never push a change touching `internal/controller|platformapi|forwarder|

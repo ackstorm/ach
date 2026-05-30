@@ -774,13 +774,17 @@ _e2e-focus:
 	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
 	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")
 
-e2e-full: ## cluster-up → e2e-run → cluster-down (trap-guaranteed teardown).
-	@bash -c '\
-	  set -e; \
-	  trap "$(MAKE) cluster-down || true" EXIT; \
-	  $(MAKE) cluster-up; \
-	  $(MAKE) e2e-run'
-
-e2e-keep: ## cluster-up (kept) → e2e-run (NO teardown — local iteration).
+e2e-full: ## cluster-up → e2e-run (cluster KEPT up; run `make cluster-down` to reclaim).
+	# No trap/teardown: the cluster is intentionally left running after the
+	# suite (pass OR fail) so a red run can be diagnosed live. Reclaim with
+	# `make cluster-down`. For a clean-room run: `make cluster-down && make
+	# e2e-full`. NOTE: CI does NOT call this target — .github/workflows/ci.yml
+	# runs cluster-up / e2e-run / cluster-down as separate steps with an
+	# `if: always()` teardown, so CI still never leaks a cluster.
 	$(MAKE) cluster-up
 	$(MAKE) e2e-run
+
+# Retained as an alias of e2e-full (both keep the cluster up) for muscle memory
+# and existing doc references.
+e2e-keep: e2e-full ## Alias of e2e-full (cluster kept for local iteration).
+	@:

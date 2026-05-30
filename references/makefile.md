@@ -160,8 +160,8 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 ### E2E (`e2e-`)
 | Target | Ctx | Description |
 |--------|-----|-------------|
-| `e2e-full` | B | `cluster-up` → `e2e-run` → `cluster-down` (trap-guaranteed teardown). |
-| `e2e-keep` | B | `cluster-up` (kept) → `e2e-run` (no teardown — local iteration). |
+| `e2e-full` | B | `cluster-up` → `e2e-run`; cluster **kept up** after the run (pass or fail). `make cluster-down` to reclaim. CI does NOT use this target (it tears down via its own `if: always()` step). |
+| `e2e-keep` | B | Alias of `e2e-full` (kept cluster — local iteration). |
 | `e2e-run` | A | Run the e2e suite against an already-up cluster. |
 | `e2e-focus RUN=… / FOCUS=…` | A | Focused subtest (stdlib `-run` or ginkgo focus). |
 
