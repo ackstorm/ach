@@ -74,6 +74,20 @@ Tip: For a fresh namespace, run:
 For a full walkthrough, see:
   https://github.com/ackstorm/ach/blob/main/README.md
 
+{{- if .Values.ingress.enabled }}
+
+=== Public Ingress (ach-public) ===
+
+The user-facing surfaces are exposed via Ingress{{ with .Values.ingress.className }} (class: {{ . }}){{ end }}:
+{{- $base := ternary (printf "https://%s" .Values.ingress.host) "http://<ingress-address>" (ne .Values.ingress.host "") }}
+{{- range .Values.ingress.paths }}
+  {{ $base }}{{ .path }}  ->  {{ .service }}
+{{- end }}
+
+/metrics is internal-only and is intentionally NOT routed through this
+Ingress — keep it that way (it is unauthenticated).
+{{- end }}
+
 {{ if not .Values.toolhive.enabled }}
 NOTE: toolhive.enabled=false — the ToolHive RBAC is not installed.
 MCPServerDiscovery CRs will surface Ready=False, reason=SourceUnreachable

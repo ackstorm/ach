@@ -1,0 +1,48 @@
+{{- if .Values.ingress.enabled }}
+# Optional public Ingress for the two user-facing HTTP surfaces:
+#   platform-api    (/platform/* REST + Dex SSO flow)  -> ach-platform-api:80
+#   content-service (/content/*  artifact download)     -> ach-content-service:8082
+#
+# SECURITY: both Services expose an UNAUTHENTICATED /metrics on the SAME
+# port as their traffic listener (cmd/ach/cmd/platform_api.go,
+# internal/contentservice). This Ingress routes ONLY the specific path
+# prefixes in .Values.ingress.paths — it MUST NOT carry a "/" or "/metrics"
+# rule, or the metrics endpoint would be publicly reachable. The dev
+# ach-local-gateway exposes /metrics/<svc> for the e2e harness; it is NOT a
+# template for this prod route (see references/local-testing-gateway.md).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ach-public
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - http:
+        paths:
+          {{- range .Values.ingress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+      {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+{{- end }}
