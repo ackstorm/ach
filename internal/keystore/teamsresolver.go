@@ -27,6 +27,22 @@ import (
 // PII but not credential material, so we use it verbatim. NO peppering.
 const teamsCacheKeyPrefix = "ach:teams:"
 
+// negativeTeamsTTL is the SHORT ttl applied to empty/negative team
+// resolves, as opposed to the 60s ceiling (defaultTTL) used for populated
+// results.
+//
+// An empty []string is a valid LiteLLM answer ("user has no teams") — but
+// it is ALSO exactly what the base resolver returns during the brief
+// eventual-consistency window right after SSO provisioning, when LiteLLM's
+// /user/list?user_email / /user/info lag behind UserNew + TeamMemberAdd.
+// Caching that transient empty at the full 60s ceiling POISONS the
+// per-email entry: every pk_ pre-check for that user reads `[]` and 403s
+// ("unauthorized_team") for a full minute, even after LiteLLM becomes
+// consistent. A short negative TTL lets the entry self-heal within seconds
+// while still bounding the LiteLLM round-trip cost for genuine no-team SSO
+// users to ~once per negativeTeamsTTL.
+const negativeTeamsTTL = 5 * time.Second
+
 // TeamsResolver returns the LiteLLM team IDs for an SSO user.
 //
 // Two consumers (Phase 4 and Phase 5) type their dependency as
@@ -112,16 +128,20 @@ func (r *liteLLMTeamsResolver) Resolve(ctx context.Context, email string) ([]str
 // LiteLLM-unreachable storm mitigation; verified by
 // TestRedisCachedTeamsResolver_SingleFlight).
 //
-// Empty-slice results ARE cached: `[]string{}` is a valid LiteLLM
-// answer ("user has no teams") and indistinguishable on the wire from
-// a JSON `[]`. Caching it bounds the LiteLLM round-trip cost for
-// no-team SSO users to once per 60s. (T-04-03-05 empty-team-list
-// confusion mitigation.)
+// Empty-slice results ARE cached, but at the SHORT negativeTeamsTTL rather
+// than the 60s ceiling: `[]string{}` is a valid LiteLLM answer ("user has
+// no teams") and indistinguishable on the wire from a JSON `[]`, yet it is
+// also the transient answer during the post-provisioning consistency
+// window. The short negative TTL bounds the LiteLLM round-trip cost for
+// genuine no-team SSO users while letting a transient empty self-heal in
+// seconds instead of poisoning the entry for a full minute. (T-04-03-05
+// empty-team-list confusion mitigation; negativeTeamsTTL doc.)
 type redisCachedTeamsResolver struct {
-	base TeamsResolver
-	rdb  *redis.Client
-	sf   singleflight.Group
-	ttl  time.Duration
+	base   TeamsResolver
+	rdb    *redis.Client
+	sf     singleflight.Group
+	ttl    time.Duration // populated-result ceiling (defaultTTL, 60s)
+	negTTL time.Duration // empty/negative-result ttl (negativeTeamsTTL)
 }
 
 // NewCachedTeamsResolver constructs the production redisCachedTeamsResolver.
@@ -135,9 +155,10 @@ func NewCachedTeamsResolver(base TeamsResolver, rdb *redis.Client) (TeamsResolve
 		return nil, errors.New("keystore: nil redis client")
 	}
 	return &redisCachedTeamsResolver{
-		base: base,
-		rdb:  rdb,
-		ttl:  defaultTTL, // 60s — same Hub §5.1 ceiling as KeyResolver
+		base:   base,
+		rdb:    rdb,
+		ttl:    defaultTTL,       // 60s — same Hub §5.1 ceiling as KeyResolver
+		negTTL: negativeTeamsTTL, // 5s — empty/negative resolves self-heal fast
 	}, nil
 }
 
@@ -155,9 +176,10 @@ func NewCachedTeamsResolver(base TeamsResolver, rdb *redis.Client) (TeamsResolve
 //     LiteLLM-unreachable failure would otherwise mask itself for 60s).
 //
 // Empty-slice results follow the same path as populated slices — they
-// ARE cached. The cache wire format for an empty result is `[]`, never
-// `null`; a nil slice from the base is normalized to `[]string{}` before
-// marshaling to ensure that invariant.
+// ARE cached, but at the short negativeTeamsTTL (see step 3a). The cache
+// wire format for an empty result is `[]`, never `null`; a nil slice from
+// the base is normalized to `[]string{}` before marshaling to ensure that
+// invariant.
 func (r *redisCachedTeamsResolver) Resolve(ctx context.Context, email string) ([]string, error) {
 	key := teamsCacheKeyPrefix + email
 
@@ -188,9 +210,16 @@ func (r *redisCachedTeamsResolver) Resolve(ctx context.Context, email string) ([
 		teams = []string{}
 	}
 
-	// Populate cache (best-effort; ignore errors).
+	// Populate cache (best-effort; ignore errors). Empty/negative resolves
+	// get the short negTTL so a transient empty (the post-provisioning
+	// consistency window) self-heals in seconds instead of poisoning the
+	// per-email entry — and 403'ing every pk_ request — for the full 60s.
+	ttl := r.ttl
+	if len(teams) == 0 {
+		ttl = r.negTTL
+	}
 	if b, marshalErr := json.Marshal(teams); marshalErr == nil {
-		_ = r.rdb.Set(ctx, key, b, r.ttl).Err()
+		_ = r.rdb.Set(ctx, key, b, ttl).Err()
 	}
 	return teams, nil
 }
