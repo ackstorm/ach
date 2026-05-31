@@ -483,7 +483,9 @@ wait_ach() {
   # NOT by the ach Helm install. Treat it as optional: only wait on it when
   # it is actually present, so standalone `make wait-ach` succeeds on a
   # partial bring-up instead of failing with a misleading rollout error.
-  local deps=(ach-operator ach-platform-api ach-forwarder)
+  # ach-gateway is a core Deployment (gateway.enabled=true) installed by
+  # the ach Helm chart; wait on it like the other core ach Deployments.
+  local deps=(ach-operator ach-platform-api ach-forwarder ach-gateway)
   if kubectl -n ach-system get deploy/ach-local-gateway >/dev/null 2>&1; then
     deps+=(ach-local-gateway)
   fi

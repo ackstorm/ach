@@ -696,14 +696,18 @@ wait-platform-api: ## Wait for platform-api Deployment Available
 wait-forwarder: ## Wait for forwarder Deployment Available
 	kubectl rollout status deploy/ach-forwarder -n ach-system --timeout=$(WAIT_TIMEOUT)
 
+.PHONY: wait-gateway
+wait-gateway: ## Wait for the ach-gateway Deployment Available.
+	kubectl rollout status deploy/ach-gateway -n ach-system --timeout=$(WAIT_TIMEOUT)
+
 # Context C (host kubectl), consistent with the sibling wait-* targets.
 # Mirrors scripts/cluster.sh wait_ach but does NOT shell into cluster.sh,
 # which refuses to run outside the devtools container — calling it here made
 # `make wait-ach` fail with "run via 'make cluster-up'... not directly".
 .PHONY: wait-ach
-wait-ach: ## Wait for all ach Deployments (operator+platform-api+forwarder+local-gateway) Ready.
+wait-ach: ## Wait for all ach Deployments (operator+platform-api+forwarder+gateway+local-gateway shim) Ready.
 	@rc=0; \
-	for d in ach-operator ach-platform-api ach-forwarder ach-local-gateway; do \
+	for d in ach-operator ach-platform-api ach-forwarder ach-gateway ach-local-gateway; do \
 	  kubectl -n ach-system rollout status deploy/"$$d" --timeout=$(WAIT_TIMEOUT) || rc=$$?; \
 	done; \
 	if [ "$$rc" -ne 0 ]; then \

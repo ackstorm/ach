@@ -6,31 +6,50 @@ This document outlines the local unifed gateway architecture and testing procedu
 
 ## 1. Local Unified Gateway Architecture
 
-In local testing on Kind, all pods are deployed inside a containerized network. Because Kind does not bind to host ports by default, each microservice must be accessed via `kubectl port-forward`.
+Routing now lives in **two layers**. Production routing is owned by the
+in-binary **`ach-gateway`** pod (`ach gateway` mode, `internal/gateway`): a
+dumb reverse proxy that fronts every production-real surface
+(`/platform /content /v1 /gemini /mcp /a2a /.well-known`) behind one
+in-cluster Service. In prod the public Ingress targets `ach-gateway`
+directly — there is no nginx.
 
-To avoid running multiple disjointed port-forwards (e.g. 8080 for platform-api, 8081 for forwarder, 8082 for content-service) and to satisfy the single `ACH_BASE_URL` requirement used to generate environment hydration JSONs, we deploy a **unified local gateway**:
+In local/e2e testing on Kind, the **`ach-local-gateway`** nginx pod is now
+an **e2e-only shim**, not the primary router. Kind binds one host port, so
+the shim preserves the single `localhost:8080` origin the SSO cookie
+round-trip and metrics-scrape harness depend on. It serves the two dev
+**kludges** locally (`/dex`, `/metrics/<svc>`) and **falls through
+everything else to `ach-gateway`** — so e2e traffic exercises the real
+gateway exactly as prod will.
 
 ```
-                              ┌───────────────────┐
-                              │ ach-local-gateway │
-                              │   (Nginx Pod)     │
-                              └─────────┬─────────┘
-                                        │
-           ┌────────────────────────────┼────────────────────────────┐
-           ▼ (/platform)                ▼ (/content)                 ▼ (/v1, /mcp, /a2a)
-┌────────────────────┐       ┌────────────────────┐       ┌────────────────────┐
-│  ach-platform-api  │       │  content-service   │       │   ach-forwarder    │
-│   (Service: 80)    │       │  (Service: 8082)   │       │   (Service: 80)    │
-└────────────────────┘       └────────────────────┘       └────────────────────┘
+                          host  http://localhost:8080
+                                        │  (NodePort 30080)
+                              ┌──────────▼──────────┐
+                              │  ach-local-gateway  │  e2e-only shim
+                              │     (Nginx Pod)     │  (stands in for the
+                              └──────────┬──────────┘   prod Ingress)
+                  ┌──────────────────────┼──────────────────────┐
+       /dex/ (kludge)        /metrics/<svc> (kludge)   everything else
+        ▼                     ▼                          ▼
+   ┌─────────┐           ┌──────────────┐         ┌────────────────┐
+   │   Dex   │           │ per-svc      │         │   ach-gateway  │  prod router
+   │ :5556   │           │ /metrics     │         │ (ach gateway)  │
+   └─────────┘           └──────────────┘         └───────┬────────┘
+                                          ┌───────────────┼───────────────┐
+                          ▼ (/platform)   ▼ (/content)                    ▼ (/v1,/gemini,/mcp,/a2a,/.well-known)
+                ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐
+                │  ach-platform-api  │ │  content-service   │ │   ach-forwarder    │
+                │   (Service: 80)    │ │  (Service: 8082)   │ │   (Service: 80)    │
+                └────────────────────┘ └────────────────────┘ └────────────────────┘
 ```
 
-The gateway unifies the entire data and control plane under a single localhost port (`8080`):
-* **Platform API:** accessible under `http://localhost:8080/platform/`
-* **SSO (Dex):** accessible under `http://localhost:8080/dex/`
-* **Content Service:** accessible under `http://localhost:8080/content/`
-* **LLM Forwarder:** accessible under `http://localhost:8080/v1/`, `http://localhost:8080/mcp/`, `http://localhost:8080/a2a/`
-* **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — distinct routes because a bare `/metrics` can't disambiguate four services behind one base. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`. `/metrics/operator` is backed by the `ach-operator-metrics` Service (the operator has no data-plane Service of its own).
-* **Gateway health:** `http://localhost:8080/healthz` returns `200 ok` directly from nginx (no upstream). It backs the gateway pod's readiness/liveness probes, so `make wait-ach` only reports `ach-local-gateway` Ready once nginx is actually serving. It is gateway-local — not a proxy to any service's health endpoint.
+Reachable under the single localhost port (`8080`):
+* **Platform API:** `http://localhost:8080/platform/` — shim → `ach-gateway` → platform-api
+* **Content Service:** `http://localhost:8080/content/` — shim → `ach-gateway` → content-service
+* **LLM Forwarder:** `http://localhost:8080/{v1,gemini,mcp,a2a}/`, JWKS at `/.well-known/` — shim → `ach-gateway` → forwarder
+* **SSO (Dex):** `http://localhost:8080/dex/` — **DEV KLUDGE, served by the shim, never by `ach-gateway`.** Prod reaches Dex directly via `ACH_DEX_ISSUER_URL` (e.g. `https://auth.ackstorm.ai`) with no gateway involvement.
+* **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — **DEV KLUDGE, served by the shim.** Distinct routes because a bare `/metrics` can't disambiguate four services. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`; `/metrics/operator` is backed by the `ach-operator-metrics` Service. **`ach-gateway` has NO `/metrics` route by design** — keeping metrics off the prod router means the prod Ingress physically cannot leak them.
+* **Shim health:** `http://localhost:8080/healthz` returns `200 ok` directly from nginx (no upstream); it backs the shim pod's probes. `ach-gateway` serves its own local `/healthz` for its pod probes.
 
 ---
 

@@ -21,7 +21,7 @@ ach/
 ├── cmd/ach/cmd/              ← cobra root + service-mode subcommands
 │   ├── root.go               (Version, services root cmd)
 │   ├── operator.go, platform_api.go, forwarder.go,
-│   ├── content_service.go, migrate.go
+│   ├── content_service.go, gateway.go, migrate.go
 ├── cmd/ach-cli/main.go      ← user-CLI entrypoint (shares exit.DispatchAndRender)
 ├── cmd/ach-cli/cmd/          ← cobra root + user-facing subcommands
 │   ├── root.go               (Version, cli root cmd)
@@ -30,8 +30,11 @@ ach/
 ├── internal/                ← controllers + service implementations
 │   ├── controller/           controller-runtime reconcilers
 │   ├── platformapi/, forwarder/, contentservice/   service-mode code
+│   ├── gateway/             route table + reverse proxy for `ach gateway` mode
 ├── config/                  ← kubebuilder kustomize overlays
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
+│   │                          (templates/gateway-deployment.yaml = ach-gateway
+│   │                           Deployment+Service; the prod edge router)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
 ├── examples/                ← CURATED user-facing samples + golden hydrate.json
@@ -49,6 +52,9 @@ ach/
 ├── test/                    ← e2e + utils
 │   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
 │       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
+│       │     (03's ach-local-gateway.yaml nginx is now a DEV SHIM —
+│       │      adds /dex + /metrics/<svc>, falls through to the prod
+│       │      ach-gateway pod; it is NOT the primary router anymore)
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
 │       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
