@@ -116,6 +116,9 @@ type extractorImpl struct {
 // through unchanged.
 func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string, prev *state.File) (ExtractResult, error) {
 	kind, name := classifyDownloadURL(ref.DownloadURL, ref.Name)
+	if err := validateContentName(name); err != nil {
+		return ExtractResult{}, fmt.Errorf("extract content %s: %w", kind, err)
+	}
 
 	resp, err := extract.FetchContent(ctx, e.client, kind, name)
 	if err != nil {
@@ -162,9 +165,23 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 // plugin). Leaving regular files in place preserves StageAndPublish's step-3
 // single-file no-op short-circuit.
 func (e *extractorImpl) stageAndMap(ctx context.Context, body io.Reader, contentType, finalRelPath, finalAbs, achDir string, kind extract.ResourceKind) (ExtractResult, error) {
-	if info, statErr := os.Stat(finalAbs); statErr == nil && info.IsDir() {
-		if rmErr := os.RemoveAll(finalAbs); rmErr != nil {
-			return ExtractResult{}, fmt.Errorf("extract content %s: remove prior dir %s: %w", kind, finalAbs, rmErr)
+	// Defense-in-depth Rel-containment: even though validateContentName at the
+	// classify layer rejects ".." / absolute / separator-bearing names, a future
+	// caller (or a refactor that reaches stageAndMap by a path bypassing
+	// ExtractContent) must NOT be able to drive RemoveAll outside achDir.
+	if rel, relErr := filepath.Rel(achDir, finalAbs); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ExtractResult{}, fmt.Errorf("extract content %s: target %s escapes achDir", kind, finalAbs)
+	}
+	// Use Lstat (do NOT follow symlinks) so an attacker-controlled symlink at
+	// finalAbs cannot redirect RemoveAll to a directory outside achDir.
+	if info, statErr := os.Lstat(finalAbs); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return ExtractResult{}, fmt.Errorf("extract content %s: symlink at target %s rejected", kind, finalAbs)
+		}
+		if info.IsDir() {
+			if rmErr := os.RemoveAll(finalAbs); rmErr != nil {
+				return ExtractResult{}, fmt.Errorf("extract content %s: remove prior dir %s: %w", kind, finalAbs, rmErr)
+			}
 		}
 	}
 
@@ -214,6 +231,33 @@ func priorContentSourceHash(prev *state.File, kind extract.ResourceKind, finalRe
 		}
 	}
 	return ""
+}
+
+// validateContentName rejects content `name` values that could redirect the
+// publication path outside achDir. The server-supplied manifest is the source
+// of `ref.Name` and the trailing segment of `ref.DownloadURL`; a malicious or
+// compromised manifest with name=".." would otherwise resolve to
+// os.RemoveAll(achDir) at the stageAndMap delete-before-replace step. Vectors
+// rejected: empty, ".", "..", hidden-prefix names (".git", ".env"), names
+// containing "/" or "\" path separators, and absolute paths. Defense-in-depth
+// Rel-containment runs in stageAndMap regardless.
+func validateContentName(name string) error {
+	if name == "" {
+		return errors.New("content name: empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("content name: traversal segment %q", name)
+	}
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("content name: hidden-directory prefix %q", name)
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("content name: path separator in %q", name)
+	}
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("content name: absolute path %q", name)
+	}
+	return nil
 }
 
 // classifyDownloadURL parses `/content/{kind}/{name}` and returns the
