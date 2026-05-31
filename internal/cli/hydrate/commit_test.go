@@ -87,7 +87,7 @@ type fakeExtractor struct {
 	err    error
 }
 
-func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string) (ExtractResult, error) {
+func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string, _ *state.File) (ExtractResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}

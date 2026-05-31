@@ -58,7 +58,7 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 		Name:        "demo-prompt",
 		DownloadURL: ts.URL + "/content/prompt/demo-prompt",
 	}
-	res, err := ext.ExtractContent(context.Background(), ref, achDir)
+	res, err := ext.ExtractContent(context.Background(), ref, achDir, nil)
 	if err != nil {
 		t.Fatalf("ExtractContent: %v", err)
 	}

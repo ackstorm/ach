@@ -105,7 +105,7 @@ type extractorImpl struct {
 // PublishResult.Skipped is folded into the result as a zero-WrittenFiles
 // outcome — the existing file remained in place. SourceHash flows
 // through unchanged.
-func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string) (ExtractResult, error) {
+func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string, prev *state.File) (ExtractResult, error) {
 	kind, name := classifyDownloadURL(ref.DownloadURL, ref.Name)
 
 	resp, err := extract.FetchContent(ctx, e.client, kind, name)
@@ -116,9 +116,50 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 
 	finalRelPath := filepath.Join(string(kind), name)
 	finalAbs := filepath.Join(achDir, finalRelPath)
-
 	contentType := resp.Header.Get("Content-Type")
-	pr, err := extract.StageAndPublish(ctx, resp.Body, contentType,
+
+	// Re-hydrate no-op skip (W6-01 Bug E): only when prior state records
+	// this content's upstream SourceHash do we hash the freshly-fetched
+	// bytes first — an unchanged source needs no disk write (the on-disk
+	// tree is preserved, FilesWritten==0). A fresh hydrate (no prior entry)
+	// streams straight through StageAndPublish with a single spill.
+	if prevHash := priorContentSourceHash(prev, kind, finalRelPath); prevHash != "" {
+		staged, srcXxh3, serr := extract.SpillAndHashXxh3(achDir, resp.Body)
+		if serr != nil {
+			return ExtractResult{}, fmt.Errorf("extract content %s/%s: %w", kind, name, serr)
+		}
+		defer func() { _ = os.RemoveAll(filepath.Dir(staged)) }()
+		if srcXxh3 == prevHash {
+			return ExtractResult{SourceHash: srcXxh3}, nil
+		}
+		f, oerr := os.Open(staged)
+		if oerr != nil {
+			return ExtractResult{}, fmt.Errorf("extract content %s/%s: reopen staged: %w", kind, name, oerr)
+		}
+		defer func() { _ = f.Close() }()
+		return e.stageAndMap(ctx, f, contentType, finalRelPath, finalAbs, achDir, kind)
+	}
+
+	return e.stageAndMap(ctx, resp.Body, contentType, finalRelPath, finalAbs, achDir, kind)
+}
+
+// stageAndMap performs the delete-before-replace + StageAndPublish + FileWrite
+// projection shared by ExtractContent's skip-capable and fresh paths.
+//
+// Delete-before-replace is DIRECTORY-ONLY (W6-01 Bug E): renameAtomic happily
+// replaces a pre-existing regular file, but cannot rename over a non-empty
+// directory — and the W5-01 orchestrator "replace step" was never wired. We
+// therefore remove only a pre-existing directory target (an already-extracted
+// plugin). Leaving regular files in place preserves StageAndPublish's step-3
+// single-file no-op short-circuit.
+func (e *extractorImpl) stageAndMap(ctx context.Context, body io.Reader, contentType, finalRelPath, finalAbs, achDir string, kind extract.ResourceKind) (ExtractResult, error) {
+	if info, statErr := os.Stat(finalAbs); statErr == nil && info.IsDir() {
+		if rmErr := os.RemoveAll(finalAbs); rmErr != nil {
+			return ExtractResult{}, fmt.Errorf("extract content %s: remove prior dir %s: %w", kind, finalAbs, rmErr)
+		}
+	}
+
+	pr, err := extract.StageAndPublish(ctx, body, contentType,
 		finalAbs, achDir, kind, e.limits, e.allowSymlinks)
 	if err != nil {
 		return ExtractResult{}, err
@@ -133,6 +174,37 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 		})
 	}
 	return out, nil
+}
+
+// priorContentSourceHash returns the upstream SourceHash recorded for the
+// content rooted at finalRelPath in the matching state bucket, or "" when no
+// prior entry exists. All per-file entries of one archive share the archive's
+// SourceHash (D-14), so the first match suffices.
+func priorContentSourceHash(prev *state.File, kind extract.ResourceKind, finalRelPath string) string {
+	if prev == nil {
+		return ""
+	}
+	var bucket []state.FileEntry
+	switch kind {
+	case extract.KindPlugin:
+		bucket = prev.Plugins
+	case extract.KindArtifact:
+		bucket = prev.Artifacts
+	case extract.KindPrompt:
+		bucket = prev.Prompts
+	default:
+		return ""
+	}
+	prefix := finalRelPath + string(filepath.Separator)
+	for _, ent := range bucket {
+		if ent.SourceHash == "" {
+			continue
+		}
+		if ent.Target == finalRelPath || strings.HasPrefix(ent.Target, prefix) {
+			return ent.SourceHash
+		}
+	}
+	return ""
 }
 
 // classifyDownloadURL parses `/content/{kind}/{name}` and returns the

@@ -108,7 +108,15 @@ type Extractor interface {
 	// GET), runs the SAFE-01 tar policy + SAFE-03 bomb defense, stages
 	// into <achDir>/tmp/<rand>/, and computes the upstream-source
 	// xxh3 sum. Returns the per-file writes + the upstream source hash.
-	ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string) (ExtractResult, error)
+	//
+	// prev is the prior (reconciled) state.File or nil on a fresh
+	// workspace. When it records this content's upstream SourceHash and
+	// the freshly-fetched bytes match, ExtractContent skips the write and
+	// returns zero WrittenFiles (W6-01 Bug E re-hydrate no-op). On a
+	// genuine change a pre-existing extracted DIRECTORY is removed before
+	// re-extract (delete-before-replace) since renameAtomic cannot replace
+	// a non-empty dir.
+	ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string, prev *state.File) (ExtractResult, error)
 }
 
 // AdapterDispatcher renders the per-platform runtime config + plugin

@@ -260,7 +260,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// so --dry-run remains a true read-only path.
 	if c.extractor != nil && !c.opts.DryRun {
 		for _, dt := range diffTargets {
-			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir)
+			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir, existingState)
 			if err != nil {
 				// adapter / extractor errors that already carry a
 				// CodedError envelope (e.g. exit.CollisionRefuse) flow
