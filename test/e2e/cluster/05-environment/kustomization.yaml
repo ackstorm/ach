@@ -10,3 +10,7 @@ resources:
   # Phase 5 content-service exercise Environment (empty runtime; context
   # references the valid plugin/prompt/artifact from stage 04).
   - env-valid.yaml
+  # Phase 5 SC2 unauthorized_team negative fixture — same context as env-valid
+  # but authorizedTeams names a sentinel team absent from LiteLLM + the e2e
+  # user (Available=False by design; gated on ExecutionResourcesResolved).
+  - env-team-denied.yaml

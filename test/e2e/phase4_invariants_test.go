@@ -264,11 +264,70 @@ func driveV1ToBackend(t *testing.T, forwarderURL, key, marker, mockLocal string)
 	return snap
 }
 
-// testPhase4SC3JwtMintAndBipAlphaLast — two BIPs targeting the same
-// MCPServer/<name> with different forwardIdentityJWT values; rename
-// shifts the alpha-LAST winner.
+// testPhase4SC3JwtMintAndBipAlphaLast — two throwaway BIPs targeting the SAME
+// MCPServer route with different forwardIdentityJWT values; the forwarder mints
+// (or not) for the alphabetically-LAST metadata.name, and the ach-mcp-echo
+// /__capture/last endpoint proves which won via jwt_present/jwt_claims. Adding
+// an even-later opt-out BIP flips the winner — the "alpha-last lock-in".
+//
+// Both BIPs target demo-mcp-jwt (the synced JWT route, mcp-echo backend with
+// requireJwt=false) and sort AFTER the synced bip-demo-mcp-jwt, so they own the
+// tiebreak. t.Cleanup removes them, restoring the route to its synced baseline.
 func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
-	t.Skip("Phase 4 SC3 (BIP alpha-last JWT mint) deferred to the SC2 forwarder data-plane decoupling work (separate plan, not yet written). Asserting which BIP won requires capturing the forwarder-minted JWT at the MCP backend; ach-mcp-echo verifies the JWT but does not echo the Authorization header back to the client, so the capture path is not yet wired.")
+	phase4SuiteGuard(t)
+
+	if err := waitDeploymentReady(t, phase4Namespace, mcpEchoDeployment, 15*time.Second); err != nil {
+		t.Skipf(
+			"ach-mcp-echo Deployment not Ready (%v) — run `make cluster-up` with "+
+				"testMocks.mcpEcho.enabled=true (requireJwt=false). Skipping.", err)
+	}
+
+	mcpEchoLocal := "8194"
+	defer startMcpEchoPortForward(t, mcpEchoLocal)()
+	gatewayLocal := "8195"
+	defer phase4StartGatewayPortForward(t, gatewayLocal)()
+	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
+
+	const route = bipJWTRouteName // demo-mcp-jwt
+	// Names sort after the synced bip-demo-mcp-jwt ('b' < 'z'); among the
+	// throwaways, "aaa" < "zzz" so zzz is alpha-last.
+	const (
+		bipAaaOn  = "zz-sc3-aaa-jwt-on"  // forwardIdentityJWT: true  (earlier name)
+		bipZzzOff = "zz-sc3-zzz-jwt-off" // forwardIdentityJWT: false (alpha-last)
+		bipZ2On   = "zz-sc3-zzz2-jwt-on" // sorts AFTER zzz-off; the flip
+	)
+
+	// Orientation 1 — alpha-last is bipZzzOff (false): explicit opt-out wins
+	// over the earlier true BIPs (bip-demo-mcp-jwt + bipAaaOn) → NO mint.
+	sc3ApplyBIP(t, bipAaaOn, route, true)
+	sc3ApplyBIP(t, bipZzzOff, route, false)
+	t.Run("alpha_last_optout_suppresses_mint", func(t *testing.T) {
+		snap := sc3AssertJWTPresentEventually(t, gatewayLocal, mcpEchoLocal, pk, route, false)
+		if snap.AuthorizationSeen != "" {
+			t.Fatalf("alpha-last opt-out: authorization_seen=%q, want empty (no JWT forwarded)",
+				snap.AuthorizationSeen)
+		}
+	})
+
+	// Orientation 2 — add bipZ2On, which sorts AFTER bipZzzOff and is true:
+	// the alpha-last winner flips back to mint. Proves the tiebreak is purely
+	// metadata.name ordering, not the value of any earlier policy.
+	sc3ApplyBIP(t, bipZ2On, route, true)
+	t.Run("later_name_flips_winner_to_mint", func(t *testing.T) {
+		snap := sc3AssertJWTPresentEventually(t, gatewayLocal, mcpEchoLocal, pk, route, true)
+		if !strings.HasPrefix(snap.AuthorizationSeen, "Bearer ey") {
+			t.Fatalf("flip-to-mint: Authorization not a JWT: %q", snap.AuthorizationSeen)
+		}
+		if wantAud := "mcp:" + route; snap.JWTClaims.Aud != wantAud {
+			t.Fatalf("flip-to-mint: aud=%q want %q", snap.JWTClaims.Aud, wantAud)
+		}
+		if snap.JWTClaims.Iss != forwarderBaseURL(t) {
+			t.Fatalf("flip-to-mint: iss=%q want %q", snap.JWTClaims.Iss, forwarderBaseURL(t))
+		}
+		if snap.JWTClaims.Sub == "" {
+			t.Fatalf("flip-to-mint: sub empty, want <namespace>/<ownerEmail>")
+		}
+	})
 }
 
 // testPhase4SC4JwksAndSecretRbac — anonymous JWKS GET + non-forwarder

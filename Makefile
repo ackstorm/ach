@@ -104,6 +104,22 @@ clean: clean-cache ## Remove all build artifacts: bin/, dist/, coverage profiles
 	rm -rf bin dist testbin cover-unit.out cover-envtest.out
 	@echo "Removed bin/ dist/ testbin/ cover*.out (tool + service binaries re-fetched/rebuilt on next make)."
 
+# clean-docker is intentionally NOT a dependency of `clean` — `clean` is a
+# docker-free, host-only fs sweep. This target reclaims docker disk and is
+# opt-in (and SAFE to run with a kind cluster up): it prunes ONLY build cache
+# (always 0-active) and DANGLING/untagged images. It never touches running
+# containers, tagged images (kind node / ach-devtools / ach), or volumes — so
+# the e2e cluster survives. NOT `docker system prune` and NOT `image prune -a`
+# (both would evict the kind node + devtools images, forcing an expensive
+# re-pull/re-build). Build cache is the big reclaim (tens of GB on a busy host).
+.PHONY: clean-docker
+clean-docker: ## Reclaim docker disk: prune ALL build cache + DANGLING images only. Safe with a cluster up (never touches running containers, tagged images, or volumes). Host-only.
+	@command -v docker >/dev/null 2>&1 || { echo "docker not on PATH — nothing to prune."; exit 0; }
+	@echo "Pruning docker build cache (all) + dangling images — active containers/tagged images/volumes untouched ..."
+	docker builder prune -af
+	docker image prune -f
+	@echo "Reclaimed build cache + dangling images. Kind cluster, devtools/ach/kind images, and volumes preserved."
+
 ##@ Development
 
 # NOTE: paths is scoped to ./api/... and ./internal/... (NOT the kubebuilder
@@ -743,6 +759,7 @@ ACH_E2E_PHASE5 ?= 1
 ACH_E2E_PHASE6 ?= 1
 ACH_E2E_PHASE9 ?= 1
 ACH_E2E_SC11C  ?= 1
+ACH_E2E_PLUGIN_FILTER ?= 1
 
 # Shared env block prefixed onto EVERY e2e go-test invocation (run + focus)
 # so URL-gated and phase-gated tests actually exercise the synced cluster.
@@ -759,7 +776,8 @@ E2E_RUN_ENV = \
 	ACH_OPERATOR_METRICS_URL=$(ACH_BASE_URL)/metrics/operator \
 	ACH_E2E_PHASE4=$(ACH_E2E_PHASE4) ACH_E2E_PHASE5=$(ACH_E2E_PHASE5) \
 	ACH_E2E_PHASE6=$(ACH_E2E_PHASE6) ACH_E2E_PHASE9=$(ACH_E2E_PHASE9) \
-	ACH_E2E_SC11C=$(ACH_E2E_SC11C)
+	ACH_E2E_SC11C=$(ACH_E2E_SC11C) \
+	ACH_E2E_PLUGIN_FILTER=$(ACH_E2E_PLUGIN_FILTER)
 
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
 e2e-run: ## Run e2e suite against an already-up cluster.

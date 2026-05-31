@@ -126,7 +126,8 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `ensure-inotify` | B | Raise host `fs.inotify` limits if below kind's needs (best-effort, non-fatal). Auto-run as a prerequisite of `cluster-up`/`cluster-reset`. |
 | `shell` | A | Interactive shell inside the devtools container. |
 | `clean-cache` | B | Remove `./.gocache`, first `chmod -R u+w` to unlock Go's read-only modcache. Host-only — runs on the host filesystem as your UID (the dir is yours, not root's). Re-created on next `scripts/dev.sh` use. |
-| `clean` | B | Full clean: `bin/` + `dist/` + `testbin/` + `cover*.out`, then `clean-cache`. Host-only. Tool + service binaries are re-fetched/rebuilt on next `make`. |
+| `clean` | B | Full clean: `bin/` + `dist/` + `testbin/` + `cover*.out`, then `clean-cache`. Host-only. Tool + service binaries are re-fetched/rebuilt on next `make`. NOT a docker prune — see `clean-docker`. |
+| `clean-docker` | B | Reclaim docker disk: `docker builder prune -af` (all build cache — the big reclaim, tens of GB) + `docker image prune -f` (dangling/untagged images only). Host-only. **SAFE with a kind cluster up** — never touches running containers, tagged images (kind node / `ach-devtools` / `ach`), or volumes. NOT in the `clean` umbrella (kept docker-free) and deliberately NOT `docker system prune` / `image prune -a` (those evict the kind+devtools images → expensive re-pull/re-build). |
 
 > **Per-worktree `.gocache` & "Permission denied" on delete.** `scripts/dev.sh`
 > roots every cache under `./.gocache` relative to the workspace, so each git

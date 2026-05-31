@@ -170,7 +170,10 @@ clean-cache` (host-only: `chmod -R u+w` then `rm -rf ./.gocache`) clears it
 safely. Recommended once a feature/worktree is done so stale per-worktree caches
 don't pile up; re-created on next `scripts/dev.sh` use. (`make clean` is the
 broader umbrella — also drops `bin/`/`dist/`/`testbin/`/coverage on top of the
-cache.)
+cache.) For **docker** disk (not the Go cache), `make clean-docker` reclaims
+build cache + dangling images — **safe with a kind cluster up** (never touches
+running containers, tagged images, or volumes); it is NOT in the `clean`
+umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 
 ## Test phases
 

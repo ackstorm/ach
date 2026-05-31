@@ -221,6 +221,11 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		wantCode     string
 		extraHeaders map[string]string
 		skipReason   string
+		// setup runs inside the subtest before the request is built. Used
+		// by cases that must mutate cluster state (e.g. seed a dangling
+		// context name) and register their own t.Cleanup. nil for the
+		// purely-declarative cases.
+		setup func(t *testing.T, ctx context.Context)
 	}
 
 	calls := []call{
@@ -257,13 +262,20 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 			wantCode:   "expired_or_revoked",
 		},
 		{
+			// unauthorized_team (gate 4, pk_ only): the request targets the
+			// env-team-denied synced fixture, whose authorized_teams names a
+			// sentinel team the SSO-provisioned user is NOT in. The user's
+			// teams (default) ∩ env.authorized_teams (sentinel) = ∅ →
+			// errUnauthorizedTeam. The test controls the RIGHT side of the
+			// intersection via the fixture's authorizedTeams — no LiteLLM
+			// membership mutation needed (the prior skip's premise was stale).
+			// ek_ would short-circuit this gate, so the key MUST be pk_.
 			name:       "UnauthorizedTeam",
 			path:       "/content/plugin/plugin-valid",
 			key:        pk,
-			envHeader:  env,
+			envHeader:  "env-team-denied",
 			wantStatus: http.StatusForbidden,
 			wantCode:   "unauthorized_team",
-			skipReason: "LiteLLM team-removal not scriptable in E2E harness — covered by integration test in Plan 05-05",
 		},
 		{
 			name:       "WrongEnvironment",
@@ -296,13 +308,39 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 			wantCode:   "environment_not_found",
 		},
 		{
+			// content_not_found is the LAST gate (§15.5): a name that IS
+			// in env.context.plugins (passes the cheaper unauthorized_content
+			// allowlist gate) but has NO backing plugins projection row →
+			// resolveContent returns nil → 404. We seed a ghost name into
+			// env-valid's context allowlist and ensure no plugins row backs
+			// it. The plugins table is read FRESH from Postgres (no cache);
+			// only the envcache (context_plugins) is Redis-cached at 60s TTL,
+			// so setup settles 65s after the UPDATE for the loader to rebuild.
 			name:       "ContentNotFound",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/plugin/ghost-content",
 			key:        pk,
 			envHeader:  env,
 			wantStatus: http.StatusNotFound,
 			wantCode:   "content_not_found",
-			skipReason: "requires env.context to name a Plugin whose CRD doesn't exist; pre-seed step not in current fixture set — engineer-pending",
+			setup: func(t *testing.T, ctx context.Context) {
+				const ghost = "ghost-content"
+				patch := `UPDATE environments SET context_plugins = array_append(context_plugins, '` + ghost + `') ` +
+					`WHERE name='env-valid' AND NOT ('` + ghost + `' = ANY(context_plugins)); ` +
+					`DELETE FROM plugins WHERE name='` + ghost + `';`
+				if _, stderr, err := psqlExec(ctx, patch); err != nil {
+					t.Skipf("psql ghost-content patch (engineer-pending): %v stderr=%s", err, strings.TrimSpace(stderr))
+				}
+				t.Cleanup(func() {
+					cctx, ccancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer ccancel()
+					_, _, _ = psqlExec(cctx,
+						`UPDATE environments SET context_plugins = array_remove(context_plugins, '`+ghost+`') WHERE name='env-valid';`)
+				})
+				// Wait out the 60s envcache TTL so the patched context_plugins
+				// loads (the direct UPDATE emits no NOTIFY). Bounded, mirrors
+				// StaleCacheExpired.
+				time.Sleep(65 * time.Second)
+			},
 		},
 	}
 
@@ -311,6 +349,9 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if c.skipReason != "" {
 				t.Skipf("%s", c.skipReason)
+			}
+			if c.setup != nil {
+				c.setup(t, ctx)
 			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, csURL+c.path, nil)
 			if err != nil {
@@ -547,7 +588,7 @@ func testPhase5SC4StalenessAndInFlightRename(t *testing.T) {
 		// (slow client + operator-side rename trigger) exceeds inline
 		// scope; covered by Plan 05-05 Task 4 integration test which
 		// asserts via direct *os.File pinning under the unit harness.
-		t.Skipf("in-flight rename verified at integration-test layer in Plan 05-05 Task 4; E2E coverage deferred (orchestration cost > 30%% context budget per plan permission)")
+		t.Skipf("DELIBERATE NON-GOAL: deterministic mid-stream rename(2) + throttled-reader orchestration is inherently flaky at the e2e layer (timing race between a slow client and the operator-side inode swap). The D-02 in-flight inode-pin invariant is covered deterministically at the integration layer (Plan 05-05 Task 4, via direct *os.File pinning). Intentionally not un-skipped by the buckets-2-3 plan.")
 	})
 }
 
