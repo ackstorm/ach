@@ -148,15 +148,31 @@ func TestCachedResolverSingleFlight(t *testing.T) {
 	const N = 50
 	plaintext := "pk_cccccccccccccccccccccccccc"
 	leaderHold := make(chan struct{})
+	leaderEntered := make(chan struct{})
+	var once sync.Once
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
+		once.Do(func() { close(leaderEntered) })
 		<-leaderHold // hold the leader until all followers have enqueued
 		return &KeyInfo{KeyID: "pkid_sf", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active"}, nil
 	}}
 	r, _, _ := setupCached(t, inner)
 
-	var entered atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
+
+	// Leader-first: one Resolve blocks inside inner → the singleflight group
+	// is GUARANTEED in-flight and held before the followers launch. (The prior
+	// entered-counter + fixed-sleep variant flaked under -race: it counted
+	// goroutines before their cache-miss GET, so stragglers reached sf.Do
+	// after the leader was released — forming extra inner calls.)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = r.Resolve(context.Background(), plaintext)
+	}()
+	<-leaderEntered
+
+	var entered atomic.Int32
+	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -164,14 +180,12 @@ func TestCachedResolverSingleFlight(t *testing.T) {
 			_, _ = r.Resolve(context.Background(), plaintext)
 		}()
 	}
-	// Wait until all N goroutines have signaled they are about to call
-	// r.Resolve. This is robust under -p=GOMAXPROCS pressure where a
-	// fixed sleep can race with goroutine scheduling.
-	for entered.Load() < N {
+	// Wait until all followers are scheduled and about to call r.Resolve.
+	for entered.Load() < N-1 {
 		runtime.Gosched()
 	}
-	// Brief settle to cover the tiny gap between `entered.Add` and the
-	// singleflight enqueue inside r.Resolve.
+	// Settle so every follower reaches singleflight.Do (joining the in-flight
+	// leader) before we release it.
 	time.Sleep(100 * time.Millisecond)
 
 	close(leaderHold)

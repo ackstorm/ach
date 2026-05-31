@@ -191,9 +191,19 @@ func TestGet_RedisDown_FallsThrough(t *testing.T) {
 func TestGet_Singleflight_DedupesConcurrentMisses(t *testing.T) {
 	var calls atomic.Int64
 	row := sampleRow("test", "foo", "rv-sf")
+	// Leader-first deterministic synchronization. The prior fixed-100ms loader
+	// sleep flaked under -race -shuffle: slow follower goroutines reached the
+	// singleflight enqueue AFTER the leader's loader returned and the group
+	// cleared, forming a second loader call. Instead, block the leader inside
+	// the loader (group guaranteed in-flight + held) BEFORE launching the
+	// followers; every follower then JOINS the in-flight group.
+	leaderHold := make(chan struct{})
+	leaderEntered := make(chan struct{})
+	var once sync.Once
 	loader := func(_ context.Context, _, _ string) (*EnvRow, error) {
 		calls.Add(1)
-		time.Sleep(100 * time.Millisecond)
+		once.Do(func() { close(leaderEntered) })
+		<-leaderHold
 		return row, nil
 	}
 	c, _, _ := newTestCache(t, loader)
@@ -202,13 +212,31 @@ func TestGet_Singleflight_DedupesConcurrentMisses(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]*EnvRow, N)
 	errs := make([]error, N)
-	wg.Add(N)
-	for i := 0; i < N; i++ {
+
+	// 1. Leader-first: one Get blocks inside the loader → group in-flight.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		results[0], errs[0] = c.Get(context.Background(), "test", "foo")
+	}()
+	<-leaderEntered
+
+	// 2. Followers join the in-flight group; none can start a new loader call.
+	var arrived sync.WaitGroup
+	arrived.Add(N - 1)
+	for i := 1; i < N; i++ {
+		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			arrived.Done()
 			results[i], errs[i] = c.Get(context.Background(), "test", "foo")
 		}(i)
 	}
+	arrived.Wait()
+	// 3. Settle so every follower reaches singleflight.Do (joining) before we
+	//    release the leader.
+	time.Sleep(100 * time.Millisecond)
+	close(leaderHold)
 	wg.Wait()
 
 	if got := calls.Load(); got != 1 {
