@@ -11,7 +11,7 @@
 //   - UnresolvedReferences: examples/04b-environment-unresolved.yaml
 //     reaches AccessGroupSynced=False/UnresolvedReferences within 30s.
 //
-// Both gated behind ACH_E2E_PHASE9=1, matching the existing phase4
+// Both opt out via ACH_SKIP_PHASE4=1, matching the existing phase4
 // promotion e2e gate.
 
 package e2e
@@ -28,8 +28,8 @@ import (
 // to True/Synced once the operator reconciles. Requires hydrate_litellm
 // to have seeded the demo Model / MCP / A2A.
 func TestAccessGroupSynced_Demo_HappyPath(t *testing.T) {
-	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skip("§17 e2e gated behind ACH_E2E_PHASE9=1")
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§17 e2e (phase4); opt out via ACH_SKIP_PHASE4=1")
 	}
 	// The "demo" Environment is pre-synced by cluster.sh (reconcile_examples).
 	// Tests assert against the live, already-synced cluster — they do NOT apply
@@ -44,8 +44,8 @@ func TestAccessGroupSynced_Demo_HappyPath(t *testing.T) {
 // TestAccessGroupSynced_DemoUnresolved_FlipsToUnresolvedReferences
 // asserts the negative-path fixture flips to False/UnresolvedReferences.
 func TestAccessGroupSynced_DemoUnresolved_FlipsToUnresolvedReferences(t *testing.T) {
-	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skip("§17 e2e gated behind ACH_E2E_PHASE9=1")
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§17 e2e (phase4); opt out via ACH_SKIP_PHASE4=1")
 	}
 	// The "demo-unresolved" Environment is pre-synced by cluster.sh
 	// (reconcile_examples). Assert against the live cluster; do not apply.

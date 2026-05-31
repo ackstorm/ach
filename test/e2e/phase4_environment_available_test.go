@@ -6,7 +6,7 @@
 // returns within 60s for an Environment whose required sub-conditions
 // reach True. Mirrors TODO §16 line 505 verbatim.
 //
-// Engineer-pending status — gated behind ACH_E2E_PHASE9=1. The
+// Engineer-pending status — opt out via ACH_SKIP_PHASE4=1. The
 // example fixture examples/04-environment-demo.yaml references 5
 // LiteLLM resources (gemini.gemini-flash-latest, openai.gpt-5-mini,
 // vmcp-dev, vmcp-aws, test-noop-agent) that today's seed LiteLLM
@@ -14,7 +14,7 @@
 // per the §16 note in TODO.md). Until §16 lands a seeded UAT
 // LiteLLM, ExecutionResourcesResolved stays False and Available stays
 // False; the wait correctly times out. The test is skipped to keep
-// the suite green; flip ACH_E2E_PHASE9=1 once §16's seed lands.
+// the suite green; set ACH_SKIP_PHASE4=1 once §16's seed lands.
 
 package e2e
 
@@ -32,8 +32,8 @@ import (
 // environment/<name>` exits 0 within 60s. Maps to TODO §16's
 // post-§7+§9 validation gate.
 func TestEnvironmentAvailableE2E(t *testing.T) {
-	if os.Getenv("ACH_E2E_PHASE9") != "1" {
-		t.Skip("§9 e2e gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`); opt-out for focused dev. The synced cluster seeds the demo LiteLLM resources, so the former TODO §16 seed gap is closed.")
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§9 e2e (phase4); opt out via ACH_SKIP_PHASE4=1. The synced cluster seeds the demo LiteLLM resources.")
 	}
 
 	const (

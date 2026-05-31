@@ -101,9 +101,9 @@ const (
 func phase6SuiteGuard(t *testing.T) {
 	t.Helper()
 
-	if os.Getenv("ACH_E2E_PHASE6") != "1" {
+	if os.Getenv("ACH_SKIP_PHASE6") == "1" {
 		t.Skipf(
-			"Phase 6 CLI e2e suite gated behind ACH_E2E_PHASE6=1 + live " +
+			"Phase 6 CLI e2e suite opted out via ACH_SKIP_PHASE6=1 (default: runs); needs a live " +
 				"kind+Helm cluster + ./bin/ach built (engineer-pending). " +
 				"Run: make cluster-keep && ./scripts/dev.sh make build && " +
 				"ACH_E2E_PHASE6=1 ACH_E2E_PHASE6_PK=pk_<26-base32-lower> " +
