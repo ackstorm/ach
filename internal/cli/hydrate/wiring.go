@@ -439,6 +439,16 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 				return FileWrite{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
 			}
 		}
+	} else {
+		// CR-01 / F-10 — on the no-op skip path the rewrite is bypassed, so
+		// the chmod side-effect of WriteAtomic / mergeForward is lost. If the
+		// on-disk file was chmod'd to a more-permissive mode between hydrates
+		// (user error, attacker, prior bug), the bearer-carrying content
+		// stays world-readable. Re-assert 0o600 unconditionally — cheap, and
+		// closes the no-op regression net the CR-01 audit flagged.
+		if err := os.Chmod(finalAbs, 0o600); err != nil && !os.IsNotExist(err) {
+			return FileWrite{}, fmt.Errorf("adapter %s chmod %s: %w", d.platformID, finalAbs, err)
+		}
 	}
 
 	// State records the canonical hash of OUR contribution (not the merged

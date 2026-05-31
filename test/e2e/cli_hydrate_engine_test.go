@@ -1576,10 +1576,11 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	if code2 != 2 {
 		t.Fatalf("sc4 autoclaim rotate: second hydrate exit %d (want 2 / exit.Drift — "+
 			"LocalEditPreserve on a drifted managed key).\n"+
-			"exit 0 → CR-03 path-normalization regressed: Classify did not find the "+
-			"owned state entry for %q (achDir-relative Target vs absolute finalPath) "+
-			"and merge-claimed the drift silently. Check internal/cli/hydrate/wiring.go "+
-			"Classify call site (must pass achDir) + §8.4 per-key drift dispatch.\n"+
+			"exit 0 → per-key drift detection regressed on the surgical-merge "+
+			"path: the drifted user value for OUR key %q was not caught. Check "+
+			"internal/cli/hydrate/wiring.go publishRuntimeFile + findAdapterEntry "+
+			"(line ~371) + the §8.4 LocalEditPreserve branch in the per-key "+
+			"NewDiffer().Compare dispatch.\n"+
 			"stdout=%s\nstderr=%s",
 			code2, phase7ClaudeCodeRuntimePath, stdout2, stderr2)
 	}

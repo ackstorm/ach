@@ -257,6 +257,59 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 }
 
+// TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode renders once
+// (establishing prior state matching disk), then chmods the
+// credential-bearing settings.json to a world-readable mode between
+// hydrates. On the second Render the publish path's no-op skip fires
+// (prior != nil + outcome == NoOp); without the F-10 chmod-on-skip
+// guard, the leaked mode would persist. With the guard, the engine
+// re-asserts 0o600 unconditionally.
+//
+// This is the load-bearing regression net for CR-01 (credential file
+// mode 0o600): the prior CR-01 tests verified the WRITE path; this
+// test verifies the SKIP path that bypasses WriteAtomic.
+func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	m := dispMiniManifest()
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	if err != nil {
+		t.Fatalf("first Render: %v", err)
+	}
+	prior := dispPriorState("demo", first)
+
+	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+
+	// Sanity: first render wrote 0o600.
+	if info, err := os.Stat(settingsPath); err != nil {
+		t.Fatalf("stat after first: %v", err)
+	} else if info.Mode().Perm() != 0o600 {
+		t.Fatalf("after first Render: mode %o, want 0o600", info.Mode().Perm())
+	}
+
+	// Simulate a leak: chmod to world-readable 0o644 between hydrates.
+	if err := os.Chmod(settingsPath, 0o644); err != nil {
+		t.Fatalf("chmod 0o644: %v", err)
+	}
+
+	// Second Render with matching prior state → no-op skip path. Without the
+	// F-10 chmod guard, the mode would stay at 0o644 (skip bypasses
+	// WriteAtomic which is where 0o600 normally gets asserted).
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir); err != nil {
+		t.Fatalf("second Render: %v", err)
+	}
+
+	info, err := os.Stat(settingsPath)
+	if err != nil {
+		t.Fatalf("stat after second: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("after no-op skip: mode %o, want 0o600 (F-10 chmod guard regressed)", info.Mode().Perm())
+	}
+}
+
 // dispMiniManifest is a minimal one-MCP-server manifest for the dispatcher
 // tests.
 func dispMiniManifest() *manifest.Manifest {
