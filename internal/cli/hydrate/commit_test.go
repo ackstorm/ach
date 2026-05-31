@@ -184,6 +184,46 @@ func TestCommit_HappyPath(t *testing.T) {
 	}
 }
 
+// TestCommit_Step12_ComposesAdapterSection verifies W6-01 state composition:
+// when the adapter runs, step 12 records RenderResult.WrittenFiles into
+// state.Adapter (ID + Files). That recorded section IS the prior state the
+// next hydrate's §8.4 per-key drift check (findAdapterEntry) reads — without
+// it drift / auto-claim (sc3 / sc4) could never fire on re-hydrate.
+func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{
+			WrittenFiles: []FileWrite{{
+				Target:     ".claude/settings.json",
+				Hash:       "xxh3:deadbeef",
+				SourceHash: "xxh3:deadbeef",
+				Merge:      mergeStrDeep,
+				Keys:       []string{"mcpServers.demo-mcp-jwt"},
+			}},
+		},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if store.savedFile == nil {
+		t.Fatal("savedFile = nil; expected a state.File at step 12")
+	}
+	if store.savedFile.Adapter.ID != "claude-code" {
+		t.Errorf("Adapter.ID = %q, want %q", store.savedFile.Adapter.ID, "claude-code")
+	}
+	if got := len(store.savedFile.Adapter.Files); got != 1 {
+		t.Fatalf("Adapter.Files len = %d, want 1 (composed from render)", got)
+	}
+	fe := store.savedFile.Adapter.Files[0]
+	if fe.Target != ".claude/settings.json" || fe.Hash != "xxh3:deadbeef" ||
+		fe.SourceHash != "xxh3:deadbeef" || fe.Merge != "deep" ||
+		len(fe.Keys) != 1 || fe.Keys[0] != "mcpServers.demo-mcp-jwt" {
+		t.Errorf("composed adapter FileEntry = %+v; want the rendered file verbatim", fe)
+	}
+}
+
 // TestCommit_DryRun_NoStateWrite asserts step 12 is skipped under
 // opts.DryRun — the read+diff path still runs but no state.json is
 // published.

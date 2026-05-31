@@ -76,6 +76,15 @@ const (
 	extTOML = ".toml"
 )
 
+// Canonical state.FileEntry.Merge strings (§8.2 schema). Kept as consts so the
+// value is single-sourced across mergeKindToString, the syncDeep dispatch, and
+// tests (goconst).
+const (
+	mergeStrDeep      = "deep"
+	mergeStrComposite = "composite"
+	mergeStrReplace   = "replace"
+)
+
 // extractorImpl satisfies the hydrate.Extractor interface declared in
 // result.go. It wraps the W2-02 FetchContent + StageAndPublish flow.
 // limits + allowSymlinks are bound at construction (the cobra layer
@@ -605,11 +614,11 @@ func findAdapterEntry(s *state.File, target string) *state.FileEntry {
 func mergeKindToString(k adapter.MergeKind) string {
 	switch k {
 	case adapter.MergeDeep:
-		return "deep"
+		return mergeStrDeep
 	case adapter.MergeComposite:
-		return "composite"
+		return mergeStrComposite
 	case adapter.MergeReplace:
-		return "replace"
+		return mergeStrReplace
 	}
 	return ""
 }
@@ -756,11 +765,11 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 
 	// Classify by Merge kind.
 	switch e.Merge {
-	case "composite":
+	case mergeStrComposite:
 		return syncComposite(e, abs, opts)
-	case "deep":
+	case mergeStrDeep:
 		return syncDeep(e, abs, opts)
-	case "", "replace":
+	case "", mergeStrReplace:
 		// Replace / unmerged → unlink.
 		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, fmt.Errorf("sync remove %s: %w", abs, err)

@@ -288,6 +288,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// cascade + atomic publish all live inside adapterDispatcherImpl;
 	// the orchestrator just calls Render once after the extraction
 	// loop completes.
+	var renderResult RenderResult
+	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
 		// ADAPT-03: propagate the bearer credential to the adapter via
 		// ctx so RenderRuntime can embed it as the x-ach-key header.
@@ -295,7 +297,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// and the agent cannot authenticate to the forwarder. Credentials
 		// travel by context key only (never env/param) per adapter.go.
 		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
-		renderResult, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot)
+		rr, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
@@ -310,6 +312,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 				Wrapped: err,
 			}
 		}
+		renderResult = rr
+		adapterRan = true
 		result.FilesWritten += len(renderResult.WrittenFiles)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
 	}
@@ -347,7 +351,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 
 	// Step 12: atomic state write.
-	if err := c.step12WriteState(existingState, m); err != nil {
+	if err := c.step12WriteState(existingState, m, renderResult, adapterRan, result.PlatformID); err != nil {
 		return result, err
 	}
 	c.maybeKill(12)
@@ -644,12 +648,16 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 // (= state.WriteAtomic, STATE-07 four-step contract). Skipped when
 // opts.DryRun is set so a `hydrate --dry-run` is genuinely read-only.
 //
-// W1 writes a minimal state.File derived from the prior state +
-// the fresh manifest's environment. Once W2/W3 land their concrete
-// Extractor + AdapterDispatcher, the FileEntries flow back from
-// ExtractResult.WrittenFiles / RenderResult.WrittenFiles and step 12
-// composes them into the final state.File before the atomic write.
-func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) error {
+// Content buckets (Prompts/Plugins/Artifacts/RuntimeFiles) are carried
+// forward from the prior state (their composition from ExtractResult is a
+// separate follow-up; see issue tracker / W6-01 notes). The ADAPTER section,
+// however, IS composed from the fresh render (W6-01): recording the adapter
+// FileEntries is what gives the next hydrate a prior state for the §8.4
+// per-key drift truth table — without it findAdapterEntry always misses and
+// drift / auto-claim (sc3 / sc4) cannot fire. The adapter section is replaced
+// only when the adapter actually ran this hydrate; a context-only run leaves
+// the prior adapter section untouched (spec §8.2 field rules).
+func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string) error {
 	if c.opts.DryRun {
 		return nil
 	}
@@ -660,7 +668,7 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		Environment:   c.opts.Environment,
 	}
 	if existing != nil {
-		// Preserve everything W2/W3 haven't yet been called to update.
+		// Preserve everything not (re)composed this hydrate.
 		next.Deployment = existing.Deployment
 		next.Prompts = existing.Prompts
 		next.Plugins = existing.Plugins
@@ -672,6 +680,13 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		next.Environment = m.Environment
 	}
 
+	// Compose the adapter section from the fresh render. publishRuntimeFile
+	// returns its FileWrite even on a no-op skip, so render.WrittenFiles is the
+	// complete set of adapter files this hydrate is responsible for.
+	if adapterRan {
+		next.Adapter = adapterSectionFromRender(platformID, render)
+	}
+
 	if err := c.stateStore.Save(c.statePath, next); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -680,6 +695,26 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		}
 	}
 	return nil
+}
+
+// adapterSectionFromRender projects a RenderResult into the
+// state.AdapterSection recorded at step 12 — the prior state the next
+// hydrate's §8.4 per-key drift check reads via findAdapterEntry. Each
+// FileWrite maps 1:1 to a state.FileEntry (Target/Hash/SourceHash carry the
+// canonical hash of OUR contributed subtree; Merge/Keys drive the inverse-
+// merge + per-key drift comparison).
+func adapterSectionFromRender(platformID string, render RenderResult) state.AdapterSection {
+	sec := state.AdapterSection{ID: platformID}
+	for _, fw := range render.WrittenFiles {
+		sec.Files = append(sec.Files, state.FileEntry{
+			Target:     fw.Target,
+			Hash:       fw.Hash,
+			SourceHash: fw.SourceHash,
+			Merge:      fw.Merge,
+			Keys:       fw.Keys,
+		})
+	}
+	return sec
 }
 
 // step13Cleanup — final state.SweepTmp(achDir). Errors swallowed per
