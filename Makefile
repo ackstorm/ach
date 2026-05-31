@@ -753,22 +753,20 @@ logs-litellm:      ## Tail LiteLLM logs.
 # kind extraPortMapping + devtools --network=host). Data-plane URLs ARE the
 # gateway base (it routes /v1 /content /platform /mcp /a2a /.well-known /dex);
 # metrics get distinct /metrics/<svc> routes (a bare /metrics can't
-# disambiguate four services behind one base). Phase gates default ON — the
-# synced cluster closes the LiteLLM seed gap (TODO §16) and the alpine+git
-# operator image closes the git gap, so the formerly-pending tests run. All
-# overridable on the command line (e.g. `make e2e-focus ACH_E2E_PHASE9=0`).
+# disambiguate four services behind one base). Phases run BY DEFAULT against
+# the synced cluster — opt OUT of a phase with ACH_SKIP_PHASE<n>=1 for focused
+# dev (e.g. `make e2e-focus ACH_SKIP_PHASE4=1`). A missing prerequisite under a
+# non-opted-out phase is a hard FAILURE, not a silent skip — a half-up cluster
+# turns red instead of green. Phases 6 & 7 are CLI suites that additionally
+# need a human-minted pk_ (ACH_E2E_PHASE6_PK / ACH_E2E_PHASE7_PK), inherited
+# from the caller's environment.
 ACH_BASE_URL   ?= http://localhost:8080
-ACH_E2E_PHASE4 ?= 1
-ACH_E2E_PHASE5 ?= 1
-ACH_E2E_PHASE6 ?= 1
-ACH_E2E_PHASE9 ?= 1
-ACH_E2E_SC11C  ?= 1
-ACH_E2E_PLUGIN_FILTER ?= 1
 
 # Shared env block prefixed onto EVERY e2e go-test invocation (run + focus)
-# so URL-gated and phase-gated tests actually exercise the synced cluster.
-# Make variables are not exported to recipe shells unless referenced inline,
-# so both _e2e-run and _e2e-focus expand this explicitly.
+# so URL-gated tests actually exercise the synced cluster. Make variables are
+# not exported to recipe shells unless referenced inline, so both _e2e-run and
+# _e2e-focus expand this explicitly. The ACH_SKIP_PHASE<n> passthroughs default
+# to empty (= run); set one to 1 on the command line to opt that phase out.
 E2E_RUN_ENV = \
 	ACH_BASE_URL=$(ACH_BASE_URL) \
 	ACH_FORWARDER_URL=$(ACH_BASE_URL) \
@@ -778,10 +776,8 @@ E2E_RUN_ENV = \
 	ACH_CONTENT_METRICS_URL=$(ACH_BASE_URL)/metrics/content \
 	ACH_PLATFORM_METRICS_URL=$(ACH_BASE_URL)/metrics/platform \
 	ACH_OPERATOR_METRICS_URL=$(ACH_BASE_URL)/metrics/operator \
-	ACH_E2E_PHASE4=$(ACH_E2E_PHASE4) ACH_E2E_PHASE5=$(ACH_E2E_PHASE5) \
-	ACH_E2E_PHASE6=$(ACH_E2E_PHASE6) ACH_E2E_PHASE9=$(ACH_E2E_PHASE9) \
-	ACH_E2E_SC11C=$(ACH_E2E_SC11C) \
-	ACH_E2E_PLUGIN_FILTER=$(ACH_E2E_PLUGIN_FILTER)
+	ACH_SKIP_PHASE4=$(ACH_SKIP_PHASE4) ACH_SKIP_PHASE5=$(ACH_SKIP_PHASE5) \
+	ACH_SKIP_PHASE6=$(ACH_SKIP_PHASE6) ACH_SKIP_PHASE7=$(ACH_SKIP_PHASE7)
 
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
 e2e-run: ## Run e2e suite against an already-up cluster.
@@ -802,8 +798,8 @@ _e2e-focus:
 	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
 	# `-args` is required for ginkgo: without it, `go test` parses the value after
 	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
-	# Same gateway-URL + phase-gate env as _e2e-run so focused runs of
-	# formerly-gated tests actually execute (not skip).
+	# Same gateway-URL + skip-passthrough env as _e2e-run so focused runs
+	# execute against the synced cluster (opt out per phase via ACH_SKIP_PHASE<n>=1).
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
 	    go test -tags=e2e -v -count=1 -timeout 5m \
 	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \

@@ -59,7 +59,7 @@ func TestPhase4Invariants(t *testing.T) {
 func testPhase4SC1HeaderRewrite(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
-		t.Skipf("ACH_FORWARDER_URL not set — see CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).")
+		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
 	}
 	pk := mustAcquirePk(t)
 
@@ -92,7 +92,7 @@ func testPhase4SC1HeaderRewrite(t *testing.T) {
 func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
-		t.Skipf("ACH_FORWARDER_URL not set; skipping (engineer-pending).")
+		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
 	}
 	ek := mustAcquireEkBoundToEnv(t, "demo")
 
@@ -151,10 +151,10 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 func testPhase4SC2EkTagInjection(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
-		t.Skipf("ACH_FORWARDER_URL not set — see CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).")
+		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
 	}
 	if err := waitDeploymentReady(t, phase4Namespace, mockModelDeployment, 15*time.Second); err != nil {
-		t.Skipf("ach-mock-model not Ready (%v) — run `make cluster-up`. Skipping.", err)
+		t.Fatalf("ach-mock-model not Ready (%v) — cluster must be up (set ACH_SKIP_PHASE4=1 to opt out).", err)
 	}
 	mockLocal := strconv.Itoa(startPortForward(t, phase4Namespace, "svc/"+mockModelService, mockModelSvcPort))
 
@@ -277,9 +277,9 @@ func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
 	phase4SuiteGuard(t)
 
 	if err := waitDeploymentReady(t, phase4Namespace, mcpEchoDeployment, 15*time.Second); err != nil {
-		t.Skipf(
-			"ach-mcp-echo Deployment not Ready (%v) — run `make cluster-up` with "+
-				"testMocks.mcpEcho.enabled=true (requireJwt=false). Skipping.", err)
+		t.Fatalf(
+			"ach-mcp-echo Deployment not Ready (%v) — cluster must be up with "+
+				"testMocks.mcpEcho.enabled=true (requireJwt=false) (set ACH_SKIP_PHASE4=1 to opt out).", err)
 	}
 
 	mcpEchoLocal := "8194"
@@ -335,7 +335,7 @@ func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
 func testPhase4SC4JwksAndSecretRbac(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
-		t.Skipf("ACH_FORWARDER_URL not set; skipping (engineer-pending).")
+		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
 	}
 	resp, err := http.Get(forwarderURL + "/.well-known/jwks.json")
 	if err != nil {

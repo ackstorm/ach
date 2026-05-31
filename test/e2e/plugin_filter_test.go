@@ -27,9 +27,9 @@
 //
 // Run via:
 //
-//	ACH_E2E_PLUGIN_FILTER=1 ./scripts/dev.sh make e2e-focus RUN='TestPluginFilter'
+//	./scripts/dev.sh make e2e-focus RUN='TestPluginFilter'
 //
-// Skips with `ACH_E2E_PLUGIN_FILTER` unset (engineer-pending pattern,
+// Runs whenever the e2e suite runs against a live cluster (no opt-in flag;
 // mirrors phase5SuiteGuard).
 
 package e2e
@@ -41,7 +41,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -90,10 +89,6 @@ var pfMustExclude = []string{
 }
 
 func TestPluginFilter(t *testing.T) {
-	if os.Getenv("ACH_E2E_PLUGIN_FILTER") != "1" {
-		t.Skip("ACH_E2E_PLUGIN_FILTER=1 + live kind cluster required; skipping (engineer-pending).")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
