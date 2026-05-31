@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ type fakeExtractor struct {
 	err    error
 }
 
-func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string) (ExtractResult, error) {
+func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string, _ *state.File) (ExtractResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
@@ -105,7 +106,7 @@ type fakeAdapterDispatcher struct {
 	err    error
 }
 
-func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _ string) (RenderResult, error) {
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string) (RenderResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
@@ -181,6 +182,101 @@ func TestCommit_HappyPath(t *testing.T) {
 	}
 	if result.FilesWritten != 0 || result.FilesPreserved != 0 || result.FilesPruned != 0 {
 		t.Errorf("Result counts non-zero on W1 stub path: %+v", result)
+	}
+}
+
+// TestCommit_Step12_ComposesAdapterSection verifies W6-01 state composition:
+// when the adapter runs, step 12 records RenderResult.WrittenFiles into
+// state.Adapter (ID + Files). That recorded section IS the prior state the
+// next hydrate's §8.4 per-key drift check (findAdapterEntry) reads — without
+// it drift / auto-claim (sc3 / sc4) could never fire on re-hydrate.
+func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{
+			WrittenFiles: []FileWrite{{
+				Target:     ".claude/settings.json",
+				Hash:       "xxh3:deadbeef",
+				SourceHash: "xxh3:deadbeef",
+				Merge:      mergeStrDeep,
+				Keys:       []string{"mcpServers.demo-mcp-jwt"},
+			}},
+		},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if store.savedFile == nil {
+		t.Fatal("savedFile = nil; expected a state.File at step 12")
+	}
+	if store.savedFile.Adapter.ID != "claude-code" {
+		t.Errorf("Adapter.ID = %q, want %q", store.savedFile.Adapter.ID, "claude-code")
+	}
+	if got := len(store.savedFile.Adapter.Files); got != 1 {
+		t.Fatalf("Adapter.Files len = %d, want 1 (composed from render)", got)
+	}
+	fe := store.savedFile.Adapter.Files[0]
+	if fe.Target != ".claude/settings.json" || fe.Hash != "xxh3:deadbeef" ||
+		fe.SourceHash != "xxh3:deadbeef" || fe.Merge != "deep" ||
+		len(fe.Keys) != 1 || fe.Keys[0] != "mcpServers.demo-mcp-jwt" {
+		t.Errorf("composed adapter FileEntry = %+v; want the rendered file verbatim", fe)
+	}
+}
+
+// TestRemapGlobalPath covers the W6-01 --global path remap: opencode's
+// GLOBAL config is XDG ~/.config/opencode/opencode.json, not the project
+// ~/.opencode/opencode.json; the other adapters' paths pass through.
+func TestRemapGlobalPath(t *testing.T) {
+	cases := []struct{ platform, in, want string }{
+		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
+		{"opencode", ".opencode/plugins/foo/x.md", ".opencode/plugins/foo/x.md"}, // only opencode.json remaps
+		{"claude-code", ".claude/settings.json", ".claude/settings.json"},
+		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
+		{"codex", ".codex/config.toml", ".codex/config.toml"},
+	}
+	for _, tc := range cases {
+		if got := remapGlobalPath(tc.platform, tc.in); got != tc.want {
+			t.Errorf("remapGlobalPath(%q, %q) = %q, want %q", tc.platform, tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestStep4ReconcileVsDisk_AdapterResolvedViaToolRoot verifies that adapter
+// state entries are reconciled against toolRoot, NOT achDir/.. — the two
+// diverge under --global (achDir is $HOME/.ach/<env>, toolRoot is $HOME). An
+// adapter file present under toolRoot must NOT be pruned. (Under the prior
+// achDir/.. resolution this file would be looked up at the wrong path and
+// silently pruned.)
+func TestStep4ReconcileVsDisk_AdapterResolvedViaToolRoot(t *testing.T) {
+	home := t.TempDir()
+	achParent := t.TempDir() // distinct from home → mimics --global divergence
+
+	c := &commit{
+		achDir:   filepath.Join(achParent, ".ach", "demo"),
+		toolRoot: home,
+	}
+	cfgDir := filepath.Join(home, ".config", "opencode")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "opencode.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := &state.File{
+		Adapter: state.AdapterSection{
+			ID:    "opencode",
+			Files: []state.FileEntry{{Target: ".config/opencode/opencode.json", Hash: "xxh3:x"}},
+		},
+	}
+	got, pruned := c.step4ReconcileVsDisk(loaded)
+	if pruned != 0 {
+		t.Errorf("pruned = %d, want 0 (adapter file exists under toolRoot)", pruned)
+	}
+	if len(got.Adapter.Files) != 1 {
+		t.Errorf("Adapter.Files len = %d, want 1 (resolved via toolRoot, not achDir/..)", len(got.Adapter.Files))
 	}
 }
 
@@ -627,7 +723,7 @@ func TestRun_Step11Sync_InvokedWhenSyncOptSet(t *testing.T) {
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
 	var sawForce bool
-	syncFn = func(_, _ *state.File, _ string, opts SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, opts SyncOptions) (SyncStats, error) {
 		calls++
 		sawForce = opts.Force
 		return SyncStats{Pruned: 0, Preserved: 0}, nil
@@ -654,7 +750,7 @@ func TestRun_Step11Sync_NotInvokedWhenSyncOptUnset(t *testing.T) {
 	prevSync := syncFn
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
-	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
 		calls++
 		return SyncStats{}, nil
 	}
@@ -678,7 +774,7 @@ func TestRun_Step11Sync_NotInvokedUnderDryRun(t *testing.T) {
 	prevSync := syncFn
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
-	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
 		calls++
 		return SyncStats{}, nil
 	}

@@ -19,15 +19,13 @@
 //     back to KindArtifact when the URL is unparseable so bomb-defense
 //     caps remain enforced even for malformed manifests.
 //
-//   - adapterDispatcherImpl wraps adapter.Lookup + RenderRuntime +
-//     TransformPlugin + the SAFE-04 cascade from 07-W2-03 autoclaim.
-//     For each adapter.FileWrite, classify the final path; on
-//     CollisionExistsUnowned, run extract.Cascade with eagerBytes =
-//     fw.Content + resolver = the adapter itself (via
-//     ResolveOutputContent). Identical → auto-claim (the file becomes
-//     a state entry); not-identical + !force → wrap as
-//     exit.CollisionRefuse (exit 7); !force-bypass is the SAFE-04
-//     refusal posture.
+//   - adapterDispatcherImpl wraps adapter.Lookup + RenderRuntime. Each
+//     adapter.FileWrite is published under toolRoot (the tool's native
+//     config dir — workspace root, or $HOME under --global; NOT achDir)
+//     via SURGICAL forward-merge: only ACH's keys are upserted into the
+//     user's existing JSON/TOML config, preserving the user's other
+//     servers/settings. A user edit to one of OUR keys is caught by the
+//     per-key §8.4 drift check → exit.Drift unless --force.
 //
 //   - Sync implements STATE-05 / D-16 verbatim: collect targets in
 //     `prev` but missing from `new`; sort deepest-first by path depth;
@@ -72,6 +70,21 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
+// File-extension discriminators for adapter runtime-config merge/sync.
+const (
+	extJSON = ".json"
+	extTOML = ".toml"
+)
+
+// Canonical state.FileEntry.Merge strings (§8.2 schema). Kept as consts so the
+// value is single-sourced across mergeKindToString, the syncDeep dispatch, and
+// tests (goconst).
+const (
+	mergeStrDeep      = "deep"
+	mergeStrComposite = "composite"
+	mergeStrReplace   = "replace"
+)
+
 // extractorImpl satisfies the hydrate.Extractor interface declared in
 // result.go. It wraps the W2-02 FetchContent + StageAndPublish flow.
 // limits + allowSymlinks are bound at construction (the cobra layer
@@ -101,8 +114,11 @@ type extractorImpl struct {
 // PublishResult.Skipped is folded into the result as a zero-WrittenFiles
 // outcome — the existing file remained in place. SourceHash flows
 // through unchanged.
-func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string) (ExtractResult, error) {
+func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.ContentRef, achDir string, prev *state.File) (ExtractResult, error) {
 	kind, name := classifyDownloadURL(ref.DownloadURL, ref.Name)
+	if err := validateContentName(name); err != nil {
+		return ExtractResult{}, fmt.Errorf("extract content %s: %w", kind, err)
+	}
 
 	resp, err := extract.FetchContent(ctx, e.client, kind, name)
 	if err != nil {
@@ -112,9 +128,64 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 
 	finalRelPath := filepath.Join(string(kind), name)
 	finalAbs := filepath.Join(achDir, finalRelPath)
-
 	contentType := resp.Header.Get("Content-Type")
-	pr, err := extract.StageAndPublish(ctx, resp.Body, contentType,
+
+	// Re-hydrate no-op skip (W6-01 Bug E): only when prior state records
+	// this content's upstream SourceHash do we hash the freshly-fetched
+	// bytes first — an unchanged source needs no disk write (the on-disk
+	// tree is preserved, FilesWritten==0). A fresh hydrate (no prior entry)
+	// streams straight through StageAndPublish with a single spill.
+	if prevHash := priorContentSourceHash(prev, kind, finalRelPath); prevHash != "" {
+		staged, srcXxh3, serr := extract.SpillAndHashXxh3(achDir, resp.Body)
+		if serr != nil {
+			return ExtractResult{}, fmt.Errorf("extract content %s/%s: %w", kind, name, serr)
+		}
+		defer func() { _ = os.RemoveAll(filepath.Dir(staged)) }()
+		if srcXxh3 == prevHash {
+			return ExtractResult{SourceHash: srcXxh3}, nil
+		}
+		f, oerr := os.Open(staged)
+		if oerr != nil {
+			return ExtractResult{}, fmt.Errorf("extract content %s/%s: reopen staged: %w", kind, name, oerr)
+		}
+		defer func() { _ = f.Close() }()
+		return e.stageAndMap(ctx, f, contentType, finalRelPath, finalAbs, achDir, kind)
+	}
+
+	return e.stageAndMap(ctx, resp.Body, contentType, finalRelPath, finalAbs, achDir, kind)
+}
+
+// stageAndMap performs the delete-before-replace + StageAndPublish + FileWrite
+// projection shared by ExtractContent's skip-capable and fresh paths.
+//
+// Delete-before-replace is DIRECTORY-ONLY (W6-01 Bug E): renameAtomic happily
+// replaces a pre-existing regular file, but cannot rename over a non-empty
+// directory — and the W5-01 orchestrator "replace step" was never wired. We
+// therefore remove only a pre-existing directory target (an already-extracted
+// plugin). Leaving regular files in place preserves StageAndPublish's step-3
+// single-file no-op short-circuit.
+func (e *extractorImpl) stageAndMap(ctx context.Context, body io.Reader, contentType, finalRelPath, finalAbs, achDir string, kind extract.ResourceKind) (ExtractResult, error) {
+	// Defense-in-depth Rel-containment: even though validateContentName at the
+	// classify layer rejects ".." / absolute / separator-bearing names, a future
+	// caller (or a refactor that reaches stageAndMap by a path bypassing
+	// ExtractContent) must NOT be able to drive RemoveAll outside achDir.
+	if rel, relErr := filepath.Rel(achDir, finalAbs); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ExtractResult{}, fmt.Errorf("extract content %s: target %s escapes achDir", kind, finalAbs)
+	}
+	// Use Lstat (do NOT follow symlinks) so an attacker-controlled symlink at
+	// finalAbs cannot redirect RemoveAll to a directory outside achDir.
+	if info, statErr := os.Lstat(finalAbs); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return ExtractResult{}, fmt.Errorf("extract content %s: symlink at target %s rejected", kind, finalAbs)
+		}
+		if info.IsDir() {
+			if rmErr := os.RemoveAll(finalAbs); rmErr != nil {
+				return ExtractResult{}, fmt.Errorf("extract content %s: remove prior dir %s: %w", kind, finalAbs, rmErr)
+			}
+		}
+	}
+
+	pr, err := extract.StageAndPublish(ctx, body, contentType,
 		finalAbs, achDir, kind, e.limits, e.allowSymlinks)
 	if err != nil {
 		return ExtractResult{}, err
@@ -129,6 +200,64 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 		})
 	}
 	return out, nil
+}
+
+// priorContentSourceHash returns the upstream SourceHash recorded for the
+// content rooted at finalRelPath in the matching state bucket, or "" when no
+// prior entry exists. All per-file entries of one archive share the archive's
+// SourceHash (D-14), so the first match suffices.
+func priorContentSourceHash(prev *state.File, kind extract.ResourceKind, finalRelPath string) string {
+	if prev == nil {
+		return ""
+	}
+	var bucket []state.FileEntry
+	switch kind {
+	case extract.KindPlugin:
+		bucket = prev.Plugins
+	case extract.KindArtifact:
+		bucket = prev.Artifacts
+	case extract.KindPrompt:
+		bucket = prev.Prompts
+	default:
+		return ""
+	}
+	prefix := finalRelPath + string(filepath.Separator)
+	for _, ent := range bucket {
+		if ent.SourceHash == "" {
+			continue
+		}
+		if ent.Target == finalRelPath || strings.HasPrefix(ent.Target, prefix) {
+			return ent.SourceHash
+		}
+	}
+	return ""
+}
+
+// validateContentName rejects content `name` values that could redirect the
+// publication path outside achDir. The server-supplied manifest is the source
+// of `ref.Name` and the trailing segment of `ref.DownloadURL`; a malicious or
+// compromised manifest with name=".." would otherwise resolve to
+// os.RemoveAll(achDir) at the stageAndMap delete-before-replace step. Vectors
+// rejected: empty, ".", "..", hidden-prefix names (".git", ".env"), names
+// containing "/" or "\" path separators, and absolute paths. Defense-in-depth
+// Rel-containment runs in stageAndMap regardless.
+func validateContentName(name string) error {
+	if name == "" {
+		return errors.New("content name: empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("content name: traversal segment %q", name)
+	}
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("content name: hidden-directory prefix %q", name)
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("content name: path separator in %q", name)
+	}
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("content name: absolute path %q", name)
+	}
+	return nil
 }
 
 // classifyDownloadURL parses `/content/{kind}/{name}` and returns the
@@ -162,11 +291,14 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 // adapterDispatcherImpl satisfies the hydrate.AdapterDispatcher
 // interface declared in result.go. platformID is bound at
 // construction (the cobra layer resolves it via ResolvePlatform or
-// Autodetect). force gates the SAFE-04 collision-refuse path; when
-// true, byte mismatches are written anyway.
+// Autodetect). force bypasses the per-key drift refusal (publishRuntimeFile)
+// so a user edit to OUR key is overwritten rather than preserved.
 type adapterDispatcherImpl struct {
 	platformID string
 	force      bool
+	// global marks --global scope so Render can remap adapters whose GLOBAL
+	// config path differs from the simple $HOME-join (currently opencode).
+	global bool
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -174,23 +306,18 @@ type adapterDispatcherImpl struct {
 //  1. Lookup the adapter by platformID. Miss → typed CodedError
 //     (General) so the cobra error envelope stays consistent.
 //  2. Call ad.RenderRuntime(ctx, m, s) — returns []adapter.FileWrite.
-//  3. For each FileWrite:
-//     a. Compute the absolute final path: filepath.Join(achDir, fw.Path).
-//     b. extract.Classify(finalPath, achDir, s) — three-value outcome.
-//     The achDir argument lets Classify normalize the workspace-
-//     relative state.FileEntry.Target values to absolute before
-//     comparing against finalAbs (CR-03 / 07-W5-03).
-//     c. CollisionExistsUnowned → extract.Cascade with eagerBytes =
-//     fw.Content, resolver = adapterContentResolver{adapter, manifest}
-//     (so the Tier-2 ResolveOutputContent path is reachable). On
-//     Identical=false AND !force → wrap as exit.CollisionRefuse (7).
-//     d. Write the content via state.WriteAtomic. Record the FileWrite
-//     in RenderResult.WrittenFiles + the Merge/Keys metadata.
+//  3. For each FileWrite, publishRuntimeFile resolves the target under
+//     toolRoot (the tool's native config location, NOT achDir),
+//     surgically merges ONLY our keys into the user's existing config,
+//     and enforces the per-key §8.4 drift truth table (a user edit to
+//     OUR key → exit.Drift unless --force). The user's other keys are
+//     preserved untouched.
 //
-// DroppedComponents stays nil for the runtime path (TransformPlugin
-// is the source of drops); the orchestrator will accumulate drops from
-// per-plugin transforms separately when it wires step 8.
-func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir string) (RenderResult, error) {
+// State records the canonical hash of OUR contribution (not the merged
+// file) so --sync inverse-merge and subsequent drift checks operate on
+// our keys only. DroppedComponents stays nil for the runtime path
+// (TransformPlugin is the source of drops).
+func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string) (RenderResult, error) {
 	ad, ok := adapter.Lookup(d.platformID)
 	if !ok {
 		return RenderResult{}, &exit.CodedError{
@@ -204,75 +331,365 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
 	}
 
-	resolver := &adapterContentResolver{ad: ad, m: m, ctx: ctx}
-
 	var result RenderResult
 	for _, fw := range fws {
-		finalAbs := filepath.Join(achDir, fw.Path)
-
-		class, err := extract.Classify(finalAbs, achDir, s)
+		if d.global {
+			fw.Path = remapGlobalPath(d.platformID, fw.Path)
+		}
+		entry, err := d.publishRuntimeFile(fw, s, toolRoot)
 		if err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s classify %s: %w", d.platformID, finalAbs, err)
+			return RenderResult{}, err
 		}
-
-		if class == extract.CollisionExistsUnowned {
-			outcome, cerr := extract.Cascade(ctx, finalAbs, nil, fw.Content, resolver, nil)
-			if cerr != nil {
-				return RenderResult{}, fmt.Errorf("adapter %s cascade %s: %w", d.platformID, finalAbs, cerr)
-			}
-			if !outcome.Identical && !d.force {
-				return RenderResult{}, extract.WrapCollisionRefuseError(finalAbs, outcome.Tier)
-			}
-			// Identical OR force → fall through to write.
-		}
-
-		// Ensure parent dir exists before atomic publish.
-		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
-		}
-		// 0o600 — adapter runtime configs embed plaintext x-ach-key
-		// bearer credentials in headers maps; refuse world-readable
-		// per CR-01 (07-W5-02 / T-07-W5-02-01). Same mode is passed
-		// at the three Sync inverse-merge call sites below
-		// (syncComposite / syncDeepJSON / syncDeepTOML) — they rewrite
-		// the same credential-bearing files and must preserve the
-		// mode contract.
-		if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
-		}
-
-		h, err := hash.Hash(bytes.NewReader(fw.Content))
-		if err != nil {
-			return RenderResult{}, fmt.Errorf("adapter %s hash %s: %w", d.platformID, finalAbs, err)
-		}
-
-		result.WrittenFiles = append(result.WrittenFiles, FileWrite{
-			Target:     fw.Path,
-			Hash:       h,
-			SourceHash: h, // for adapter-rendered files the hash IS the source
-			Merge:      mergeKindToString(fw.Merge),
-			Keys:       append([]string(nil), fw.Keys...),
-		})
+		result.WrittenFiles = append(result.WrittenFiles, entry)
 	}
 
 	return result, nil
 }
 
-// adapterContentResolver bridges adapter.Adapter into the
-// extract.ContentResolver interface used by the SAFE-04 cascade
-// Tier-2. The adapter's ResolveOutputContent signature is
-// (ctx, *manifest.Manifest, target) → ([]byte, error); ContentResolver
-// is (ctx, target) → ([]byte, error). The bridge closes over the
-// manifest at dispatcher construction so the cascade can ask "what
-// WOULD this target's bytes be?" without re-threading the manifest.
-type adapterContentResolver struct {
-	ad  adapter.Adapter
-	m   *manifest.Manifest
-	ctx context.Context
+// remapGlobalPath adjusts an adapter's workspace-relative FileWrite path for
+// --global scope where the tool's GLOBAL config location differs from the
+// simple $HOME-join. OpenCode reads its global config from XDG
+// ~/.config/opencode/opencode.json — NOT ~/.opencode/opencode.json (the
+// latter is the PROJECT path). The other three adapters' relative paths
+// (.claude/, .codex/, .gemini/) are correct under $HOME as-is, so they pass
+// through unchanged. Kept in the orchestrator (dispatcher) rather than the
+// adapter so RenderRuntime stays scope-agnostic.
+func remapGlobalPath(platformID, path string) string {
+	if platformID == "opencode" && path == ".opencode/opencode.json" {
+		return ".config/opencode/opencode.json"
+	}
+	return path
 }
 
-func (r *adapterContentResolver) Resolve(_ context.Context, target string) ([]byte, error) {
-	return r.ad.ResolveOutputContent(r.ctx, r.m, target)
+// publishRuntimeFile writes one adapter runtime-config FileWrite via
+// SURGICAL MERGE + PER-KEY DRIFT.
+//
+// Target resolution: fw.Path joins toolRoot (workspace root in project
+// scope, $HOME in --global) — the tool's native config location — NOT
+// achDir. ACH's private state/cache stay under achDir.
+//
+// Per-key drift (§8.4 truth table, applied to OUR keys only): we compare
+// the hash of our contributed subtree as it currently sits on disk
+// (onDisk) against the prior state record (Hash/SourceHash) and the fresh
+// render (source). A user edit to OUR key surfaces as LocalEditPreserve /
+// ConflictPreserve → exit 2 (preserve), unless --force. The user's OTHER
+// keys are invisible to this comparison and are never claimed, refused, or
+// removed — only merged around. A no-op (disk + upstream both unchanged)
+// skips the rewrite so the file's bytes stay byte-identical (sc3 no-op).
+//
+// 0o600 — these files embed the plaintext x-ach-key bearer (CR-01).
+func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *state.File, toolRoot string) (FileWrite, error) {
+	finalAbs := filepath.Join(toolRoot, fw.Path)
+	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
+
+	// Canonical hash of our freshly-rendered contribution (parsed → map →
+	// deterministic re-encode) so it is directly comparable to the on-disk
+	// subtree regardless of struct-vs-map field ordering.
+	oursMap, err := parseDoc(fw.Content, isTOML)
+	if err != nil {
+		return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
+	}
+	freshHash, err := subtreeHash(oursMap)
+	if err != nil {
+		return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
+	}
+
+	// Hash of our keys as they currently sit on disk (empty when the file
+	// or our keys are absent — first hydrate / user removed them).
+	onDiskHash := ""
+	if fw.Merge == adapter.MergeDeep {
+		diskMap, ok, derr := readParseDoc(finalAbs, isTOML)
+		if derr != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, derr)
+		}
+		if ok {
+			sub, found := extractByKeys(diskMap, fw.Keys)
+			if found {
+				if onDiskHash, err = subtreeHash(sub); err != nil {
+					return FileWrite{}, fmt.Errorf("adapter %s hash on-disk %s: %w", d.platformID, finalAbs, err)
+				}
+			}
+		}
+	}
+
+	prior := findAdapterEntry(s, fw.Path)
+	outcome := NewDiffer().Compare(prior, onDiskHash, freshHash)
+
+	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
+	// prior == nil (fresh hydrate) never refuses — there is nothing of ours
+	// to preserve yet.
+	if prior != nil && ShouldExit2(outcome) && !d.force {
+		return FileWrite{}, WrapDriftError(outcome, finalAbs)
+	}
+
+	// Skip the rewrite only on a true no-op (prior exists; disk + upstream
+	// unchanged) so byte-for-byte stability holds. Otherwise publish.
+	skip := prior != nil && outcome == NoOp
+	if !skip {
+		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
+		}
+		switch fw.Merge {
+		case adapter.MergeDeep:
+			if _, err := mergeForward(finalAbs, fw.Content, 0o600); err != nil {
+				return FileWrite{}, fmt.Errorf("adapter %s merge %s: %w", d.platformID, finalAbs, err)
+			}
+		default:
+			if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
+				return FileWrite{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
+			}
+		}
+	} else {
+		// CR-01 / F-10 — on the no-op skip path the rewrite is bypassed, so
+		// the chmod side-effect of WriteAtomic / mergeForward is lost. If the
+		// on-disk file was chmod'd to a more-permissive mode between hydrates
+		// (user error, attacker, prior bug), the bearer-carrying content
+		// stays world-readable. Re-assert 0o600 unconditionally — cheap, and
+		// closes the no-op regression net the CR-01 audit flagged.
+		if err := os.Chmod(finalAbs, 0o600); err != nil && !os.IsNotExist(err) {
+			return FileWrite{}, fmt.Errorf("adapter %s chmod %s: %w", d.platformID, finalAbs, err)
+		}
+	}
+
+	// State records the canonical hash of OUR contribution (not the merged
+	// file) so --sync inverse-merge (via Keys[]) and the next drift check
+	// operate on our keys only, never the user's other entries.
+	return FileWrite{
+		Target:     fw.Path,
+		Hash:       freshHash,
+		SourceHash: freshHash, // adapter-rendered: the hash IS the source
+		Merge:      mergeKindToString(fw.Merge),
+		Keys:       append([]string(nil), fw.Keys...),
+	}, nil
+}
+
+// mergeForward reads the existing file at abs (JSON or TOML by extension),
+// deep-merges the keys from `ours` (an adapter-rendered document carrying
+// ONLY ACH's contributed entries) into it, and atomic-writes the result at
+// the given mode. When abs does not exist, the result is just `ours`. The
+// user's pre-existing keys are preserved; ACH's keys upsert same-named
+// entries. Returns the merged bytes (for hashing/state if the caller wants
+// them). This is the forward counterpart to syncDeep{JSON,TOML}'s removal.
+//
+// Concurrency note (security 2.4 — accept-disposition): the read-merge-write
+// sequence is NOT atomic against external writers. The <achDir>/lock flock
+// excludes other ach-cli processes, but a concurrent editor save on the
+// runtime-config file (e.g. claude-code's auto-format on .claude/settings.json)
+// between our read and our atomic-rename will be silently clobbered. Pragmatic
+// trade-off for v1: users should avoid editing the target while hydrate is
+// running. A defense-in-depth mtime-recheck would catch the race but is
+// deferred until a real-world report. See CLAUDE.md "Common failure modes" for
+// the symptom.
+func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	switch strings.ToLower(filepath.Ext(abs)) {
+	case extJSON:
+		return mergeForwardJSON(abs, ours, mode)
+	case extTOML:
+		return mergeForwardTOML(abs, ours, mode)
+	default:
+		// No structured merge for an unknown extension — write verbatim.
+		if err := state.WriteAtomic(abs, ours, mode); err != nil {
+			return nil, fmt.Errorf("mergeForward write %s: %w", abs, err)
+		}
+		return ours, nil
+	}
+}
+
+// mergeForwardJSON deep-merges `ours` into the existing JSON document at
+// abs. A missing file is treated as an empty object. A pre-existing file
+// MUST be valid JSON (we never silently discard a user's config).
+func mergeForwardJSON(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	var oursMap map[string]any
+	if err := json.Unmarshal(ours, &oursMap); err != nil {
+		return nil, fmt.Errorf("mergeForward decode rendered JSON: %w", err)
+	}
+	existing := map[string]any{}
+	if body, err := os.ReadFile(abs); err == nil {
+		if len(bytes.TrimSpace(body)) > 0 {
+			if derr := json.Unmarshal(body, &existing); derr != nil {
+				return nil, fmt.Errorf("mergeForward decode existing JSON %s: %w", abs, derr)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
+	}
+	deepMergeInto(existing, oursMap)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(existing); err != nil {
+		return nil, fmt.Errorf("mergeForward encode JSON %s: %w", abs, err)
+	}
+	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
+		return nil, fmt.Errorf("mergeForward write JSON %s: %w", abs, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// mergeForwardTOML mirrors mergeForwardJSON for TOML files.
+func mergeForwardTOML(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
+	var oursMap map[string]any
+	if err := toml.Unmarshal(ours, &oursMap); err != nil {
+		return nil, fmt.Errorf("mergeForward decode rendered TOML: %w", err)
+	}
+	existing := map[string]any{}
+	if body, err := os.ReadFile(abs); err == nil {
+		if len(bytes.TrimSpace(body)) > 0 {
+			if derr := toml.Unmarshal(body, &existing); derr != nil {
+				return nil, fmt.Errorf("mergeForward decode existing TOML %s: %w", abs, derr)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
+	}
+	deepMergeInto(existing, oursMap)
+	var buf bytes.Buffer
+	enc := toml.NewEncoder(&buf)
+	if err := enc.Encode(existing); err != nil {
+		return nil, fmt.Errorf("mergeForward encode TOML %s: %w", abs, err)
+	}
+	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
+		return nil, fmt.Errorf("mergeForward write TOML %s: %w", abs, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// deepMergeInto recursively merges src into dst: when both sides hold a
+// nested object at the same key, recurse; otherwise src's value overwrites
+// dst's. This preserves the user's sibling keys (e.g. their other MCP
+// servers and unrelated settings) while upserting ACH's entries.
+func deepMergeInto(dst, src map[string]any) {
+	for k, sv := range src {
+		if svMap, ok := sv.(map[string]any); ok {
+			if dvMap, ok := dst[k].(map[string]any); ok {
+				deepMergeInto(dvMap, svMap)
+				continue
+			}
+		}
+		dst[k] = sv
+	}
+}
+
+// parseDoc unmarshals a JSON or TOML document into a generic map. An
+// empty/whitespace body yields an empty map (not an error).
+func parseDoc(content []byte, isTOML bool) (map[string]any, error) {
+	out := map[string]any{}
+	if len(bytes.TrimSpace(content)) == 0 {
+		return out, nil
+	}
+	if isTOML {
+		if err := toml.Unmarshal(content, &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	if err := json.Unmarshal(content, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// readParseDoc reads + parses abs. Returns (nil, false, nil) when the file
+// is absent or empty (no prior on-disk document).
+func readParseDoc(abs string, isTOML bool) (map[string]any, bool, error) {
+	body, err := os.ReadFile(abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, false, nil
+	}
+	m, perr := parseDoc(body, isTOML)
+	if perr != nil {
+		return nil, false, perr
+	}
+	return m, true, nil
+}
+
+// subtreeHash returns the xxh3 of a deterministic (sorted-key) JSON
+// encoding of m. Encoding via json.Marshal regardless of the source
+// format makes the hash independent of struct-vs-map field ordering and
+// of JSON-vs-TOML provenance, so the freshly-rendered and on-disk subtrees
+// are directly comparable.
+func subtreeHash(m map[string]any) (string, error) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return hash.Hash(bytes.NewReader(b))
+}
+
+// extractByKeys builds a document containing ONLY the dotted `keys` lifted
+// from src (preserving nesting). found reports whether at least one key was
+// present — used to distinguish "our keys absent on disk" from "present".
+func extractByKeys(src map[string]any, keys []string) (map[string]any, bool) {
+	out := map[string]any{}
+	found := false
+	for _, k := range keys {
+		if v, ok := getDottedKey(src, k); ok {
+			setDottedKey(out, k, v)
+			found = true
+		}
+	}
+	return out, found
+}
+
+// getDottedKey reads the value at a dotted path from a nested map. Returns
+// (nil, false) when any segment is missing or a non-map intermediate is hit.
+func getDottedKey(root map[string]any, path string) (any, bool) {
+	parts := strings.Split(path, ".")
+	cur := root
+	for i, p := range parts {
+		v, ok := cur[p]
+		if !ok {
+			return nil, false
+		}
+		if i == len(parts)-1 {
+			return v, true
+		}
+		next, ok := v.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	return nil, false
+}
+
+// setDottedKey sets val at a dotted path, creating intermediate maps.
+func setDottedKey(root map[string]any, path string, val any) {
+	parts := strings.Split(path, ".")
+	cur := root
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			cur[p] = val
+			return
+		}
+		next, ok := cur[p].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			cur[p] = next
+		}
+		cur = next
+	}
+}
+
+// findAdapterEntry locates the prior state.FileEntry for target under
+// s.Adapter.Files, or nil when absent (fresh hydrate).
+func findAdapterEntry(s *state.File, target string) *state.FileEntry {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Adapter.Files {
+		if s.Adapter.Files[i].Target == target {
+			return &s.Adapter.Files[i]
+		}
+	}
+	return nil
 }
 
 // mergeKindToString translates adapter.MergeKind into the state.json
@@ -282,11 +699,11 @@ func (r *adapterContentResolver) Resolve(_ context.Context, target string) ([]by
 func mergeKindToString(k adapter.MergeKind) string {
 	switch k {
 	case adapter.MergeDeep:
-		return "deep"
+		return mergeStrDeep
 	case adapter.MergeComposite:
-		return "composite"
+		return mergeStrComposite
 	case adapter.MergeReplace:
-		return "replace"
+		return mergeStrReplace
 	}
 	return ""
 }
@@ -338,10 +755,21 @@ type SyncStats struct {
 // deepest-first and call os.Remove — kernels return ENOTEMPTY for
 // non-empty dirs which we silently swallow. CLI NEVER recursively
 // deletes.
-func Sync(prev, newFile *state.File, achDir string, opts SyncOptions) (SyncStats, error) {
+//
+// Adapter.Files resolve against toolRoot (the tool's native config root —
+// workspace root in project scope, $HOME under --global, $XDG_CONFIG_HOME/...
+// for opencode global). The four content buckets resolve against achDir. The
+// caller MUST pass toolRoot even if it equals achDir; an empty toolRoot is
+// rejected by an assertion in walkEntriesTagged → falls back to achDir for
+// safety (defensive, since the orchestrator at commit.go:334 always supplies
+// a non-empty value).
+func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) (SyncStats, error) {
 	var stats SyncStats
 	if prev == nil {
 		return stats, nil
+	}
+	if toolRoot == "" {
+		toolRoot = achDir
 	}
 
 	// Build the set of Targets present in newFile so we can compute
@@ -358,16 +786,21 @@ func Sync(prev, newFile *state.File, achDir string, opts SyncOptions) (SyncStats
 		entry state.FileEntry
 		abs   string
 	}
-	prevEntries := walkEntries(prev)
+	prevEntries := walkEntriesTagged(prev)
 	dels := make([]del, 0, len(prevEntries))
 	parentDirs := map[string]struct{}{}
-	for _, e := range prevEntries {
+	for _, te := range prevEntries {
+		e := te.Entry
 		if _, ok := keep[e.Target]; ok {
 			continue
 		}
 		abs := e.Target
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(achDir, e.Target)
+			base := achDir
+			if te.IsAdapter {
+				base = toolRoot
+			}
+			abs = filepath.Join(base, e.Target)
 		}
 		dels = append(dels, del{entry: e, abs: abs})
 		parentDirs[filepath.Dir(abs)] = struct{}{}
@@ -433,11 +866,11 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 
 	// Classify by Merge kind.
 	switch e.Merge {
-	case "composite":
+	case mergeStrComposite:
 		return syncComposite(e, abs, opts)
-	case "deep":
+	case mergeStrDeep:
 		return syncDeep(e, abs, opts)
-	case "", "replace":
+	case "", mergeStrReplace:
 		// Replace / unmerged → unlink.
 		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, fmt.Errorf("sync remove %s: %w", abs, err)
@@ -487,9 +920,9 @@ func syncComposite(_ state.FileEntry, abs string, opts SyncOptions) (bool, error
 func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	ext := strings.ToLower(filepath.Ext(abs))
 	switch ext {
-	case ".json":
+	case extJSON:
 		return syncDeepJSON(e, abs, opts)
-	case ".toml":
+	case extTOML:
 		return syncDeepTOML(e, abs, opts)
 	}
 	warnPreserved(opts.Stderr, abs,
@@ -647,6 +1080,42 @@ func walkEntries(f *state.File) []state.FileEntry {
 	return out
 }
 
+// taggedEntry preserves bucket provenance for Sync — Adapter.Files resolve
+// against toolRoot (the tool's native config root); the four content buckets
+// resolve against achDir. Lost when walkEntries flattens.
+type taggedEntry struct {
+	Entry     state.FileEntry
+	IsAdapter bool
+}
+
+// walkEntriesTagged is walkEntries with provenance retained so Sync can pick
+// the correct base path per bucket (F-02 / CR-02 follow-up). Adapter entries
+// flow through with IsAdapter=true; the four content buckets with false.
+func walkEntriesTagged(f *state.File) []taggedEntry {
+	if f == nil {
+		return nil
+	}
+	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) +
+		len(f.RuntimeFiles) + len(f.Adapter.Files)
+	out := make([]taggedEntry, 0, total)
+	for _, e := range f.Prompts {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Plugins {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Artifacts {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.RuntimeFiles {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Adapter.Files {
+		out = append(out, taggedEntry{Entry: e, IsAdapter: true})
+	}
+	return out
+}
+
 // warnPreserved emits a single-line stderr message naming the
 // preserved file and the reason. stderr=nil disables emission
 // (useful for unit tests that don't care about the warning text).
@@ -685,6 +1154,7 @@ func NewWiring(
 	limits extract.Limits,
 	allowSymlinks bool,
 	force bool,
+	global bool,
 ) (Extractor, AdapterDispatcher) {
 	ext := &extractorImpl{
 		client:        client,
@@ -694,6 +1164,7 @@ func NewWiring(
 	disp := &adapterDispatcherImpl{
 		platformID: platformID,
 		force:      force,
+		global:     global,
 	}
 	return ext, disp
 }

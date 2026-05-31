@@ -404,6 +404,20 @@ func hashFileXxh3(path string) (string, error) {
 // circuit comparison; the value is NEVER persisted to state.json.
 // The state ledger stores xxh3 exclusively per STATE-02 + D-14.
 func fileSha256IfExists(path string) ([]byte, bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("extract: stat existing for sha256: %w", err)
+	}
+	// A directory target (a previously-extracted plugin) has no single-file
+	// sha256 to short-circuit against. Report "no short-circuit" rather than
+	// erroring — the re-hydrate decision (no-op skip vs delete-before-replace)
+	// is owned by the orchestrator (W6-01 Bug E), not this leaf helper.
+	if info.IsDir() {
+		return nil, false, nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -417,4 +431,33 @@ func fileSha256IfExists(path string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("extract: read existing for sha256: %w", copyErr)
 	}
 	return h.Sum(nil), true, nil
+}
+
+// SpillAndHashXxh3 streams body to a fresh staging file under <achDir>/tmp/
+// and returns that file's path plus the canonical "xxh3:<32hex>" digest of
+// the bytes (the same format StageAndPublish records as PublishResult.SourceHash).
+//
+// The caller owns deletion of the staging DIRECTORY (filepath.Dir(path)).
+//
+// W6-01 Bug E: the hydrate orchestrator uses this to compute the upstream
+// SourceHash BEFORE StageAndPublish, so the re-hydrate no-op-skip decision
+// lives at the orchestrator layer (which holds prior state) rather than
+// inside StageAndPublish. The returned file can then be re-opened and fed to
+// StageAndPublish for the non-skip path.
+func SpillAndHashXxh3(achDir string, body io.Reader) (path, xxh3 string, err error) {
+	dir, err := StagingDir(achDir)
+	if err != nil {
+		return "", "", err
+	}
+	p := filepath.Join(dir, "source.bin")
+	if _, err := spillAndHashSha256(body, p); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", "", err
+	}
+	sum, err := hashFileXxh3(p)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return "", "", fmt.Errorf("extract: xxh3 staged source: %w", err)
+	}
+	return p, sum, nil
 }

@@ -17,8 +17,9 @@
 //     ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP=11 env-var seam
 //     (declared in 07-W1-06 Task 2). The seam fires syscall.Kill
 //     between steps 11 and 12 (atomic state write); the test asserts
-//     prior state.json bytes intact + <ach-dir>/tmp orphan from the
-//     killed run. A third clean run sweeps tmp/ per spec §6.7 step 2.
+//     prior state.json bytes intact, then plants a synthetic orphan
+//     under <ach-dir>/tmp (the killed run leaves none — StageAndPublish
+//     eager-cleans) and asserts a clean re-run sweeps it per §6.7 step 2.
 //   - sc3_drift_* — §8.4 four-outcome drift truth table + --force
 //     override on conflict-preserve.
 //   - sc4_safe_extract_malicious — iterates the
@@ -68,6 +69,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,26 +94,30 @@ const (
 // const blocks (mcpJSONPath / configTOMLPath / settingsJSONPath /
 // configJSONPath). Tests cross-check the on-disk file at <output>/<path>.
 const (
-	phase7ClaudeCodeRuntimePath = ".claude/.mcp.json"
+	phase7ClaudeCodeRuntimePath = ".claude/settings.json"
 	phase7CodexRuntimePath      = ".codex/config.toml"
 	phase7GeminiRuntimePath     = ".gemini/settings.json"
 	phase7OpencodeRuntimePath   = ".opencode/opencode.json"
 )
 
-// phase7StatePath returns the on-disk path of the engine's state.json
-// under <output>/.ach/<environment>/state.json. Cross-checked against
-// internal/cli/state.ResolvePath conventions (workspace mode).
+// phase7StatePath returns the on-disk path of the engine's state.json.
+// WORKSPACE scope (these tests pass --output, never --global) is
+// <output>/.ach/state.json — NOT env-namespaced (only --global namespaces by
+// environment). Matches internal/cli/state.ResolvePath. The environment param
+// is retained for call-site symmetry but unused in workspace scope.
 func phase7StatePath(output, environment string) string {
-	return filepath.Join(output, ".ach", environment, "state.json")
+	_ = environment
+	return filepath.Join(output, ".ach", "state.json")
 }
 
 // phase7AchTmpDir returns the on-disk <ach-dir>/tmp/ path the engine
 // uses for staging — swept on hydrate start per spec §6.7 step 2.
-// sc2_commit_sequence_sigkill asserts that after a mid-sequence
-// SIGKILL there is at least one orphan staging dir here, and after a
-// clean re-run there are none.
+// sc2_commit_sequence_sigkill plants a synthetic orphan staging dir here
+// (the killed run leaves none — StageAndPublish eager-cleans) and asserts
+// a clean re-run sweeps it.
 func phase7AchTmpDir(output, environment string) string {
-	return filepath.Join(output, ".ach", environment, "tmp")
+	_ = environment
+	return filepath.Join(output, ".ach", "tmp")
 }
 
 // TestPhase7CLIEngine is the single top-level umbrella for the Phase 7
@@ -130,6 +137,10 @@ func TestPhase7CLIEngine(t *testing.T) {
 	t.Run("sc1_gemini_ek", testPhase7Sc1GeminiEk)
 	t.Run("sc1_opencode_pk", testPhase7Sc1OpencodePk)
 	t.Run("sc1_opencode_ek", testPhase7Sc1OpencodeEk)
+
+	// W6-01 surgical-merge proof: hydrate must add ACH's MCP servers into the
+	// tool's native config without clobbering the user's pre-existing entries.
+	t.Run("sc1_claudecode_surgical_preserve", testPhase7Sc1ClaudeCodeSurgicalPreserve)
 
 	// SC#2 (deterministic SIGKILL seam — §6.7 crash recovery).
 	t.Run("sc2_commit_sequence_sigkill", testPhase7Sc2SigkillRecovery)
@@ -377,6 +388,91 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 	phase7Sc1RunEk(t, phase7PlatformOpencode, phase7OpencodeRuntimePath)
 }
 
+// testPhase7Sc1ClaudeCodeSurgicalPreserve is the W6-01 surgical-merge proof:
+// a hydrate must MERGE ACH's MCP servers into the tool's native config while
+// preserving the user's pre-existing servers + unrelated settings. Pre-seed
+// .claude/settings.json with a user MCP server and a permissions block,
+// hydrate, then assert the user keys survive verbatim, ACH added >=1 server,
+// and an ACH-contributed server carries a populated x-ach-key bearer.
+//
+// (Assertion shapes track the demo environment's MCP fixtures; if the demo
+// MCP set changes, the >=1-ACH-server / x-ach-key checks may need tuning.)
+func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
+	t.Helper()
+	phase7SuiteGuard(t)
+	pk := phase7AcquirePk(t)
+	baseURL := phase7BaseURL()
+	xdg := phase7SeedXdgConfig(t, baseURL, pk)
+	phase7DemoEnvironmentReady(t)
+	output := phase7Workspace(t)
+
+	// Pre-seed the user's native config: a personal MCP server + a permissions
+	// block ACH must never touch.
+	target := filepath.Join(output, phase7ClaudeCodeRuntimePath)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("surgical-preserve seed mkdir: %v", err)
+	}
+	seed := []byte(`{
+  "mcpServers": {
+    "user-personal": {"command": "my-server", "args": ["--port", "9999"]}
+  },
+  "permissions": {"allow": ["Read", "Edit"]}
+}`)
+	if err := os.WriteFile(target, seed, 0o600); err != nil {
+		t.Fatalf("surgical-preserve seed write: %v", err)
+	}
+
+	stdout, stderr, err := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode, "--output", output,
+	)
+	code, runErr := phase7StripExitErr(err)
+	if runErr != nil {
+		t.Fatalf("surgical-preserve hydrate: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+	}
+	if code != 0 {
+		t.Fatalf("surgical-preserve hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+
+	raw, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("surgical-preserve read merged config: %v", rerr)
+	}
+	var doc struct {
+		McpServers  map[string]json.RawMessage `json:"mcpServers"`
+		Permissions json.RawMessage            `json:"permissions"`
+	}
+	if jerr := json.Unmarshal(raw, &doc); jerr != nil {
+		t.Fatalf("surgical-preserve merged config not valid JSON: %v\n%s", jerr, raw)
+	}
+	if _, ok := doc.McpServers["user-personal"]; !ok {
+		t.Errorf("surgical-merge clobbered user MCP server 'user-personal'\nmerged=%s", raw)
+	}
+	if len(doc.Permissions) == 0 {
+		t.Errorf("surgical-merge dropped the user 'permissions' block\nmerged=%s", raw)
+	}
+	if len(doc.McpServers) < 2 {
+		t.Errorf("expected ACH server(s) merged alongside the user's; got %d total\nmerged=%s",
+			len(doc.McpServers), raw)
+	}
+	foundKey := false
+	for name, rawSrv := range doc.McpServers {
+		if name == "user-personal" {
+			continue
+		}
+		var srv struct {
+			Headers map[string]string `json:"headers"`
+		}
+		_ = json.Unmarshal(rawSrv, &srv)
+		if srv.Headers["x-ach-key"] != "" {
+			foundKey = true
+		}
+	}
+	if !foundKey {
+		t.Errorf("no ACH-contributed MCP server carries a populated x-ach-key\nmerged=%s", raw)
+	}
+}
+
 // -----------------------------------------------------------------------
 // SC#2 — deterministic SIGKILL between steps 11 and 12.
 // -----------------------------------------------------------------------
@@ -400,9 +496,16 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 //  2. Run hydrate with ACH_E2E_PHASE7_INJECT_SIGKILL_AFTER_STEP=11. The
 //     process exits non-zero (SIGKILL → exit code -1 via Go's ExitError).
 //  3. Assert state.json bytes equal the prior snapshot (step 12 never ran).
-//  4. Assert <ach-dir>/tmp/ contains ≥1 orphan dir from the killed run.
+//  4. Plant a synthetic orphan staging dir under <ach-dir>/tmp/. The
+//     killed run itself leaves NONE by design — extract.StageAndPublish
+//     removes each per-resource staging dir via a deferred os.RemoveAll
+//     on every return (stage.go: "a mid-extraction crash leaves no
+//     orphan"), and the maybeKill(11) hook fires AFTER ExtractContent has
+//     returned. The §6.7 step-2 sweep instead defends the narrower window
+//     where a SIGKILL lands WHILE a staging dir exists (before its defer
+//     runs); the plant simulates exactly that residue.
 //  5. Run hydrate WITHOUT the env-var; assert it completes cleanly +
-//     the orphan tmp/ is swept per spec §6.7 step 2.
+//     the planted orphan tmp/ is swept per spec §6.7 step 2.
 //
 // NO TIMEOUT FALLBACK — the env-var seam is deterministic per D-22.
 // The previously-considered `timeout --signal=KILL 0.5s` retry-3-times
@@ -479,16 +582,25 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 			"before=%s\nafter=%s", stateBytesBefore, stateBytesAfterKill)
 	}
 
-	// Step 4 — orphan staging dir(s) under <ach-dir>/tmp/.
-	tmpEntries, err := os.ReadDir(tmpDir)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("sc2: readdir tmp: %v", err)
+	// Step 4 — plant a synthetic orphan staging dir under <ach-dir>/tmp/.
+	// The killed run leaves none by design (extract.StageAndPublish's
+	// deferred os.RemoveAll fires on every return, and maybeKill(11) is
+	// after ExtractContent returns), so we simulate the residue a SIGKILL
+	// mid-staging would leave and then prove step 5 sweeps it.
+	if err := os.MkdirAll(filepath.Join(tmpDir, "orphan-staging-sim", "extracted"), 0o755); err != nil {
+		t.Fatalf("sc2: plant orphan staging dir under %s: %v", tmpDir, err)
 	}
-	if len(tmpEntries) == 0 {
-		t.Errorf("sc2: expected ≥1 orphan staging dir under %s after killed run; "+
-			"found none. The kill may have fired before any extraction reached "+
-			"the staging step — re-verify maybeKill(11) sits after the staging "+
-			"write in commit.go (step 11 = §6.7 step 11).", tmpDir)
+	if err := os.WriteFile(filepath.Join(tmpDir, "orphan-staging-sim", "source.bin"),
+		[]byte("partial-extract-residue"), 0o644); err != nil {
+		t.Fatalf("sc2: plant orphan source.bin: %v", err)
+	}
+	planted, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("sc2: readdir tmp after plant: %v", err)
+	}
+	if len(planted) == 0 {
+		t.Fatalf("sc2: planted orphan staging dir not present under %s — cannot "+
+			"exercise the §6.7 step-2 sweep", tmpDir)
 	}
 
 	// Step 5 — clean re-run sweeps tmp/ (§6.7 step 2).
@@ -890,56 +1002,67 @@ func testPhase7Sc4SafeExtractMalicious(t *testing.T) {
 	}
 }
 
-// phase7AssertMaliciousFixtureRejected serves a single fixture via a
-// localhost httptest.Server and runs hydrate against it. The engine's
-// extract package should reject the archive on the first SAFE-01
-// violation, exit non-zero, and write zero files under output.
+// phase7PoisonedContentServer returns an httptest.Server that injects
+// `archive` bytes into the engine's content-fetch path WITHOUT any
+// production test seam. It serves `archive` (with the canonical
+// application/gzip Content-Type the real Content Service sends) for every
+// GET /content/{kind}/{name}, and reverse-proxies all other requests —
+// notably the POST /platform/hydrate manifest call — to the live
+// platform-api at `upstream`.
 //
-// Note: the engine's content URL is constructed from /platform/hydrate's
-// manifest. Since we cannot easily inject a malicious URL into the
-// real platform-api's manifest without server-side mutation, this
-// subtest uses a degenerate variant — invoke `ach-cli hydrate
-// --raw-extract <fixture> --output <out>` IF the engine exposes a
-// direct-extract debug entry point. WHEN that entry point does NOT
-// exist, the assertion shape is: the malicious extract path is
-// covered by the W2-01 unit tests (extract/tar_test.go iterates the
-// same maliciousfixtures.BuildAll set + asserts every rejection), so
-// here we only re-prove the fixture set is materializable and the
-// engine integration would route to internal/cli/extract.Extract on
-// a real cluster fetch.
+// Pointing the seeded deployment URL at this server splits the two paths:
+// the manifest still resolves against the real cluster (so the demo
+// environment hydrates as usual), while every per-artifact content GET is
+// poisoned with the malicious / oversized archive. The engine's content
+// URL is `client.BaseURL + /content/{kind}/{name}` (extract.FetchContent),
+// so it always targets this server regardless of manifest contents.
 //
-// PHASE 7 RUNTIME NOTE: the W4-01 plan's expected behavior assumes the
-// engine accepts an HTTP override (e.g. via a test seam or a manifest
-// fixture) for the per-resource downloadUrl. If that seam does not
-// exist by the time this test runs against the live cluster, this
-// subtest will skip with an "engine seam not wired" message — that is
-// the contract for Phase 7 close: the W2-01 unit tests already prove
-// the SAFE-01 invariants at the extract layer; sc4_safe_extract_malicious
-// proves the engine's integration of that layer, which requires the
-// engine to call into a controllable URL.
+// The canonical Content-Type matters: http.ServeFile would sniff the gzip
+// magic and send "application/x-gzip", which the engine's isGzip dispatch
+// (correctly, per spec) does NOT treat as gzip — the archive would then be
+// written verbatim and the SAFE-01/03 tar policy would never run.
+func phase7PoisonedContentServer(t *testing.T, upstream string, archive []byte) *httptest.Server {
+	t.Helper()
+	target, err := url.Parse(upstream)
+	if err != nil {
+		t.Fatalf("phase7PoisonedContentServer: parse upstream %q: %v", upstream, err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/content/") {
+			w.Header().Set("Content-Type", "application/gzip")
+			_, _ = w.Write(archive)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// phase7AssertMaliciousFixtureRejected points the engine's content-fetch
+// path at a poisoned reverse-proxy server (phase7PoisonedContentServer)
+// serving the malicious fixture, and runs a real hydrate. The engine's
+// extract package must reject the archive on the first SAFE-01 violation,
+// exit non-zero, and write zero files under output. The /platform/hydrate
+// manifest is proxied to the live platform-api, so this exercises the
+// engine's true fetch → extract integration end-to-end — no production
+// test seam, no skip fallback.
 func phase7AssertMaliciousFixtureRejected(t *testing.T, fixturePath string) {
 	t.Helper()
 
-	// Serve the fixture via a localhost httptest.Server.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, fixturePath)
-	}))
-	defer srv.Close()
+	archive, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("sc4 malicious fixture: read %s: %v", fixturePath, err)
+	}
 
 	pk := phase7AcquirePk(t)
 	baseURL := phase7BaseURL()
-	xdg := phase7SeedXdgConfig(t, baseURL, pk)
+	srv := phase7PoisonedContentServer(t, baseURL, archive)
+	xdg := phase7SeedXdgConfig(t, srv.URL, pk)
 	output := phase7Workspace(t)
 
-	// Run hydrate with the malicious-content URL override. The engine
-	// must expose a content-server override seam for this subtest to
-	// exercise the malicious-fixture path; if absent, the W2-01 unit
-	// tests at internal/cli/extract/tar_test.go cover the rejection
-	// contract directly and this subtest skips with an engineer hint.
-	stdout, stderr, err := phase7RunAchCliEnv(t, xdg,
-		[]string{
-			"ACH_E2E_PHASE7_CONTENT_BASEURL=" + srv.URL,
-		},
+	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"hydrate", "--environment", phase7DemoEnvironment,
 		"--platform", phase7PlatformClaudeCode,
 		"--output", output,
@@ -997,25 +1120,21 @@ func testPhase7Sc4SafeExtractBomb(t *testing.T) {
 	phase7SuiteGuard(t)
 	pk := phase7AcquirePk(t)
 	baseURL := phase7BaseURL()
-	xdg := phase7SeedXdgConfig(t, baseURL, pk)
 	output := phase7Workspace(t)
 
 	// Build a 10MiB synthetic tarball (entry size = 10*1024*1024) in
-	// memory, gzip-wrap, serve via httptest.
+	// memory, gzip-wrap, serve via the poisoned reverse-proxy server (the
+	// manifest still resolves against the live platform-api).
 	bomb, err := buildBombTarGz(10 * 1024 * 1024)
 	if err != nil {
 		t.Fatalf("sc4 bomb: build tarball: %v", err)
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/gzip")
-		_, _ = w.Write(bomb)
-	}))
-	defer srv.Close()
+	srv := phase7PoisonedContentServer(t, baseURL, bomb)
+	xdg := phase7SeedXdgConfig(t, srv.URL, pk)
 
 	stdout, stderr, err := phase7RunAchCliEnv(t, xdg,
 		[]string{
 			"ACH_MAX_EXTRACTED_PLUGIN_MIB=1",
-			"ACH_E2E_PHASE7_CONTENT_BASEURL=" + srv.URL,
 		},
 		"hydrate", "--environment", phase7DemoEnvironment,
 		"--platform", phase7PlatformClaudeCode,
@@ -1144,10 +1263,22 @@ func testPhase7Sc4AutoClaimMatch(t *testing.T) {
 	}
 }
 
-// testPhase7Sc4AutoClaimDiffer: seed the final adapter-output path
-// with bytes that DIFFER from what the adapter emits; hydrate without
-// --force → exit 7 (exit.CollisionRefuse) + bytes preserved. Then
-// --force → exit 0 + bytes overwritten.
+// testPhase7Sc4AutoClaimDiffer exercises the per-key auto-claim contract
+// against a file ACH did NOT previously write and has NO prior state for —
+// the case sc3 never reaches (sc3 always seeds via a prior ACH hydrate, so
+// the file is already owned). The surgical-merge redesign replaced the old
+// whole-file collision cascade (exit 7 CollisionRefuse on a differing
+// pre-existing file) with per-key coexistence: ACH claims the file by
+// merging its managed keys (mcpServers) in and PRESERVING every unmanaged
+// key. No refuse, exit 0.
+//
+// Two arms:
+//  1. No --force: ACH merges into the unowned file. Exit 0; the unmanaged
+//     keys survive AND the ACH-managed mcpServers block appears.
+//  2. --force re-run: still exit 0, and the unmanaged keys are STILL
+//     preserved — --force overrides per-key DRIFT on managed keys, it does
+//     NOT nuke unmanaged content. This is the load-bearing guard that the
+//     surgical-merge contract holds even under --force.
 func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -1161,35 +1292,61 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("sc4 autoclaim differ: mkdir final path parent: %v", err)
 	}
-	// Hand-crafted bytes that are guaranteed to differ from any
-	// canonical RenderRuntime output (the canonical output is a JSON
-	// object; this is a string with a unique marker).
-	differing := []byte(`{"_unowned_pre_existing":"do_not_clobber_without_force"}` + "\n")
-	if err := os.WriteFile(target, differing, 0o644); err != nil {
+	// A valid JSON object ACH did NOT author — no mcpServers, no prior
+	// state.json. Contains an unmanaged sentinel key + a permissions block
+	// ACH must never touch.
+	const sentinelKey = "_unowned_pre_existing"
+	seed := []byte(`{
+  "` + sentinelKey + `": "must_survive_auto_claim",
+  "permissions": {"allow": ["Read", "Edit"]}
+}`)
+	if err := os.WriteFile(target, seed, 0o644); err != nil {
 		t.Fatalf("sc4 autoclaim differ: seed final path: %v", err)
 	}
 
-	// First hydrate — expect refuse + bytes preserved.
-	stdoutRefuse, stderrRefuse, errRefuse := phase7RunAchCli(t, xdg,
+	assertClaimed := func(t *testing.T, arm string, raw []byte) {
+		t.Helper()
+		var doc struct {
+			McpServers  map[string]json.RawMessage `json:"mcpServers"`
+			Permissions json.RawMessage            `json:"permissions"`
+			Sentinel    string                     `json:"_unowned_pre_existing"`
+		}
+		if jerr := json.Unmarshal(raw, &doc); jerr != nil {
+			t.Fatalf("sc4 autoclaim differ (%s): merged config not valid JSON: %v\n%s", arm, jerr, raw)
+		}
+		if doc.Sentinel != "must_survive_auto_claim" {
+			t.Errorf("sc4 autoclaim differ (%s): auto-claim clobbered the unmanaged %q key\nmerged=%s",
+				arm, sentinelKey, raw)
+		}
+		if len(doc.Permissions) == 0 {
+			t.Errorf("sc4 autoclaim differ (%s): auto-claim dropped the user 'permissions' block\nmerged=%s", arm, raw)
+		}
+		if len(doc.McpServers) == 0 {
+			t.Errorf("sc4 autoclaim differ (%s): no ACH-managed mcpServers merged into the claimed file\nmerged=%s", arm, raw)
+		}
+	}
+
+	// Arm 1 — no --force: merge-claim, exit 0.
+	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"hydrate", "--environment", phase7DemoEnvironment,
 		"--platform", phase7PlatformClaudeCode,
 		"--output", output,
 	)
-	codeRefuse, _ := phase7StripExitErr(errRefuse)
-	if codeRefuse != 7 {
-		t.Errorf("sc4 autoclaim differ refuse: exit %d (want 7 / exit.CollisionRefuse)\n"+
-			"stdout=%s\nstderr=%s", codeRefuse, stdoutRefuse, stderrRefuse)
+	code, runErr := phase7StripExitErr(err)
+	if runErr != nil {
+		t.Fatalf("sc4 autoclaim differ: hydrate exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
 	}
-	preserved, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("sc4 autoclaim differ: read after refuse: %v", err)
+	if code != 0 {
+		t.Errorf("sc4 autoclaim differ: exit %d (want 0 — per-key auto-claim merges, never refuses)\n"+
+			"stdout=%s\nstderr=%s", code, stdout, stderr)
 	}
-	if !bytes.Equal(preserved, differing) {
-		t.Errorf("sc4 autoclaim differ refuse: bytes mutated (want preserved)\n"+
-			"want=%s\ngot=%s", differing, preserved)
+	merged, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("sc4 autoclaim differ: read after claim: %v", rerr)
 	}
+	assertClaimed(t, "no-force", merged)
 
-	// --force re-run — expect overwrite + exit 0.
+	// Arm 2 — --force re-run: still exit 0, unmanaged keys STILL preserved.
 	stdoutForce, stderrForce, errForce := phase7RunAchCli(t, xdg,
 		"hydrate", "--environment", phase7DemoEnvironment,
 		"--platform", phase7PlatformClaudeCode,
@@ -1201,61 +1358,51 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 		t.Errorf("sc4 autoclaim differ force: exit %d (want 0)\n"+
 			"stdout=%s\nstderr=%s", codeForce, stdoutForce, stderrForce)
 	}
-	overwritten, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("sc4 autoclaim differ force: read after force: %v", err)
+	forced, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("sc4 autoclaim differ force: read after force: %v", rerr)
 	}
-	if bytes.Equal(overwritten, differing) {
-		t.Errorf("sc4 autoclaim differ force: bytes NOT overwritten\nstill=%s",
-			overwritten)
-	}
+	assertClaimed(t, "force", forced)
 }
 
 // testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent is the W6-01
-// Task 2 runtime gate for W5-03 (CR-03 closure). It exercises the
+// Task 2 runtime gate for W5-03 (CR-03 path-normalization closure),
+// reframed for the per-key surgical-merge model. It exercises the
 // re-hydrate-with-rotated-credentials path:
 //
-//  1. First hydrate writes .claude/.mcp.json + state.json. The adapter
-//     file's on-disk hash matches state.json's recorded hash for that
-//     target.
-//  2. Simulate a credential rotation by mutating the on-disk runtime-
-//     config file (rewriting the bearer placeholder to a different
-//     value). The on-disk hash now DIFFERS from state.json's recorded
-//     hash for the same target.
-//  3. Second hydrate re-runs against the same workspace + same
-//     credential.
+//  1. First hydrate writes the runtime-config file + state.json. The
+//     adapter file's recorded hash for that target lands in
+//     state.adapter.files (asserted below — composition guard).
+//  2. Simulate a credential rotation by mutating an ACH-MANAGED key
+//     (a server body inside mcpServers) on-disk, keeping the file valid
+//     JSON. The managed key now drifts from state.json's recorded hash.
+//  3. Second hydrate (no --force) → exit 2 (LocalEditPreserve), on-disk
+//     bytes preserved.
+//  4. --force re-run → exit 0, the managed key restored to canonical,
+//     mode 0o600 preserved.
 //
-// Pre-W5-03 (CR-03 bug): Classify compared `entry.Target` (workspace-
-// relative, e.g. ".claude/.mcp.json") against `finalPath` (absolute,
-// e.g. "/tmp/abc/.claude/.mcp.json"). The strings never matched →
-// Classify returned CollisionExistsUnowned → Cascade ran → on-disk
-// (mutated) bytes differed from upstream (canonical) bytes → outcome.
-// Identical = false → engine returned exit 7 (CollisionRefuse) on
-// every credential-rotation re-hydrate.
+// CR-03 guard (per-key): pre-W5-03 Classify compared `entry.Target`
+// (workspace-relative) against an absolute finalPath; the strings never
+// matched → the engine failed to find the owned entry. In the per-key
+// model that manifests as a SILENT exit 0 (the drift is merge-claimed as
+// if unowned) instead of the correct exit 2 drift-preserve. Post-W5-03
+// Classify normalizes entry.Target against achDir via filepath.Join, the
+// comparison succeeds, the engine finds the owned entry and classifies
+// per-key drift. So an exit 2 at step 3 is the load-bearing proof that
+// the path-normalization fix is effective end-to-end.
 //
-// Post-W5-03 (CR-03 closed): Classify normalizes entry.Target against
-// achDir via filepath.Join, the comparison succeeds, Classify returns
-// CollisionOwnedByCurrent, the engine falls through to WriteAtomic and
-// overwrites the file with the canonical bytes. Exit code is 0 — NOT 7.
+// Approach: Approach B from the W6-01 plan (documented test-seam
+// state-mutation). Approach A (real credential rotation via a platform-api
+// admin endpoint) is not feasible in the current kind fixture —
+// `grep -rn "refresh-pk\|RefreshPK" internal/platformapi/ cmd/ach/cmd/`
+// confirms no such endpoint exists. The mutation edits a managed key so
+// the engine sees an "owned-by-current but drifted" file on the second
+// invocation.
 //
-// Approach: this test uses Approach B from the W6-01 plan (documented
-// test-seam state-mutation). Approach A (real credential rotation via
-// platform-api admin endpoint) is not feasible in the current kind
-// fixture — `grep -rn "refresh-pk\|RefreshPK" internal/platformapi/
-// cmd/ach/cmd/` confirms no such endpoint exists. Approach B is the
-// real test-suite seam: phase7MutateAdapterFile(t, target, suffix)
-// appends bytes to the on-disk adapter file so the file's on-disk hash
-// diverges from state.json's recorded hash; the engine sees an
-// "owned-by-current but drifted" file on the second invocation. The
-// W5-03 fix makes the path-comparison arm succeed, and the engine
-// overwrites the drifted file rather than refusing with exit 7.
-//
-// t.Fatal fallback: if Approach B fails (e.g. the workspace state is
-// corrupt or the first hydrate didn't write a state.json entry), the
-// test fails with the "blocker follow-up plan required" message
-// mandated by the W6-01 plan. t.Skip is FORBIDDEN here — a silent skip
-// would falsely green the suite and the W5-03 runtime fix would be
-// unverified end-to-end.
+// t.Fatal fallback: if the first hydrate didn't write a state.json entry
+// (or the demo env no longer renders mcpServers), the test fails with a
+// "blocker follow-up plan required" message. t.Skip is FORBIDDEN — a
+// silent skip would falsely green the suite.
 func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -1339,33 +1486,83 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 			phase7ClaudeCodeRuntimePath, stateBytes)
 	}
 
-	// --- Step 2: simulate credential rotation by mutating on-disk
-	// bytes. The engine on the next run will see a target whose on-disk
-	// bytes do NOT match the canonical-rendered bytes for the current
-	// credential — this is the same observable state the engine would
-	// see if the bearer in the headers map had rotated between
-	// invocations. Append a marker line so the mutation is byte-
-	// distinct from the canonical content (idempotent across re-runs).
-	mutated := append(append([]byte(nil), canonical...), []byte("\n// rotated-credential-marker\n")...)
-	if err := os.WriteFile(target, mutated, 0o600); err != nil {
-		t.Fatalf("sc4 autoclaim rotate: mutate on-disk bytes at %s: %v",
-			target, err)
+	// --- Step 2: simulate credential rotation by mutating an ACH-MANAGED
+	// key on-disk (a server body inside mcpServers — the same observable
+	// state the engine would see if the bearer/header in a managed server
+	// had rotated between invocations). The mutation keeps the file valid
+	// JSON (per-key surgical merge parses it on re-hydrate) and is confined
+	// to a managed key, so it is genuine §8.4 drift — NOT an unmanaged-key
+	// edit (which would be preserved silently). ---
+	const driftMarker = "DRIFTED-rotated-credential"
+	var canonDoc map[string]json.RawMessage
+	if err := json.Unmarshal(canonical, &canonDoc); err != nil {
+		t.Fatalf("sc4 autoclaim rotate: canonical settings.json not valid JSON: %v\n%s", err, canonical)
 	}
-
-	// Confirm the mutation produced a byte-distinct file.
+	var servers map[string]json.RawMessage
+	if err := json.Unmarshal(canonDoc["mcpServers"], &servers); err != nil || len(servers) == 0 {
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — canonical "+
+			"settings.json has no mcpServers block to drift (err=%v). The rotated-"+
+			"credential scenario needs an ACH-managed server to mutate; if the demo "+
+			"environment no longer renders an mcpServers block this test's premise is "+
+			"stale.\n%s", err, canonical)
+	}
+	// Drift a key the adapter ACTUALLY renders (here "url") rather than
+	// injecting a new key. mergeForward's deepMergeInto only overwrites keys
+	// present in OUR canonical contribution, so a brand-new key would be
+	// preserved as unmanaged content (correct surgical behavior) and --force
+	// could never restore it. Mutating an existing rendered field gives a
+	// genuine §8.4 managed-key drift that --force overwrites back.
+	var drifted bool
+	for name := range servers {
+		var sObj map[string]any
+		if err := json.Unmarshal(servers[name], &sObj); err != nil {
+			t.Fatalf("sc4 autoclaim rotate: decode server %q: %v", name, err)
+		}
+		if _, ok := sObj["url"].(string); !ok {
+			continue // need a rendered string field to drift
+		}
+		sObj["url"] = "http://" + driftMarker + ".invalid/"
+		b, merr := json.Marshal(sObj)
+		if merr != nil {
+			t.Fatalf("sc4 autoclaim rotate: re-marshal server %q: %v", name, merr)
+		}
+		servers[name] = b
+		drifted = true
+		break
+	}
+	if !drifted {
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — no ACH-"+
+			"rendered mcpServer carries a 'url' field to drift; the demo environment's "+
+			"MCP render shape changed. Pick another rendered key.\n%s", canonical)
+	}
+	sm, err := json.Marshal(servers)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: re-marshal drifted mcpServers: %v", err)
+	}
+	canonDoc["mcpServers"] = sm
+	mutated, err := json.Marshal(canonDoc)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: re-marshal mutated settings.json: %v", err)
+	}
 	if bytes.Equal(mutated, canonical) {
-		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — " +
-			"on-disk mutation produced identical bytes; the rotated-credential " +
-			"scenario cannot be exercised. Append marker should have made the " +
-			"bytes distinct; investigate the helper's append path.")
+		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — mutation " +
+			"produced identical bytes; the managed-key drift could not be applied.")
+	}
+	if err := os.WriteFile(target, mutated, 0o600); err != nil {
+		t.Fatalf("sc4 autoclaim rotate: mutate on-disk bytes at %s: %v", target, err)
 	}
 
-	// --- Step 3: second hydrate. Engine sees an existing file whose
-	// path matches a state.adapter.files Target. POST-W5-03: Classify
-	// returns CollisionOwnedByCurrent; engine overwrites; exit 0.
-	// PRE-W5-03: Classify returned CollisionExistsUnowned; Cascade ran;
-	// outcome.Identical was false (on-disk mutated bytes != canonical);
-	// engine returned exit 7. ---
+	// --- Step 3: second hydrate WITHOUT --force. The engine sees an
+	// existing file whose path matches a state.adapter.files Target, with a
+	// managed key drifted from the recorded hash. POST per-key model:
+	// LocalEditPreserve → exit 2 (exit.Drift), on-disk bytes preserved.
+	//
+	// This is the load-bearing CR-03 path-normalization guard reframed for
+	// the per-key model: exit 2 proves Classify FOUND the owned state entry
+	// (achDir-relative Target normalized against the absolute finalPath) and
+	// classified per-key drift. A silent exit 0 here would mean the path
+	// comparison regressed — the engine failed to find the owned entry and
+	// merge-claimed the drift as if unowned. ---
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
 		"hydrate", "--environment", phase7DemoEnvironment,
 		"--platform", phase7PlatformClaudeCode,
@@ -1376,58 +1573,66 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 		t.Fatalf("sc4 autoclaim rotate: second hydrate exec error: %v\nstdout=%s\nstderr=%s",
 			runErr2, stdout2, stderr2)
 	}
-	if code2 == 7 {
-		t.Fatalf("sc4 autoclaim rotate: second hydrate exit 7 (CollisionRefuse) — "+
-			"W5-03 CR-03 fix is NOT effective.\n"+
-			"This is the load-bearing failure mode the W5-03 plan closed: pre-W5-03 "+
-			"Classify compared entry.Target (workspace-relative) against finalPath "+
-			"(absolute) and never matched, falling into CollisionExistsUnowned + "+
-			"Cascade refusal. Post-W5-03 Classify normalizes the path comparison and "+
-			"returns CollisionOwnedByCurrent → engine overwrites. An exit 7 here "+
-			"means the W5-03 fix was reverted or wired wrong. Check "+
-			"internal/cli/extract/autoclaim.go:Classify (signature + filepath.Join "+
-			"normalization) and internal/cli/hydrate/wiring.go:213 (Classify call "+
-			"site must pass achDir).\nstdout=%s\nstderr=%s",
-			stdout2, stderr2)
-	}
-	if code2 != 0 {
-		t.Fatalf("sc4 autoclaim rotate: second hydrate exit %d (want 0)\n"+
+	if code2 != 2 {
+		t.Fatalf("sc4 autoclaim rotate: second hydrate exit %d (want 2 / exit.Drift — "+
+			"LocalEditPreserve on a drifted managed key).\n"+
+			"exit 0 → per-key drift detection regressed on the surgical-merge "+
+			"path: the drifted user value for OUR key %q was not caught. Check "+
+			"internal/cli/hydrate/wiring.go publishRuntimeFile + findAdapterEntry "+
+			"(line ~371) + the §8.4 LocalEditPreserve branch in the per-key "+
+			"NewDiffer().Compare dispatch.\n"+
 			"stdout=%s\nstderr=%s",
-			code2, stdout2, stderr2)
+			code2, phase7ClaudeCodeRuntimePath, stdout2, stderr2)
+	}
+	// Drift-preserve must NOT have overwritten — the marker survives.
+	mid, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("sc4 autoclaim rotate: read after drift-preserve: %v", err)
+	}
+	if !bytes.Contains(mid, []byte(driftMarker)) {
+		t.Errorf("sc4 autoclaim rotate: LocalEditPreserve (exit 2) must NOT overwrite the "+
+			"drifted managed key, but the drift marker is gone.\nfile=%s", mid)
 	}
 
-	// Verify the engine actually overwrote the mutated bytes back to
-	// the canonical form. If the file still carries the rotated-
-	// credential marker, the engine returned exit 0 but didn't follow
-	// through on the write — that would be a different bug than CR-03
-	// (likely a W5-01 wiring regression).
+	// --- Step 4: --force re-run. The engine overwrites the drifted managed
+	// key back to canonical; exit 0. The marker disappears and the W5-02
+	// mode-0o600 contract holds on the force-overwrite path. ---
+	stdout3, stderr3, err3 := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode,
+		"--output", output,
+		"--force",
+	)
+	code3, runErr3 := phase7StripExitErr(err3)
+	if runErr3 != nil {
+		t.Fatalf("sc4 autoclaim rotate: force hydrate exec error: %v\nstdout=%s\nstderr=%s",
+			runErr3, stdout3, stderr3)
+	}
+	if code3 != 0 {
+		t.Fatalf("sc4 autoclaim rotate: force hydrate exit %d (want 0)\nstdout=%s\nstderr=%s",
+			code3, stdout3, stderr3)
+	}
 	after, err := os.ReadFile(target)
 	if err != nil {
-		t.Fatalf("sc4 autoclaim rotate: read after second hydrate: %v", err)
+		t.Fatalf("sc4 autoclaim rotate: read after force: %v", err)
 	}
-	if bytes.Contains(after, []byte("rotated-credential-marker")) {
-		t.Errorf("sc4 autoclaim rotate: second hydrate exited 0 but did NOT overwrite "+
-			"the mutated bytes — the rotated-credential marker is still present.\n"+
-			"This is not a CR-03 regression but a W5-01 wiring regression: the "+
-			"engine classified the file as owned + skipped WriteAtomic. Re-check "+
-			"internal/cli/hydrate/wiring.go:240 — the WriteAtomic call MUST fire "+
-			"unconditionally after the Classify OwnedByCurrent branch (no\n"+
-			"`if outcome.Identical` guard).\n"+
-			"file=%s", after)
+	if bytes.Contains(after, []byte(driftMarker)) {
+		t.Errorf("sc4 autoclaim rotate: --force exited 0 but did NOT restore the drifted "+
+			"managed key to canonical — the drift marker is still present.\n"+
+			"Re-check the surgical-merge WriteAtomic path under --force "+
+			"(internal/cli/hydrate/wiring.go).\nfile=%s", after)
 	}
 
-	// Also re-assert mode 0o600 — the rotated-credential overwrite path
-	// must preserve the W5-02 mode contract. WriteAtomic is called with
-	// the same 0o600 mode parameter as the initial write; if a future
-	// regression changed the rewrite path to a non-WriteAtomic write,
-	// the mode would drop to 0o644 (T-07-W5-02-05 silent regression).
+	// Re-assert mode 0o600 on the force-overwrite path — WriteAtomic must be
+	// called with the same 0o600 mode as the initial write; a non-WriteAtomic
+	// rewrite would silently drop to 0o644 (T-07-W5-02-05 / CR-01 regression).
 	info, err := os.Stat(target)
 	if err != nil {
-		t.Fatalf("sc4 autoclaim rotate: stat after second hydrate: %v", err)
+		t.Fatalf("sc4 autoclaim rotate: stat after force: %v", err)
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("sc4 autoclaim rotate: rotated-credential overwrite produced mode %o "+
-			"(want %o) — W5-02 CR-01 mitigation regressed on the rotate path.",
+		t.Errorf("sc4 autoclaim rotate: force overwrite produced mode %o (want %o) — "+
+			"W5-02 CR-01 mitigation regressed on the rotate/force path.",
 			got, 0o600)
 	}
 }

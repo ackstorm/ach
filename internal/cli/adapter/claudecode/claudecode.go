@@ -14,9 +14,12 @@
 //     adapter returns PluginWrite{Dropped: nil}), but claude-code has
 //     no source-tree component it cannot translate — Dropped is always
 //     nil.
-//   - The runtime-config target .claude/.mcp.json is the Claude Code
-//     MCP server registry format verbatim — the same shape the Hub's
-//     Plugin .mcp.json carries.
+//   - The runtime-config target .claude/settings.json is where Claude
+//     Code reads MCP server definitions in this adapter's contract.
+//     (The official .claude/.mcp.json definition location and the
+//     settings.json approval-allowlist split — `enabledMcpjsonServers`
+//     — are not modeled here; see follow-up.md "Open question" for the
+//     escape hatch back to .mcp.json + an allowlist write.)
 //
 // ADAPT-06 scope rule: this adapter emits ONLY .claude/-prefixed paths.
 // Prompts and artifacts are written by the hydrator core directly (CLI
@@ -41,7 +44,11 @@ import (
 // Target paths emitted by this adapter. Centralized as constants so
 // the test assertions and the production code stay in lock-step.
 const (
-	mcpJSONPath = ".claude/.mcp.json"
+	// settingsJSONPath is where claude-code MCP server definitions are
+	// written (user-directed; see the surgical-merge redesign plan). The
+	// adapter merges its mcpServers entries into this file surgically,
+	// preserving the user's other settings/servers.
+	settingsJSONPath = ".claude/settings.json"
 
 	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
 	// alias contract (plan must_haves: ["claude", "cc"]).
@@ -120,10 +127,11 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}, nil
 }
 
-// mcpServerEntry is the per-server JSON shape Claude Code consumes in
-// .claude/.mcp.json. Matches the upstream Claude Code MCP server
-// registry format (Hub spec §11.6 carries the same shape inside
-// plugin .mcp.json files).
+// mcpServerEntry is the per-server JSON shape Claude Code consumes
+// under the mcpServers key of .claude/settings.json. Matches the
+// upstream MCP server registry format (Hub spec §11.6 carries the same
+// shape inside plugin .mcp.json files; the runtime location split is
+// adapter-level only).
 type mcpServerEntry struct {
 	Type    string            `json:"type"`
 	URL     string            `json:"url"`
@@ -141,7 +149,10 @@ type a2aAgentEntry struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// mcpJSONShape is the .claude/.mcp.json document Claude Code reads.
+// mcpJSONShape is the document Claude Code reads at settingsJSONPath
+// (.claude/settings.json). The schema mirrors what .claude/.mcp.json
+// would carry — adapter renders one shape, surgical merge upserts it
+// under the configured runtime path.
 // We use ordered map types via explicit struct + json.Marshal sorting
 // at render time so the output is deterministic (byte-identical across
 // invocations with the same input) — important for ResolveOutputContent
@@ -151,7 +162,8 @@ type mcpJSONShape struct {
 	A2AAgents  map[string]a2aAgentEntry  `json:"a2aAgents,omitempty"`
 }
 
-// renderMcpJSON builds the .claude/.mcp.json bytes from a manifest +
+// renderMcpJSON builds the JSON bytes the adapter writes to
+// settingsJSONPath (.claude/settings.json) from a manifest +
 // credential. Returned bytes are deterministic: keys are emitted in
 // sorted order because encoding/json sorts map keys lexicographically.
 // The credential is embedded into each server's headers map under
@@ -203,7 +215,7 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(shape); err != nil {
-		return nil, nil, fmt.Errorf("claudecode: encode .mcp.json: %w", err)
+		return nil, nil, fmt.Errorf("claudecode: encode mcpServers shape: %w", err)
 	}
 
 	return buf.Bytes(), contributedKeys, nil
@@ -220,7 +232,7 @@ func headersWithCredential(cred string) map[string]string {
 	}
 }
 
-// RenderRuntime emits the single .claude/.mcp.json FileWrite per
+// RenderRuntime emits the single .claude/settings.json FileWrite per
 // CLI spec §7.4 claude-code section. Merge=MergeDeep; Keys carries the
 // contributed top-level keys for STATE-02 + ADAPT-05 inverse-merge.
 //
@@ -239,7 +251,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 
 	return []adapter.FileWrite{
 		{
-			Path:    mcpJSONPath,
+			Path:    settingsJSONPath,
 			Content: content,
 			Merge:   adapter.MergeDeep,
 			Keys:    keys,
@@ -337,17 +349,17 @@ func copyFile(srcPath, dstPath string) error {
 }
 
 // MergeStrategies returns the per-target merge classification per
-// CLI spec §7.1 + ADAPT-05. claude-code merges .claude/.mcp.json deep
-// (the plugin .mcp.json files contributed by Plugins get layered onto
-// the runtime-config one via deep-merge).
+// CLI spec §7.1 + ADAPT-05. claude-code merges .claude/settings.json
+// deep (the plugin .mcp.json files contributed by Plugins get layered
+// onto the runtime-config one via deep-merge).
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
-		mcpJSONPath: adapter.MergeDeep,
+		settingsJSONPath: adapter.MergeDeep,
 	}
 }
 
 // ResolveOutputContent satisfies the SAFE-04 cascade Tier 2 contract
-// from plan 07-W2-03. For target ".claude/.mcp.json" we recompute the
+// from plan 07-W2-03. For target ".claude/settings.json" we recompute the
 // bytes RenderRuntime would emit (so the cascade can compare against
 // disk bytes without re-running the orchestrator). For any other
 // target, we return (nil, nil) — the cascade falls through to Tier 3
@@ -355,7 +367,7 @@ func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 // plugin files (claudecode's TransformPlugin already emits source bytes
 // verbatim).
 func (a *Adapter) ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error) {
-	if target != mcpJSONPath {
+	if target != settingsJSONPath {
 		return nil, nil
 	}
 	if m == nil || m.Runtime == nil {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/lock"
@@ -44,6 +45,10 @@ type commit struct {
 	// Resolved paths from step 0/1.
 	achDir    string
 	statePath string
+	// toolRoot is the base for adapter runtime-config writes (the tools'
+	// native config files): the workspace root in project scope, $HOME in
+	// --global scope. Distinct from achDir (ACH's private .ach/ cache).
+	toolRoot string
 
 	// TEST-ONLY SIGKILL injection seam consumed by 07-W4-01 sc2.
 	//
@@ -138,6 +143,25 @@ func newCommit(opts Opts) (*commit, error) {
 	}
 	achDir := filepath.Dir(statePath)
 
+	// Resolve toolRoot — the base for adapter runtime-config writes. In
+	// project scope it is the workspace root (the dir that CONTAINS
+	// .ach/). In --global scope adapter configs go under $HOME (the tools'
+	// user-level config dirs, e.g. ~/.claude/settings.json), NOT under
+	// ~/.ach/<env>/. This decouples the tool config location from achDir
+	// so the tools actually read what we write.
+	toolRoot := workspaceCwd
+	if opts.Global {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("resolve $HOME for --global adapter config: %v", herr),
+				Wrapped: herr,
+			}
+		}
+		toolRoot = home
+	}
+
 	c := &commit{
 		opts:       opts,
 		stateStore: defaultStateStore{},
@@ -147,6 +171,7 @@ func newCommit(opts Opts) (*commit, error) {
 		adapter:    opts.AdapterDispatcher,
 		achDir:     achDir,
 		statePath:  statePath,
+		toolRoot:   toolRoot,
 		killFn:     newDefaultKillFn(),
 	}
 
@@ -235,7 +260,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// so --dry-run remains a true read-only path.
 	if c.extractor != nil && !c.opts.DryRun {
 		for _, dt := range diffTargets {
-			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir)
+			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir, existingState)
 			if err != nil {
 				// adapter / extractor errors that already carry a
 				// CodedError envelope (e.g. exit.CollisionRefuse) flow
@@ -263,8 +288,16 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// cascade + atomic publish all live inside adapterDispatcherImpl;
 	// the orchestrator just calls Render once after the extraction
 	// loop completes.
+	var renderResult RenderResult
+	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
-		renderResult, err := c.adapter.Render(ctx, m, existingState, c.achDir)
+		// ADAPT-03: propagate the bearer credential to the adapter via
+		// ctx so RenderRuntime can embed it as the x-ach-key header.
+		// Without this the rendered MCP config carries an empty credential
+		// and the agent cannot authenticate to the forwarder. Credentials
+		// travel by context key only (never env/param) per adapter.go.
+		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
+		rr, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
@@ -279,6 +312,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 				Wrapped: err,
 			}
 		}
+		renderResult = rr
+		adapterRan = true
 		result.FilesWritten += len(renderResult.WrittenFiles)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
 	}
@@ -296,7 +331,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// a safe no-op until the composition follow-up plan lands.
 		// Sync is wired so future composition automatically activates
 		// STATE-05 inverse-merge.
-		stats, err := syncFn(existingState, existingState, c.achDir, SyncOptions{
+		stats, err := syncFn(existingState, existingState, c.achDir, c.toolRoot, SyncOptions{
 			Force:  c.opts.Force,
 			Stderr: c.opts.Stderr,
 		})
@@ -316,7 +351,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 
 	// Step 12: atomic state write.
-	if err := c.step12WriteState(existingState, m); err != nil {
+	if err := c.step12WriteState(existingState, m, renderResult, adapterRan, result.PlatformID); err != nil {
 		return result, err
 	}
 	c.maybeKill(12)
@@ -489,11 +524,16 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 		return nil, 0
 	}
 	pruned := 0
-	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, pruned)
-	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, pruned)
-	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, pruned)
-	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, pruned)
-	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, pruned)
+	// Content buckets are workspace-relative (resolved against the workspace
+	// root = achDir's parent). Adapter files live under toolRoot — the same
+	// workspace root in project scope, but $HOME under --global (where achDir
+	// is $HOME/.ach/<env>, so achDir/.. would wrongly point at $HOME/.ach).
+	wsRoot := filepath.Join(c.achDir, "..")
+	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, wsRoot, pruned)
+	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, wsRoot, pruned)
+	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, wsRoot, pruned)
+	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, wsRoot, pruned)
+	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, c.toolRoot, pruned)
 	return loaded, pruned
 }
 
@@ -501,7 +541,7 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 // entries whose Target stat'd successfully. fs.ErrNotExist is the
 // silent-drop case; any other error keeps the entry (let the next
 // stage error appropriately rather than masking a real I/O fault here).
-func (c *commit) pruneMissing(entries []state.FileEntry, pruned int) ([]state.FileEntry, int) {
+func (c *commit) pruneMissing(entries []state.FileEntry, base string, pruned int) ([]state.FileEntry, int) {
 	if len(entries) == 0 {
 		return entries, pruned
 	}
@@ -509,7 +549,7 @@ func (c *commit) pruneMissing(entries []state.FileEntry, pruned int) ([]state.Fi
 	for _, e := range entries {
 		target := e.Target
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(c.achDir, "..", target)
+			target = filepath.Join(base, target)
 		}
 		if _, err := os.Stat(target); err != nil && errors.Is(err, fs.ErrNotExist) {
 			pruned++
@@ -613,12 +653,16 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 // (= state.WriteAtomic, STATE-07 four-step contract). Skipped when
 // opts.DryRun is set so a `hydrate --dry-run` is genuinely read-only.
 //
-// W1 writes a minimal state.File derived from the prior state +
-// the fresh manifest's environment. Once W2/W3 land their concrete
-// Extractor + AdapterDispatcher, the FileEntries flow back from
-// ExtractResult.WrittenFiles / RenderResult.WrittenFiles and step 12
-// composes them into the final state.File before the atomic write.
-func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) error {
+// Content buckets (Prompts/Plugins/Artifacts/RuntimeFiles) are carried
+// forward from the prior state (their composition from ExtractResult is a
+// separate follow-up; see issue tracker / W6-01 notes). The ADAPTER section,
+// however, IS composed from the fresh render (W6-01): recording the adapter
+// FileEntries is what gives the next hydrate a prior state for the §8.4
+// per-key drift truth table — without it findAdapterEntry always misses and
+// drift / auto-claim (sc3 / sc4) cannot fire. The adapter section is replaced
+// only when the adapter actually ran this hydrate; a context-only run leaves
+// the prior adapter section untouched (spec §8.2 field rules).
+func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string) error {
 	if c.opts.DryRun {
 		return nil
 	}
@@ -629,7 +673,7 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		Environment:   c.opts.Environment,
 	}
 	if existing != nil {
-		// Preserve everything W2/W3 haven't yet been called to update.
+		// Preserve everything not (re)composed this hydrate.
 		next.Deployment = existing.Deployment
 		next.Prompts = existing.Prompts
 		next.Plugins = existing.Plugins
@@ -641,6 +685,13 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		next.Environment = m.Environment
 	}
 
+	// Compose the adapter section from the fresh render. publishRuntimeFile
+	// returns its FileWrite even on a no-op skip, so render.WrittenFiles is the
+	// complete set of adapter files this hydrate is responsible for.
+	if adapterRan {
+		next.Adapter = adapterSectionFromRender(platformID, render)
+	}
+
 	if err := c.stateStore.Save(c.statePath, next); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -649,6 +700,26 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest) er
 		}
 	}
 	return nil
+}
+
+// adapterSectionFromRender projects a RenderResult into the
+// state.AdapterSection recorded at step 12 — the prior state the next
+// hydrate's §8.4 per-key drift check reads via findAdapterEntry. Each
+// FileWrite maps 1:1 to a state.FileEntry (Target/Hash/SourceHash carry the
+// canonical hash of OUR contributed subtree; Merge/Keys drive the inverse-
+// merge + per-key drift comparison).
+func adapterSectionFromRender(platformID string, render RenderResult) state.AdapterSection {
+	sec := state.AdapterSection{ID: platformID}
+	for _, fw := range render.WrittenFiles {
+		sec.Files = append(sec.Files, state.FileEntry{
+			Target:     fw.Target,
+			Hash:       fw.Hash,
+			SourceHash: fw.SourceHash,
+			Merge:      fw.Merge,
+			Keys:       fw.Keys,
+		})
+	}
+	return sec
 }
 
 // step13Cleanup — final state.SweepTmp(achDir). Errors swallowed per

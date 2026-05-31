@@ -258,13 +258,17 @@ func pfTeardownFixture(t *testing.T) {
 }
 
 // pfClearPriorState ensures the test starts from a known-clean state by
-// (a) deleting any prior Plugin CR with the same name, (b) clearing the
-// external_refs projection row so within-interval / 304 fast-paths
-// can't short-circuit the filter on re-runs.
+// deleting any prior Plugin CR with the same name. The --wait=true blocks
+// until the §10.3 finalizer drain completes, which hard-deletes the
+// external_refs projection row (plugin_controller.go reconcileDeletion →
+// achdb.DeleteExternalRef) — so the within-interval / 304 fast-paths can't
+// short-circuit the filter on re-runs without a separate SQL DELETE. The
+// operator is gated Ready by cluster.sh verify_all before any test runs, so
+// the cascade is reliable; an orphaned row could only survive an
+// operator-down delete, which the e2e harness rules out.
 func pfClearPriorState(t *testing.T, ctx context.Context) {
 	t.Helper()
 	_ = pfKubectlRun(ctx, "-n", pfNamespace, "delete", "plugin", pfPluginName, "--ignore-not-found", "--wait=true")
-	_, _, _ = psqlExec(ctx, fmt.Sprintf("DELETE FROM external_refs WHERE kind='plugin' AND name='%s';", pfPluginName))
 }
 
 // pfApplyPluginCR applies a Plugin CR pointing at the in-cluster
