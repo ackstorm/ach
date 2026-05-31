@@ -91,17 +91,20 @@ const (
 // const blocks (mcpJSONPath / configTOMLPath / settingsJSONPath /
 // configJSONPath). Tests cross-check the on-disk file at <output>/<path>.
 const (
-	phase7ClaudeCodeRuntimePath = ".claude/.mcp.json"
+	phase7ClaudeCodeRuntimePath = ".claude/settings.json"
 	phase7CodexRuntimePath      = ".codex/config.toml"
 	phase7GeminiRuntimePath     = ".gemini/settings.json"
 	phase7OpencodeRuntimePath   = ".opencode/opencode.json"
 )
 
-// phase7StatePath returns the on-disk path of the engine's state.json
-// under <output>/.ach/<environment>/state.json. Cross-checked against
-// internal/cli/state.ResolvePath conventions (workspace mode).
+// phase7StatePath returns the on-disk path of the engine's state.json.
+// WORKSPACE scope (these tests pass --output, never --global) is
+// <output>/.ach/state.json — NOT env-namespaced (only --global namespaces by
+// environment). Matches internal/cli/state.ResolvePath. The environment param
+// is retained for call-site symmetry but unused in workspace scope.
 func phase7StatePath(output, environment string) string {
-	return filepath.Join(output, ".ach", environment, "state.json")
+	_ = environment
+	return filepath.Join(output, ".ach", "state.json")
 }
 
 // phase7AchTmpDir returns the on-disk <ach-dir>/tmp/ path the engine
@@ -110,7 +113,8 @@ func phase7StatePath(output, environment string) string {
 // SIGKILL there is at least one orphan staging dir here, and after a
 // clean re-run there are none.
 func phase7AchTmpDir(output, environment string) string {
-	return filepath.Join(output, ".ach", environment, "tmp")
+	_ = environment
+	return filepath.Join(output, ".ach", "tmp")
 }
 
 // TestPhase7CLIEngine is the single top-level umbrella for the Phase 7
@@ -130,6 +134,10 @@ func TestPhase7CLIEngine(t *testing.T) {
 	t.Run("sc1_gemini_ek", testPhase7Sc1GeminiEk)
 	t.Run("sc1_opencode_pk", testPhase7Sc1OpencodePk)
 	t.Run("sc1_opencode_ek", testPhase7Sc1OpencodeEk)
+
+	// W6-01 surgical-merge proof: hydrate must add ACH's MCP servers into the
+	// tool's native config without clobbering the user's pre-existing entries.
+	t.Run("sc1_claudecode_surgical_preserve", testPhase7Sc1ClaudeCodeSurgicalPreserve)
 
 	// SC#2 (deterministic SIGKILL seam — §6.7 crash recovery).
 	t.Run("sc2_commit_sequence_sigkill", testPhase7Sc2SigkillRecovery)
@@ -375,6 +383,91 @@ func testPhase7Sc1OpencodePk(t *testing.T) {
 }
 func testPhase7Sc1OpencodeEk(t *testing.T) {
 	phase7Sc1RunEk(t, phase7PlatformOpencode, phase7OpencodeRuntimePath)
+}
+
+// testPhase7Sc1ClaudeCodeSurgicalPreserve is the W6-01 surgical-merge proof:
+// a hydrate must MERGE ACH's MCP servers into the tool's native config while
+// preserving the user's pre-existing servers + unrelated settings. Pre-seed
+// .claude/settings.json with a user MCP server and a permissions block,
+// hydrate, then assert the user keys survive verbatim, ACH added >=1 server,
+// and an ACH-contributed server carries a populated x-ach-key bearer.
+//
+// (Assertion shapes track the demo environment's MCP fixtures; if the demo
+// MCP set changes, the >=1-ACH-server / x-ach-key checks may need tuning.)
+func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
+	t.Helper()
+	phase7SuiteGuard(t)
+	pk := phase7AcquirePk(t)
+	baseURL := phase7BaseURL()
+	xdg := phase7SeedXdgConfig(t, baseURL, pk)
+	phase7DemoEnvironmentReady(t)
+	output := phase7Workspace(t)
+
+	// Pre-seed the user's native config: a personal MCP server + a permissions
+	// block ACH must never touch.
+	target := filepath.Join(output, phase7ClaudeCodeRuntimePath)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("surgical-preserve seed mkdir: %v", err)
+	}
+	seed := []byte(`{
+  "mcpServers": {
+    "user-personal": {"command": "my-server", "args": ["--port", "9999"]}
+  },
+  "permissions": {"allow": ["Read", "Edit"]}
+}`)
+	if err := os.WriteFile(target, seed, 0o600); err != nil {
+		t.Fatalf("surgical-preserve seed write: %v", err)
+	}
+
+	stdout, stderr, err := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode, "--output", output,
+	)
+	code, runErr := phase7StripExitErr(err)
+	if runErr != nil {
+		t.Fatalf("surgical-preserve hydrate: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+	}
+	if code != 0 {
+		t.Fatalf("surgical-preserve hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+
+	raw, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("surgical-preserve read merged config: %v", rerr)
+	}
+	var doc struct {
+		McpServers  map[string]json.RawMessage `json:"mcpServers"`
+		Permissions json.RawMessage            `json:"permissions"`
+	}
+	if jerr := json.Unmarshal(raw, &doc); jerr != nil {
+		t.Fatalf("surgical-preserve merged config not valid JSON: %v\n%s", jerr, raw)
+	}
+	if _, ok := doc.McpServers["user-personal"]; !ok {
+		t.Errorf("surgical-merge clobbered user MCP server 'user-personal'\nmerged=%s", raw)
+	}
+	if len(doc.Permissions) == 0 {
+		t.Errorf("surgical-merge dropped the user 'permissions' block\nmerged=%s", raw)
+	}
+	if len(doc.McpServers) < 2 {
+		t.Errorf("expected ACH server(s) merged alongside the user's; got %d total\nmerged=%s",
+			len(doc.McpServers), raw)
+	}
+	foundKey := false
+	for name, rawSrv := range doc.McpServers {
+		if name == "user-personal" {
+			continue
+		}
+		var srv struct {
+			Headers map[string]string `json:"headers"`
+		}
+		_ = json.Unmarshal(rawSrv, &srv)
+		if srv.Headers["x-ach-key"] != "" {
+			foundKey = true
+		}
+	}
+	if !foundKey {
+		t.Errorf("no ACH-contributed MCP server carries a populated x-ach-key\nmerged=%s", raw)
+	}
 }
 
 // -----------------------------------------------------------------------
