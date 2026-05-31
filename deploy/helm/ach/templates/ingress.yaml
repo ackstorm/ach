@@ -1,15 +1,14 @@
 {{- if .Values.ingress.enabled }}
-# Optional public Ingress for the two user-facing HTTP surfaces:
-#   platform-api    (/platform/* REST + Dex SSO flow)  -> ach-platform-api:80
-#   content-service (/content/*  artifact download)     -> ach-content-service:8082
+# Optional public Ingress. With the ach-gateway edge proxy in front of all
+# HTTP surfaces, this Ingress routes a single backend -> ach-gateway:80.
+# The gateway owns path routing (/platform, /content, /v1, /gemini, /mcp,
+# /a2a, /.well-known).
 #
-# SECURITY: both Services expose an UNAUTHENTICATED /metrics on the SAME
-# port as their traffic listener (cmd/ach/cmd/platform_api.go,
-# internal/contentservice). This Ingress routes ONLY the specific path
-# prefixes in .Values.ingress.paths — it MUST NOT carry a "/" or "/metrics"
-# rule, or the metrics endpoint would be publicly reachable. The dev
-# ach-local-gateway exposes /metrics/<svc> for the e2e harness; it is NOT a
-# template for this prod route (see references/local-testing-gateway.md).
+# SECURITY: the gateway has NO /metrics route and NO "/" catch-all that
+# could reach a service's unauthenticated /metrics — so a single "/" rule
+# here is safe (unmatched paths 404 at the gateway). /metrics stays an
+# in-cluster scrape concern; do NOT add a per-service backend that bypasses
+# the gateway.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -33,15 +32,13 @@ spec:
   rules:
     - http:
         paths:
-          {{- range .Values.ingress.paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType | default "Prefix" }}
+          - path: {{ .Values.ingress.path | default "/" }}
+            pathType: {{ .Values.ingress.pathType | default "Prefix" }}
             backend:
               service:
-                name: {{ .service }}
+                name: {{ .Values.ingress.service | default "ach-gateway" }}
                 port:
-                  number: {{ .port }}
-          {{- end }}
+                  number: {{ .Values.ingress.port | default 80 }}
       {{- with .Values.ingress.host }}
       host: {{ . | quote }}
       {{- end }}

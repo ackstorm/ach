@@ -158,41 +158,26 @@ redis:
 toolhive:
   enabled: true
 
-# ingress: optional public Ingress for the user-facing HTTP surfaces —
-# platform-api (/platform/* + Dex SSO) and content-service (/content/*).
-#
-# DISABLED by default: every cluster's ingress controller, hostname, and TLS
-# story differ, so this is opt-in per environment. The two knobs you almost
-# always set are `host` and `className`.
-#
-# ⚠ /metrics is INTENTIONALLY never routed here. Both Services serve an
-# unauthenticated /metrics on their traffic port (see the metrics: block
-# below) — only the explicit prefixes in `paths` are exposed. Do NOT add a
-# "/" or "/metrics" entry to `paths`.
 ingress:
   enabled: false
   # className -> spec.ingressClassName. Empty = the cluster's default
   # IngressClass (the one annotated ingressclass.kubernetes.io/is-default-class).
   className: ""
-  # host: public hostname for both routes. Empty = a catch-all rule (no host
-  # match — every Host header hits these paths). Set your domain in production.
+  # host: public hostname. Empty = a catch-all rule (no host match). Set
+  # your domain in production.
   host: ""
   # annotations on the Ingress object (e.g. cert-manager.io/cluster-issuer,
   # nginx.ingress.kubernetes.io/* tuning).
   annotations: {}
   # tls: passed through verbatim to spec.tls — list of {hosts: [...], secretName: ...}.
   tls: []
-  # paths: URL prefix -> Service backend. /metrics is deliberately absent and
-  # MUST stay absent (see warning above).
-  paths:
-    - path: /platform
-      pathType: Prefix
-      service: ach-platform-api
-      port: 80
-    - path: /content
-      pathType: Prefix
-      service: ach-content-service
-      port: 8082
+  # The Ingress sends ONE backend to the ach-gateway Service, which owns
+  # all path routing. Override path/service/port only for unusual edge
+  # topologies. /metrics is NOT routable through the gateway by design.
+  path: /
+  pathType: Prefix
+  service: ach-gateway
+  port: 80
 
 # metrics: Prometheus observability topology — Phase 5 OBS-03..06.
 #
