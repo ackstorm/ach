@@ -254,48 +254,70 @@ func TestRedisCachedTeamsResolver_UnreachablePropagates(t *testing.T) {
 	}
 }
 
-// T10 — Singleflight dedup. N concurrent Resolve calls for the same
-// email collapse to exactly ONE base call. Robust synchronization
-// strategy mirrors TestCachedResolverSingleFlight:
+// T10 — Singleflight dedup. N concurrent Resolve calls for the same email
+// collapse to exactly ONE base call.
 //
-//  1. Spawn N goroutines; each atomically signals "I'm about to call
-//     Resolve" via the `entered` counter BEFORE calling r.Resolve.
-//  2. Main spins on runtime.Gosched until entered == N.
-//  3. Brief settle so any goroutine between entered.Add and the
-//     singleflight enqueue inside r.Resolve actually enqueues.
-//  4. close(leaderHold) releases the leader; followers join the
-//     in-flight result.
+// Deterministic LEADER-FIRST synchronization (the prior `entered`-counter +
+// fixed-sleep variant flaked under -race: it counted goroutines BEFORE their
+// cache-miss GET, so the in-flight singleflight group only began part-way
+// through the settle window and slow stragglers reached sf.Do AFTER the leader
+// was released — forming extra groups, e.g. "got 6"):
+//
+//  1. Start ONE leader Resolve and block inside the base call; signal
+//     leaderEntered. The singleflight group is now GUARANTEED in-flight and
+//     stays in-flight (leader parked, cache unpopulated) until we release it.
+//  2. Only THEN launch the N-1 followers. With the group already in-flight,
+//     every follower's sf.Do(email) JOINS the leader — none can start a new
+//     base call. Wait for all follower goroutines to be scheduled (arrived).
+//  3. Settle so the (cache-missing) GET + sf.Do enqueue completes for every
+//     follower while the group is still in-flight — they all join.
+//  4. Release the leader; followers share its result. Exactly 1 base call.
 func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 	const N = 50
 	leaderHold := make(chan struct{})
+	leaderEntered := make(chan struct{})
+	var once sync.Once
 	base := &fakeTeamsBase{respond: func(string) ([]string, error) {
+		once.Do(func() { close(leaderEntered) })
 		<-leaderHold
 		return []string{"t-sf"}, nil
 	}}
 	r, _, _ := setupCachedTeams(t, base)
 	email := "u@example.com"
 
-	var entered atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
+
+	// 1. Leader-first: block inside the base call → group is in-flight.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = r.Resolve(context.Background(), email)
+	}()
+	<-leaderEntered
+
+	// 2. Launch followers now that the group is guaranteed in-flight.
+	var arrived atomic.Int32
+	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			entered.Add(1)
+			arrived.Add(1)
 			_, _ = r.Resolve(context.Background(), email)
 		}()
 	}
-	for entered.Load() < N {
+	for arrived.Load() < N-1 {
 		runtime.Gosched()
 	}
-	// Brief settle covers the tiny gap between entered.Add and the
-	// singleflight enqueue inside r.Resolve.
+
+	// 3. Settle so every follower completes its cache-miss GET and blocks in
+	//    sf.Do (joining the in-flight leader) before we release it.
 	time.Sleep(100 * time.Millisecond)
 
+	// 4. Release; all followers share the single in-flight result.
 	close(leaderHold)
 	wg.Wait()
-	if base.callCount() != 1 {
-		t.Fatalf("expected exactly 1 base call (single-flight), got %d", base.callCount())
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("expected exactly 1 base call (single-flight), got %d", got)
 	}
 }
 
