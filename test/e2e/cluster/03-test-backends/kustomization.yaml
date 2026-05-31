@@ -8,8 +8,22 @@ kind: Kustomization
 # backend behind demo-agent. All are test-only scaffolding kept OUT of the
 # user-facing Helm chart. Applied by scripts/cluster.sh (reconcile_fixtures)
 # via `kubectl apply -k` AFTER reconcile_ach helm-installs the ach Services.
+# All stage-03 backends live in ach-system; stamping it here lets the
+# generated nginx ConfigMap (below) land there too.
+namespace: ach-system
+
 resources:
   - ach-local-gateway.yaml
   - ach-mcp-echo.yaml
   - ach-mock-model.yaml
   - ach-mock-a2a.yaml
+
+# nginx shim config as a generated ConfigMap. The default content-hash name
+# suffix is the point: edit files/nginx.conf -> new CM name -> kustomize
+# rewrites ach-local-gateway's volume ref -> the nginx pod ROLLS on
+# `kubectl apply -k` (cluster-sync). An inline/static ConfigMap would update
+# in place WITHOUT restarting nginx, leaving it serving stale config.
+configMapGenerator:
+  - name: ach-local-gateway-config
+    files:
+      - nginx.conf=files/nginx.conf
