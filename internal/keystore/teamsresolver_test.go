@@ -264,14 +264,14 @@ func TestRedisCachedTeamsResolver_UnreachablePropagates(t *testing.T) {
 //     invariant WHILE the leader's entry is still in-flight, where any
 //     follower that reaches sf.Do is guaranteed to join.
 //
-//  1. Spawn exactly ONE leader; the fake signals leaderInFlight then
+//     1. Spawn exactly ONE leader; the fake signals leaderInFlight then
 //     blocks on leaderHold (removes the leader/follower ambiguity that
 //     produced got>2).
-//  2. Wait for leaderInFlight — base callCount is provably 1.
-//  3. Spawn N-1 followers; wait until all are launched, then a generous
+//     2. Wait for leaderInFlight — base callCount is provably 1.
+//     3. Spawn N-1 followers; wait until all are launched, then a generous
 //     settle so each clears the cache-GET prelude and parks in sf.Do.
-//  4. Assert callCount==1 while the leader is held.
-//  5. Release; after wg.Wait, re-assert callCount==1.
+//     4. Assert callCount==1 while the leader is held.
+//     5. Release; after wg.Wait, re-assert callCount==1.
 func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 	const N = 50
 	leaderHold := make(chan struct{})
