@@ -290,6 +290,22 @@ Relative-path writes silently hit a sibling repo (`ach-old/`,
 unchanged. ✅ Use absolute paths; verify with `pwd && git remote -v` (expect
 `ackstorm/ach`).
 
+### ❌ Editor save vs `ach-cli hydrate` runtime-config — user edit silently lost
+`ach-cli hydrate` reads the adapter runtime-config file (`.claude/settings.json`,
+`.gemini/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`),
+deep-merges ACH's keys, and atomic-renames the result back. The `<achDir>/lock`
+flock excludes other ach-cli processes — NOT other tools. A concurrent editor
+save (auto-format on file change, manual write) between hydrate's read and
+hydrate's rename overwrites the merge with the user's pre-merge edit; on the
+NEXT hydrate ACH re-merges its keys back in, so the engine self-heals — but the
+user's edit made during the hydrate window is silently lost.
+
+✅ Avoid saving the runtime-config files while `ach-cli hydrate` is running. If
+you need to edit the config concurrently, run hydrate to completion first
+(`echo $?` == 0), THEN edit. There's no telemetry for the race; the user-visible
+symptom is "my edit reverted." Documented as a known v1 trade-off (security
+2.4 — accept-disposition); a future mtime-recheck would close it.
+
 ## Repository-specific patterns
 
 - **Single-binary cobra layout**: each long-running mode is a subcommand under

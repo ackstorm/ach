@@ -482,6 +482,16 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	// these per-artifact content GETs rely on the header. effectiveEnv is
 	// guaranteed non-empty for pk_ by the D-12 gate in runHydrate.
 	if prefix, perr := keys.ClassifyBearer(bearer); perr == nil && prefix == keys.PrefixPk {
+		// Security 2.10 (defense-in-depth): reject CRLF / NUL / control bytes
+		// in the env name before assigning to a header value. The Go stdlib's
+		// http.Transport already rejects these at write time, but failing
+		// early gives a clean error envelope instead of a transport panic.
+		if err := validateEnvHeaderValue(effectiveEnv); err != nil {
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("invalid environment %q: %v", effectiveEnv, err),
+			}
+		}
 		hc.ExtraHeaders = http.Header{"x-ach-environment": {effectiveEnv}}
 	}
 
@@ -738,6 +748,28 @@ func asHydrateErr(err error, target **httpclient.ServerError) bool {
 		unwrap = u.Unwrap()
 	}
 	return false
+}
+
+// validateEnvHeaderValue rejects characters that have no business in a
+// well-formed environment name and would compromise the x-ach-environment
+// header (CRLF injection, header smuggling). Allowed: printable ASCII
+// excluding control bytes. The platform-api enforces the canonical
+// environment regex; this is a defense-in-depth gate so a buggy local
+// effectiveEnv computation cannot smuggle a CR/LF.
+func validateEnvHeaderValue(env string) error {
+	if env == "" {
+		return fmt.Errorf("empty")
+	}
+	for i := 0; i < len(env); i++ {
+		c := env[i]
+		if c == '\r' || c == '\n' || c == 0 {
+			return fmt.Errorf("control byte 0x%02x at position %d", c, i)
+		}
+		if c < 0x20 || c == 0x7f {
+			return fmt.Errorf("control byte 0x%02x at position %d", c, i)
+		}
+	}
+	return nil
 }
 
 func init() {

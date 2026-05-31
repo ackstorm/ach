@@ -470,6 +470,16 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 // user's pre-existing keys are preserved; ACH's keys upsert same-named
 // entries. Returns the merged bytes (for hashing/state if the caller wants
 // them). This is the forward counterpart to syncDeep{JSON,TOML}'s removal.
+//
+// Concurrency note (security 2.4 — accept-disposition): the read-merge-write
+// sequence is NOT atomic against external writers. The <achDir>/lock flock
+// excludes other ach-cli processes, but a concurrent editor save on the
+// runtime-config file (e.g. claude-code's auto-format on .claude/settings.json)
+// between our read and our atomic-rename will be silently clobbered. Pragmatic
+// trade-off for v1: users should avoid editing the target while hydrate is
+// running. A defense-in-depth mtime-recheck would catch the race but is
+// deferred until a real-world report. See CLAUDE.md "Common failure modes" for
+// the symptom.
 func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
 	switch strings.ToLower(filepath.Ext(abs)) {
 	case extJSON:

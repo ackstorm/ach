@@ -741,3 +741,38 @@ func withCleanHomeEngine(t *testing.T) {
 	scratch := t.TempDir()
 	t.Setenv("HOME", scratch)
 }
+
+// TestValidateEnvHeaderValue exercises security 2.10 — CRLF / NUL /
+// control-byte rejection on the x-ach-environment header value.
+func TestValidateEnvHeaderValue(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "empty", input: "", wantErr: true},
+		{name: "valid_simple", input: "demo", wantErr: false},
+		{name: "valid_with_dash", input: "demo-prod", wantErr: false},
+		{name: "valid_with_underscore", input: "demo_env", wantErr: false},
+		{name: "crlf_injection", input: "demo\r\nX-Injected: yes", wantErr: true},
+		{name: "lf_only", input: "demo\nfoo", wantErr: true},
+		{name: "cr_only", input: "demo\rfoo", wantErr: true},
+		{name: "nul_byte", input: "demo\x00foo", wantErr: true},
+		{name: "tab", input: "demo\tfoo", wantErr: true},
+		{name: "delete_byte", input: "demo\x7ffoo", wantErr: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateEnvHeaderValue(tc.input)
+			if tc.wantErr && err == nil {
+				t.Fatalf("input %q: want error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("input %q: want nil, got %v", tc.input, err)
+			}
+		})
+	}
+}
