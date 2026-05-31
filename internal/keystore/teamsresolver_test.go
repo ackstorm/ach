@@ -256,46 +256,74 @@ func TestRedisCachedTeamsResolver_UnreachablePropagates(t *testing.T) {
 
 // T10 — Singleflight dedup. N concurrent Resolve calls for the same
 // email collapse to exactly ONE base call. Robust synchronization
-// strategy mirrors TestCachedResolverSingleFlight:
+// strategy mirrors TestCachedResolverSingleFlight (the prior spin+sleep
+// was flaky under -race -shuffle):
 //
-//  1. Spawn N goroutines; each atomically signals "I'm about to call
-//     Resolve" via the `entered` counter BEFORE calling r.Resolve.
-//  2. Main spins on runtime.Gosched until entered == N.
-//  3. Brief settle so any goroutine between entered.Add and the
-//     singleflight enqueue inside r.Resolve actually enqueues.
-//  4. close(leaderHold) releases the leader; followers join the
-//     in-flight result.
+//   - A singleflight JOIN is unobservable from our code (followers block
+//     inside singleflight internals), so we assert the coalescing
+//     invariant WHILE the leader's entry is still in-flight, where any
+//     follower that reaches sf.Do is guaranteed to join.
+//
+//  1. Spawn exactly ONE leader; the fake signals leaderInFlight then
+//     blocks on leaderHold (removes the leader/follower ambiguity that
+//     produced got>2).
+//  2. Wait for leaderInFlight — base callCount is provably 1.
+//  3. Spawn N-1 followers; wait until all are launched, then a generous
+//     settle so each clears the cache-GET prelude and parks in sf.Do.
+//  4. Assert callCount==1 while the leader is held.
+//  5. Release; after wg.Wait, re-assert callCount==1.
 func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 	const N = 50
 	leaderHold := make(chan struct{})
+	leaderInFlight := make(chan struct{})
+	var inFlightOnce sync.Once
 	base := &fakeTeamsBase{respond: func(string) ([]string, error) {
+		inFlightOnce.Do(func() { close(leaderInFlight) })
 		<-leaderHold
 		return []string{"t-sf"}, nil
 	}}
 	r, _, _ := setupCachedTeams(t, base)
 	email := "u@example.com"
 
-	var entered atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
+
+	// 1+2. Leader: spawn, then wait until it provably holds the sf entry.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = r.Resolve(context.Background(), email)
+	}()
+	<-leaderInFlight
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("after leader in-flight: expected exactly 1 base call, got %d", got)
+	}
+
+	// 3. Followers: every concurrent caller on the same key must join.
+	var launched atomic.Int32
+	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			entered.Add(1)
+			launched.Add(1)
 			_, _ = r.Resolve(context.Background(), email)
 		}()
 	}
-	for entered.Load() < N {
+	for launched.Load() < N-1 {
 		runtime.Gosched()
 	}
-	// Brief settle covers the tiny gap between entered.Add and the
-	// singleflight enqueue inside r.Resolve.
-	time.Sleep(100 * time.Millisecond)
+	// Generous settle: followers clear the prelude and park in sf.Do.
+	time.Sleep(2 * time.Second)
 
+	// 4. Invariant holds while the leader is still in-flight.
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("while leader held: expected exactly 1 base call (single-flight), got %d", got)
+	}
+
+	// 5. Release and confirm nothing started a late second call.
 	close(leaderHold)
 	wg.Wait()
-	if base.callCount() != 1 {
-		t.Fatalf("expected exactly 1 base call (single-flight), got %d", base.callCount())
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("after release: expected exactly 1 base call (single-flight), got %d", got)
 	}
 }
 
