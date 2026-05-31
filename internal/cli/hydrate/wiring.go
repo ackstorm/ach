@@ -252,6 +252,9 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 type adapterDispatcherImpl struct {
 	platformID string
 	force      bool
+	// global marks --global scope so Render can remap adapters whose GLOBAL
+	// config path differs from the simple $HOME-join (currently opencode).
+	global bool
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -286,6 +289,9 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 
 	var result RenderResult
 	for _, fw := range fws {
+		if d.global {
+			fw.Path = remapGlobalPath(d.platformID, fw.Path)
+		}
 		entry, err := d.publishRuntimeFile(fw, s, toolRoot)
 		if err != nil {
 			return RenderResult{}, err
@@ -294,6 +300,21 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	}
 
 	return result, nil
+}
+
+// remapGlobalPath adjusts an adapter's workspace-relative FileWrite path for
+// --global scope where the tool's GLOBAL config location differs from the
+// simple $HOME-join. OpenCode reads its global config from XDG
+// ~/.config/opencode/opencode.json — NOT ~/.opencode/opencode.json (the
+// latter is the PROJECT path). The other three adapters' relative paths
+// (.claude/, .codex/, .gemini/) are correct under $HOME as-is, so they pass
+// through unchanged. Kept in the orchestrator (dispatcher) rather than the
+// adapter so RenderRuntime stays scope-agnostic.
+func remapGlobalPath(platformID, path string) string {
+	if platformID == "opencode" && path == ".opencode/opencode.json" {
+		return ".config/opencode/opencode.json"
+	}
+	return path
 }
 
 // publishRuntimeFile writes one adapter runtime-config FileWrite via
@@ -1017,6 +1038,7 @@ func NewWiring(
 	limits extract.Limits,
 	allowSymlinks bool,
 	force bool,
+	global bool,
 ) (Extractor, AdapterDispatcher) {
 	ext := &extractorImpl{
 		client:        client,
@@ -1026,6 +1048,7 @@ func NewWiring(
 	disp := &adapterDispatcherImpl{
 		platformID: platformID,
 		force:      force,
+		global:     global,
 	}
 	return ext, disp
 }

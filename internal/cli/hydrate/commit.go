@@ -524,11 +524,16 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 		return nil, 0
 	}
 	pruned := 0
-	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, pruned)
-	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, pruned)
-	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, pruned)
-	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, pruned)
-	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, pruned)
+	// Content buckets are workspace-relative (resolved against the workspace
+	// root = achDir's parent). Adapter files live under toolRoot — the same
+	// workspace root in project scope, but $HOME under --global (where achDir
+	// is $HOME/.ach/<env>, so achDir/.. would wrongly point at $HOME/.ach).
+	wsRoot := filepath.Join(c.achDir, "..")
+	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, wsRoot, pruned)
+	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, wsRoot, pruned)
+	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, wsRoot, pruned)
+	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, wsRoot, pruned)
+	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, c.toolRoot, pruned)
 	return loaded, pruned
 }
 
@@ -536,7 +541,7 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 // entries whose Target stat'd successfully. fs.ErrNotExist is the
 // silent-drop case; any other error keeps the entry (let the next
 // stage error appropriately rather than masking a real I/O fault here).
-func (c *commit) pruneMissing(entries []state.FileEntry, pruned int) ([]state.FileEntry, int) {
+func (c *commit) pruneMissing(entries []state.FileEntry, base string, pruned int) ([]state.FileEntry, int) {
 	if len(entries) == 0 {
 		return entries, pruned
 	}
@@ -544,7 +549,7 @@ func (c *commit) pruneMissing(entries []state.FileEntry, pruned int) ([]state.Fi
 	for _, e := range entries {
 		target := e.Target
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(c.achDir, "..", target)
+			target = filepath.Join(base, target)
 		}
 		if _, err := os.Stat(target); err != nil && errors.Is(err, fs.ErrNotExist) {
 			pruned++

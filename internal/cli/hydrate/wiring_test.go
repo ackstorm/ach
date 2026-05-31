@@ -51,7 +51,7 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	hc := &httpclient.Client{BaseURL: ts.URL, APIKey: "pk_test"}
-	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false)
+	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false)
 
 	ref := manifest.ContentRef{
 		ID:          "demo-prompt",
@@ -85,7 +85,7 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
 
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
@@ -120,7 +120,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
 
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
@@ -164,7 +164,7 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
 	m := dispMiniManifest()
 
 	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
@@ -211,7 +211,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	achDir := t.TempDir()
 	m := dispMiniManifest()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
 	first, err := disp.Render(context.Background(), m, nil, achDir, achDir)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
@@ -244,7 +244,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 
 	// --force → overwrite our key (edit gone).
-	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true)
+	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false)
 	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir); err != nil {
 		t.Fatalf("force re-render: %v", err)
 	}

@@ -488,7 +488,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	// NewWiring constructs the default Extractor + AdapterDispatcher;
 	// both are threaded into Opts so commit.run()'s steps 7-10 invoke
 	// real impls (07-W5-01 gap closure).
-	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force)
+	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force, in.global)
 
 	opts := hydrate.Opts{
 		Environment:       effectiveEnv,

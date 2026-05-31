@@ -73,7 +73,7 @@ func TestExtractorImpl_ReHydrate_NoOpAndReplace(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	hc := &httpclient.Client{BaseURL: ts.URL, APIKey: "pk_test"}
-	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false)
+	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false)
 	ref := manifest.ContentRef{
 		ID:          "caveman",
 		Name:        "caveman.tar.gz",

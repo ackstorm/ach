@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -221,6 +222,61 @@ func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
 		fe.SourceHash != "xxh3:deadbeef" || fe.Merge != "deep" ||
 		len(fe.Keys) != 1 || fe.Keys[0] != "mcpServers.demo-mcp-jwt" {
 		t.Errorf("composed adapter FileEntry = %+v; want the rendered file verbatim", fe)
+	}
+}
+
+// TestRemapGlobalPath covers the W6-01 --global path remap: opencode's
+// GLOBAL config is XDG ~/.config/opencode/opencode.json, not the project
+// ~/.opencode/opencode.json; the other adapters' paths pass through.
+func TestRemapGlobalPath(t *testing.T) {
+	cases := []struct{ platform, in, want string }{
+		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
+		{"opencode", ".opencode/plugins/foo/x.md", ".opencode/plugins/foo/x.md"}, // only opencode.json remaps
+		{"claude-code", ".claude/settings.json", ".claude/settings.json"},
+		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
+		{"codex", ".codex/config.toml", ".codex/config.toml"},
+	}
+	for _, tc := range cases {
+		if got := remapGlobalPath(tc.platform, tc.in); got != tc.want {
+			t.Errorf("remapGlobalPath(%q, %q) = %q, want %q", tc.platform, tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestStep4ReconcileVsDisk_AdapterResolvedViaToolRoot verifies that adapter
+// state entries are reconciled against toolRoot, NOT achDir/.. — the two
+// diverge under --global (achDir is $HOME/.ach/<env>, toolRoot is $HOME). An
+// adapter file present under toolRoot must NOT be pruned. (Under the prior
+// achDir/.. resolution this file would be looked up at the wrong path and
+// silently pruned.)
+func TestStep4ReconcileVsDisk_AdapterResolvedViaToolRoot(t *testing.T) {
+	home := t.TempDir()
+	achParent := t.TempDir() // distinct from home → mimics --global divergence
+
+	c := &commit{
+		achDir:   filepath.Join(achParent, ".ach", "demo"),
+		toolRoot: home,
+	}
+	cfgDir := filepath.Join(home, ".config", "opencode")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "opencode.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := &state.File{
+		Adapter: state.AdapterSection{
+			ID:    "opencode",
+			Files: []state.FileEntry{{Target: ".config/opencode/opencode.json", Hash: "xxh3:x"}},
+		},
+	}
+	got, pruned := c.step4ReconcileVsDisk(loaded)
+	if pruned != 0 {
+		t.Errorf("pruned = %d, want 0 (adapter file exists under toolRoot)", pruned)
+	}
+	if len(got.Adapter.Files) != 1 {
+		t.Errorf("Adapter.Files len = %d, want 1 (resolved via toolRoot, not achDir/..)", len(got.Adapter.Files))
 	}
 }
 
