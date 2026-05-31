@@ -117,6 +117,20 @@ forwarder:
   # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
 
+# gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
+# platform-api, content-service, and forwarder HTTP surfaces behind one
+# origin so the public Ingress targets a single Service. It performs no
+# auth and never routes /metrics or /dex (see internal/gateway). ClusterIP
+# by default; the public Ingress (ingress.enabled) points here.
+gateway:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["gateway"]
+  # extraEnv supplies optional overrides (e.g. ACH_GATEWAY_BIND_ADDRESS).
+  # POD_NAMESPACE is injected via the downward API in the template.
+  extraEnv: []
+
 # contentService: serves agent-rendered content (assets, snapshots).
 contentService:
   enabled: true

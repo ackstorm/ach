@@ -1,0 +1,97 @@
+{{- if .Values.gateway.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      serviceAccountName: ach-gateway
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.gateway.args | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ACH_GATEWAY_BIND_ADDRESS
+              value: ":8080"
+            {{- with .Values.gateway.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources: {{ toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+{{- end }}
