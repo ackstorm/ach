@@ -723,7 +723,7 @@ func TestRun_Step11Sync_InvokedWhenSyncOptSet(t *testing.T) {
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
 	var sawForce bool
-	syncFn = func(_, _ *state.File, _ string, opts SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, opts SyncOptions) (SyncStats, error) {
 		calls++
 		sawForce = opts.Force
 		return SyncStats{Pruned: 0, Preserved: 0}, nil
@@ -750,7 +750,7 @@ func TestRun_Step11Sync_NotInvokedWhenSyncOptUnset(t *testing.T) {
 	prevSync := syncFn
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
-	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
 		calls++
 		return SyncStats{}, nil
 	}
@@ -774,7 +774,7 @@ func TestRun_Step11Sync_NotInvokedUnderDryRun(t *testing.T) {
 	prevSync := syncFn
 	t.Cleanup(func() { syncFn = prevSync })
 	var calls int
-	syncFn = func(_, _ *state.File, _ string, _ SyncOptions) (SyncStats, error) {
+	syncFn = func(_, _ *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
 		calls++
 		return SyncStats{}, nil
 	}

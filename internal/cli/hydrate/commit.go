@@ -331,7 +331,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// a safe no-op until the composition follow-up plan lands.
 		// Sync is wired so future composition automatically activates
 		// STATE-05 inverse-merge.
-		stats, err := syncFn(existingState, existingState, c.achDir, SyncOptions{
+		stats, err := syncFn(existingState, existingState, c.achDir, c.toolRoot, SyncOptions{
 			Force:  c.opts.Force,
 			Stderr: c.opts.Stderr,
 		})

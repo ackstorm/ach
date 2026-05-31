@@ -735,10 +735,21 @@ type SyncStats struct {
 // deepest-first and call os.Remove — kernels return ENOTEMPTY for
 // non-empty dirs which we silently swallow. CLI NEVER recursively
 // deletes.
-func Sync(prev, newFile *state.File, achDir string, opts SyncOptions) (SyncStats, error) {
+//
+// Adapter.Files resolve against toolRoot (the tool's native config root —
+// workspace root in project scope, $HOME under --global, $XDG_CONFIG_HOME/...
+// for opencode global). The four content buckets resolve against achDir. The
+// caller MUST pass toolRoot even if it equals achDir; an empty toolRoot is
+// rejected by an assertion in walkEntriesTagged → falls back to achDir for
+// safety (defensive, since the orchestrator at commit.go:334 always supplies
+// a non-empty value).
+func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) (SyncStats, error) {
 	var stats SyncStats
 	if prev == nil {
 		return stats, nil
+	}
+	if toolRoot == "" {
+		toolRoot = achDir
 	}
 
 	// Build the set of Targets present in newFile so we can compute
@@ -755,16 +766,21 @@ func Sync(prev, newFile *state.File, achDir string, opts SyncOptions) (SyncStats
 		entry state.FileEntry
 		abs   string
 	}
-	prevEntries := walkEntries(prev)
+	prevEntries := walkEntriesTagged(prev)
 	dels := make([]del, 0, len(prevEntries))
 	parentDirs := map[string]struct{}{}
-	for _, e := range prevEntries {
+	for _, te := range prevEntries {
+		e := te.Entry
 		if _, ok := keep[e.Target]; ok {
 			continue
 		}
 		abs := e.Target
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(achDir, e.Target)
+			base := achDir
+			if te.IsAdapter {
+				base = toolRoot
+			}
+			abs = filepath.Join(base, e.Target)
 		}
 		dels = append(dels, del{entry: e, abs: abs})
 		parentDirs[filepath.Dir(abs)] = struct{}{}
@@ -1041,6 +1057,42 @@ func walkEntries(f *state.File) []state.FileEntry {
 	out = append(out, f.Artifacts...)
 	out = append(out, f.RuntimeFiles...)
 	out = append(out, f.Adapter.Files...)
+	return out
+}
+
+// taggedEntry preserves bucket provenance for Sync — Adapter.Files resolve
+// against toolRoot (the tool's native config root); the four content buckets
+// resolve against achDir. Lost when walkEntries flattens.
+type taggedEntry struct {
+	Entry     state.FileEntry
+	IsAdapter bool
+}
+
+// walkEntriesTagged is walkEntries with provenance retained so Sync can pick
+// the correct base path per bucket (F-02 / CR-02 follow-up). Adapter entries
+// flow through with IsAdapter=true; the four content buckets with false.
+func walkEntriesTagged(f *state.File) []taggedEntry {
+	if f == nil {
+		return nil
+	}
+	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) +
+		len(f.RuntimeFiles) + len(f.Adapter.Files)
+	out := make([]taggedEntry, 0, total)
+	for _, e := range f.Prompts {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Plugins {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Artifacts {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.RuntimeFiles {
+		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Adapter.Files {
+		out = append(out, taggedEntry{Entry: e, IsAdapter: true})
+	}
 	return out
 }
 

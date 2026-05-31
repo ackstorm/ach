@@ -331,7 +331,7 @@ func TestSync_DeepestFirst_Order(t *testing.T) {
 	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
 
 	var stderr bytes.Buffer
-	stats, err := hydrate.Sync(prev, newFile, achDir, hydrate.SyncOptions{Stderr: &stderr})
+	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestSync_LocalEdit_PreservesAndWarns(t *testing.T) {
 	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
 
 	var stderr bytes.Buffer
-	stats, err := hydrate.Sync(prev, newFile, achDir, hydrate.SyncOptions{Stderr: &stderr})
+	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
 
 	var stderr bytes.Buffer
-	if _, err := hydrate.Sync(prev, newFile, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
+	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 
@@ -475,7 +475,7 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 	}
 	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
 
-	if _, err := hydrate.Sync(prev, newFile, achDir, hydrate.SyncOptions{}); err != nil {
+	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	body, err := os.ReadFile(target)
@@ -513,7 +513,7 @@ func TestSync_Force_BypassesDriftWins(t *testing.T) {
 	}
 	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
 
-	stats, err := hydrate.Sync(prev, newFile, achDir, hydrate.SyncOptions{Force: true})
+	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Force: true})
 	if err != nil {
 		t.Fatalf("Sync --force: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestSync_Force_BypassesDriftWins(t *testing.T) {
 
 // TestSync_Nil_Prev returns zero stats without panic.
 func TestSync_Nil_Prev(t *testing.T) {
-	stats, err := hydrate.Sync(nil, nil, t.TempDir(), hydrate.SyncOptions{})
+	stats, err := hydrate.Sync(nil, nil, t.TempDir(), "", hydrate.SyncOptions{})
 	if err != nil {
 		t.Fatalf("Sync(nil): %v", err)
 	}
