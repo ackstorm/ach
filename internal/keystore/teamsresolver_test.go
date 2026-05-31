@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -296,22 +295,18 @@ func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 	<-leaderEntered
 
 	// 2. Launch followers now that the group is guaranteed in-flight.
-	var arrived atomic.Int32
 	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			arrived.Add(1)
 			_, _ = r.Resolve(context.Background(), email)
 		}()
 	}
-	for arrived.Load() < N-1 {
-		runtime.Gosched()
-	}
 
-	// 3. Settle so every follower completes its cache-miss GET and blocks in
-	//    sf.Do (joining the in-flight leader) before we release it.
-	time.Sleep(100 * time.Millisecond)
+	// 3. Deterministic barrier: wait until the held leader + all N-1 followers
+	//    are parked inside singleflight.Do (robust under any CPU contention;
+	//    a fixed-ms settle starves under -p=GOMAXPROCS -race).
+	waitInSingleflight(t, N)
 
 	// 4. Release; all followers share the single in-flight result.
 	close(leaderHold)

@@ -131,19 +131,41 @@ func TestCachedResolverHit(t *testing.T) {
 // Synchronization strategy (was: 50ms sleep, flaky under -p=GOMAXPROCS
 // parallel package pressure):
 //
-//  1. Spawn N goroutines; each atomically signals "I'm about to call
-//     Resolve" via the `entered` counter BEFORE calling r.Resolve.
-//  2. Main spins on runtime.Gosched until entered == N — that is, all
-//     N goroutines have been scheduled and are about to call r.Resolve
-//     (no longer depends on the scheduler giving every goroutine 50ms).
-//  3. Brief settle so any goroutine between `entered.Add` and the
-//     singleflight enqueue inside r.Resolve actually enqueues. This
-//     window is ~tens of nanoseconds; 100ms is overkill even under
-//     heavy CPU pressure.
-//  4. close(leaderHold) releases the leader; only then can the
-//     singleflight entry be cleared. By construction all followers
-//     have already enqueued, so they join the leader's call → exactly
-//     one inner Resolve.
+//  1. Leader-first: block ONE Resolve inside inner (group held in-flight).
+//  2. Launch the N-1 followers.
+//  3. waitInSingleflight blocks until all N goroutines are parked in
+//     singleflight.Do — deterministic under any CPU contention.
+//  4. Release the leader; followers join its call → exactly one inner Resolve.
+
+// waitInSingleflight blocks until at least n goroutines have a
+// golang.org/x/sync/singleflight frame on their stack (the held leader plus
+// its joined followers, all parked in Group.Do). Makes the single-flight
+// dedup tests DETERMINISTIC under -p=GOMAXPROCS -race CPU oversubscription,
+// where a fixed-ms settle starves and a straggler reaches Do after the leader
+// is released (a spurious extra call). Shared by the keystore single-flight
+// tests in this package.
+func waitInSingleflight(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	buf := make([]byte, 1<<20)
+	for {
+		m := runtime.Stack(buf, true)
+		count := 0
+		for _, blk := range strings.Split(string(buf[:m]), "\n\ngoroutine ") {
+			if strings.Contains(blk, "/sync/singleflight.") {
+				count++
+			}
+		}
+		if count >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout: %d/%d goroutines parked in singleflight", count, n)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func TestCachedResolverSingleFlight(t *testing.T) {
 	const N = 50
 	plaintext := "pk_cccccccccccccccccccccccccc"
@@ -171,22 +193,15 @@ func TestCachedResolverSingleFlight(t *testing.T) {
 	}()
 	<-leaderEntered
 
-	var entered atomic.Int32
 	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			entered.Add(1)
 			_, _ = r.Resolve(context.Background(), plaintext)
 		}()
 	}
-	// Wait until all followers are scheduled and about to call r.Resolve.
-	for entered.Load() < N-1 {
-		runtime.Gosched()
-	}
-	// Settle so every follower reaches singleflight.Do (joining the in-flight
-	// leader) before we release it.
-	time.Sleep(100 * time.Millisecond)
+	// Deterministic barrier: leader + all N-1 followers parked in singleflight.Do.
+	waitInSingleflight(t, N)
 
 	close(leaderHold)
 	wg.Wait()
