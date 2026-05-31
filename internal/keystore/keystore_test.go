@@ -128,56 +128,85 @@ func TestCachedResolverHit(t *testing.T) {
 // TestCachedResolverSingleFlight — N concurrent Resolve calls for the
 // same plaintext collapse to exactly ONE inner call.
 //
-// Synchronization strategy (was: 50ms sleep, flaky under -p=GOMAXPROCS
-// parallel package pressure):
+// Synchronization strategy (the prior "spin on entered==N, then sleep
+// 100ms" was flaky under -race -shuffle: got 2/5/18). Two facts drive
+// the redesign:
 //
-//  1. Spawn N goroutines; each atomically signals "I'm about to call
-//     Resolve" via the `entered` counter BEFORE calling r.Resolve.
-//  2. Main spins on runtime.Gosched until entered == N — that is, all
-//     N goroutines have been scheduled and are about to call r.Resolve
-//     (no longer depends on the scheduler giving every goroutine 50ms).
-//  3. Brief settle so any goroutine between `entered.Add` and the
-//     singleflight enqueue inside r.Resolve actually enqueues. This
-//     window is ~tens of nanoseconds; 100ms is overkill even under
-//     heavy CPU pressure.
-//  4. close(leaderHold) releases the leader; only then can the
-//     singleflight entry be cleared. By construction all followers
-//     have already enqueued, so they join the leader's call → exactly
-//     one inner Resolve.
+//   - A singleflight JOIN cannot be observed from our code: followers
+//     block inside the singleflight internals, never in the resolver or
+//     fake. So we cannot assert "all followers enqueued" directly.
+//   - But coalescing is GUARANTEED for any follower that reaches sf.Do
+//     while the leader's entry is still in-flight. So we keep the leader
+//     held and assert the invariant WHILE it is held.
+//
+// Steps:
+//  1. Spawn exactly ONE leader; the fake signals leaderInFlight (the
+//     singleflight entry now exists) then blocks on leaderHold. This
+//     removes the leader/follower ambiguity that produced got>2.
+//  2. Wait for leaderInFlight — callCount is now provably 1.
+//  3. Spawn N-1 followers; wait until every follower goroutine is
+//     launched, then a generous settle so each clears the credhash +
+//     Redis-GET prelude and parks inside sf.Do (joining the leader).
+//  4. Assert callCount==1 WHILE the leader is still held: no follower
+//     can have started a second inner call, because the entry is open.
+//  5. Release the leader; after wg.Wait, re-assert callCount==1.
+//
+// The settle in step 3 is the only timing element; sized at 2s it is
+// ~1000x the real prelude even under -race, and a wrong value can only
+// fail loud (a straggler becomes a 2nd leader → callCount>1), never
+// pass falsely.
 func TestCachedResolverSingleFlight(t *testing.T) {
 	const N = 50
 	plaintext := "pk_cccccccccccccccccccccccccc"
 	leaderHold := make(chan struct{})
+	leaderInFlight := make(chan struct{})
+	var inFlightOnce sync.Once
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
-		<-leaderHold // hold the leader until all followers have enqueued
+		inFlightOnce.Do(func() { close(leaderInFlight) })
+		<-leaderHold // hold the in-flight entry until followers have joined
 		return &KeyInfo{KeyID: "pkid_sf", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active"}, nil
 	}}
 	r, _, _ := setupCached(t, inner)
 
-	var entered atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
+
+	// 1+2. Leader: spawn, then wait until it provably holds the sf entry.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = r.Resolve(context.Background(), plaintext)
+	}()
+	<-leaderInFlight
+	if got := inner.callCount(); got != 1 {
+		t.Fatalf("after leader in-flight: expected exactly 1 inner call, got %d", got)
+	}
+
+	// 3. Followers: every concurrent caller on the same key must join.
+	var launched atomic.Int32
+	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			entered.Add(1)
+			launched.Add(1)
 			_, _ = r.Resolve(context.Background(), plaintext)
 		}()
 	}
-	// Wait until all N goroutines have signaled they are about to call
-	// r.Resolve. This is robust under -p=GOMAXPROCS pressure where a
-	// fixed sleep can race with goroutine scheduling.
-	for entered.Load() < N {
+	for launched.Load() < N-1 {
 		runtime.Gosched()
 	}
-	// Brief settle to cover the tiny gap between `entered.Add` and the
-	// singleflight enqueue inside r.Resolve.
-	time.Sleep(100 * time.Millisecond)
+	// Generous settle: followers clear the prelude and park in sf.Do.
+	time.Sleep(2 * time.Second)
 
+	// 4. Invariant holds while the leader is still in-flight.
+	if got := inner.callCount(); got != 1 {
+		t.Fatalf("while leader held: expected exactly 1 inner call (single-flight), got %d", got)
+	}
+
+	// 5. Release and confirm nothing started a late second call.
 	close(leaderHold)
 	wg.Wait()
-	if inner.callCount() != 1 {
-		t.Fatalf("expected exactly 1 inner call (single-flight), got %d", inner.callCount())
+	if got := inner.callCount(); got != 1 {
+		t.Fatalf("after release: expected exactly 1 inner call (single-flight), got %d", got)
 	}
 }
 
