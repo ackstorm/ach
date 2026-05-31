@@ -21,7 +21,7 @@ ach/
 ├── cmd/ach/cmd/              ← cobra root + service-mode subcommands
 │   ├── root.go               (Version, services root cmd)
 │   ├── operator.go, platform_api.go, forwarder.go,
-│   ├── content_service.go, migrate.go
+│   ├── content_service.go, gateway.go, migrate.go
 ├── cmd/ach-cli/main.go      ← user-CLI entrypoint (shares exit.DispatchAndRender)
 ├── cmd/ach-cli/cmd/          ← cobra root + user-facing subcommands
 │   ├── root.go               (Version, cli root cmd)
@@ -30,8 +30,11 @@ ach/
 ├── internal/                ← controllers + service implementations
 │   ├── controller/           controller-runtime reconcilers
 │   ├── platformapi/, forwarder/, contentservice/   service-mode code
+│   ├── gateway/             route table + reverse proxy for `ach gateway` mode
 ├── config/                  ← kubebuilder kustomize overlays
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
+│   │                          (templates/gateway-deployment.yaml = ach-gateway
+│   │                           Deployment+Service; the prod edge router)
 ├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
 ├── examples/                ← CURATED user-facing samples + golden hydrate.json
@@ -49,10 +52,14 @@ ach/
 ├── test/                    ← e2e + utils
 │   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
 │       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
+│       │     (03's ach-local-gateway.yaml nginx is now a DEV SHIM —
+│       │      adds /dex + /metrics/<svc>, falls through to the prod
+│       │      ach-gateway pod; it is NOT the primary router anymore)
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
 │       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
+│                            + env-team-denied (SC2 unauthorized_team negative)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE, PUBLISH.md
 ```
@@ -69,7 +76,12 @@ for the content-service exercise (`plugin-valid`/`plugin-invalid`,
 `env-valid`): `verify_all` gates the valid half to its healthy condition
 (`SourceReachable`/`Available`) and the invalid half to its **expected failure
 state** (`SourceReachable=False`, nonexistent upstream), so "everything is in
-its known state" before tests run. Tests only create/delete throwaways for
+its known state" before tests run. `env-team-denied` is a third Environment
+fixture for the SC2 `unauthorized_team` case: same context as `env-valid` but
+`authorizedTeams` names a sentinel team absent from LiteLLM + the e2e user, so
+it is `Available=False` BY DESIGN and `verify_all` gates it on
+`ExecutionResourcesResolved=True` (the condition set in the same reconcile that
+writes the projection row the content-service reads). Tests only create/delete throwaways for
 mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
 `examples/` holds **curated, user-facing
 samples** (legacy ToolHive 12-15, the ServiceMonitor, the manual JWT helper)

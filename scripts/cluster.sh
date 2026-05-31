@@ -483,7 +483,9 @@ wait_ach() {
   # NOT by the ach Helm install. Treat it as optional: only wait on it when
   # it is actually present, so standalone `make wait-ach` succeeds on a
   # partial bring-up instead of failing with a misleading rollout error.
-  local deps=(ach-operator ach-platform-api ach-forwarder)
+  # ach-gateway is a core Deployment (gateway.enabled=true) installed by
+  # the ach Helm chart; wait on it like the other core ach Deployments.
+  local deps=(ach-operator ach-platform-api ach-forwarder ach-gateway)
   if kubectl -n ach-system get deploy/ach-local-gateway >/dev/null 2>&1; then
     deps+=(ach-local-gateway)
   fi
@@ -601,6 +603,15 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/prompt-valid
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/artifact-valid
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
+  # Phase 5 SC2 unauthorized_team negative fixture. authorizedTeams names a
+  # sentinel team absent from LiteLLM → AccessGroupSynced=False → Available=False
+  # BY DESIGN, so it is NOT gated on Available. ExecutionResourcesResolved=True
+  # is the gate: the operator sets it in the same reconcile that writes the
+  # projection row the content-service reads, so once it is True the
+  # authorized_teams=[sentinel] row exists and the UnauthorizedTeam case can
+  # assert 403. (Mirrors the demo-unresolved exclusion idiom for not-Available
+  # fixtures, but keeps a positive wait so the e2e suite never races the row.)
+  kubectl -n ach-system wait --for=condition=ExecutionResourcesResolved --timeout="${to}" environment/env-team-denied
   # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
   # has fetched + failed). kubectl wait supports condition=<type>=false.
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid

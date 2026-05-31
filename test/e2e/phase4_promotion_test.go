@@ -168,15 +168,15 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Helper()
 
-	// Gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`). Stage-2
+	// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`). Stage-2
 	// dispatches the per-entry fetch via internal/sources/git, which
 	// exec's the system `git` binary. The operator runtime image now
 	// ships git (Dockerfile: alpine + `apk add git`), so the former
 	// git-gap is closed; the gate now only scopes the
 	// GitHub-reachability-dependent marketplace fetch out of focused
 	// dev runs.
-	if os.Getenv("ACH_E2E_SC11C") != "1" {
-		t.Skip("§11c gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`); opt-out for focused dev.")
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§11c (phase4); opt out via ACH_SKIP_PHASE4=1.")
 	}
 
 	applyPhase4MarketplaceServer(t)
@@ -294,13 +294,13 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	t.Helper()
 
 	t.Run("Environment", func(t *testing.T) {
-		// Gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`; shared
+		// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`; shared
 		// with phase4_environment_available_test.go). The synced cluster
 		// seeds the LiteLLM resources the Environment references, so the
 		// former TODO §16 seed gap is closed; the gate now just scopes
 		// the heavier Environment flow out of focused dev runs.
-		if os.Getenv("ACH_E2E_PHASE9") != "1" {
-			t.Skip("§11f.Environment gated behind ACH_E2E_PHASE9=1 (set by `make e2e-run`); opt-out for focused dev.")
+		if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+			t.Skip("§11f.Environment (phase4); opt out via ACH_SKIP_PHASE4=1.")
 		}
 		// Finalizer-drain on a THROWAWAY Environment — never touches the synced
 		// "demo" (other specs assert against it). The execution resources it
@@ -321,12 +321,12 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 	})
 
 	t.Run("PluginMarketplace", func(t *testing.T) {
-		// Gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`), same as
+		// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`), same as
 		// §11c. The operator image now ships git, so the former git-gap
 		// is closed; the gate only scopes the GitHub-dependent fetch out
 		// of focused dev runs.
-		if os.Getenv("ACH_E2E_SC11C") != "1" {
-			t.Skip("§11f.PluginMarketplace gated behind ACH_E2E_SC11C=1 (set by `make e2e-run`); opt-out for focused dev.")
+		if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+			t.Skip("§11f.PluginMarketplace (phase4); opt out via ACH_SKIP_PHASE4=1.")
 		}
 		// Same flow as §11c but bare-minimum (skip the count-1 assert
 		// — that's §11c's job; we only assert count-after-delete).

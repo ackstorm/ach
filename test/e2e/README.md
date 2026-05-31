@@ -17,7 +17,7 @@ Activation: `make e2e-run` (assumes `make cluster-up` already invoked).
 | `phase3_helpers_test.go`              | Port-forward + HTTP-client + audit-line parser helpers                                                                 |
 | `phase4_invariants_test.go`           | Phase 04 SCs #1–#5 (Forwarder header rewrite + precheck + JWT mint + JWKS + audit), plan 04-09 helpers                 |
 | `phase4_helpers_test.go`              | Phase 04 Forwarder helpers (SSO key acquisition, JWKS probe, BIP fixture seed)                                         |
-| `phase4_environment_available_test.go`| TODO §9 acceptance — Environment Available composite condition (gated behind `ACH_E2E_PHASE9=1`)                       |
+| `phase4_environment_available_test.go`| TODO §9 acceptance — Environment Available composite condition (runs by default; opt out via `ACH_SKIP_PHASE4=1`)      |
 | `phase4_promotion_test.go`            | §11 UAT promotion: force-refresh, BIP, marketplace, restart, hydrate-golden, finalizer matrix                          |
 | `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, fixture-server bring-up, DB-count helpers     |
 | `phase5_invariants_test.go`           | Phase 05 SCs (content-service sendfile path, env-cache observability, hydrate URL surface)                            |

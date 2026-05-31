@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -253,31 +254,31 @@ func TestRedisCachedTeamsResolver_UnreachablePropagates(t *testing.T) {
 	}
 }
 
-// T10 — Singleflight dedup. N concurrent Resolve calls for the same email
-// collapse to exactly ONE base call.
+// T10 — Singleflight dedup. N concurrent Resolve calls for the same
+// email collapse to exactly ONE base call. Robust synchronization
+// strategy mirrors TestCachedResolverSingleFlight (the prior spin+sleep
+// was flaky under -race -shuffle):
 //
-// Deterministic LEADER-FIRST synchronization (the prior `entered`-counter +
-// fixed-sleep variant flaked under -race: it counted goroutines BEFORE their
-// cache-miss GET, so the in-flight singleflight group only began part-way
-// through the settle window and slow stragglers reached sf.Do AFTER the leader
-// was released — forming extra groups, e.g. "got 6"):
+//   - A singleflight JOIN is unobservable from our code (followers block
+//     inside singleflight internals), so we assert the coalescing
+//     invariant WHILE the leader's entry is still in-flight, where any
+//     follower that reaches sf.Do is guaranteed to join.
 //
-//  1. Start ONE leader Resolve and block inside the base call; signal
-//     leaderEntered. The singleflight group is now GUARANTEED in-flight and
-//     stays in-flight (leader parked, cache unpopulated) until we release it.
-//  2. Only THEN launch the N-1 followers. With the group already in-flight,
-//     every follower's sf.Do(email) JOINS the leader — none can start a new
-//     base call. Wait for all follower goroutines to be scheduled (arrived).
-//  3. Settle so the (cache-missing) GET + sf.Do enqueue completes for every
-//     follower while the group is still in-flight — they all join.
-//  4. Release the leader; followers share its result. Exactly 1 base call.
+//     1. Spawn exactly ONE leader; the fake signals leaderInFlight then
+//     blocks on leaderHold (removes the leader/follower ambiguity that
+//     produced got>2).
+//     2. Wait for leaderInFlight — base callCount is provably 1.
+//     3. Spawn N-1 followers; wait until all are launched, then a generous
+//     settle so each clears the cache-GET prelude and parks in sf.Do.
+//     4. Assert callCount==1 while the leader is held.
+//     5. Release; after wg.Wait, re-assert callCount==1.
 func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 	const N = 50
 	leaderHold := make(chan struct{})
-	leaderEntered := make(chan struct{})
-	var once sync.Once
+	leaderInFlight := make(chan struct{})
+	var inFlightOnce sync.Once
 	base := &fakeTeamsBase{respond: func(string) ([]string, error) {
-		once.Do(func() { close(leaderEntered) })
+		inFlightOnce.Do(func() { close(leaderInFlight) })
 		<-leaderHold
 		return []string{"t-sf"}, nil
 	}}
@@ -286,33 +287,43 @@ func TestRedisCachedTeamsResolver_SingleFlight(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// 1. Leader-first: block inside the base call → group is in-flight.
+	// 1+2. Leader: spawn, then wait until it provably holds the sf entry.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		_, _ = r.Resolve(context.Background(), email)
 	}()
-	<-leaderEntered
+	<-leaderInFlight
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("after leader in-flight: expected exactly 1 base call, got %d", got)
+	}
 
-	// 2. Launch followers now that the group is guaranteed in-flight.
+	// 3. Followers: every concurrent caller on the same key must join.
+	var launched atomic.Int32
 	for i := 0; i < N-1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			launched.Add(1)
 			_, _ = r.Resolve(context.Background(), email)
 		}()
 	}
+	for launched.Load() < N-1 {
+		runtime.Gosched()
+	}
+	// Generous settle: followers clear the prelude and park in sf.Do.
+	time.Sleep(2 * time.Second)
 
-	// 3. Deterministic barrier: wait until the held leader + all N-1 followers
-	//    are parked inside singleflight.Do (robust under any CPU contention;
-	//    a fixed-ms settle starves under -p=GOMAXPROCS -race).
-	waitInSingleflight(t, N)
+	// 4. Invariant holds while the leader is still in-flight.
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("while leader held: expected exactly 1 base call (single-flight), got %d", got)
+	}
 
-	// 4. Release; all followers share the single in-flight result.
+	// 5. Release and confirm nothing started a late second call.
 	close(leaderHold)
 	wg.Wait()
 	if got := base.callCount(); got != 1 {
-		t.Fatalf("expected exactly 1 base call (single-flight), got %d", got)
+		t.Fatalf("after release: expected exactly 1 base call (single-flight), got %d", got)
 	}
 }
 

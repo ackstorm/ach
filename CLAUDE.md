@@ -75,8 +75,12 @@ touchpoint is the Dex SSO flow.
 Content-service runs as a **sidecar in the operator Pod** (co-located because
 the artifact PVC is RWO) — there is no `ach-content-service` Deployment.
 operator, platform-api, and forwarder are independent Deployments, each running
-the same `ach` image with `args: ["<mode>"]`. Owned CRDs
-(`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
+the same `ach` image with `args: ["<mode>"]`. The `ach gateway` Deployment is a
+dumb edge reverse proxy fronting platform-api/content-service/forwarder behind
+one `ach-gateway` Service; the public Ingress targets it directly. In dev/e2e
+the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
+in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
+CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 `EnvKey`, `BackendIdentityPolicy`, `ContentRef` (`api/` is authoritative).
 
 | Service mode | Subcommand | Owns |
@@ -85,6 +89,7 @@ the same `ach` image with `args: ["<mode>"]`. Owned CRDs
 | platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
+| gateway         | `ach gateway`         | Edge reverse proxy — single-origin front for all HTTP surfaces (no auth, no /metrics, no /dex) |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
@@ -170,7 +175,10 @@ clean-cache` (host-only: `chmod -R u+w` then `rm -rf ./.gocache`) clears it
 safely. Recommended once a feature/worktree is done so stale per-worktree caches
 don't pile up; re-created on next `scripts/dev.sh` use. (`make clean` is the
 broader umbrella — also drops `bin/`/`dist/`/`testbin/`/coverage on top of the
-cache.)
+cache.) For **docker** disk (not the Go cache), `make clean-docker` reclaims
+build cache + dangling images — **safe with a kind cluster up** (never touches
+running containers, tagged images, or volumes); it is NOT in the `clean`
+umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 
 ## Test phases
 
@@ -208,7 +216,8 @@ target disappears the predicate is unreachable and the agent hangs. Use a
 | CR condition Ready | `make wait-cr-ready KIND=... NAME=... NS=...` |
 | Operator / Platform API / Forwarder Ready | `make wait-operator` / `wait-platform-api` / `wait-forwarder` |
 | Content Service container Ready (sidecar in operator Pod) | `make wait-content-service` |
-| All ach Deployments Ready | `make wait-ach` (also `ach-local-gateway` when present — a dev/test add-on) |
+| ach-gateway Deployment Ready | `make wait-gateway` |
+| All ach Deployments Ready | `make wait-ach` (covers `ach-gateway`; also `ach-local-gateway` shim when present — a dev/test add-on) |
 | Postgres / Redis(Valkey) / Dex | `make wait-postgres` / `wait-redis` / `wait-dex` |
 | Container exit + PASS/FAIL marker | `make wait-container NAME=<c>` (`TIMEOUT=<s>`, default 600) |
 | Full cluster hydration | `make cluster-up` (synchronous; do not poll after) |

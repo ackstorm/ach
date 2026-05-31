@@ -56,6 +56,14 @@ const upsertBIPSQL = `
 	    observed_generation  = EXCLUDED.observed_generation,
 	    resource_version     = EXCLUDED.resource_version,
 	    updated_at           = now(),
+	    -- Resurrection: a re-applied CR is LIVE. Unlike environments.go (which
+	    -- preserves deletion_timestamp for the CS-09 content-drain window), a
+	    -- BIP soft-delete is purely a forwarder cache-eviction signal with no
+	    -- drain consumer, so a delete-then-recreate of the SAME (namespace,name)
+	    -- MUST clear the tombstone. Otherwise the resurrected policy stays
+	    -- invisible to ListAllBIPs (which filters deletion_timestamp IS NULL)
+	    -- and the forwarder never sees it again.
+	    deletion_timestamp   = NULL,
 	    locked               = TRUE
 	WHERE backend_identity_policies.origin = 'cr'
 	RETURNING namespace

@@ -54,8 +54,8 @@ const (
 //     when metrics-secure=false, or :8443 with TLS+auth when secure).
 func phase5SuiteGuard(t *testing.T) {
 	t.Helper()
-	if os.Getenv("ACH_E2E_PHASE5") != "1" {
-		t.Skipf("Phase 5 e2e suite gated behind ACH_E2E_PHASE5=1 + live kind+Helm cluster with operator Pod Ready; see CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).")
+	if os.Getenv("ACH_SKIP_PHASE5") == "1" {
+		t.Skipf("Phase 5 e2e suite opted out via ACH_SKIP_PHASE5=1 (default: runs against the synced cluster).")
 	}
 	required := []string{
 		"ACH_CONTENT_SERVICE_URL",
@@ -65,11 +65,11 @@ func phase5SuiteGuard(t *testing.T) {
 	}
 	for _, k := range required {
 		if os.Getenv(k) == "" {
-			t.Skipf("%s not set — set port-forwarded URL per CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).", k)
+			t.Fatalf("%s not set — required for a phase5 run (set ACH_SKIP_PHASE5=1 to opt out).", k)
 		}
 	}
 	if err := waitOperatorReady(t, 30*time.Second); err != nil {
-		t.Skipf("operator Deployment %s/%s not Ready (%v) — run `make e2e-keep` first. Skipping (engineer-pending).",
+		t.Fatalf("operator Deployment %s/%s not Ready (%v) — cluster must be up (set ACH_SKIP_PHASE5=1 to opt out).",
 			phase5Namespace, phase5OperatorDeployment, err)
 	}
 }

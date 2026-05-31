@@ -891,6 +891,87 @@ func TestPipeline_InFlightReadSurvivesRename(t *testing.T) {
 	}
 }
 
+// TestPipeline_InFlightReadSurvivesRename_ServePath closes the coverage
+// gap left by TestPipeline_InFlightReadSurvivesRename above: that test's
+// "true SC#4" assertion (the inode-pin step) operates on a bare os.Open
+// FD and therefore proves only the Linux kernel primitive, NOT that ACH's
+// own serve path honors it. This test drives the REAL serve functions:
+//
+//  1. pipeline() runs all gates and performs the D-02 early open (gate 8),
+//     returning the held *os.File in row.File — exactly what serve() does.
+//  2. We then simulate the Operator's refresh: stage a NEW body under a
+//     temp name and os.Rename(2) it over the published cache path while
+//     our pipeline FD is still open (the §10.3 atomic-rename invariant —
+//     same dir / same filesystem, mirrored from materializeExternalRef +
+//     pluginmarketplace_controller).
+//  3. stream() copies from the pipeline-held FD (io.Copy → *os.File.WriteTo
+//     → sendfile(2) on a TCP writer; plain copy on httptest.Recorder).
+//
+// The served bytes MUST equal the ORIGINAL content: the rename repointed
+// the directory entry at the new inode, but the FD opened in step 1 pins
+// the old inode for the lifetime of the stream. A regression that re-opens
+// the file by path inside stream() (instead of consuming the passed FD)
+// would serve the NEW bytes and fail here — deterministically, with no
+// goroutine/timing race, which is why this lives at the integration layer
+// and the live-cluster e2e variant stays a documented non-goal.
+func TestPipeline_InFlightReadSurvivesRename_ServePath(t *testing.T) {
+	t.Parallel()
+	fx := setupIntegration(t)
+	defer fx.cleanup()
+	now := time.Now().UTC()
+
+	fx.seedEnvironment("prod", []string{"team-a"}, nil, []string{"big-plugin"}, nil)
+	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
+	originalBody := bytes.Repeat([]byte{0xAA}, 64*1024) // 64 KiB
+	fx.seedPlugin("big-plugin", &now, 600, originalBody)
+
+	// Build a request with the chi route context "name" param populated so
+	// pipeline() resolves the same way serve() would, then run the pipeline
+	// directly to capture the gate-8 open FD.
+	req := httptest.NewRequest("GET", "/content/plugin/big-plugin", nil)
+	req.Header.Set("x-ach-key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
+	req.Header.Set("x-ach-environment", "prod")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "big-plugin")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	row, errR := pipeline(req.Context(), fx.deps, kindPlugin, req)
+	if errR != nil {
+		t.Fatalf("pipeline returned error: %+v", errR.errResp)
+	}
+	if row == nil || row.File == nil {
+		t.Fatal("pipeline returned nil row or nil File")
+	}
+	defer func() { _ = row.File.Close() }()
+
+	// Operator refresh: stage a NEW body and atomically rename(2) it over
+	// the published cache path while our FD is still open.
+	cachePath := filepath.Join(fx.cacheRoot, "plugin", "big-plugin.tar.gz")
+	newBody := bytes.Repeat([]byte{0xBB}, 64*1024)
+	tmpPath := cachePath + ".new"
+	if err := os.WriteFile(tmpPath, newBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stream from the pipeline-held FD. Must serve ORIGINAL bytes.
+	rec := httptest.NewRecorder()
+	n, err := stream(rec, req, row.File, row.ContentType, row.Size)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if n != int64(len(originalBody)) {
+		t.Errorf("streamed %d bytes, want %d", n, len(originalBody))
+	}
+	if !bytes.Equal(rec.Body.Bytes(), originalBody) {
+		t.Errorf("serve path did not pin inode across rename: streamed NEW bytes (0x%02X...) — want ORIGINAL (0xAA...)",
+			rec.Body.Bytes()[0])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestPipeline_EmitsOneAuditEventPerRequest
 // ---------------------------------------------------------------------------

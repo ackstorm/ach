@@ -38,11 +38,11 @@ const (
 // phase4SuiteGuard skips when prerequisites aren't met.
 func phase4SuiteGuard(t *testing.T) {
 	t.Helper()
-	if os.Getenv("ACH_E2E_PHASE4") != "1" {
-		t.Skipf("Phase 4 e2e suite gated behind ACH_E2E_PHASE4=1 + live kind+Helm cluster with Forwarder Ready; see CLAUDE.md `E2E debug loop`. Skipping (engineer-pending).")
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skipf("Phase 4 e2e suite opted out via ACH_SKIP_PHASE4=1 (default: runs against the synced cluster).")
 	}
 	if err := waitForwarderReady(t, 15*time.Second); err != nil {
-		t.Skipf("Forwarder Deployment %s/%s not Ready (%v) — run `make e2e-keep` first. Skipping (engineer-pending).",
+		t.Fatalf("Forwarder Deployment %s/%s not Ready (%v) — cluster must be up (set ACH_SKIP_PHASE4=1 to opt out).",
 			phase4Namespace, phase4ForwarderDeployment, err)
 	}
 }
