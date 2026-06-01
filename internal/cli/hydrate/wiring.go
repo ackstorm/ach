@@ -382,6 +382,20 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 // the runtime loop does. Dropped kinds are de-duplicated across all plugin
 // trees and appended (sorted) to result.DroppedComponents.
 //
+// Composite targets are EXEMPT from the CR-01 claimed[] collision fail-fast
+// (D-07): multiple plugins legally co-own the host memory file (CLAUDE.md /
+// GEMINI.md) via per-id <!-- ach:begin:<plugin> --> blocks, so a second
+// composite contributor is not a collision. File-owned MergeReplace keeps the
+// check. For each composite FileWrite the dispatcher threads fw.Keys =
+// [ent.Name()] before publishFile so (i) the per-id marker carries the plugin
+// name and (ii) the state.Plugins[] row records Keys=[plugin-name] for the
+// Phase-4 single-block subtract.
+//
+// Runtime-wins MCP drop (D-10): a projected MergeDeep mcpServers.<id> that a
+// runtime RenderRuntime file (result.WrittenFiles, same Target) already owns is
+// DROPPED — the runtime-owned (bearer/command-exec) server is never shadowed.
+// The dropped id is recorded once in result.DroppedComponents.
+//
 // Error handling (D-06 Claude's-discretion): each FileWrite is published
 // atomically (tmp+rename via state.WriteAtomic / mergeForward), so a crash
 // mid-loop leaves already-published files intact and unpublished ones
@@ -450,15 +464,48 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
 			}
-			// Cross-plugin Target-collision detection on the FINAL published
-			// path (post-remap), checked BEFORE publishFile so no
-			// duplicate-Target row is ever appended to ProjectedFiles.
-			if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
-				return fmt.Errorf(
-					"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
-					d.platformID, owner, ent.Name(), fw.Path)
+			// CR-01 exemption (D-07): composite targets are co-owned by multiple
+			// plugins via per-id blocks, so they SKIP both the claimed[]
+			// fail-fast AND the claimed[] write (otherwise the first composite
+			// contributor would block the second). File-owned MergeReplace keeps
+			// the cross-plugin collision check.
+			if fw.Merge != adapter.MergeComposite {
+				// Cross-plugin Target-collision detection on the FINAL published
+				// path (post-remap), checked BEFORE publishFile so no
+				// duplicate-Target row is ever appended to ProjectedFiles.
+				if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
+					return fmt.Errorf(
+						"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
+						d.platformID, owner, ent.Name(), fw.Path)
+				}
+				claimed[fw.Path] = ent.Name()
 			}
-			claimed[fw.Path] = ent.Name()
+
+			// Plugin-name threading (D-07): composite FileWrites carry
+			// Keys=[plugin-name] (NOT dotted JSON keys) — this supplies the
+			// per-id marker in publishFile's composite arm and records the
+			// composite state row's Keys for the Phase-4 single-block subtract.
+			if fw.Merge == adapter.MergeComposite {
+				fw.Keys = []string{ent.Name()}
+			}
+
+			// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
+			// a runtime WrittenFiles entry (same Target) already owns; record the
+			// drop. If nothing survives, skip publishing this FileWrite entirely.
+			published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, result.WrittenFiles)
+			if derr != nil {
+				return fmt.Errorf("adapter %s runtime-wins drop %s: %w", d.platformID, fw.Path, derr)
+			}
+			for _, dr := range fwDrops {
+				if !seen[dr] {
+					seen[dr] = true
+					dropped = append(dropped, dr)
+				}
+			}
+			if !published {
+				continue
+			}
+
 			// Look up the prior projected entry in the PLUGINS bucket (D-07)
 			// so an unchanged re-hydrate hits the publishFile no-op skip.
 			entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
@@ -478,6 +525,88 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	sort.Strings(dropped)
 	result.DroppedComponents = append(result.DroppedComponents, dropped...)
 	return nil
+}
+
+// mcpServersPrefix is the dotted-key prefix a projected plugin MCP FileWrite
+// contributes (from the mcpDeepKeys Transform): "mcpServers.<id>".
+const mcpServersPrefix = "mcpServers."
+
+// dropRuntimeOwnedMCP implements the D-10 runtime-wins MCP id-clash drop. For a
+// projected MergeDeep FileWrite, any contributed mcpServers.<id> that a runtime
+// WrittenFiles entry targeting the SAME Path already owns is excluded from the
+// merge: the colliding mcpServers.<id> subtree is removed from fw.Content (parse
+// → delete → deterministic re-encode), the id is dropped from fw.Keys, and a
+// "mcp:<id> (runtime-owned)" token is returned for the DroppedComponents
+// aggregation. The runtime-owned (bearer/command-exec) server is NEVER
+// overwritten or shadowed.
+//
+// Returns (publish, drops, err): publish=false means every contributed key
+// collided, so the caller skips publishing this FileWrite entirely (still
+// recording the drops). Non-MergeDeep writes (composite/replace) pass through
+// untouched (publish=true, no drops). fw is mutated IN PLACE via the pointer so
+// the caller publishes the de-conflicted content.
+func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []string, error) {
+	if fw.Merge != adapter.MergeDeep {
+		return true, nil, nil
+	}
+
+	// Union the runtime-owned dotted keys for the SAME Target.
+	runtimeKeys := map[string]bool{}
+	for _, w := range runtime {
+		if w.Target != fw.Path {
+			continue
+		}
+		for _, k := range w.Keys {
+			runtimeKeys[k] = true
+		}
+	}
+	if len(runtimeKeys) == 0 {
+		return true, nil, nil
+	}
+
+	// Determine which contributed keys collide.
+	var collide []string
+	survivors := make([]string, 0, len(fw.Keys))
+	for _, k := range fw.Keys {
+		if runtimeKeys[k] {
+			collide = append(collide, k)
+		} else {
+			survivors = append(survivors, k)
+		}
+	}
+	if len(collide) == 0 {
+		return true, nil, nil
+	}
+
+	// Re-derive the content with the colliding mcpServers.<id> subtrees removed.
+	// The projected MCP content is JSON (.claude/.gemini settings.json).
+	doc, err := parseDoc(fw.Content, false)
+	if err != nil {
+		return false, nil, err
+	}
+	drops := make([]string, 0, len(collide))
+	for _, k := range collide {
+		removeDottedKey(doc, k)
+		drops = append(drops, "mcp:"+strings.TrimPrefix(k, mcpServersPrefix)+" (runtime-owned)")
+	}
+	// If mcpServers is now empty, drop the empty container so we don't write a
+	// bare {"mcpServers":{}} that the deep-merge would otherwise leave behind.
+	if ms, ok := doc[strings.TrimSuffix(mcpServersPrefix, ".")].(map[string]any); ok && len(ms) == 0 {
+		delete(doc, strings.TrimSuffix(mcpServersPrefix, "."))
+	}
+
+	fw.Keys = survivors
+	if len(survivors) == 0 || len(doc) == 0 {
+		// Nothing of ours survives — skip publishing (drops still recorded).
+		return false, drops, nil
+	}
+
+	out, err := encodeDoc(doc, false)
+	if err != nil {
+		return false, nil, err
+	}
+	fw.Content = out
+	return true, drops, nil
 }
 
 // validatePluginName rejects a plugin-directory name that is not a single
