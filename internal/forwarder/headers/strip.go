@@ -20,20 +20,20 @@ const (
 	prefixXAch     = "x-ach-"
 )
 
-// hopByHop is the RFC 7230 §6.1 static list of hop-by-hop headers. They are
-// stripped on every route per D-06 regardless of whether the client also
-// named them in a Connection token list. Every entry is the canonical-case
-// form returned by textproto.CanonicalMIMEHeaderKey so it matches the keys
-// http.Header stores internally.
-var hopByHop = []string{
-	"Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"Te",
-	"Trailer",
-	"Transfer-Encoding",
-	"Upgrade",
+// hopByHopSet is the RFC 7230 §6.1 static hop-by-hop header set, built
+// once at package init for O(1) per-request lookup (D-06). They are
+// stripped on every route regardless of whether the client also named
+// them in a Connection token list. Keys are the canonical-case form
+// (textproto.CanonicalMIMEHeaderKey) http.Header stores internally.
+var hopByHopSet = map[string]struct{}{
+	"Connection":          {},
+	"Keep-Alive":          {},
+	"Proxy-Authenticate":  {},
+	"Proxy-Authorization": {},
+	"Te":                  {},
+	"Trailer":             {},
+	"Transfer-Encoding":   {},
+	"Upgrade":             {},
 }
 
 // authHeader is the canonical-case form of the client Authorization header
@@ -51,7 +51,7 @@ const authHeader = "Authorization"
 //     - canonical "Authorization"
 //     - case-insensitive prefix "x-litellm-"
 //     - case-insensitive prefix "x-ach-"
-//     - canonical-case form is in the static hopByHop list
+//     - canonical-case form is in the static hopByHopSet
 //     - canonical-case form is in the Connection-named set
 //  3. WRITE PASS — h.Set("x-litellm-api-key", masterKey) and
 //     h.Set("x-litellm-key-id", litellmToken). http.Header.Set canonicalizes
@@ -84,12 +84,6 @@ func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
 		}
 	}
 
-	// hopByHopSet is computed once per call as a set for O(1) lookup.
-	hopSet := make(map[string]struct{}, len(hopByHop))
-	for _, k := range hopByHop {
-		hopSet[k] = struct{}{}
-	}
-
 	// 2. Strip pass.
 	for k := range h {
 		if k == authHeader {
@@ -103,7 +97,7 @@ func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
 		}
 		// k is already canonical-case (http.Header stores canonical keys);
 		// textproto.CanonicalMIMEHeaderKey on a canonical key is a no-op.
-		if _, ok := hopSet[k]; ok {
+		if _, ok := hopByHopSet[k]; ok {
 			delete(h, k)
 			continue
 		}
