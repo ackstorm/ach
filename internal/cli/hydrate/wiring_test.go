@@ -98,7 +98,7 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	}
 
 	// Pre-render to obtain the canonical bytes claudecode would emit.
-	firstRes, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	firstRes, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("initial Render: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	// (so the existing .mcp.json is "unowned"). The cascade should
 	// detect Identical (bytes match what Render would emit) and
 	// auto-claim — no error.
-	res, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("re-Render with unowned-but-identical bytes: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if _, err := disp.Render(context.Background(), m, nil, achDir, achDir); err != nil {
+	if _, err := disp.Render(context.Background(), m, nil, achDir, achDir, false); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	m := dispMiniManifest()
 
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
-	first, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 
 	// No --force → drift refuse (exit 2).
-	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir); err == nil {
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false); err == nil {
 		t.Fatal("re-render after user edit of our key: want drift error, got nil")
 	} else {
 		var ce *exit.CodedError
@@ -245,7 +245,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 
 	// --force → overwrite our key (edit gone).
 	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false)
-	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir); err != nil {
+	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir, false); err != nil {
 		t.Fatalf("force re-render: %v", err)
 	}
 	after, err := os.ReadFile(settingsPath)
@@ -274,7 +274,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	m := dispMiniManifest()
 
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
-	first, err := disp.Render(context.Background(), m, nil, achDir, achDir)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	// Second Render with matching prior state → no-op skip path. Without the
 	// F-10 chmod guard, the mode would stay at 0o644 (skip bypasses
 	// WriteAtomic which is where 0o600 normally gets asserted).
-	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir); err != nil {
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false); err != nil {
 		t.Fatalf("second Render: %v", err)
 	}
 
@@ -597,4 +597,129 @@ func hashOf(t *testing.T, s string) string {
 		t.Fatalf("hash.Hash(%q): %v", s, err)
 	}
 	return h
+}
+
+// stagePluginTree writes a plugin source tree under
+// <achDir>/plugin/<name>/ so the projection leg (route.Project) has an
+// extracted tree to decompose. files maps a plugin-relative path (e.g.
+// "rules/foo.md") to its content. Mirrors the rehydrate harness's
+// <achDir>/plugin/<name> layout.
+func stagePluginTree(t *testing.T, achDir, name string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		abs := filepath.Join(achDir, "plugin", name, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", abs, err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", abs, err)
+		}
+	}
+}
+
+// TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir is the
+// WIRE-01 dispatch-wiring proof. With projectPlugins=true and an extracted
+// plugin tree carrying a routable kind (rules/foo.md), Render's projection
+// leg must:
+//   - publish the projected file at the claude-code NATIVE destination
+//     (<toolRoot>/.claude/rules/foo.md), NOT the verbatim source path;
+//   - return the projected file in RenderResult.ProjectedFiles (the
+//     Plugins[] bucket tag), distinct from WrittenFiles;
+//   - be a byte no-op on re-render against the prior projected state.
+func TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	stagePluginTree(t, achDir, "caveman", map[string]string{
+		"rules/foo.md": "# rule foo\nbe excellent\n",
+	})
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime:       &manifest.RuntimeBlock{},
+		Context:       &manifest.ContextBlock{},
+	}
+
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	if err != nil {
+		t.Fatalf("Render with projection: %v", err)
+	}
+	if len(res.ProjectedFiles) != 1 {
+		t.Fatalf("ProjectedFiles len = %d; want 1 (the routed rules/foo.md)", len(res.ProjectedFiles))
+	}
+	pf := res.ProjectedFiles[0]
+	wantTarget := ".claude/rules/foo.md"
+	if pf.Target != wantTarget {
+		t.Errorf("projected Target = %q; want native dest %q", pf.Target, wantTarget)
+	}
+	if !strings.HasPrefix(pf.Hash, "xxh3:") {
+		t.Errorf("projected Hash = %q; want xxh3: prefix", pf.Hash)
+	}
+
+	// Native destination on disk — NOT the verbatim source path.
+	nativeAbs := filepath.Join(toolRoot, ".claude", "rules", "foo.md")
+	got, rerr := os.ReadFile(nativeAbs)
+	if rerr != nil {
+		t.Fatalf("projected file missing at native dest %s: %v", nativeAbs, rerr)
+	}
+	if string(got) != "# rule foo\nbe excellent\n" {
+		t.Errorf("projected content = %q; want verbatim passthrough", got)
+	}
+	if _, serr := os.Stat(filepath.Join(toolRoot, "rules", "foo.md")); serr == nil {
+		t.Errorf("projected file leaked to verbatim source path <toolRoot>/rules/foo.md")
+	}
+
+	// Re-render against the prior Plugins[] state → byte no-op.
+	prior := &state.File{SchemaVersion: "2"}
+	prior.Plugins = append(prior.Plugins, state.FileEntry{
+		Target:     pf.Target,
+		Hash:       pf.Hash,
+		SourceHash: pf.SourceHash,
+		Merge:      pf.Merge,
+		Keys:       pf.Keys,
+	})
+	before, _ := os.ReadFile(nativeAbs)
+	if _, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true); err != nil {
+		t.Fatalf("second Render (no-op): %v", err)
+	}
+	after, _ := os.ReadFile(nativeAbs)
+	if !bytes.Equal(before, after) {
+		t.Errorf("projected bytes changed across re-render: before=%q after=%q", before, after)
+	}
+}
+
+// TestAdapterDispatcherImpl_ProjectionLeg_ScopeSkip asserts the projection
+// leg does NOT run when projectPlugins=false (the --only-runtime gate):
+// no ProjectedFiles, and the native dest stays absent.
+func TestAdapterDispatcherImpl_ProjectionLeg_ScopeSkip(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	stagePluginTree(t, achDir, "caveman", map[string]string{
+		"rules/foo.md": "# rule foo\n",
+	})
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime:       &manifest.RuntimeBlock{},
+		Context:       &manifest.ContextBlock{},
+	}
+
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, false)
+	if err != nil {
+		t.Fatalf("Render (scope skip): %v", err)
+	}
+	if len(res.ProjectedFiles) != 0 {
+		t.Errorf("ProjectedFiles len = %d; want 0 (projectPlugins=false skips projection)", len(res.ProjectedFiles))
+	}
+	if _, serr := os.Stat(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); serr == nil {
+		t.Errorf("projection ran despite projectPlugins=false")
+	}
 }

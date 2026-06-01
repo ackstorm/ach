@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -297,7 +299,14 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// and the agent cannot authenticate to the forwarder. Credentials
 		// travel by context key only (never env/param) per adapter.go.
 		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
-		rr, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot)
+		// WIRE-04 / D-11 scope gate: plugin/resource projection is the
+		// CONTEXT slice. Run it when NOT --only-runtime (default context
+		// scope and --include-runtime both project; OnlyRuntime has
+		// precedence per spec §6.3 and skips it). The gate lives here in
+		// the orchestrator where c.opts is in scope (per D-11/PATTERNS),
+		// NOT inside Render.
+		projectPlugins := !c.opts.OnlyRuntime
+		rr, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot, projectPlugins)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
@@ -314,8 +323,15 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		}
 		renderResult = rr
 		adapterRan = true
-		result.FilesWritten += len(renderResult.WrittenFiles)
+		result.FilesWritten += len(renderResult.WrittenFiles) + len(renderResult.ProjectedFiles)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
+
+		// WIRE-03 / D-12: a SINGLE end-of-hydration stderr warning lists
+		// each dropped component once (deduped + stable-sorted for
+		// byte-stable stderr). Exit code is UNCHANGED — this is a warning,
+		// not an error. Skipped entirely when nothing was dropped (no
+		// spurious warning for claude-code, which drops nothing).
+		c.warnDroppedComponents(result.DroppedComponents)
 	}
 	c.maybeKill(10)
 
@@ -649,6 +665,35 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 	return targets
 }
 
+// warnDroppedComponents emits the WIRE-03 / D-12 single end-of-hydration
+// stderr warning naming each dropped component exactly once. The input is
+// already deduped + sorted by the projection leg, but this re-dedups and
+// stable-sorts defensively so the warning is byte-stable regardless of how
+// the caller aggregated the list. A nil/empty list emits NOTHING (no
+// spurious warning for adapters that drop nothing, e.g. claude-code). The
+// exit code is unaffected — this is a warning, never an error.
+func (c *commit) warnDroppedComponents(dropped []string) {
+	if len(dropped) == 0 {
+		return
+	}
+	seen := map[string]bool{}
+	uniq := make([]string, 0, len(dropped))
+	for _, d := range dropped {
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	if len(uniq) == 0 {
+		return
+	}
+	sort.Strings(uniq)
+	_, _ = fmt.Fprintf(c.opts.Stderr,
+		"warning: dropped unsupported components for platform %s: %s\n",
+		c.opts.Platform, strings.Join(uniq, ", "))
+}
+
 // step12WriteState — atomic state.json publication via state.Save
 // (= state.WriteAtomic, STATE-07 four-step contract). Skipped when
 // opts.DryRun is set so a `hydrate --dry-run` is genuinely read-only.
@@ -692,6 +737,19 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 		next.Adapter = adapterSectionFromRender(platformID, render)
 	}
 
+	// Compose the Plugins[] bucket (D-07 / WIRE-02) from the fresh
+	// projected files — one FileEntry per projected file, carrying
+	// Target/Hash/SourceHash/Merge/Keys VERBATIM (the Keys faithfulness
+	// is the T-01-04 invariant: Phase 2-3 deep-merge resources inherit
+	// correct per-plugin key scoping so Phase 4 uninstall subtracts
+	// exactly the plugin's keys). Replace the bucket only when the
+	// adapter ran AND projection was in scope (NOT --only-runtime);
+	// otherwise carry forward existing.Plugins unchanged (mirroring the
+	// adapter-section field rule — spec §8.2).
+	if adapterRan && !c.opts.OnlyRuntime {
+		next.Plugins = pluginsSectionFromRender(render)
+	}
+
 	if err := c.stateStore.Save(c.statePath, next); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -720,6 +778,33 @@ func adapterSectionFromRender(platformID string, render RenderResult) state.Adap
 		})
 	}
 	return sec
+}
+
+// pluginsSectionFromRender projects RenderResult.ProjectedFiles into the
+// state.File.Plugins bucket recorded at step 12 (D-07 / WIRE-02). Each
+// projected FileWrite maps 1:1 to a state.FileEntry. Keys is copied
+// VERBATIM for every MergeKind (T-01-04): the recording path never filters
+// or rewrites Keys, so a MergeDeep co-owned resource's contributed dotted
+// paths survive into state.Plugins[] and Phase 4 uninstall/--sync subtracts
+// exactly the plugin's keys (and never the user's other keys). Phase-1
+// passthrough resources use Merge=replace/Keys=nil; the faithful-Keys
+// guarantee is what lets Phase 2-3 deep-merge resources inherit correct
+// per-plugin scoping unchanged.
+func pluginsSectionFromRender(render RenderResult) []state.FileEntry {
+	if len(render.ProjectedFiles) == 0 {
+		return nil
+	}
+	out := make([]state.FileEntry, 0, len(render.ProjectedFiles))
+	for _, fw := range render.ProjectedFiles {
+		out = append(out, state.FileEntry{
+			Target:     fw.Target,
+			Hash:       fw.Hash,
+			SourceHash: fw.SourceHash,
+			Merge:      fw.Merge,
+			Keys:       fw.Keys,
+		})
+	}
+	return out
 }
 
 // step13Cleanup — final state.SweepTmp(achDir). Errors swallowed per

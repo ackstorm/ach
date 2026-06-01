@@ -85,8 +85,20 @@ type FileWrite struct {
 // W3-01..05 supply the concrete impl; W1 unit tests use a stub
 // returning a zero-value RenderResult.
 type RenderResult struct {
-	// WrittenFiles flows into step 12 (state.File.Adapter.Files).
+	// WrittenFiles flows into step 12 (state.File.Adapter.Files) — the
+	// adapter RUNTIME bucket (RenderRuntime output: .claude/settings.json
+	// etc.).
 	WrittenFiles []FileWrite
+
+	// ProjectedFiles flows into step 12 (state.File.Plugins) — the
+	// PROJECTION bucket (route.Project output: plugin resources routed
+	// into the adapter's native layout, e.g. .claude/rules/foo.md).
+	// Kept distinct from WrittenFiles so commit.go step12WriteState
+	// routes projected files to the Plugins[] bucket (D-07) rather than
+	// Adapter.Files. Each entry already flowed through the SAME
+	// publishRuntimeFile path (per-key drift + no-op skip + atomic
+	// publish) as the runtime files (D-05).
+	ProjectedFiles []FileWrite
 
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types
@@ -140,7 +152,15 @@ type AdapterDispatcher interface {
 	// --global scope. It is DISTINCT from achDir (ACH's private state +
 	// content cache) so adapter runtime-config (e.g. .claude/settings.json)
 	// lands where the tool actually reads it, not buried under .ach/.
-	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string) (RenderResult, error)
+	//
+	// projectPlugins is the WIRE-04 / D-11 scope gate: when true the
+	// projection leg (route.Project → publishRuntimeFile → Plugins[])
+	// runs after the RenderRuntime loop; when false it is skipped
+	// entirely. The orchestrator derives it as !opts.OnlyRuntime in
+	// commit.go step 10 (where opts is in scope, per D-11) — default
+	// context scope and --include-runtime project plugins; --only-runtime
+	// skips them (OnlyRuntime has precedence per spec §6.3).
+	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins bool) (RenderResult, error)
 }
 
 // DriftOutcome is the typed-int enum returned by Differ.Compare for the

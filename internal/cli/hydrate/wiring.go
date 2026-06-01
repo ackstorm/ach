@@ -62,6 +62,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hash"
@@ -317,7 +318,19 @@ type adapterDispatcherImpl struct {
 // file) so --sync inverse-merge and subsequent drift checks operate on
 // our keys only. DroppedComponents stays nil for the runtime path
 // (TransformPlugin is the source of drops).
-func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string) (RenderResult, error) {
+//
+// After the RenderRuntime loop, when projectPlugins is true (WIRE-04 /
+// D-11 scope gate, derived by the orchestrator as !opts.OnlyRuntime),
+// the projection leg runs: route.Project decomposes the extracted plugin
+// tree(s) under <achDir>/plugin into the adapter's native layout and each
+// projected FileWrite is published through the SAME publishRuntimeFile
+// path (per-key drift + no-op skip + atomic publish — D-05). Projected
+// entries are returned tagged in RenderResult.ProjectedFiles so step 12
+// routes them to state.Plugins[] (D-07), distinct from the runtime
+// WrittenFiles bucket. Dropped top-level kinds are aggregated into
+// DroppedComponents for the single end-of-hydration stderr warning
+// (WIRE-03 / D-12).
+func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins bool) (RenderResult, error) {
 	ad, ok := adapter.Lookup(d.platformID)
 	if !ok {
 		return RenderResult{}, &exit.CodedError{
@@ -343,7 +356,97 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		result.WrittenFiles = append(result.WrittenFiles, entry)
 	}
 
+	// Projection leg (D-05). Skipped under the scope gate (--only-runtime).
+	if projectPlugins {
+		if err := d.projectPlugins(ad, s, achDir, toolRoot, &result); err != nil {
+			return RenderResult{}, err
+		}
+	}
+
 	return result, nil
+}
+
+// projectPlugins runs the route.Project projection leg for every extracted
+// plugin tree under <achDir>/plugin, publishing each projected FileWrite
+// through the SAME publishRuntimeFile engine as the runtime loop (D-05).
+//
+// The adapter is type-asserted to route.RuleProvider (the D-06 seam); an
+// adapter that does not implement it projects nothing (no-op — forward
+// compatible). Each per-plugin subdir under <achDir>/plugin is a separate
+// source tree; route.Project is invoked once per tree and the results are
+// aggregated. The provenance signal is "" (ACH has no claude-plugin
+// provenance axis in Phase 1 per OPENPACKAGE-MAPPING:66 — the ungated rule
+// arm matches; the gated branch EXISTS for Phase 2).
+//
+// Projected paths compose with remapGlobalPath under --global exactly as
+// the runtime loop does. Dropped kinds are de-duplicated across all plugin
+// trees and appended (sorted) to result.DroppedComponents.
+//
+// Error handling (D-06 Claude's-discretion): each FileWrite is published
+// atomically (tmp+rename via state.WriteAtomic / mergeForward), so a crash
+// mid-loop leaves already-published files intact and unpublished ones
+// absent — best-effort per-file atomicity matching the runtime loop. There
+// is deliberately NO all-or-nothing transaction across the projected set.
+// The first error encountered aborts (same as the runtime loop).
+func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string, result *RenderResult) error {
+	rp, ok := ad.(route.RuleProvider)
+	if !ok {
+		return nil
+	}
+	rules := rp.ProjectionRules()
+
+	pluginRoot := filepath.Join(achDir, "plugin")
+	entries, err := os.ReadDir(pluginRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No plugins extracted this hydrate — nothing to project.
+			return nil
+		}
+		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
+	}
+
+	// Dedup dropped kinds across all plugin trees (route.Project already
+	// dedups per-run; aggregating across multiple plugin subdirs needs a
+	// second-layer dedup) and stable-sort for byte-stable stderr (D-12).
+	seen := map[string]bool{}
+	var dropped []string
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			// Plugin archives extract to a directory per name; a stray
+			// regular file (e.g. an un-extracted blob) carries no routable
+			// resource kinds — skip it.
+			continue
+		}
+		pluginSrc := filepath.Join(pluginRoot, ent.Name())
+		// source == "" : Phase-1 ungated arm (no claude-plugin provenance
+		// axis yet). The gated branch exists for Phase 2.
+		projected, drops, perr := route.Project(rules, pluginSrc, "")
+		if perr != nil {
+			return fmt.Errorf("adapter %s project plugin %s: %w", d.platformID, ent.Name(), perr)
+		}
+		for _, fw := range projected {
+			if d.global {
+				fw.Path = remapGlobalPath(d.platformID, fw.Path)
+			}
+			// Look up the prior projected entry in the PLUGINS bucket (D-07)
+			// so an unchanged re-hydrate hits the publishFile no-op skip.
+			entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
+			if err != nil {
+				return err
+			}
+			result.ProjectedFiles = append(result.ProjectedFiles, entry)
+		}
+		for _, dr := range drops {
+			if !seen[dr] {
+				seen[dr] = true
+				dropped = append(dropped, dr)
+			}
+		}
+	}
+
+	sort.Strings(dropped)
+	result.DroppedComponents = append(result.DroppedComponents, dropped...)
+	return nil
 }
 
 // remapGlobalPath adjusts an adapter's workspace-relative FileWrite path for
@@ -379,25 +482,35 @@ func remapGlobalPath(platformID, path string) string {
 //
 // 0o600 — these files embed the plaintext x-ach-key bearer (CR-01).
 func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *state.File, toolRoot string) (FileWrite, error) {
+	return d.publishFile(fw, findAdapterEntry(s, fw.Path), toolRoot)
+}
+
+// publishFile is the bucket-agnostic core of publishRuntimeFile: the
+// caller supplies the prior state.FileEntry it looked up from the correct
+// bucket (Adapter.Files for the runtime loop, Plugins[] for the projection
+// leg) so the §8.4 per-key drift truth table + no-op skip operate against
+// the right prior record. publishRuntimeFile is the Adapter.Files-bucket
+// convenience wrapper; the projection leg calls publishFile directly with
+// a Plugins-bucket prior so re-hydration of an unchanged projected file
+// hits the no-op skip path (FMT-05 byte no-op).
+func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.FileEntry, toolRoot string) (FileWrite, error) {
 	finalAbs := filepath.Join(toolRoot, fw.Path)
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
 
-	// Canonical hash of our freshly-rendered contribution (parsed → map →
-	// deterministic re-encode) so it is directly comparable to the on-disk
-	// subtree regardless of struct-vs-map field ordering.
-	oursMap, err := parseDoc(fw.Content, isTOML)
-	if err != nil {
-		return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
-	}
-	freshHash, err := subtreeHash(oursMap)
-	if err != nil {
-		return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
-	}
-
-	// Hash of our keys as they currently sit on disk (empty when the file
-	// or our keys are absent — first hydrate / user removed them).
-	onDiskHash := ""
+	var freshHash, onDiskHash string
 	if fw.Merge == adapter.MergeDeep {
+		// Co-owned deep-merge file: hash ONLY our contributed subtree
+		// (parsed → map → deterministic re-encode) so it is directly
+		// comparable to the on-disk subtree regardless of struct-vs-map
+		// field ordering, and the user's other keys are invisible to the
+		// drift check.
+		oursMap, err := parseDoc(fw.Content, isTOML)
+		if err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
+		}
+		if freshHash, err = subtreeHash(oursMap); err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
+		}
 		diskMap, ok, derr := readParseDoc(finalAbs, isTOML)
 		if derr != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, derr)
@@ -410,9 +523,20 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 				}
 			}
 		}
+	} else {
+		// File-owned replace (incl. opaque passthrough projection —
+		// markdown/skill files that are NOT structured JSON/TOML): we own
+		// the WHOLE file, so the hash is the raw content hash and on-disk
+		// drift is the raw file hash. Parsing as JSON/TOML would wrongly
+		// reject a markdown body (the WIRE-01 projection regression).
+		freshHash = hash.HashBytes(fw.Content)
+		if body, rerr := os.ReadFile(finalAbs); rerr == nil {
+			onDiskHash = hash.HashBytes(body)
+		} else if !os.IsNotExist(rerr) {
+			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, rerr)
+		}
 	}
 
-	prior := findAdapterEntry(s, fw.Path)
 	outcome := NewDiffer().Compare(prior, onDiskHash, freshHash)
 
 	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
@@ -687,6 +811,24 @@ func findAdapterEntry(s *state.File, target string) *state.FileEntry {
 	for i := range s.Adapter.Files {
 		if s.Adapter.Files[i].Target == target {
 			return &s.Adapter.Files[i]
+		}
+	}
+	return nil
+}
+
+// findPluginEntry locates the prior state.FileEntry for target under
+// s.Plugins (the projection bucket, D-07), or nil when absent. The
+// projection leg uses this so the §8.4 drift truth table + no-op skip in
+// publishFile compare a projected file against its prior Plugins[] record
+// — not the Adapter.Files bucket — making an unchanged re-hydrate a byte
+// no-op (FMT-05).
+func findPluginEntry(s *state.File, target string) *state.FileEntry {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Plugins {
+		if s.Plugins[i].Target == target {
+			return &s.Plugins[i]
 		}
 	}
 	return nil
