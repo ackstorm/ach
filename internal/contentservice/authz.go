@@ -136,9 +136,6 @@ func resolveEnv(ctx context.Context, d Deps, info *keystore.KeyInfo, headerEnv s
 			return nil, errWrongEnvironment()
 		}
 		resolved = info.Environment
-		if headerEnv != "" {
-			resolved = headerEnv
-		}
 	default:
 		// Resolver guarantees PrefixPk or PrefixEk; defensive only.
 		return nil, errInvalidKeyFormat()

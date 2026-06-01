@@ -3,6 +3,7 @@
 package cachefs
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -88,27 +89,25 @@ func IsEmpty(root string) (bool, error) {
 	return true, nil
 }
 
-// subtreeHasFile recursively scans dir and returns true as soon as it
-// finds a regular file (or any non-directory entry). Returns false
-// when dir and all transitive descendants contain only empty
-// directories. ReadDir errors propagate to the caller, which converts
-// them to the defensive "populated" classification.
+// subtreeHasFile reports whether dir or any descendant contains a regular
+// (non-directory) entry. Walks via filepath.WalkDir, short-circuiting with
+// fs.SkipAll on the first non-dir entry. A walk error propagates so the
+// caller (IsEmpty) can apply its defensive "any error ⇒ populated"
+// classification.
 func subtreeHasFile(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
+	found := false
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
 	if err != nil {
 		return false, err
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			return true, nil
-		}
-		populated, err := subtreeHasFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			return false, err
-		}
-		if populated {
-			return true, nil
-		}
-	}
-	return false, nil
+	return found, nil
 }
