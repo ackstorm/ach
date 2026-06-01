@@ -89,111 +89,59 @@ func (r *Resync) Start(ctx context.Context) error {
 // logged but do not abort the sweep — a transient apiserver hiccup on
 // one Kind should not block the others.
 func (r *Resync) sweepAll(ctx context.Context) {
-	r.sweepEnvironments(ctx)
-	r.sweepPlugins(ctx)
-	r.sweepPrompts(ctx)
-	r.sweepArtifacts(ctx)
-	r.sweepMarketplaces(ctx)
-	r.sweepBIPs(ctx)
-	r.sweepLiteLLMConnections(ctx)
+	sweepKind(ctx, r, r.Channels.Environment, &achv1alpha1.EnvironmentList{}, "environments",
+		func(l *achv1alpha1.EnvironmentList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Plugin, &achv1alpha1.PluginList{}, "plugins",
+		func(l *achv1alpha1.PluginList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Prompt, &achv1alpha1.PromptList{}, "prompts",
+		func(l *achv1alpha1.PromptList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Artifact, &achv1alpha1.ArtifactList{}, "artifacts",
+		func(l *achv1alpha1.ArtifactList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Marketplace, &achv1alpha1.PluginMarketplaceList{}, "pluginmarketplaces",
+		func(l *achv1alpha1.PluginMarketplaceList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.BIP, &achv1alpha1.BackendIdentityPolicyList{}, "backendidentitypolicies",
+		func(l *achv1alpha1.BackendIdentityPolicyList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.LiteLLMConnection, &achv1alpha1.LiteLLMConnectionList{}, "litellmconnections",
+		func(l *achv1alpha1.LiteLLMConnectionList) []client.Object { return toObjects(l.Items) })
 }
 
-func (r *Resync) sweepEnvironments(ctx context.Context) {
-	if r.Channels.Environment == nil {
+// sweepKind lists all objects of one Kind in the watched namespace and
+// pushes each into the per-Kind resync channel. Nil channel → no-op
+// (the Kind's feed is disabled). itemsOf adapts the concrete *List to the
+// []client.Object the push loop needs (client.ObjectList has no generic
+// .Items accessor). label names the Kind in the list-error log.
+func sweepKind[L client.ObjectList](
+	ctx context.Context,
+	r *Resync,
+	ch chan<- event.GenericEvent,
+	list L,
+	label string,
+	itemsOf func(L) []client.Object,
+) {
+	if ch == nil {
 		return
 	}
-	var list achv1alpha1.EnvironmentList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list environments")
+	if err := r.Client.List(ctx, list, client.InNamespace(r.Namespace)); err != nil {
+		r.Log.Error(err, "list "+label)
 		return
 	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.Environment, &list.Items[i])
-	}
-}
-
-func (r *Resync) sweepPlugins(ctx context.Context) {
-	if r.Channels.Plugin == nil {
-		return
-	}
-	var list achv1alpha1.PluginList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list plugins")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.Plugin, &list.Items[i])
-	}
-}
-
-func (r *Resync) sweepPrompts(ctx context.Context) {
-	if r.Channels.Prompt == nil {
-		return
-	}
-	var list achv1alpha1.PromptList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list prompts")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.Prompt, &list.Items[i])
+	for _, obj := range itemsOf(list) {
+		r.push(ctx, ch, obj)
 	}
 }
 
-func (r *Resync) sweepArtifacts(ctx context.Context) {
-	if r.Channels.Artifact == nil {
-		return
+// toObjects converts a slice of CR values to []client.Object, taking the
+// address of each element (so the pushed object is the addressable list
+// item, matching the original &list.Items[i] semantics).
+func toObjects[T any, PT interface {
+	*T
+	client.Object
+}](items []T) []client.Object {
+	out := make([]client.Object, len(items))
+	for i := range items {
+		out[i] = PT(&items[i])
 	}
-	var list achv1alpha1.ArtifactList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list artifacts")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.Artifact, &list.Items[i])
-	}
-}
-
-func (r *Resync) sweepMarketplaces(ctx context.Context) {
-	if r.Channels.Marketplace == nil {
-		return
-	}
-	var list achv1alpha1.PluginMarketplaceList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list pluginmarketplaces")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.Marketplace, &list.Items[i])
-	}
-}
-
-func (r *Resync) sweepBIPs(ctx context.Context) {
-	if r.Channels.BIP == nil {
-		return
-	}
-	var list achv1alpha1.BackendIdentityPolicyList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list backendidentitypolicies")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.BIP, &list.Items[i])
-	}
-}
-
-func (r *Resync) sweepLiteLLMConnections(ctx context.Context) {
-	if r.Channels.LiteLLMConnection == nil {
-		return
-	}
-	var list achv1alpha1.LiteLLMConnectionList
-	if err := r.Client.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
-		r.Log.Error(err, "list litellmconnections")
-		return
-	}
-	for i := range list.Items {
-		r.push(ctx, r.Channels.LiteLLMConnection, &list.Items[i])
-	}
+	return out
 }
 
 // push sends a GenericEvent into ch, returning early if ctx is cancelled
