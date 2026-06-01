@@ -191,3 +191,28 @@ func TestApplyReconcileConditions_WritesBoth(t *testing.T) {
 		t.Errorf("Synced.ObservedGeneration = %d; want 7", sync.ObservedGeneration)
 	}
 }
+
+func TestSetConflictWithUIRowCondition(t *testing.T) {
+	var conds []metav1.Condition
+	setConflictWithUIRowCondition(&conds, "Synced", 7)
+
+	if len(conds) != 1 {
+		t.Fatalf("want 1 condition, got %d", len(conds))
+	}
+	c := conds[0]
+	if c.Type != "Synced" {
+		t.Errorf("Type = %q, want Synced", c.Type)
+	}
+	if c.Status != metav1.ConditionFalse {
+		t.Errorf("Status = %q, want False", c.Status)
+	}
+	if c.Reason != ReasonConflictWithUIRow {
+		t.Errorf("Reason = %q, want %q", c.Reason, ReasonConflictWithUIRow)
+	}
+	if c.Message != ConflictWithUIRowMessage {
+		t.Errorf("Message = %q, want %q", c.Message, ConflictWithUIRowMessage)
+	}
+	if c.ObservedGeneration != 7 {
+		t.Errorf("ObservedGeneration = %d, want 7", c.ObservedGeneration)
+	}
+}

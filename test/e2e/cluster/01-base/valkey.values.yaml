@@ -3,9 +3,10 @@
 # Used by:  scripts/cluster.sh hydrate_valkey
 # Chart:    oci://registry-1.docker.io/bitnamicharts/valkey
 #
-# Same public.ecr.aws redirect as postgres.values.yaml (Bitnami 2025
-# prune workaround). Chart defaults pull bitnami/* image paths; only
-# the registry is overridden.
+# Same docker.io/bitnamilegacy redirect as postgres.values.yaml (Bitnami
+# 2025 prune workaround — public.ecr.aws/bitnami is now empty too). Chart
+# defaults pull bitnami/* image paths; we point the registry at docker.io
+# and override image.repository to bitnamilegacy/valkey.
 
 chartVersion: 2.4.1
 
@@ -21,7 +22,10 @@ primary:
   persistence:
     size: 1Gi
 
+image:
+  repository: bitnamilegacy/valkey
+
 global:
-  imageRegistry: public.ecr.aws
+  imageRegistry: docker.io
   security:
     allowInsecureImages: true

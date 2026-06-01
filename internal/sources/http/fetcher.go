@@ -31,7 +31,6 @@ package http
 import (
 	"context"
 	"fmt"
-	"io"
 	nethttp "net/http"
 	"strings"
 	"time"
@@ -116,7 +115,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	case resp.StatusCode == nethttp.StatusNotModified:
 		// 304: caller keeps prior cached file unchanged. Preserve the
 		// prior UpstreamRev verbatim so callers may write it back.
-		drainAndClose(resp.Body)
+		sources.DrainAndClose(resp.Body)
 		return &sources.FetchResult{
 			NotModified: true,
 			UpstreamRev: req.PriorRev,
@@ -133,26 +132,16 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 			NotModified: false,
 		}, nil
 
-	case resp.StatusCode == nethttp.StatusUnauthorized,
-		resp.StatusCode == nethttp.StatusForbidden:
-		drainAndClose(resp.Body)
-		return nil, fmt.Errorf("http: GET %q: %d: %w",
-			f.spec.URL, resp.StatusCode, sources.ErrUnauthorized)
-
-	case resp.StatusCode == nethttp.StatusNotFound:
-		drainAndClose(resp.Body)
-		return nil, fmt.Errorf("http: GET %q: 404: %w",
-			f.spec.URL, sources.ErrNotFound)
-
-	case resp.StatusCode >= 500:
-		drainAndClose(resp.Body)
-		return nil, fmt.Errorf("http: GET %q: %d: %w",
-			f.spec.URL, resp.StatusCode, sources.ErrUnreachable)
-
 	default:
-		// Other 4xx: reachable but the request is invalid in some way
-		// (bad headers, conditional-GET protocol error, etc.).
-		drainAndClose(resp.Body)
+		// Every non-200/304 status maps via the shared ladder
+		// (401/403→Unauthorized, 404→NotFound, ≥500→Unreachable, other
+		// 4xx→UpstreamInvalid). The guard preserves the original default
+		// arm for the pathological 2xx-other case (e.g. 206), which the
+		// ladder would otherwise classify as nil.
+		sources.DrainAndClose(resp.Body)
+		if e := sources.ClassifyHTTPStatus("http", fmt.Sprintf("GET %q", f.spec.URL), resp.StatusCode); e != nil {
+			return nil, e
+		}
 		return nil, fmt.Errorf("http: GET %q: %d: %w",
 			f.spec.URL, resp.StatusCode, sources.ErrUpstreamInvalid)
 	}
@@ -176,17 +165,6 @@ func splitPriorRev(rev string) (etag, lastMod string) {
 // vary); the composite is symmetric with splitPriorRev's parsing.
 func buildRev(etag, lastMod string) string {
 	return etag + "|" + lastMod
-}
-
-// drainAndClose is the REL-04 helper duplicated from
-// internal/litellm/transport.go to avoid an internal/sources/http →
-// internal/litellm dep edge.
-func drainAndClose(body io.ReadCloser) {
-	if body == nil {
-		return
-	}
-	_, _ = io.Copy(io.Discard, body)
-	_ = body.Close()
 }
 
 // setHTTPClientForTesting is the test-only override that injects an

@@ -196,19 +196,14 @@ func classifyS3Err(err error, op string) error {
 		return fmt.Errorf("s3: %s: %w", op, sources.ErrNotFound)
 	}
 
-	// 2. HTTP-status inspection on the underlying response error.
+	// 2. HTTP-status inspection on the underlying response error. Only
+	//    status >= 400 maps via the shared ladder; a <400 response error
+	//    (pathological) falls through to the network-Unreachable default,
+	//    preserving the original behavior.
 	var respErr *smithyhttp.ResponseError
 	if errors.As(err, &respErr) {
-		status := respErr.HTTPStatusCode()
-		switch {
-		case status == 401, status == 403:
-			return fmt.Errorf("s3: %s %d: %w", op, status, sources.ErrUnauthorized)
-		case status == 404:
-			return fmt.Errorf("s3: %s 404: %w", op, sources.ErrNotFound)
-		case status >= 500:
-			return fmt.Errorf("s3: %s %d: %w", op, status, sources.ErrUnreachable)
-		case status >= 400:
-			return fmt.Errorf("s3: %s %d: %w", op, status, sources.ErrUpstreamInvalid)
+		if status := respErr.HTTPStatusCode(); status >= 400 {
+			return sources.ClassifyHTTPStatus("s3", op, status)
 		}
 	}
 

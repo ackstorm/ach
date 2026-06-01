@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -179,14 +177,7 @@ func (r *BackendIdentityPolicyReconciler) writeConflictStatus(
 	ctx context.Context,
 	cr *achv1alpha1.BackendIdentityPolicy,
 ) error {
-	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
-		Type:               "Synced",
-		Status:             metav1.ConditionFalse,
-		Reason:             "ConflictWithUIRow",
-		Message:            "projection row owned by UI; operator declines to overwrite",
-		ObservedGeneration: cr.Generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setConflictWithUIRowCondition(&cr.Status.Conditions, "Synced", cr.Generation)
 	cr.Status.ObservedGeneration = cr.Generation
 	desiredStatus := cr.Status
 	return retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.BackendIdentityPolicy) {
