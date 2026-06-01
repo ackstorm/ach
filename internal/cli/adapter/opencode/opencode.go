@@ -361,24 +361,50 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 	}, nil
 }
 
-// ProjectionRules returns the opencode Phase-1 PASSTHROUGH projection
-// table satisfying route.RuleProvider (the D-06 seam). It is current-
-// behavior-equivalent to opencode's TransformPlugin: commands/, agents/,
-// skills/, prompts/ are routed into .opencode/<kind>/; the droppable
-// components (hooks/, .lsp.json, monitors/, bin/, settings.json) have NO
-// rule and fall into route.Project's dropped set (matching
-// droppableComponent).
+// ProjectionRules returns the opencode ROUTE-04 conversion projection table
+// satisfying route.RuleProvider (the D-06 seam). Per D-18/D-19 the routed
+// (plural) kinds are:
 //
-// Phase 3 wires opencode's agent tools array->object + MCP mcpServers->mcp
-// conversions on top of this same mechanism. Phase 1 ships only the
-// passthrough table. TransformPlugin is LEFT AS-IS — projection runs via
-// the plan-02 Render leg (ProjectionRules -> route.Project). This method
-// is pure data — no I/O.
+//   - commands/**/*  → .opencode/commands/**/*  (MergeReplace, verbatim copy)
+//   - agents/**/*.md → .opencode/agents/**/*.md (MergeReplace, Transform:
+//     opencodeAgentTools — tools[]→{name:true}, output stays markdown)
+//   - skills/**/*    → .opencode/skills/**/*    (MergeReplace, verbatim copy)
+//   - mcp/**/*       → .opencode/opencode.json  (MergeDeep, Transform:
+//     opencodeMCPRename — mcpServers→mcp, no header surgery, JSON output)
+//
+// rules/ and AGENTS.md have NO rule and fall into route.Project's dropped set
+// (route.go records each unrouted top-level kind exactly once — D-12/D-19); the
+// droppable runtime components (hooks/, .lsp.json, monitors/, bin/,
+// settings.json) likewise have no rule and drop the same way (matching
+// droppableComponent). There is deliberately no prompts/ row: D-18 routes only
+// commands/agents/skills/mcp for opencode (OPENPACKAGE-MAPPING §opencode).
+//
+// The mcp/**/* row collapses N→1 onto the SAME runtime target
+// (configJSONPath) RenderRuntime emits, deep-merged under the `mcp` key (D-21);
+// the runtime encoder (renderConfigJSON) is left untouched. This method is pure
+// data — no I/O. TransformPlugin is LEFT AS-IS — projection runs via the
+// plan-02 Render leg (ProjectionRules -> route.Project).
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*", ToGlob: ".opencode/commands/**/*", Merge: adapter.MergeReplace},
-		{FromGlob: "agents/**/*", ToGlob: ".opencode/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
 		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
-		{FromGlob: "prompts/**/*", ToGlob: ".opencode/prompts/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
 	}
+}
+
+// opencodeAgentTools is the agent-frontmatter Transform (FMT-04, D-20). Task 2
+// (TDD) fills the real tools[]→{name:true} re-encode; this Task-1 placeholder
+// passes the source bytes through unchanged so the projection table compiles
+// and the existing passthrough behavior is preserved until GREEN lands.
+func opencodeAgentTools(_ string, in []byte) (out []byte, keys []string, err error) {
+	return in, nil, nil
+}
+
+// opencodeMCPRename is the MCP Transform (D-21). Task 2 (TDD) fills the real
+// mcpServers→mcp rename + canonical JSON emission; this Task-1 placeholder
+// passes the source bytes through unchanged so the projection table compiles
+// until GREEN lands.
+func opencodeMCPRename(_ string, in []byte) (out []byte, keys []string, err error) {
+	return in, nil, nil
 }

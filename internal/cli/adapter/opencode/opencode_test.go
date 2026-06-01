@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -503,6 +504,74 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	}
 	if !seenIDs["opencode"] {
 		t.Error("adapter.Iter() does not include opencode")
+	}
+}
+
+// TestProjectionRules_RoutesAndDrops exercises the real route.Project engine
+// over a plugin tree containing every opencode-routed kind (commands/agents/
+// skills/mcp) PLUS the dropped kinds (rules/, AGENTS.md) (ROUTE-04, D-18/D-19).
+// It asserts: the three file kinds route to the PLURAL .opencode/<kind>/ dirs,
+// mcp/ collapses onto .opencode/opencode.json, and both rules + AGENTS.md land
+// in the dropped set exactly once.
+func TestProjectionRules_RoutesAndDrops(t *testing.T) {
+	src := t.TempDir()
+	mustWrite := func(rel, body string) {
+		full := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %q: %v", rel, err)
+		}
+	}
+	mustWrite("commands/grunt.md", "# grunt\n")
+	mustWrite("agents/cave.md", "---\nname: cave\n---\nhello\n")
+	mustWrite("skills/fire/skill.md", "# fire\n")
+	mustWrite("mcp/servers.json", `{"mcpServers":{"svc":{"type":"http","url":"https://svc"}}}`)
+	// Dropped-by-omission kinds.
+	mustWrite("rules/no.md", "# rule\n")
+	mustWrite("AGENTS.md", "# agents prose\n")
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, dropped, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project returned error: %v", err)
+	}
+
+	// rules + AGENTS.md must be dropped (exactly once each).
+	wantDropped := map[string]int{"rules": 0, "AGENTS.md": 0}
+	for _, d := range dropped {
+		if _, ok := wantDropped[d]; ok {
+			wantDropped[d]++
+		}
+	}
+	for kind, n := range wantDropped {
+		if n != 1 {
+			t.Errorf("dropped count for %q = %d, want 1 (dropped=%v)", kind, n, dropped)
+		}
+	}
+
+	// Kept kinds must route to the PLURAL .opencode/<kind>/ dirs (+ the N→1
+	// mcp collapse onto opencode.json).
+	wantPaths := map[string]bool{
+		".opencode/commands/grunt.md":    false,
+		".opencode/agents/cave.md":       false,
+		".opencode/skills/fire/skill.md": false,
+		".opencode/opencode.json":        false,
+	}
+	for _, w := range fws {
+		p := filepath.ToSlash(w.Path)
+		if strings.HasPrefix(p, ".opencode/prompts/") {
+			t.Errorf("FileWrite targets a .opencode/prompts/ path %q; prompts/ has no opencode rule", w.Path)
+		}
+		if _, ok := wantPaths[p]; ok {
+			wantPaths[p] = true
+		}
+	}
+	for p, seen := range wantPaths {
+		if !seen {
+			t.Errorf("expected a FileWrite for %q, got %d writes: %+v", p, len(fws), fws)
+		}
 	}
 }
 
