@@ -791,8 +791,10 @@ var envRefRE = regexp.MustCompile(`^\$\{env:([A-Z_][A-Z0-9_]*)\}$`)
 //   - Parse the plugin mcp.json (top key mcpServers); rename top key
 //     mcpServers → mcp_servers.
 //   - Per server: headers.Authorization "Bearer ${env:X}" →
-//     bearer_token_env_var = "X" (NAME only); on no-match the header stays a
-//     literal http_header.
+//     bearer_token_env_var = "X" (NAME only). A bare "${env:X}" Authorization
+//     becomes an env_http_header. Any OTHER Authorization (a hardcoded literal
+//     token) is DROPPED, never copied as plaintext into the config (CR-02 /
+//     T-03-04 — the secret VALUE is never read).
 //   - Partition remaining headers by value: "${env:Y}" → env_http_headers
 //     (extract var NAME); literal → http_headers.
 //   - timeout → startup_timeout_sec. Drop the original headers map.
@@ -874,8 +876,17 @@ func surgeryServer(srv map[string]any) map[string]any {
 				out["bearer_token_env_var"] = m[1]
 				continue
 			}
-			// No Bearer-env match: fall through to the env/literal partition
-			// below so a literal Authorization header is preserved.
+			// A non-"Bearer ${env:NAME}" Authorization that is also not a bare
+			// "${env:NAME}" reference is a hardcoded literal credential. DROP
+			// it rather than copy the plaintext token into .codex/config.toml:
+			// materializing a literal secret would violate the documented
+			// T-03-04 invariant ("the secret VALUE is never read", line 776-777
+			// + codex_test.go "raw secret value must never appear"). Only the
+			// "${env:NAME}" form below is preserved (NAME only, value never
+			// read) (CR-02).
+			if envRefRE.FindStringSubmatch(val) == nil {
+				continue
+			}
 		}
 		if m := envRefRE.FindStringSubmatch(val); m != nil {
 			envHeaders[hk] = m[1]

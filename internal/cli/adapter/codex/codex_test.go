@@ -873,6 +873,34 @@ func TestCodexMCPSurgery_BearerEnv(t *testing.T) {
 	}
 }
 
+// TestCodexMCPSurgery_LiteralAuthorizationDropped proves CR-02: a hardcoded
+// literal Authorization token (one that is NOT "Bearer ${env:NAME}" and NOT a
+// bare "${env:NAME}" reference) is DROPPED rather than materialized into the
+// on-disk .codex/config.toml. Materializing the plaintext token would violate
+// the documented T-03-04 "the secret VALUE is never read" invariant.
+func TestCodexMCPSurgery_LiteralAuthorizationDropped(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"Authorization":"Bearer sk-live-abc123"}}}}`)
+	out, _, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	// The raw secret value must never appear in the emitted bytes.
+	if bytes.Contains(out, []byte("sk-live-abc123")) {
+		t.Errorf("literal Authorization secret leaked into output: %q", out)
+	}
+	m := decodeTOML(t, out)
+	svc := m["mcp_servers"].(map[string]any)["svc"].(map[string]any)
+	// No Authorization survives in any partition.
+	if _, ok := svc["bearer_token_env_var"]; ok {
+		t.Errorf("literal token must not produce bearer_token_env_var: %v", svc)
+	}
+	if hh, ok := svc["http_headers"].(map[string]any); ok {
+		if _, present := hh["Authorization"]; present {
+			t.Errorf("literal Authorization must be dropped, not kept as http_header: %v", hh)
+		}
+	}
+}
+
 func TestCodexMCPSurgery_EnvAndLiteralHeaders(t *testing.T) {
 	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"X-Foo":"${env:BAR}","X-Lit":"literal"}}}}`)
 	out, _, err := codexMCPSurgery("mcp/mcp.json", in)
