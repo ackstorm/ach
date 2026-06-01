@@ -266,7 +266,7 @@ func TestProject_TransformNilIsVerbatim(t *testing.T) {
 // a spec-violating plugin that drops binary/non-.md content under agents/.
 func TestProject_TerminalExtensionEnforced(t *testing.T) {
 	src := writeTree(t, map[string]string{
-		"agents/real.md":  "---\nname: a\n---\nbody",
+		"agents/real.md":   "---\nname: a\n---\nbody",
 		"agents/image.png": "\x89PNG\x00binary",
 		"agents/README":    "no extension",
 	})
