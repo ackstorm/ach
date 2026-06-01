@@ -85,12 +85,26 @@ func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 
 func upsertEnv(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, mcps, a2as, teams []string) {
 	t.Helper()
+	// The environments text[] columns are NOT NULL; UpsertEnvironment binds
+	// every value explicitly, so a nil Go slice maps to SQL NULL and violates
+	// the constraint (the column DEFAULT '{}' applies only when omitted). The
+	// operator always sends non-nil slices from the CR spec — mirror that.
+	nz := func(s []string) []string {
+		if s == nil {
+			return []string{}
+		}
+		return s
+	}
 	require.NoError(t, db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace:         testNS,
 		Name:              name,
-		AuthorizedTeams:   teams,
-		RuntimeMCPServers: mcps,
-		RuntimeA2AAgents:  a2as,
+		AuthorizedTeams:   nz(teams),
+		ContextPrompts:    []string{},
+		ContextPlugins:    []string{},
+		ContextArtifacts:  []string{},
+		RuntimeModels:     []string{},
+		RuntimeMCPServers: nz(mcps),
+		RuntimeA2AAgents:  nz(a2as),
 		ResourceVersion:   "1",
 	}))
 }

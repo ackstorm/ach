@@ -180,7 +180,6 @@ func TestServer_S4_MiddlewareOrder(t *testing.T) {
 			KeyID:      "pkid_test",
 			KeyType:    keys.PrefixPk,
 			OwnerEmail: "user@example.com",
-			Status:     "active",
 		},
 	})
 

@@ -129,6 +129,47 @@ func (l *Listener) runOnce(ctx context.Context) error {
 	}
 }
 
+// RunRefreshLoop drives the standard cache-freshness lifecycle shared by
+// the forwarder's bipcache and envstore: an initial refresh, a LISTEN
+// subscription on channel for event-driven refresh, and a periodic
+// ticker safety-net (LISTEN is at-most-once on session loss). Blocks
+// until ctx is cancelled and returns ctx.Err(). refresh errors are
+// logged (the caller's log carries the component name via WithName) and
+// retried on the next NOTIFY/tick — never fatal.
+func RunRefreshLoop(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	channel string,
+	interval time.Duration,
+	log logr.Logger,
+	refresh func(context.Context) error,
+) error {
+	if err := refresh(ctx); err != nil {
+		log.Error(err, "initial refresh failed; will retry on next NOTIFY or tick")
+	}
+
+	lis := NewListener(pool, log.WithName("listen"))
+	lis.Subscribe(channel, func(_ string) {
+		if err := refresh(ctx); err != nil {
+			log.Error(err, "notify-driven refresh failed")
+		}
+	})
+	go func() { _ = lis.Run(ctx) }()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := refresh(ctx); err != nil {
+				log.Error(err, "periodic refresh failed")
+			}
+		}
+	}
+}
+
 type invalidChannelErr struct{ name string }
 
 func (e *invalidChannelErr) Error() string {

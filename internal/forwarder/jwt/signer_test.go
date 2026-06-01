@@ -27,7 +27,7 @@ func freshSeed(t *testing.T) []byte {
 	return seed
 }
 
-// Test 1 — Loaded()/Sign() pre-LoadCurrent surface area.
+// Test 1 — Loaded()/Sign() pre-loadCurrent surface area.
 func TestEd25519Signer_NoCurrentSlot(t *testing.T) {
 	s := NewEd25519Signer()
 	if s.Loaded() {
@@ -92,7 +92,7 @@ func TestNewSignerSlot_KeyLengths(t *testing.T) {
 	}
 }
 
-// Test 4 — LoadCurrent flips Loaded; LoadNext does NOT; LoadNext(nil) clears.
+// Test 4 — loadCurrent flips Loaded; loadNext does NOT; loadNext(nil) clears.
 func TestEd25519Signer_LoadFlags(t *testing.T) {
 	s := NewEd25519Signer()
 	slotA, err := newSignerSlot("k1", freshSeed(t))
@@ -104,21 +104,21 @@ func TestEd25519Signer_LoadFlags(t *testing.T) {
 		t.Fatalf("newSignerSlot k2: %v", err)
 	}
 
-	// LoadNext alone does not flip Loaded — Loaded gates on current.
-	s.LoadNext(slotB)
+	// loadNext alone does not flip Loaded — Loaded gates on current.
+	s.loadNext(slotB)
 	if s.Loaded() {
-		t.Fatal("Loaded() = true after only LoadNext; want false")
+		t.Fatal("Loaded() = true after only loadNext; want false")
 	}
 
-	s.LoadCurrent(slotA)
+	s.loadCurrent(slotA)
 	if !s.Loaded() {
-		t.Fatal("Loaded() = false after LoadCurrent; want true")
+		t.Fatal("Loaded() = false after loadCurrent; want true")
 	}
 
-	// LoadNext(nil) clears next; JWKS drops to 1 entry.
-	s.LoadNext(nil)
+	// loadNext(nil) clears next; JWKS drops to 1 entry.
+	s.loadNext(nil)
 	if got := s.JWKS(); len(got) != 1 {
-		t.Fatalf("JWKS() len after LoadNext(nil) = %d; want 1", len(got))
+		t.Fatalf("JWKS() len after loadNext(nil) = %d; want 1", len(got))
 	}
 }
 
@@ -129,7 +129,7 @@ func TestEd25519Signer_Sign_Header(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot: %v", err)
 	}
-	s.LoadCurrent(slot)
+	s.loadCurrent(slot)
 	tok, err := s.Sign(context.Background(), Claims{Iss: "https://h.example", Sub: "ns/u@e", Aud: "mcp:x"})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
@@ -164,7 +164,7 @@ func TestEd25519Signer_Sign_ClaimsShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot: %v", err)
 	}
-	s.LoadCurrent(slot)
+	s.loadCurrent(slot)
 	tok, err := s.Sign(context.Background(), Claims{Iss: "i", Sub: "s", Aud: "a"})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
@@ -204,8 +204,8 @@ func TestEd25519Signer_Sign_AlwaysCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot K2: %v", err)
 	}
-	s.LoadCurrent(slotCur)
-	s.LoadNext(slotNxt)
+	s.loadCurrent(slotCur)
+	s.loadNext(slotNxt)
 
 	tok, err := s.Sign(context.Background(), Claims{Iss: "i", Sub: "s", Aud: "a"})
 	if err != nil {
@@ -220,7 +220,7 @@ func TestEd25519Signer_Sign_AlwaysCurrent(t *testing.T) {
 	}
 
 	// Clear next; current still wins.
-	s.LoadNext(nil)
+	s.loadNext(nil)
 	tok, err = s.Sign(context.Background(), Claims{Iss: "i", Sub: "s", Aud: "a"})
 	if err != nil {
 		t.Fatalf("Sign post-clear: %v", err)
@@ -234,7 +234,7 @@ func TestEd25519Signer_Sign_AlwaysCurrent(t *testing.T) {
 	}
 }
 
-// Test 8 — concurrent Sign + LoadCurrent: no panic, no torn slot. Run
+// Test 8 — concurrent Sign + loadCurrent: no panic, no torn slot. Run
 // under -race for the publication-safety assertion. We assert ONLY that
 // the Sign result is a parseable JWS whose kid is one of the published
 // kids — never an empty or torn value.
@@ -246,7 +246,7 @@ func TestEd25519Signer_AtomicSwap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot K1: %v", err)
 	}
-	s.LoadCurrent(slot1)
+	s.loadCurrent(slot1)
 
 	slot2, err := newSignerSlot("K-atomic-2", freshSeed(t))
 	if err != nil {
@@ -286,9 +286,9 @@ func TestEd25519Signer_AtomicSwap(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iters; i++ {
 			if i%2 == 0 {
-				s.LoadCurrent(slot1)
+				s.loadCurrent(slot1)
 			} else {
-				s.LoadCurrent(slot2)
+				s.loadCurrent(slot2)
 			}
 		}
 	}()
@@ -304,13 +304,13 @@ func TestEd25519Signer_JWKS_SlotCount(t *testing.T) {
 	}
 
 	slotA, _ := newSignerSlot("k-only-cur", freshSeed(t))
-	s.LoadCurrent(slotA)
+	s.loadCurrent(slotA)
 	if got := s.JWKS(); len(got) != 1 {
 		t.Fatalf("JWKS() current-only len = %d; want 1", len(got))
 	}
 
 	slotB, _ := newSignerSlot("k-also-nxt", freshSeed(t))
-	s.LoadNext(slotB)
+	s.loadNext(slotB)
 	got := s.JWKS()
 	if len(got) != 2 {
 		t.Fatalf("JWKS() current+next len = %d; want 2", len(got))
@@ -328,7 +328,7 @@ func TestEd25519Signer_JWKS_EntryShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot: %v", err)
 	}
-	s.LoadCurrent(slot)
+	s.loadCurrent(slot)
 
 	jwks := s.JWKS()
 	if len(jwks) != 1 {
@@ -382,7 +382,7 @@ func TestEd25519Signer_RoundTripVerify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignerSlot: %v", err)
 	}
-	s.LoadCurrent(slot)
+	s.loadCurrent(slot)
 
 	tok, err := s.Sign(context.Background(), Claims{Iss: "i", Sub: "s", Aud: "a"})
 	if err != nil {

@@ -67,7 +67,6 @@ func newAdminReq(opts adminCallOpts) *http.Request {
 		KeyID:      "pkid_test",
 		KeyType:    opts.keyType,
 		OwnerEmail: opts.ownerEmail,
-		Status:     "active",
 	}
 	ctx = middleware.WithKeyContext(ctx, info, false /* isAdmin is unused by AdminOnly */)
 	return r.WithContext(ctx)

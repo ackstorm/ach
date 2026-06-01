@@ -237,7 +237,7 @@ func TestContentTypeJSONIdempotent(t *testing.T) {
 // populated KeyContext with KeyType=PrefixPk.
 func TestAuthnHappyPathPk(t *testing.T) {
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com", Status: "active"}, nil
+		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com"}, nil
 	})
 	var observed KeyContext
 	var ok bool
@@ -262,7 +262,7 @@ func TestAuthnHappyPathPk(t *testing.T) {
 // and Environment populated.
 func TestAuthnHappyPathEk(t *testing.T) {
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Status: "active", Environment: "prod"}, nil
+		return &keystore.KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "prod"}, nil
 	})
 	var observed KeyContext
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +342,7 @@ func TestAuthnResolverErr(t *testing.T) {
 // handler sees an empty x-ach-key header (D-19 / T-03-05-02).
 func TestAuthnDiscardsPlaintext(t *testing.T) {
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com", Status: "active"}, nil
+		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com"}, nil
 	})
 	var seenHeader string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +376,7 @@ func TestKeyContextAbsentOnRawCtx(t *testing.T) {
 func TestAuthnAdminAllowlistPositive(t *testing.T) {
 	allow := map[string]struct{}{"admin@x.com": {}}
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "admin@x.com", Status: "active"}, nil
+		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "admin@x.com"}, nil
 	})
 	var observed KeyContext
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -398,7 +398,7 @@ func TestAuthnAdminAllowlistPositive(t *testing.T) {
 func TestAuthnAdminAllowlistNegative(t *testing.T) {
 	allow := map[string]struct{}{"admin@x.com": {}}
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "user@x.com", Status: "active"}, nil
+		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "user@x.com"}, nil
 	})
 	var observed KeyContext
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -421,7 +421,7 @@ func TestAuthnAdminAllowlistNegative(t *testing.T) {
 func TestAuthnEkNeverAdmin(t *testing.T) {
 	allow := map[string]struct{}{"admin@x.com": {}}
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "admin@x.com", Status: "active", Environment: "prod"}, nil
+		return &keystore.KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "admin@x.com", Environment: "prod"}, nil
 	})
 	var observed KeyContext
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

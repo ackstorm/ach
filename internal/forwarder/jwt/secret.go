@@ -78,6 +78,32 @@ func NewSecretLoader(signer *Ed25519Signer, namespace, name string, log logr.Log
 	}
 }
 
+// applyNextSlot resolves the optional next signing slot from the Secret
+// and publishes it (or clears it when absent/malformed). phase is "load"
+// or "reload" — it selects the malformed-next log wording (refuse-to-start
+// vs refuse-to-update semantics) without duplicating the branch. Always
+// publishes a next slot (possibly nil); never returns an error (a
+// malformed next is non-fatal — current stays valid).
+func (l *SecretLoader) applyNextSlot(secret *corev1.Secret, phase string) {
+	nxtKid := string(secret.Data[DataKeyNextKid])
+	if nxtKid == "" {
+		l.signer.loadNext(nil)
+		return
+	}
+	nxtSlot, nxtErr := newSignerSlot(nxtKid, secret.Data[DataKeyNextSeed])
+	if nxtErr != nil {
+		msg := "next slot malformed; continuing with current only"
+		if phase == "reload" {
+			msg = "jwt secret reload next malformed; clearing next slot"
+		}
+		l.log.Error(nxtErr, msg,
+			"namespace", l.namespace, "name", l.name, "next.kid", nxtKid)
+		l.signer.loadNext(nil)
+		return
+	}
+	l.signer.loadNext(nxtSlot)
+}
+
 // LoadOnce is the startup-path loader. Returns an error wrapping
 // ErrEmptyKid or ErrEmptySeed when current.kid is empty or
 // current.seed is not 32 bytes; the caller MUST surface this error
@@ -86,7 +112,7 @@ func NewSecretLoader(signer *Ed25519Signer, namespace, name string, log logr.Log
 //
 // On success: current is populated; if next.kid is non-empty AND
 // next.seed is valid, next is also populated. If next.kid is non-empty
-// but next.seed is malformed, the next slot is CLEARED (LoadNext(nil))
+// but next.seed is malformed, the next slot is CLEARED (loadNext(nil))
 // and the error is logged at Error level — the forwarder still starts
 // (current is valid) but the rotation overlap window is unavailable
 // until the operator fixes the Secret.
@@ -103,20 +129,8 @@ func (l *SecretLoader) LoadOnce(secret *corev1.Secret) error {
 	if err != nil {
 		return fmt.Errorf("jwt secret %s/%s current: %w", l.namespace, l.name, err)
 	}
-	l.signer.LoadCurrent(curSlot)
-
-	if nxtKid := string(secret.Data[DataKeyNextKid]); nxtKid != "" {
-		nxtSlot, nxtErr := newSignerSlot(nxtKid, secret.Data[DataKeyNextSeed])
-		if nxtErr != nil {
-			l.log.Error(nxtErr, "next slot malformed; continuing with current only",
-				"namespace", l.namespace, "name", l.name, "next.kid", nxtKid)
-			l.signer.LoadNext(nil)
-		} else {
-			l.signer.LoadNext(nxtSlot)
-		}
-	} else {
-		l.signer.LoadNext(nil)
-	}
+	l.signer.loadCurrent(curSlot)
+	l.applyNextSlot(secret, "load")
 
 	l.log.Info("jwt signing keys loaded",
 		"namespace", l.namespace,
@@ -159,20 +173,8 @@ func (l *SecretLoader) Reload(secret *corev1.Secret) error {
 			"namespace", l.namespace, "name", l.name)
 		return fmt.Errorf("jwt secret %s/%s reload current: %w", l.namespace, l.name, err)
 	}
-	l.signer.LoadCurrent(curSlot)
-
-	if nxtKid := string(secret.Data[DataKeyNextKid]); nxtKid != "" {
-		nxtSlot, nxtErr := newSignerSlot(nxtKid, secret.Data[DataKeyNextSeed])
-		if nxtErr != nil {
-			l.log.Error(nxtErr, "jwt secret reload next malformed; clearing next slot",
-				"namespace", l.namespace, "name", l.name, "next.kid", nxtKid)
-			l.signer.LoadNext(nil)
-		} else {
-			l.signer.LoadNext(nxtSlot)
-		}
-	} else {
-		l.signer.LoadNext(nil)
-	}
+	l.signer.loadCurrent(curSlot)
+	l.applyNextSlot(secret, "reload")
 
 	l.log.Info("jwt signing keys reloaded",
 		"namespace", l.namespace,
