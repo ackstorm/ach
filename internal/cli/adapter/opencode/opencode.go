@@ -103,6 +103,23 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	check(".opencode/plugins", "found .opencode/plugins/ directory")
 	check("opencode.json", "found opencode.json at root")
 
+	// Global-mode hint (WR-06): opencode's global config lives at the XDG path
+	// $HOME/.config/opencode/ (remapGlobalPath, wiring.go), so a global-only
+	// install with no project-relative .opencode/ footprint still matches —
+	// mirroring codex's $HOME/.codex/ probe. Skipped when HOME is unset
+	// (defensive — os.UserHomeDir errors on unset HOME) and when root == $HOME
+	// to avoid double-counting an already-checked dir.
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		absRoot, _ := filepath.Abs(root)
+		if absRoot != home {
+			full := filepath.Join(home, ".config", "opencode")
+			if _, err := os.Stat(full); err == nil {
+				signals++
+				reasons = append(reasons, "found $HOME/.config/opencode/ directory (global-mode hint)")
+			}
+		}
+	}
+
 	if signals == 0 {
 		return adapter.Match{}, nil
 	}

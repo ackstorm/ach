@@ -42,6 +42,9 @@ func TestOpencode_Aliases_Empty(t *testing.T) {
 func TestOpencode_Detect_NoSignals_ZeroMatch(t *testing.T) {
 	a := &Adapter{}
 	tmp := t.TempDir()
+	// Clobber HOME to a fresh dir so a real ~/.config/opencode/ on the test
+	// machine cannot leak a global-mode signal (WR-06).
+	t.Setenv("HOME", t.TempDir())
 	got, err := a.Detect(tmp)
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
@@ -54,9 +57,35 @@ func TestOpencode_Detect_NoSignals_ZeroMatch(t *testing.T) {
 	}
 }
 
+// TestOpencode_Detect_GlobalOnly_LowConfidence proves WR-06: a global-only
+// install whose ONLY footprint is the XDG dir $HOME/.config/opencode/ still
+// matches (Low), mirroring codex's $HOME/.codex/ global-mode hint.
+func TestOpencode_Detect_GlobalOnly_LowConfidence(t *testing.T) {
+	a := &Adapter{}
+	// root has no project-relative opencode artifacts.
+	root := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".config", "opencode"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	got, err := a.Detect(root)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "opencode" {
+		t.Errorf("global-only Detect ID=%q, want opencode", got.ID)
+	}
+	if got.Confidence != adapter.ConfidenceLow {
+		t.Errorf("global-only Detect Confidence=%v, want ConfidenceLow", got.Confidence)
+	}
+}
+
 func TestOpencode_Detect_OneSignal_LowConfidence(t *testing.T) {
 	a := &Adapter{}
 	tmp := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate from a real ~/.config/opencode/ (WR-06)
 	if err := os.MkdirAll(filepath.Join(tmp, ".opencode"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -78,6 +107,7 @@ func TestOpencode_Detect_OneSignal_LowConfidence(t *testing.T) {
 func TestOpencode_Detect_TwoSignals_MediumConfidence(t *testing.T) {
 	a := &Adapter{}
 	tmp := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate from a real ~/.config/opencode/ (WR-06)
 	if err := os.MkdirAll(filepath.Join(tmp, ".opencode"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -96,6 +126,7 @@ func TestOpencode_Detect_TwoSignals_MediumConfidence(t *testing.T) {
 func TestOpencode_Detect_AllSignals_HighConfidence(t *testing.T) {
 	a := &Adapter{}
 	tmp := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate from a real ~/.config/opencode/ (WR-06)
 	if err := os.MkdirAll(filepath.Join(tmp, ".opencode", "plugins"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
