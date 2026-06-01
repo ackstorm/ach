@@ -30,6 +30,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -393,18 +395,126 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 	}
 }
 
-// opencodeAgentTools is the agent-frontmatter Transform (FMT-04, D-20). Task 2
-// (TDD) fills the real tools[]→{name:true} re-encode; this Task-1 placeholder
-// passes the source bytes through unchanged so the projection table compiles
-// and the existing passthrough behavior is preserved until GREEN lands.
-func opencodeAgentTools(_ string, in []byte) (out []byte, keys []string, err error) {
-	return in, nil, nil
+// opencodeAgentTools is the agent-frontmatter Transform (FMT-04, D-20). It
+// converts ONLY the frontmatter `tools` value from a YAML sequence
+// (`[read, write]`) into a string→bool object (`{read: true, write: true}`) —
+// the shape opencode's agent config expects — and re-emits the document as
+// markdown+frontmatter via the deterministic route.EncodeFrontmatterDoc
+// (sorted keys, encoder-quoted scalars — D-24/D-05), so re-hydrate is
+// byte-identical (FMT-05).
+//
+// Every OTHER frontmatter key is preserved verbatim: `model` is NOT rewritten
+// (it already carries opencode's provider/model form), and the claude-extras
+// (`permissions`, `skills`, `hooks`, `disallowedTools`, …) pass through —
+// opencode tolerates unknown keys. The body after the closing fence is
+// preserved byte-for-byte. When the input carries no frontmatter, it passes
+// through unchanged (no fence is invented). When `tools` is absent the doc is
+// re-encoded but no tools field is fabricated.
+//
+// keys is nil: the rule is MergeReplace (file-owned), so there are no dotted
+// deep-merge keys to contribute. Output stays markdown — NOT JSON (D-20).
+func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	fm, body, found := route.SplitFrontmatter(in)
+	if !found {
+		// No frontmatter — pass the document through unharmed (D-20).
+		return in, nil, nil
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(fm, &doc); err != nil {
+		return nil, nil, fmt.Errorf("opencode: opencodeAgentTools parse %q frontmatter: %w", srcRel, err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+
+	// Convert tools sequence → {name: true} object. Only when tools is present
+	// AND is a sequence; any other already-object/absent shape is left as-is
+	// (a pre-converted object round-trips through the encoder unchanged).
+	if rawTools, ok := doc["tools"]; ok {
+		switch tv := rawTools.(type) {
+		case []any:
+			toolsObj := make(map[string]bool, len(tv))
+			for _, e := range tv {
+				name, ok := e.(string)
+				if !ok {
+					return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools element %v (%T) is not a string", srcRel, e, e)
+				}
+				toolsObj[name] = true
+			}
+			doc["tools"] = toolsObj
+		case map[string]any:
+			// Already an object (e.g. a re-hydrate of converted output). Coerce
+			// to map[string]bool so the encoder emits the stable {name:true}
+			// shape and the Transform stays idempotent (FMT-05).
+			obj := make(map[string]bool, len(tv))
+			for k, v := range tv {
+				b, ok := v.(bool)
+				if !ok {
+					return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools[%q] value %v (%T) is not a bool", srcRel, k, v, v)
+				}
+				obj[k] = b
+			}
+			doc["tools"] = obj
+		default:
+			return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools is %T, want sequence or object", srcRel, rawTools)
+		}
+	}
+
+	out, err = route.EncodeFrontmatterDoc(doc, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opencode: opencodeAgentTools encode %q: %w", srcRel, err)
+	}
+	return out, nil, nil
 }
 
-// opencodeMCPRename is the MCP Transform (D-21). Task 2 (TDD) fills the real
-// mcpServers→mcp rename + canonical JSON emission; this Task-1 placeholder
-// passes the source bytes through unchanged so the projection table compiles
-// until GREEN lands.
-func opencodeMCPRename(_ string, in []byte) (out []byte, keys []string, err error) {
-	return in, nil, nil
+// opencodeMCPRename is the MCP Transform (D-21). It parses the plugin
+// `mcp.json`, renames the top-level `mcpServers` key to `mcp` (opencode's MCP
+// merge key under .opencode/opencode.json), and re-emits canonical JSON via
+// route.CanonicalJSON (sorted keys — D-24) so re-hydrate is byte-identical.
+//
+// NO header surgery: unlike codex, opencode consumes the raw per-server shape
+// verbatim under `mcp` — any `${env:X}` env-reference literal in a header is the
+// value the plugin author wrote and is copied through unchanged (T-03-08 accept;
+// opencode resolves the `${env:X}` reference at its own runtime — ACH never
+// reads or materializes the secret here). There is deliberately no token/header
+// partition (the codex bearer/env/literal split does NOT apply to opencode).
+//
+// keys returns the contributed dotted paths `["mcp.<id>", …]` (sorted) matching
+// the runtime encoder prefix (renderConfigJSON contributes `mcp.<server.ID>`),
+// so the Wave-1 prefix-aware dropRuntimeOwnedMCP dedups a projected server
+// against an identically-named runtime server on a `mcp.<id>` clash. The
+// runtime emission (renderConfigJSON / the `json:"mcp"` shape) is UNTOUCHED.
+func opencodeMCPRename(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	var top map[string]any
+	if err := json.Unmarshal(in, &top); err != nil {
+		return nil, nil, fmt.Errorf("opencode: opencodeMCPRename parse %q: %w", srcRel, err)
+	}
+	if top == nil {
+		top = map[string]any{}
+	}
+
+	// Rename mcpServers → mcp. If the input is already keyed `mcp` (e.g. a
+	// re-hydrate of converted output) the servers stay under `mcp` and the
+	// rename is a no-op, keeping the Transform idempotent (FMT-05).
+	if servers, ok := top["mcpServers"]; ok {
+		top["mcp"] = servers
+		delete(top, "mcpServers")
+	}
+
+	keys = make([]string, 0)
+	if mcpRaw, ok := top["mcp"]; ok {
+		if servers, ok := mcpRaw.(map[string]any); ok {
+			for id := range servers {
+				keys = append(keys, "mcp."+id)
+			}
+		}
+	}
+	sort.Strings(keys)
+
+	out, err = route.CanonicalJSON(top)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opencode: opencodeMCPRename encode %q: %w", srcRel, err)
+	}
+	return out, keys, nil
 }
