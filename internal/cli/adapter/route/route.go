@@ -311,6 +311,22 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 			return nil
 		}
 
+		// WR-03 terminal-extension enforcement: matchRule classifies on the
+		// FromGlob anchor's FIRST segment only, so the `.md` in
+		// "agents/**/*.md" is otherwise decorative — any file under agents/
+		// (image.png, README, notes.txt) would be routed through the
+		// converting Transform. When the FromGlob terminal segment is a
+		// "*.<ext>" wildcard, skip files whose extension differs so a
+		// spec-violating plugin's non-.md content never reaches codexAgentTOML
+		// / opencodeAgentTools (binary → developer_instructions / silent
+		// wrong-output). D-01 plugin source is Claude-vanilla, so this only
+		// guards a malformed tree, fail-fast rather than corrupt-through.
+		if base := filepath.Base(filepath.ToSlash(rule.FromGlob)); strings.HasPrefix(base, "*.") {
+			if filepath.Ext(rel) != filepath.Ext(base) {
+				return nil
+			}
+		}
+
 		dest, err := resolveRecursiveGlobTarget(rule.FromGlob, rule.ToGlob, rel)
 		if err != nil {
 			return err

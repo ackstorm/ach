@@ -260,6 +260,45 @@ func TestProject_TransformNilIsVerbatim(t *testing.T) {
 	}
 }
 
+// TestProject_TerminalExtensionEnforced (WR-03): when a rule's FromGlob ends
+// in a "*.<ext>" wildcard, files under the matching kind dir whose extension
+// differs are skipped — never routed through the converting Transform. Guards
+// a spec-violating plugin that drops binary/non-.md content under agents/.
+func TestProject_TerminalExtensionEnforced(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"agents/real.md":  "---\nname: a\n---\nbody",
+		"agents/image.png": "\x89PNG\x00binary",
+		"agents/README":    "no extension",
+	})
+	transformCalls := 0
+	rules := []Rule{
+		{
+			FromGlob: "agents/**/*.md",
+			ToGlob:   ".codex/agents/**/*.toml",
+			Merge:    adapter.MergeReplace,
+			Transform: func(_ string, in []byte) ([]byte, []string, error) {
+				transformCalls++
+				return in, nil, nil
+			},
+		},
+	}
+
+	fws, _, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	// Only the .md file should be routed/transformed.
+	if len(fws) != 1 {
+		t.Fatalf("expected 1 FileWrite (.md only), got %d: %v", len(fws), fws)
+	}
+	if transformCalls != 1 {
+		t.Errorf("Transform called %d times; want 1 (only the .md file)", transformCalls)
+	}
+	if got := fws[0].Path; got != ".codex/agents/real.toml" {
+		t.Errorf("Path = %q, want .codex/agents/real.toml", got)
+	}
+}
+
 // TestProject_TransformApplied (D-03): a rule whose Transform returns fixed
 // bytes + keys ["mcpServers.x"] yields a FileWrite carrying those Content/Keys.
 func TestProject_TransformApplied(t *testing.T) {
