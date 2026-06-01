@@ -818,7 +818,15 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 				return FileWrite{}, fmt.Errorf("adapter %s write composite %s: %w", d.platformID, finalAbs, err)
 			}
 		default:
-			if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
+			// MergeReplace (file-owned) covers ONLY the Phase-3 projected
+			// plugin resource files — .codex/agents/*.toml, .codex/prompts/*.md,
+			// .agents/skills/*, .opencode/agents/*.md, .opencode/commands/*,
+			// .opencode/skills/* — none of which carry credentials (WR-04).
+			// 0o600 (owner-only) is reserved for the credential-bearing
+			// MergeDeep runtime configs above; non-secret projected resources
+			// use 0o644 so cross-account use (service user, mounted docker
+			// volume) works.
+			if err := state.WriteAtomic(finalAbs, fw.Content, 0o644); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
 			}
 		}
@@ -829,13 +837,15 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		// (user error, attacker, prior bug), the content stays at the leaked
 		// mode. Re-assert the per-MergeKind mode unconditionally — cheap, and
 		// closes the no-op regression net the CR-01 audit flagged. The mode is
-		// MergeKind-dependent: composite host memory files are 0o644 (no
-		// credential); MergeDeep/replace runtime configs are 0o600 (bearer).
-		// Using a fixed 0o600 here would silently DOWNGRADE CLAUDE.md/GEMINI.md
-		// from 0o644 → 0o600 on every idempotent re-hydrate.
-		mode := os.FileMode(0o600)
-		if fw.Merge == adapter.MergeComposite {
-			mode = 0o644
+		// MergeKind-dependent: only MergeDeep runtime configs carry a bearer
+		// credential, so ONLY they get owner-only 0o600. MergeComposite host
+		// memory files (CLAUDE.md/GEMINI.md) and MergeReplace projected plugin
+		// resources (WR-04 — .codex/agents/*.toml, .opencode/commands/*, …)
+		// hold no secret and use 0o644; a fixed 0o600 here would silently
+		// DOWNGRADE them on every idempotent re-hydrate.
+		mode := os.FileMode(0o644)
+		if fw.Merge == adapter.MergeDeep {
+			mode = 0o600
 		}
 		if err := os.Chmod(finalAbs, mode); err != nil && !os.IsNotExist(err) {
 			return FileWrite{}, fmt.Errorf("adapter %s chmod %s: %w", d.platformID, finalAbs, err)

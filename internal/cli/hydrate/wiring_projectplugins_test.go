@@ -147,6 +147,32 @@ func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 	}
 }
 
+// TestProjectPlugins_ReplaceProjectedFileIs0o644 proves WR-04: a MergeReplace
+// projected plugin resource file (no credential) is written world-readable at
+// 0o644, NOT owner-only 0o600 — 0o600 is reserved for credential-bearing
+// MergeDeep runtime configs, and 0o600 on a non-secret projected file breaks
+// cross-account use (service user, mounted docker volume).
+func TestProjectPlugins_ReplaceProjectedFileIs0o644(t *testing.T) {
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+	stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
+
+	d := &adapterDispatcherImpl{platformID: "fakerepl"}
+	var result RenderResult
+	if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+		t.Fatalf("projectPlugins: %v", err)
+	}
+
+	abs := filepath.Join(toolRoot, ".claude", "rules", "foo.md")
+	info, err := os.Stat(abs)
+	if err != nil {
+		t.Fatalf("stat projected file: %v", err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("projected MergeReplace file mode = %o; want 0o644 (non-credential resource)", info.Mode().Perm())
+	}
+}
+
 // fakeReplaceAdapter routes rules/**/* → .claude/rules/**/* (MergeReplace) only,
 // so a two-plugin same-file collision exercises the CR-01 fail-fast that
 // composite is exempt from.
