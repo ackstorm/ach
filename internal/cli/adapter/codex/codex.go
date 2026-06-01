@@ -64,13 +64,16 @@ package codex
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
@@ -312,13 +315,19 @@ func (d *droppedSet) add(name string) {
 }
 
 // silentDropTopLevel is the set of src top-level component names that
-// Codex silently drops per CLI spec §7.4 last paragraph + plan
-// behavior. The orchestrator's per-plugin .mcp.json consumption is
-// separate (handled at runtime-config rendering, not TransformPlugin),
-// so ".mcp.json" is intentionally NOT in this set.
+// Codex silently drops in the LEGACY TransformPlugin walk per CLI spec
+// §7.4 last paragraph + plan behavior. The orchestrator's per-plugin
+// .mcp.json consumption is separate (handled at runtime-config rendering,
+// not TransformPlugin), so ".mcp.json" is intentionally NOT in this set.
+//
+// Per D-14 "commands" is REMOVED from this set: codex now ROUTES
+// commands/**/*.md → .codex/prompts/**/*.md through ProjectionRules /
+// route.Project (the projection Render leg), so the legacy walk must no
+// longer silent-drop them. The walk's "hooks" drop stays (codex has no
+// plugin hook system). The projection drop set {rules, AGENTS.md, hooks}
+// arises naturally in route.Project: those kinds have no matching Rule.
 var silentDropTopLevel = map[string]bool{
-	"commands": true,
-	"hooks":    true,
+	"hooks": true,
 }
 
 // TransformPlugin walks the src plugin tree and writes a transformed
@@ -657,24 +666,229 @@ func rewriteFrontmatterLine(line []byte) []byte {
 	return line
 }
 
-// ProjectionRules returns the codex Phase-1 PASSTHROUGH projection table
-// satisfying route.RuleProvider (the D-06 seam). It is current-behavior-
-// equivalent to the codex TransformPlugin walk: agents/ and skills/ are
-// routed into .codex/<kind>/; commands/, hooks/, and rules/ have NO rule
-// and therefore fall into route.Project's dropped set (matching codex's
-// existing silentDropTopLevel{commands,hooks} plus the rules/ kind codex
-// has never had a destination for).
+// ProjectionRules returns the codex ROUTE-03 projection table satisfying
+// route.RuleProvider (the D-06 seam). It is the real Phase-3
+// format-converting table (D-13/D-14), mirroring the claudecode.go /
+// gemini.go rule-list-literal shape (Transform only on the converting
+// rows):
 //
-// Phase 3 (OPENPACKAGE-MAPPING #7) reconciles codex's routed-kind/drop
-// sets — routing commands/ -> .codex/prompts/ and the agents .md->.toml
-// conversion. Phase 1 deliberately ships only the passthrough table;
-// TransformPlugin (incl. writeAgentWithFrontmatterRewrite and
-// silentDropTopLevel) is LEFT AS-IS — projection runs via the plan-02
-// Render leg (ProjectionRules -> route.Project), not TransformPlugin.
-// This method is pure data — no I/O.
+//   - commands/**/*.md → .codex/prompts/**/*.md (MergeReplace): codex calls
+//     them "prompts" (D-13). Dropped in the Phase-1 stub; now routed.
+//   - skills/**/*       → .agents/skills/**/* (MergeReplace): codex skills
+//     live under .agents/, NOT .codex/skills/ (the stub bug).
+//   - agents/**/*.md    → .codex/agents/**/*.toml (MergeReplace) via
+//     codexAgentTOML: markdown→TOML field-lift (FMT-01, D-15), exercising
+//     the Wave-1 .md→.toml extension remap.
+//   - mcp/**/*          → .codex/config.toml (MergeDeep) via codexMCPSurgery:
+//     N→1 concrete ToGlob collapse + MCP header surgery (FMT-02, D-16).
+//
+// The drop set {rules, AGENTS.md, hooks} arises naturally in route.Project:
+// those kinds have no matching Rule, so each is recorded once via
+// dropped.add. TransformPlugin (the legacy walk) is LEFT AS-IS — projection
+// runs via the plan-02 Render leg (ProjectionRules -> route.Project), not
+// TransformPlugin. This method is pure data — no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
-		{FromGlob: "agents/**/*", ToGlob: ".codex/agents/**/*", Merge: adapter.MergeReplace},
-		{FromGlob: "skills/**/*", ToGlob: ".codex/skills/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*.md", ToGlob: ".codex/prompts/**/*.md", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".agents/skills/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "agents/**/*.md", ToGlob: ".codex/agents/**/*.toml", Merge: adapter.MergeReplace, Transform: codexAgentTOML},
+		{FromGlob: "mcp/**/*", ToGlob: configTOMLPath, Merge: adapter.MergeDeep, Transform: codexMCPSurgery},
 	}
+}
+
+// codexAgentWhitelist is the exact set of agent-frontmatter keys D-15 lifts
+// to the top level of the emitted .codex/agents/<name>.toml. Every OTHER
+// frontmatter key (`tools`, `permissions`, `hooks`, `skills`,
+// `disallowedTools`, …) is dropped (the OpenPackage `$unset frontmatter`
+// posture), so a malicious plugin cannot inject an unexpected codex config
+// key via agent frontmatter (T-03-06).
+var codexAgentWhitelist = []string{
+	"name",
+	"description",
+	"model",
+	"model_reasoning_effort",
+	"sandbox_mode",
+	"mcp_servers",
+}
+
+// codexAgentTOML is the FMT-01 / D-15 agent markdown→TOML field-lift
+// Transform (the locked D-03 seam signature, route.go:80). It re-encodes
+// the source bytes, so the projected file's Hash != SourceHash (the D-23
+// raison d'être).
+//
+// Pipeline (mirrors OPENPACKAGE-MAPPING §2a markdown→json→field-lift→toml):
+//
+//   - Split frontmatter+body via the Wave-1 route.SplitFrontmatter. A file
+//     with no frontmatter fence is treated as an empty-frontmatter doc with
+//     the whole input as body.
+//   - body → developer_instructions.
+//   - Whitelist-rename ONLY the six codexAgentWhitelist keys to top level;
+//     drop every other frontmatter key.
+//   - name defaults to filepath.Base(srcRel) sans .md; a frontmatter name
+//     overrides the default. A $rename on a missing source key is a no-op
+//     (the field is simply omitted).
+//   - Emit deterministic TOML via route.CanonicalTOML (D-24 byte-stability).
+//
+// keys return == nil: this is a MergeReplace, file-owned destination with no
+// dotted deep-merge keys. All output goes through the BurntSushi/toml
+// encoder (NO string concatenation), so frontmatter values carrying TOML
+// metacharacters are escaped/quoted and cannot break out of their field
+// (T-03-05).
+func codexAgentTOML(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	fmBytes, body, found := route.SplitFrontmatter(in)
+
+	fm := map[string]any{}
+	if found && len(bytes.TrimSpace(fmBytes)) > 0 {
+		if uerr := yaml.Unmarshal(fmBytes, &fm); uerr != nil {
+			return nil, nil, fmt.Errorf("codex: codexAgentTOML parse frontmatter %q: %w", srcRel, uerr)
+		}
+		if fm == nil {
+			fm = map[string]any{}
+		}
+	}
+
+	doc := map[string]any{}
+
+	// Whitelist-lift the six keys; everything else in fm is dropped.
+	for _, k := range codexAgentWhitelist {
+		if v, ok := fm[k]; ok && v != nil {
+			doc[k] = v
+		}
+	}
+
+	// name default: filename sans .md, overridden by a frontmatter name.
+	if _, ok := doc["name"]; !ok {
+		base := filepath.Base(filepath.ToSlash(srcRel))
+		doc["name"] = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
+	// body → developer_instructions (always present; empty body → empty string).
+	doc["developer_instructions"] = string(body)
+
+	out, err = route.CanonicalTOML(doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("codex: codexAgentTOML encode %q: %w", srcRel, err)
+	}
+	return out, nil, nil
+}
+
+// bearerEnvRE matches an Authorization header of the exact form
+// "Bearer ${env:VARNAME}"; group 1 captures the env-var NAME. Only the NAME
+// is materialized — the secret VALUE is never read (T-03-04).
+var bearerEnvRE = regexp.MustCompile(`^Bearer \$\{env:([A-Z_][A-Z0-9_]*)\}$`)
+
+// envRefRE matches a bare "${env:VARNAME}" header value; group 1 captures the
+// env-var NAME.
+var envRefRE = regexp.MustCompile(`^\$\{env:([A-Z_][A-Z0-9_]*)\}$`)
+
+// codexMCPSurgery is the FMT-02 / D-16 MCP header-surgery Transform — NET-NEW
+// (codex's runtime mcpServerTable/renderConfigTOML path emits a DIFFERENT
+// shape, {url, headers{x-ach-key}, transport}, and stays byte-unchanged per
+// D-17). It re-encodes, so Hash != SourceHash (D-23).
+//
+// Pipeline (per OPENPACKAGE-MAPPING §2b):
+//
+//   - Parse the plugin mcp.json (top key mcpServers); rename top key
+//     mcpServers → mcp_servers.
+//   - Per server: headers.Authorization "Bearer ${env:X}" →
+//     bearer_token_env_var = "X" (NAME only); on no-match the header stays a
+//     literal http_header.
+//   - Partition remaining headers by value: "${env:Y}" → env_http_headers
+//     (extract var NAME); literal → http_headers.
+//   - timeout → startup_timeout_sec. Drop the original headers map.
+//   - Emit deterministic TOML via route.CanonicalTOML (sorted ids, sorted
+//     keys — BurntSushi sorts map keys lexicographically).
+//
+// keys return == ["mcp_servers.<id>", …] (sorted) matching the runtime
+// encoder's contributedKeys prefix (renderConfigTOML, "mcp_servers."+id) so
+// the Wave-1 generalized dropRuntimeOwnedMCP (D-10/D-17) dedups projected
+// against runtime. The runtime mcpServerTable / renderConfigTOML path is NOT
+// touched.
+func codexMCPSurgery(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	var top map[string]json.RawMessage
+	if uerr := json.Unmarshal(in, &top); uerr != nil {
+		return nil, nil, fmt.Errorf("codex: codexMCPSurgery parse %q: %w", srcRel, uerr)
+	}
+
+	servers := map[string]json.RawMessage{}
+	if raw, ok := top["mcpServers"]; ok {
+		if uerr := json.Unmarshal(raw, &servers); uerr != nil {
+			return nil, nil, fmt.Errorf("codex: codexMCPSurgery parse %q mcpServers: %w", srcRel, uerr)
+		}
+	}
+
+	mcpServers := map[string]any{}
+	keys = make([]string, 0, len(servers))
+
+	for id, rawSrv := range servers {
+		var srv map[string]any
+		if uerr := json.Unmarshal(rawSrv, &srv); uerr != nil {
+			return nil, nil, fmt.Errorf("codex: codexMCPSurgery parse %q server %q: %w", srcRel, id, uerr)
+		}
+		mcpServers[id] = surgeryServer(srv)
+		keys = append(keys, "mcp_servers."+id)
+	}
+
+	sort.Strings(keys)
+
+	doc := map[string]any{"mcp_servers": mcpServers}
+	out, err = route.CanonicalTOML(doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("codex: codexMCPSurgery encode %q: %w", srcRel, err)
+	}
+	return out, keys, nil
+}
+
+// surgeryServer applies the per-server FMT-02 header surgery to a single
+// parsed mcp.json server object and returns the projected codex server table.
+// The original `headers` map is consumed (dropped); `timeout` is renamed.
+// Any other server key (url, transport, …) passes through verbatim.
+func surgeryServer(srv map[string]any) map[string]any {
+	out := map[string]any{}
+
+	var headers map[string]any
+	for k, v := range srv {
+		switch k {
+		case "headers":
+			if hm, ok := v.(map[string]any); ok {
+				headers = hm
+			}
+		case "timeout":
+			out["startup_timeout_sec"] = v
+		default:
+			out[k] = v
+		}
+	}
+
+	if len(headers) == 0 {
+		return out
+	}
+
+	envHeaders := map[string]any{}
+	litHeaders := map[string]any{}
+
+	for hk, hv := range headers {
+		val, _ := hv.(string)
+		if hk == "Authorization" {
+			if m := bearerEnvRE.FindStringSubmatch(val); m != nil {
+				out["bearer_token_env_var"] = m[1]
+				continue
+			}
+			// No Bearer-env match: fall through to the env/literal partition
+			// below so a literal Authorization header is preserved.
+		}
+		if m := envRefRE.FindStringSubmatch(val); m != nil {
+			envHeaders[hk] = m[1]
+			continue
+		}
+		litHeaders[hk] = hv
+	}
+
+	if len(envHeaders) > 0 {
+		out["env_http_headers"] = envHeaders
+	}
+	if len(litHeaders) > 0 {
+		out["http_headers"] = litHeaders
+	}
+	return out
 }
