@@ -3,9 +3,11 @@
 package route
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -221,6 +223,126 @@ func TestProject_TraversalGuard(t *testing.T) {
 	_, _, err := Project(rules, src, "")
 	if err == nil {
 		t.Fatalf("expected traversal guard error for ToGlob escaping dest root, got nil")
+	}
+}
+
+// TestProject_TransformNilIsVerbatim (D-03): a rule with Transform==nil
+// produces FileWrite.Content == raw source bytes and FileWrite.Keys == nil,
+// byte-identical to the Phase-1 passthrough output (regression guard).
+func TestProject_TransformNilIsVerbatim(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"mcp/server.json": `{"mcpServers":{"x":{}}}`,
+	})
+	rules := []Rule{
+		{FromGlob: "mcp/**/*", ToGlob: ".claude/settings.json", Merge: adapter.MergeDeep},
+	}
+
+	fws, _, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if len(fws) != 1 {
+		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
+	}
+	got := fws[0]
+	if string(got.Content) != `{"mcpServers":{"x":{}}}` {
+		t.Errorf("Content: got %q, want verbatim raw bytes", string(got.Content))
+	}
+	if got.Keys != nil {
+		t.Errorf("Keys: got %v, want nil for nil-Transform path", got.Keys)
+	}
+}
+
+// TestProject_TransformApplied (D-03): a rule whose Transform returns fixed
+// bytes + keys ["mcpServers.x"] yields a FileWrite carrying those Content/Keys.
+func TestProject_TransformApplied(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"mcp/server.json": "RAW INPUT",
+	})
+	rules := []Rule{
+		{
+			FromGlob: "mcp/**/*",
+			ToGlob:   ".claude/settings.json",
+			Merge:    adapter.MergeDeep,
+			Transform: func(_ string, _ []byte) ([]byte, []string, error) {
+				return []byte("OUT"), []string{"mcpServers.x"}, nil
+			},
+		},
+	}
+
+	fws, _, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if len(fws) != 1 {
+		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
+	}
+	got := fws[0]
+	if string(got.Content) != "OUT" {
+		t.Errorf("Content: got %q, want %q (transform output)", string(got.Content), "OUT")
+	}
+	if !reflect.DeepEqual(got.Keys, []string{"mcpServers.x"}) {
+		t.Errorf("Keys: got %v, want %v (transform keys)", got.Keys, []string{"mcpServers.x"})
+	}
+}
+
+// TestProject_TransformReceivesSrcRel (D-03): Transform receives srcRel ==
+// the plugin-tree-relative path of the matched file, forward-slashed.
+func TestProject_TransformReceivesSrcRel(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"mcp/nested/server.json": "x",
+	})
+	var seen string
+	rules := []Rule{
+		{
+			FromGlob: "mcp/**/*",
+			ToGlob:   ".claude/settings.json",
+			Merge:    adapter.MergeDeep,
+			Transform: func(srcRel string, in []byte) ([]byte, []string, error) {
+				seen = srcRel
+				return in, nil, nil
+			},
+		},
+	}
+
+	if _, _, err := Project(rules, src, ""); err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if seen != "mcp/nested/server.json" {
+		t.Errorf("Transform srcRel: got %q, want plugin-tree-relative %q", seen, "mcp/nested/server.json")
+	}
+}
+
+// TestProject_TransformErrorAborts (D-03): a Transform returning a non-nil
+// error makes Project return a non-nil error mentioning the file path.
+func TestProject_TransformErrorAborts(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"mcp/server.json": "x",
+	})
+	rules := []Rule{
+		{
+			FromGlob: "mcp/**/*",
+			ToGlob:   ".claude/settings.json",
+			Merge:    adapter.MergeDeep,
+			Transform: func(_ string, _ []byte) ([]byte, []string, error) {
+				return nil, nil, errors.New("boom")
+			},
+		},
+	}
+
+	sentinel := errors.New("boom")
+	rules[0].Transform = func(_ string, _ []byte) ([]byte, []string, error) {
+		return nil, nil, sentinel
+	}
+	_, _, err := Project(rules, src, "")
+	if err == nil {
+		t.Fatalf("expected Project to abort on Transform error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("error %v does not wrap the Transform's sentinel error", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "mcp/server.json") {
+		t.Errorf("error %q does not name the offending file path", msg)
 	}
 }
 
