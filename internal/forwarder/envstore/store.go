@@ -46,9 +46,6 @@ func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Store {
 // retain it past the next Refresh.
 func (s *Store) Get(name string) (*db.EnvironmentRow, bool) {
 	m := s.rows.Load()
-	if m == nil {
-		return nil, false
-	}
 	r, ok := (*m)[name]
 	if !ok {
 		return nil, false
@@ -61,9 +58,6 @@ func (s *Store) Get(name string) (*db.EnvironmentRow, bool) {
 // ordering does not affect outcome.
 func (s *Store) List() []db.EnvironmentRow {
 	m := s.rows.Load()
-	if m == nil {
-		return nil
-	}
 	out := make([]db.EnvironmentRow, 0, len(*m))
 	for _, r := range *m {
 		out = append(out, r)

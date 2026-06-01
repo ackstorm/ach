@@ -65,9 +65,6 @@ func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Cache {
 // retain it past the next Refresh.
 func (c *Cache) Resolve(targetKind, targetName string) *db.BIPRow {
 	m := c.rows.Load()
-	if m == nil {
-		return nil
-	}
 	rows := (*m)[targetKey{Kind: targetKind, Name: targetName}]
 	if len(rows) == 0 {
 		return nil

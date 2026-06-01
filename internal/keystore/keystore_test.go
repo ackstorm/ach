@@ -73,7 +73,7 @@ func TestCachedResolverMiss(t *testing.T) {
 	plaintext := "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa"
 	expires := time.Now().Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
-		return &KeyInfo{KeyID: "pkid_x", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active", ExpiresAt: &expires}, nil
+		return &KeyInfo{KeyID: "pkid_x", KeyType: keys.PrefixPk, OwnerEmail: "a@b", ExpiresAt: &expires}, nil
 	}}
 	r, mr, pepper := setupCached(t, inner)
 	info, err := r.Resolve(context.Background(), plaintext)
@@ -108,7 +108,7 @@ func TestCachedResolverHit(t *testing.T) {
 	}}
 	r, mr, pepper := setupCached(t, inner)
 	hash, _ := credhash.Hash(pepper, []byte(plaintext))
-	want := &KeyInfo{KeyID: "pkid_cached", KeyType: keys.PrefixPk, OwnerEmail: "cached@b", Status: "active"}
+	want := &KeyInfo{KeyID: "pkid_cached", KeyType: keys.PrefixPk, OwnerEmail: "cached@b"}
 	b, _ := json.Marshal(want)
 	if err := mr.Set("ach:key:"+hash, string(b)); err != nil {
 		t.Fatalf("miniredis Set: %v", err)
@@ -164,7 +164,7 @@ func TestCachedResolverSingleFlight(t *testing.T) {
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
 		inFlightOnce.Do(func() { close(leaderInFlight) })
 		<-leaderHold // hold the in-flight entry until followers have joined
-		return &KeyInfo{KeyID: "pkid_sf", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active"}, nil
+		return &KeyInfo{KeyID: "pkid_sf", KeyType: keys.PrefixPk, OwnerEmail: "a@b"}, nil
 	}}
 	r, _, _ := setupCached(t, inner)
 
@@ -216,7 +216,7 @@ func TestCachedResolverTTLExact(t *testing.T) {
 	plaintext := "pk_dddddddddddddddddddddddddd"
 	expires := time.Now().Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
-		return &KeyInfo{KeyID: "pkid_y", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active", ExpiresAt: &expires}, nil
+		return &KeyInfo{KeyID: "pkid_y", KeyType: keys.PrefixPk, OwnerEmail: "a@b", ExpiresAt: &expires}, nil
 	}}
 	r, mr, pepper := setupCached(t, inner)
 	if _, err := r.Resolve(context.Background(), plaintext); err != nil {
@@ -309,7 +309,7 @@ func (s *stubDB) ekLookup(_ context.Context, _ string) (*KeyInfo, error) {
 func TestDBResolverPkHappy(t *testing.T) {
 	plaintext := validBearer(t)
 	expires := time.Now().Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
-	stub := &stubDB{pkResp: &KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "a@b", Status: "active", ExpiresAt: &expires}}
+	stub := &stubDB{pkResp: &KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "a@b", ExpiresAt: &expires}}
 	r := newDBResolverWith([]byte("pepper-aaaaaaaaaaaaaaaaaaaaaaaaaa"), stub.pkLookup, stub.ekLookup)
 	info, err := r.Resolve(context.Background(), plaintext)
 	if err != nil {
@@ -330,7 +330,7 @@ func TestDBResolverEkHappy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBearer(Ek): %v", err)
 	}
-	stub := &stubDB{ekResp: &KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "a@b", Status: "active", Environment: "prod"}}
+	stub := &stubDB{ekResp: &KeyInfo{KeyID: "ekid_b", KeyType: keys.PrefixEk, OwnerEmail: "a@b", Environment: "prod"}}
 	r := newDBResolverWith([]byte("pepper-bbbbbbbbbbbbbbbbbbbbbbbbbb"), stub.pkLookup, stub.ekLookup)
 	info, err := r.Resolve(context.Background(), plaintext)
 	if err != nil {

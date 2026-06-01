@@ -126,7 +126,6 @@ func pkLookupFor(pool *pgxpool.Pool) dbLookupFn {
 			KeyID:         row.KeyID,
 			KeyType:       keys.PrefixPk,
 			OwnerEmail:    row.OwnerEmail,
-			Status:        "active", // PkCheckAndExtend filters on status='active'
 			ExpiresAt:     &expires,
 			LiteLLMUserID: row.LiteLLMUserID,
 			LiteLLMToken:  row.LiteLLMToken,
@@ -149,7 +148,6 @@ func ekLookupFor(pool *pgxpool.Pool) dbLookupFn {
 			KeyID:         row.KeyID,
 			KeyType:       keys.PrefixEk,
 			OwnerEmail:    row.OwnerEmail,
-			Status:        "active", // EkResolve filters on status='active'
 			Environment:   row.Environment,
 			LiteLLMUserID: row.LiteLLMUserID,
 			LiteLLMToken:  row.LiteLLMToken,
