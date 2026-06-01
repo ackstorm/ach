@@ -134,17 +134,13 @@ func classifyGCSErr(err error, op string) error {
 	if errors.Is(err, storage.ErrBucketNotExist) {
 		return fmt.Errorf("gcs: %s: %w", op, sources.ErrNotFound)
 	}
+	// Only Code >= 400 maps via the shared ladder; a <400 googleapi error
+	// (pathological) falls through to the network-Unreachable default,
+	// preserving the original behavior.
 	var apiErr *googleapi.Error
 	if errors.As(err, &apiErr) {
-		switch {
-		case apiErr.Code == 401, apiErr.Code == 403:
-			return fmt.Errorf("gcs: %s %d: %w", op, apiErr.Code, sources.ErrUnauthorized)
-		case apiErr.Code == 404:
-			return fmt.Errorf("gcs: %s 404: %w", op, sources.ErrNotFound)
-		case apiErr.Code >= 500:
-			return fmt.Errorf("gcs: %s %d: %w", op, apiErr.Code, sources.ErrUnreachable)
-		case apiErr.Code >= 400:
-			return fmt.Errorf("gcs: %s %d: %w", op, apiErr.Code, sources.ErrUpstreamInvalid)
+		if apiErr.Code >= 400 {
+			return sources.ClassifyHTTPStatus("gcs", op, apiErr.Code)
 		}
 	}
 	return fmt.Errorf("gcs: %s: %v: %w", op, err, sources.ErrUnreachable)

@@ -25,7 +25,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	nethttp "net/http"
 	"net/url"
 	"time"
@@ -168,19 +167,19 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 		}, nil
 	case resp.StatusCode == nethttp.StatusUnauthorized,
 		resp.StatusCode == nethttp.StatusForbidden:
-		drainAndClose(resp.Body)
+		sources.DrainAndClose(resp.Body)
 		return nil, fmt.Errorf("bitbucket: archive %d on %s/%s: %w",
 			resp.StatusCode, f.spec.Workspace, f.spec.Repo, sources.ErrUnauthorized)
 	case resp.StatusCode == nethttp.StatusNotFound:
-		drainAndClose(resp.Body)
+		sources.DrainAndClose(resp.Body)
 		return nil, fmt.Errorf("bitbucket: archive 404 on %s/%s@%s: %w",
 			f.spec.Workspace, f.spec.Repo, sha, sources.ErrNotFound)
 	case resp.StatusCode >= 500:
-		drainAndClose(resp.Body)
+		sources.DrainAndClose(resp.Body)
 		return nil, fmt.Errorf("bitbucket: archive %d on %s/%s: %w",
 			resp.StatusCode, f.spec.Workspace, f.spec.Repo, sources.ErrUnreachable)
 	default:
-		drainAndClose(resp.Body)
+		sources.DrainAndClose(resp.Body)
 		return nil, fmt.Errorf("bitbucket: archive %d on %s/%s: %w",
 			resp.StatusCode, f.spec.Workspace, f.spec.Repo, sources.ErrUpstreamInvalid)
 	}
@@ -204,7 +203,7 @@ func (f *Fetcher) resolveCommitSHA(ctx context.Context, url, token string) (stri
 	if err != nil {
 		return "", fmt.Errorf("bitbucket: commit GET: %v: %w", err, sources.ErrUnreachable)
 	}
-	defer drainAndClose(resp.Body)
+	defer sources.DrainAndClose(resp.Body)
 
 	switch {
 	case resp.StatusCode == nethttp.StatusOK:
@@ -231,15 +230,6 @@ func (f *Fetcher) resolveCommitSHA(ctx context.Context, url, token string) (stri
 		return "", fmt.Errorf("bitbucket: commit %d: %w",
 			resp.StatusCode, sources.ErrUpstreamInvalid)
 	}
-}
-
-// drainAndClose is the REL-04 helper.
-func drainAndClose(body io.ReadCloser) {
-	if body == nil {
-		return
-	}
-	_, _ = io.Copy(io.Discard, body)
-	_ = body.Close()
 }
 
 // setHTTPClientForTesting is the test-only override.

@@ -26,7 +26,6 @@ package gitlab
 import (
 	"context"
 	"fmt"
-	"io"
 	nethttp "net/http"
 	"net/url"
 	"strings"
@@ -177,35 +176,16 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 			UpstreamRev: sha,
 			NotModified: false,
 		}, nil
-	case resp2.StatusCode == nethttp.StatusUnauthorized,
-		resp2.StatusCode == nethttp.StatusForbidden:
-		drainAndClose(resp2.Body)
-		return nil, fmt.Errorf("gitlab: archive %d on %s: %w",
-			resp2.StatusCode, f.spec.Project, sources.ErrUnauthorized)
-	case resp2.StatusCode == nethttp.StatusNotFound:
-		drainAndClose(resp2.Body)
-		return nil, fmt.Errorf("gitlab: archive 404 on %s@%s: %w",
-			f.spec.Project, sha, sources.ErrNotFound)
-	case resp2.StatusCode >= 500:
-		drainAndClose(resp2.Body)
-		return nil, fmt.Errorf("gitlab: archive %d on %s: %w",
-			resp2.StatusCode, f.spec.Project, sources.ErrUnreachable)
 	default:
-		drainAndClose(resp2.Body)
+		// Shared ladder for every non-200 archive status; guard preserves
+		// the original default arm for the pathological 2xx-other case.
+		sources.DrainAndClose(resp2.Body)
+		if e := sources.ClassifyHTTPStatus("gitlab", "archive on "+f.spec.Project, resp2.StatusCode); e != nil {
+			return nil, e
+		}
 		return nil, fmt.Errorf("gitlab: archive %d on %s: %w",
 			resp2.StatusCode, f.spec.Project, sources.ErrUpstreamInvalid)
 	}
-}
-
-// drainAndClose is the REL-04 helper — guarantees the OS-level connection
-// is released to the http.Transport's pool after a non-2xx response. Used
-// only on error paths; success paths hand the unread Body to the caller.
-func drainAndClose(body io.ReadCloser) {
-	if body == nil {
-		return
-	}
-	_, _ = io.Copy(io.Discard, body)
-	_ = body.Close()
 }
 
 // classifyGitLabErr maps a go-gitlab SDK error + response into one of
@@ -214,17 +194,11 @@ func classifyGitLabErr(err error, resp *gogitlab.Response, op string) error {
 	if resp == nil || resp.Response == nil {
 		return fmt.Errorf("gitlab: %s: %v: %w", op, err, sources.ErrUnreachable)
 	}
-	switch {
-	case resp.StatusCode == nethttp.StatusUnauthorized,
-		resp.StatusCode == nethttp.StatusForbidden:
-		return fmt.Errorf("gitlab: %s %d: %w", op, resp.StatusCode, sources.ErrUnauthorized)
-	case resp.StatusCode == nethttp.StatusNotFound:
-		return fmt.Errorf("gitlab: %s 404: %w", op, sources.ErrNotFound)
-	case resp.StatusCode >= 500:
-		return fmt.Errorf("gitlab: %s %d: %w", op, resp.StatusCode, sources.ErrUnreachable)
-	default:
-		return fmt.Errorf("gitlab: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
+	if classified := sources.ClassifyHTTPStatus("gitlab", op, resp.StatusCode); classified != nil {
+		return classified
 	}
+	// 2xx-with-err edge: preserve the original default-arm mapping.
+	return fmt.Errorf("gitlab: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
 }
 
 // Compile-time assertion that *Fetcher satisfies sources.Fetcher.

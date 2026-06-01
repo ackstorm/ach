@@ -181,20 +181,13 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 			UpstreamRev: sha,
 			NotModified: false,
 		}, nil
-	case tarballResp.StatusCode == nethttp.StatusUnauthorized,
-		tarballResp.StatusCode == nethttp.StatusForbidden:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball %d on %s: %w",
-			tarballResp.StatusCode, f.spec.Repo, sources.ErrUnauthorized)
-	case tarballResp.StatusCode == nethttp.StatusNotFound:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball 404 on %s: %w", f.spec.Repo, sources.ErrNotFound)
-	case tarballResp.StatusCode >= 500:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball %d on %s: %w",
-			tarballResp.StatusCode, f.spec.Repo, sources.ErrUnreachable)
 	default:
-		drainAndClose(tarballResp.Body)
+		// Shared ladder for every non-200 tarball status; guard preserves
+		// the original default arm for the pathological 2xx-other case.
+		sources.DrainAndClose(tarballResp.Body)
+		if e := sources.ClassifyHTTPStatus("github", "tarball on "+f.spec.Repo, tarballResp.StatusCode); e != nil {
+			return nil, e
+		}
 		return nil, fmt.Errorf("github: tarball %d on %s: %w",
 			tarballResp.StatusCode, f.spec.Repo, sources.ErrUpstreamInvalid)
 	}
@@ -208,17 +201,13 @@ func classifyGitHubErr(err error, resp *gogithub.Response, op string) error {
 	if resp == nil || resp.Response == nil {
 		return fmt.Errorf("github: %s: %v: %w", op, err, sources.ErrUnreachable)
 	}
-	switch {
-	case resp.StatusCode == nethttp.StatusUnauthorized,
-		resp.StatusCode == nethttp.StatusForbidden:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUnauthorized)
-	case resp.StatusCode == nethttp.StatusNotFound:
-		return fmt.Errorf("github: %s 404: %w", op, sources.ErrNotFound)
-	case resp.StatusCode >= 500:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUnreachable)
-	default:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
+	if classified := sources.ClassifyHTTPStatus("github", op, resp.StatusCode); classified != nil {
+		return classified
 	}
+	// 2xx-with-err edge: ClassifyHTTPStatus returns nil for 2xx, but an
+	// SDK error paired with a 2xx still means the response was unusable —
+	// preserve the original default-arm UpstreamInvalid mapping.
+	return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
 }
 
 // setHTTPClientForTesting is the test-only override that injects an
