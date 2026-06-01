@@ -382,6 +382,20 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 // the runtime loop does. Dropped kinds are de-duplicated across all plugin
 // trees and appended (sorted) to result.DroppedComponents.
 //
+// Composite targets are EXEMPT from the CR-01 claimed[] collision fail-fast
+// (D-07): multiple plugins legally co-own the host memory file (CLAUDE.md /
+// GEMINI.md) via per-id <!-- ach:begin:<plugin> --> blocks, so a second
+// composite contributor is not a collision. File-owned MergeReplace keeps the
+// check. For each composite FileWrite the dispatcher threads fw.Keys =
+// [ent.Name()] before publishFile so (i) the per-id marker carries the plugin
+// name and (ii) the state.Plugins[] row records Keys=[plugin-name] for the
+// Phase-4 single-block subtract.
+//
+// Runtime-wins MCP drop (D-10): a projected MergeDeep mcpServers.<id> that a
+// runtime RenderRuntime file (result.WrittenFiles, same Target) already owns is
+// DROPPED — the runtime-owned (bearer/command-exec) server is never shadowed.
+// The dropped id is recorded once in result.DroppedComponents.
+//
 // Error handling (D-06 Claude's-discretion): each FileWrite is published
 // atomically (tmp+rename via state.WriteAtomic / mergeForward), so a crash
 // mid-loop leaves already-published files intact and unpublished ones
@@ -450,15 +464,48 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
 			}
-			// Cross-plugin Target-collision detection on the FINAL published
-			// path (post-remap), checked BEFORE publishFile so no
-			// duplicate-Target row is ever appended to ProjectedFiles.
-			if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
-				return fmt.Errorf(
-					"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
-					d.platformID, owner, ent.Name(), fw.Path)
+			// CR-01 exemption (D-07): composite targets are co-owned by multiple
+			// plugins via per-id blocks, so they SKIP both the claimed[]
+			// fail-fast AND the claimed[] write (otherwise the first composite
+			// contributor would block the second). File-owned MergeReplace keeps
+			// the cross-plugin collision check.
+			if fw.Merge != adapter.MergeComposite {
+				// Cross-plugin Target-collision detection on the FINAL published
+				// path (post-remap), checked BEFORE publishFile so no
+				// duplicate-Target row is ever appended to ProjectedFiles.
+				if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
+					return fmt.Errorf(
+						"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
+						d.platformID, owner, ent.Name(), fw.Path)
+				}
+				claimed[fw.Path] = ent.Name()
 			}
-			claimed[fw.Path] = ent.Name()
+
+			// Plugin-name threading (D-07): composite FileWrites carry
+			// Keys=[plugin-name] (NOT dotted JSON keys) — this supplies the
+			// per-id marker in publishFile's composite arm and records the
+			// composite state row's Keys for the Phase-4 single-block subtract.
+			if fw.Merge == adapter.MergeComposite {
+				fw.Keys = []string{ent.Name()}
+			}
+
+			// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
+			// a runtime WrittenFiles entry (same Target) already owns; record the
+			// drop. If nothing survives, skip publishing this FileWrite entirely.
+			published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, result.WrittenFiles)
+			if derr != nil {
+				return fmt.Errorf("adapter %s runtime-wins drop %s: %w", d.platformID, fw.Path, derr)
+			}
+			for _, dr := range fwDrops {
+				if !seen[dr] {
+					seen[dr] = true
+					dropped = append(dropped, dr)
+				}
+			}
+			if !published {
+				continue
+			}
+
 			// Look up the prior projected entry in the PLUGINS bucket (D-07)
 			// so an unchanged re-hydrate hits the publishFile no-op skip.
 			entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
@@ -478,6 +525,88 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	sort.Strings(dropped)
 	result.DroppedComponents = append(result.DroppedComponents, dropped...)
 	return nil
+}
+
+// mcpServersPrefix is the dotted-key prefix a projected plugin MCP FileWrite
+// contributes (from the mcpDeepKeys Transform): "mcpServers.<id>".
+const mcpServersPrefix = "mcpServers."
+
+// dropRuntimeOwnedMCP implements the D-10 runtime-wins MCP id-clash drop. For a
+// projected MergeDeep FileWrite, any contributed mcpServers.<id> that a runtime
+// WrittenFiles entry targeting the SAME Path already owns is excluded from the
+// merge: the colliding mcpServers.<id> subtree is removed from fw.Content (parse
+// → delete → deterministic re-encode), the id is dropped from fw.Keys, and a
+// "mcp:<id> (runtime-owned)" token is returned for the DroppedComponents
+// aggregation. The runtime-owned (bearer/command-exec) server is NEVER
+// overwritten or shadowed.
+//
+// Returns (publish, drops, err): publish=false means every contributed key
+// collided, so the caller skips publishing this FileWrite entirely (still
+// recording the drops). Non-MergeDeep writes (composite/replace) pass through
+// untouched (publish=true, no drops). fw is mutated IN PLACE via the pointer so
+// the caller publishes the de-conflicted content.
+func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []string, error) {
+	if fw.Merge != adapter.MergeDeep {
+		return true, nil, nil
+	}
+
+	// Union the runtime-owned dotted keys for the SAME Target.
+	runtimeKeys := map[string]bool{}
+	for _, w := range runtime {
+		if w.Target != fw.Path {
+			continue
+		}
+		for _, k := range w.Keys {
+			runtimeKeys[k] = true
+		}
+	}
+	if len(runtimeKeys) == 0 {
+		return true, nil, nil
+	}
+
+	// Determine which contributed keys collide.
+	var collide []string
+	survivors := make([]string, 0, len(fw.Keys))
+	for _, k := range fw.Keys {
+		if runtimeKeys[k] {
+			collide = append(collide, k)
+		} else {
+			survivors = append(survivors, k)
+		}
+	}
+	if len(collide) == 0 {
+		return true, nil, nil
+	}
+
+	// Re-derive the content with the colliding mcpServers.<id> subtrees removed.
+	// The projected MCP content is JSON (.claude/.gemini settings.json).
+	doc, err := parseDoc(fw.Content, false)
+	if err != nil {
+		return false, nil, err
+	}
+	drops := make([]string, 0, len(collide))
+	for _, k := range collide {
+		removeDottedKey(doc, k)
+		drops = append(drops, "mcp:"+strings.TrimPrefix(k, mcpServersPrefix)+" (runtime-owned)")
+	}
+	// If mcpServers is now empty, drop the empty container so we don't write a
+	// bare {"mcpServers":{}} that the deep-merge would otherwise leave behind.
+	if ms, ok := doc[strings.TrimSuffix(mcpServersPrefix, ".")].(map[string]any); ok && len(ms) == 0 {
+		delete(doc, strings.TrimSuffix(mcpServersPrefix, "."))
+	}
+
+	fw.Keys = survivors
+	if len(survivors) == 0 || len(doc) == 0 {
+		// Nothing of ours survives — skip publishing (drops still recorded).
+		return false, drops, nil
+	}
+
+	out, err := encodeDoc(doc, false)
+	if err != nil {
+		return false, nil, err
+	}
+	fw.Content = out
+	return true, drops, nil
 }
 
 // validatePluginName rejects a plugin-directory name that is not a single
@@ -558,8 +687,19 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	finalAbs := filepath.Join(toolRoot, fw.Path)
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
 
+	// Composite pre-staging (D-06): build the per-plugin marked block ONCE so
+	// the drift hash (marked-region bytes) and the forward write (insert or
+	// replace) operate on identical bytes.
+	compositeID, compositeBlock := buildCompositeBlock(fw)
+
 	var freshHash, onDiskHash string
-	if fw.Merge == adapter.MergeDeep {
+	switch {
+	case fw.Merge == adapter.MergeComposite:
+		var herr error
+		if freshHash, onDiskHash, herr = compositeHashes(finalAbs, compositeID, compositeBlock); herr != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, herr)
+		}
+	case fw.Merge == adapter.MergeDeep:
 		// Co-owned deep-merge file: hash ONLY our contributed subtree
 		// (parsed → map → deterministic re-encode) so it is directly
 		// comparable to the on-disk subtree regardless of struct-vs-map
@@ -584,7 +724,7 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 				}
 			}
 		}
-	} else {
+	default:
 		// File-owned replace (incl. opaque passthrough projection —
 		// markdown/skill files that are NOT structured JSON/TOML): we own
 		// the WHOLE file, so the hash is the raw content hash and on-disk
@@ -619,6 +759,10 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 			if _, err := mergeForward(finalAbs, fw.Content, 0o600); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s merge %s: %w", d.platformID, finalAbs, err)
 			}
+		case adapter.MergeComposite:
+			if err := writeComposite(finalAbs, compositeID, compositeBlock); err != nil {
+				return FileWrite{}, fmt.Errorf("adapter %s write composite %s: %w", d.platformID, finalAbs, err)
+			}
 		default:
 			if err := state.WriteAtomic(finalAbs, fw.Content, 0o600); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s write %s: %w", d.platformID, finalAbs, err)
@@ -628,10 +772,18 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		// CR-01 / F-10 — on the no-op skip path the rewrite is bypassed, so
 		// the chmod side-effect of WriteAtomic / mergeForward is lost. If the
 		// on-disk file was chmod'd to a more-permissive mode between hydrates
-		// (user error, attacker, prior bug), the bearer-carrying content
-		// stays world-readable. Re-assert 0o600 unconditionally — cheap, and
-		// closes the no-op regression net the CR-01 audit flagged.
-		if err := os.Chmod(finalAbs, 0o600); err != nil && !os.IsNotExist(err) {
+		// (user error, attacker, prior bug), the content stays at the leaked
+		// mode. Re-assert the per-MergeKind mode unconditionally — cheap, and
+		// closes the no-op regression net the CR-01 audit flagged. The mode is
+		// MergeKind-dependent: composite host memory files are 0o644 (no
+		// credential); MergeDeep/replace runtime configs are 0o600 (bearer).
+		// Using a fixed 0o600 here would silently DOWNGRADE CLAUDE.md/GEMINI.md
+		// from 0o644 → 0o600 on every idempotent re-hydrate.
+		mode := os.FileMode(0o600)
+		if fw.Merge == adapter.MergeComposite {
+			mode = 0o644
+		}
+		if err := os.Chmod(finalAbs, mode); err != nil && !os.IsNotExist(err) {
 			return FileWrite{}, fmt.Errorf("adapter %s chmod %s: %w", d.platformID, finalAbs, err)
 		}
 	}
@@ -646,6 +798,72 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		Merge:      mergeKindToString(fw.Merge),
 		Keys:       append([]string(nil), fw.Keys...),
 	}, nil
+}
+
+// buildCompositeBlock builds the per-plugin marked block for a MergeComposite
+// FileWrite (D-06/D-07). compositeID is fw.Keys[0] (the dispatcher-threaded
+// plugin name; empty for a degenerate write). fw.Content is inserted VERBATIM
+// (D-05: no canonical markdown re-encode); a trailing newline on the content
+// is trimmed so the block ends with exactly one newline — deterministic for
+// FMT-05 re-hydrate idempotence. Returns ("", nil) for non-composite writes.
+func buildCompositeBlock(fw adapter.FileWrite) (id string, block []byte) {
+	if fw.Merge != adapter.MergeComposite {
+		return "", nil
+	}
+	if len(fw.Keys) > 0 {
+		id = fw.Keys[0]
+	}
+	body := bytes.TrimRight(fw.Content, "\n")
+	block = []byte("<!-- ach:begin:" + id + " -->\n" +
+		string(body) + "\n<!-- ach:end:" + id + " -->\n")
+	return id, block
+}
+
+// compositeHashes computes the composite drift hashes (D-06): freshHash over
+// the block we WOULD write, onDiskHash over the on-disk per-plugin marked
+// region only (extracted via pluginMarkerRE; "" when absent). Hashing only the
+// marked region means a user editing prose OUTSIDE this plugin's block is NOT
+// flagged as drift.
+func compositeHashes(finalAbs, id string, block []byte) (freshHash, onDiskHash string, err error) {
+	freshHash = hash.HashBytes(block)
+	body, rerr := os.ReadFile(finalAbs)
+	if rerr != nil {
+		if os.IsNotExist(rerr) {
+			return freshHash, "", nil
+		}
+		return "", "", rerr
+	}
+	if region := pluginMarkerRE(id).Find(body); region != nil {
+		onDiskHash = hash.HashBytes(region)
+	}
+	return freshHash, onDiskHash, nil
+}
+
+// writeComposite performs the forward composite merge (D-06): a marker-bounded
+// insert (no prior block) or replace (existing per-plugin block) of block into
+// the host memory file (CLAUDE.md / GEMINI.md). EXACT inverse of syncComposite.
+// block is already wrapped in this plugin's outer markers; any forged inner
+// markers in untrusted plugin prose are inert text inside our boundary
+// (T-02-03 marker-injection mitigation — pluginMarkerRE matches only the OUTER
+// real markers for `id`).
+//
+// Mode 0o644 (NOT 0o600): host memory files carry NO credential (the mcpServers
+// bearer lives in the MergeDeep settings.json arm, which stays 0o600).
+// World-readable is correct for non-secret markdown prose. See 02-PATTERNS.md
+// file-mode policy table (D-06).
+func writeComposite(finalAbs, id string, block []byte) error {
+	body, rerr := os.ReadFile(finalAbs)
+	if rerr != nil && !os.IsNotExist(rerr) {
+		return rerr
+	}
+	var merged []byte
+	re := pluginMarkerRE(id)
+	if re.Match(body) {
+		merged = re.ReplaceAll(body, block)
+	} else {
+		merged = append(append([]byte(nil), body...), block...)
+	}
+	return state.WriteAtomic(finalAbs, merged, 0o644)
 }
 
 // mergeForward reads the existing file at abs (JSON or TOML by extension),
@@ -930,15 +1148,30 @@ func mergeKindToString(k adapter.MergeKind) string {
 	return ""
 }
 
-// achMarkerRE matches the composite-merge inverse path: replace
-// "<!-- ach:begin -->...<!-- ach:end -->" with the empty string,
-// trimming a trailing newline if present. Per spec §8.5 for
-// MergeComposite the inverse-merge is block deletion; the marker
-// boundaries themselves are removed too.
+// pluginMarkerRE builds the per-plugin composite marker regex (D-07):
+// "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->" with an
+// optional trailing newline. The plugin id is regexp-escaped via
+// QuoteMeta so a forged inner marker carried in untrusted plugin prose
+// (T-02-03) cannot widen or hijack another plugin's region — the per-id
+// boundary is the OUTER real markers only. (?s) lets . span newlines so
+// a multi-line block is captured.
 //
-// (?s) enables . to match newlines so a multi-line block is
-// captured.
-var achMarkerRE = regexp.MustCompile(`(?s)<!-- ach:begin -->.*?<!-- ach:end -->\n?`)
+// Both the forward composite arm in publishFile (insert/replace) and the
+// inverse path in syncComposite (deletion) build the regex from the same
+// builder, keeping the forward and inverse merges symmetric on the exact
+// same marked region.
+func pluginMarkerRE(pluginID string) *regexp.Regexp {
+	return regexp.MustCompile("(?s)<!-- ach:begin:" + regexp.QuoteMeta(pluginID) +
+		" -->.*?<!-- ach:end:" + regexp.QuoteMeta(pluginID) + " -->\\n?")
+}
+
+// genericMarkerRE matches the OLD single-marker composite form
+// "<!-- ach:begin -->...<!-- ach:end -->" (no per-plugin id). Retained
+// SOLELY for the syncComposite backward-compat fallback: a pre-Phase-2
+// state row carries no plugin id in Keys, so its inverse-merge must
+// target the generic region. All Phase-2 composite rows carry exactly
+// one Keys entry (the plugin name) and use pluginMarkerRE instead.
+var genericMarkerRE = regexp.MustCompile(`(?s)<!-- ach:begin -->.*?<!-- ach:end -->\n?`)
 
 // SyncOptions packages the Sync handler's behavior toggles so the
 // signature stays narrow. Force overrides the drift-wins arm
@@ -1107,20 +1340,33 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 }
 
 // syncComposite handles MergeComposite by regex-replacing the
-// "<!-- ach:begin -->...<!-- ach:end -->" block with empty. If the
-// marker is absent the file is preserved with a warning (the user
-// must have authored the file outside the engine's contract).
-func syncComposite(_ state.FileEntry, abs string, opts SyncOptions) (bool, error) {
+// per-plugin "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->"
+// block with empty (D-07: Phase-4 sync subtracts exactly ONE plugin's
+// block — the one named in e.Keys[0]). If the marker is absent the file
+// is preserved with a warning (the user must have authored the file
+// outside the engine's contract).
+//
+// Empty-Keys backward-compat (D-07): a pre-Phase-2 state row carries no
+// plugin id in Keys, so it targets the OLD generic single-marker region
+// via genericMarkerRE. All Phase-2 composite rows carry Keys=[plugin-name]
+// and use the per-id regex.
+func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	body, err := os.ReadFile(abs)
 	if err != nil {
 		return false, fmt.Errorf("sync read composite %s: %w", abs, err)
 	}
-	if !achMarkerRE.Match(body) {
+	var markerRE *regexp.Regexp
+	if len(e.Keys) > 0 {
+		markerRE = pluginMarkerRE(e.Keys[0])
+	} else {
+		markerRE = genericMarkerRE
+	}
+	if !markerRE.Match(body) {
 		warnPreserved(opts.Stderr, abs,
 			"composite marker not found; refusing to inverse-merge")
 		return true, nil
 	}
-	updated := achMarkerRE.ReplaceAll(body, nil)
+	updated := markerRE.ReplaceAll(body, nil)
 	// 0o600 — composite inverse-merge rewrites the same credential-
 	// bearing adapter runtime-config file (CR-01).
 	if err := state.WriteAtomic(abs, updated, 0o600); err != nil {

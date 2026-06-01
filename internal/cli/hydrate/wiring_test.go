@@ -499,8 +499,12 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 }
 
 // TestSync_CompositeBlock_RemovesMarkedRegion seeds a markdown file
-// with `<!-- ach:begin -->X<!-- ach:end -->Y`; after Sync only Y
-// should remain.
+// with the OLD generic-marker form `<!-- ach:begin -->X<!-- ach:end -->Y`;
+// after Sync only Y should remain. The state row carries EMPTY Keys — under
+// the D-07 per-plugin contract an empty-Keys composite row is a pre-Phase-2
+// row whose inverse-merge falls back to the generic genericMarkerRE region
+// (Phase-2 rows carry Keys=[plugin-name] and a per-id <!-- ach:begin:<id> -->
+// marker instead). This case proves the backward-compat fallback path.
 func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
@@ -521,7 +525,8 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 					Target: target,
 					Hash:   hashOf(t, original),
 					Merge:  "composite",
-					Keys:   []string{"ach:block"},
+					// Empty Keys → genericMarkerRE backward-compat fallback (D-07).
+					Keys: nil,
 				},
 			},
 		},
