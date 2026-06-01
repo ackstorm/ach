@@ -410,12 +410,34 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	// second-layer dedup) and stable-sort for byte-stable stderr (D-12).
 	seen := map[string]bool{}
 	var dropped []string
+	// claimed maps a FINAL published Target → the plugin name that first
+	// claimed it. Under D-01's flat kind-routing there is NO per-plugin
+	// destination namespace, so two distinct plugins both shipping e.g.
+	// rules/foo.md would both project to .claude/rules/foo.md. That is an
+	// unresolvable cross-plugin collision (CR-01): silently letting the
+	// second publishFile (MergeReplace → WriteAtomic) overwrite the first
+	// would lose a file AND append a second state.Plugins[] row with an
+	// identical Target, so findPluginEntry's first-match would bind
+	// re-hydrate drift to the wrong owner. We detect the collision on the
+	// post-remap path (identical to what lands in state.Plugins[]) and
+	// fail-fast — matching the existing first-error abort in this loop.
+	claimed := map[string]string{}
 	for _, ent := range entries {
 		if !ent.IsDir() {
 			// Plugin archives extract to a directory per name; a stray
 			// regular file (e.g. an un-extracted blob) carries no routable
 			// resource kinds — skip it.
 			continue
+		}
+		// Plugin-name segment validation (T-01-04). D-01 keeps the plugin
+		// name OUT of the destination path, but it is still joined into the
+		// SOURCE path below and appears in error strings — a NEW
+		// path-construction surface. Reject any name that is not a single
+		// safe basename BEFORE reading any file under it (defense-in-depth
+		// on top of the SAFE-01/02 extract-time checks). Sibling pattern:
+		// route.resolveRecursiveGlobTarget's T-01-01 destination guard.
+		if verr := validatePluginName(ent.Name()); verr != nil {
+			return fmt.Errorf("adapter %s plugin directory %q: %w", d.platformID, ent.Name(), verr)
 		}
 		pluginSrc := filepath.Join(pluginRoot, ent.Name())
 		// source == "" : Phase-1 ungated arm (no claude-plugin provenance
@@ -428,6 +450,15 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
 			}
+			// Cross-plugin Target-collision detection on the FINAL published
+			// path (post-remap), checked BEFORE publishFile so no
+			// duplicate-Target row is ever appended to ProjectedFiles.
+			if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
+				return fmt.Errorf(
+					"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
+					d.platformID, owner, ent.Name(), fw.Path)
+			}
+			claimed[fw.Path] = ent.Name()
 			// Look up the prior projected entry in the PLUGINS bucket (D-07)
 			// so an unchanged re-hydrate hits the publishFile no-op skip.
 			entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
@@ -446,6 +477,36 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 
 	sort.Strings(dropped)
 	result.DroppedComponents = append(result.DroppedComponents, dropped...)
+	return nil
+}
+
+// validatePluginName rejects a plugin-directory name that is not a single
+// safe path segment. Under D-01 the plugin name never reaches the
+// destination path, but projectPlugins still joins it into the SOURCE path
+// (filepath.Join(pluginRoot, name)) and embeds it in error strings, so a
+// traversal / absolute / multi-segment name is a path-construction surface
+// that MUST be validated before any file under it is read. This is
+// defense-in-depth: SAFE-01/02 already reject ../, symlinks, and absolute
+// paths at extract time, and os.ReadDir yields only basenames in practice —
+// the guard closes the contract regardless of how the name was obtained.
+// It mirrors the route package's T-01-01 destination guard, applied here to
+// the SOURCE segment.
+func validatePluginName(name string) error {
+	if name == "" {
+		return fmt.Errorf("empty name is not a valid plugin segment (escapes plugin root)")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("name %q is a relative path segment (escapes plugin root)", name)
+	}
+	if strings.ContainsAny(name, "/\\") || strings.ContainsRune(name, os.PathSeparator) {
+		return fmt.Errorf("name %q contains a path separator (escapes plugin root)", name)
+	}
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("name %q is an absolute path (escapes plugin root)", name)
+	}
+	if filepath.Base(name) != name {
+		return fmt.Errorf("name %q is not a single path segment (escapes plugin root)", name)
+	}
 	return nil
 }
 
