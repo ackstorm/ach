@@ -91,47 +91,6 @@ func New(spec *achv1alpha1.BitbucketSource) (*Fetcher, error) {
 	}, nil
 }
 
-// extractToken returns the bearer token to send to Bitbucket, or empty
-// for anonymous fetch. Shared by both transport branches.
-//
-// Semantics (post Task 1 CRD shape relaxation):
-//
-//   - spec.AuthSecretRef == nil          → anonymous (token="").
-//   - spec.AuthSecretRef != nil,
-//     req.Secret == nil                  → ErrUnauthorized.
-//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
-//     achv1alpha1.DefaultAuthSecretKey("bitbucket") == "BITBUCKET_TOKEN"
-//     so `kubectl create secret generic foo --from-literal=BITBUCKET_TOKEN=…`
-//     works zero-config.
-//   - resolved key missing from Secret.Data → ErrUnauthorized with the
-//     key NAME in the message (never the absent value — T-02-02-01).
-func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
-	if f.spec.AuthSecretRef == nil {
-		return "", nil
-	}
-	if req.Secret == nil {
-		return "", fmt.Errorf("bitbucket: auth secret %q is nil: %w",
-			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-	}
-	key := f.spec.AuthSecretRef.Key
-	defaulted := false
-	if key == "" {
-		key = achv1alpha1.DefaultAuthSecretKey("bitbucket")
-		defaulted = true
-	}
-	raw := req.Secret.Data[key]
-	if len(raw) == 0 {
-		if defaulted {
-			return "", fmt.Errorf(
-				"bitbucket: missing auth secret key %q (default for bitbucket; set authSecretRef.key to override): %w",
-				key, sources.ErrUnauthorized)
-		}
-		return "", fmt.Errorf("bitbucket: missing auth secret key %q: %w",
-			key, sources.ErrUnauthorized)
-	}
-	return string(raw), nil
-}
-
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
 //
 // Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
@@ -143,7 +102,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	}
 
 	// ───── legacy REST branch ─────
-	token, err := f.extractToken(req)
+	token, err := sources.ExtractBearerToken("bitbucket", f.spec.AuthSecretRef, req.Secret)
 	if err != nil {
 		return nil, err
 	}

@@ -82,51 +82,6 @@ func New(spec *achv1alpha1.GitHubSource) (*Fetcher, error) {
 	}, nil
 }
 
-// extractToken returns the bearer token to send to GitHub, or empty
-// for anonymous fetch. Shared by both transport branches.
-//
-// Semantics (post Task 1 CRD shape relaxation):
-//
-//   - spec.AuthSecretRef == nil          → anonymous (token="").
-//   - spec.AuthSecretRef != nil,
-//     req.Secret == nil                  → ErrUnauthorized (operator
-//     declared intent for auth and we
-//     must not silently fall back to
-//     anonymous).
-//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
-//     achv1alpha1.DefaultAuthSecretKey("github") == "GITHUB_TOKEN"
-//     so `kubectl create secret generic foo --from-literal=GITHUB_TOKEN=…`
-//     works zero-config.
-//   - resolved key missing from Secret.Data
-//     → ErrUnauthorized with the key NAME in the message (never the
-//     absent value — threat T-02-02-01).
-func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
-	if f.spec.AuthSecretRef == nil {
-		return "", nil
-	}
-	if req.Secret == nil {
-		return "", fmt.Errorf("github: auth secret %q is nil: %w",
-			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-	}
-	key := f.spec.AuthSecretRef.Key
-	defaulted := false
-	if key == "" {
-		key = achv1alpha1.DefaultAuthSecretKey("github")
-		defaulted = true
-	}
-	raw := req.Secret.Data[key]
-	if len(raw) == 0 {
-		if defaulted {
-			return "", fmt.Errorf(
-				"github: missing auth secret key %q (default for github; set authSecretRef.key to override): %w",
-				key, sources.ErrUnauthorized)
-		}
-		return "", fmt.Errorf("github: missing auth secret key %q: %w",
-			key, sources.ErrUnauthorized)
-	}
-	return string(raw), nil
-}
-
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
 //
 // Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
@@ -140,7 +95,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	}
 
 	// ───── legacy REST branch ─────
-	token, err := f.extractToken(req)
+	token, err := sources.ExtractBearerToken("github", f.spec.AuthSecretRef, req.Secret)
 	if err != nil {
 		return nil, err
 	}
