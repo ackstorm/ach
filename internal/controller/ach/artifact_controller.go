@@ -14,8 +14,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -23,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -73,153 +70,27 @@ type ArtifactReconciler struct {
 // Reconcile mirrors PluginReconciler.Reconcile with kind="artifact",
 // no size cap, and spec.Scope feeding computeFinalPath.
 func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("artifact", req.NamespacedName)
-
-	var cr achv1alpha1.Artifact
-	if err := r.Get(ctx, req.NamespacedName, &cr); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-
-	// ─── Deletion path: prefer status.StorageLocation when set. ───
-	if !cr.DeletionTimestamp.IsZero() {
-		return r.reconcileDeletion(ctx, &cr, logger)
-	}
-
-	// ─── Finalizer-add path. ───
-	if !controllerutil.ContainsFinalizer(&cr, artifactFinalizer) {
-		controllerutil.AddFinalizer(&cr, artifactFinalizer)
-		if err := r.Update(ctx, &cr); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// ─── Phase 2 steady state: §10.3 refresh. ───
-	var priorRev string
-	var lastRefresh time.Time
-	var forceRefreshRequestedAt time.Time
-	if r.DB != nil {
-		priorRow, err := achdb.GetExternalRef(ctx, r.DB, "artifact", cr.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("db get external_ref: %w", err)
-		}
-		if priorRow != nil {
-			priorRev = priorRow.UpstreamRev
-			lastRefresh = priorRow.LastSuccessfulRefresh
-			forceRefreshRequestedAt = priorRow.ForceRefreshRequestedAt
-		}
-	}
-
-	// §10.3 within-interval gate: skip the upstream probe when the CR was
-	// successfully refreshed within spec.refresh.interval and nothing
-	// demands re-verification. Cuts steady-state GitHub API burn ~10x.
-	// Reads lastRefresh from cr.Status.LastSuccessfulRefresh (not the DB
-	// row) because the materializeExternalRef NotModified (304) path
-	// returns before the external_refs DB upsert — so the DB row goes
-	// stale on every 304, defeating the gate. Status is bumped on both
-	// fresh and NotModified paths, making it the reliable source.
-	var gateLastRefresh time.Time
-	if cr.Status.LastSuccessfulRefresh != nil {
-		gateLastRefresh = cr.Status.LastSuccessfulRefresh.Time
-	}
-	if shouldSkipFetch(cr.Spec.Refresh, gateLastRefresh, cr.Status.ObservedGeneration, cr.Generation, cr.Annotations, forceRefreshRequestedAt, time.Now()) {
-		remaining := time.Until(gateLastRefresh.Add(requeueDurationFromRefresh(cr.Spec.Refresh)))
-		if remaining < time.Second {
-			remaining = time.Second
-		}
-		logger.V(1).Info("§10.3 within-interval gate: skipping fetch",
-			"lastRefresh", gateLastRefresh, "requeueAfter", remaining)
-		return ctrl.Result{RequeueAfter: remaining}, nil
-	}
-
-	spec := cr.Spec
-	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
-	authRef := extractAuthSecretRef(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
-	finalPath := computeFinalPath(r.CacheRoot, "artifact", cr.Name, cr.Spec.Scope)
-
-	deps := ExternalRefRefreshDeps{
-		Client:        r.Client,
-		Namespace:     r.Namespace,
-		DB:            r.DB,
-		CacheRoot:     r.CacheRoot,
-		Kind:          "artifact",
-		Name:          cr.Name,
-		SourceSpec:    sourceSpec,
-		AuthSecretRef: authRef,
-		Refresh:       spec.Refresh,
-		PriorRev:      priorRev,
-		SizeCapBytes:  0, // no cap per spec §13
-		FinalPath:     finalPath,
-		Fetchers:      r.Fetchers,
-		Log:           logger,
-	}
-	result := materializeExternalRef(ctx, deps)
-
-	requeue := requeueDurationFromRefresh(spec.Refresh)
-
-	if result.Err != nil {
-		reason, message := classifyFetchError(result.Err, spec.Refresh, lastRefresh)
-		applyReconcileConditions(&cr.Status.Conditions, reason, message, cr.Generation)
-		cr.Status.ObservedGeneration = cr.Generation
-		desiredStatus := cr.Status
-		if statusErr := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Artifact) {
-			fresh.Status = desiredStatus
-		}); statusErr != nil {
-			logger.Error(statusErr, "status update failed", "reason", reason)
-		}
-		switch reason {
-		case ReasonPluginTooLarge, ReasonUnauthorized, ReasonNotFound, ReasonUpstreamInvalid:
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		default:
-			return ctrl.Result{}, result.Err
-		}
-	}
-
-	applyReconcileConditions(&cr.Status.Conditions, ReasonSynced, sourceReachableMessage(sourceSpec), cr.Generation)
-	cr.Status.UpstreamRev = result.UpstreamRev
-	if result.NotModified && cr.Status.StorageLocation == "" {
-		cr.Status.StorageLocation = finalPath
-	} else if !result.NotModified {
-		cr.Status.StorageLocation = finalPath
-	}
-	now := metav1.Now()
-	cr.Status.LastSuccessfulRefresh = &now
-	cr.Status.ObservedGeneration = cr.Generation
-
-	// Spec v4 §5.2 / D-13 / D-15: dual-write the artifacts projection
-	// row BEFORE the best-effort K8s Status update. DB is authoritative —
-	// Plan 05-05 CS pipeline reads scope + max_staleness_seconds +
-	// last_successful_refresh from this row on every artifact request.
-	// cr.Spec.Scope is passed verbatim — kubebuilder enum validation
-	// constrains it to {"object","directory"} at admission AND the DB
-	// CHECK constraint scope IN ('object','directory') in migration
-	// 000004 catches any drift.
-	if err := r.writeArtifactProjection(ctx, &cr, now.Time, spec.Refresh.MaxStaleness.Duration); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return r.writeArtifactConflictStatus(ctx, &cr, logger)
-		}
-		return ctrl.Result{}, err
-	}
-	desiredStatus := cr.Status
-	if err := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.Artifact) {
-		fresh.Status = desiredStatus
-	}); err != nil {
-		// WR-02: see plugin_controller.go for rationale.
-		logger.Error(err, "status update failed; skipping annotation-clear")
-		return ctrl.Result{RequeueAfter: requeue}, nil
-	}
-
-	if _, hasAnnotation := cr.Annotations["ach.ackstorm.ai/force-refresh"]; hasAnnotation {
-		delete(cr.Annotations, "ach.ackstorm.ai/force-refresh")
-		if err := r.Update(ctx, &cr); err != nil {
-			logger.Error(err, "force-refresh annotation removal failed")
-		}
-	}
-
-	return ctrl.Result{RequeueAfter: requeue}, nil
+	return reconcileExternalRefCR[achv1alpha1.Artifact](ctx, req, externalRefDriverConfig[achv1alpha1.Artifact, *achv1alpha1.Artifact]{
+		client:    r.Client,
+		db:        r.DB,
+		cacheRoot: r.CacheRoot,
+		namespace: r.Namespace,
+		fetchers:  r.Fetchers,
+		kind:      "artifact",
+		finalizer: artifactFinalizer,
+		specView: func(cr *achv1alpha1.Artifact) externalRefSpecView {
+			s := cr.Spec
+			return externalRefSpecView{
+				SourceSpec:    buildSourceSpec(s.Type, s.GitHub, s.GitLab, s.Bitbucket, s.S3, s.GCS, s.HTTP),
+				AuthSecretRef: extractAuthSecretRef(s.Type, s.GitHub, s.GitLab, s.Bitbucket, s.S3, s.GCS, s.HTTP),
+				Refresh:       s.Refresh,
+				Scope:         cr.Spec.Scope,
+				SizeCapBytes:  0,
+			}
+		},
+		handleDeletion:  r.reconcileDeletion,
+		writeProjection: r.writeArtifactProjection,
+	})
 }
 
 // reconcileDeletion runs the artifact deletion path: on-disk cache rm
@@ -332,24 +203,6 @@ func (r *ArtifactReconciler) softDeleteArtifactProjection(
 		return fmt.Errorf("db soft-delete artifact projection: %w", err)
 	}
 	return nil
-}
-
-// writeArtifactConflictStatus flips Synced=False/ConflictWithUIRow when
-// the projection upsert collides with a UI-origin row holding the same PK.
-func (r *ArtifactReconciler) writeArtifactConflictStatus(
-	ctx context.Context,
-	cr *achv1alpha1.Artifact,
-	logger logr.Logger,
-) (ctrl.Result, error) {
-	setConflictWithUIRowCondition(&cr.Status.Conditions, ConditionSynced, cr.Generation)
-	cr.Status.ObservedGeneration = cr.Generation
-	desiredStatus := cr.Status
-	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.Artifact) {
-		fresh.Status = desiredStatus
-	}); err != nil {
-		logger.Error(err, "status update failed", "reason", ReasonConflictWithUIRow)
-	}
-	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
