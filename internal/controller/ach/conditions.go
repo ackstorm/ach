@@ -169,6 +169,33 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 	})
 }
 
+// ReasonConflictWithUIRow is the canonical Reason emitted on any
+// projection-row conflict where a UI-origin row holds the same PK and
+// the operator declines to overwrite it. Shared by every reconciler that
+// dual-writes a projection table (plugin, prompt, artifact, BIP,
+// environment, litellmconnection) so the contract string cannot drift.
+const ReasonConflictWithUIRow = "ConflictWithUIRow"
+
+// ConflictWithUIRowMessage is the canonical condition Message paired with
+// ReasonConflictWithUIRow. See [setConflictWithUIRowCondition].
+const ConflictWithUIRowMessage = "projection row owned by UI; operator declines to overwrite"
+
+// setConflictWithUIRowCondition writes the canonical ConflictWithUIRow
+// Status=False condition into a status conditions slice. condType varies
+// per CR family — "Synced" (plugin/prompt/artifact/BIP),
+// "AccessGroupSynced" (environment), or "Ready" (litellmconnection) — so
+// the caller passes it explicitly; the Reason + Message are fixed.
+func setConflictWithUIRowCondition(conds *[]metav1.Condition, condType string, observedGen int64) {
+	apimeta.SetStatusCondition(conds, metav1.Condition{
+		Type:               condType,
+		Status:             metav1.ConditionFalse,
+		Reason:             ReasonConflictWithUIRow,
+		Message:            ConflictWithUIRowMessage,
+		ObservedGeneration: observedGen,
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
 // Condition type constants. Every external-ref-shaped resource
 // (Plugin, Prompt, Artifact, PluginMarketplace) surfaces the same
 // two-axis status model:

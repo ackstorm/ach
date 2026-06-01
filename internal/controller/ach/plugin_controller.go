@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -328,20 +327,13 @@ func (r *PluginReconciler) writePluginConflictStatus(
 	cr *achv1alpha1.Plugin,
 	logger logr.Logger,
 ) (ctrl.Result, error) {
-	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
-		Type:               ConditionSynced,
-		Status:             metav1.ConditionFalse,
-		Reason:             "ConflictWithUIRow",
-		Message:            "projection row owned by UI; operator declines to overwrite",
-		ObservedGeneration: cr.Generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setConflictWithUIRowCondition(&cr.Status.Conditions, ConditionSynced, cr.Generation)
 	cr.Status.ObservedGeneration = cr.Generation
 	desiredStatus := cr.Status
 	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.Plugin) {
 		fresh.Status = desiredStatus
 	}); err != nil {
-		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+		logger.Error(err, "status update failed", "reason", ReasonConflictWithUIRow)
 	}
 	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }

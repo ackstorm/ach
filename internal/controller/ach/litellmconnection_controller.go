@@ -209,9 +209,9 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		})
 		if err != nil {
 			if errors.Is(err, achdb.ErrOriginConflict) {
-				if werr := r.writeStatus(ctx, &conn, metav1.ConditionFalse, "ConflictWithUIRow",
-					"projection row owned by UI; operator declines to overwrite"); werr != nil {
-					r.Log.Error(werr, "status update failed", "reason", "ConflictWithUIRow")
+				if werr := r.writeStatus(ctx, &conn, metav1.ConditionFalse, ReasonConflictWithUIRow,
+					ConflictWithUIRowMessage); werr != nil {
+					r.Log.Error(werr, "status update failed", "reason", ReasonConflictWithUIRow)
 				}
 				return ctrl.Result{RequeueAfter: time.Minute}, nil
 			}
