@@ -208,14 +208,10 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 			return nil, nil
 		}
 		return &envcache.EnvRow{
-			Namespace:         row.Namespace,
-			Name:              row.Name,
-			AuthorizedTeams:   row.AuthorizedTeams,
-			ContextPrompts:    row.ContextPrompts,
-			ContextPlugins:    row.ContextPlugins,
-			ContextArtifacts:  row.ContextArtifacts,
-			DeletionTimestamp: row.DeletionTimestamp,
-			ResourceVersion:   row.ResourceVersion,
+			AuthorizedTeams:  row.AuthorizedTeams,
+			ContextPrompts:   row.ContextPrompts,
+			ContextPlugins:   row.ContextPlugins,
+			ContextArtifacts: row.ContextArtifacts,
 		}, nil
 	}
 	envCache, err := envcache.NewCachedEnvCache(loader, redisClient)

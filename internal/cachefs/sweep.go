@@ -3,11 +3,8 @@
 package cachefs
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 // IsEmpty returns true when root exists and contains no regular files
@@ -40,8 +37,9 @@ import (
 // Edge cases:
 //   - root contains only the .tmp/ directory (possibly with files
 //     inside): returns (true, nil). The .tmp/ staging dir is
-//     operator-internal; orphan files there are not "user data" and
-//     SweepTmp handles them on a separate cadence.
+//     operator-internal scratch (orphan staging files), not user data,
+//     and is excluded from the emptiness check. No sweeper runs — atomic
+//     rename(2) makes orphans rare and the PVC is bounded.
 //   - root contains a stray regular file at the top level (e.g. a
 //     lost+found from fsck): the entry is detected as a non-directory
 //     immediately and IsEmpty returns (false, nil).
@@ -63,8 +61,9 @@ func IsEmpty(root string) (bool, error) {
 		// longer masks population.
 		if entry.IsDir() && entry.Name() == ".tmp" {
 			// .tmp/ presence (and any contents inside it) is operator-
-			// internal scratch, not user data. SweepTmp handles its
-			// lifecycle on a separate cadence.
+			// internal scratch, not user data. No sweeper runs; orphan
+			// staging files are rare (atomic rename) and the PVC is
+			// bounded.
 			continue
 		}
 		// A top-level non-directory entry is immediately "user data"
@@ -112,46 +111,4 @@ func subtreeHasFile(dir string) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// SweepTmp removes regular files under root/.tmp/ whose ModTime is
-// older than maxAge. Hub §10.3 — orphan staging-file sweep against
-// crashed reconciles that exited between os.CreateTemp and
-// rename(2). Idempotent; best-effort; concurrent rename(2) calls
-// from live reconciles race benignly (Remove returns ErrNotExist
-// which SweepTmp silently ignores).
-//
-// Returns nil if .tmp/ does not exist (the operator's hourly Runnable
-// may call this before EnsureLayout has run; absent dir = nothing to
-// do). Returns nil unconditionally after iteration — partial Remove
-// failures (e.g. a concurrent rename winning the race) are silently
-// ignored on a per-entry basis so a single anomaly does not abort
-// the sweep of subsequent entries.
-func SweepTmp(root string, maxAge time.Duration) error {
-	tmp := filepath.Join(root, ".tmp")
-	entries, err := os.ReadDir(tmp)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	cutoff := time.Now().Add(-maxAge)
-	for _, entry := range entries {
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			// File disappeared between ReadDir and Info — a benign
-			// race against a concurrent rename(2) from a live
-			// reconcile. Skip this entry and continue.
-			continue
-		}
-		if info.ModTime().Before(cutoff) {
-			// Ignore Remove error: ErrNotExist means a concurrent
-			// rename(2) won the race (the file is already at its
-			// production path); other errors are best-effort and
-			// will be retried on the next tick.
-			_ = os.Remove(filepath.Join(tmp, entry.Name()))
-		}
-	}
-	return nil
 }

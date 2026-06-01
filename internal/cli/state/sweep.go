@@ -16,14 +16,13 @@ import (
 // crashed before commit, in which case the staged bytes are
 // unreferenced state").
 //
-// Differences from internal/cachefs.SweepTmp:
+// Contract:
 //
 //   - NO maxAge parameter. D-02 mandates the unconditional sweep — a
 //     hydrate cannot tell which tmp entries belong to a recovering
 //     prior process and which are its own (none, since this runs
-//     before any tmp writes). The cachefs version is the operator's
-//     hourly Runnable, which races live reconciles and so honors a
-//     cutoff; the CLI's tmp/ has no concurrent writers between locks.
+//     before any tmp writes). The CLI's tmp/ has no concurrent writers
+//     between locks, so an unconditional wipe is safe.
 //   - Subentries are <rand>/ STAGING SUBTREES (directories), not flat
 //     files — use os.RemoveAll, not os.Remove.
 //   - Per-entry errors are swallowed silently per spec §6.7 step 2

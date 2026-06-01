@@ -26,7 +26,6 @@
 package contentservice
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -41,17 +40,6 @@ import (
 	"github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
-
-// PromptContentTypeLookup is RETAINED transitionally so the existing
-// cmd/ach/cmd/content_service.go stub patch keeps compiling between
-// Plan 05-05 (this plan) and Plan 05-06 (full wiring rewrite). Plan
-// 05-06 removes both this type and the deprecated PromptContentTypeFn
-// field below.
-//
-// Production no longer reads spec.contentType via the k8s informer —
-// content_type now flows from the prompts.content_type projection
-// column resolved in resolveContent (authz.go).
-type PromptContentTypeLookup func(ctx context.Context, name string) (string, error)
 
 // Deps bundles the handler's runtime collaborators per Plan 05-05 D-16.
 //
@@ -76,14 +64,6 @@ type PromptContentTypeLookup func(ctx context.Context, name string) (string, err
 // Optional fields (defaulted in RegisterRoutes):
 //   - Logger             — operational logger. Defaults to slog.Default().
 //
-// Deprecated transition-only fields:
-//   - PromptContentTypeFn — DEPRECATED. Pre-Plan-05-05 the handler
-//     resolved Prompt.spec.contentType via a k8s
-//     informer-cached lookup. Plan 05-05 moved the
-//     column into prompts.content_type so the
-//     lookup is now part of resolveContent.
-//     Plan 05-06 Task 1 removes this field.
-//
 // RegisterRoutes does NOT nil-guard the required fields — a request
 // that lands on a nil-Pool / nil-Resolver Deps panics at request time,
 // surfacing the wiring bug loudly rather than silently 500-ing every
@@ -92,17 +72,16 @@ type PromptContentTypeLookup func(ctx context.Context, name string) (string, err
 // build stays green between Plan 05-05 and Plan 05-06; that
 // configuration is NOT runtime-safe for content requests.
 type Deps struct {
-	CacheRoot           string
-	Namespace           string
-	PromptContentTypeFn PromptContentTypeLookup // DEPRECATED — Plan 05-06 removes
-	Pool                *pgxpool.Pool
-	EnvCache            envcache.Cache
-	Resolver            keystore.Resolver
-	Teams               keystore.TeamsResolver
-	Metrics             *metrics.ContentServiceCollectors
-	LiteLLMUnreachable  *prometheus.CounterVec
-	AuditLog            *slog.Logger
-	Logger              *slog.Logger
+	CacheRoot          string
+	Namespace          string
+	Pool               *pgxpool.Pool
+	EnvCache           envcache.Cache
+	Resolver           keystore.Resolver
+	Teams              keystore.TeamsResolver
+	Metrics            *metrics.ContentServiceCollectors
+	LiteLLMUnreachable *prometheus.CounterVec
+	AuditLog           *slog.Logger
+	Logger             *slog.Logger
 }
 
 // RegisterRoutes wires Content Service routes onto r. The router MUST
