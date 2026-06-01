@@ -489,23 +489,98 @@ func encodeExtensionManifest(m extensionManifest) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ProjectionRules returns the gemini-cli Phase-1 PASSTHROUGH projection
-// table satisfying route.RuleProvider (the D-06 seam). It is current-
-// behavior-equivalent to gemini's TransformPlugin componentKept set:
-// agents/, prompts/, commands/, skills/ are routed into .gemini/<kind>/;
-// hooks/ has NO rule and falls into route.Project's dropped set (Gemini
-// has no hook system — matching componentDropped{hooks}).
+// mcpDeepKeys is the gemini-cli adapter's only non-nil route.Rule.Transform
+// (D-09/D-12). It is wired onto the `mcp/**/*` ProjectionRules row and serves a
+// single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
+// contributes so the deep-merge engine can record them in state.files[*].keys[]
+// (STATE-02 + ADAPT-05) and so the runtime-wins drop (plan 02, D-10) can drop
+// ids that clash with the runtime MCP set.
 //
-// gemini-cli has no OpenPackage reference; ACH's existing gemini.go is
-// canonical (PROJECT.md key decision). Phase 1 mirrors its current
-// routed-kind set as the passthrough table. TransformPlugin is LEFT
-// AS-IS — projection runs via the plan-02 Render leg
-// (ProjectionRules -> route.Project). This method is pure data — no I/O.
+// This is the SAME func/shape as claude-code's mcpDeepKeys (PATTERNS §gemini.go);
+// the two copies are intentionally short and identical — each adapter keeps its
+// own to avoid an unaccounted shared package. The only difference between the
+// adapters is the ToGlob target wired on the ProjectionRules row, not this
+// enumeration logic.
+//
+// Byte discipline (D-03): mcpDeepKeys returns `in` UNCHANGED — it parses ONLY to
+// read the top-level map keys, never re-encodes. Re-encoding would reorder the
+// user's plugin file and break FMT-05 byte-stability / drift no-op detection.
+//
+// Key shape (D-09): for each top-level `mcpServers` map key id →
+// "mcpServers."+id; if a top-level `a2aAgents` object is present, for each of
+// its keys id → "a2aAgents."+id. Keys are sorted lexicographically, mirroring
+// renderSettingsJSON's contributedKeys loop, so the enumeration is deterministic.
+//
+// Malformed JSON returns a non-nil error so route.Project aborts that file
+// (first-error discipline, T-02-09) rather than letting a server slip into the
+// merge unenumerated. An input with no mcpServers object returns empty keys and
+// out==in with no error.
+func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	// Decode only the top-level object so we read the contributed key names
+	// without materializing or re-encoding the nested server definitions.
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(in, &top); err != nil {
+		return nil, nil, fmt.Errorf("gemini: mcpDeepKeys parse %q: %w", srcRel, err)
+	}
+
+	keys = make([]string, 0)
+
+	if raw, ok := top["mcpServers"]; ok {
+		var servers map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return nil, nil, fmt.Errorf("gemini: mcpDeepKeys parse %q mcpServers: %w", srcRel, err)
+		}
+		for id := range servers {
+			keys = append(keys, "mcpServers."+id)
+		}
+	}
+
+	if raw, ok := top["a2aAgents"]; ok {
+		var agents map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &agents); err != nil {
+			return nil, nil, fmt.Errorf("gemini: mcpDeepKeys parse %q a2aAgents: %w", srcRel, err)
+		}
+		for id := range agents {
+			keys = append(keys, "a2aAgents."+id)
+		}
+	}
+
+	// Sort exactly like renderSettingsJSON's contributedKeys so the enumeration
+	// is stable across invocations.
+	sort.Strings(keys)
+
+	// D-03: return the input bytes UNCHANGED — no re-encode, no reorder.
+	return in, keys, nil
+}
+
+// ProjectionRules returns the gemini-cli projection table satisfying
+// route.RuleProvider (the D-06 seam), extended per D-12. The four file-owned
+// resource kinds (agents/, prompts/, commands/, skills/) route verbatim into
+// .gemini/<kind>/ as MergeReplace — current-behavior-equivalent to gemini's
+// TransformPlugin componentKept set.
+//
+// Two non-file rows complete the D-12 contract:
+//   - AGENTS.md → GEMINI.md as MergeComposite: the plugin's top-level AGENTS.md
+//     prose is composited (marker-bounded) into the host GEMINI.md memory file.
+//   - mcp/**/* → settingsJSONPath as MergeDeep with Transform=mcpDeepKeys: the
+//     plugin's MCP definitions deep-merge under mcpServers in the EXISTING
+//     .gemini/settings.json (D-08 — the same RenderRuntime MCP target; there is
+//     NO .mcp.json filename switch and NO OpenPackage-style key rename). The
+//     Transform enumerates the contributed keys without altering the bytes.
+//
+// hooks/ has NO rule and falls into route.Project's dropped set (D-12 "drop
+// hooks": Gemini has no hook system — matching componentDropped{hooks}). gemini-
+// cli has no OpenPackage reference; ACH's existing gemini.go is canonical
+// (PROJECT.md key decision) — this extends it, it does NOT retrofit foreign
+// rules. TransformPlugin is LEFT AS-IS — projection runs via the plan-02 Render
+// leg (ProjectionRules -> route.Project). This method is pure data — no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "agents/**/*", ToGlob: ".gemini/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "prompts/**/*", ToGlob: ".gemini/prompts/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "commands/**/*", ToGlob: ".gemini/commands/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".gemini/skills/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "AGENTS.md", ToGlob: "GEMINI.md", Merge: adapter.MergeComposite},
+		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 	}
 }

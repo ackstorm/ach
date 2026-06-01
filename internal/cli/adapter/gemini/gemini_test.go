@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -556,5 +558,211 @@ func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("dst bytes = %q, want %q", got, payload)
+	}
+}
+
+// TestProjectionRules_Rows (D-12) asserts the gemini-cli ProjectionRules table:
+// the four file-owned kinds stay verbatim MergeReplace with NO Transform,
+// AGENTS.md composites into GEMINI.md, mcp/**/* deep-merges into settingsJSONPath
+// with the mcpDeepKeys Transform wired, and NO hooks rule is present (D-12 "drop
+// hooks" is the no-rule -> dropped-set mechanism).
+func TestProjectionRules_Rows(t *testing.T) {
+	rules := (&Adapter{}).ProjectionRules()
+
+	type rowFields struct {
+		to       string
+		merge    adapter.MergeKind
+		hasXform bool
+	}
+	byFrom := map[string]*rowFields{}
+	for _, r := range rules {
+		if _, dup := byFrom[r.FromGlob]; dup {
+			t.Fatalf("ProjectionRules has duplicate FromGlob %q", r.FromGlob)
+		}
+		byFrom[r.FromGlob] = &rowFields{
+			to:       r.ToGlob,
+			merge:    r.Merge,
+			hasXform: r.Transform != nil,
+		}
+	}
+
+	// The four file-owned kinds: MergeReplace, no Transform (verbatim D-01/D-02).
+	fileKinds := map[string]string{
+		"agents/**/*":   ".gemini/agents/**/*",
+		"prompts/**/*":  ".gemini/prompts/**/*",
+		"commands/**/*": ".gemini/commands/**/*",
+		"skills/**/*":   ".gemini/skills/**/*",
+	}
+	for from, wantTo := range fileKinds {
+		row, ok := byFrom[from]
+		if !ok {
+			t.Fatalf("ProjectionRules missing file-kind row %q", from)
+		}
+		if row.to != wantTo {
+			t.Errorf("row %q ToGlob = %q, want %q", from, row.to, wantTo)
+		}
+		if row.merge != adapter.MergeReplace {
+			t.Errorf("row %q Merge = %v, want MergeReplace", from, row.merge)
+		}
+		if row.hasXform {
+			t.Errorf("row %q has a non-nil Transform; pass-through kinds must be verbatim", from)
+		}
+	}
+
+	// AGENTS.md -> GEMINI.md as MergeComposite, no Transform.
+	comp, ok := byFrom["AGENTS.md"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing AGENTS.md composite row")
+	}
+	if comp.to != "GEMINI.md" {
+		t.Errorf("AGENTS.md ToGlob = %q, want GEMINI.md", comp.to)
+	}
+	if comp.merge != adapter.MergeComposite {
+		t.Errorf("AGENTS.md Merge = %v, want MergeComposite", comp.merge)
+	}
+	if comp.hasXform {
+		t.Errorf("AGENTS.md composite row must have nil Transform")
+	}
+
+	// mcp/**/* -> settingsJSONPath as MergeDeep WITH a non-nil Transform.
+	mcp, ok := byFrom["mcp/**/*"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing mcp/**/* deep-merge row")
+	}
+	if mcp.to != settingsJSONPath {
+		t.Errorf("mcp/**/* ToGlob = %q, want settingsJSONPath %q", mcp.to, settingsJSONPath)
+	}
+	if mcp.merge != adapter.MergeDeep {
+		t.Errorf("mcp/**/* Merge = %v, want MergeDeep", mcp.merge)
+	}
+	if !mcp.hasXform {
+		t.Errorf("mcp/**/* row must wire a non-nil Transform (mcpDeepKeys)")
+	}
+
+	// NO hooks rule: D-12 "drop hooks" is the no-rule -> dropped-set mechanism.
+	if _, ok := byFrom["hooks/**/*"]; ok {
+		t.Errorf("ProjectionRules must NOT carry a hooks rule (drop via dropped-set)")
+	}
+	for from := range byFrom {
+		if from == "hooks" || strings.HasPrefix(from, "hooks/") {
+			t.Errorf("ProjectionRules carries an unexpected hooks rule %q", from)
+		}
+	}
+}
+
+// TestProjectionRules_HooksDropped exercises the real route.Project engine: a
+// plugin tree with a hooks/ subdir and no hooks rule records "hooks" in the
+// dropped slice and emits no FileWrite under hooks/ (D-12 / T-02-10). The
+// agents/ entry confirms a kept kind still projects.
+func TestProjectionRules_HooksDropped(t *testing.T) {
+	src := t.TempDir()
+	mustWrite := func(rel, body string) {
+		full := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %q: %v", rel, err)
+		}
+	}
+	mustWrite("agents/x.md", "# agent x\n")
+	mustWrite("hooks/foo.sh", "#!/bin/sh\necho hi\n")
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, dropped, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project returned error: %v", err)
+	}
+
+	// "hooks" must be recorded in the dropped set exactly once.
+	foundHooksDrop := false
+	for _, d := range dropped {
+		if d == "hooks" {
+			foundHooksDrop = true
+		}
+	}
+	if !foundHooksDrop {
+		t.Errorf("dropped = %v, want to contain %q", dropped, "hooks")
+	}
+
+	// No FileWrite may target a path under hooks/.
+	sawAgent := false
+	for _, w := range fws {
+		if strings.HasPrefix(filepath.ToSlash(w.Path), "hooks/") || strings.Contains(filepath.ToSlash(w.Path), "/hooks/") {
+			t.Errorf("FileWrite targets a hooks path %q; hooks must be dropped", w.Path)
+		}
+		if filepath.ToSlash(w.Path) == ".gemini/agents/x.md" {
+			sawAgent = true
+		}
+	}
+	if !sawAgent {
+		t.Errorf("expected a FileWrite for .gemini/agents/x.md, got %d writes: %+v", len(fws), fws)
+	}
+}
+
+// TestMcpDeepKeys_Enumerates (D-09): a plugin mcp.json with two mcpServers
+// enumerates sorted "mcpServers.<id>" keys and returns the input bytes exactly.
+func TestMcpDeepKeys_Enumerates(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"type":"http","url":"https://b"},"a":{"type":"http","url":"https://a"}}}`)
+
+	out, keys, err := mcpDeepKeys("mcp/servers.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q, want %q (no byte conversion)", out, in)
+	}
+	want := []string{"mcpServers.a", "mcpServers.b"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("keys = %v, want sorted %v", keys, want)
+	}
+}
+
+// TestMcpDeepKeys_A2A (D-09): input carrying both mcpServers and a2aAgents
+// enumerates both families (sorted), bytes unchanged.
+func TestMcpDeepKeys_A2A(t *testing.T) {
+	in := []byte(`{"mcpServers":{"srv":{"type":"http"}},"a2aAgents":{"agt":{"type":"http"}}}`)
+
+	out, keys, err := mcpDeepKeys("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q", out)
+	}
+	want := []string{"a2aAgents.agt", "mcpServers.srv"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("keys = %v, want sorted %v", keys, want)
+	}
+}
+
+// TestMcpDeepKeys_Empty: an input with no mcpServers object returns empty keys,
+// no error, and out==in.
+func TestMcpDeepKeys_Empty(t *testing.T) {
+	in := []byte(`{}`)
+
+	out, keys, err := mcpDeepKeys("mcp/empty.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error on empty object: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q, want %q", out, in)
+	}
+	if len(keys) != 0 {
+		t.Errorf("keys = %v, want empty", keys)
+	}
+}
+
+// TestMcpDeepKeys_Malformed (T-02-09): invalid JSON returns a non-nil error so
+// the projection aborts that file rather than silently dropping servers.
+func TestMcpDeepKeys_Malformed(t *testing.T) {
+	in := []byte(`{"mcpServers": this is not json}`)
+
+	out, keys, err := mcpDeepKeys("mcp/bad.json", in)
+	if err == nil {
+		t.Fatalf("expected error on malformed JSON, got nil (out=%q keys=%v)", out, keys)
+	}
+	if out != nil || keys != nil {
+		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
 }
