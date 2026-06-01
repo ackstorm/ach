@@ -89,7 +89,7 @@ func Init(ctx context.Context, baseURL string) (*InitResponse, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, decodeServerError(resp)
+		return nil, httpclient.DecodeServerError(resp)
 	}
 
 	var ir InitResponse
@@ -213,36 +213,8 @@ func pollOnce(ctx context.Context, url, sessionID string) (*TokenResponse, *http
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &httpclient.ServerError{Status: http.StatusAccepted, Code: "pending"}, nil
 	default:
-		return nil, decodeServerError(resp), nil
+		return nil, httpclient.DecodeServerError(resp), nil
 	}
-}
-
-// decodeServerError mirrors httpclient.decodeServerError but is
-// inlined here because the upstream version is unexported. Reading
-// the response body up-front (rather than passing the *Response) lets
-// callers defer the Close() in their own flow.
-func decodeServerError(resp *http.Response) *httpclient.ServerError {
-	sErr := &httpclient.ServerError{Status: resp.StatusCode}
-	raw, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		sErr.Underlying = fmt.Errorf("%w: read body: %v", httpclient.ErrEnvelopeDecode, readErr)
-		return sErr
-	}
-	var envelope struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-		RequestID string `json:"request_id"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		sErr.Underlying = fmt.Errorf("%w: %v", httpclient.ErrEnvelopeDecode, err)
-		return sErr
-	}
-	sErr.Code = envelope.Error.Code
-	sErr.Message = envelope.Error.Message
-	sErr.RequestID = envelope.RequestID
-	return sErr
 }
 
 // HTTPClient is the package-level *http.Client seam used by Init and

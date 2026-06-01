@@ -6,9 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,7 +40,6 @@ type commit struct {
 	fetcher    manifestFetcher
 	extractor  Extractor
 	adapter    AdapterDispatcher
-	differ     Differ
 
 	// Resolved paths from step 0/1.
 	achDir    string
@@ -168,7 +165,6 @@ func newCommit(opts Opts) (*commit, error) {
 		opts:       opts,
 		stateStore: defaultStateStore{},
 		locker:     lock.NewLocker(lock.Path(achDir)),
-		differ:     NewDiffer(),
 		extractor:  opts.Extractor,
 		adapter:    opts.AdapterDispatcher,
 		achDir:     achDir,
@@ -829,12 +825,3 @@ func (defaultStateStore) Save(path string, f *state.File) error {
 func (defaultStateStore) GuardEnvironment(existing *state.File, requested string, force bool) error {
 	return state.GuardEnvironment(existing, requested, force)
 }
-
-// Compile-time assertion that http.MethodPost (manifest.Fetch's verb)
-// is used somewhere — the linter would otherwise prune the
-// net/http import the codepath docs reference. Cheap and harmless.
-var _ = http.MethodPost
-
-// Compile-time assertion that io.Writer (Stdout/Stderr) is the right
-// type — defends against a future refactor of Opts.
-var _ io.Writer = (*os.File)(nil)

@@ -67,11 +67,6 @@ var (
 	// ErrNoDeployment is returned by ResolveActive when no deployment
 	// can be selected via flag / env / default / sole entry.
 	ErrNoDeployment = errors.New("config: no deployment resolved")
-
-	// ErrFileMode is reserved for callers that want to fail-closed on
-	// permissive modes (e.g. a future strict-mode flag). Today Load
-	// only warns; Save normalizes back to 0600.
-	ErrFileMode = errors.New("config: file mode more permissive than 0600")
 )
 
 // Path returns the canonical config file location, honoring

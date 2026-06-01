@@ -668,9 +668,9 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
 	switch strings.ToLower(filepath.Ext(abs)) {
 	case extJSON:
-		return mergeForwardJSON(abs, ours, mode)
+		return mergeForwardDoc(abs, ours, mode, false)
 	case extTOML:
-		return mergeForwardTOML(abs, ours, mode)
+		return mergeForwardDoc(abs, ours, mode, true)
 	default:
 		// No structured merge for an unknown extension — write verbatim.
 		if err := state.WriteAtomic(abs, ours, mode); err != nil {
@@ -680,64 +680,59 @@ func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
 	}
 }
 
-// mergeForwardJSON deep-merges `ours` into the existing JSON document at
-// abs. A missing file is treated as an empty object. A pre-existing file
-// MUST be valid JSON (we never silently discard a user's config).
-func mergeForwardJSON(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
-	var oursMap map[string]any
-	if err := json.Unmarshal(ours, &oursMap); err != nil {
-		return nil, fmt.Errorf("mergeForward decode rendered JSON: %w", err)
+// mergeForwardDoc deep-merges `ours` into the existing JSON or TOML
+// document at abs (isTOML selects the codec). A missing file is treated
+// as an empty object. A pre-existing file MUST be valid in the selected
+// format (we never silently discard a user's config). The format label
+// keeps the error messages identical to the prior per-format functions.
+func mergeForwardDoc(abs string, ours []byte, mode os.FileMode, isTOML bool) ([]byte, error) {
+	format := "JSON"
+	if isTOML {
+		format = "TOML"
+	}
+	oursMap, err := parseRendered(ours, isTOML)
+	if err != nil {
+		return nil, fmt.Errorf("mergeForward decode rendered %s: %w", format, err)
 	}
 	existing := map[string]any{}
 	if body, err := os.ReadFile(abs); err == nil {
 		if len(bytes.TrimSpace(body)) > 0 {
-			if derr := json.Unmarshal(body, &existing); derr != nil {
-				return nil, fmt.Errorf("mergeForward decode existing JSON %s: %w", abs, derr)
+			if derr := unmarshalDoc(body, &existing, isTOML); derr != nil {
+				return nil, fmt.Errorf("mergeForward decode existing %s %s: %w", format, abs, derr)
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
 	}
 	deepMergeInto(existing, oursMap)
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(existing); err != nil {
-		return nil, fmt.Errorf("mergeForward encode JSON %s: %w", abs, err)
+	out, err := encodeDoc(existing, isTOML)
+	if err != nil {
+		return nil, fmt.Errorf("mergeForward encode %s %s: %w", format, abs, err)
 	}
-	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
-		return nil, fmt.Errorf("mergeForward write JSON %s: %w", abs, err)
+	if err := state.WriteAtomic(abs, out, mode); err != nil {
+		return nil, fmt.Errorf("mergeForward write %s %s: %w", format, abs, err)
 	}
-	return buf.Bytes(), nil
+	return out, nil
 }
 
-// mergeForwardTOML mirrors mergeForwardJSON for TOML files.
-func mergeForwardTOML(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
-	var oursMap map[string]any
-	if err := toml.Unmarshal(ours, &oursMap); err != nil {
-		return nil, fmt.Errorf("mergeForward decode rendered TOML: %w", err)
+// parseRendered unmarshals the freshly-rendered `ours` bytes into a
+// generic map via the selected codec. Unlike parseDoc it does NOT treat
+// an empty body as an empty map — the rendered content always parses as
+// the adapter emitted it; preserving the prior strict-decode semantics.
+func parseRendered(ours []byte, isTOML bool) (map[string]any, error) {
+	var m map[string]any
+	if err := unmarshalDoc(ours, &m, isTOML); err != nil {
+		return nil, err
 	}
-	existing := map[string]any{}
-	if body, err := os.ReadFile(abs); err == nil {
-		if len(bytes.TrimSpace(body)) > 0 {
-			if derr := toml.Unmarshal(body, &existing); derr != nil {
-				return nil, fmt.Errorf("mergeForward decode existing TOML %s: %w", abs, derr)
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
+	return m, nil
+}
+
+// unmarshalDoc decodes b into v via the JSON or TOML codec.
+func unmarshalDoc(b []byte, v any, isTOML bool) error {
+	if isTOML {
+		return toml.Unmarshal(b, v)
 	}
-	deepMergeInto(existing, oursMap)
-	var buf bytes.Buffer
-	enc := toml.NewEncoder(&buf)
-	if err := enc.Encode(existing); err != nil {
-		return nil, fmt.Errorf("mergeForward encode TOML %s: %w", abs, err)
-	}
-	if err := state.WriteAtomic(abs, buf.Bytes(), mode); err != nil {
-		return nil, fmt.Errorf("mergeForward write TOML %s: %w", abs, err)
-	}
-	return buf.Bytes(), nil
+	return json.Unmarshal(b, v)
 }
 
 // deepMergeInto recursively merges src into dst: when both sides hold a
@@ -773,6 +768,30 @@ func parseDoc(content []byte, isTOML bool) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// encodeDoc renders a generic map back to JSON or TOML bytes. It is the
+// inverse of parseDoc and the single encoder both the forward-merge and
+// the --sync inverse-merge paths share. The settings are pinned to match
+// the prior per-format encoders byte-for-byte (JSON: 2-space indent,
+// HTML-escaping disabled; TOML: BurntSushi default encoder) so drift
+// hashing and idempotence stay stable across the consolidation.
+func encodeDoc(m map[string]any, isTOML bool) ([]byte, error) {
+	var buf bytes.Buffer
+	if isTOML {
+		enc := toml.NewEncoder(&buf)
+		if err := enc.Encode(m); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(m); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // readParseDoc reads + parses abs. Returns (nil, false, nil) when the file
@@ -979,7 +998,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	// the to-delete set as set-difference.
 	keep := map[string]struct{}{}
 	if newFile != nil {
-		for _, e := range walkEntries(newFile) {
+		for _, e := range state.WalkEntries(newFile) {
 			keep[e.Target] = struct{}{}
 		}
 	}
@@ -1056,7 +1075,7 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	// Drift-wins gate: compare on-disk xxh3 to prev.Hash. Mismatch +
 	// !Force → preserve.
 	if !opts.Force && e.Hash != "" {
-		current, err := hashFileXxh3(abs)
+		current, err := hash.HashFile(abs)
 		if err != nil {
 			return false, fmt.Errorf("sync hash %s: %w", abs, err)
 		}
@@ -1124,81 +1143,52 @@ func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	ext := strings.ToLower(filepath.Ext(abs))
 	switch ext {
 	case extJSON:
-		return syncDeepJSON(e, abs, opts)
+		return syncDeepDoc(e, abs, false)
 	case extTOML:
-		return syncDeepTOML(e, abs, opts)
+		return syncDeepDoc(e, abs, true)
 	}
 	warnPreserved(opts.Stderr, abs,
 		fmt.Sprintf("unsupported merge=deep file extension %q; refusing to inverse-merge", ext))
 	return true, nil
 }
 
-// syncDeepJSON loads a JSON file as map[string]any, removes the
-// dotted-path Keys, re-encodes, and atomically rewrites. An empty
-// resulting map → the file is deleted entirely (the user's whole
-// document was engine-contributed).
-func syncDeepJSON(e state.FileEntry, abs string, _ SyncOptions) (bool, error) {
+// syncDeepDoc loads a JSON or TOML file as map[string]any (isTOML selects
+// the codec), removes the dotted-path Keys, re-encodes, and atomically
+// rewrites. An empty resulting map → the file is deleted entirely (the
+// user's whole document was engine-contributed). The format label keeps
+// the error messages identical to the prior per-format functions; the
+// JSON/TOML encoder settings are unchanged (encodeDoc reproduces them
+// byte-for-byte).
+func syncDeepDoc(e state.FileEntry, abs string, isTOML bool) (bool, error) {
+	format := "JSON"
+	if isTOML {
+		format = "TOML"
+	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
-		return false, fmt.Errorf("sync read JSON %s: %w", abs, err)
+		return false, fmt.Errorf("sync read %s %s: %w", format, abs, err)
 	}
 	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return false, fmt.Errorf("sync decode JSON %s: %w", abs, err)
+	if err := unmarshalDoc(body, &root, isTOML); err != nil {
+		return false, fmt.Errorf("sync decode %s %s: %w", format, abs, err)
 	}
 	for _, k := range e.Keys {
 		removeDottedKey(root, k)
 	}
 	if len(root) == 0 {
 		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return false, fmt.Errorf("sync remove JSON %s: %w", abs, rerr)
+			return false, fmt.Errorf("sync remove %s %s: %w", format, abs, rerr)
 		}
 		return false, nil
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(root); err != nil {
-		return false, fmt.Errorf("sync encode JSON %s: %w", abs, err)
-	}
-	// 0o600 — deep-merge JSON inverse rewrites the same credential-
-	// bearing adapter runtime-config file (CR-01).
-	if err := state.WriteAtomic(abs, buf.Bytes(), 0o600); err != nil {
-		return false, fmt.Errorf("sync write JSON %s: %w", abs, err)
-	}
-	return false, nil
-}
-
-// syncDeepTOML mirrors syncDeepJSON for TOML files via the
-// BurntSushi/toml decode-modify-encode roundtrip.
-func syncDeepTOML(e state.FileEntry, abs string, _ SyncOptions) (bool, error) {
-	body, err := os.ReadFile(abs)
+	out, err := encodeDoc(root, isTOML)
 	if err != nil {
-		return false, fmt.Errorf("sync read TOML %s: %w", abs, err)
+		return false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
 	}
-	var root map[string]any
-	if err := toml.Unmarshal(body, &root); err != nil {
-		return false, fmt.Errorf("sync decode TOML %s: %w", abs, err)
-	}
-	for _, k := range e.Keys {
-		removeDottedKey(root, k)
-	}
-	if len(root) == 0 {
-		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return false, fmt.Errorf("sync remove TOML %s: %w", abs, rerr)
-		}
-		return false, nil
-	}
-	var buf bytes.Buffer
-	enc := toml.NewEncoder(&buf)
-	if err := enc.Encode(root); err != nil {
-		return false, fmt.Errorf("sync encode TOML %s: %w", abs, err)
-	}
-	// 0o600 — deep-merge TOML inverse rewrites the same credential-
+	// 0o600 — deep-merge inverse rewrites the same credential-
 	// bearing adapter runtime-config file (CR-01).
-	if err := state.WriteAtomic(abs, buf.Bytes(), 0o600); err != nil {
-		return false, fmt.Errorf("sync write TOML %s: %w", abs, err)
+	if err := state.WriteAtomic(abs, out, 0o600); err != nil {
+		return false, fmt.Errorf("sync write %s %s: %w", format, abs, err)
 	}
 	return false, nil
 }
@@ -1263,35 +1253,15 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 	}
 }
 
-// walkEntries flattens every FileEntry across all projection buckets
-// on a state.File (Prompts → Plugins → Artifacts → RuntimeFiles →
-// Adapter.Files). The deterministic order mirrors extract.walkAllEntries
-// (the autoclaim package's flattener) so behavior stays consistent
-// across the Phase 7 surface.
-func walkEntries(f *state.File) []state.FileEntry {
-	if f == nil {
-		return nil
-	}
-	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) +
-		len(f.RuntimeFiles) + len(f.Adapter.Files)
-	out := make([]state.FileEntry, 0, total)
-	out = append(out, f.Prompts...)
-	out = append(out, f.Plugins...)
-	out = append(out, f.Artifacts...)
-	out = append(out, f.RuntimeFiles...)
-	out = append(out, f.Adapter.Files...)
-	return out
-}
-
 // taggedEntry preserves bucket provenance for Sync — Adapter.Files resolve
 // against toolRoot (the tool's native config root); the four content buckets
-// resolve against achDir. Lost when walkEntries flattens.
+// resolve against achDir. Lost when state.WalkEntries flattens.
 type taggedEntry struct {
 	Entry     state.FileEntry
 	IsAdapter bool
 }
 
-// walkEntriesTagged is walkEntries with provenance retained so Sync can pick
+// walkEntriesTagged is state.WalkEntries with provenance retained so Sync can pick
 // the correct base path per bucket (F-02 / CR-02 follow-up). Adapter entries
 // flow through with IsAdapter=true; the four content buckets with false.
 func walkEntriesTagged(f *state.File) []taggedEntry {
@@ -1327,19 +1297,6 @@ func warnPreserved(stderr io.Writer, abs, reason string) {
 		return
 	}
 	_, _ = fmt.Fprintf(stderr, "warning: preserving %s — %s\n", abs, reason)
-}
-
-// hashFileXxh3 returns the canonical "xxh3:<32hex>" digest of the
-// file at path. Wraps the W1-04 hash.Hash with file open/close
-// discipline — same shape as extract.hashFileXxh3 (kept package-local
-// here to avoid exporting from extract).
-func hashFileXxh3(path string) (string, error) {
-	f, err := os.Open(path) // #nosec G304 — Sync handler reads paths from prior state ledger
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	return hash.Hash(f)
 }
 
 // NewWiring constructs the default Extractor + AdapterDispatcher

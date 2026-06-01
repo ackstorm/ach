@@ -467,61 +467,6 @@ func TestTransformPlugin_EmptyPaths_Errors(t *testing.T) {
 	}
 }
 
-func TestMergeStrategies_OpencodeJsonIsDeep(t *testing.T) {
-	a := &Adapter{}
-	got := a.MergeStrategies()
-	if got[".opencode/opencode.json"] != adapter.MergeDeep {
-		t.Errorf("MergeStrategies()[\".opencode/opencode.json\"] = %v, want MergeDeep",
-			got[".opencode/opencode.json"])
-	}
-}
-
-func TestResolveOutputContent_RoundTrip(t *testing.T) {
-	a := &Adapter{}
-	m := buildManifest()
-	ctx := adapter.WithCredential(context.Background(), "pk_demo")
-
-	// Get the bytes RenderRuntime would emit.
-	writes, err := a.RenderRuntime(ctx, m, nil)
-	if err != nil {
-		t.Fatalf("RenderRuntime: %v", err)
-	}
-	wantBytes := writes[0].Content
-
-	// ResolveOutputContent must return byte-identical content for the
-	// matched target — that is the SAFE-04 cascade Tier 2 contract.
-	gotBytes, err := a.ResolveOutputContent(ctx, m, ".opencode/opencode.json")
-	if err != nil {
-		t.Fatalf("ResolveOutputContent: %v", err)
-	}
-	if !bytes.Equal(wantBytes, gotBytes) {
-		t.Errorf("ResolveOutputContent bytes != RenderRuntime bytes\ngot:\n%s\nwant:\n%s", gotBytes, wantBytes)
-	}
-}
-
-func TestResolveOutputContent_UnknownTarget_ReturnsNilNil(t *testing.T) {
-	a := &Adapter{}
-	m := buildManifest()
-	got, err := a.ResolveOutputContent(context.Background(), m, "plugins/caveman/agents/x.md")
-	if err != nil {
-		t.Fatalf("ResolveOutputContent: %v", err)
-	}
-	if got != nil {
-		t.Errorf("ResolveOutputContent(unknown target) = non-nil; want nil so cascade Tier 3 source-byte read takes over")
-	}
-}
-
-func TestResolveOutputContent_NilManifest_ReturnsNilNil(t *testing.T) {
-	a := &Adapter{}
-	got, err := a.ResolveOutputContent(context.Background(), nil, ".opencode/opencode.json")
-	if err != nil {
-		t.Fatalf("ResolveOutputContent: %v", err)
-	}
-	if got != nil {
-		t.Errorf("ResolveOutputContent(nil manifest) = non-nil; want nil")
-	}
-}
-
 func TestRegistry_RegistersOnImport(t *testing.T) {
 	// This file imports github.com/ackstorm/ach/internal/cli/adapter
 	// and is itself in the opencode package — so init() has fired by
@@ -593,7 +538,7 @@ func TestCopyFile_SurfacesCloseError_OnDevFull(t *testing.T) {
 		t.Fatalf("write src: %v", err)
 	}
 
-	err := copyFile(src, "/dev/full")
+	err := adapter.CopyFile(src, "/dev/full")
 	if err == nil {
 		t.Fatal("copyFile(/dev/full) returned nil; expected ENOSPC from close(2) — the deferred-close pattern is swallowing the error (WR-02)")
 	}
@@ -620,7 +565,7 @@ func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
 	if err := os.WriteFile(src, payload, 0o600); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
-	if err := copyFile(src, dst); err != nil {
+	if err := adapter.CopyFile(src, dst); err != nil {
 		t.Fatalf("copyFile success path returned error: %v", err)
 	}
 	got, err := os.ReadFile(dst) //nolint:gosec // dst is under t.TempDir()

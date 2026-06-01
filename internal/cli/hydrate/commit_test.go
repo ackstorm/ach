@@ -151,7 +151,6 @@ func newTestCommit(t *testing.T) (*commit, *fakeStateStore, *fakeLocker) {
 				Context:       &manifest.ContextBlock{},
 			}, nil
 		},
-		differ:    NewDiffer(),
 		achDir:    dir,
 		statePath: filepath.Join(dir, "state.json"),
 		killFn:    defaultKillFn, // overridden in SIGKILL seam tests.

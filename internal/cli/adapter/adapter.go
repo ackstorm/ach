@@ -163,22 +163,6 @@ type Adapter interface {
 	// writes the platform-native plugin tree at dst. Returns the list
 	// of extracted files + the silent-drop accounting per ADAPT-07.
 	TransformPlugin(ctx context.Context, src, dst string) (PluginWrite, error)
-
-	// MergeStrategies returns the per-target merge classification
-	// (CLI spec §7.1 + ADAPT-05). Map key is the workspace-relative
-	// target path; map value is the MergeKind. The orchestrator
-	// consults this map at publication time to choose deep-merge vs
-	// composite-replace vs full-replace.
-	MergeStrategies() map[string]MergeKind
-
-	// ResolveOutputContent recomputes the bytes RenderRuntime would
-	// emit for a specific target. Used by the SAFE-04 cascade Tier 2
-	// (plan 07-W2-03 internal/cli/extract/autoclaim.go) to compare a
-	// freshly-claimed target against what the adapter WOULD produce on
-	// the next hydrate. Pass-through adapters (claudecode) may return
-	// (nil, nil) for non-runtime targets — the cascade falls through to
-	// Tier 3 source-byte read.
-	ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error)
 }
 
 // credentialKey is the unexported typed key used to stuff the bearer
@@ -216,4 +200,13 @@ func CredentialFromContext(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+// HeadersWithCredential returns the per-server headers map embedding the
+// bearer under "x-ach-key"; an empty credential still emits the header
+// (empty value) so the rendered JSON/TOML shape stays stable.
+func HeadersWithCredential(cred string) map[string]string {
+	return map[string]string{
+		"x-ach-key": cred,
+	}
 }

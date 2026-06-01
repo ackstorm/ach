@@ -54,9 +54,8 @@ type FileWrite struct {
 // the archive listed entries (callers downstream depend on insertion
 // order for the state ledger's deterministic file table).
 type Result struct {
-	WrittenFiles  []FileWrite
-	BytesWritten  int64
-	EntriesParsed int
+	WrittenFiles []FileWrite
+	BytesWritten int64
 }
 
 // Extract decompresses a gzipped tar stream into dst with the
@@ -156,7 +155,7 @@ func Extract(
 			// and the package itself normalizes any pre-USTAR null-byte
 			// typeflag entries into TypeReg before returning; no need for a
 			// separate case (the constant is now staticcheck-deprecated).
-			fw, written, err := writeRegular(target, hdr, tr, &res, maxBytes)
+			fw, written, err := writeRegular(target, hdr, tr, maxBytes)
 			if err != nil {
 				return res, err
 			}
@@ -200,7 +199,6 @@ func Extract(
 		}
 	}
 
-	res.EntriesParsed = entriesSeen
 	return res, nil
 }
 
@@ -286,7 +284,6 @@ func writeRegular(
 	target string,
 	hdr *tar.Header,
 	tr *tar.Reader,
-	_ *Result,
 	maxBytes int64,
 ) (FileWrite, int64, error) {
 	// Ensure the parent directory exists (tar archives don't always

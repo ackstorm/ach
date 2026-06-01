@@ -117,7 +117,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return decodeServerError(resp)
+		return DecodeServerError(resp)
 	}
 	if out == nil {
 		// Drain body to allow connection reuse.
@@ -150,7 +150,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) (*htt
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		sErr := decodeServerError(resp)
+		sErr := DecodeServerError(resp)
 		_ = resp.Body.Close()
 		return nil, sErr
 	}
@@ -214,10 +214,12 @@ func (c *Client) dumpVerbose(req *http.Request) {
 	_, _ = io.WriteString(c.Stderr, HeaderDump(req.Header))
 }
 
-// decodeServerError reads the response body and tries to decode it
+// DecodeServerError reads the response body and tries to decode it
 // as a §15.5 envelope. Returns a populated *ServerError on success
-// and an envelope-decode-wrapping *ServerError on failure.
-func decodeServerError(resp *http.Response) *ServerError {
+// and an envelope-decode-wrapping *ServerError on failure. Exported so
+// sibling CLI packages (e.g. devicecode) share a single envelope-decode
+// implementation rather than copying it.
+func DecodeServerError(resp *http.Response) *ServerError {
 	sErr := &ServerError{Status: resp.StatusCode}
 	raw, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {

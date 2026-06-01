@@ -8,7 +8,7 @@
 // `ach env-keys list` and W3-P2 `ach admin keys list` (per 06-04 W7 —
 // single source of truth, no inline duplication). The broader render
 // surface (FormatConfigList / FormatConfigShow / FormatEnvList /
-// FormatEnvDescribe / FormatIdentity) lands via 06-04 in `render.go`
+// FormatEnvDescribe) lands via 06-04 in `render.go`
 // alongside this file — both files contribute to the same `render`
 // package without a merge conflict because they own disjoint symbols.
 //

@@ -29,10 +29,6 @@ func (f *fakeAdapter) RenderRuntime(_ context.Context, _ *manifest.Manifest, _ *
 func (f *fakeAdapter) TransformPlugin(_ context.Context, _, _ string) (PluginWrite, error) {
 	return PluginWrite{}, nil
 }
-func (f *fakeAdapter) MergeStrategies() map[string]MergeKind { return nil }
-func (f *fakeAdapter) ResolveOutputContent(_ context.Context, _ *manifest.Manifest, _ string) ([]byte, error) {
-	return nil, nil
-}
 
 func TestRegister_Duplicate_Panics(t *testing.T) {
 	resetForTesting()

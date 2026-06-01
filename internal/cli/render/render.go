@@ -243,17 +243,3 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 
 	return sb.String()
 }
-
-// FormatIdentity returns the three-line identity block for `ach
-// whoami` (no-net default). Provided here as an optional refactor
-// target for 06-03 follow-up — the whoami subcommand can lift its
-// inline formatIdentityBlock to consume this function for a single
-// source of truth. The key string is masked via config.Mask so this
-// function NEVER emits plaintext on stdout (CLI-04).
-func FormatIdentity(name, url, key string) string {
-	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Deployment: %s\n", name)
-	_, _ = fmt.Fprintf(&sb, "URL: %s\n", url)
-	_, _ = fmt.Fprintf(&sb, "Key: %s\n", config.Mask(key))
-	return sb.String()
-}

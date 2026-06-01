@@ -67,13 +67,4 @@
 // translate (e.g. "hooks", "commands" for codex). The orchestrator
 // emits a single end-of-hydration stderr warning; exit code is
 // unchanged.
-//
-// SAFE-04 cascade contract (ResolveOutputContent):
-//
-// Every adapter implements ResolveOutputContent for the SAFE-04
-// three-tier auto-claim cascade (Tier 2: adapter-driven content
-// resolution). For pass-through adapters (claudecode), this returns
-// the bytes RenderRuntime would emit for the named target — for any
-// other target, source-byte read at Tier 3 suffices and the adapter
-// may return (nil, nil) to signal "use Tier 3 fallback".
 package adapter

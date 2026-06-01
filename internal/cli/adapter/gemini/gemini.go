@@ -29,14 +29,6 @@
 // adapter.CredentialFromContext(ctx) — never from env vars. Empty
 // credentials produce an empty header value (the orchestrator gates
 // whether to write at all).
-//
-// SAFE-04 ResolveOutputContent contract: for target
-// ".gemini/settings.json" the adapter recomputes the bytes RenderRuntime
-// would emit. For any other target (plugin files inside
-// .gemini/extensions/), it returns (nil, nil) so the W2-03 cascade
-// falls through to Tier 3 source-byte read — the right behavior for
-// pass-through plugin files (this adapter's TransformPlugin emits source
-// bytes verbatim for the kept components).
 package gemini
 
 import (
@@ -44,7 +36,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -164,33 +155,23 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}, nil
 }
 
-// mcpServerEntry is the per-server JSON shape Gemini CLI consumes in
-// .gemini/settings.json under the "mcpServers" key per CLI spec §7.4
-// gemini-cli paragraph. The shape mirrors Claude Code's MCP server
-// registry format — same {type, url, headers} surface.
-type mcpServerEntry struct {
-	Type    string            `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
-// a2aAgentEntry mirrors the MCP server shape under "a2aAgents". Spec
-// §7.4 gemini-cli does not pin a fixed A2A shape (parity with the
-// claudecode reference); we mirror the MCP shape so the JSON round-trip
-// is symmetric on both sides.
-type a2aAgentEntry struct {
-	Type    string            `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
 // settingsShape is the .gemini/settings.json document Gemini reads.
 // Encoded with sorted keys (encoding/json's lexicographic map-key sort)
-// so the output is deterministic — important for ResolveOutputContent's
-// SAFE-04 cascade byte-equality check.
+// so the output is deterministic — important for FMT-05 deterministic
+// re-hydrate / drift no-op detection.
+//
+// MCPServers carries the per-server JSON shape Gemini CLI consumes under
+// the "mcpServers" key per CLI spec §7.4 gemini-cli paragraph. The shape
+// mirrors Claude Code's MCP server registry format — same
+// {type, url, headers} surface.
+//
+// A2AAgents mirrors the MCP server shape under "a2aAgents". Spec §7.4
+// gemini-cli does not pin a fixed A2A shape (parity with the claudecode
+// reference); we mirror the MCP shape so the JSON round-trip is
+// symmetric on both sides.
 type settingsShape struct {
-	MCPServers map[string]mcpServerEntry `json:"mcpServers"`
-	A2AAgents  map[string]a2aAgentEntry  `json:"a2aAgents,omitempty"`
+	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
+	A2AAgents  map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
 }
 
 // renderSettingsJSON builds the .gemini/settings.json bytes from a
@@ -200,27 +181,27 @@ type settingsShape struct {
 // plaintext discipline CLI-04 / D-04 establishes for the trust path).
 func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := settingsShape{
-		MCPServers: map[string]mcpServerEntry{},
-		A2AAgents:  map[string]a2aAgentEntry{},
+		MCPServers: map[string]adapter.MCPServerEntry{},
+		A2AAgents:  map[string]adapter.A2AAgentEntry{},
 	}
 
 	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
 
 	for _, server := range m.Runtime.MCPServers {
-		entry := mcpServerEntry{
+		entry := adapter.MCPServerEntry{
 			Type:    "http",
 			URL:     server.Endpoint,
-			Headers: headersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.MCPServers[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
 	}
 
 	for _, agent := range m.Runtime.A2AAgents {
-		entry := a2aAgentEntry{
+		entry := adapter.A2AAgentEntry{
 			Type:    "http",
 			URL:     agent.Endpoint,
-			Headers: headersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.A2AAgents[agent.ID] = entry
 		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
@@ -244,16 +225,6 @@ func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []stri
 	}
 
 	return buf.Bytes(), contributedKeys, nil
-}
-
-// headersWithCredential returns the per-server headers map. Empty
-// credentials still emit the x-ach-key header with empty value so the
-// JSON shape stays stable across offline / dry-run / unit-test
-// invocations.
-func headersWithCredential(cred string) map[string]string {
-	return map[string]string{
-		"x-ach-key": cred,
-	}
 }
 
 // RenderRuntime emits the single .gemini/settings.json FileWrite per
@@ -373,7 +344,7 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 		}
 
 		// Classify by top-level component (first path element).
-		topLevel := firstPathComponent(rel)
+		topLevel := adapter.TopLevelComponent(rel)
 
 		// .claude-plugin/ metadata is consumed for version above; not
 		// copied to dst.
@@ -417,7 +388,7 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 			return err
 		}
-		if err := copyFile(path, dstPath); err != nil {
+		if err := adapter.CopyFile(path, dstPath); err != nil {
 			return err
 		}
 
@@ -487,24 +458,6 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 	}, nil
 }
 
-// firstPathComponent returns the first path element of rel (e.g.
-// "agents/foo.md" → "agents"; ".claude-plugin/plugin.json" →
-// ".claude-plugin"; ".mcp.json" → ".mcp.json"). Used to classify
-// walked entries by their top-level component name.
-func firstPathComponent(rel string) string {
-	// filepath.Dir returns "." for a single-element path; in that case
-	// the rel IS the top-level (e.g. ".mcp.json"). Otherwise we need
-	// to walk up to the root.
-	for {
-		parent, file := filepath.Split(rel)
-		if parent == "" {
-			return file
-		}
-		// Strip trailing separator.
-		rel = parent[:len(parent)-1]
-	}
-}
-
 // readPluginVersion parses the version field from a
 // .claude-plugin/plugin.json file. Best-effort: returns "" on any
 // error (missing file, unreadable, malformed JSON, no version key).
@@ -536,41 +489,6 @@ func encodeExtensionManifest(m extensionManifest) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// copyFile copies srcPath → dstPath with mode 0644. Parent dirs must
-// already exist.
-func copyFile(srcPath, dstPath string) error {
-	in, err := os.Open(srcPath) //nolint:gosec // srcPath is under our staging dir
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // dstPath is under our destination dir
-	if err != nil {
-		return err
-	}
-
-	// Per 07-W5-05 (WR-02): explicit close to surface buffered-write
-	// errors that surface only at close(2) (EIO/ENOSPC). A deferred
-	// `_ = out.Close()` would silently drop those errors, recording a
-	// truncated file as successfully written.
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
-}
-
-// MergeStrategies returns the per-target merge classification per
-// CLI spec §7.1 + ADAPT-05. gemini-cli merges .gemini/settings.json
-// deep (the user may carry unrelated keys; the adapter contributes
-// mcpServers + a2aAgents under the deep-merge protocol).
-func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
-	return map[string]adapter.MergeKind{
-		settingsJSONPath: adapter.MergeDeep,
-	}
-}
-
 // ProjectionRules returns the gemini-cli Phase-1 PASSTHROUGH projection
 // table satisfying route.RuleProvider (the D-06 seam). It is current-
 // behavior-equivalent to gemini's TransformPlugin componentKept set:
@@ -590,29 +508,4 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "commands/**/*", ToGlob: ".gemini/commands/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".gemini/skills/**/*", Merge: adapter.MergeReplace},
 	}
-}
-
-// ResolveOutputContent satisfies the SAFE-04 cascade Tier 2 contract
-// from plan 07-W2-03. For target ".gemini/settings.json" we recompute
-// the bytes RenderRuntime would emit (so the cascade can compare
-// against disk bytes without re-running the orchestrator). For any
-// other target, we return (nil, nil) — the cascade falls through to
-// Tier 3 (source-byte read), which is correct for the per-plugin
-// component files emitted under .gemini/extensions/ (those are
-// byte-identical to the staged source bytes; per-plugin
-// extension.json files are also pass-through to the orchestrator's
-// staging dir).
-func (a *Adapter) ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error) {
-	if target != settingsJSONPath {
-		return nil, nil
-	}
-	if m == nil || m.Runtime == nil {
-		return nil, nil
-	}
-	cred := adapter.CredentialFromContext(ctx)
-	content, _, err := renderSettingsJSON(m, cred)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
 }

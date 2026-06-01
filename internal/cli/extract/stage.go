@@ -212,7 +212,7 @@ func StageAndPublish(
 	// Re-read source.bin to compute the xxh3 SourceHash. The extra
 	// read is cache-hot — same trade-off tar.go's writeRegular makes
 	// for per-file hashes.
-	srcXxh3, err := hashFileXxh3(sourceBin)
+	srcXxh3, err := hash.HashFile(sourceBin)
 	if err != nil {
 		return nil, fmt.Errorf("extract: xxh3 source.bin: %w", err)
 	}
@@ -225,7 +225,7 @@ func StageAndPublish(
 	if existingSha256, ok, err := fileSha256IfExists(finalRelPath); err != nil {
 		return nil, err
 	} else if ok && subtle.ConstantTimeCompare(existingSha256, srcSha256) == 1 {
-		existingXxh3, herr := hashFileXxh3(finalRelPath)
+		existingXxh3, herr := hash.HashFile(finalRelPath)
 		if herr != nil {
 			return nil, fmt.Errorf("extract: xxh3 existing %s: %w", finalRelPath, herr)
 		}
@@ -385,17 +385,6 @@ func spillAndHashSha256(body io.Reader, sourcePath string) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-// hashFileXxh3 returns the canonical "xxh3:<32hex>" digest of the
-// file at path. Wraps hash.Hash with file-open/close discipline.
-func hashFileXxh3(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	return hash.Hash(f)
-}
-
 // fileSha256IfExists computes the sha256 of the file at path if it
 // exists, returning (sum, true, nil). When the file is absent returns
 // (nil, false, nil). Other I/O errors surface as (nil, false, err).
@@ -454,7 +443,7 @@ func SpillAndHashXxh3(achDir string, body io.Reader) (path, xxh3 string, err err
 		_ = os.RemoveAll(dir)
 		return "", "", err
 	}
-	sum, err := hashFileXxh3(p)
+	sum, err := hash.HashFile(p)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", "", fmt.Errorf("extract: xxh3 staged source: %w", err)

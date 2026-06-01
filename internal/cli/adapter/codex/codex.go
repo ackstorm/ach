@@ -65,7 +65,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -203,8 +202,8 @@ type a2aAgentTable struct {
 // top-level keys are emitted by BurntSushi/toml in source-declaration
 // order — but our values are maps, and TOML map encoding sorts keys
 // lexicographically, so the output is deterministic across invocations
-// with the same input. ResolveOutputContent's SAFE-04 Tier 2 byte-equal
-// compare depends on this.
+// with the same input. FMT-05 deterministic re-hydrate / drift no-op
+// detection depends on this.
 type configTOMLShape struct {
 	MCPServers map[string]mcpServerTable `toml:"mcp_servers"`
 	A2AAgents  map[string]a2aAgentTable  `toml:"a2a_agents"`
@@ -231,7 +230,7 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 	for _, server := range m.Runtime.MCPServers {
 		shape.MCPServers[server.ID] = mcpServerTable{
 			URL:       server.Endpoint,
-			Headers:   headersWithCredential(credential),
+			Headers:   adapter.HeadersWithCredential(credential),
 			Transport: "http",
 		}
 		contributedKeys = append(contributedKeys, "mcp_servers."+server.ID)
@@ -240,7 +239,7 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 	for _, agent := range m.Runtime.A2AAgents {
 		shape.A2AAgents[agent.ID] = a2aAgentTable{
 			URL:       agent.Endpoint,
-			Headers:   headersWithCredential(credential),
+			Headers:   adapter.HeadersWithCredential(credential),
 			Transport: "http",
 		}
 		contributedKeys = append(contributedKeys, "a2a_agents."+agent.ID)
@@ -256,16 +255,6 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 	}
 
 	return buf.Bytes(), contributedKeys, nil
-}
-
-// headersWithCredential returns the per-server headers map. When the
-// credential is empty (offline / dry-run / unit-test), we still emit
-// the x-ach-key header with empty value so the TOML shape stays
-// stable.
-func headersWithCredential(cred string) map[string]string {
-	return map[string]string{
-		"x-ach-key": cred,
-	}
 }
 
 // RenderRuntime emits the single .codex/config.toml FileWrite per
@@ -386,8 +375,7 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 		// Determine the top-level component under src — used to drive
 		// the silent-drop discipline AND the per-component routing
 		// (agents → frontmatter rewrite; everything else → verbatim).
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		topLevel := parts[0]
+		topLevel := adapter.TopLevelComponent(rel)
 
 		// Silent-drop: skip this entry entirely AND skip recursion into
 		// the dir.
@@ -426,7 +414,7 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 				return err
 			}
 		} else {
-			if err := copyFile(path, dstPath); err != nil {
+			if err := adapter.CopyFile(path, dstPath); err != nil {
 				return err
 			}
 		}
@@ -444,31 +432,6 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 		ExtractedFiles: extracted,
 		Dropped:        dropped.out,
 	}, nil
-}
-
-// copyFile copies srcPath → dstPath with mode 0644. Parent dirs are
-// expected to already exist (WalkDir order guarantees this).
-func copyFile(srcPath, dstPath string) error {
-	in, err := os.Open(srcPath) //nolint:gosec // srcPath is under our staging dir
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // dstPath is under our destination dir
-	if err != nil {
-		return err
-	}
-
-	// Per 07-W5-05 (WR-02): explicit close to surface buffered-write
-	// errors that surface only at close(2) (EIO/ENOSPC). A deferred
-	// `_ = out.Close()` would silently drop those errors, recording a
-	// truncated file as successfully written.
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
 }
 
 // writeAgentWithFrontmatterRewrite reads srcPath, rewrites the YAML
@@ -694,16 +657,6 @@ func rewriteFrontmatterLine(line []byte) []byte {
 	return line
 }
 
-// MergeStrategies returns the per-target merge classification per
-// CLI spec §7.1 + ADAPT-05. codex merges .codex/config.toml deep
-// (the plugin .mcp.json contributions get layered onto the
-// runtime-config one via deep-merge).
-func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
-	return map[string]adapter.MergeKind{
-		configTOMLPath: adapter.MergeDeep,
-	}
-}
-
 // ProjectionRules returns the codex Phase-1 PASSTHROUGH projection table
 // satisfying route.RuleProvider (the D-06 seam). It is current-behavior-
 // equivalent to the codex TransformPlugin walk: agents/ and skills/ are
@@ -724,28 +677,4 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "agents/**/*", ToGlob: ".codex/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".codex/skills/**/*", Merge: adapter.MergeReplace},
 	}
-}
-
-// ResolveOutputContent satisfies the SAFE-04 cascade Tier 2 contract
-// from plan 07-W2-03. For target ".codex/config.toml" we recompute the
-// bytes RenderRuntime would emit (so the cascade can compare against
-// disk bytes without re-running the orchestrator). For any other
-// target, we return (nil, nil) — the cascade falls through to Tier 3
-// source-byte read, which is the right behavior for non-merged plugin
-// files (codex's TransformPlugin already emits the transformed bytes
-// verbatim, so the staging dir bytes ARE the canonical bytes for
-// non-merged paths).
-func (a *Adapter) ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error) {
-	if target != configTOMLPath {
-		return nil, nil
-	}
-	if m == nil || m.Runtime == nil {
-		return nil, nil
-	}
-	cred := adapter.CredentialFromContext(ctx)
-	content, _, err := renderConfigTOML(m, cred)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
 }

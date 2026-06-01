@@ -106,20 +106,6 @@ type Params struct {
 // substitute a deterministic lookup without touching the process env.
 var Getenv = os.Getenv
 
-// allowedInSyntheticGates is the constant lookup table for "this gate
-// is permitted under fully-synthetic mode". It does NOT short-circuit
-// the --deployment / --env-key cross-gate checks — those still fire.
-// Half-set always rejects regardless of this table.
-var allowedInSyntheticGates = map[Gate]bool{
-	GateHydrate:       true,
-	GateWhoami:        true,
-	GateEnvList:       true,
-	GateEnvDescribe:   true,
-	GateEnvKeysList:   true,
-	GateEnvKeysRevoke: true,
-	GateAdmin:         true,
-}
-
 // readOnlyGatesRejectingEnvKey is the subset of allowed-in-synthetic
 // gates that additionally reject --env-key / ACH_ENV_KEY under
 // synthetic. CLI-09: ek_ requires the config registry, which is
@@ -269,6 +255,5 @@ func GuardCommand(p Params) error {
 
 	// Allow-set silent fallthrough — the gate is permitted, all
 	// cross-gate checks passed.
-	_ = allowedInSyntheticGates // referenced for godoc; the actual gating logic above is sufficient.
 	return nil
 }

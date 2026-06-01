@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/zeebo/xxh3"
 )
@@ -45,4 +46,17 @@ func Hash(r io.Reader) (string, error) {
 func HashBytes(b []byte) string {
 	sum := xxh3.Hash128(b).Bytes()
 	return prefix + hex.EncodeToString(sum[:])
+}
+
+// HashFile returns the canonical "xxh3:<32hex>" digest of the file at
+// path. Wraps Hash with file-open/close discipline. The caller passes
+// paths it controls (staging dir / prior state ledger), so the file
+// open is trusted.
+func HashFile(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // path is caller-controlled (staging dir / prior state ledger)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	return Hash(f)
 }

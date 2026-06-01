@@ -31,7 +31,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -128,39 +127,28 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}, nil
 }
 
-// mcpServerEntry is the per-server JSON shape Claude Code consumes
-// under the mcpServers key of .claude/settings.json. Matches the
-// upstream MCP server registry format (Hub spec §11.6 carries the same
-// shape inside plugin .mcp.json files; the runtime location split is
-// adapter-level only).
-type mcpServerEntry struct {
-	Type    string            `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
-// a2aAgentEntry mirrors the MCP server shape for A2A agents. CLI spec
-// §7.4 claude-code does not pin a fixed A2A shape (Claude Code's A2A
-// support is recent + evolving), so we mirror the MCP shape under a
-// parallel "a2aAgents" key. The orchestrator's autodetection layer
-// can refine this later as the upstream contract solidifies.
-type a2aAgentEntry struct {
-	Type    string            `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
 // mcpJSONShape is the document Claude Code reads at settingsJSONPath
 // (.claude/settings.json). The schema mirrors what .claude/.mcp.json
 // would carry — adapter renders one shape, surgical merge upserts it
 // under the configured runtime path.
 // We use ordered map types via explicit struct + json.Marshal sorting
 // at render time so the output is deterministic (byte-identical across
-// invocations with the same input) — important for ResolveOutputContent
-// SAFE-04 cascade equality.
+// invocations with the same input) — important for FMT-05 deterministic
+// re-hydrate / drift no-op detection.
+//
+// MCPServers carries the per-server JSON shape Claude Code consumes
+// under the mcpServers key. Matches the upstream MCP server registry
+// format (Hub spec §11.6 carries the same shape inside plugin .mcp.json
+// files; the runtime location split is adapter-level only).
+//
+// A2AAgents mirrors the MCP server shape for A2A agents. CLI spec §7.4
+// claude-code does not pin a fixed A2A shape (Claude Code's A2A support
+// is recent + evolving), so we mirror the MCP shape under a parallel
+// "a2aAgents" key. The orchestrator's autodetection layer can refine
+// this later as the upstream contract solidifies.
 type mcpJSONShape struct {
-	MCPServers map[string]mcpServerEntry `json:"mcpServers"`
-	A2AAgents  map[string]a2aAgentEntry  `json:"a2aAgents,omitempty"`
+	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
+	A2AAgents  map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
 }
 
 // renderMcpJSON builds the JSON bytes the adapter writes to
@@ -172,8 +160,8 @@ type mcpJSONShape struct {
 // establishes.
 func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := mcpJSONShape{
-		MCPServers: map[string]mcpServerEntry{},
-		A2AAgents:  map[string]a2aAgentEntry{},
+		MCPServers: map[string]adapter.MCPServerEntry{},
+		A2AAgents:  map[string]adapter.A2AAgentEntry{},
 	}
 
 	// Track the contributed keys for state.adapter.files[*].keys[]
@@ -182,20 +170,20 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
 
 	for _, server := range m.Runtime.MCPServers {
-		entry := mcpServerEntry{
+		entry := adapter.MCPServerEntry{
 			Type:    "http",
 			URL:     server.Endpoint,
-			Headers: headersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.MCPServers[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
 	}
 
 	for _, agent := range m.Runtime.A2AAgents {
-		entry := a2aAgentEntry{
+		entry := adapter.A2AAgentEntry{
 			Type:    "http",
 			URL:     agent.Endpoint,
-			Headers: headersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.A2AAgents[agent.ID] = entry
 		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
@@ -220,17 +208,6 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 	}
 
 	return buf.Bytes(), contributedKeys, nil
-}
-
-// headersWithCredential returns the per-server headers map. When the
-// credential is empty (offline / dry-run / unit-test), we still emit
-// the x-ach-key header with empty value so the JSON shape stays
-// stable — the orchestrator's at-publication-time credential check
-// (plan 07-W3-05) gates whether to attempt the write at all.
-func headersWithCredential(cred string) map[string]string {
-	return map[string]string{
-		"x-ach-key": cred,
-	}
 }
 
 // RenderRuntime emits the single .claude/settings.json FileWrite per
@@ -306,7 +283,7 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 			return nil
 		}
 
-		if err := copyFile(path, dstPath); err != nil {
+		if err := adapter.CopyFile(path, dstPath); err != nil {
 			return err
 		}
 		extracted = append(extracted, rel)
@@ -322,41 +299,6 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 		ExtractedFiles: extracted,
 		Dropped:        nil, // claude-code drops nothing per ADAPT-04 pass-through
 	}, nil
-}
-
-// copyFile copies srcPath → dstPath with mode 0644. Parent dirs are
-// expected to already exist (WalkDir order guarantees this).
-func copyFile(srcPath, dstPath string) error {
-	in, err := os.Open(srcPath) //nolint:gosec // srcPath is under our staging dir
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // dstPath is under our destination dir
-	if err != nil {
-		return err
-	}
-
-	// Per 07-W5-05 (WR-02): explicit close to surface buffered-write
-	// errors that surface only at close(2) (EIO/ENOSPC). A deferred
-	// `_ = out.Close()` would silently drop those errors, recording a
-	// truncated file as successfully written.
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
-}
-
-// MergeStrategies returns the per-target merge classification per
-// CLI spec §7.1 + ADAPT-05. claude-code merges .claude/settings.json
-// deep (the plugin .mcp.json files contributed by Plugins get layered
-// onto the runtime-config one via deep-merge).
-func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
-	return map[string]adapter.MergeKind{
-		settingsJSONPath: adapter.MergeDeep,
-	}
 }
 
 // ProjectionRules returns the claude-code Phase-1 PASSTHROUGH projection
@@ -378,27 +320,4 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
 	}
-}
-
-// ResolveOutputContent satisfies the SAFE-04 cascade Tier 2 contract
-// from plan 07-W2-03. For target ".claude/settings.json" we recompute the
-// bytes RenderRuntime would emit (so the cascade can compare against
-// disk bytes without re-running the orchestrator). For any other
-// target, we return (nil, nil) — the cascade falls through to Tier 3
-// (source-byte read), which is the right behavior for pass-through
-// plugin files (claudecode's TransformPlugin already emits source bytes
-// verbatim).
-func (a *Adapter) ResolveOutputContent(ctx context.Context, m *manifest.Manifest, target string) ([]byte, error) {
-	if target != settingsJSONPath {
-		return nil, nil
-	}
-	if m == nil || m.Runtime == nil {
-		return nil, nil
-	}
-	cred := adapter.CredentialFromContext(ctx)
-	content, _, err := renderMcpJSON(m, cred)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
 }

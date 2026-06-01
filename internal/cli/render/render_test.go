@@ -249,23 +249,3 @@ func TestFormatEkList(t *testing.T) {
 // TestFormatEkList_Empty moved to ek_test.go (06-05) — single source of
 // truth for the empty-slice marker assertion (now strict-matches
 // "No env-keys found").
-
-// TestFormatIdentity asserts the identity block carries the four-line
-// shape consumed by whoami (deployment, URL, key — render is the
-// optional refactor target for 06-03 follow-up).
-func TestFormatIdentity(t *testing.T) {
-	got := FormatIdentity("prod", "https://hub.example", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
-	if !strings.Contains(got, "Deployment: prod") {
-		t.Errorf("missing 'Deployment: prod'; got: %s", got)
-	}
-	if !strings.Contains(got, "URL: https://hub.example") {
-		t.Errorf("missing URL line; got: %s", got)
-	}
-	if !strings.Contains(got, "Key: pk_****wxyz") {
-		t.Errorf("missing masked key; got: %s", got)
-	}
-	// CLI-04 — full plaintext MUST NOT leak.
-	if strings.Contains(got, "pk_aaaaaaaaaaaaaaaaaaaaaawxyz") {
-		t.Errorf("CLI-04 leak: full pk_ in identity block; got: %s", got)
-	}
-}
