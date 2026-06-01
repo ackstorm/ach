@@ -62,6 +62,22 @@ type Rule struct {
 	// both arms is verbatim passthrough copy; Phases 2-3 fill the
 	// transform arm.
 	ProvenanceGate string
+
+	// Transform is the D-03 per-file conversion seam. When nil the engine
+	// copies the matched file's bytes verbatim and emits Keys=nil — exactly
+	// the Phase-1 passthrough. When non-nil, Project calls it per matched
+	// file with the plugin-tree-relative, forward-slashed srcRel and the
+	// raw source bytes; the returned out bytes become FileWrite.Content and
+	// the returned keys become FileWrite.Keys (the dotted paths MergeDeep
+	// deep-merges, e.g. "mcpServers.<id>"). A non-nil error aborts Project,
+	// wrapped with the offending file path.
+	//
+	// Phase 2's ONLY non-nil Transform is mcpDeepKeys: it returns in
+	// unchanged plus keys=["mcpServers.<id>"…] (no byte conversion — D-04:
+	// every projected file's Hash equals its source hash, so no per-file
+	// pre-conversion hash is threaded here). Phase 3 fills the real
+	// conversion arm (codex .md→.toml, opencode tools[]→{}).
+	Transform func(srcRel string, in []byte) (out []byte, keys []string, err error)
 }
 
 // RuleProvider is the D-06 seam. Adapters implement a concrete
@@ -255,18 +271,31 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 			return err
 		}
 
-		// Phase-1: both provenance arms (gated vs ungated) copy bytes
-		// verbatim. The transform arm is the Phase 2-3 seam.
 		content, err := os.ReadFile(path) //nolint:gosec // path is under the caller-validated src root
 		if err != nil {
 			return fmt.Errorf("route: read %q: %w", path, err)
+		}
+
+		// D-03 transform seam: nil → verbatim passthrough (Keys=nil,
+		// byte-identical to Phase 1). Non-nil → convert bytes + contribute
+		// the dotted Keys[] for MergeDeep. The transform sees the
+		// plugin-tree-relative, forward-slashed srcRel (the existing rel).
+		var keys []string
+		if rule.Transform != nil {
+			srcRel := filepath.ToSlash(rel)
+			out, tkeys, terr := rule.Transform(srcRel, content)
+			if terr != nil {
+				return fmt.Errorf("route: transform %q: %w", srcRel, terr)
+			}
+			content = out
+			keys = tkeys
 		}
 
 		fws = append(fws, adapter.FileWrite{
 			Path:    dest,
 			Content: content,
 			Merge:   rule.Merge,
-			Keys:    nil,
+			Keys:    keys,
 		})
 		return nil
 	})
