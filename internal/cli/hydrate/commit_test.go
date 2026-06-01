@@ -100,15 +100,21 @@ func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, 
 
 // fakeAdapterDispatcher implements hydrate.AdapterDispatcher for unit
 // tests. Render records call count + returns canned RenderResult.
+// gotProjectPlugins, when non-nil, captures the projectPlugins scope-gate
+// argument the orchestrator derived (WIRE-04 assertion).
 type fakeAdapterDispatcher struct {
-	calls  *int
-	result RenderResult
-	err    error
+	calls             *int
+	result            RenderResult
+	err               error
+	gotProjectPlugins *bool
 }
 
-func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string) (RenderResult, error) {
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string, projectPlugins bool) (RenderResult, error) {
 	if f.calls != nil {
 		*f.calls++
+	}
+	if f.gotProjectPlugins != nil {
+		*f.gotProjectPlugins = projectPlugins
 	}
 	if f.err != nil {
 		return RenderResult{}, f.err
@@ -890,4 +896,196 @@ func TestCommit_Run_PublicEntryPoint(t *testing.T) {
 	// We tolerate any error type here — the point is the orchestrator
 	// got far enough to call the fetcher (proving Run wired the
 	// commit struct and the step5 dispatch).
+}
+
+// TestCommit_Step12_ComposesPluginsSection verifies WIRE-02 / D-07: when
+// the adapter runs AND projection is in scope (default), step 12 records
+// RenderResult.ProjectedFiles into state.File.Plugins[] (the projection
+// bucket), distinct from Adapter.Files.
+func TestCommit_Step12_ComposesPluginsSection(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{
+			ProjectedFiles: []FileWrite{{
+				Target:     ".claude/rules/foo.md",
+				Hash:       "xxh3:abc123",
+				SourceHash: "xxh3:abc123",
+				Merge:      mergeStrReplace,
+			}},
+		},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if store.savedFile == nil {
+		t.Fatal("savedFile = nil; expected a state.File at step 12")
+	}
+	if got := len(store.savedFile.Plugins); got != 1 {
+		t.Fatalf("Plugins len = %d, want 1 (composed from ProjectedFiles)", got)
+	}
+	fe := store.savedFile.Plugins[0]
+	if fe.Target != ".claude/rules/foo.md" || fe.Hash != "xxh3:abc123" ||
+		fe.SourceHash != "xxh3:abc123" || fe.Merge != "replace" {
+		t.Errorf("composed Plugins FileEntry = %+v; want the projected file verbatim", fe)
+	}
+	if !strings.HasPrefix(fe.Hash, "xxh3:") {
+		t.Errorf("Plugins[0].Hash = %q; want xxh3: prefix", fe.Hash)
+	}
+}
+
+// TestCommit_Step12_KeysVerbatim_MergeDeep is the T-01-04 invariant: a
+// MergeDeep projected FileWrite's contributed Keys are recorded VERBATIM
+// into state.Plugins[] (never dropped or rewritten), so Phase 4 uninstall
+// subtracts exactly the plugin's keys and never the user's other keys.
+func TestCommit_Step12_KeysVerbatim_MergeDeep(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{
+			ProjectedFiles: []FileWrite{{
+				Target:     ".claude/.mcp.json",
+				Hash:       "xxh3:deadbeef",
+				SourceHash: "xxh3:cafe",
+				Merge:      mergeStrDeep,
+				Keys:       []string{"mcp.server1"},
+			}},
+		},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if got := len(store.savedFile.Plugins); got != 1 {
+		t.Fatalf("Plugins len = %d, want 1", got)
+	}
+	fe := store.savedFile.Plugins[0]
+	if fe.Merge != "deep" {
+		t.Errorf("Plugins[0].Merge = %q; want deep", fe.Merge)
+	}
+	if len(fe.Keys) != 1 || fe.Keys[0] != "mcp.server1" {
+		t.Errorf("Plugins[0].Keys = %v; want [mcp.server1] VERBATIM (T-01-04)", fe.Keys)
+	}
+}
+
+// TestCommit_Step10_ScopeGate_OnlyRuntimeSkipsProjection asserts WIRE-04 /
+// D-11: with OnlyRuntime=true the orchestrator passes projectPlugins=false
+// to Render (the projection leg is suppressed). Default scope passes true.
+func TestCommit_Step10_ScopeGate_OnlyRuntimeSkipsProjection(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		onlyRuntime bool
+		want        bool
+	}{
+		{"default scope projects", false, true},
+		{"only-runtime skips", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, _ := newTestCommit(t)
+			c.opts.Platform = "claude-code"
+			c.opts.OnlyRuntime = tc.onlyRuntime
+			var got bool
+			c.adapter = fakeAdapterDispatcher{gotProjectPlugins: &got}
+
+			if _, err := c.run(context.Background()); err != nil {
+				t.Fatalf("c.run = %v, want nil", err)
+			}
+			if got != tc.want {
+				t.Errorf("projectPlugins arg = %v; want %v (OnlyRuntime=%v)", got, tc.want, tc.onlyRuntime)
+			}
+		})
+	}
+}
+
+// TestCommit_Step12_OnlyRuntime_CarriesForwardPlugins asserts that under
+// --only-runtime the existing Plugins[] is carried forward unchanged (the
+// projection bucket is NOT recomposed when projection was out of scope).
+func TestCommit_Step12_OnlyRuntime_CarriesForwardPlugins(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.opts.OnlyRuntime = true
+	// step4ReconcileVsDisk prunes content-bucket entries whose target is
+	// missing on disk (workspace-relative = achDir/..). Stage the prior
+	// file so it survives pruning and we genuinely test carry-forward.
+	wsRoot := filepath.Join(c.achDir, "..")
+	priorAbs := filepath.Join(wsRoot, ".claude", "rules", "prior.md")
+	if err := os.MkdirAll(filepath.Dir(priorAbs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(priorAbs, []byte("# prior\n"), 0o644); err != nil {
+		t.Fatalf("write prior: %v", err)
+	}
+	existing := &state.File{
+		SchemaVersion: "2",
+		Environment:   "demo",
+		Plugins: []state.FileEntry{{
+			Target: ".claude/rules/prior.md", Hash: "xxh3:prior", SourceHash: "xxh3:prior",
+		}},
+	}
+	store.loadFn = func(string) (*state.File, error) { return existing, nil }
+	// Even if the (stale) render returned projected files, OnlyRuntime must
+	// NOT recompose Plugins[].
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/rules/new.md", Hash: "xxh3:new"}}},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if got := len(store.savedFile.Plugins); got != 1 {
+		t.Fatalf("Plugins len = %d, want 1 (prior carried forward)", got)
+	}
+	if store.savedFile.Plugins[0].Target != ".claude/rules/prior.md" {
+		t.Errorf("Plugins[0].Target = %q; want the prior entry carried forward unchanged",
+			store.savedFile.Plugins[0].Target)
+	}
+}
+
+// TestCommit_DropWarning_SingleDedupedSorted is the WIRE-03 / D-12 proof:
+// a render returning Dropped=["hooks","rules"] (already deduped+sorted by
+// the projection leg) emits exactly ONE stderr line listing them, and the
+// exit code is UNCHANGED (Run returns nil).
+func TestCommit_DropWarning_SingleDedupedSorted(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Platform = "codex"
+	var stderr bytes.Buffer
+	c.opts.Stderr = &stderr
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{DroppedComponents: []string{"hooks", "rules"}},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v; want nil (drop warning must not change exit code)", err)
+	}
+	out := stderr.String()
+	lines := 0
+	for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if strings.Contains(ln, "dropped unsupported components") {
+			lines++
+		}
+	}
+	if lines != 1 {
+		t.Fatalf("drop-warning lines = %d; want exactly 1\nstderr:\n%s", lines, out)
+	}
+	if !strings.Contains(out, "hooks, rules") {
+		t.Errorf("drop warning missing sorted list 'hooks, rules'; got:\n%s", out)
+	}
+}
+
+// TestCommit_DropWarning_EmptyNoWarning asserts an adapter with no drops
+// (e.g. claude-code) emits NO drop-warning line.
+func TestCommit_DropWarning_EmptyNoWarning(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	var stderr bytes.Buffer
+	c.opts.Stderr = &stderr
+	c.adapter = fakeAdapterDispatcher{result: RenderResult{}}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if strings.Contains(stderr.String(), "dropped unsupported components") {
+		t.Errorf("unexpected drop warning for empty drop list:\n%s", stderr.String())
+	}
 }
