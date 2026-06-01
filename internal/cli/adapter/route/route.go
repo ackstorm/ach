@@ -32,6 +32,15 @@ import (
 	"github.com/ackstorm/ach/internal/cli/hash"
 )
 
+// projectMaxFileBytes is the defense-in-depth per-file ceiling Project asserts
+// before slurping a matched file into memory (WR-08). It is deliberately
+// generous — 512 MiB, at/above the SAFE-02 per-artifact uncompressed cap — so
+// it never fires on a legitimate plugin/artifact resource; it exists solely to
+// stop a reusable-engine caller NOT gated by the extract bomb-defense limits
+// from os.ReadFile'ing a pathological multi-GiB file. The SAFE-02 safe-extract
+// layer remains the PRIMARY bomb defense.
+const projectMaxFileBytes int64 = 512 * 1024 * 1024
+
 // Rule is the declarative routing entry per CONTEXT.md D-03. Each
 // adapter exposes a static []Rule table (see RuleProvider); the shared
 // engine performs the recursive ** walk, target remap, and provenance
@@ -330,6 +339,22 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 		dest, err := resolveRecursiveGlobTarget(rule.FromGlob, rule.ToGlob, rel)
 		if err != nil {
 			return err
+		}
+
+		// WR-08 defense-in-depth size cap: the SAFE-02 safe-extract layer is
+		// the PRIMARY bomb defense (per-archive uncompressed cap before
+		// Project ever sees the tree), but Project is a reusable engine also
+		// invoked directly in tests / by future callers over a tree that may
+		// NOT be gated by extract limits. Lstat the entry and reject anything
+		// past projectMaxFileBytes before os.ReadFile loads it fully, so the
+		// engine's safety no longer depends on an invariant it never asserts.
+		// The ceiling is generous (>= the largest legitimate plugin/artifact
+		// resource) so it never fires on real input — it only stops a
+		// pathological multi-GiB file from being slurped into memory.
+		if fi, statErr := os.Lstat(path); statErr == nil {
+			if fi.Size() > projectMaxFileBytes {
+				return fmt.Errorf("route: file %q is %d bytes, exceeds projection size cap %d (defense-in-depth)", rel, fi.Size(), projectMaxFileBytes)
+			}
 		}
 
 		content, err := os.ReadFile(path) //nolint:gosec // path is under the caller-validated src root
