@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -503,6 +505,277 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	}
 	if !seenIDs["opencode"] {
 		t.Error("adapter.Iter() does not include opencode")
+	}
+}
+
+// TestProjectionRules_RoutesAndDrops exercises the real route.Project engine
+// over a plugin tree containing every opencode-routed kind (commands/agents/
+// skills/mcp) PLUS the dropped kinds (rules/, AGENTS.md) (ROUTE-04, D-18/D-19).
+// It asserts: the three file kinds route to the PLURAL .opencode/<kind>/ dirs,
+// mcp/ collapses onto .opencode/opencode.json, and both rules + AGENTS.md land
+// in the dropped set exactly once.
+func TestProjectionRules_RoutesAndDrops(t *testing.T) {
+	src := t.TempDir()
+	mustWrite := func(rel, body string) {
+		full := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %q: %v", rel, err)
+		}
+	}
+	mustWrite("commands/grunt.md", "# grunt\n")
+	mustWrite("agents/cave.md", "---\nname: cave\n---\nhello\n")
+	mustWrite("skills/fire/skill.md", "# fire\n")
+	mustWrite("mcp/servers.json", `{"mcpServers":{"svc":{"type":"http","url":"https://svc"}}}`)
+	// Dropped-by-omission kinds.
+	mustWrite("rules/no.md", "# rule\n")
+	mustWrite("AGENTS.md", "# agents prose\n")
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, dropped, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project returned error: %v", err)
+	}
+
+	// rules + AGENTS.md must be dropped (exactly once each).
+	wantDropped := map[string]int{"rules": 0, "AGENTS.md": 0}
+	for _, d := range dropped {
+		if _, ok := wantDropped[d]; ok {
+			wantDropped[d]++
+		}
+	}
+	for kind, n := range wantDropped {
+		if n != 1 {
+			t.Errorf("dropped count for %q = %d, want 1 (dropped=%v)", kind, n, dropped)
+		}
+	}
+
+	// Kept kinds must route to the PLURAL .opencode/<kind>/ dirs (+ the N→1
+	// mcp collapse onto opencode.json).
+	wantPaths := map[string]bool{
+		".opencode/commands/grunt.md":    false,
+		".opencode/agents/cave.md":       false,
+		".opencode/skills/fire/skill.md": false,
+		".opencode/opencode.json":        false,
+	}
+	for _, w := range fws {
+		p := filepath.ToSlash(w.Path)
+		if strings.HasPrefix(p, ".opencode/prompts/") {
+			t.Errorf("FileWrite targets a .opencode/prompts/ path %q; prompts/ has no opencode rule", w.Path)
+		}
+		if _, ok := wantPaths[p]; ok {
+			wantPaths[p] = true
+		}
+	}
+	for p, seen := range wantPaths {
+		if !seen {
+			t.Errorf("expected a FileWrite for %q, got %d writes: %+v", p, len(fws), fws)
+		}
+	}
+}
+
+// --- Task 2: opencodeAgentTools (FMT-04, D-20) -------------------------------
+
+// TestOpencodeAgentTools_ToolsArrayToObject: a tools array becomes a
+// {name: true} object; model is preserved verbatim (NO provider/model rewrite);
+// the body is intact; output stays markdown (opens with "---").
+func TestOpencodeAgentTools_ToolsArrayToObject(t *testing.T) {
+	in := []byte("---\ntools:\n  - read\n  - write\nmodel: anthropic/claude\n---\nB")
+	out, keys, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+	s := string(out)
+	if !strings.HasPrefix(s, "---\n") {
+		t.Errorf("output does not open with frontmatter fence:\n%s", s)
+	}
+	// tools must now be a nested mapping read: true / write: true.
+	if !strings.Contains(s, "tools:\n") {
+		t.Errorf("tools not emitted as a block mapping:\n%s", s)
+	}
+	if !strings.Contains(s, `"read": true`) || !strings.Contains(s, `"write": true`) {
+		t.Errorf("tools array not converted to {name:true} object:\n%s", s)
+	}
+	if strings.Contains(s, "- read") || strings.Contains(s, "- write") {
+		t.Errorf("tools still emitted as a sequence:\n%s", s)
+	}
+	// model preserved verbatim (no provider/model rewrite).
+	if !strings.Contains(s, `model: "anthropic/claude"`) {
+		t.Errorf("model not preserved verbatim:\n%s", s)
+	}
+	// body intact.
+	if !strings.HasSuffix(s, "---\nB") {
+		t.Errorf("body not preserved (want trailing '---\\nB'):\n%s", s)
+	}
+}
+
+// TestOpencodeAgentTools_PreservesClaudeExtras: claude-only frontmatter keys
+// (skills, hooks, disallowedTools) survive the re-encode.
+func TestOpencodeAgentTools_PreservesClaudeExtras(t *testing.T) {
+	in := []byte("---\n" +
+		"tools:\n  - read\n" +
+		"skills:\n  - alpha\n" +
+		"hooks:\n  - preflight\n" +
+		"disallowedTools:\n  - delete\n" +
+		"---\nbody\n")
+	out, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	s := string(out)
+	for _, k := range []string{"skills:", "hooks:", "disallowedTools:"} {
+		if !strings.Contains(s, k) {
+			t.Errorf("claude-extra key %q dropped:\n%s", k, s)
+		}
+	}
+	for _, v := range []string{`"alpha"`, `"preflight"`, `"delete"`} {
+		if !strings.Contains(s, v) {
+			t.Errorf("claude-extra value %q dropped:\n%s", v, s)
+		}
+	}
+}
+
+// TestOpencodeAgentTools_NoToolsKey: when tools is absent the doc is re-encoded
+// (sorted) but no tools field is invented.
+func TestOpencodeAgentTools_NoToolsKey(t *testing.T) {
+	in := []byte("---\nmodel: anthropic/claude\nname: cave\n---\nbody\n")
+	out, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	s := string(out)
+	if strings.Contains(s, "tools") {
+		t.Errorf("tools field invented when source had none:\n%s", s)
+	}
+	if !strings.Contains(s, `model: "anthropic/claude"`) || !strings.Contains(s, `name: "cave"`) {
+		t.Errorf("non-tools keys not preserved:\n%s", s)
+	}
+}
+
+// TestOpencodeAgentTools_NoFrontmatter: a body with no frontmatter passes
+// through unharmed (no fence invented).
+func TestOpencodeAgentTools_NoFrontmatter(t *testing.T) {
+	in := []byte("# just a heading\nno frontmatter here\n")
+	out, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("no-frontmatter input mutated:\ngot:  %q\nwant: %q", out, in)
+	}
+}
+
+// TestOpencodeAgentTools_Idempotent (FMT-05): a second call on the FIRST call's
+// output yields byte-identical output.
+func TestOpencodeAgentTools_Idempotent(t *testing.T) {
+	in := []byte("---\ntools:\n  - write\n  - read\nmodel: anthropic/claude\n---\nB")
+	out1, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	out2, _, err := opencodeAgentTools("agents/x.md", out1)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if !bytes.Equal(out1, out2) {
+		t.Errorf("not byte-identical on re-run (FMT-05):\nfirst:  %q\nsecond: %q", out1, out2)
+	}
+}
+
+// --- Task 2: opencodeMCPRename (D-21) ----------------------------------------
+
+// TestOpencodeMCPRename_RenamesKey: mcpServers→mcp with the per-server shape
+// preserved; keys == ["mcp.<id>"]; output is JSON (no markdown fence).
+func TestOpencodeMCPRename_RenamesKey(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc1":{"type":"http","url":"https://svc1"}}}`)
+	out, keys, err := opencodeMCPRename("mcp/servers.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPRename: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if _, ok := got["mcp"]; !ok {
+		t.Errorf("top key 'mcp' missing:\n%s", out)
+	}
+	if _, ok := got["mcpServers"]; ok {
+		t.Errorf("top key 'mcpServers' should be renamed away:\n%s", out)
+	}
+	mcp, _ := got["mcp"].(map[string]any)
+	svc1, _ := mcp["svc1"].(map[string]any)
+	if svc1["type"] != "http" || svc1["url"] != "https://svc1" {
+		t.Errorf("per-server shape not preserved under mcp.svc1: %#v", svc1)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp.svc1"}) {
+		t.Errorf("keys = %v, want [mcp.svc1]", keys)
+	}
+}
+
+// TestOpencodeMCPRename_NoHeaderSurgery: a "Bearer ${env:X}" header value is
+// left UNCHANGED under mcp.svc (no codex-style partition).
+func TestOpencodeMCPRename_NoHeaderSurgery(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"type":"http","url":"https://svc","headers":{"Authorization":"Bearer ${env:X}"}}}}`)
+	out, _, err := opencodeMCPRename("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPRename: %v", err)
+	}
+	if !bytes.Contains(out, []byte(`Bearer ${env:X}`)) {
+		t.Errorf("Bearer ${env:X} literal not preserved verbatim:\n%s", out)
+	}
+	if bytes.Contains(out, []byte("bearer_token_env_var")) || bytes.Contains(out, []byte("env_http_headers")) {
+		t.Errorf("codex-style header surgery leaked into opencode output:\n%s", out)
+	}
+}
+
+// TestOpencodeMCPRename_MultipleServersSortedKeys: keys are sorted mcp.<id>.
+func TestOpencodeMCPRename_MultipleServersSortedKeys(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"type":"http"},"a":{"type":"http"}}}`)
+	_, keys, err := opencodeMCPRename("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPRename: %v", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp.a", "mcp.b"}) {
+		t.Errorf("keys = %v, want sorted [mcp.a mcp.b]", keys)
+	}
+}
+
+// TestOpencodeMCPRename_Idempotent (FMT-05): a second call on the FIRST call's
+// output yields byte-identical output.
+func TestOpencodeMCPRename_Idempotent(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"type":"http","url":"https://b"},"a":{"type":"http","url":"https://a"}}}`)
+	out1, _, err := opencodeMCPRename("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	// Second call sees the renamed shape (top key already 'mcp'); it must
+	// still be byte-stable. opencodeMCPRename re-keys mcpServers→mcp, so on
+	// the already-renamed input there is no mcpServers key — assert the
+	// canonical re-encode of an mcp-keyed doc is stable across a re-run.
+	out2, _, err := opencodeMCPRename("mcp/x.json", out1)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if !bytes.Equal(out1, out2) {
+		t.Errorf("not byte-identical on re-run (FMT-05):\nfirst:  %q\nsecond: %q", out1, out2)
+	}
+}
+
+// TestOpencodeMCPRename_Malformed: invalid JSON returns a non-nil error so the
+// projection aborts that file rather than emitting a half-parsed doc.
+func TestOpencodeMCPRename_Malformed(t *testing.T) {
+	in := []byte(`{"mcpServers": this is not json}`)
+	out, keys, err := opencodeMCPRename("mcp/bad.json", in)
+	if err == nil {
+		t.Fatalf("expected error on malformed JSON, got nil (out=%q keys=%v)", out, keys)
+	}
+	if out != nil || keys != nil {
+		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
 }
 
