@@ -1367,9 +1367,11 @@ func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error
 		return true, nil
 	}
 	updated := markerRE.ReplaceAll(body, nil)
-	// 0o600 — composite inverse-merge rewrites the same credential-
-	// bearing adapter runtime-config file (CR-01).
-	if err := state.WriteAtomic(abs, updated, 0o600); err != nil {
+	// 0o644 — composite host memory files (CLAUDE.md/GEMINI.md) carry NO
+	// credential; the forward writeComposite path writes 0o644, so the
+	// inverse-merge MUST match or it silently downgrades the file mode on
+	// every plugin-block removal.
+	if err := state.WriteAtomic(abs, updated, 0o644); err != nil {
 		return false, fmt.Errorf("sync write composite %s: %w", abs, err)
 	}
 	return false, nil

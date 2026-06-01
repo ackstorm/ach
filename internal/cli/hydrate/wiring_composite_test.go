@@ -256,6 +256,11 @@ func TestSyncComposite_EmptyKeys_GenericFallback(t *testing.T) {
 		t.Errorf("syncComposite empty-keys: preserved=true; want pruned (generic region removed)")
 	}
 	got := readFileT(t, abs)
+	if fi, serr := os.Stat(abs); serr != nil {
+		t.Fatalf("stat: %v", serr)
+	} else if fi.Mode().Perm() != 0o644 {
+		t.Errorf("post-sync mode: got %o, want 0644 (composite memory file must not downgrade)", fi.Mode().Perm())
+	}
 	if strings.Contains(got, "OLD BLOCK") || strings.Contains(got, "ach:begin") {
 		t.Errorf("generic region not removed:\n%s", got)
 	}
@@ -288,6 +293,11 @@ func TestSyncComposite_PerID_RemovesOnlyNamedBlock(t *testing.T) {
 		t.Errorf("syncComposite per-id: preserved=true; want pruned")
 	}
 	got := readFileT(t, abs)
+	if fi, serr := os.Stat(abs); serr != nil {
+		t.Fatalf("stat: %v", serr)
+	} else if fi.Mode().Perm() != 0o644 {
+		t.Errorf("post-sync mode: got %o, want 0644 (composite memory file must not downgrade)", fi.Mode().Perm())
+	}
 	if strings.Contains(got, "ach:begin:plug-a") {
 		t.Errorf("plug-a block not removed:\n%s", got)
 	}
