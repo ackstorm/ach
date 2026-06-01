@@ -908,6 +908,30 @@ func TestCodexMCPSurgery_LiteralAuthorizationDropped(t *testing.T) {
 	}
 }
 
+// TestCodexMCPSurgery_NonStringHeaderDropped proves WR-05: a header whose value
+// is not a string (number/bool/object — malformed but valid JSON) is dropped,
+// not coerced to "" and emitted as an unvalidated literal.
+func TestCodexMCPSurgery_NonStringHeaderDropped(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"X-Num":42,"X-Obj":{"k":"v"},"X-Ok":"literal"}}}}`)
+	out, _, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	m := decodeTOML(t, out)
+	svc := m["mcp_servers"].(map[string]any)["svc"].(map[string]any)
+	lit, _ := svc["http_headers"].(map[string]any)
+	// The string header survives; the non-string headers are dropped.
+	if lit["X-Ok"] != "literal" {
+		t.Errorf("string header X-Ok = %v, want literal", lit["X-Ok"])
+	}
+	if _, present := lit["X-Num"]; present {
+		t.Errorf("non-string header X-Num must be dropped: %v", lit)
+	}
+	if _, present := lit["X-Obj"]; present {
+		t.Errorf("non-string header X-Obj must be dropped: %v", lit)
+	}
+}
+
 func TestCodexMCPSurgery_EnvAndLiteralHeaders(t *testing.T) {
 	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"X-Foo":"${env:BAR}","X-Lit":"literal"}}}}`)
 	out, _, err := codexMCPSurgery("mcp/mcp.json", in)

@@ -850,7 +850,9 @@ func codexMCPSurgery(srcRel string, in []byte) (out []byte, keys []string, err e
 // surgeryServer applies the per-server FMT-02 header surgery to a single
 // parsed mcp.json server object and returns the projected codex server table.
 // The original `headers` map is consumed (dropped); `timeout` is renamed.
-// Any other server key (url, transport, …) passes through verbatim.
+// Any other server key (url, transport, …) passes through verbatim. A header
+// whose value is not a string (malformed but valid JSON) is dropped rather
+// than coerced and emitted unvalidated (WR-05).
 func surgeryServer(srv map[string]any) map[string]any {
 	out := map[string]any{}
 
@@ -876,7 +878,15 @@ func surgeryServer(srv map[string]any) map[string]any {
 	litHeaders := map[string]any{}
 
 	for hk, hv := range headers {
-		val, _ := hv.(string)
+		val, ok := hv.(string)
+		if !ok {
+			// A non-string header value (number, bool, object — malformed but
+			// valid JSON) is dropped rather than coerced to "" and partitioned
+			// as an unvalidated literal that the TOML encoder would emit
+			// verbatim (WR-05). MCP header values are always strings; a
+			// non-string is a malformed plugin shape with no safe projection.
+			continue
+		}
 		if hk == "Authorization" {
 			if m := bearerEnvRE.FindStringSubmatch(val); m != nil {
 				out["bearer_token_env_var"] = m[1]
