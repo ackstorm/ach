@@ -527,18 +527,52 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	return nil
 }
 
-// mcpServersPrefix is the dotted-key prefix a projected plugin MCP FileWrite
-// contributes (from the mcpDeepKeys Transform): "mcpServers.<id>".
-const mcpServersPrefix = "mcpServers."
+// MCP server-key prefixes per adapter config format (D-17). The projected
+// plugin MCP FileWrite contributes a dotted key of the form
+// "<prefix><id>" from its mcpDeepKeys Transform:
+//   - claude / gemini settings.json → "mcpServers.<id>"
+//   - codex .codex/config.toml      → "mcp_servers.<id>"
+//   - opencode .opencode/opencode.json → "mcp.<id>"
+const (
+	mcpServersPrefix     = "mcpServers."  // claude / gemini (JSON)
+	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
+	mcpOpencodePrefix    = "mcp."         // opencode (JSON)
+)
 
-// dropRuntimeOwnedMCP implements the D-10 runtime-wins MCP id-clash drop. For a
-// projected MergeDeep FileWrite, any contributed mcpServers.<id> that a runtime
-// WrittenFiles entry targeting the SAME Path already owns is excluded from the
-// merge: the colliding mcpServers.<id> subtree is removed from fw.Content (parse
-// → delete → deterministic re-encode), the id is dropped from fw.Keys, and a
+// mcpContainerKeyFor returns the dotted-key prefix the contributed MCP keys of
+// fw use, derived from fw.Keys. Codex uses "mcp_servers.", opencode "mcp.",
+// claude/gemini "mcpServers.". When no contributed key matches a known prefix
+// (no MCP keys), the default "mcpServers." is returned harmlessly — the
+// collision loop will then never match. The longest-prefix check orders
+// mcp_servers. / mcpServers. before the bare "mcp." so a "mcpServers.x" key is
+// not mis-attributed to the opencode "mcp." prefix.
+func mcpServersPrefixFor(keys []string) string {
+	for _, k := range keys {
+		switch {
+		case strings.HasPrefix(k, mcpServersTOMLPrefix):
+			return mcpServersTOMLPrefix
+		case strings.HasPrefix(k, mcpServersPrefix):
+			return mcpServersPrefix
+		case strings.HasPrefix(k, mcpOpencodePrefix):
+			return mcpOpencodePrefix
+		}
+	}
+	return mcpServersPrefix
+}
+
+// dropRuntimeOwnedMCP implements the D-10/D-17 runtime-wins MCP id-clash drop.
+// For a projected MergeDeep FileWrite, any contributed <prefix><id> that a
+// runtime WrittenFiles entry targeting the SAME Path already owns is excluded
+// from the merge: the colliding subtree is removed from fw.Content (parse →
+// delete → deterministic re-encode), the id is dropped from fw.Keys, and a
 // "mcp:<id> (runtime-owned)" token is returned for the DroppedComponents
 // aggregation. The runtime-owned (bearer/command-exec) server is NEVER
 // overwritten or shadowed.
+//
+// Format- and prefix-aware (D-17): the config format is detected from the
+// target extension (.toml → TOML for codex, JSON otherwise), and the server-key
+// prefix is derived from the contributed keys ("mcp_servers." for codex,
+// "mcp." for opencode, "mcpServers." for claude/gemini).
 //
 // Returns (publish, drops, err): publish=false means every contributed key
 // collided, so the caller skips publishing this FileWrite entirely (still
@@ -578,21 +612,24 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 		return true, nil, nil
 	}
 
-	// Re-derive the content with the colliding mcpServers.<id> subtrees removed.
-	// The projected MCP content is JSON (.claude/.gemini settings.json).
-	doc, err := parseDoc(fw.Content, false)
+	// Format-aware parse: TOML for codex .toml targets, JSON otherwise.
+	isTOML := strings.ToLower(filepath.Ext(fw.Path)) == extTOML
+	prefix := mcpServersPrefixFor(fw.Keys)
+
+	doc, err := parseDoc(fw.Content, isTOML)
 	if err != nil {
 		return false, nil, err
 	}
 	drops := make([]string, 0, len(collide))
 	for _, k := range collide {
 		removeDottedKey(doc, k)
-		drops = append(drops, "mcp:"+strings.TrimPrefix(k, mcpServersPrefix)+" (runtime-owned)")
+		drops = append(drops, "mcp:"+strings.TrimPrefix(k, prefix)+" (runtime-owned)")
 	}
-	// If mcpServers is now empty, drop the empty container so we don't write a
-	// bare {"mcpServers":{}} that the deep-merge would otherwise leave behind.
-	if ms, ok := doc[strings.TrimSuffix(mcpServersPrefix, ".")].(map[string]any); ok && len(ms) == 0 {
-		delete(doc, strings.TrimSuffix(mcpServersPrefix, "."))
+	// If the server container is now empty, drop it so we don't write a bare
+	// {"<container>":{}} that the deep-merge would otherwise leave behind.
+	container := strings.TrimSuffix(prefix, ".")
+	if ms, ok := doc[container].(map[string]any); ok && len(ms) == 0 {
+		delete(doc, container)
 	}
 
 	fw.Keys = survivors
@@ -601,7 +638,7 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 		return false, drops, nil
 	}
 
-	out, err := encodeDoc(doc, false)
+	out, err := encodeDoc(doc, isTOML)
 	if err != nil {
 		return false, nil, err
 	}
@@ -639,17 +676,34 @@ func validatePluginName(name string) error {
 	return nil
 }
 
+// opencodeProjectPrefix is the project-scope path prefix OpenCode FileWrites
+// carry (.opencode/opencode.json, .opencode/commands/, .opencode/agents/, …).
+// opencodeGlobalPrefix is the XDG global-config root the prefix remaps to.
+const (
+	opencodeProjectPrefix = ".opencode/"
+	opencodeGlobalPrefix  = ".config/opencode/"
+)
+
 // remapGlobalPath adjusts an adapter's workspace-relative FileWrite path for
 // --global scope where the tool's GLOBAL config location differs from the
-// simple $HOME-join. OpenCode reads its global config from XDG
-// ~/.config/opencode/opencode.json — NOT ~/.opencode/opencode.json (the
-// latter is the PROJECT path). The other three adapters' relative paths
-// (.claude/, .codex/, .gemini/) are correct under $HOME as-is, so they pass
-// through unchanged. Kept in the orchestrator (dispatcher) rather than the
-// adapter so RenderRuntime stays scope-agnostic.
+// simple $HOME-join. OpenCode reads its global config from the XDG root
+// ~/.config/opencode/ — NOT ~/.opencode/ (the latter is the PROJECT path).
+//
+// D-22 generalization: ALL projected `.opencode/*` paths remap to
+// `.config/opencode/*` under global scope — not just `.opencode/opencode.json`
+// but also `.opencode/commands/`, `.opencode/agents/`, `.opencode/skills/`, …
+// Project scope (non-global) is never reached here (the caller gates on
+// d.global). The other three adapters' relative paths (.claude/, .codex/,
+// .gemini/) are correct under $HOME as-is and pass through unchanged. Kept in
+// the orchestrator (dispatcher) rather than the adapter so RenderRuntime stays
+// scope-agnostic.
+//
+// The remap is a pure prefix substitution on an already-traversal-guarded
+// relative path (route.resolveRecursiveGlobTarget's T-01-01 guard ran before
+// this), so no ".." can be reintroduced by the concat (T-03-02).
 func remapGlobalPath(platformID, path string) string {
-	if platformID == "opencode" && path == ".opencode/opencode.json" {
-		return ".config/opencode/opencode.json"
+	if platformID == "opencode" && strings.HasPrefix(path, opencodeProjectPrefix) {
+		return opencodeGlobalPrefix + strings.TrimPrefix(path, opencodeProjectPrefix)
 	}
 	return path
 }
@@ -791,10 +845,20 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	// State records the canonical hash of OUR contribution (not the merged
 	// file) so --sync inverse-merge (via Keys[]) and the next drift check
 	// operate on our keys only, never the user's other entries.
+	//
+	// SourceHash threading (D-23): a CONVERTED projected file carries the
+	// pre-transform source hash in fw.SourceHash (set by route.Project),
+	// which diverges from the emitted-content freshHash. A passthrough /
+	// runtime-rendered file leaves fw.SourceHash empty, so SourceHash falls
+	// back to freshHash (== Hash) — preserving the Phase-1/2 invariant.
+	sourceHash := freshHash
+	if fw.SourceHash != "" {
+		sourceHash = fw.SourceHash
+	}
 	return FileWrite{
 		Target:     fw.Path,
 		Hash:       freshHash,
-		SourceHash: freshHash, // adapter-rendered: the hash IS the source
+		SourceHash: sourceHash,
 		Merge:      mergeKindToString(fw.Merge),
 		Keys:       append([]string(nil), fw.Keys...),
 	}, nil
