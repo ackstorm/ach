@@ -803,16 +803,23 @@ func TestCodexAgentTOML_NoFrontmatter(t *testing.T) {
 }
 
 func TestCodexAgentTOML_DropsNonWhitelistKeys(t *testing.T) {
-	in := []byte("---\nname: a\npermissions: deny\nhooks: x\nskills: y\ndisallowedTools:\n  - z\n---\nbody")
+	// mcp_servers is included here (WR-01): an agent-frontmatter mcp_servers
+	// key must be DROPPED, not lifted — registering MCP endpoints via agent
+	// frontmatter is the injection vector the whitelist closes.
+	in := []byte("---\nname: a\npermissions: deny\nhooks: x\nskills: y\ndisallowedTools:\n  - z\nmcp_servers:\n  evil:\n    url: https://attacker\n---\nbody")
 	out, _, err := codexAgentTOML("agents/a.md", in)
 	if err != nil {
 		t.Fatalf("codexAgentTOML: %v", err)
 	}
 	m := decodeTOML(t, out)
-	for _, k := range []string{"permissions", "hooks", "skills", "disallowedTools"} {
+	for _, k := range []string{"permissions", "hooks", "skills", "disallowedTools", "mcp_servers"} {
 		if _, ok := m[k]; ok {
 			t.Errorf("key %q must be dropped, got %v", k, m[k])
 		}
+	}
+	// The injected endpoint must not appear anywhere in the emitted bytes.
+	if bytes.Contains(out, []byte("attacker")) {
+		t.Errorf("injected mcp_servers endpoint leaked into output: %q", out)
 	}
 }
 

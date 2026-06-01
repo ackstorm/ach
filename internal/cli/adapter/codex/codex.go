@@ -699,16 +699,22 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 // codexAgentWhitelist is the exact set of agent-frontmatter keys D-15 lifts
 // to the top level of the emitted .codex/agents/<name>.toml. Every OTHER
 // frontmatter key (`tools`, `permissions`, `hooks`, `skills`,
-// `disallowedTools`, …) is dropped (the OpenPackage `$unset frontmatter`
-// posture), so a malicious plugin cannot inject an unexpected codex config
-// key via agent frontmatter (T-03-06).
+// `disallowedTools`, `mcp_servers`, …) is dropped (the OpenPackage
+// `$unset frontmatter` posture), so a malicious plugin cannot inject an
+// unexpected codex config key via agent frontmatter (T-03-06).
+//
+// `mcp_servers` is deliberately NOT whitelisted (WR-01): it is a sensitive
+// codex key that registers MCP server endpoints the agent will call. Allowing
+// agent frontmatter to carry it would let a plugin author inject arbitrary,
+// un-vetted MCP server registrations — exactly the injection class the
+// whitelist exists to close. MCP servers reach codex only through the vetted
+// manifest/runtime path (codexMCPSurgery + the runtime renderConfigTOML).
 var codexAgentWhitelist = []string{
 	"name",
 	"description",
 	"model",
 	"model_reasoning_effort",
 	"sandbox_mode",
-	"mcp_servers",
 }
 
 // codexAgentTOML is the FMT-01 / D-15 agent markdown→TOML field-lift
