@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/hash"
 )
 
 // writeTree materializes a map of rel-path -> contents under a fresh
@@ -373,5 +374,113 @@ func TestResolveTarget_NestedAndGuard(t *testing.T) {
 	// `..` in the resulting dest must be rejected.
 	if _, err := resolveRecursiveGlobTarget("rules/**/*.md", "../x/**/*.md", "rules/foo/bar.md"); err == nil {
 		t.Errorf("expected error for `..` dest segment")
+	}
+}
+
+// TestResolveTarget_ExtensionRemap exercises the Phase-3 extension-remap
+// seam: when the ToGlob basename is a `*.<ext>` wildcard whose extension
+// differs from the source suffix, the source suffix's extension is swapped
+// to the ToGlob's literal extension (D-23 codex .md→.toml). When the ToGlob
+// basename carries no extension (e.g. `**/*`) the suffix passes through
+// unchanged. The concrete N→1 collapse arm is untouched.
+func TestResolveTarget_ExtensionRemap(t *testing.T) {
+	cases := []struct {
+		name             string
+		from, to, srcRel string
+		want             string
+	}{
+		{
+			name: "md to toml flat", from: "agents/**/*.md",
+			to: ".codex/agents/**/*.toml", srcRel: "agents/foo.md",
+			want: ".codex/agents/foo.toml",
+		},
+		{
+			name: "md to toml nested suffix preserved", from: "agents/**/*.md",
+			to: ".codex/agents/**/*.toml", srcRel: "agents/sub/bar.md",
+			want: ".codex/agents/sub/bar.toml",
+		},
+		{
+			name: "no ext in toglob basename means no swap", from: "skills/**/*",
+			to: ".agents/skills/**/*", srcRel: "skills/x/y.sh",
+			want: ".agents/skills/x/y.sh",
+		},
+		{
+			name: "concrete N to 1 collapse unchanged", from: "mcp/**/*",
+			to: ".codex/config.toml", srcRel: "mcp/github/server.json",
+			want: ".codex/config.toml",
+		},
+		{
+			name: "same ext is a no-op swap", from: "rules/**/*.md",
+			to: ".claude/rules/**/*.md", srcRel: "rules/foo/bar.md",
+			want: ".claude/rules/foo/bar.md",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveRecursiveGlobTarget(tc.from, tc.to, tc.srcRel)
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("dest: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProject_SourceHash asserts the D-23 SourceHash capture: a nil-Transform
+// (passthrough) rule records SourceHash == HashBytes(emitted content), while a
+// Transform that alters bytes records SourceHash == HashBytes(source bytes) !=
+// HashBytes(emitted content).
+func TestProject_SourceHash(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"rules/a.md":  "SOURCE-A\n",
+		"agents/b.md": "SOURCE-B\n",
+	})
+
+	passthrough := Rule{
+		FromGlob: "rules/**/*.md",
+		ToGlob:   ".claude/rules/**/*.md",
+		Merge:    adapter.MergeReplace,
+	}
+	convert := Rule{
+		FromGlob: "agents/**/*.md",
+		ToGlob:   ".codex/agents/**/*.md",
+		Merge:    adapter.MergeReplace,
+		Transform: func(_ string, in []byte) ([]byte, []string, error) {
+			return []byte("CONVERTED-" + string(in)), nil, nil
+		},
+	}
+
+	fws, _, err := Project([]Rule{passthrough, convert}, src, "")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	byPath := map[string]adapter.FileWrite{}
+	for _, fw := range fws {
+		byPath[fw.Path] = fw
+	}
+
+	pf, ok := byPath[".claude/rules/a.md"]
+	if !ok {
+		t.Fatalf("passthrough file missing; got %+v", fws)
+	}
+	if pf.SourceHash == "" {
+		t.Errorf("passthrough SourceHash empty")
+	}
+	if want := hash.HashBytes(pf.Content); pf.SourceHash != want {
+		t.Errorf("passthrough SourceHash: got %q, want %q", pf.SourceHash, want)
+	}
+
+	cf, ok := byPath[".codex/agents/b.md"]
+	if !ok {
+		t.Fatalf("converted file missing; got %+v", fws)
+	}
+	if cf.SourceHash == hash.HashBytes(cf.Content) {
+		t.Errorf("converted SourceHash must differ from emitted Hash; both %q", cf.SourceHash)
+	}
+	if want := hash.HashBytes([]byte("SOURCE-B\n")); cf.SourceHash != want {
+		t.Errorf("converted SourceHash: got %q, want %q (source bytes)", cf.SourceHash, want)
 	}
 }

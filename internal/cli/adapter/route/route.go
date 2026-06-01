@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/hash"
 )
 
 // Rule is the declarative routing entry per CONTEXT.md D-03. Each
@@ -142,6 +143,36 @@ func globAnchor(glob string) string {
 // path. (Defense-in-depth: SAFE-01/02 already rejected ../, symlinks,
 // and absolute paths at extract time, but the remap is a NEW
 // path-construction surface.)
+// remapSuffixExt swaps the trailing extension of suffix to the ToGlob's
+// literal extension WHEN the ToGlob's final path segment is a `*.<ext>`
+// wildcard basename (a wildcard stem with a fixed extension, e.g.
+// ".codex/agents/**/*.toml" → ".toml"). This is the Phase-3 extension-remap
+// seam (D-23: codex agents/**/*.md → .codex/agents/**/*.toml). When the
+// ToGlob basename carries no extension (e.g. "**/*"), or its extension already
+// matches the suffix's extension, the suffix passes through unchanged. Only the
+// trailing extension of the basename is rewritten — directory segments of the
+// nested suffix are preserved verbatim.
+func remapSuffixExt(toGlob, suffix string) string {
+	if suffix == "" {
+		return suffix
+	}
+	toBase := filepath.Base(filepath.ToSlash(toGlob))
+	// Only a `*.<ext>` wildcard basename triggers the swap. A bare "*" (no
+	// dot) or a concrete basename is not an extension-remap target.
+	if !strings.HasPrefix(toBase, "*") {
+		return suffix
+	}
+	toExt := filepath.Ext(toBase) // ".toml" for "*.toml"; "" for "*"
+	if toExt == "" || toExt == "." {
+		return suffix
+	}
+	srcExt := filepath.Ext(suffix) // honor the source basename's extension
+	if srcExt == toExt {
+		return suffix
+	}
+	return strings.TrimSuffix(suffix, srcExt) + toExt
+}
+
 func resolveRecursiveGlobTarget(fromGlob, toGlob, srcRel string) (string, error) {
 	srcRel = filepath.ToSlash(srcRel)
 	fromAnchor := globAnchor(fromGlob)
@@ -169,7 +200,14 @@ func resolveRecursiveGlobTarget(fromGlob, toGlob, srcRel string) (string, error)
 	case suffix == "":
 		dest = toAnchor
 	default:
-		dest = toAnchor + "/" + suffix
+		// Extension-remap seam (Phase 3, D-23): when the ToGlob's final
+		// segment is a `*.<ext>` wildcard basename whose extension differs
+		// from the source suffix's extension (e.g. ToGlob
+		// `.codex/agents/**/*.toml` vs source `foo.md`), swap the suffix's
+		// trailing extension to the ToGlob's literal extension. The swap
+		// rewrites ONLY the trailing `.ext` of the basename — it never
+		// inserts a path segment, so the T-01-01 guard below still holds.
+		dest = toAnchor + "/" + remapSuffixExt(toGlob, suffix)
 	}
 	dest = filepath.ToSlash(filepath.Clean(dest))
 
@@ -283,6 +321,14 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 			return fmt.Errorf("route: read %q: %w", path, err)
 		}
 
+		// D-23 SourceHash capture: hash the SOURCE bytes BEFORE any Transform
+		// overwrite. For a nil-Transform (passthrough) rule the source bytes
+		// equal the emitted Content, so SourceHash == downstream Hash (the
+		// Phase-1/2 invariant). For a converting Transform the emitted bytes
+		// differ, so SourceHash != Hash — recorded into state.FileEntry by
+		// publishFile.
+		srcHash := hash.HashBytes(content)
+
 		// D-03 transform seam: nil → verbatim passthrough (Keys=nil,
 		// byte-identical to Phase 1). Non-nil → convert bytes + contribute
 		// the dotted Keys[] for MergeDeep. The transform sees the
@@ -299,10 +345,11 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 		}
 
 		fws = append(fws, adapter.FileWrite{
-			Path:    dest,
-			Content: content,
-			Merge:   rule.Merge,
-			Keys:    keys,
+			Path:       dest,
+			Content:    content,
+			SourceHash: srcHash,
+			Merge:      rule.Merge,
+			Keys:       keys,
 		})
 		return nil
 	})

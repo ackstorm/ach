@@ -230,13 +230,14 @@ func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
 	}
 }
 
-// TestRemapGlobalPath covers the W6-01 --global path remap: opencode's
-// GLOBAL config is XDG ~/.config/opencode/opencode.json, not the project
-// ~/.opencode/opencode.json; the other adapters' paths pass through.
+// TestRemapGlobalPath covers the W6-01 --global path remap, generalized for
+// D-22 (plan 03-01): opencode's GLOBAL config root is XDG ~/.config/opencode/,
+// not the project ~/.opencode/, so ALL .opencode/* projected paths remap (not
+// just opencode.json); the other adapters' paths pass through.
 func TestRemapGlobalPath(t *testing.T) {
 	cases := []struct{ platform, in, want string }{
 		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
-		{"opencode", ".opencode/plugins/foo/x.md", ".opencode/plugins/foo/x.md"}, // only opencode.json remaps
+		{"opencode", ".opencode/plugins/foo/x.md", ".config/opencode/plugins/foo/x.md"}, // D-22: all .opencode/* remap
 		{"claude-code", ".claude/settings.json", ".claude/settings.json"},
 		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},

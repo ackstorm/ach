@@ -86,6 +86,16 @@ type FileWrite struct {
 	// Content is the byte sequence to write at Path.
 	Content []byte
 
+	// SourceHash is the xxh3 of the pre-conversion source bytes (D-23).
+	// For passthrough files it equals the emitted-content Hash (the
+	// Phase-1/2 invariant); for converted files (Phase 3: codex .md→.toml,
+	// opencode tools[]→{}) it differs from Hash because the emitted bytes
+	// are not the source bytes. route.Project captures it from the source
+	// bytes BEFORE the Transform overwrite; publishFile threads it into the
+	// state.FileEntry.SourceHash. Empty on adapter RenderRuntime output —
+	// publishFile then falls back to the emitted Hash.
+	SourceHash string
+
 	// Merge classifies how this file combines with any pre-existing
 	// on-disk content (CLI spec §7.1 + ADAPT-05).
 	Merge MergeKind
