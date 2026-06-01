@@ -87,7 +87,7 @@ func NewSecretLoader(signer *Ed25519Signer, namespace, name string, log logr.Log
 func (l *SecretLoader) applyNextSlot(secret *corev1.Secret, phase string) {
 	nxtKid := string(secret.Data[DataKeyNextKid])
 	if nxtKid == "" {
-		l.signer.LoadNext(nil)
+		l.signer.loadNext(nil)
 		return
 	}
 	nxtSlot, nxtErr := newSignerSlot(nxtKid, secret.Data[DataKeyNextSeed])
@@ -98,10 +98,10 @@ func (l *SecretLoader) applyNextSlot(secret *corev1.Secret, phase string) {
 		}
 		l.log.Error(nxtErr, msg,
 			"namespace", l.namespace, "name", l.name, "next.kid", nxtKid)
-		l.signer.LoadNext(nil)
+		l.signer.loadNext(nil)
 		return
 	}
-	l.signer.LoadNext(nxtSlot)
+	l.signer.loadNext(nxtSlot)
 }
 
 // LoadOnce is the startup-path loader. Returns an error wrapping
@@ -112,7 +112,7 @@ func (l *SecretLoader) applyNextSlot(secret *corev1.Secret, phase string) {
 //
 // On success: current is populated; if next.kid is non-empty AND
 // next.seed is valid, next is also populated. If next.kid is non-empty
-// but next.seed is malformed, the next slot is CLEARED (LoadNext(nil))
+// but next.seed is malformed, the next slot is CLEARED (loadNext(nil))
 // and the error is logged at Error level — the forwarder still starts
 // (current is valid) but the rotation overlap window is unavailable
 // until the operator fixes the Secret.
@@ -129,7 +129,7 @@ func (l *SecretLoader) LoadOnce(secret *corev1.Secret) error {
 	if err != nil {
 		return fmt.Errorf("jwt secret %s/%s current: %w", l.namespace, l.name, err)
 	}
-	l.signer.LoadCurrent(curSlot)
+	l.signer.loadCurrent(curSlot)
 	l.applyNextSlot(secret, "load")
 
 	l.log.Info("jwt signing keys loaded",
@@ -173,7 +173,7 @@ func (l *SecretLoader) Reload(secret *corev1.Secret) error {
 			"namespace", l.namespace, "name", l.name)
 		return fmt.Errorf("jwt secret %s/%s reload current: %w", l.namespace, l.name, err)
 	}
-	l.signer.LoadCurrent(curSlot)
+	l.signer.loadCurrent(curSlot)
 	l.applyNextSlot(secret, "reload")
 
 	l.log.Info("jwt signing keys reloaded",

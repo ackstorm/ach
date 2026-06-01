@@ -131,24 +131,17 @@ func NewEd25519Signer() *Ed25519Signer {
 	return &Ed25519Signer{}
 }
 
-// LoadCurrent publishes a new current slot via atomic.Pointer.Store.
-// Exported so the SecretLoader (in secret.go) can publish from another
-// file in the same package — but only the loader is intended to call
-// it. Pass a slot constructed via newSignerSlot so the kid/seed
-// invariants are pre-validated.
-//
-// LoadCurrent is package-private by convention; treat it as internal-use-only.
-func (s *Ed25519Signer) LoadCurrent(slot *signerSlot) { //nolint:revive // exported only for the same-package SecretLoader; treat as internal.
+// loadCurrent publishes a new current slot via atomic.Pointer.Store.
+// Pass a slot from newSignerSlot so the kid/seed invariants are
+// pre-validated. The atomic publication makes the new key visible to
+// in-flight Sign() calls without a lock.
+func (s *Ed25519Signer) loadCurrent(slot *signerSlot) {
 	s.current.Store(slot)
 }
 
-// LoadNext publishes a new next slot via atomic.Pointer.Store. Accepts
-// nil to clear next (used after a rotation completes — the Secret
-// removes next.kid/next.seed, the loader calls LoadNext(nil), and JWKS
-// drops back to one published key).
-//
-// LoadNext is package-private by convention; treat it as internal-use-only.
-func (s *Ed25519Signer) LoadNext(slot *signerSlot) { //nolint:revive // exported only for the same-package SecretLoader; treat as internal.
+// loadNext publishes a new next slot (nil clears it after a completed
+// rotation — JWKS drops back to one published key).
+func (s *Ed25519Signer) loadNext(slot *signerSlot) {
 	s.next.Store(slot)
 }
 
@@ -166,9 +159,9 @@ func (s *Ed25519Signer) Loaded() bool {
 // §20 (accepted v1alpha1 threat model).
 //
 // The signing slot is the result of s.current.Load() at Sign-entry; a
-// concurrent LoadCurrent racing the in-flight Sign uses whichever slot
+// concurrent loadCurrent racing the in-flight Sign uses whichever slot
 // won the atomic publication race — never torn, never nil after the
-// first successful LoadCurrent.
+// first successful loadCurrent.
 func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	slot := s.current.Load()
 	if slot == nil {
