@@ -32,6 +32,7 @@ import (
 	"sort"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -428,6 +429,28 @@ func copyFile(srcPath, dstPath string) error {
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
 		configJSONPath: adapter.MergeDeep,
+	}
+}
+
+// ProjectionRules returns the opencode Phase-1 PASSTHROUGH projection
+// table satisfying route.RuleProvider (the D-06 seam). It is current-
+// behavior-equivalent to opencode's TransformPlugin: commands/, agents/,
+// skills/, prompts/ are routed into .opencode/<kind>/; the droppable
+// components (hooks/, .lsp.json, monitors/, bin/, settings.json) have NO
+// rule and fall into route.Project's dropped set (matching
+// droppableComponent).
+//
+// Phase 3 wires opencode's agent tools array->object + MCP mcpServers->mcp
+// conversions on top of this same mechanism. Phase 1 ships only the
+// passthrough table. TransformPlugin is LEFT AS-IS — projection runs via
+// the plan-02 Render leg (ProjectionRules -> route.Project). This method
+// is pure data — no I/O.
+func (a *Adapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "commands/**/*", ToGlob: ".opencode/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "agents/**/*", ToGlob: ".opencode/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "prompts/**/*", ToGlob: ".opencode/prompts/**/*", Merge: adapter.MergeReplace},
 	}
 }
 

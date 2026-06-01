@@ -37,6 +37,7 @@ import (
 	"sort"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -355,6 +356,27 @@ func copyFile(srcPath, dstPath string) error {
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
 		settingsJSONPath: adapter.MergeDeep,
+	}
+}
+
+// ProjectionRules returns the claude-code Phase-1 PASSTHROUGH projection
+// table satisfying route.RuleProvider (the D-06 seam). claude-code is
+// the passthrough reference: it routes every canonical resource kind it
+// sees today verbatim into .claude/<kind>/, dropping nothing (matching
+// TransformPlugin's Dropped == nil contract). All file-owned resources
+// use MergeReplace.
+//
+// Phase 2 (FMT-03) wires claude's agent field-rewrite rules on top of
+// this same mechanism; Phase 1 ships only the passthrough table. This
+// method is pure data — no I/O. TransformPlugin is left as-is: projection
+// runs through the plan-02 Render leg (ProjectionRules -> route.Project),
+// NOT through TransformPlugin.
+func (a *Adapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "rules/**/*", ToGlob: ".claude/rules/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*", ToGlob: ".claude/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
 	}
 }
 

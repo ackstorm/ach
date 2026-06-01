@@ -74,6 +74,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -700,6 +701,28 @@ func rewriteFrontmatterLine(line []byte) []byte {
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
 		configTOMLPath: adapter.MergeDeep,
+	}
+}
+
+// ProjectionRules returns the codex Phase-1 PASSTHROUGH projection table
+// satisfying route.RuleProvider (the D-06 seam). It is current-behavior-
+// equivalent to the codex TransformPlugin walk: agents/ and skills/ are
+// routed into .codex/<kind>/; commands/, hooks/, and rules/ have NO rule
+// and therefore fall into route.Project's dropped set (matching codex's
+// existing silentDropTopLevel{commands,hooks} plus the rules/ kind codex
+// has never had a destination for).
+//
+// Phase 3 (OPENPACKAGE-MAPPING #7) reconciles codex's routed-kind/drop
+// sets — routing commands/ -> .codex/prompts/ and the agents .md->.toml
+// conversion. Phase 1 deliberately ships only the passthrough table;
+// TransformPlugin (incl. writeAgentWithFrontmatterRewrite and
+// silentDropTopLevel) is LEFT AS-IS — projection runs via the plan-02
+// Render leg (ProjectionRules -> route.Project), not TransformPlugin.
+// This method is pure data — no I/O.
+func (a *Adapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "agents/**/*", ToGlob: ".codex/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".codex/skills/**/*", Merge: adapter.MergeReplace},
 	}
 }
 

@@ -50,6 +50,7 @@ import (
 	"sort"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -567,6 +568,27 @@ func copyFile(srcPath, dstPath string) error {
 func (a *Adapter) MergeStrategies() map[string]adapter.MergeKind {
 	return map[string]adapter.MergeKind{
 		settingsJSONPath: adapter.MergeDeep,
+	}
+}
+
+// ProjectionRules returns the gemini-cli Phase-1 PASSTHROUGH projection
+// table satisfying route.RuleProvider (the D-06 seam). It is current-
+// behavior-equivalent to gemini's TransformPlugin componentKept set:
+// agents/, prompts/, commands/, skills/ are routed into .gemini/<kind>/;
+// hooks/ has NO rule and falls into route.Project's dropped set (Gemini
+// has no hook system — matching componentDropped{hooks}).
+//
+// gemini-cli has no OpenPackage reference; ACH's existing gemini.go is
+// canonical (PROJECT.md key decision). Phase 1 mirrors its current
+// routed-kind set as the passthrough table. TransformPlugin is LEFT
+// AS-IS — projection runs via the plan-02 Render leg
+// (ProjectionRules -> route.Project). This method is pure data — no I/O.
+func (a *Adapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "agents/**/*", ToGlob: ".gemini/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "prompts/**/*", ToGlob: ".gemini/prompts/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*", ToGlob: ".gemini/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".gemini/skills/**/*", Merge: adapter.MergeReplace},
 	}
 }
 
