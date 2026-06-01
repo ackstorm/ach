@@ -124,15 +124,69 @@ func TestEncodeFrontmatterDoc_Deterministic(t *testing.T) {
 	}
 }
 
-// TestEncodeFrontmatterDoc_UnsupportedType proves an unsupported value type
-// returns an error rather than emitting nondeterministic output.
-func TestEncodeFrontmatterDoc_UnsupportedType(t *testing.T) {
-	fm := map[string]any{
-		"weird": []int{1, 2, 3}, // not a string slice / scalar / string→bool map
-	}
-	if _, err := EncodeFrontmatterDoc(fm, []byte("body")); err == nil {
-		t.Errorf("expected error for unsupported value type")
-	}
+// TestEncodeFrontmatterDoc_UnknownShapePassThrough proves CR-01: a value
+// outside the optimized lifted grammar is re-marshalled verbatim through
+// yaml.v3 rather than aborting the whole hydrate. Real Claude agent
+// frontmatter routinely carries these shapes (a non-integral float, a list of
+// non-strings, a nested string-valued map like `permissions: {bash: ask}`, and
+// a nil-valued key), and opencode tolerates unknown keys (opencode.go:407), so
+// each must pass through, not error.
+func TestEncodeFrontmatterDoc_UnknownShapePassThrough(t *testing.T) {
+	t.Run("non-integral float", func(t *testing.T) {
+		out, err := EncodeFrontmatterDoc(map[string]any{"temperature": 0.7}, []byte("body"))
+		if err != nil {
+			t.Fatalf("expected pass-through, got error: %v", err)
+		}
+		if !bytes.Contains(out, []byte("temperature")) || !bytes.Contains(out, []byte("0.7")) {
+			t.Errorf("float not passed through:\n%s", out)
+		}
+	})
+
+	t.Run("string-valued nested map (permissions: {bash: ask})", func(t *testing.T) {
+		fm := map[string]any{"permissions": map[string]any{"bash": "ask"}}
+		out, err := EncodeFrontmatterDoc(fm, []byte("body"))
+		if err != nil {
+			t.Fatalf("expected pass-through, got error: %v", err)
+		}
+		if !bytes.Contains(out, []byte("permissions")) || !bytes.Contains(out, []byte("bash")) || !bytes.Contains(out, []byte("ask")) {
+			t.Errorf("string-valued map not passed through:\n%s", out)
+		}
+	})
+
+	t.Run("list of non-strings", func(t *testing.T) {
+		out, err := EncodeFrontmatterDoc(map[string]any{"weird": []any{1, 2, 3}}, []byte("body"))
+		if err != nil {
+			t.Fatalf("expected pass-through, got error: %v", err)
+		}
+		if !bytes.Contains(out, []byte("weird")) {
+			t.Errorf("non-string list not passed through:\n%s", out)
+		}
+	})
+
+	t.Run("nil-valued key", func(t *testing.T) {
+		out, err := EncodeFrontmatterDoc(map[string]any{"description": nil}, []byte("body"))
+		if err != nil {
+			t.Fatalf("expected pass-through, got error: %v", err)
+		}
+		if !bytes.Contains(out, []byte("description")) {
+			t.Errorf("nil-valued key not passed through:\n%s", out)
+		}
+	})
+
+	t.Run("output still re-splits with body intact", func(t *testing.T) {
+		body := []byte("the body\n")
+		out, err := EncodeFrontmatterDoc(map[string]any{"temperature": 0.7}, body)
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		_, gotBody, found := SplitFrontmatter(out)
+		if !found {
+			t.Fatalf("encoded output did not re-split")
+		}
+		if !bytes.Equal(gotBody, body) {
+			t.Errorf("round-trip body = %q; want %q", gotBody, body)
+		}
+	})
 }
 
 // TestEncodeFrontmatterDoc_RoundTripWithSplit proves split→encode composes:

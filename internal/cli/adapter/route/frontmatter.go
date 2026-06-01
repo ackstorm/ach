@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SplitFrontmatter splits a markdown document into its raw YAML frontmatter
@@ -113,9 +115,13 @@ func findFrontmatterFences(raw []byte) (openEnd, closeStart, closeEnd int, found
 //     all bool), emitted as a sorted nested mapping — this is the
 //     tools[]→{name:true} shape opencode produces.
 //
-// Any other value type returns an error rather than emitting nondeterministic
-// or lossy output. All string emission goes through strconv.Quote so a value
-// containing YAML metacharacters cannot break out of its field (T-03-03).
+// Any OTHER value type (non-integral float, []any of non-strings, a nested
+// map with non-bool values, nil, …) is NOT lifted into the optimized grammar
+// above; instead it is re-marshalled verbatim through yaml.v3 so an unknown
+// frontmatter shape passes through rather than aborting the hydrate (CR-01 —
+// opencode tolerates unknown keys, opencode.go:407). All lifted-grammar string
+// emission goes through strconv.Quote so a value containing YAML
+// metacharacters cannot break out of its field (T-03-03).
 func EncodeFrontmatterDoc(frontmatter map[string]any, body []byte) ([]byte, error) {
 	keys := make([]string, 0, len(frontmatter))
 	for k := range frontmatter {
@@ -136,7 +142,13 @@ func EncodeFrontmatterDoc(frontmatter map[string]any, body []byte) ([]byte, erro
 }
 
 // encodeFrontmatterEntry emits one top-level `key: value` (or `key:` + nested
-// block) for the supported value grammar.
+// block) for the optimized lifted grammar. Any value OUTSIDE that grammar — a
+// non-integral float, a []any whose elements are not all strings, a map whose
+// values are not all bool, a nil, or any other type — falls back to
+// passThroughEntry (CR-01): it is re-marshalled verbatim via yaml.v3 rather
+// than aborting the whole hydrate. The opencode agent path promises to pass
+// unknown keys through (opencode tolerates unknown keys — opencode.go:407), so
+// a shape the optimized grammar does not cover must round-trip, not error.
 func encodeFrontmatterEntry(buf *bytes.Buffer, key string, val any) error {
 	switch v := val.(type) {
 	case string:
@@ -156,7 +168,8 @@ func encodeFrontmatterEntry(buf *bytes.Buffer, key string, val any) error {
 			buf.WriteString(key + ": " + strconv.FormatInt(int64(v), 10) + "\n")
 			return nil
 		}
-		return fmt.Errorf("non-integral float value %v unsupported", v)
+		// Non-integral float (e.g. temperature: 0.7) — pass through.
+		return passThroughEntry(buf, key, val)
 	case []string:
 		return encodeStringSlice(buf, key, v)
 	case []any:
@@ -164,7 +177,9 @@ func encodeFrontmatterEntry(buf *bytes.Buffer, key string, val any) error {
 		for _, e := range v {
 			s, ok := e.(string)
 			if !ok {
-				return fmt.Errorf("sequence element %v (%T) is not a string", e, e)
+				// A non-string element (numeric list, list of maps) — the
+				// whole sequence falls back to a verbatim yaml.v3 re-marshal.
+				return passThroughEntry(buf, key, val)
 			}
 			strs = append(strs, s)
 		}
@@ -176,14 +191,30 @@ func encodeFrontmatterEntry(buf *bytes.Buffer, key string, val any) error {
 		for mk, mv := range v {
 			b, ok := mv.(bool)
 			if !ok {
-				return fmt.Errorf("map value for %q (%T) is not a bool", mk, mv)
+				// A non-bool value (e.g. permissions: {bash: ask}) — the whole
+				// nested map falls back to a verbatim yaml.v3 re-marshal.
+				return passThroughEntry(buf, key, val)
 			}
 			conv[mk] = b
 		}
 		return encodeStringBoolMap(buf, key, conv)
 	default:
-		return fmt.Errorf("unsupported value type %T", val)
+		// Any other type (nil, nested non-bool/non-string structures, …).
+		return passThroughEntry(buf, key, val)
 	}
+}
+
+// passThroughEntry re-marshals a single `key: val` mapping verbatim through
+// yaml.v3 for a value the optimized lifted grammar does not cover (CR-01).
+// yaml.v3 emits a deterministic single-document mapping for a one-key map, so
+// the byte-stability contract (VER-03 idempotence) is preserved.
+func passThroughEntry(buf *bytes.Buffer, key string, val any) error {
+	sub, err := yaml.Marshal(map[string]any{key: val})
+	if err != nil {
+		return fmt.Errorf("re-encode key %q: %w", key, err)
+	}
+	buf.Write(sub)
+	return nil
 }
 
 // encodeStringSlice emits a YAML block sequence under key, preserving the given
