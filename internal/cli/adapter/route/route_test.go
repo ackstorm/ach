@@ -245,6 +245,12 @@ func TestProject_TransformNilIsVerbatim(t *testing.T) {
 		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
 	}
 	got := fws[0]
+	// N→1 collapse: a concrete (wildcard-free) ToGlob is the merge target
+	// verbatim — the source suffix must NOT be appended (regression guard
+	// for the settings.json/<name> bogus-subpath bug).
+	if got.Path != ".claude/settings.json" {
+		t.Errorf("Path: got %q, want %q (N→1 collapse, no suffix append)", got.Path, ".claude/settings.json")
+	}
 	if string(got.Content) != `{"mcpServers":{"x":{}}}` {
 		t.Errorf("Content: got %q, want verbatim raw bytes", string(got.Content))
 	}
@@ -278,6 +284,9 @@ func TestProject_TransformApplied(t *testing.T) {
 		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
 	}
 	got := fws[0]
+	if got.Path != ".claude/settings.json" {
+		t.Errorf("Path: got %q, want %q (N→1 collapse, no suffix append)", got.Path, ".claude/settings.json")
+	}
 	if string(got.Content) != "OUT" {
 		t.Errorf("Content: got %q, want %q (transform output)", string(got.Content), "OUT")
 	}

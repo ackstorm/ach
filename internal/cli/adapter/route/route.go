@@ -159,6 +159,13 @@ func resolveRecursiveGlobTarget(fromGlob, toGlob, srcRel string) (string, error)
 	switch {
 	case toAnchor == "":
 		dest = suffix
+	case !strings.Contains(toGlob, "*"):
+		// Concrete destination (ToGlob carries no wildcard): an N→1
+		// collapse — every matched source maps to the single ToGlob file
+		// (deep-merged downstream, e.g. mcp/**/* → .claude/settings.json).
+		// The source suffix MUST NOT be appended or the merge target
+		// becomes a bogus subpath (settings.json/<name>) and never fires.
+		dest = toAnchor
 	case suffix == "":
 		dest = toAnchor
 	default:
