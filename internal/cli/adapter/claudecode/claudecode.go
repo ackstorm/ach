@@ -301,23 +301,95 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 	}, nil
 }
 
-// ProjectionRules returns the claude-code Phase-1 PASSTHROUGH projection
-// table satisfying route.RuleProvider (the D-06 seam). claude-code is
-// the passthrough reference: it routes every canonical resource kind it
-// sees today verbatim into .claude/<kind>/, dropping nothing (matching
-// TransformPlugin's Dropped == nil contract). All file-owned resources
-// use MergeReplace.
+// mcpDeepKeys is the claude-code adapter's only non-nil route.Rule.Transform
+// (D-03/D-09). It is wired onto the `mcp/**/*` ProjectionRules row and serves a
+// single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
+// contributes so the deep-merge engine can record them in state.files[*].keys[]
+// (STATE-02 + ADAPT-05) and so the runtime-wins drop (plan 02, D-10) can drop
+// ids that clash with the runtime MCP set.
 //
-// Phase 2 (FMT-03) wires claude's agent field-rewrite rules on top of
-// this same mechanism; Phase 1 ships only the passthrough table. This
-// method is pure data — no I/O. TransformPlugin is left as-is: projection
-// runs through the plan-02 Render leg (ProjectionRules -> route.Project),
-// NOT through TransformPlugin.
+// Byte discipline (D-03): mcpDeepKeys returns `in` UNCHANGED — it parses ONLY to
+// read the top-level map keys, never re-encodes. Re-encoding would reorder the
+// user's plugin file and break FMT-05 byte-stability / drift no-op detection.
+//
+// Key shape (D-09): for each top-level `mcpServers` map key id →
+// "mcpServers."+id; if a top-level `a2aAgents` object is present, for each of
+// its keys id → "a2aAgents."+id. Keys are sorted lexicographically, mirroring
+// renderMcpJSON's contributedKeys loop, so the enumeration is deterministic.
+//
+// Malformed JSON returns a non-nil error so route.Project aborts that file
+// (first-error discipline, T-02-07) rather than letting a server slip into the
+// merge unenumerated. An input with no mcpServers object returns empty keys and
+// out==in with no error.
+//
+// Phase-2 assumption: the plugin mcp source is treated as plain JSON. There is
+// no jsonc comment-stripping helper in this codebase today; if one is added
+// later (the source kind is mcp.{json,jsonc}) it should be reused here.
+func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	// Decode only the top-level object so we read the contributed key names
+	// without materializing or re-encoding the nested server definitions.
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(in, &top); err != nil {
+		return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q: %w", srcRel, err)
+	}
+
+	keys = make([]string, 0)
+
+	if raw, ok := top["mcpServers"]; ok {
+		var servers map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q mcpServers: %w", srcRel, err)
+		}
+		for id := range servers {
+			keys = append(keys, "mcpServers."+id)
+		}
+	}
+
+	if raw, ok := top["a2aAgents"]; ok {
+		var agents map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &agents); err != nil {
+			return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q a2aAgents: %w", srcRel, err)
+		}
+		for id := range agents {
+			keys = append(keys, "a2aAgents."+id)
+		}
+	}
+
+	// Sort exactly like renderMcpJSON's contributedKeys so the enumeration is
+	// stable across invocations.
+	sort.Strings(keys)
+
+	// D-03: return the input bytes UNCHANGED — no re-encode, no reorder.
+	return in, keys, nil
+}
+
+// ProjectionRules returns the claude-code PASS-THROUGH projection table
+// satisfying route.RuleProvider (the D-06 seam). claude-code is the canonical
+// pass-through reference: the four file-owned resource kinds
+// (rules/commands/agents/skills) route verbatim into .claude/<kind>/ as
+// MergeReplace with NO field rewrite — FMT-03 is CUT (D-02): claude-code does
+// NOT rewrite model/tools/permissions or any agent frontmatter; the canonical
+// plugin format IS Claude Code format, so pass-through is byte-faithful.
+//
+// Two non-file rows complete the D-11 contract:
+//   - AGENTS.md → CLAUDE.md as MergeComposite: the plugin's top-level AGENTS.md
+//     prose is composited (marker-bounded) into the host CLAUDE.md memory file.
+//   - mcp/**/* → settingsJSONPath as MergeDeep with Transform=mcpDeepKeys: the
+//     plugin's MCP definitions deep-merge under mcpServers in the EXISTING
+//     .claude/settings.json (D-08 — this is the same RenderRuntime MCP target;
+//     there is NO .mcp.json filename switch and NO mcp_servers rename). The
+//     Transform enumerates the contributed keys without altering the bytes.
+//
+// This method is pure data — no I/O. TransformPlugin is left as-is: projection
+// runs through the plan-02 Render leg (ProjectionRules -> route.Project), NOT
+// through TransformPlugin.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "rules/**/*", ToGlob: ".claude/rules/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "commands/**/*", ToGlob: ".claude/commands/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
+		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 	}
 }

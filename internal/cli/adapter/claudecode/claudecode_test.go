@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -449,5 +450,153 @@ func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("dst bytes = %q, want %q", got, payload)
+	}
+}
+
+// TestProjectionRules_Rows (D-11/D-02) asserts the claude-code ProjectionRules
+// table: the four file-owned kinds stay verbatim MergeReplace with NO Transform
+// (FMT-03 cut), AGENTS.md composites into CLAUDE.md, and mcp/**/* deep-merges
+// into settingsJSONPath with the mcpDeepKeys Transform wired.
+func TestProjectionRules_Rows(t *testing.T) {
+	rules := (&Adapter{}).ProjectionRules()
+
+	// Build a lookup keyed by FromGlob for membership + field assertions.
+	type rowFields struct {
+		to        string
+		merge     adapter.MergeKind
+		hasXform  bool
+		seenTwice bool
+	}
+	byFrom := map[string]*rowFields{}
+	for _, r := range rules {
+		if _, dup := byFrom[r.FromGlob]; dup {
+			byFrom[r.FromGlob].seenTwice = true
+			continue
+		}
+		byFrom[r.FromGlob] = &rowFields{
+			to:       r.ToGlob,
+			merge:    r.Merge,
+			hasXform: r.Transform != nil,
+		}
+	}
+
+	// The four file-owned kinds: MergeReplace, no Transform (FMT-03 cut, D-02).
+	fileKinds := map[string]string{
+		"rules/**/*":    ".claude/rules/**/*",
+		"commands/**/*": ".claude/commands/**/*",
+		"agents/**/*":   ".claude/agents/**/*",
+		"skills/**/*":   ".claude/skills/**/*",
+	}
+	for from, wantTo := range fileKinds {
+		row, ok := byFrom[from]
+		if !ok {
+			t.Fatalf("ProjectionRules missing file-kind row %q", from)
+		}
+		if row.to != wantTo {
+			t.Errorf("row %q ToGlob = %q, want %q", from, row.to, wantTo)
+		}
+		if row.merge != adapter.MergeReplace {
+			t.Errorf("row %q Merge = %v, want MergeReplace", from, row.merge)
+		}
+		if row.hasXform {
+			t.Errorf("row %q has a non-nil Transform; file kinds must be verbatim (FMT-03 cut)", from)
+		}
+	}
+
+	// AGENTS.md -> CLAUDE.md as MergeComposite, no Transform.
+	comp, ok := byFrom["AGENTS.md"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing AGENTS.md composite row")
+	}
+	if comp.to != "CLAUDE.md" {
+		t.Errorf("AGENTS.md ToGlob = %q, want CLAUDE.md", comp.to)
+	}
+	if comp.merge != adapter.MergeComposite {
+		t.Errorf("AGENTS.md Merge = %v, want MergeComposite", comp.merge)
+	}
+	if comp.hasXform {
+		t.Errorf("AGENTS.md composite row must have nil Transform")
+	}
+
+	// mcp/**/* -> settingsJSONPath as MergeDeep WITH a non-nil Transform.
+	mcp, ok := byFrom["mcp/**/*"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing mcp/**/* deep-merge row")
+	}
+	if mcp.to != settingsJSONPath {
+		t.Errorf("mcp/**/* ToGlob = %q, want settingsJSONPath %q", mcp.to, settingsJSONPath)
+	}
+	if mcp.merge != adapter.MergeDeep {
+		t.Errorf("mcp/**/* Merge = %v, want MergeDeep", mcp.merge)
+	}
+	if !mcp.hasXform {
+		t.Errorf("mcp/**/* row must wire a non-nil Transform (mcpDeepKeys)")
+	}
+}
+
+// TestMcpDeepKeys_Enumerates (D-09): a plugin mcp.json with two mcpServers
+// enumerates sorted "mcpServers.<id>" keys and returns the input bytes exactly.
+func TestMcpDeepKeys_Enumerates(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"type":"http","url":"https://b"},"a":{"type":"http","url":"https://a"}}}`)
+
+	out, keys, err := mcpDeepKeys("mcp/servers.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q, want %q (no byte conversion)", out, in)
+	}
+	want := []string{"mcpServers.a", "mcpServers.b"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("keys = %v, want sorted %v", keys, want)
+	}
+}
+
+// TestMcpDeepKeys_A2A (D-09): input carrying both mcpServers and a2aAgents
+// enumerates both families (sorted), bytes unchanged.
+func TestMcpDeepKeys_A2A(t *testing.T) {
+	in := []byte(`{"mcpServers":{"srv":{"type":"http"}},"a2aAgents":{"agt":{"type":"http"}}}`)
+
+	out, keys, err := mcpDeepKeys("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q", out)
+	}
+	want := []string{"a2aAgents.agt", "mcpServers.srv"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("keys = %v, want sorted %v", keys, want)
+	}
+}
+
+// TestMcpDeepKeys_Empty: an input with no mcpServers object returns empty keys,
+// no error, and out==in.
+func TestMcpDeepKeys_Empty(t *testing.T) {
+	in := []byte(`{}`)
+
+	out, keys, err := mcpDeepKeys("mcp/empty.json", in)
+	if err != nil {
+		t.Fatalf("mcpDeepKeys returned error on empty object: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("out bytes differ from in: got %q, want %q", out, in)
+	}
+	if len(keys) != 0 {
+		t.Errorf("keys = %v, want empty", keys)
+	}
+}
+
+// TestMcpDeepKeys_Malformed (T-02-07): invalid JSON returns a non-nil error so
+// the projection aborts that file rather than silently dropping servers.
+func TestMcpDeepKeys_Malformed(t *testing.T) {
+	in := []byte(`{"mcpServers": this is not json}`)
+
+	out, keys, err := mcpDeepKeys("mcp/bad.json", in)
+	if err == nil {
+		t.Fatalf("expected error on malformed JSON, got nil (out=%q keys=%v)", out, keys)
+	}
+	if out != nil || keys != nil {
+		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
 }
