@@ -201,3 +201,39 @@ func TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged(t *testing.T) {
 		t.Errorf("drops = %v; want one foo runtime-owned token", drops)
 	}
 }
+
+// TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes proves WR-07:
+// when ALL MCP keys collide (survivors == 0) but the doc still carries OTHER
+// top-level keys, fw.Content is re-encoded from the de-conflicted doc — NOT
+// left at its pre-removal bytes carrying the runtime-owned subtree. Honors the
+// "fw is mutated IN PLACE" contract for a future projection rule contributing
+// non-MCP deep-merge keys.
+func TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes(t *testing.T) {
+	// doc has a non-MCP key (other) plus a single mcpServers.foo that collides.
+	jsonContent := `{"other":{"keep":true},"mcpServers":{"foo":{"type":"http","url":"https://PLUGIN-foo"}}}`
+	fw := adapter.FileWrite{
+		Path:    ".claude/settings.json",
+		Content: []byte(jsonContent),
+		Merge:   adapter.MergeDeep,
+		Keys:    []string{"mcpServers.foo"},
+	}
+	runtime := []FileWrite{
+		{Target: ".claude/settings.json", Merge: mergeStrDeep, Keys: []string{"mcpServers.foo"}},
+	}
+	published, _, err := dropRuntimeOwnedMCP(&fw, runtime)
+	if err != nil {
+		t.Fatalf("dropRuntimeOwnedMCP: %v", err)
+	}
+	// Caller still skips publishing (nothing of ours survives).
+	if published {
+		t.Errorf("publish=true; all OUR keys collided so publish should be false")
+	}
+	// But fw.Content must be re-encoded: the runtime-owned subtree is GONE and
+	// the non-MCP key survives (no stale pre-removal bytes).
+	if strings.Contains(string(fw.Content), "PLUGIN-foo") {
+		t.Errorf("stale runtime-owned subtree left in fw.Content:\n%s", fw.Content)
+	}
+	if !strings.Contains(string(fw.Content), "keep") {
+		t.Errorf("non-MCP key dropped from re-encoded fw.Content:\n%s", fw.Content)
+	}
+}

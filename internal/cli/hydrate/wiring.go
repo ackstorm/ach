@@ -634,7 +634,22 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 
 	fw.Keys = survivors
 	if len(survivors) == 0 || len(doc) == 0 {
-		// Nothing of ours survives — skip publishing (drops still recorded).
+		// Nothing of OURS survives — skip publishing (drops still recorded).
+		// But the function's contract is "fw is mutated IN PLACE so the caller
+		// publishes the de-conflicted content" (WR-07): when survivors == 0 yet
+		// doc still holds OTHER top-level keys (len(doc) != 0), fw.Content must
+		// be re-encoded from the de-conflicted doc rather than left at its
+		// pre-removal bytes (which still carry the runtime-owned subtree). The
+		// current caller skips publishing on !published so this is latent, but
+		// a future projection rule contributing non-MCP deep-merge keys would
+		// otherwise publish stale content.
+		if len(doc) != 0 {
+			out, err := encodeDoc(doc, isTOML)
+			if err != nil {
+				return false, nil, err
+			}
+			fw.Content = out
+		}
 		return false, drops, nil
 	}
 
