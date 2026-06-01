@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -318,7 +320,7 @@ func TestTransformPlugin_DistributesPrompts(t *testing.T) {
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name": "caveman", "version": "1.0.0"}`,
 		"agents/cave-agent.md":       "---\nname: cave\ntools:\n  - bash\n  - read\n---\nhello body",
-		"commands/grunt.md":          "# grunt",   // silent-dropped
+		"commands/grunt.md":          "# grunt",   // D-14: now COPIED verbatim by the legacy walk
 		"prompts/intro.md":           "# intro",   // preserved verbatim
 		"skills/fire/skill.md":       "# fire",    // preserved verbatim
 		"hooks/preflight.sh":         "#!/bin/sh", // silent-dropped
@@ -339,8 +341,10 @@ func TestTransformPlugin_DistributesPrompts(t *testing.T) {
 		t.Fatalf("TransformPlugin: %v", err)
 	}
 
-	// Dropped MUST include both "commands" and "hooks" per ADAPT-07.
-	wantDrop := map[string]bool{"commands": true, "hooks": true}
+	// D-14: "commands" is NO LONGER silent-dropped by the legacy walk
+	// (commands are now ROUTED via ProjectionRules). Only "hooks" remains in
+	// the legacy walk's silentDropTopLevel set.
+	wantDrop := map[string]bool{"hooks": true}
 	if len(pw.Dropped) != len(wantDrop) {
 		t.Errorf("Dropped count = %d, want %d (got %v)", len(pw.Dropped), len(wantDrop), pw.Dropped)
 	}
@@ -356,10 +360,12 @@ func TestTransformPlugin_DistributesPrompts(t *testing.T) {
 
 	// ExtractedFiles MUST include exactly the non-dropped, non-.mcp.json
 	// files: .claude-plugin/plugin.json, agents/cave-agent.md,
-	// prompts/intro.md, skills/fire/skill.md.
+	// commands/grunt.md (D-14: now copied), prompts/intro.md,
+	// skills/fire/skill.md.
 	wantExtracted := []string{
 		".claude-plugin/plugin.json",
 		"agents/cave-agent.md",
+		"commands/grunt.md",
 		"prompts/intro.md",
 		"skills/fire/skill.md",
 	}
@@ -406,8 +412,10 @@ func TestTransformPlugin_DistributesPrompts(t *testing.T) {
 		}
 	}
 
-	// Verify the dropped components were NOT written to dst.
-	for _, dropped := range []string{"commands", "hooks"} {
+	// Verify the dropped component (hooks only, post-D-14) was NOT written to
+	// dst. commands/ is now copied (see ExtractedFiles above), so it is no
+	// longer in the drop set.
+	for _, dropped := range []string{"hooks"} {
 		path := filepath.Join(dst, dropped)
 		if _, err := os.Stat(path); err == nil {
 			t.Errorf("dropped component %s should not exist at %s", dropped, path)
@@ -625,5 +633,298 @@ func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("dst bytes = %q, want %q", got, payload)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Task 1: ROUTE-03 ProjectionRules table (D-13/D-14)
+// ----------------------------------------------------------------------------
+
+// writePluginTree writes a map of rel-path → content under root, creating
+// parent dirs as needed. A nil/empty content writes an empty file (used to
+// materialize directory-bearing kinds).
+func writePluginTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", rel, err)
+		}
+	}
+}
+
+func TestCodex_ProjectionRules_RouteTargets(t *testing.T) {
+	a := &Adapter{}
+	rules := a.ProjectionRules()
+
+	// Index the rules by FromGlob to assert each route target + Transform.
+	type want struct {
+		to        string
+		merge     adapter.MergeKind
+		transform bool
+	}
+	wants := map[string]want{
+		"commands/**/*.md": {to: ".codex/prompts/**/*.md", merge: adapter.MergeReplace, transform: false},
+		"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, transform: false},
+		"agents/**/*.md":   {to: ".codex/agents/**/*.toml", merge: adapter.MergeReplace, transform: true},
+		"mcp/**/*":         {to: configTOMLPath, merge: adapter.MergeDeep, transform: true},
+	}
+	if len(rules) != len(wants) {
+		t.Fatalf("ProjectionRules() = %d rules, want %d: %+v", len(rules), len(wants), rules)
+	}
+	for _, r := range rules {
+		w, ok := wants[r.FromGlob]
+		if !ok {
+			t.Errorf("unexpected rule FromGlob=%q", r.FromGlob)
+			continue
+		}
+		if r.ToGlob != w.to {
+			t.Errorf("%s ToGlob = %q, want %q", r.FromGlob, r.ToGlob, w.to)
+		}
+		if r.Merge != w.merge {
+			t.Errorf("%s Merge = %v, want %v", r.FromGlob, r.Merge, w.merge)
+		}
+		if (r.Transform != nil) != w.transform {
+			t.Errorf("%s Transform present = %v, want %v", r.FromGlob, r.Transform != nil, w.transform)
+		}
+	}
+
+	// skills MUST NOT route into .codex/skills (the Phase-1 stub bug).
+	for _, r := range rules {
+		if r.FromGlob == "skills/**/*" && strings.Contains(r.ToGlob, ".codex/skills") {
+			t.Errorf("skills route target %q must not be under .codex/skills", r.ToGlob)
+		}
+	}
+}
+
+func TestCodex_Project_DroppedSet(t *testing.T) {
+	src := t.TempDir()
+	writePluginTree(t, src, map[string]string{
+		// Routed kinds.
+		"commands/foo.md":     "# foo command\n",
+		"skills/bar/SKILL.md": "skill body\n",
+		"agents/baz.md":       "---\nname: baz\n---\nbody\n",
+		"mcp/mcp.json":        `{"mcpServers":{"svc":{"url":"https://x"}}}`,
+		// Dropped kinds (no rule).
+		"rules/style.md": "rule body\n",
+		"AGENTS.md":      "agents prose\n",
+		"hooks/pre.sh":   "#!/bin/sh\n",
+	})
+
+	a := &Adapter{}
+	_, dropped, err := route.Project(a.ProjectionRules(), src, "")
+	if err != nil {
+		t.Fatalf("route.Project: %v", err)
+	}
+
+	got := append([]string(nil), dropped...)
+	sort.Strings(got)
+	want := []string{"AGENTS.md", "hooks", "rules"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("dropped = %v, want %v", got, want)
+	}
+}
+
+func TestCodex_SilentDropTopLevel_NoCommands(t *testing.T) {
+	if silentDropTopLevel["commands"] {
+		t.Error("silentDropTopLevel still contains \"commands\" — D-14 removed it (commands are now routed)")
+	}
+	if !silentDropTopLevel["hooks"] {
+		t.Error("silentDropTopLevel must still contain \"hooks\"")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Task 2: codexAgentTOML (FMT-01) + codexMCPSurgery (FMT-02)
+// ----------------------------------------------------------------------------
+
+// decodeTOML parses TOML bytes into a generic map for assertion.
+func decodeTOML(t *testing.T, b []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := toml.Unmarshal(b, &m); err != nil {
+		t.Fatalf("toml.Unmarshal(%q): %v", b, err)
+	}
+	return m
+}
+
+func TestCodexAgentTOML_FieldLift(t *testing.T) {
+	in := []byte("---\nname: x\nmodel: y\ntools:\n  - a\n  - b\n---\nB")
+	out, keys, err := codexAgentTOML("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+	m := decodeTOML(t, out)
+	if m["name"] != "x" {
+		t.Errorf("name = %v, want x", m["name"])
+	}
+	if m["model"] != "y" {
+		t.Errorf("model = %v, want y", m["model"])
+	}
+	if m["developer_instructions"] != "B" {
+		t.Errorf("developer_instructions = %v, want B", m["developer_instructions"])
+	}
+	if _, ok := m["tools"]; ok {
+		t.Errorf("tools must be dropped, got %v", m["tools"])
+	}
+}
+
+func TestCodexAgentTOML_NameDefaultsToFilename(t *testing.T) {
+	in := []byte("---\nmodel: y\n---\nbody text")
+	out, _, err := codexAgentTOML("agents/foo.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	m := decodeTOML(t, out)
+	if m["name"] != "foo" {
+		t.Errorf("name = %v, want foo (filename sans .md)", m["name"])
+	}
+}
+
+func TestCodexAgentTOML_NoFrontmatter(t *testing.T) {
+	in := []byte("just a body, no fence")
+	out, _, err := codexAgentTOML("agents/plain.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	m := decodeTOML(t, out)
+	if m["name"] != "plain" {
+		t.Errorf("name = %v, want plain", m["name"])
+	}
+	if m["developer_instructions"] != "just a body, no fence" {
+		t.Errorf("developer_instructions = %v, want whole body", m["developer_instructions"])
+	}
+}
+
+func TestCodexAgentTOML_DropsNonWhitelistKeys(t *testing.T) {
+	in := []byte("---\nname: a\npermissions: deny\nhooks: x\nskills: y\ndisallowedTools:\n  - z\n---\nbody")
+	out, _, err := codexAgentTOML("agents/a.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	m := decodeTOML(t, out)
+	for _, k := range []string{"permissions", "hooks", "skills", "disallowedTools"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("key %q must be dropped, got %v", k, m[k])
+		}
+	}
+}
+
+func TestCodexAgentTOML_WhitelistKeysPassThrough(t *testing.T) {
+	in := []byte("---\nname: a\ndescription: d\nmodel: m\nmodel_reasoning_effort: high\nsandbox_mode: read-only\n---\nbody")
+	out, _, err := codexAgentTOML("agents/a.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	m := decodeTOML(t, out)
+	if m["model_reasoning_effort"] != "high" {
+		t.Errorf("model_reasoning_effort = %v, want high", m["model_reasoning_effort"])
+	}
+	if m["sandbox_mode"] != "read-only" {
+		t.Errorf("sandbox_mode = %v, want read-only", m["sandbox_mode"])
+	}
+}
+
+func TestCodexAgentTOML_Idempotent(t *testing.T) {
+	in := []byte("---\nname: x\nmodel: y\n---\nB")
+	out1, _, err := codexAgentTOML("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	out2, _, err := codexAgentTOML("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if !bytes.Equal(out1, out2) {
+		t.Errorf("not byte-identical (FMT-05):\nfirst:  %q\nsecond: %q", out1, out2)
+	}
+}
+
+func TestCodexMCPSurgery_BearerEnv(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"Authorization":"Bearer ${env:TOKEN}"}}}}`)
+	out, keys, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp_servers.svc"}) {
+		t.Errorf("keys = %v, want [mcp_servers.svc]", keys)
+	}
+	m := decodeTOML(t, out)
+	servers := m["mcp_servers"].(map[string]any)
+	svc := servers["svc"].(map[string]any)
+	if svc["bearer_token_env_var"] != "TOKEN" {
+		t.Errorf("bearer_token_env_var = %v, want TOKEN", svc["bearer_token_env_var"])
+	}
+	// The raw secret value must never appear.
+	if bytes.Contains(out, []byte("Bearer")) {
+		t.Errorf("output must not contain the literal Bearer header: %q", out)
+	}
+	// No literal Authorization header remains.
+	if hh, ok := svc["http_headers"].(map[string]any); ok {
+		if _, present := hh["Authorization"]; present {
+			t.Errorf("Authorization must not remain as http_header: %v", hh)
+		}
+	}
+}
+
+func TestCodexMCPSurgery_EnvAndLiteralHeaders(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","headers":{"X-Foo":"${env:BAR}","X-Lit":"literal"}}}}`)
+	out, _, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	m := decodeTOML(t, out)
+	svc := m["mcp_servers"].(map[string]any)["svc"].(map[string]any)
+	env := svc["env_http_headers"].(map[string]any)
+	if env["X-Foo"] != "BAR" {
+		t.Errorf("env_http_headers.X-Foo = %v, want BAR", env["X-Foo"])
+	}
+	lit := svc["http_headers"].(map[string]any)
+	if lit["X-Lit"] != "literal" {
+		t.Errorf("http_headers.X-Lit = %v, want literal", lit["X-Lit"])
+	}
+}
+
+func TestCodexMCPSurgery_TimeoutRename(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"url":"https://x","timeout":30,"headers":{"X-A":"literal"}}}}`)
+	out, _, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	m := decodeTOML(t, out)
+	svc := m["mcp_servers"].(map[string]any)["svc"].(map[string]any)
+	// startup_timeout_sec present; timeout absent; headers map absent.
+	if _, ok := svc["startup_timeout_sec"]; !ok {
+		t.Errorf("startup_timeout_sec missing: %v", svc)
+	}
+	if _, ok := svc["timeout"]; ok {
+		t.Errorf("timeout must be renamed away: %v", svc)
+	}
+	if _, ok := svc["headers"]; ok {
+		t.Errorf("original headers map must be dropped: %v", svc)
+	}
+}
+
+func TestCodexMCPSurgery_KeysAndIdempotent(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"url":"https://b"},"a":{"url":"https://a"}}}`)
+	out1, keys1, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if !reflect.DeepEqual(keys1, []string{"mcp_servers.a", "mcp_servers.b"}) {
+		t.Errorf("keys = %v, want sorted [mcp_servers.a mcp_servers.b]", keys1)
+	}
+	out2, _, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if !bytes.Equal(out1, out2) {
+		t.Errorf("not byte-identical (FMT-05):\nfirst:  %q\nsecond: %q", out1, out2)
 	}
 }
