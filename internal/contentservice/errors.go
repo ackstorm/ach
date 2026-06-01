@@ -103,16 +103,7 @@ func errInternal() *errResp {
 func (d Deps) writeError(w http.ResponseWriter, r *http.Request, kind, name string, info *keystore.KeyInfo, e *errResp) {
 	reqID := middleware.RequestIDFromCtx(r.Context())
 	render.Error(w, e.HTTPStatus, e.Code, e.Message, reqID)
-	if d.AuditLog != nil {
-		audit.EmitAudit(r.Context(), d.AuditLog, audit.Event{
-			Action:    audit.ActionContentGet,
-			Outcome:   e.Code,
-			Actor:     actorFromInfo(info),
-			RequestID: reqID,
-			KeyID:     keyIDFromInfo(info),
-			Target:    &audit.Target{Kind: kind, Name: name},
-		})
-	}
+	d.emitAudit(r.Context(), kind, name, e.Code, info)
 	if d.Metrics != nil {
 		d.Metrics.IncRequest(kind, e.Code)
 	}

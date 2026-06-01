@@ -301,7 +301,7 @@ func TestNewCachedEnvCache_RefusesNilLoader(t *testing.T) {
 	if c != nil {
 		t.Error("expected nil Cache on nil loader")
 	}
-	if want := "nil loader"; !contains(err.Error(), want) {
+	if want := "nil loader"; !strings.Contains(err.Error(), want) {
 		t.Errorf("err=%q, want substring %q", err.Error(), want)
 	}
 }
@@ -317,16 +317,7 @@ func TestNewCachedEnvCache_RefusesNilRedis(t *testing.T) {
 	if c != nil {
 		t.Error("expected nil Cache on nil redis")
 	}
-	if want := "nil redis"; !contains(err.Error(), want) {
+	if want := "nil redis"; !strings.Contains(err.Error(), want) {
 		t.Errorf("err=%q, want substring %q", err.Error(), want)
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

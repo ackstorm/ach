@@ -26,6 +26,7 @@
 package contentservice
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -145,20 +146,29 @@ func (d Deps) serve(kind string) http.HandlerFunc {
 			d.Logger.Warn("content stream interrupted",
 				"kind", kind, "name", name, "bytes_written", n, "err", copyErr)
 		}
-		if d.AuditLog != nil {
-			audit.EmitAudit(ctx, d.AuditLog, audit.Event{
-				Action:    audit.ActionContentGet,
-				Outcome:   audit.OutcomeForwarded,
-				Actor:     actorFromInfo(row.KeyInfo),
-				RequestID: middleware.RequestIDFromCtx(ctx),
-				KeyID:     keyIDFromInfo(row.KeyInfo),
-				Target:    &audit.Target{Kind: kind, Name: name},
-			})
-		}
+		d.emitAudit(ctx, kind, name, audit.OutcomeForwarded, row.KeyInfo)
 		if d.Metrics != nil {
 			d.Metrics.IncRequest(kind, audit.OutcomeForwarded)
 			d.Metrics.AddBytesServed(kind, n)
 			d.Metrics.ObserveRequestDuration(kind, time.Since(start).Seconds())
 		}
 	}
+}
+
+// emitAudit emits a content.get audit event with the shared field set.
+// Both the forwarded-success path (serve) and the denial path
+// (writeError) call it so an audit-schema change is single-site. info
+// may be nil on gate-1 denials (actorFromInfo/keyIDFromInfo nil-tolerant).
+func (d Deps) emitAudit(ctx context.Context, kind, name, outcome string, info *keystore.KeyInfo) {
+	if d.AuditLog == nil {
+		return
+	}
+	audit.EmitAudit(ctx, d.AuditLog, audit.Event{
+		Action:    audit.ActionContentGet,
+		Outcome:   outcome,
+		Actor:     actorFromInfo(info),
+		RequestID: middleware.RequestIDFromCtx(ctx),
+		KeyID:     keyIDFromInfo(info),
+		Target:    &audit.Target{Kind: kind, Name: name},
+	})
 }
