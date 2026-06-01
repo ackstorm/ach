@@ -134,6 +134,9 @@ clean-docker: ## Reclaim docker disk: prune ALL build cache + DANGLING images on
 	docker image prune -f
 	@echo "Reclaimed build cache + dangling images. Kind cluster, devtools/ach/kind images, and volumes preserved."
 
+.PHONY: clear
+clear: clean-cache clean-docker ## Reclaim BOTH ./.gocache and docker disk (build cache + dangling images). Host-only; clean-cache + clean-docker combined.
+
 ##@ Development
 
 # NOTE: paths is scoped to ./api/... and ./internal/... (NOT the kubebuilder
