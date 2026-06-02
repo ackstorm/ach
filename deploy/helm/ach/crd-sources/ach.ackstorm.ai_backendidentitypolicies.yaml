@@ -92,7 +92,7 @@ spec:
                     description: |-
                       Name is the bare route segment the Forwarder sees as <name> in
                       /mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules
-                      (≤253 chars, [a-z0-9]([-a-z0-9.]*[a-z0-9])?). Pattern enforced
+                      (≤253 chars, `[a-z0-9]([-a-z0-9.]*[a-z0-9])?`). Pattern enforced
                       per CRD-08 / Hub §9.3.
                     maxLength: 253
                     minLength: 1
