@@ -1362,7 +1362,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 		abs := e.Target
 		if !filepath.IsAbs(abs) {
 			base := achDir
-			if te.IsAdapter {
+			if te.ResolveAgainstToolRoot {
 				base = toolRoot
 			}
 			abs = filepath.Join(base, e.Target)
@@ -1629,17 +1629,33 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 	}
 }
 
-// taggedEntry preserves bucket provenance for Sync — Adapter.Files resolve
-// against toolRoot (the tool's native config root); the four content buckets
-// resolve against achDir. Lost when state.WalkEntries flattens.
+// taggedEntry preserves bucket provenance for Sync — entries whose projected
+// files live under toolRoot (the tool's native config root) carry
+// ResolveAgainstToolRoot=true; entries whose bytes live under achDir (ACH's
+// private .ach/ cache) carry false. Lost when state.WalkEntries flattens.
+//
+// Both Adapter.Files AND Plugins resolve against toolRoot: projectPlugins
+// publishes each projected plugin FileWrite under toolRoot (the adapter-native
+// resource dirs — .claude/agents/…, .pi/agent/skills/…, etc., see publishFile
+// call in projectPlugins), recording a toolRoot-RELATIVE Target. Prompts and
+// Artifacts are extracted into the achDir content cache (ExtractContent's base
+// is achDir) and are NOT projected to toolRoot, so they resolve against achDir.
+// Resolving Plugins against achDir (the pre-fix behavior) made uninstall/--sync
+// compute <achDir>/<target> — a path that never exists — so os.Remove was a
+// silent no-op and the projected plugin files survived uninstall (VER-02).
 type taggedEntry struct {
-	Entry     state.FileEntry
-	IsAdapter bool
+	Entry state.FileEntry
+	// ResolveAgainstToolRoot selects toolRoot (vs achDir) as the base when the
+	// FileEntry.Target is workspace-relative. True for Adapter.Files and
+	// Plugins (both published under toolRoot); false for the achDir-cached
+	// content buckets (Prompts / Artifacts / RuntimeFiles).
+	ResolveAgainstToolRoot bool
 }
 
 // walkEntriesTagged is state.WalkEntries with provenance retained so Sync can pick
-// the correct base path per bucket (F-02 / CR-02 follow-up). Adapter entries
-// flow through with IsAdapter=true; the four content buckets with false.
+// the correct base path per bucket (F-02 / CR-02 follow-up). Adapter.Files and
+// Plugins flow through with ResolveAgainstToolRoot=true (both live under
+// toolRoot); the remaining achDir-cached content buckets with false.
 func walkEntriesTagged(f *state.File) []taggedEntry {
 	if f == nil {
 		return nil
@@ -1651,7 +1667,9 @@ func walkEntriesTagged(f *state.File) []taggedEntry {
 		out = append(out, taggedEntry{Entry: e})
 	}
 	for _, e := range f.Plugins {
-		out = append(out, taggedEntry{Entry: e})
+		// Projected plugin resources are published under toolRoot (native
+		// resource dirs), so their deletion path must resolve there too.
+		out = append(out, taggedEntry{Entry: e, ResolveAgainstToolRoot: true})
 	}
 	for _, e := range f.Artifacts {
 		out = append(out, taggedEntry{Entry: e})
@@ -1660,7 +1678,7 @@ func walkEntriesTagged(f *state.File) []taggedEntry {
 		out = append(out, taggedEntry{Entry: e})
 	}
 	for _, e := range f.Adapter.Files {
-		out = append(out, taggedEntry{Entry: e, IsAdapter: true})
+		out = append(out, taggedEntry{Entry: e, ResolveAgainstToolRoot: true})
 	}
 	return out
 }
