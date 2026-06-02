@@ -68,7 +68,7 @@ func (a *Adapter) Aliases() []string { return []string{"pi", "pi-mono"} }
 //   - .pi/ directory at root
 //   - .pi/agent/ directory
 //   - .pi/mcp.json file
-//   - $HOME/.pi (global-mode hint, checked independently of root)
+//   - $HOME/.pi/mcp.json (global-mode hint, checked independently of root)
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	signals := 0
 	reasons := make([]string, 0, 4)
@@ -85,13 +85,18 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	check(".pi/agent", "found .pi/agent/ directory")
 	check(".pi/mcp.json", "found .pi/mcp.json")
 
-	// Global-mode hint: $HOME/.pi. Checked independently of `root` (mirrors
-	// gemini's global-settings probe).
+	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`
+	// (mirrors gemini's $HOME/.gemini/settings.json global-settings probe).
+	// A specific file — NOT the bare $HOME/.pi directory (WR-03): a populated
+	// global config is a far stronger signal than the mere existence of a
+	// scratch ~/.pi dir, so an unrelated cwd no longer trips a spurious
+	// global-only match that could turn a clean single-match into a multi-
+	// match (exit 1) for a totally different project.
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		full := filepath.Join(home, ".pi")
+		full := filepath.Join(home, ".pi", "mcp.json")
 		if _, err := os.Stat(full); err == nil {
 			signals++
-			reasons = append(reasons, "found ~/.pi (global mode)")
+			reasons = append(reasons, "found ~/.pi/mcp.json (global mode)")
 		}
 	}
 
