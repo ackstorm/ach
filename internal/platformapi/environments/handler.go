@@ -243,7 +243,7 @@ func GetHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.AuthorizedTeams, teams) {
+			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
 				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
 					"caller is not a member of any authorized team", reqID)
 				return
@@ -252,28 +252,4 @@ func GetHandler(deps Deps) http.HandlerFunc {
 
 		render.JSON(w, http.StatusOK, store.RowToView(*env))
 	}
-}
-
-// hasIntersect reports whether the two slices share at least one element.
-// O(len(a) + len(b)) via a hash-set on the smaller side; expected slice
-// sizes are single-digit so the constant factors matter little.
-//
-// Empty slice in either side short-circuits to false — an Environment with
-// no authorizedTeams is unreachable to non-admin callers (the CRD enforces
-// MinItems=1 so this branch is mostly defensive), and a caller with no team
-// memberships sees nothing.
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }

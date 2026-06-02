@@ -275,7 +275,7 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, st, oc, msg, reqID)
 			return
 		}
-		if !hasIntersect(env.AuthorizedTeams, callerTeams) {
+		if !achteams.HasIntersect(env.AuthorizedTeams, callerTeams) {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionEkCreate,
 				Outcome:   audit.OutcomeUnauthorizedTeam,
@@ -527,25 +527,6 @@ func classifyInsertError(err error) insertErrClass {
 		return insertErrEkidCollision
 	}
 	return insertErrOther
-}
-
-// hasIntersect reports whether the two string slices share at least one
-// element. Used for the §8.2 step-4 authorizedTeams ∩ callerTeams check.
-// Empty slice in either argument short-circuits to false.
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // --------------------------------------------------------------------------

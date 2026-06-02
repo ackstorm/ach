@@ -231,7 +231,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.AuthorizedTeams, teams) {
+			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
 				if deps.Audit != nil {
 					audit.EmitAudit(ctx, deps.Audit, audit.Event{
 						Action:    audit.ActionHydrate,
@@ -367,24 +367,4 @@ func Mount(deps Deps) func(chi.Router) {
 	return func(r chi.Router) {
 		r.Post("/", HydrateHandler(deps))
 	}
-}
-
-// hasIntersect reports whether the two slices share at least one element.
-// Mirrors the helper in environments.handler.go; duplicated rather than
-// shared to keep package boundaries clean (each handler package is
-// self-contained beyond the explicit Deps + render + audit imports).
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }

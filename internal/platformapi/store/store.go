@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/ackstorm/ach/internal/db"
+	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
 )
 
 // ConditionTypeAccessGroupSynced is the Hub §6.6 condition type name the
@@ -167,31 +168,9 @@ func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []st
 	}
 	out := make([]db.EnvironmentRow, 0, len(rows))
 	for _, row := range rows {
-		if isAdmin || hasIntersect(row.AuthorizedTeams, callerTeams) {
+		if isAdmin || achteams.HasIntersect(row.AuthorizedTeams, callerTeams) {
 			out = append(out, row)
 		}
 	}
 	return out, nil
-}
-
-// hasIntersect reports whether the two string slices share at least one
-// element. Used for the authorized_teams ∩ callerTeams check in
-// ListAuthorizedEnvironments. Empty slice in either argument short-circuits
-// to false — an Environment with no authorized_teams entries is unreachable
-// to non-admin callers, and a caller with no Team membership sees nothing
-// (admins bypass this helper entirely).
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }
