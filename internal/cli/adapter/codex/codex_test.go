@@ -987,3 +987,117 @@ func TestCodexMCPSurgery_KeysAndIdempotent(t *testing.T) {
 		t.Errorf("not byte-identical (FMT-05):\nfirst:  %q\nsecond: %q", out1, out2)
 	}
 }
+
+// ----------------------------------------------------------------------------
+// VER-01 conformance gap-fill (Phase 06): pin every literal codex rule from
+// OPENPACKAGE-MAPPING.md §codex 2a/2b in single greppable assertions so the
+// spec doc and the codexAgentTOML / codexMCPSurgery ports cannot drift apart.
+// These are the per-rule audit anchors the plan's <action> checklist requires;
+// they overlap intentionally with the FMT-01/FMT-02 cases above (audit, not
+// duplication) and cite the exact output keys the acceptance criteria greps for.
+// ----------------------------------------------------------------------------
+
+// TestCodexFieldLift_Conformance pins OPENPACKAGE-MAPPING.md §codex 2a in one
+// assertion: body→developer_instructions, the six-key whitelist lift, the
+// name-defaults-to-filename rule, and the $unset-frontmatter drop of every
+// non-whitelist key (tools/permissions/hooks/skills/disallowedTools/mcp_servers).
+func TestCodexFieldLift_Conformance(t *testing.T) {
+	// All whitelist keys present + every non-whitelist key present.
+	in := []byte("---\n" +
+		"name: cave\n" +
+		"description: d\n" +
+		"model: m\n" +
+		"model_reasoning_effort: high\n" +
+		"sandbox_mode: read-only\n" +
+		"tools:\n  - bash\n" +
+		"permissions:\n  bash: ask\n" +
+		"hooks: x\n" +
+		"skills: y\n" +
+		"disallowedTools:\n  - z\n" +
+		"mcp_servers:\n  evil:\n    url: https://attacker\n" +
+		"---\nbody text")
+	out, keys, err := codexAgentTOML("agents/cave.md", in)
+	if err != nil {
+		t.Fatalf("codexAgentTOML: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+	m := decodeTOML(t, out)
+
+	// body → developer_instructions (§codex 2a literal output key).
+	if m["developer_instructions"] != "body text" {
+		t.Errorf("developer_instructions = %v, want %q", m["developer_instructions"], "body text")
+	}
+	// Whitelist (exactly the named keys) lifted to top level.
+	for k, want := range map[string]any{
+		"name": "cave", "description": "d", "model": "m",
+		"model_reasoning_effort": "high", "sandbox_mode": "read-only",
+	} {
+		if m[k] != want {
+			t.Errorf("whitelist key %q = %v, want %v", k, m[k], want)
+		}
+	}
+	// $unset frontmatter: every non-whitelist key dropped.
+	for _, k := range []string{"tools", "permissions", "hooks", "skills", "disallowedTools", "mcp_servers"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("non-whitelist key %q must be dropped, got %v", k, m[k])
+		}
+	}
+	// The injected mcp_servers endpoint must not leak anywhere in the bytes.
+	if bytes.Contains(out, []byte("attacker")) {
+		t.Errorf("injected mcp_servers endpoint leaked into output: %q", out)
+	}
+}
+
+// TestCodexMCPSurgery_Conformance pins OPENPACKAGE-MAPPING.md §codex 2b in one
+// assertion citing every literal output key: bearer_token_env_var (NAME only),
+// env_http_headers (env-ref NAME extraction), http_headers (literal partition),
+// startup_timeout_sec (timeout rename), and the dropped original headers map.
+func TestCodexMCPSurgery_Conformance(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{` +
+		`"url":"https://x",` +
+		`"timeout":30,` +
+		`"headers":{` +
+		`"Authorization":"Bearer ${env:TOKEN}",` +
+		`"X-Env":"${env:BAR}",` +
+		`"X-Lit":"literal"` +
+		`}}}}`)
+	out, keys, err := codexMCPSurgery("mcp/mcp.json", in)
+	if err != nil {
+		t.Fatalf("codexMCPSurgery: %v", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp_servers.svc"}) {
+		t.Errorf("keys = %v, want [mcp_servers.svc]", keys)
+	}
+	m := decodeTOML(t, out)
+	svc := m["mcp_servers"].(map[string]any)["svc"].(map[string]any)
+
+	// bearer_token_env_var = NAME only (the secret VALUE is never read, T-03-04).
+	if svc["bearer_token_env_var"] != "TOKEN" {
+		t.Errorf("bearer_token_env_var = %v, want TOKEN", svc["bearer_token_env_var"])
+	}
+	if bytes.Contains(out, []byte("Bearer")) {
+		t.Errorf("literal Bearer header leaked into output: %q", out)
+	}
+	// env_http_headers: ${env:Y} value → NAME extraction.
+	env := svc["env_http_headers"].(map[string]any)
+	if env["X-Env"] != "BAR" {
+		t.Errorf("env_http_headers.X-Env = %v, want BAR", env["X-Env"])
+	}
+	// http_headers: literal value passes through.
+	lit := svc["http_headers"].(map[string]any)
+	if lit["X-Lit"] != "literal" {
+		t.Errorf("http_headers.X-Lit = %v, want literal", lit["X-Lit"])
+	}
+	// startup_timeout_sec: timeout renamed; original key + headers map dropped.
+	if _, ok := svc["startup_timeout_sec"]; !ok {
+		t.Errorf("startup_timeout_sec missing: %v", svc)
+	}
+	if _, ok := svc["timeout"]; ok {
+		t.Errorf("timeout must be renamed to startup_timeout_sec: %v", svc)
+	}
+	if _, ok := svc["headers"]; ok {
+		t.Errorf("original headers map must be dropped: %v", svc)
+	}
+}

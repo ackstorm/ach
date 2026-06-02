@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -443,6 +445,101 @@ func TestPimono_McpDeepKeys_Malformed(t *testing.T) {
 	if out != nil || keys != nil {
 		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
+}
+
+// TestPimono_GlobalOnly_Conformance pins pimono's global-only / passthrough
+// nature plus the D-33 .pi/mcp.json deep-merge keys (VER-01, Phase 06), against
+// OPENPACKAGE-MAPPING.md §pimono. It asserts, via the REAL route.Project engine:
+//
+//	(a) the two passthrough globs route verbatim to .pi/agent/prompts/ and
+//	    .pi/agent/skills/ as MergeReplace (file-owned, byte-identical);
+//	(b) the D-33 mcp/**/* → .pi/mcp.json rule is MergeDeep with mcpDeepKeys
+//	    enumerating the top-level mcpServers.<id> keys;
+//	(c) the drop set is EXACTLY {AGENTS.md, agents, rules} — mcp is NOT dropped
+//	    (D-33 routes it), and there is no root catch-all (D-36).
+func TestPimono_GlobalOnly_Conformance(t *testing.T) {
+	src := t.TempDir()
+	mustWrite := func(rel, body string) {
+		full := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("MkdirAll %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("WriteFile %q: %v", rel, err)
+		}
+	}
+	const cmdBody = "# grunt command\n"
+	const skillBody = "skill body\n"
+	mustWrite("commands/grunt.md", cmdBody)
+	mustWrite("skills/fire/skill.md", skillBody)
+	mustWrite("mcp/servers.json", `{"mcpServers":{"b":{"url":"https://b"},"a":{"url":"https://a"}}}`)
+	// Dropped-by-omission kinds (no rule): rules/, agents/, AGENTS.md.
+	mustWrite("rules/style.md", "rule\n")
+	mustWrite("agents/cave.md", "---\nname: cave\n---\nhi\n")
+	mustWrite("AGENTS.md", "agents prose\n")
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, dropped, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project: %v", err)
+	}
+
+	byPath := map[string]*adapter.FileWrite{}
+	for i := range fws {
+		byPath[filepath.ToSlash(fws[i].Path)] = &fws[i]
+	}
+
+	// (a) commands → .pi/agent/prompts/ verbatim MergeReplace.
+	cmd, ok := byPath[".pi/agent/prompts/grunt.md"]
+	if !ok {
+		t.Fatalf("no FileWrite for .pi/agent/prompts/grunt.md; got %v", keysOf(byPath))
+	}
+	if string(cmd.Content) != cmdBody {
+		t.Errorf("commands passthrough not byte-identical: got %q, want %q", cmd.Content, cmdBody)
+	}
+	if cmd.Merge != adapter.MergeReplace {
+		t.Errorf("commands Merge = %v, want MergeReplace", cmd.Merge)
+	}
+
+	// skills → .pi/agent/skills/ verbatim MergeReplace.
+	sk, ok := byPath[".pi/agent/skills/fire/skill.md"]
+	if !ok {
+		t.Fatalf("no FileWrite for .pi/agent/skills/fire/skill.md; got %v", keysOf(byPath))
+	}
+	if string(sk.Content) != skillBody {
+		t.Errorf("skills passthrough not byte-identical: got %q, want %q", sk.Content, skillBody)
+	}
+	if sk.Merge != adapter.MergeReplace {
+		t.Errorf("skills Merge = %v, want MergeReplace", sk.Merge)
+	}
+
+	// (b) D-33 mcp/**/* → .pi/mcp.json MergeDeep with enumerated mcpServers.<id> keys.
+	mcp, ok := byPath[".pi/mcp.json"]
+	if !ok {
+		t.Fatalf("no FileWrite for .pi/mcp.json; got %v", keysOf(byPath))
+	}
+	if mcp.Merge != adapter.MergeDeep {
+		t.Errorf("mcp Merge = %v, want MergeDeep", mcp.Merge)
+	}
+	if !reflect.DeepEqual(mcp.Keys, []string{"mcpServers.a", "mcpServers.b"}) {
+		t.Errorf("mcp Keys = %v, want sorted [mcpServers.a mcpServers.b]", mcp.Keys)
+	}
+
+	// (c) drop set EXACTLY {AGENTS.md, agents, rules} — mcp NOT dropped (D-33).
+	wantDropped := []string{"AGENTS.md", "agents", "rules"}
+	if !reflect.DeepEqual(dropped, wantDropped) {
+		t.Errorf("dropped = %v, want %v (mcp must NOT be dropped — D-33)", dropped, wantDropped)
+	}
+}
+
+// keysOf returns the sorted path keys of a FileWrite-by-path map for diagnostics.
+func keysOf(m map[string]*adapter.FileWrite) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestPimono_RegistersOnImport(t *testing.T) {
