@@ -2670,7 +2670,7 @@ condition is written.</p>
 </tr>
 <tr>
 <td><code>name</code> <em>string</em></td>
-<td>Name is the bare route segment the Forwarder sees as <name> in<br />/mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules<br />(≤253 chars, <a href="[-a-z0-9.]*[a-z0-9]">a-z0-9</a>?). Pattern enforced<br />per CRD-08 / Hub §9.3.</td>
+<td>Name is the bare route segment the Forwarder sees as <name> in<br />/mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules<br />(≤253 chars, <code>[a-z0-9]([-a-z0-9.]*[a-z0-9])?</code>). Pattern enforced<br />per CRD-08 / Hub §9.3.</td>
 <td></td>
 <td>MaxLength: 253 <br />MinLength: 1 <br />Pattern: <code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$</code> <br />Required: {} <br /></td>
 </tr>
@@ -2749,21 +2749,21 @@ or marketplace_plugins rows) and are served by the ACH Content Service.</p>
 <tbody>
 <tr>
 <td><code>prompts</code> <em>string array</em></td>
-<td>Prompts lists referenced Prompt names.</td>
+<td>Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 <tr>
 <td><code>plugins</code> <em>string array</em></td>
-<td>Plugins lists referenced Plugin (or marketplace plugin) names.</td>
+<td>Plugins lists referenced Plugin (or marketplace plugin) names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL).</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 <tr>
 <td><code>artifacts</code> <em>string array</em></td>
-<td>Artifacts lists referenced Artifact names.</td>
+<td>Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL).</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 </tbody>
 </table>
@@ -4183,21 +4183,21 @@ so a manifest omitting a sub-field still surfaces an empty slice.</p>
 <tbody>
 <tr>
 <td><code>models</code> <em>string array</em></td>
-<td>Models lists LiteLLM model names (model_name) included in this Environment.</td>
+<td>Models lists LiteLLM model names (model_name) included in this Environment.<br />Names are projected into LiteLLM API request bodies (not ACH URL routing),<br />so the looser deny-pattern admits provider-prefixed ("openai/gpt-4") and<br />tagged ("gpt-4o:latest") names while forbidding URL-injection metacharacters<br />? # % plus whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). Only Models uses the loose pattern; see MCPServers<br />and A2AAgents below for why those must use the strict (no-slash) pattern.</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 <tr>
 <td><code>mcpServers</code> <em>string array</em></td>
-<td>MCPServers lists LiteLLM MCP server names (server_name).</td>
+<td>MCPServers lists LiteLLM MCP server names (server_name).<br />Names are used as chi route parameters at the forwarder (/mcp/{name});<br />a slash-containing name would be admitted but always 403 (chi matches<br />raw "%2F"-encoded segment against the decoded DB value — never matches).<br />The strict deny-pattern therefore also forbids "/" and "\" in addition<br />to ? # % whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth).</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 <tr>
 <td><code>a2aAgents</code> <em>string array</em></td>
-<td>A2AAgents lists LiteLLM A2A agent names (agent_name).</td>
+<td>A2AAgents lists LiteLLM A2A agent names (agent_name).<br />Names are used as chi route parameters at the forwarder (/a2a/{name});<br />same routing constraint as MCPServers — slash-containing names always 403.<br />The strict deny-pattern forbids "/" and "\" in addition to ? # %<br />whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth).</td>
 <td>{  }</td>
-<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
 </tbody>
 </table>
