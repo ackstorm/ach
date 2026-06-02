@@ -817,6 +817,94 @@ func safeIdx(s []string, i int) string {
 	return s[i]
 }
 
+// ----------------------------------------------------------------------------
+// VER-01 conformance gap-fill (Phase 06): pin every literal opencode rule from
+// OPENPACKAGE-MAPPING.md §opencode 2a/2b in single greppable assertions so the
+// spec doc and the opencodeAgentTools / opencodeMCPRename ports cannot drift
+// apart. These overlap intentionally with the FMT-04/D-21 cases above (audit,
+// not duplication).
+// ----------------------------------------------------------------------------
+
+// TestOpencodeAgentTools_Conformance pins OPENPACKAGE-MAPPING.md §opencode 2a:
+// tools[] → {name:true} object; model passes through verbatim (NO rewrite);
+// claude-extras (skills/hooks/disallowedTools) preserved; output stays markdown.
+func TestOpencodeAgentTools_Conformance(t *testing.T) {
+	in := []byte("---\n" +
+		"tools:\n  - read\n  - write\n" +
+		"model: anthropic/claude\n" +
+		"permissions:\n  bash: ask\n" +
+		"skills:\n  - alpha\n" +
+		"hooks:\n  - preflight\n" +
+		"disallowedTools:\n  - delete\n" +
+		"---\nbody")
+	out, keys, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+	s := string(out)
+	// Output stays markdown+frontmatter (NOT JSON).
+	if !strings.HasPrefix(s, "---\n") {
+		t.Errorf("output does not open with a frontmatter fence:\n%s", s)
+	}
+	// tools[] → {name:true} object.
+	if !strings.Contains(s, `"read": true`) || !strings.Contains(s, `"write": true`) {
+		t.Errorf("tools array not converted to {name:true} object:\n%s", s)
+	}
+	if strings.Contains(s, "- read") || strings.Contains(s, "- write") {
+		t.Errorf("tools still emitted as a sequence:\n%s", s)
+	}
+	// model + permissions pass through as-is (NO provider/model rewrite).
+	if !strings.Contains(s, `model: "anthropic/claude"`) {
+		t.Errorf("model not preserved verbatim:\n%s", s)
+	}
+	if !strings.Contains(s, "permissions:") {
+		t.Errorf("permissions not preserved:\n%s", s)
+	}
+	// claude-extras preserved.
+	for _, k := range []string{"skills:", "hooks:", "disallowedTools:"} {
+		if !strings.Contains(s, k) {
+			t.Errorf("claude-extra key %q dropped:\n%s", k, s)
+		}
+	}
+}
+
+// TestOpencodeMCPRename_Conformance pins OPENPACKAGE-MAPPING.md §opencode 2b:
+// top-level mcpServers→mcp rename ONLY (output stays JSON), AND the explicit
+// NO-header-surgery contract — a "Bearer ${env:X}" header survives verbatim
+// under mcp (NOT lifted to bearer_token_env_var / env_http_headers like codex).
+func TestOpencodeMCPRename_Conformance(t *testing.T) {
+	in := []byte(`{"mcpServers":{"svc":{"type":"http","url":"https://svc",` +
+		`"headers":{"Authorization":"Bearer ${env:X}"}}}}`)
+	out, keys, err := opencodeMCPRename("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPRename: %v", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp.svc"}) {
+		t.Errorf("keys = %v, want [mcp.svc]", keys)
+	}
+	// Output is JSON with the top key renamed mcpServers→mcp.
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if _, ok := got["mcp"]; !ok {
+		t.Errorf("top key 'mcp' missing:\n%s", out)
+	}
+	if _, ok := got["mcpServers"]; ok {
+		t.Errorf("top key 'mcpServers' must be renamed away:\n%s", out)
+	}
+	// NO header surgery: the Bearer ${env:X} literal survives verbatim under mcp.
+	if !bytes.Contains(out, []byte(`Bearer ${env:X}`)) {
+		t.Errorf("Bearer ${env:X} literal not preserved verbatim (opencode does NOT do header surgery):\n%s", out)
+	}
+	if bytes.Contains(out, []byte("bearer_token_env_var")) || bytes.Contains(out, []byte("env_http_headers")) {
+		t.Errorf("codex-style header surgery leaked into opencode output:\n%s", out)
+	}
+}
+
 // TestCopyFile_SurfacesCloseError_OnDevFull asserts that copyFile
 // surfaces a close(2) ENOSPC when the destination is /dev/full. Per
 // 07-W5-05 + WR-02 (07-REVIEW.md): on Linux with buffered I/O,
