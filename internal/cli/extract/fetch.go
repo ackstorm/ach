@@ -4,11 +4,19 @@ package extract
 
 import (
 	"context"
-	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
+
+// contentPath builds the escaped Content Service path. Both segments are
+// PathEscaped (defense-in-depth: the server already escapes, but a name
+// carrying URL metacharacters must never bleed into the query/path here —
+// finding S2).
+func contentPath(kind ResourceKind, name string) string {
+	return "/content/" + url.PathEscape(string(kind)) + "/" + url.PathEscape(name)
+}
 
 // FetchContent issues an UNCONDITIONAL GET against the Content Service
 // for the supplied (kind, name) and returns the live *http.Response
@@ -47,6 +55,5 @@ func FetchContent(
 	kind ResourceKind,
 	name string,
 ) (*http.Response, error) {
-	return client.DoRaw(ctx, http.MethodGet,
-		fmt.Sprintf("/content/%s/%s", kind, name), nil)
+	return client.DoRaw(ctx, http.MethodGet, contentPath(kind, name), nil)
 }

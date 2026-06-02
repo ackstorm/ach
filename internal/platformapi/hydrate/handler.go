@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -310,13 +311,13 @@ func toRuntimeBlockFromRow(row *db.EnvironmentRow, baseURL string) RuntimeBlock 
 	for _, name := range row.RuntimeMCPServers {
 		out.MCPServers = append(out.MCPServers, RuntimeItem{
 			ID:       name,
-			Endpoint: baseURL + "/mcp/" + name,
+			Endpoint: baseURL + "/mcp/" + url.PathEscape(name),
 		})
 	}
 	for _, name := range row.RuntimeA2AAgents {
 		out.A2AAgents = append(out.A2AAgents, RuntimeItem{
 			ID:       name,
-			Endpoint: baseURL + "/a2a/" + name,
+			Endpoint: baseURL + "/a2a/" + url.PathEscape(name),
 		})
 	}
 	return out
@@ -340,21 +341,21 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 		out.Prompts = append(out.Prompts, ContextItem{
 			Name:        name,
 			ID:          name,
-			DownloadURL: baseURL + contentPrefix + "prompt/" + name,
+			DownloadURL: baseURL + contentPrefix + "prompt/" + url.PathEscape(name),
 		})
 	}
 	for _, name := range row.ContextPlugins {
 		out.Plugins = append(out.Plugins, ContextItem{
 			Name:        name,
 			ID:          name,
-			DownloadURL: baseURL + contentPrefix + "plugin/" + name,
+			DownloadURL: baseURL + contentPrefix + "plugin/" + url.PathEscape(name),
 		})
 	}
 	for _, name := range row.ContextArtifacts {
 		out.Artifacts = append(out.Artifacts, ContextItem{
 			Name:        name,
 			ID:          name,
-			DownloadURL: baseURL + contentPrefix + "artifact/" + name,
+			DownloadURL: baseURL + contentPrefix + "artifact/" + url.PathEscape(name),
 		})
 	}
 	return out

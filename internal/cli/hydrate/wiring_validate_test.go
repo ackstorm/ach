@@ -34,6 +34,10 @@ func TestValidateContentName(t *testing.T) {
 		{name: "valid_with_underscore", input: "demo_artifact", wantErr: false},
 		{name: "valid_with_digits", input: "plugin123", wantErr: false},
 		{name: "valid_archive_extension", input: "blob.tar.gz", wantErr: false},
+		{name: "url_metachar_question", input: "a?b", wantErr: true, errMatch: "url metacharacter"},
+		{name: "url_metachar_hash", input: "a#b", wantErr: true, errMatch: "url metacharacter"},
+		{name: "url_metachar_percent", input: "a%2e", wantErr: true, errMatch: "url metacharacter"},
+		{name: "control_char_newline", input: "a\nb", wantErr: true, errMatch: "control character"},
 	}
 
 	for _, tc := range cases {

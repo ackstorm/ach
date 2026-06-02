@@ -255,6 +255,14 @@ func validateContentName(name string) error {
 	if strings.ContainsAny(name, `/\`) {
 		return fmt.Errorf("content name: path separator in %q", name)
 	}
+	if strings.ContainsAny(name, "?#%") {
+		return fmt.Errorf("content name: url metacharacter in %q", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("content name: control character in %q", name)
+		}
+	}
 	if filepath.IsAbs(name) {
 		return fmt.Errorf("content name: absolute path %q", name)
 	}
