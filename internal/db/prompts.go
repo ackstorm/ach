@@ -72,43 +72,18 @@ const upsertPromptSQL = `
 `
 
 func UpsertPrompt(ctx context.Context, pool *pgxpool.Pool, row PromptRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPrompt(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertPromptTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPrompt(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertPromptTx(ctx, tx, row)
+	})
 }
 
-func upsertPromptTx(ctx context.Context, tx pgx.Tx, row PromptRow) error {
-	var ns string
-	err := tx.QueryRow(ctx, upsertPromptSQL,
+// UpsertPromptTx — see UpsertEnvironmentTx.
+func UpsertPromptTx(ctx context.Context, tx pgx.Tx, row PromptRow) error {
+	return upsertReturning(ctx, tx, upsertPromptSQL, "UpsertPrompt("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name, row.StorageLocation, row.ContentType,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	).Scan(&ns)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPrompt(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	)
 }
 
 // GetPromptByName reads the row keyed by (namespace, name). pgx.ErrNoRows
@@ -153,7 +128,8 @@ func SoftDeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	return nil
 }
 
-func softDeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+// SoftDeletePromptTx — see SoftDeleteEnvironmentTx.
+func SoftDeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err

@@ -24,7 +24,6 @@ package db
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -69,42 +68,17 @@ const upsertMarketplacePluginSQL = `
 `
 
 func UpsertMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, p MarketplacePlugin) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertMarketplacePlugin(%s/%s): begin: %w", p.MarketplaceName, p.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertMarketplacePluginTx(ctx, tx, p); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertMarketplacePlugin(%s/%s): commit: %w", p.MarketplaceName, p.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertMarketplacePluginTx(ctx, tx, p)
+	})
 }
 
-func upsertMarketplacePluginTx(ctx context.Context, tx pgx.Tx, p MarketplacePlugin) error {
-	var m string
-	err := tx.QueryRow(ctx, upsertMarketplacePluginSQL,
+// UpsertMarketplacePluginTx — see UpsertEnvironmentTx.
+func UpsertMarketplacePluginTx(ctx context.Context, tx pgx.Tx, p MarketplacePlugin) error {
+	return upsertReturning(ctx, tx, upsertMarketplacePluginSQL, "UpsertMarketplacePlugin("+p.MarketplaceName+"/"+p.Name+")",
 		p.MarketplaceName, p.Name, p.StorageLocation, p.UpstreamRev,
 		p.LastSuccessfulRefresh, p.NextRefreshAt, p.MaxStalenessSeconds,
-	).Scan(&m)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertMarketplacePlugin(%s/%s): %w", p.MarketplaceName, p.Name, err)
-	}
-	return nil
+	)
 }
 
 // ListMarketplacePlugins returns every row under marketplaceName. Returns
