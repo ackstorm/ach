@@ -77,43 +77,18 @@ const upsertArtifactSQL = `
 `
 
 func UpsertArtifact(ctx context.Context, pool *pgxpool.Pool, row ArtifactRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertArtifact(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertArtifactTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertArtifact(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertArtifactTx(ctx, tx, row)
+	})
 }
 
-func upsertArtifactTx(ctx context.Context, tx pgx.Tx, row ArtifactRow) error {
-	var ns string
-	err := tx.QueryRow(ctx, upsertArtifactSQL,
+// UpsertArtifactTx — see UpsertEnvironmentTx.
+func UpsertArtifactTx(ctx context.Context, tx pgx.Tx, row ArtifactRow) error {
+	return upsertReturning(ctx, tx, upsertArtifactSQL, "UpsertArtifact("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name, row.StorageLocation, row.Scope,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	).Scan(&ns)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertArtifact(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	)
 }
 
 // GetArtifactByName reads the row keyed by (namespace, name). pgx.ErrNoRows
@@ -158,7 +133,8 @@ func SoftDeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string
 	return nil
 }
 
-func softDeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+// SoftDeleteArtifactTx — see SoftDeleteEnvironmentTx.
+func SoftDeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err

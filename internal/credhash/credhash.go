@@ -5,7 +5,6 @@ package credhash
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 )
@@ -35,28 +34,4 @@ func Hash(pepper, plaintext []byte) (string, error) {
 	h := hmac.New(sha256.New, pepper)
 	h.Write(plaintext)
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// Equal performs a constant-time comparison of two hex-encoded digests.
-//
-// Both inputs are decoded with hex.DecodeString before the byte-level
-// comparison; either input failing to decode causes Equal to return false
-// without panicking (T-04-04 mitigation: malformed adversarial input must
-// not crash the process). The underlying byte comparison uses
-// crypto/subtle.ConstantTimeCompare so a partial-prefix-matching attack
-// cannot leak digest contents through response-time differences.
-//
-// Note: ConstantTimeCompare returns 0 (not constant-time) when its two
-// inputs have different lengths. The hex.DecodeString path means our two
-// inputs are always equal-length when both are well-formed 64-char hex
-// digests — the only length-mismatch path is one input being a malformed
-// shorter/longer hex string, which is itself a logic error in the caller
-// and not a timing-sensitive code path.
-func Equal(a, b string) bool {
-	ab, errA := hex.DecodeString(a)
-	bb, errB := hex.DecodeString(b)
-	if errA != nil || errB != nil {
-		return false
-	}
-	return subtle.ConstantTimeCompare(ab, bb) == 1
 }

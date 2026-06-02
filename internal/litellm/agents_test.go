@@ -11,69 +11,6 @@ import (
 	"testing"
 )
 
-// TestCreateAgentPath — POST /v1/agents.
-func TestCreateAgentPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"agent_id":"a1","agent_name":"x","agent_card_params":{}}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	_, err := c.CreateAgent(context.Background(), &AgentConfig{
-		AgentName:       "x",
-		AgentCardParams: map[string]any{"k": "v"},
-	})
-	if err != nil {
-		t.Fatalf("CreateAgent: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/v1/agents" {
-		t.Errorf("CreateAgent: want POST /v1/agents, got %+v", captured)
-	}
-}
-
-// TestUpdateAgentPath — PUT /v1/agents/{id} (NOT PATCH; §5.1 holds for
-// agents per spike Probe 7).
-func TestUpdateAgentPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"agent_id":"a1","agent_name":"x","agent_card_params":{}}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	_, err := c.UpdateAgent(context.Background(), "a1", &AgentConfig{
-		AgentName:       "x",
-		AgentCardParams: map[string]any{"k": "v"},
-	})
-	if err != nil {
-		t.Fatalf("UpdateAgent: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "PUT" || captured[0].Path != "/v1/agents/a1" {
-		t.Errorf("UpdateAgent: want PUT /v1/agents/a1, got %+v", captured)
-	}
-}
-
-// TestDeleteAgentPath — DELETE /v1/agents/{id}.
-func TestDeleteAgentPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	if err := c.DeleteAgent(context.Background(), "a-zzz"); err != nil {
-		t.Fatalf("DeleteAgent: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "DELETE" || captured[0].Path != "/v1/agents/a-zzz" {
-		t.Errorf("DeleteAgent: want DELETE /v1/agents/a-zzz, got %+v", captured)
-	}
-}
-
 // TestListAgentsLengthCheck — REL-05 on the bare-array list shape.
 func TestListAgentsLengthCheck(t *testing.T) {
 	cases := []struct {
@@ -142,12 +79,6 @@ func TestAgentsHelpers401Propagation(t *testing.T) {
 		}
 	}
 
-	_, err := c.CreateAgent(context.Background(), &AgentConfig{AgentName: "x", AgentCardParams: map[string]any{}})
-	check("CreateAgent", err)
-	_, err = c.UpdateAgent(context.Background(), "x", &AgentConfig{AgentName: "x", AgentCardParams: map[string]any{}})
-	check("UpdateAgent", err)
-	err = c.DeleteAgent(context.Background(), "x")
-	check("DeleteAgent", err)
-	_, err = c.ListAgents(context.Background())
+	_, err := c.ListAgents(context.Background())
 	check("ListAgents", err)
 }

@@ -84,42 +84,17 @@ const upsertExternalRefSQL = `
 `
 
 func UpsertExternalRef(ctx context.Context, pool *pgxpool.Pool, r ExternalRef) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertExternalRef(%s/%s): begin: %w", r.Kind, r.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertExternalRefTx(ctx, tx, r); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertExternalRef(%s/%s): commit: %w", r.Kind, r.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertExternalRefTx(ctx, tx, r)
+	})
 }
 
-func upsertExternalRefTx(ctx context.Context, tx pgx.Tx, r ExternalRef) error {
-	var k string
-	err := tx.QueryRow(ctx, upsertExternalRefSQL,
+// UpsertExternalRefTx — see UpsertEnvironmentTx.
+func UpsertExternalRefTx(ctx context.Context, tx pgx.Tx, r ExternalRef) error {
+	return upsertReturning(ctx, tx, upsertExternalRefSQL, "UpsertExternalRef("+r.Kind+"/"+r.Name+")",
 		r.Kind, r.Name, r.StorageLocation, r.UpstreamRev,
 		r.LastSuccessfulRefresh, r.NextRefreshAt, r.MaxStalenessSeconds,
-	).Scan(&k)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertExternalRef(%s/%s): %w", r.Kind, r.Name, err)
-	}
-	return nil
+	)
 }
 
 // GetExternalRef reads the row keyed by (kind, name). On pgx.ErrNoRows it

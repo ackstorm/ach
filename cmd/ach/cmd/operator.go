@@ -281,7 +281,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	//     change and out of scope for Phase 5. The pre-declared
 	//     caller dimension means a future phase can add Inc hooks
 	//     without re-registering the metric.
-	operatorLitellmUnreachable := achmetrics.MustRegisterLitellmUnreachableOn(crmetrics.Registry)
+	operatorLitellmUnreachable := achmetrics.MustRegisterLitellmUnreachable(crmetrics.Registry)
 	operatorLitellmUnreachable.WithLabelValues("operator").Add(0) // expose family at 0 (§18.5)
 	operatorSetupLog.Info("operator: registered ACH-namespaced collectors on controller-runtime metrics registry",
 		"metric_count", 1, "metric", "litellm_unreachable_total")
