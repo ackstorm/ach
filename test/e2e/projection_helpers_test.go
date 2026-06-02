@@ -64,6 +64,7 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -435,4 +436,84 @@ func countRegularFilesUnder(root string) int {
 		return nil
 	})
 	return n
+}
+
+// snapshotProjectedFiles walks every adapter-native projection dir from the
+// descriptor under <output>/, reads each regular file, and returns a
+// workspace-relative-path → bytes map. Used by the VER-03 idempotence matrix
+// (projection_idempotence_test.go) to capture the projected tree after hydrate
+// run 1 and compare it byte-for-byte after run 2.
+//
+// Keys are forward-slashed and relative to output (so they are stable across
+// the two runs against the SAME workspace). The scope is intentionally limited
+// to the descriptor's nativeDirs — the demo Environment's caveman plugin only
+// projects the kinds the 06-02 descriptor enumerates, so a dir the adapter
+// never populates contributes nothing (and is not an error). Co-owned runtime
+// deep-merge files (descriptor.coOwnedFile) are NOT snapshotted here: they are
+// the RUNTIME leg's concern and carry the live x-ach-key bearer; the projection
+// idempotence proof gates the file-owned projected resources, whose byte-no-op
+// is what FMT-05 deterministic-encode guarantees.
+func snapshotProjectedFiles(t *testing.T, output string, d projectionDescriptor) map[string][]byte {
+	t.Helper()
+	snap := make(map[string][]byte)
+	for _, dir := range d.nativeDirs {
+		abs := filepath.Join(output, filepath.FromSlash(dir))
+		walkErr := filepath.Walk(abs, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil //nolint:nilerr // absent native dir → nothing to snapshot
+			}
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+			rel, relErr := filepath.Rel(output, p)
+			if relErr != nil {
+				return relErr
+			}
+			b, readErr := os.ReadFile(p) //nolint:gosec // p is under the test temp workspace
+			if readErr != nil {
+				return readErr
+			}
+			snap[filepath.ToSlash(rel)] = b
+			return nil
+		})
+		if walkErr != nil {
+			t.Fatalf("%s: snapshotProjectedFiles walk %s: %v", d.platformID, dir, walkErr)
+		}
+	}
+	return snap
+}
+
+// assertSnapshotsByteIdentical fails if the two projected-file snapshots are not
+// byte-for-byte identical. It catches three distinct churn signatures:
+//
+//	1. a file present in both whose bytes differ (a non-deterministic encode —
+//	   the load-bearing FMT-05 failure for the codex/opencode TOML/JSON
+//	   conversions);
+//	2. a file present in `before` but MISSING from `after` (the second hydrate
+//	   dropped a projected resource);
+//	3. a file present in `after` but ABSENT from `before` (the second hydrate
+//	   introduced spurious new output — churn in the other direction).
+//
+// All mismatches are reported (not fail-fast) so a single run surfaces the full
+// drift set. The maps are descriptor-scoped (see snapshotProjectedFiles), so an
+// empty `before` AND empty `after` is a benign no-projection match — the caller
+// guards against an unexpectedly-empty projection via assertProjectedNativeDirs.
+func assertSnapshotsByteIdentical(t *testing.T, before, after map[string][]byte) {
+	t.Helper()
+	for path, b := range before {
+		a, ok := after[path]
+		if !ok {
+			t.Errorf("re-hydrate dropped projected file %q (present after run 1, missing after run 2)", path)
+			continue
+		}
+		if !bytes.Equal(a, b) {
+			t.Errorf("re-hydrate changed projected file %q bytes (FMT-05 non-deterministic encode?):\n"+
+				"  run1=%q\n  run2=%q", path, b, a)
+		}
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			t.Errorf("re-hydrate introduced spurious projected file %q (absent after run 1, present after run 2)", path)
+		}
+	}
 }
