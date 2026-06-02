@@ -48,7 +48,7 @@ work happens when you debug it.
 
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
-| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
+| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
 | **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-commit`/`pre-push`/`verify`, `e2e-full`/`e2e-keep` (orchestrate context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
@@ -144,7 +144,8 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 |--------|-----|-------------|
 | `build-all` | A | Build both binaries (ach services + ach-cli). |
 | `build-server` | A | Build `bin/ach` (operator/platform-api/forwarder/content-service/migrate). |
-| `build-cli` | A | Build `bin/ach-cli` (user CLI). |
+| `build-cli` | A | Build `bin/ach-cli` (user CLI; **container glibc — NOT host-runnable**). |
+| `build-cli-host` | A | Build `bin/ach-cli-host` (static, `CGO_ENABLED=0`; runs on the host outside the devtools container — use for host hydrate/login testing). |
 | `build-image` | B | Build the ach services container image (`IMG=...`). |
 | `build-image-mock` | B | Build `ach-mock:e2e` (LiteLLM-shaped mock). |
 | `build-image-mcp-echo` | B | Build `ach-mcp-echo:e2e` (JWT-verifying MCP backend, issue #35). |

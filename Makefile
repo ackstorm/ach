@@ -378,10 +378,16 @@ _build-server: gen-manifests gen-code fmt vet
 	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" -o bin/ach ./cmd/ach
 
 .PHONY: build-cli
-build-cli: ## Build bin/ach-cli (user CLI).
+build-cli: ## Build bin/ach-cli (user CLI; container glibc — NOT host-runnable, use build-cli-host for that).
 	$(call container_target,_build-cli)
 _build-cli:
 	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" -o bin/ach-cli ./cmd/ach-cli
+
+.PHONY: build-cli-host
+build-cli-host: ## Build bin/ach-cli-host (static, CGO off — runs on the host outside the devtools container).
+	$(call container_target,_build-cli-host)
+_build-cli-host:
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=$(VERSION)" -o bin/ach-cli-host ./cmd/ach-cli
 
 .PHONY: build-e2e
 build-e2e: ## Build ach + ach-cli binaries with -tags=e2e (required for TestPhase7CLIEngine/sc2_commit_sequence_sigkill per 07-W5-04 WR-01)
