@@ -150,9 +150,15 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	// (b) Resolve scope exactly as commit.go:newCommit.
 	workspaceCwd := in.output
 	if workspaceCwd == "" && !in.global {
-		if wd, err := os.Getwd(); err == nil {
-			workspaceCwd = wd
+		wd, err := os.Getwd()
+		if err != nil {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("resolve working directory: %v", err),
+				Wrapped: err,
+			}
 		}
+		workspaceCwd = wd
 	}
 	statePath, err := state.ResolvePath(workspaceCwd, in.environment, in.global)
 	if err != nil {
@@ -203,6 +209,11 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	stats, err := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{
 		Force:  in.force,
 		Stderr: cmd.ErrOrStderr(),
+		// CR-01: under --dry-run the engine must classify only and
+		// mutate nothing. SyncOptions.DryRun gates every os.Remove /
+		// WriteAtomic / dir-prune inside Sync; the !in.dryRun guard
+		// below covers only the state.json write.
+		DryRun: in.dryRun,
 	})
 	if err != nil {
 		return &exit.CodedError{

@@ -14,10 +14,13 @@ import "github.com/ackstorm/ach/internal/cli/state"
 // verbatim and leave bucket X empty. The returned File is therefore the
 // scope-filtered SURVIVOR set, not the removal set.
 //
-// Scope semantics mirror the hydrate orchestrator's context/runtime
-// split seam (commit.go:636-637):
+// Scope semantics derive from the hydrate orchestrator's context/runtime
+// split seam (commit.go:636-637), but INVERTED: this is the survivor set,
+// so includeContext here means "context survives", which is the opposite
+// of the forward orchestrator's "context is (re)hydrated" sense. The
+// implemented derivation is:
 //
-//   - includeContext := !onlyRuntime
+//   - includeContext := onlyRuntime          (context survives only when removing runtime)
 //   - removeRuntime  := onlyRuntime || includeRuntime
 //
 // where context buckets are Prompts/Plugins/Artifacts and runtime is

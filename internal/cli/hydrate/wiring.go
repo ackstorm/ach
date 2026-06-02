@@ -1284,6 +1284,12 @@ var genericMarkerRE = regexp.MustCompile(`(?s)<!-- ach:begin -->.*?<!-- ach:end 
 type SyncOptions struct {
 	Force  bool
 	Stderr io.Writer
+	// DryRun classifies every entry (drift-wins, marker/extension
+	// support, doc-empty detection) so SyncStats reflects what a real
+	// run WOULD do, but performs NO disk mutation — no os.Remove, no
+	// WriteAtomic, no empty-dir pruning. Defaults false; existing
+	// forward-teardown callers are unaffected.
+	DryRun bool
 }
 
 // SyncStats reports the per-call Sync outcome. Pruned counts entries
@@ -1384,8 +1390,11 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	}
 
 	// Walk parent dirs deepest-first; os.Remove honors ENOTEMPTY by
-	// returning an error which we silently swallow.
-	pruneEmptyDirs(parentDirs, achDir)
+	// returning an error which we silently swallow. Skipped under
+	// DryRun — a preview must never remove directories.
+	if !opts.DryRun {
+		pruneEmptyDirs(parentDirs, achDir)
+	}
 
 	return stats, nil
 }
@@ -1430,7 +1439,11 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	case mergeStrDeep:
 		return syncDeep(e, abs, opts)
 	case "", mergeStrReplace:
-		// Replace / unmerged → unlink.
+		// Replace / unmerged → unlink (would-prune). Preview: classify
+		// only, write nothing.
+		if opts.DryRun {
+			return false, nil
+		}
 		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, fmt.Errorf("sync remove %s: %w", abs, err)
 		}
@@ -1470,6 +1483,11 @@ func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error
 			"composite marker not found; refusing to inverse-merge")
 		return true, nil
 	}
+	// Marker confirmed present → this entry would-prune. Preview: stop
+	// before the rewrite.
+	if opts.DryRun {
+		return false, nil
+	}
 	updated := markerRE.ReplaceAll(body, nil)
 	// 0o644 — composite host memory files (CLAUDE.md/GEMINI.md) carry NO
 	// credential; the forward writeComposite path writes 0o644, so the
@@ -1495,9 +1513,9 @@ func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	ext := strings.ToLower(filepath.Ext(abs))
 	switch ext {
 	case extJSON:
-		return syncDeepDoc(e, abs, false)
+		return syncDeepDoc(e, abs, false, opts.DryRun)
 	case extTOML:
-		return syncDeepDoc(e, abs, true)
+		return syncDeepDoc(e, abs, true, opts.DryRun)
 	}
 	warnPreserved(opts.Stderr, abs,
 		fmt.Sprintf("unsupported merge=deep file extension %q; refusing to inverse-merge", ext))
@@ -1511,7 +1529,7 @@ func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 // the error messages identical to the prior per-format functions; the
 // JSON/TOML encoder settings are unchanged (encodeDoc reproduces them
 // byte-for-byte).
-func syncDeepDoc(e state.FileEntry, abs string, isTOML bool) (bool, error) {
+func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, error) {
 	format := "JSON"
 	if isTOML {
 		format = "TOML"
@@ -1526,6 +1544,12 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML bool) (bool, error) {
 	}
 	for _, k := range e.Keys {
 		removeDottedKey(root, k)
+	}
+	// Preview: the document was decoded and the inverse-merge resolved
+	// (both rewrite and whole-file delete count as pruned). Stop before
+	// any disk write.
+	if dryRun {
+		return false, nil
 	}
 	if len(root) == 0 {
 		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {

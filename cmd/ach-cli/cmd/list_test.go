@@ -173,7 +173,10 @@ func TestList_OutToBuffer(t *testing.T) {
 	cmd := newListCmd()
 	var outBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
-	cmd.SetArgs(nil)
+	// Empty slice, NOT nil: cobra falls back to os.Args[1:] when args is
+	// nil, which would leak go-test flags (-test.v, -test.run) into the
+	// list command's flag parser and fail with an unknown-flag error.
+	cmd.SetArgs([]string{})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("list: %v", err)
 	}

@@ -594,6 +594,94 @@ func TestSync_Nil_Prev(t *testing.T) {
 	}
 }
 
+// TestSync_DryRun_ClassifiesButWritesNothing is the CR-01 regression
+// guard: with SyncOptions.DryRun the engine must report the same
+// would-prune SyncStats a real run produces, yet leave every on-disk
+// file (replace-unlink, deep inverse-merge, composite block) byte-for-byte
+// unchanged and prune no parent directories.
+func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+
+	// (1) replace/unlink entry, nested so a dir-prune would fire on a real run.
+	replaceTarget := filepath.Join(achDir, "nested", "deep", "plain.txt")
+	replaceBody := "plain content"
+	if err := os.MkdirAll(filepath.Dir(replaceTarget), 0o755); err != nil {
+		t.Fatalf("mkdir replace: %v", err)
+	}
+	if err := os.WriteFile(replaceTarget, []byte(replaceBody), 0o644); err != nil {
+		t.Fatalf("seed replace: %v", err)
+	}
+
+	// (2) deep inverse-merge JSON entry.
+	deepTarget := filepath.Join(achDir, ".claude", ".mcp.json")
+	deepBody := `{"mcpServers":{"foo":{"url":"http://foo"},"bar":{"url":"http://bar"}}}`
+	if err := os.MkdirAll(filepath.Dir(deepTarget), 0o755); err != nil {
+		t.Fatalf("mkdir deep: %v", err)
+	}
+	if err := os.WriteFile(deepTarget, []byte(deepBody), 0o644); err != nil {
+		t.Fatalf("seed deep: %v", err)
+	}
+
+	// (3) composite block entry.
+	compTarget := filepath.Join(achDir, "PROJECT.md")
+	compBody := "<!-- ach:begin -->XXX<!-- ach:end -->\nY tail content\n"
+	if err := os.WriteFile(compTarget, []byte(compBody), 0o644); err != nil {
+		t.Fatalf("seed composite: %v", err)
+	}
+
+	prev := &state.File{
+		SchemaVersion: "2",
+		Environment:   "demo",
+		Artifacts: []state.FileEntry{
+			{Target: replaceTarget, Hash: hashOf(t, replaceBody)},
+		},
+		Adapter: state.AdapterSection{
+			ID: "claude-code",
+			Files: []state.FileEntry{
+				{Target: deepTarget, Hash: hashOf(t, deepBody), Merge: "deep", Keys: []string{"mcpServers.foo"}},
+				{Target: compTarget, Hash: hashOf(t, compBody), Merge: "composite"},
+			},
+		},
+	}
+	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+
+	var stderr bytes.Buffer
+	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{DryRun: true, Stderr: &stderr})
+	if err != nil {
+		t.Fatalf("Sync(DryRun): %v", err)
+	}
+
+	// Stats reflect the would-prune outcome — all three classify as pruned.
+	if stats.Pruned != 3 {
+		t.Errorf("Pruned = %d; want 3 (dry-run must still classify)", stats.Pruned)
+	}
+	if stats.Preserved != 0 {
+		t.Errorf("Preserved = %d; want 0", stats.Preserved)
+	}
+
+	// Every file survives byte-for-byte; no dir pruned.
+	for _, tc := range []struct {
+		name, path, want string
+	}{
+		{"replace", replaceTarget, replaceBody},
+		{"deep", deepTarget, deepBody},
+		{"composite", compTarget, compBody},
+	} {
+		got, rerr := os.ReadFile(tc.path)
+		if rerr != nil {
+			t.Errorf("%s: file removed/unreadable under dry-run: %v", tc.name, rerr)
+			continue
+		}
+		if string(got) != tc.want {
+			t.Errorf("%s: file mutated under dry-run:\n got: %q\nwant: %q", tc.name, string(got), tc.want)
+		}
+	}
+	if _, derr := os.Stat(filepath.Join(achDir, "nested", "deep")); derr != nil {
+		t.Errorf("dry-run pruned a parent dir: %v", derr)
+	}
+}
+
 // hashOf returns the canonical xxh3 of s.
 func hashOf(t *testing.T, s string) string {
 	t.Helper()
