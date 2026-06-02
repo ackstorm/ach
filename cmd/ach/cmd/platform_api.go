@@ -222,7 +222,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 
 	oidcProvider, err := oidc.NewProvider(ctx, cfg.DexIssuerURL)
 	if err != nil {
-		return nil, fmt.Errorf("oidc.NewProvider: %w", err)
+		return out, fmt.Errorf("oidc.NewProvider: %w", err)
 	}
 	oauth2Cfg := &oauth2.Config{
 		ClientID:     cfg.DexClientID,
@@ -235,18 +235,18 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 
 	allowlist, err := admin.LoadAllowlist(cfg.AllowlistPath, logger)
 	if err != nil {
-		return nil, fmt.Errorf("admin.LoadAllowlist: %w", err)
+		return out, fmt.Errorf("admin.LoadAllowlist: %w", err)
 	}
 
 	platformStore := store.New(pool, cfg.Namespace, logr.Discard())
 
 	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
 	if err != nil {
-		return nil, fmt.Errorf("keystore.NewDBResolver: %w", err)
+		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
 	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper)
 	if err != nil {
-		return nil, fmt.Errorf("keystore.NewCachedResolver: %w", err)
+		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
 
 	out.server = platformapi.Deps{

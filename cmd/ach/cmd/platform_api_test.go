@@ -67,3 +67,13 @@ func TestValidatePlatformAPIConfig_RedisDB(t *testing.T) {
 		}
 	})
 }
+
+func TestPlatformAPIProcessDeps_CloseSafeOnPartialBuild(t *testing.T) {
+	// Regression for B1: when buildPlatformAPIDeps errors AFTER opening the
+	// pool/redis it must return the partial struct (not nil) so the caller's
+	// `if deps != nil { deps.close() }` actually releases the handles. close()
+	// itself must tolerate a partially-populated struct (some fields nil).
+	deps := &platformAPIProcessDeps{} // pool + redis nil, as in an early failure
+	deps.close()
+	deps.close() // idempotent
+}
