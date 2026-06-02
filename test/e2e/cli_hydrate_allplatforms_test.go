@@ -39,13 +39,11 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,7 +142,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	phase7DemoEnvironmentReady(t)
 
 	baseURL := phase7BaseURL()
-	pk := allPlatformsAcquirePk(t, baseURL)
+	pk := phase7AcquirePk(t) // env override else self-mint via SSO mock
 
 	for _, pe := range allPlatformExpects {
 		pe := pe
@@ -154,7 +152,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			output := t.TempDir()
 			xdg := phase7SeedXdgConfig(t, baseURL, pk)
 
-			stdout, stderr, err := runAchDiskConfig(t, xdg,
+			stdout, stderr, err := phase7RunAchCli(t, xdg,
 				"hydrate",
 				"--environment", phase7DemoEnvironment,
 				"--platform", pe.id,
@@ -188,14 +186,14 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	t.Run("ek_path_claude_code", func(t *testing.T) {
 		phase7SuiteGuard(t)
 		xdg := phase7SeedXdgConfig(t, baseURL, pk)
-		ek := createEkDiskConfig(t, xdg, "allplatforms-ek")
+		ek := phase7CreateEkKey(t, xdg, "allplatforms-ek")
 		if !strings.HasPrefix(ek, "ek_") {
 			t.Fatalf("ek_path: env-keys create returned %q (want ek_ prefix)", ek)
 		}
 		output := t.TempDir()
 		// --environment is now required for any engine run (D1: the engine
 		// namespaces state by environment), incl. the ek_ credential path.
-		stdout, stderr, err := runAchDiskConfig(t, xdg,
+		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"hydrate",
 			"--environment", phase7DemoEnvironment,
 			"--platform", "claude-code",
@@ -230,7 +228,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		phase7SuiteGuard(t)
 		output := t.TempDir()
 		xdg := phase7SeedXdgConfig(t, baseURL, pk)
-		stdout, stderr, err := runAchDiskConfig(t, xdg,
+		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"hydrate",
 			"--environment", phase7DemoEnvironment,
 			"--platform", "claude-code",
@@ -447,83 +445,6 @@ func assertRuntimeMirror(t *testing.T, output, cred string) {
 }
 
 // ---- helpers -------------------------------------------------------------
-
-// syntheticModeEnvVars are the env vars that flip the CLI into "synthetic
-// mode" (spec §3.3 / CLI-07): ACH_BASE_URL + a resolved credential. The e2e
-// harness (E2E_RUN_ENV) exports ACH_BASE_URL into the test process, which
-// would make the CLI ignore the seeded XDG disk config (and half-set-error
-// when no credential env is present). This suite authenticates via the
-// seeded config.yaml, so it strips these before exec.
-var syntheticModeEnvVars = []string{"ACH_BASE_URL", "ACH_API_KEY", "ACH_ENV_KEY"}
-
-// runAchDiskConfig exec's ./bin/ach-cli with XDG_CONFIG_HOME pointed at the
-// seeded config and the synthetic-mode env vars stripped, so credential
-// resolution falls through to the disk config (the pk_/ek_ under
-// deployments.demo). 60s bound; returns stdout, stderr, err.
-func runAchDiskConfig(t *testing.T, xdgHome string, args ...string) ([]byte, []byte, error) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, phase7BinaryPath, args...)
-	cmd.Env = append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
-
-// cleanEnv returns env with the synthetic-mode vars removed.
-func cleanEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, kv := range env {
-		drop := false
-		for _, k := range syntheticModeEnvVars {
-			if strings.HasPrefix(kv, k+"=") {
-				drop = true
-				break
-			}
-		}
-		if !drop {
-			out = append(out, kv)
-		}
-	}
-	return out
-}
-
-// createEkDiskConfig mints an ek_ via `env-keys create` against the seeded
-// disk config (synthetic-mode vars stripped) and returns its plaintext.
-func createEkDiskConfig(t *testing.T, xdgHome, label string) string {
-	t.Helper()
-	stdout, stderr, err := runAchDiskConfig(t, xdgHome,
-		"env-keys", "create",
-		"--environment", phase7DemoEnvironment,
-		"--name", label,
-	)
-	code, runErr := phase7StripExitErr(err)
-	if runErr != nil {
-		t.Fatalf("createEkDiskConfig: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
-	}
-	if code != 0 {
-		t.Fatalf("createEkDiskConfig: env-keys create exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
-	}
-	ek := phase7ParseEkPlaintext(stdout)
-	if ek == "" {
-		t.Fatalf("createEkDiskConfig: stdout missing ek_ plaintext\nstdout=%s\nstderr=%s", stdout, stderr)
-	}
-	return ek
-}
-
-// allPlatformsAcquirePk returns the pk_ to authenticate hydrate calls.
-// Honors ACH_E2E_PHASE7_PK as an override; otherwise mints a fresh pk_
-// through the Dex mockCallback SSO flow so the suite is self-sufficient.
-func allPlatformsAcquirePk(t *testing.T, baseURL string) string {
-	t.Helper()
-	if v := os.Getenv("ACH_E2E_PHASE7_PK"); v != "" {
-		return v
-	}
-	return ssoMintPK(t, baseURL)
-}
 
 // ssoMintPK drives the browser JSON SSO login flow end-to-end against the
 // gateway and returns the minted pk_ plaintext. It follows redirects

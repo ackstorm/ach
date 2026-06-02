@@ -345,8 +345,11 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	_ = phase7CreateEkKey(t, xdg, label)
 
 	output := phase7Workspace(t)
+	// --environment is required for any engine run (D1: state is namespaced by
+	// environment), including the ek_ credential path.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"hydrate",
+		"--environment", phase7DemoEnvironment,
 		"--env-key", label,
 		"--platform", platformID,
 		"--output", output,

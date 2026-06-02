@@ -211,25 +211,21 @@ func phase7BaseURL() string {
 }
 
 // phase7AcquirePk returns the pk_ the test should use to authenticate
-// CLI invocations. Sources:
-//   - ACH_E2E_PHASE7_PK env var (engineer-pending — operator mints
-//     it out-of-band via the Phase 3 SSO endpoints).
+// CLI invocations. Sources, in order:
+//   - ACH_E2E_PHASE7_PK env var (explicit override).
+//   - else SELF-MINT via the Dex mockCallback SSO flow against the kept
+//     cluster (ssoMintPK), so the Phase 7 engine suite runs unattended
+//     inside the e2e container instead of skipping on a missing pk_.
 //
-// When unset, the calling subtest skips with an engineer-pending
-// message pointing at the canonical acquisition path. Mirrors
-// phase6AcquirePk verbatim except for the env-var name.
+// The mint is the same Go port of references/local-testing-gateway.md §3
+// used by TestPhase7AllPlatformsProjection. Standard kind+Helm fixture only
+// (the mock connector returns the static kilgore@kilgore.trout user).
 func phase7AcquirePk(t *testing.T) string {
 	t.Helper()
 	if v := os.Getenv("ACH_E2E_PHASE7_PK"); v != "" {
 		return v
 	}
-	t.Skipf(
-		"phase7AcquirePk: ACH_E2E_PHASE7_PK unset. Acquire a real pk_ via " +
-			"the Phase 3 SSO endpoints (POST /platform/auth/login → " +
-			"/sso/callback) against the kept cluster, then re-export. " +
-			"Engineer-pending verification debt — mirror of phase6AcquirePk.",
-	)
-	return ""
+	return ssoMintPK(t, phase7BaseURL())
 }
 
 // phase7SeedXdgConfig writes a synthetic ~/.config/ach/config.yaml under
@@ -407,7 +403,11 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, phase7BinaryPath, args...)
-	env := append(os.Environ(), "XDG_CONFIG_HOME="+xdgHome)
+	// Strip the synthetic-mode env vars the e2e harness exports (E2E_RUN_ENV
+	// sets ACH_BASE_URL): they would flip the CLI into synthetic mode and
+	// ignore the seeded XDG disk-config credential (half-set-erroring when no
+	// ACH_API_KEY is present). These tests authenticate via the seeded config.
+	env := append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome)
 	env = append(env, extraEnv...)
 	cmd.Env = env
 	var stdout, stderr bytes.Buffer
@@ -415,6 +415,31 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+// syntheticModeEnvVars are the env vars that flip the CLI into "synthetic
+// mode" (spec §3.3 / CLI-07): ACH_BASE_URL + a resolved credential. The e2e
+// harness (E2E_RUN_ENV) exports ACH_BASE_URL into the test process, so these
+// are stripped before exec'ing the CLI — the Phase 7 suite authenticates via
+// the seeded XDG disk config, not synthetic mode.
+var syntheticModeEnvVars = []string{"ACH_BASE_URL", "ACH_API_KEY", "ACH_ENV_KEY"}
+
+// cleanEnv returns env with the synthetic-mode vars removed.
+func cleanEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		drop := false
+		for _, k := range syntheticModeEnvVars {
+			if strings.HasPrefix(kv, k+"=") {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // phase7StripExitErr reduces an *exec.ExitError to its underlying exit
