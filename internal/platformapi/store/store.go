@@ -117,6 +117,16 @@ func (s *Store) EnvironmentAccessGroupSynced(ctx context.Context, name string) (
 	return decodeAccessGroupSynced(row.AccessGroupSyncedCondition), nil
 }
 
+// AccessGroupSyncedFromRow reports AccessGroupSynced=True for an already-
+// loaded Environment row, avoiding a second SELECT. Mirrors
+// EnvironmentAccessGroupSynced but takes the row the caller already holds.
+func (s *Store) AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool {
+	if row == nil {
+		return false
+	}
+	return decodeAccessGroupSynced(row.AccessGroupSyncedCondition)
+}
+
 // decodeAccessGroupSynced extracts the AccessGroupSynced=True predicate from
 // the access_group_synced_condition JSONB column. The writer's canonical
 // shape is a []metav1.Condition slice (mirrors the K8s status subresource
