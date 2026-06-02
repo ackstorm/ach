@@ -766,3 +766,59 @@ func TestMcpDeepKeys_Malformed(t *testing.T) {
 		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
 }
+
+// TestGemini_PassThrough_NoFieldRewrite_Conformance is the gemini pass-through
+// guard (VER-01, Phase 06). gemini-cli has NO OpenPackage reference; ACH's own
+// adapter is canonical (PROJECT.md) and treats agents as a verbatim MergeReplace
+// passthrough with NO field rewrite — same FMT-03-cut posture as claude. This
+// projects a Claude-vanilla agent markdown (model + tools STRING + permissions
+// block) through the REAL route.Project engine and asserts byte-identical output,
+// plus confirms `hooks` is the ONLY drop (OPENPACKAGE-MAPPING.md §gemini-cli).
+func TestGemini_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
+	src := t.TempDir()
+	agent := "---\n" +
+		"name: cave\n" +
+		"model: claude-sonnet-4\n" +
+		"tools: \"Read, Edit\"\n" +
+		"permissions:\n" +
+		"  edit: allow\n" +
+		"---\n" +
+		"agent body prose\n"
+	mustWrite := func(rel, body string) {
+		full := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("MkdirAll %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("WriteFile %q: %v", rel, err)
+		}
+	}
+	mustWrite("agents/cave.md", agent)
+	mustWrite("hooks/pre.sh", "#!/bin/sh\n")
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, dropped, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project: %v", err)
+	}
+
+	var agentFW *adapter.FileWrite
+	for i := range fws {
+		if filepath.ToSlash(fws[i].Path) == ".gemini/agents/cave.md" {
+			agentFW = &fws[i]
+		}
+	}
+	if agentFW == nil {
+		t.Fatalf("no FileWrite for .gemini/agents/cave.md; got %+v", fws)
+	}
+	if string(agentFW.Content) != agent {
+		t.Errorf("claude-vanilla agent was rewritten (gemini must be verbatim passthrough):\ngot:  %q\nwant: %q", agentFW.Content, agent)
+	}
+	if agentFW.Merge != adapter.MergeReplace {
+		t.Errorf("agent Merge = %v, want MergeReplace (file-owned, no transform)", agentFW.Merge)
+	}
+	// hooks is the ONLY drop for gemini-cli.
+	if len(dropped) != 1 || dropped[0] != "hooks" {
+		t.Errorf("dropped = %v, want exactly [\"hooks\"]", dropped)
+	}
+}

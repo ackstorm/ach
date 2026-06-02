@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
@@ -598,5 +599,68 @@ func TestMcpDeepKeys_Malformed(t *testing.T) {
 	}
 	if out != nil || keys != nil {
 		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
+	}
+}
+
+// TestClaudeCode_PassThrough_NoFieldRewrite_Conformance is the FMT-03-cut guard
+// (VER-01, Phase 06). FMT-03 was CUT 2026-06-01 (REQUIREMENTS.md): the canonical
+// plugin source is ALWAYS Claude-vanilla, so running OpenPackage's universal→claude
+// rewrite (model-provider regex, tools array→capitalized-comma-string, the
+// permissions→permissionMode 9-row ladder) would CORRUPT already-Claude input.
+// This test projects a Claude-vanilla agent markdown — carrying a `model:` value,
+// a `tools:` STRING (Claude's native comma-string form), and a `permissions` block
+// — through the REAL route.Project engine and asserts the emitted Content is
+// byte-identical to the source: NO model rewrite, NO tools transform, NO
+// permissionMode mapping fired (the claude `agents/**/*` rule is MergeReplace with
+// a nil Transform per OPENPACKAGE-MAPPING.md §claude-code: drops = NONE, pass-through).
+func TestClaudeCode_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
+	src := t.TempDir()
+	// A Claude-vanilla agent: model set, tools as a STRING (not an array),
+	// and a permissions block — exactly the fields FMT-03 would have rewritten.
+	agent := "---\n" +
+		"name: cave\n" +
+		"model: claude-sonnet-4\n" +
+		"tools: \"Read, Edit\"\n" +
+		"permissions:\n" +
+		"  edit: allow\n" +
+		"  bash: ask\n" +
+		"---\n" +
+		"agent body prose\n"
+	full := filepath.Join(src, "agents", "cave.md")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(full, []byte(agent), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	rules := (&Adapter{}).ProjectionRules()
+	fws, _, err := route.Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("route.Project: %v", err)
+	}
+
+	var agentFW *adapter.FileWrite
+	for i := range fws {
+		if filepath.ToSlash(fws[i].Path) == ".claude/agents/cave.md" {
+			agentFW = &fws[i]
+		}
+	}
+	if agentFW == nil {
+		t.Fatalf("no FileWrite for .claude/agents/cave.md; got %+v", fws)
+	}
+	// Byte-identical pass-through: FMT-03 cut means NO field rewrite at all.
+	if string(agentFW.Content) != agent {
+		t.Errorf("claude-vanilla agent was rewritten (FMT-03 must be CUT):\ngot:  %q\nwant: %q", agentFW.Content, agent)
+	}
+	if agentFW.Merge != adapter.MergeReplace {
+		t.Errorf("agent Merge = %v, want MergeReplace (file-owned, no transform)", agentFW.Merge)
+	}
+	// Negative assertions: none of the universal→claude rewrite artifacts appear.
+	if bytes.Contains(agentFW.Content, []byte("inherit")) {
+		t.Errorf("model rewrite to \"inherit\" fired — FMT-03 model pipeline must be cut")
+	}
+	if bytes.Contains(agentFW.Content, []byte("permissionMode")) {
+		t.Errorf("permissions→permissionMode ladder fired — FMT-03 must be cut")
 	}
 }
