@@ -253,7 +253,7 @@ _test-leak-soak: gen-manifests gen-code fmt vet setup-envtest
 qa-lint: ## golangci-lint full sweep.
 	$(call container_target,_qa-lint)
 _qa-lint: golangci-lint
-	$(GOLANGCI_LINT) run
+	$(GOLANGCI_LINT) run --timeout=10m
 
 .PHONY: qa-lint-fix
 qa-lint-fix: ## golangci-lint with --fix.
