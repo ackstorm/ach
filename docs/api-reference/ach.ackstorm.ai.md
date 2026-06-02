@@ -230,7 +230,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `kind` _string_ | Kind is the routed backend type. CEL-enforced enum. |  | Enum: [MCPServer A2AAgent] <br />Required: \{\} <br /> |
-| `name` _string_ | Name is the bare route segment the Forwarder sees as <name> in<br />/mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules<br />(≤253 chars, [a-z0-9]([-a-z0-9.]*[a-z0-9])?). Pattern enforced<br />per CRD-08 / Hub §9.3. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br />Required: \{\} <br /> |
+| `name` _string_ | Name is the bare route segment the Forwarder sees as <name> in<br />/mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules<br />(≤253 chars, `[a-z0-9]([-a-z0-9.]*[a-z0-9])?`). Pattern enforced<br />per CRD-08 / Hub §9.3. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br />Required: \{\} <br /> |
 
 
 #### BitbucketSource
