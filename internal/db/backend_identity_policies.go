@@ -111,6 +111,40 @@ func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 	return nil
 }
 
+// scanBIPRow scans one BIP row in the canonical 11-field order. The single-
+// row error contract (ErrNoRows / transient / wrap) stays with each caller —
+// this helper shares ONLY the Scan column order, which must match every
+// SELECT below.
+func scanBIPRow(row pgx.Row, r *BIPRow) error {
+	return row.Scan(
+		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
+		&r.ForwardIdentityJWT, &r.ObservedGeneration,
+		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
+	)
+}
+
+// scanBIPRows drains a multi-row BIP query into a slice, applying the
+// shared transient-guard + rows.Err classification. Returns a non-nil empty
+// slice on zero rows (preserving the original list contract).
+func scanBIPRows(rows pgx.Rows) ([]BIPRow, error) {
+	defer rows.Close()
+	out := []BIPRow{}
+	for rows.Next() {
+		var r BIPRow
+		if err := scanBIPRow(rows, &r); err != nil {
+			return nil, fmt.Errorf("db: scan BIP row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: iterate BIP rows: %w", err)
+	}
+	return out, nil
+}
+
 // GetBIPByName returns the row keyed by (Namespace, Name) or (nil, nil) on
 // absence.
 func GetBIPByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*BIPRow, error) {
@@ -122,11 +156,7 @@ func GetBIPByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*BI
 		 WHERE namespace = $1 AND name = $2
 	`
 	r := &BIPRow{}
-	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
-		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
-		&r.ForwardIdentityJWT, &r.ObservedGeneration,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
-	); err != nil {
+	if err := scanBIPRow(pool.QueryRow(ctx, sql, ns, name), r); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -160,26 +190,7 @@ func ListBIPsByTarget(ctx context.Context, pool *pgxpool.Pool, ns, targetKind, t
 		}
 		return nil, fmt.Errorf("db: ListBIPsByTarget(%s/%s/%s): %w", ns, targetKind, targetName, err)
 	}
-	defer rows.Close()
-	out := []BIPRow{}
-	for rows.Next() {
-		var r BIPRow
-		if err := rows.Scan(
-			&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
-			&r.ForwardIdentityJWT, &r.ObservedGeneration,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
-		); err != nil {
-			return nil, fmt.Errorf("db: ListBIPsByTarget(%s/%s/%s) scan: %w", ns, targetKind, targetName, err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListBIPsByTarget(%s/%s/%s) iterate: %w", ns, targetKind, targetName, err)
-	}
-	return out, nil
+	return scanBIPRows(rows)
 }
 
 // ListAllBIPs returns every live row in the namespace, ordered by name ASC.
@@ -200,26 +211,7 @@ func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, 
 		}
 		return nil, fmt.Errorf("db: ListAllBIPs(%s): %w", ns, err)
 	}
-	defer rows.Close()
-	out := []BIPRow{}
-	for rows.Next() {
-		var r BIPRow
-		if err := rows.Scan(
-			&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
-			&r.ForwardIdentityJWT, &r.ObservedGeneration,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
-		); err != nil {
-			return nil, fmt.Errorf("db: ListAllBIPs(%s) scan: %w", ns, err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListAllBIPs(%s) iterate: %w", ns, err)
-	}
-	return out, nil
+	return scanBIPRows(rows)
 }
 
 const softDeleteBIPSQL = `

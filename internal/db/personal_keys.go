@@ -218,32 +218,15 @@ func ListPersonalKeysByOwner(ctx context.Context, pool *pgxpool.Pool, ownerEmail
 		}
 		return nil, "", fmt.Errorf("db: ListPersonalKeysByOwner(%s): %w", ownerEmail, err)
 	}
-	defer rows.Close()
-
-	out := make([]PkKeyInfo, 0, limit)
-	for rows.Next() {
-		var r PkKeyInfo
-		if err := rows.Scan(
-			&r.KeyID, &r.OwnerEmail, &r.ExpiresAt, &r.LiteLLMUserID, &r.LiteLLMToken,
-			&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt,
-		); err != nil {
-			return nil, "", fmt.Errorf("db: ListPersonalKeysByOwner scan: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, "", err
-		}
-		return nil, "", fmt.Errorf("db: ListPersonalKeysByOwner iterate: %w", err)
-	}
-
-	// Compute nextCursor if we got the +1 "peek" row.
-	var nextCursor string
-	if len(out) > limit {
-		last := out[limit-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.KeyID)
-		out = out[:limit]
-	}
-	return out, nextCursor, nil
+	return paginate(rows, limit,
+		func(r pgx.Rows) (PkKeyInfo, error) {
+			var k PkKeyInfo
+			err := r.Scan(
+				&k.KeyID, &k.OwnerEmail, &k.ExpiresAt, &k.LiteLLMUserID, &k.LiteLLMToken,
+				&k.Status, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt,
+			)
+			return k, err
+		},
+		func(k PkKeyInfo) (time.Time, string) { return k.CreatedAt, k.KeyID },
+	)
 }

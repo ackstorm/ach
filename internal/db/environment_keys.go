@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -182,32 +183,16 @@ func listEnvironmentKeys(ctx context.Context, pool *pgxpool.Pool, ownerEmailFilt
 		}
 		return nil, "", fmt.Errorf("db: ListEnvironmentKeys: %w", err)
 	}
-	defer rows.Close()
-
-	out := make([]EkKeyInfo, 0, limit)
-	for rows.Next() {
-		var r EkKeyInfo
-		if err := rows.Scan(
-			&r.KeyID, &r.Environment, &r.OwnerEmail, &r.Name,
-			&r.LiteLLMUserID, &r.LiteLLMToken,
-			&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt,
-		); err != nil {
-			return nil, "", fmt.Errorf("db: ListEnvironmentKeys scan: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, "", err
-		}
-		return nil, "", fmt.Errorf("db: ListEnvironmentKeys iterate: %w", err)
-	}
-
-	var nextCursor string
-	if len(out) > limit {
-		last := out[limit-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.KeyID)
-		out = out[:limit]
-	}
-	return out, nextCursor, nil
+	return paginate(rows, limit,
+		func(r pgx.Rows) (EkKeyInfo, error) {
+			var k EkKeyInfo
+			err := r.Scan(
+				&k.KeyID, &k.Environment, &k.OwnerEmail, &k.Name,
+				&k.LiteLLMUserID, &k.LiteLLMToken,
+				&k.Status, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt,
+			)
+			return k, err
+		},
+		func(k EkKeyInfo) (time.Time, string) { return k.CreatedAt, k.KeyID },
+	)
 }
