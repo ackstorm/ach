@@ -1,0 +1,27 @@
+# FIXTURE: valid. Expected acceptance at admission.
+# Guards that the runtime element-level Pattern (S2 CRD validation) is NOT
+# too strict: real LiteLLM model names are provider-prefixed ("openai/gpt-4")
+# and/or tagged ("gpt-4o:latest"). The looser runtime deny-pattern admits
+# slash and colon (forbidding only ? # % and whitespace/control chars), so
+# these legitimate names must pass admission. See
+# api/ach/v1alpha1/environment_types.go.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: valid-runtime-provider-prefixed
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - "openai/gpt-4"
+      - "gpt-4o:latest"
+    mcpServers:
+      - "demo-mcp-jwt"
+    a2aAgents: []
+  context:
+    prompts:
+      - "claude-code-system-prompt"
+    plugins: []
+    artifacts: []

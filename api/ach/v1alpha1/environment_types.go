@@ -15,18 +15,28 @@ import (
 // so a manifest omitting a sub-field still surfaces an empty slice.
 type RuntimeBlock struct {
 	// Models lists LiteLLM model names (model_name) included in this Environment.
+	// Names are projected into LiteLLM API URLs (the access-group sync path);
+	// the looser runtime deny-pattern admits provider-prefixed ("openai/gpt-4")
+	// and tagged ("gpt-4o:latest") names while forbidding the URL-injection
+	// metacharacters ? # % plus whitespace and control chars (S2 defense-in-depth).
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
 	Models []string `json:"models,omitempty"`
 
 	// MCPServers lists LiteLLM MCP server names (server_name).
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
 	MCPServers []string `json:"mcpServers,omitempty"`
 
 	// A2AAgents lists LiteLLM A2A agent names (agent_name).
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
 	A2AAgents []string `json:"a2aAgents,omitempty"`
 }
 
@@ -34,19 +44,28 @@ type RuntimeBlock struct {
 // Names reference ACH-owned content objects (Prompt, Plugin, Artifact CRDs
 // or marketplace_plugins rows) and are served by the ACH Content Service.
 type ContextBlock struct {
-	// Prompts lists referenced Prompt names.
+	// Prompts lists referenced Prompt names. Context names map to content
+	// filenames served by the Content Service, so the stricter deny-pattern
+	// also forbids "/" and "\" (path-traversal) in addition to ? # %
+	// whitespace and control chars (S2 defense-in-depth).
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
 	Prompts []string `json:"prompts,omitempty"`
 
 	// Plugins lists referenced Plugin (or marketplace plugin) names.
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
 	Plugins []string `json:"plugins,omitempty"`
 
 	// Artifacts lists referenced Artifact names.
 	// +optional
 	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
 	Artifacts []string `json:"artifacts,omitempty"`
 }
 

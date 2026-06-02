@@ -1,0 +1,27 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Environment.spec.runtime.models element-level Pattern
+#   (S2 CRD validation). The runtime fields use the LOOSER deny pattern
+#   that still admits provider-prefixed ("openai/gpt-4") and tagged
+#   ("gpt-4o:latest") LiteLLM model names, but forbids the URL-injection
+#   metacharacters ? # % and whitespace/control chars.
+# Expected error substring: "models"
+#
+# "gpt-4?x=1" smuggles a query string into the LiteLLM access-group URL
+# path and is rejected by the items:Pattern marker.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: invalid-runtime-query
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - "gpt-4?x=1"
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

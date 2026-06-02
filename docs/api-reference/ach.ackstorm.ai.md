@@ -272,9 +272,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `prompts` _string array_ | Prompts lists referenced Prompt names. | \{  \} |  |
-| `plugins` _string array_ | Plugins lists referenced Plugin (or marketplace plugin) names. | \{  \} |  |
-| `artifacts` _string array_ | Artifacts lists referenced Artifact names. | \{  \} |  |
+| `prompts` _string array_ | Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the stricter deny-pattern<br />also forbids "/" and "\" (path-traversal) in addition to ? # %<br />whitespace and control chars (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f]+$ <br /> |
+| `plugins` _string array_ | Plugins lists referenced Plugin (or marketplace plugin) names. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f]+$ <br /> |
+| `artifacts` _string array_ | Artifacts lists referenced Artifact names. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f]+$ <br /> |
 
 
 #### Environment
@@ -946,9 +946,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `models` _string array_ | Models lists LiteLLM model names (model_name) included in this Environment. | \{  \} |  |
-| `mcpServers` _string array_ | MCPServers lists LiteLLM MCP server names (server_name). | \{  \} |  |
-| `a2aAgents` _string array_ | A2AAgents lists LiteLLM A2A agent names (agent_name). | \{  \} |  |
+| `models` _string array_ | Models lists LiteLLM model names (model_name) included in this Environment.<br />Names are projected into LiteLLM API URLs (the access-group sync path);<br />the looser runtime deny-pattern admits provider-prefixed ("openai/gpt-4")<br />and tagged ("gpt-4o:latest") names while forbidding the URL-injection<br />metacharacters ? # % plus whitespace and control chars (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f]+$ <br /> |
+| `mcpServers` _string array_ | MCPServers lists LiteLLM MCP server names (server_name). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f]+$ <br /> |
+| `a2aAgents` _string array_ | A2AAgents lists LiteLLM A2A agent names (agent_name). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f]+$ <br /> |
 
 
 #### S3Source

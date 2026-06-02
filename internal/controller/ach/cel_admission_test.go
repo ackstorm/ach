@@ -94,6 +94,17 @@ func TestCELAdmission(t *testing.T) {
 			kind:         "LiteLLMConnection",
 			resourceName: "default",
 		},
+		// S2 CRD validation — runtime element-level Pattern must NOT be too
+		// strict: provider-prefixed ("openai/gpt-4") and tagged
+		// ("gpt-4o:latest") LiteLLM model names are legitimate and must pass.
+		{
+			name:         "valid_env_runtime_provider_prefixed",
+			fixturePath:  "../../../test/fixtures/valid/environment_runtime_provider_prefixed.yaml",
+			shouldFail:   false,
+			apiVersion:   "ach.ackstorm.ai/v1alpha1",
+			kind:         "Environment",
+			resourceName: "valid-runtime-provider-prefixed",
+		},
 
 		// ─── Seven invalid fixtures (Plan 01-11 Task 1) ───
 		// errMustContain is matched case-insensitively against the API
@@ -147,6 +158,24 @@ func TestCELAdmission(t *testing.T) {
 			fixturePath:    "../../../test/fixtures/invalid/litellmconnection_non_default.yaml",
 			shouldFail:     true,
 			errMustContain: "default",
+		},
+		// S2 CRD validation — element-level Pattern on the content/runtime
+		// name fields (api/ach/v1alpha1/environment_types.go). Context names
+		// map to filenames, so the strict deny-pattern forbids "/" → a
+		// path-traversal name is rejected. Runtime names allow "/" + ":" but
+		// the looser deny-pattern still forbids "?#%"/whitespace/control, so
+		// a query-injection model name is rejected too.
+		{
+			name:           "invalid_env_context_path_traversal",
+			fixturePath:    "../../../test/fixtures/invalid/environment_context_path_traversal.yaml",
+			shouldFail:     true,
+			errMustContain: "prompts",
+		},
+		{
+			name:           "invalid_env_runtime_query_injection",
+			fixturePath:    "../../../test/fixtures/invalid/environment_runtime_query_injection.yaml",
+			shouldFail:     true,
+			errMustContain: "models",
 		},
 	}
 

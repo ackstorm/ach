@@ -79,6 +79,8 @@ spec:
                     default: []
                     description: Artifacts lists referenced Artifact names.
                     items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                   plugins:
@@ -86,12 +88,20 @@ spec:
                     description: Plugins lists referenced Plugin (or marketplace plugin)
                       names.
                     items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                   prompts:
                     default: []
-                    description: Prompts lists referenced Prompt names.
+                    description: |-
+                      Prompts lists referenced Prompt names. Context names map to content
+                      filenames served by the Content Service, so the stricter deny-pattern
+                      also forbids "/" and "\" (path-traversal) in addition to ? # %
+                      whitespace and control chars (S2 defense-in-depth).
                     items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                 type: object
@@ -104,19 +114,29 @@ spec:
                     default: []
                     description: A2AAgents lists LiteLLM A2A agent names (agent_name).
                     items:
+                      maxLength: 253
+                      pattern: ^[^?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                   mcpServers:
                     default: []
                     description: MCPServers lists LiteLLM MCP server names (server_name).
                     items:
+                      maxLength: 253
+                      pattern: ^[^?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                   models:
                     default: []
-                    description: Models lists LiteLLM model names (model_name) included
-                      in this Environment.
+                    description: |-
+                      Models lists LiteLLM model names (model_name) included in this Environment.
+                      Names are projected into LiteLLM API URLs (the access-group sync path);
+                      the looser runtime deny-pattern admits provider-prefixed ("openai/gpt-4")
+                      and tagged ("gpt-4o:latest") names while forbidding the URL-injection
+                      metacharacters ? # % plus whitespace and control chars (S2 defense-in-depth).
                     items:
+                      maxLength: 253
+                      pattern: ^[^?#%\s\x00-\x1f]+$
                       type: string
                     type: array
                 type: object
