@@ -486,13 +486,13 @@ func snapshotProjectedFiles(t *testing.T, output string, d projectionDescriptor)
 // assertSnapshotsByteIdentical fails if the two projected-file snapshots are not
 // byte-for-byte identical. It catches three distinct churn signatures:
 //
-//	1. a file present in both whose bytes differ (a non-deterministic encode —
-//	   the load-bearing FMT-05 failure for the codex/opencode TOML/JSON
-//	   conversions);
-//	2. a file present in `before` but MISSING from `after` (the second hydrate
-//	   dropped a projected resource);
-//	3. a file present in `after` but ABSENT from `before` (the second hydrate
-//	   introduced spurious new output — churn in the other direction).
+//  1. a file present in both whose bytes differ (a non-deterministic encode —
+//     the load-bearing FMT-05 failure for the codex/opencode TOML/JSON
+//     conversions);
+//  2. a file present in `before` but MISSING from `after` (the second hydrate
+//     dropped a projected resource);
+//  3. a file present in `after` but ABSENT from `before` (the second hydrate
+//     introduced spurious new output — churn in the other direction).
 //
 // All mismatches are reported (not fail-fast) so a single run surfaces the full
 // drift set. The maps are descriptor-scoped (see snapshotProjectedFiles), so an
