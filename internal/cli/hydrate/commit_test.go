@@ -673,6 +673,59 @@ func TestRun_InvokesExtractorPerDiffTarget(t *testing.T) {
 	}
 }
 
+// TestRun_ExtractSkipsRuntimeKinds asserts the extraction loop runs ONLY for
+// context kinds (prompt/plugin/artifact) and skips runtime kinds
+// (model/mcpServer/a2aAgent) under --include-runtime. Runtime entries carry an
+// {id, endpoint}, not a /content/{kind}/{name} tarball; feeding one to
+// ExtractContent derives an empty content name → "content name: empty" (the
+// historical --include-runtime crash). step6Diff still emits 4 diffTargets
+// here for scope symmetry, but only the 1 context prompt is extracted.
+func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.opts.IncludeRuntime = true
+
+	manifestFn := func() *manifest.Manifest {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime: &manifest.RuntimeBlock{
+				Models:     []manifest.ContentRef{{ID: "demo-model", Endpoint: "http://local/v1"}},
+				MCPServers: []manifest.ContentRef{{ID: "s1", Endpoint: "http://local/mcp/s1"}},
+				A2AAgents:  []manifest.ContentRef{{ID: "a1", Endpoint: "http://local/a2a/a1"}},
+			},
+			Context: &manifest.ContextBlock{
+				Prompts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+				},
+			},
+		}
+	}
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return manifestFn(), nil
+	}
+
+	// Precondition: under --include-runtime step6Diff emits 4 targets
+	// (1 context prompt + 3 runtime) — the scope contract is unchanged.
+	if got := len(c.step6Diff(manifestFn())); got != 4 {
+		t.Fatalf("precondition: step6Diff = %d targets, want 4 (1 context + 3 runtime)", got)
+	}
+
+	var extCalls, adCalls int
+	c.extractor = fakeExtractor{calls: &extCalls}
+	c.adapter = fakeAdapterDispatcher{calls: &adCalls, result: RenderResult{}}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil (runtime kinds must not be extracted)", err)
+	}
+	if extCalls != 1 {
+		t.Errorf("extractor calls = %d, want 1 (context prompt only; runtime kinds skipped)", extCalls)
+	}
+	if adCalls != 1 {
+		t.Errorf("adapter calls = %d, want 1 (RenderRuntime still projects mcp/a2a)", adCalls)
+	}
+}
+
 // TestRun_DryRun_SkipsExtractorAndAdapter asserts that --dry-run gates
 // every disk-touching call site introduced in 07-W5-01: extractor +
 // adapter MUST NOT be invoked. Result.FilesWritten stays at zero.

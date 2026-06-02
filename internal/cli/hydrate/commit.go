@@ -258,6 +258,18 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// so --dry-run remains a true read-only path.
 	if c.extractor != nil && !c.opts.DryRun {
 		for _, dt := range diffTargets {
+			// Runtime kinds (model / mcpServer / a2aAgent) are NOT extractable
+			// content: their ContentRef carries an {id, endpoint} (e.g. /v1,
+			// /mcp/<id>), not a /content/{kind}/{name} tarball. They are
+			// projected by the adapter's RenderRuntime leg (which reads
+			// m.Runtime directly, independent of diffTargets), never fetched +
+			// extracted. Feeding one to ExtractContent yields an empty content
+			// name → "content name: empty" (the --include-runtime crash). Skip
+			// non-context kinds here; step6Diff still emits them for scope
+			// symmetry, but extraction is a context-only leg.
+			if !dt.isExtractableContent() {
+				continue
+			}
 			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir, existingState)
 			if err != nil {
 				// adapter / extractor errors that already carry a
@@ -624,6 +636,20 @@ type diffTarget struct {
 	// next stage. The fields used depend on Kind: context Kinds use
 	// Ref.DownloadURL, runtime Kinds use Ref.Endpoint.
 	Ref manifest.ContentRef
+}
+
+// isExtractableContent reports whether dt is a context kind whose Ref points at
+// a /content/{kind}/{name} tarball the extractor can fetch+stage. Runtime kinds
+// (model / mcpServer / a2aAgent) carry an {id, endpoint} instead and are
+// projected by the adapter RenderRuntime leg, never extracted — sending one to
+// ExtractContent yields "content name: empty".
+func (dt diffTarget) isExtractableContent() bool {
+	switch dt.Kind {
+	case "prompt", "plugin", "artifact":
+		return true
+	default:
+		return false
+	}
 }
 
 // step6Diff — STATE-10 scope-aware iteration. Builds the slice of

@@ -215,6 +215,38 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Errorf("ek_path: runtime config missing ek_ credential in x-ach-key header")
 		}
 	})
+
+	// --include-runtime regression guard: runtime kinds (model/mcp/a2a) carry
+	// an {id,endpoint}, not extractable content. The engine previously fed them
+	// to ExtractContent and crashed with "extract content (model): content
+	// name: empty". The fix gates extraction to context kinds; this asserts
+	// --include-runtime exits 0 and still projects context + runtime config.
+	t.Run("include_runtime_no_crash", func(t *testing.T) {
+		phase7SuiteGuard(t)
+		output := t.TempDir()
+		xdg := phase7SeedXdgConfig(t, baseURL, pk)
+		stdout, stderr, err := runAchDiskConfig(t, xdg,
+			"hydrate",
+			"--environment", phase7DemoEnvironment,
+			"--platform", "claude-code",
+			"--include-runtime",
+			"--output", output,
+		)
+		code, runErr := phase7StripExitErr(err)
+		if runErr != nil {
+			t.Fatalf("include_runtime: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+		}
+		if code != 0 {
+			t.Fatalf("include_runtime: exit %d (want 0 — runtime kinds must not be extracted)\n"+
+				"stdout=%s\nstderr=%s", code, stdout, stderr)
+		}
+		if bytes.Contains(stderr, []byte("content name: empty")) {
+			t.Errorf("include_runtime: regression — runtime entry hit ExtractContent\nstderr=%s", stderr)
+		}
+		// Context projection + runtime config still land.
+		assertProjectedSkills(t, output, allPlatformExpects[0])
+		assertRuntimeConfig(t, output, allPlatformExpects[0], pk)
+	})
 }
 
 // assertRuntimeConfig validates the adapter's runtime-config file exists,
