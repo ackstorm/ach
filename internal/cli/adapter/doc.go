@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package adapter owns the closed-set 4-adapter contract per ADAPT-01
+// Package adapter owns the closed-set 5-adapter contract per ADAPT-01
 // (CLI spec §7) and the init-side-effect registry that the cobra
 // autodetection layer iterates.
 //
-// The four shipped adapters are:
+// The five shipped adapters are:
 //
 //   - claude-code (subpackage internal/cli/adapter/claudecode): the
 //     pass-through reference impl per CONTEXT.md D-05. Plugin canonical
@@ -26,6 +26,14 @@
 //   - opencode (subpackage internal/cli/adapter/opencode,
 //     plan 07-W3-04): platform-specific merge + plugin distribution
 //     per spec §7.4 opencode.
+//
+//   - pimono (subpackage internal/cli/adapter/pimono, Phase 5 D-33):
+//     the optional 5th target (Pi / pi-mono). RenderRuntime deep-merges
+//     Environment runtime MCP servers into .pi/mcp.json (MergeDeep) and
+//     a 3-row ProjectionRules table passes plugin commands/skills
+//     verbatim through 2 .pi/-prefixed globs. Silently drops
+//     {rules, agents, AGENTS.md} per the route.Project accumulate-once
+//     drop set.
 //
 // Boundary discipline (CONTEXT.md D-07 + D-09):
 //

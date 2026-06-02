@@ -137,7 +137,7 @@ func newHydrateCmd() *cobra.Command {
 The engine performs the full 14-step commit sequence under a workspace
 lock: state.json v2 reconciliation, drift detection, manifest fetch,
 safe tar extraction with bomb-defense caps, three-tier auto-claim
-collision cascade, adapter dispatch (4-platform closed set), atomic
+collision cascade, adapter dispatch (5-platform closed set), atomic
 state write.
 
 Scope filters (CLI spec §6.3 / STATE-10):
