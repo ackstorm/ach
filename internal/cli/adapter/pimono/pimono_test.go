@@ -106,9 +106,12 @@ func TestPimono_Detect_HighConfidence_AllSignals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, ".pi", "mcp.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	// Global signal: $HOME/.pi
+	// Global signal: $HOME/.pi/mcp.json (WR-03: specific file, not bare dir)
 	if err := os.MkdirAll(filepath.Join(fakeHome, ".pi"), 0o755); err != nil {
 		t.Fatalf("MkdirAll fakeHome: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeHome, ".pi", "mcp.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile fakeHome: %v", err)
 	}
 
 	got, err := a.Detect(tmp)
@@ -120,6 +123,69 @@ func TestPimono_Detect_HighConfidence_AllSignals(t *testing.T) {
 	}
 	if len(got.Reasons) < 3 {
 		t.Errorf("Detect with 4 signals returned %d Reasons, want >=3", len(got.Reasons))
+	}
+}
+
+// TestPimono_Detect_GlobalOnly exercises the WR-03 path: the global hint
+// ($HOME/.pi/mcp.json) is present but the scanned root has zero local signals.
+// Contract: exactly 1 signal → ConfidenceLow, ID set, single reason naming the
+// global hint. This is the path most likely to cause a spurious autodetect
+// multi-match, so the weakest signal must rank only Low. The probe is the
+// specific mcp.json file (NOT the bare ~/.pi dir) so an unrelated scratch
+// directory no longer trips it.
+func TestPimono_Detect_GlobalOnly(t *testing.T) {
+	a := &Adapter{}
+	tmp := t.TempDir() // empty root — zero local signals
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".pi"), 0o755); err != nil {
+		t.Fatalf("MkdirAll fakeHome: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeHome, ".pi", "mcp.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile fakeHome: %v", err)
+	}
+
+	got, err := a.Detect(tmp)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "pimono" {
+		t.Errorf("global-only Detect ID = %q, want %q", got.ID, "pimono")
+	}
+	if got.Confidence != adapter.ConfidenceLow {
+		t.Errorf("global-only Detect Confidence = %v, want ConfidenceLow", got.Confidence)
+	}
+	if len(got.Reasons) != 1 {
+		t.Fatalf("global-only Detect returned %d Reasons, want exactly 1: %v", len(got.Reasons), got.Reasons)
+	}
+	if got.Reasons[0] != "found ~/.pi/mcp.json (global mode)" {
+		t.Errorf("global-only Detect reason = %q, want global-hint reason", got.Reasons[0])
+	}
+}
+
+// TestPimono_Detect_GlobalDirOnly locks WR-03's lower-false-positive intent:
+// a bare $HOME/.pi DIRECTORY (no mcp.json inside) and an empty root must NOT
+// produce a match — the specific-file probe ignores the scratch dir.
+func TestPimono_Detect_GlobalDirOnly(t *testing.T) {
+	a := &Adapter{}
+	tmp := t.TempDir() // empty root — zero local signals
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".pi"), 0o755); err != nil {
+		t.Fatalf("MkdirAll fakeHome: %v", err)
+	}
+
+	got, err := a.Detect(tmp)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "" {
+		t.Errorf("bare ~/.pi dir Detect returned ID=%q, want empty (no match)", got.ID)
+	}
+	if got.Confidence != 0 {
+		t.Errorf("bare ~/.pi dir Detect returned Confidence=%v, want zero", got.Confidence)
 	}
 }
 
