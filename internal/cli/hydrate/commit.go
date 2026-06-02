@@ -542,7 +542,14 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 	// is $HOME/.ach/<env>, so achDir/.. would wrongly point at $HOME/.ach).
 	wsRoot := filepath.Join(c.achDir, "..")
 	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, wsRoot, pruned)
-	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, wsRoot, pruned)
+	// Projected plugin resources are published under toolRoot (native resource
+	// dirs), so their reconcile-vs-disk stat must resolve there too — symmetric
+	// with the Adapter.Files line below and with walkEntriesTagged tagging every
+	// Plugins entry ResolveAgainstToolRoot. Using wsRoot coincides with toolRoot
+	// in project scope but points at $HOME/.ach under --global, silently pruning
+	// live projected plugins from state on every re-hydrate (breaks FMT-05
+	// idempotence and re-opens the survive-uninstall defect CR-01).
+	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, c.toolRoot, pruned)
 	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, wsRoot, pruned)
 	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, wsRoot, pruned)
 	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, c.toolRoot, pruned)

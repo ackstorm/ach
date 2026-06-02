@@ -1005,10 +1005,13 @@ func TestCommit_Step12_OnlyRuntime_CarriesForwardPlugins(t *testing.T) {
 	c, store, _ := newTestCommit(t)
 	c.opts.Platform = "claude-code"
 	c.opts.OnlyRuntime = true
-	// step4ReconcileVsDisk prunes content-bucket entries whose target is
-	// missing on disk (workspace-relative = achDir/..). Stage the prior
-	// file so it survives pruning and we genuinely test carry-forward.
+	// step4ReconcileVsDisk prunes entries whose target is missing on disk.
+	// Content buckets resolve workspace-relative (achDir/..); Plugins now
+	// resolve against toolRoot (projected resources live in native dirs). In
+	// project scope toolRoot == wsRoot, so pin them equal here and stage the
+	// prior file there so it survives pruning and we genuinely test carry-forward.
 	wsRoot := filepath.Join(c.achDir, "..")
+	c.toolRoot = wsRoot
 	priorAbs := filepath.Join(wsRoot, ".claude", "rules", "prior.md")
 	if err := os.MkdirAll(filepath.Dir(priorAbs), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -1038,6 +1041,56 @@ func TestCommit_Step12_OnlyRuntime_CarriesForwardPlugins(t *testing.T) {
 	}
 	if store.savedFile.Plugins[0].Target != ".claude/rules/prior.md" {
 		t.Errorf("Plugins[0].Target = %q; want the prior entry carried forward unchanged",
+			store.savedFile.Plugins[0].Target)
+	}
+}
+
+// TestCommit_Step4Reconcile_GlobalScope_PrunesPluginsAgainstToolRoot is the
+// CR-01 regression gate: under --global, wsRoot ($HOME/.ach) and toolRoot
+// ($HOME) diverge. Projected plugins are published under toolRoot, so
+// step4ReconcileVsDisk must stat them against toolRoot — not wsRoot. The whole
+// e2e matrix runs project scope (where the two coincide) and cannot catch this,
+// so it is pinned here. A regression (resolving Plugins against wsRoot) would
+// ErrNotExist on a live projected plugin and silently prune it from state on
+// every re-hydrate, re-opening the survive-uninstall defect.
+func TestCommit_Step4Reconcile_GlobalScope_PrunesPluginsAgainstToolRoot(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.opts.OnlyRuntime = true
+	// Diverge wsRoot and toolRoot as --global does: achDir/.. is the ach-state
+	// root; toolRoot is a wholly separate tree (the user's $HOME).
+	wsRoot := filepath.Join(c.achDir, "..")
+	c.toolRoot = t.TempDir()
+	if c.toolRoot == wsRoot {
+		t.Fatalf("test setup: toolRoot must differ from wsRoot to exercise --global")
+	}
+	// Stage the projected plugin under toolRoot ONLY (never under wsRoot), so a
+	// wsRoot-based stat would miss it and prune.
+	pluginAbs := filepath.Join(c.toolRoot, ".claude", "agents", "caveman.md")
+	if err := os.MkdirAll(filepath.Dir(pluginAbs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(pluginAbs, []byte("# caveman\n"), 0o644); err != nil {
+		t.Fatalf("write plugin: %v", err)
+	}
+	existing := &state.File{
+		SchemaVersion: "2",
+		Environment:   "demo",
+		Plugins: []state.FileEntry{{
+			Target: ".claude/agents/caveman.md", Hash: "xxh3:cm", SourceHash: "xxh3:cm",
+		}},
+	}
+	store.loadFn = func(string) (*state.File, error) { return existing, nil }
+	c.adapter = fakeAdapterDispatcher{result: RenderResult{}}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if got := len(store.savedFile.Plugins); got != 1 {
+		t.Fatalf("Plugins len = %d, want 1 (projected plugin under toolRoot must survive reconcile under --global)", got)
+	}
+	if store.savedFile.Plugins[0].Target != ".claude/agents/caveman.md" {
+		t.Errorf("Plugins[0].Target = %q; want the toolRoot-resolved plugin retained",
 			store.savedFile.Plugins[0].Target)
 	}
 }
