@@ -55,6 +55,20 @@ func (f *Fetcher) constructCloneURL() string {
 	return fmt.Sprintf("https://%s/%s.git", host, f.spec.Project)
 }
 
+// restBaseURL builds the REST scheme+host from spec.Host with the same
+// hardening as constructCloneURL: normalize (strip any caller-supplied
+// scheme + trailing slash), default to gitlab.com, then force https://.
+// This closes the REST-path SSRF where a raw "http://<internal>" host
+// passed New()-time validation (which strips the scheme before checking)
+// but reached WithBaseURL / archiveURL unsanitized (finding S1).
+func (f *Fetcher) restBaseURL() string {
+	host := normalizeGitLabHost(f.spec.Host)
+	if host == "" {
+		host = "gitlab.com"
+	}
+	return "https://" + host
+}
+
 func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
 	token, err := sources.ExtractBearerToken("gitlab", f.spec.AuthSecretRef, req.Secret)
 	if err != nil {

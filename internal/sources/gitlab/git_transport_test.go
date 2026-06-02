@@ -221,3 +221,19 @@ func gitlabHeadSHA(t *testing.T, bare string) string {
 	}
 	return string(out[:40])
 }
+
+func TestRestBaseURL_NormalizesAndForcesHTTPS(t *testing.T) {
+	cases := []struct{ host, want string }{
+		{"", "https://gitlab.com"},
+		{"gitlab.example.com", "https://gitlab.example.com"},
+		{"https://gitlab.example.com", "https://gitlab.example.com"},
+		{"http://169.254.169.254", "https://169.254.169.254"}, // S1: scheme stripped, https forced
+		{"HTTP://Metadata.Internal/", "https://Metadata.Internal"},
+	}
+	for _, tc := range cases {
+		f := &Fetcher{spec: &achv1alpha1.GitLabSource{Host: tc.host}}
+		if got := f.restBaseURL(); got != tc.want {
+			t.Errorf("restBaseURL(host=%q) = %q, want %q", tc.host, got, tc.want)
+		}
+	}
+}

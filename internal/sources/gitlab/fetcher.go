@@ -38,9 +38,6 @@ import (
 	"github.com/ackstorm/ach/internal/sources/cr02validate"
 )
 
-// defaultGitLabHost is the canonical SaaS host when spec.Host is empty.
-const defaultGitLabHost = "https://gitlab.com"
-
 // archiveHTTPTimeout bounds the archive-download HTTP request itself.
 // The full archive may be large; the SizeCapBytes LimitReader bounds
 // post-fetch memory in the caller (external_ref_refresh.materializeExternalRef),
@@ -106,11 +103,10 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 		return nil, err
 	}
 
-	// 2. Resolve host (default to gitlab.com SaaS when spec.Host is empty).
-	host := f.spec.Host
-	if host == "" {
-		host = defaultGitLabHost
-	}
+	// 2. Resolve host with scheme hardening (S1): force https against the
+	//    normalized host so a crafted spec.Host cannot redirect REST/archive
+	//    traffic to an attacker scheme/host (e.g. http://169.254.169.254).
+	host := f.restBaseURL()
 
 	// 3. Construct go-gitlab client. Token (when set) is attached to every
 	//    request via Authorization header; NEVER via URL query string
