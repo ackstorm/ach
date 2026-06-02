@@ -34,11 +34,6 @@ type Deps struct {
 	EnvProvider EnvProvider
 	// TeamsResolver is the Redis-cached LiteLLM teams lookup (Plan 04-03).
 	TeamsResolver keystore.TeamsResolver
-	// Namespace scopes the Environment reads. Forwarder runs in a single
-	// tenant namespace per deployment (Hub §5.1). The EnvProvider is
-	// constructed for this namespace at boot, so it is informational
-	// here (left for log fields + parity with the legacy Deps shape).
-	Namespace string
 }
 
 // resourceKind selects which runtime list to consult on the Environment.

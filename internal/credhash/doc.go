@@ -10,9 +10,10 @@
 //     mounted from the Kubernetes Secret `ach-credential-hash-pepper` per
 //     Plan 09. This package does NOT read env vars — callers pass the pepper
 //     as a byte slice argument so the package surface stays pure.
-//   - Equal performs constant-time comparison of two hex-encoded digests
-//     using crypto/subtle.ConstantTimeCompare; on malformed hex input it
-//     returns false rather than panicking.
+//   - Hashes are compared by an indexed Postgres lookup
+//     (WHERE credential_hash = $1), not in Go — this package exposes no
+//     comparison helper. Equality is exact-match on the hex digest, so no
+//     constant-time compare is needed (the digest is not itself a secret).
 //
 // This package MUST NOT import any logger and MUST NOT call any logging
 // function: plaintext bearer keys (pk_…, ek_…) flow through the Hash

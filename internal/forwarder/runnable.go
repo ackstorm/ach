@@ -71,20 +71,19 @@ func (r *Runnable) Start(ctx context.Context) error {
 		}
 	}()
 
+	shutdown := func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = traffic.Shutdown(shutdownCtx)
+		_ = health.Shutdown(shutdownCtx)
+		wg.Wait()
+	}
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = traffic.Shutdown(shutdownCtx)
-		_ = health.Shutdown(shutdownCtx)
-		wg.Wait()
+		shutdown()
 		return nil
 	case err := <-errCh:
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = traffic.Shutdown(shutdownCtx)
-		_ = health.Shutdown(shutdownCtx)
-		wg.Wait()
+		shutdown()
 		return err
 	}
 }

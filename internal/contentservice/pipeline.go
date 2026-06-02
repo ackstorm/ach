@@ -52,8 +52,6 @@ type resolvedRow struct {
 	File        *os.File
 	Size        int64
 	ContentType string
-	AuditKind   string
-	AuditName   string
 	KeyInfo     *keystore.KeyInfo
 }
 
@@ -162,8 +160,6 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 		File:        f,
 		Size:        fi.Size(),
 		ContentType: contentType,
-		AuditKind:   kind,
-		AuditName:   name,
 		KeyInfo:     info,
 	}, nil
 }

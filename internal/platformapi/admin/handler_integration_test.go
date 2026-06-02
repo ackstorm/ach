@@ -154,16 +154,11 @@ func TestRevokeKey_PkHappyPath_DBFirst(t *testing.T) {
 	if len(ll.revokedKeys) != 1 || ll.revokedKeys[0] != "litellm-tok-rv1" {
 		t.Fatalf("LiteLLM revoke called with wrong token: %v", ll.revokedKeys)
 	}
-	// Verify Redis was called.
-	if len(rd.calls) != 1 || !strings.HasPrefix(rd.calls[0], adminCacheKeyPrefix) {
-		t.Fatalf("expected one Redis Del call under %s, got %v", adminCacheKeyPrefix, rd.calls)
-	}
-	// Verify ordering: NOTE the recorderOrder captures only LiteLLM + Redis;
-	// the DB step happens before both via db.RevokePersonalKey (not
-	// recorded). Verifying LiteLLM precedes Redis still proves the
-	// post-DB ordering invariant.
-	if len(order.steps) < 2 || order.steps[0] != "litellm" || order.steps[1] != "redis" {
-		t.Fatalf("post-DB ordering violated: steps=%v", order.steps)
+	// Verify LiteLLM was invoked (the recorderOrder captures only the
+	// LiteLLM step; the DB flip happens before it via db.RevokePersonalKey,
+	// not recorded).
+	if len(order.steps) < 1 || order.steps[0] != "litellm" {
+		t.Fatalf("expected LiteLLM revoke step, got steps=%v", order.steps)
 	}
 	// Verify audit emitted with outcome=revoked.
 	if !strings.Contains(auditBuf.String(), `"outcome":"revoked"`) {
@@ -257,9 +252,9 @@ func TestRevokeKey_EkHappyPath_LiteLLMFirst(t *testing.T) {
 	if ll.revokeCalled.Load() != 1 {
 		t.Fatalf("expected 1 LiteLLM revoke, got %d", ll.revokeCalled.Load())
 	}
-	// ordering: LiteLLM precedes Redis (DB flip not captured by recorder
-	// but happens between LiteLLM and Redis).
-	if order.steps[0] != "litellm" || order.steps[1] != "redis" {
+	// ordering: LiteLLM revoke is the recorded step (DB flip not captured by
+	// recorder but happens after LiteLLM).
+	if len(order.steps) < 1 || order.steps[0] != "litellm" {
 		t.Fatalf("ordering violated: %v", order.steps)
 	}
 	row, _ := db.GetEnvironmentKey(context.Background(), pool, "ekid_rv4")

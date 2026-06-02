@@ -132,6 +132,11 @@ func TestSoftDeleteEnvironment_PreservesRow(t *testing.T) {
 
 	if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace: "ns1", Name: "e", ResourceVersion: "1",
+		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
+		AuthorizedTeams: []string{}, ContextPrompts: []string{},
+		ContextPlugins: []string{}, ContextArtifacts: []string{},
+		RuntimeModels: []string{}, RuntimeMCPServers: []string{},
+		RuntimeA2AAgents: []string{},
 	}); err != nil {
 		t.Fatalf("seed Upsert: %v", err)
 	}
@@ -164,6 +169,11 @@ func TestDeleteEnvironment_RemovesRow(t *testing.T) {
 
 	if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace: "ns1", Name: "e", ResourceVersion: "1",
+		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
+		AuthorizedTeams: []string{}, ContextPrompts: []string{},
+		ContextPlugins: []string{}, ContextArtifacts: []string{},
+		RuntimeModels: []string{}, RuntimeMCPServers: []string{},
+		RuntimeA2AAgents: []string{},
 	}); err != nil {
 		t.Fatalf("seed Upsert: %v", err)
 	}

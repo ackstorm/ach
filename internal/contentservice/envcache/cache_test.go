@@ -32,18 +32,27 @@ func newTestCache(t *testing.T, loader Loader) (Cache, *miniredis.Miniredis, *re
 	return c, mr, rdb
 }
 
-// sampleRow is a small helper to construct an EnvRow with predictable
-// fields. Empty slices keep the JSON wire format stable.
-func sampleRow(ns, name, rv string) *EnvRow {
+// sampleRow constructs an EnvRow whose AuthorizedTeams carries the
+// per-write sentinel (sentinel) — used as the cache-identity
+// discriminator in place of the removed ResourceVersion field. Empty
+// context slices keep the JSON wire format stable. ns/name are accepted
+// for call-site readability but no longer stored on EnvRow.
+func sampleRow(_, _, sentinel string) *EnvRow {
 	return &EnvRow{
-		Namespace:        ns,
-		Name:             name,
-		AuthorizedTeams:  []string{"team-a"},
+		AuthorizedTeams:  []string{sentinel},
 		ContextPrompts:   []string{},
 		ContextPlugins:   []string{},
 		ContextArtifacts: []string{},
-		ResourceVersion:  rv,
 	}
+}
+
+// sentinel returns the per-write discriminator stored in AuthorizedTeams
+// (see sampleRow), or "" when absent.
+func sentinel(r *EnvRow) string {
+	if r == nil || len(r.AuthorizedTeams) == 0 {
+		return ""
+	}
+	return r.AuthorizedTeams[0]
 }
 
 func TestGet_Hit_FromCache(t *testing.T) {
@@ -66,8 +75,8 @@ func TestGet_Hit_FromCache(t *testing.T) {
 	if got == nil {
 		t.Fatal("Get returned nil row on hit")
 	}
-	if got.ResourceVersion != "rv-1" {
-		t.Errorf("ResourceVersion=%q, want rv-1", got.ResourceVersion)
+	if sentinel(got) != "rv-1" {
+		t.Errorf("sentinel=%q, want rv-1", sentinel(got))
 	}
 }
 
@@ -82,7 +91,7 @@ func TestGet_Miss_LoaderHydrates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got == nil || got.ResourceVersion != "rv-2" {
+	if got == nil || sentinel(got) != "rv-2" {
 		t.Fatalf("loader hydration mismatch: got=%+v", got)
 	}
 
@@ -94,8 +103,8 @@ func TestGet_Miss_LoaderHydrates(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &roundtrip); err != nil {
 		t.Fatalf("JSON in cache not parseable as EnvRow: %v", err)
 	}
-	if roundtrip.ResourceVersion != "rv-2" {
-		t.Errorf("cached row mismatch: rv=%q", roundtrip.ResourceVersion)
+	if sentinel(&roundtrip) != "rv-2" {
+		t.Errorf("cached row mismatch: sentinel=%q", sentinel(&roundtrip))
 	}
 
 	ttl := mr.TTL("ach:env:test/foo")
@@ -156,7 +165,7 @@ func TestGet_MalformedCache_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got == nil || got.ResourceVersion != "rv-3" {
+	if got == nil || sentinel(got) != "rv-3" {
 		t.Errorf("expected loader row on malformed cache, got=%+v", got)
 	}
 
@@ -168,8 +177,8 @@ func TestGet_MalformedCache_FallsThrough(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &roundtrip); err != nil {
 		t.Errorf("expected loader to overwrite malformed entry with valid JSON, got: %s", raw)
 	}
-	if roundtrip.ResourceVersion != "rv-3" {
-		t.Errorf("malformed key was not overwritten by loader; rv=%q", roundtrip.ResourceVersion)
+	if sentinel(&roundtrip) != "rv-3" {
+		t.Errorf("malformed key was not overwritten by loader; sentinel=%q", sentinel(&roundtrip))
 	}
 }
 
@@ -185,7 +194,7 @@ func TestGet_RedisDown_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get with redis down: %v", err)
 	}
-	if got == nil || got.ResourceVersion != "rv-4" {
+	if got == nil || sentinel(got) != "rv-4" {
 		t.Errorf("expected loader row when redis is down, got=%+v", got)
 	}
 }
@@ -274,8 +283,8 @@ func TestGet_Singleflight_DedupesConcurrentMisses(t *testing.T) {
 			t.Errorf("goroutine %d err: %v", i, errs[i])
 			continue
 		}
-		if results[i] == nil || results[i].ResourceVersion != "rv-sf" {
-			t.Errorf("goroutine %d got %+v, want rv=rv-sf", i, results[i])
+		if results[i] == nil || sentinel(results[i]) != "rv-sf" {
+			t.Errorf("goroutine %d got %+v, want sentinel=rv-sf", i, results[i])
 		}
 	}
 }
@@ -292,7 +301,7 @@ func TestNewCachedEnvCache_RefusesNilLoader(t *testing.T) {
 	if c != nil {
 		t.Error("expected nil Cache on nil loader")
 	}
-	if want := "nil loader"; !contains(err.Error(), want) {
+	if want := "nil loader"; !strings.Contains(err.Error(), want) {
 		t.Errorf("err=%q, want substring %q", err.Error(), want)
 	}
 }
@@ -308,16 +317,7 @@ func TestNewCachedEnvCache_RefusesNilRedis(t *testing.T) {
 	if c != nil {
 		t.Error("expected nil Cache on nil redis")
 	}
-	if want := "nil redis"; !contains(err.Error(), want) {
+	if want := "nil redis"; !strings.Contains(err.Error(), want) {
 		t.Errorf("err=%q, want substring %q", err.Error(), want)
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

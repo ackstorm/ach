@@ -35,8 +35,12 @@ import (
 // controller-runtime informer cache to the Postgres projection table.
 type envStore interface {
 	GetEnvironment(ctx context.Context, name string) (*db.EnvironmentRow, error)
-	EnvironmentTerminating(ctx context.Context, name string) (bool, error)
-	EnvironmentAccessGroupSynced(ctx context.Context, name string) (bool, error)
+	// AccessGroupSyncedFromRow derives AccessGroupSynced=True from an
+	// already-loaded row (OPT-1): CreateHandler reads terminating off the
+	// row's DeletionTimestamp and synced via this method, so the per-call
+	// EnvironmentTerminating/EnvironmentAccessGroupSynced SELECTs are no
+	// longer on the create path (they remain on *store.Store for other use).
+	AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool
 }
 
 // dbOps is the set of internal/db helpers the envkeys handlers call. Same
@@ -127,15 +131,16 @@ const defaultTeam = "default"
 //  1. Caller-type guard: only pk_ may create ek_; ek_ → 401.
 //  2. Strict JSON decode (DisallowUnknownFields) into CreateRequest;
 //     missing fields → 400.
-//  3. GetEnvironment from the informer cache; absent or terminating → 404.
+//  3. GetEnvironment from the Postgres projection table; absent or terminating → 404.
 //  4. EnvironmentAccessGroupSynced check; not True → 503 not_ready.
 //  5. Team-membership intersection: authorizedTeams ∩ caller teams ≠ ∅;
 //     empty → 403 unauthorized_team.
 //  6. Idempotent LiteLLM user provision: UserInfoByEmail; on absent run
 //     UserNew + TeamMemberAdd(default, user_id, "user").
 //  7. Generate server-side plaintext (ek_<26>) + key_id (ekid_<26>);
-//     hash plaintext with the pepper; call litellm.KeyGenerate with the
-//     ACH-supplied Key + AccessGroups=[<env>] + MaxBudget=nil (KEY-10).
+//     hash plaintext with the pepper; call litellm.KeyGenerate — LiteLLM
+//     owns its virtual-key plaintext format (ACH does NOT supply Key);
+//     ACH supplies AccessGroups=[<env>] + MaxBudget=nil (KEY-10).
 //  8. INSERT environment_keys row; on PK collision retry once with a
 //     new ekid_ (reusing same plaintext + LiteLLM token per WARN-03);
 //     on any other failure run the LiteLLM compensation
@@ -178,322 +183,327 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Step 3a: GetEnvironment (Postgres projection per issue #34) — absent → 404.
-		// db.GetEnvironmentByName returns (nil, nil) on a clean absence, so
-		// any non-nil err here is a genuine internal failure.
-		env, err := deps.Store.GetEnvironment(ctx, req.Environment)
-		if err != nil {
-			deps.Logger.Error("envkeys.create: GetEnvironment failed", "env", req.Environment, "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		if env == nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeEnvironmentNotFound,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "environment not found", reqID)
-			return
+		cr := &createReq{
+			deps: deps, w: w, ctx: ctx, req: req, keyCtx: keyCtx,
+			actor: actor, reqID: reqID,
+			target: &audit.Target{Kind: "environment", Name: req.Environment},
 		}
 
-		// Step 3b: terminating envs treated as not-found per D-12 step 2.
-		terminating, err := deps.Store.EnvironmentTerminating(ctx, req.Environment)
-		if err != nil {
-			deps.Logger.Error("envkeys.create: EnvironmentTerminating failed", "env", req.Environment, "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+		// Step 3+4: load env, terminating(404), not-synced(503).
+		env, handled := cr.validateAndLoadEnv()
+		if handled {
 			return
 		}
-		if terminating {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeEnvironmentNotFound,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "environment not found", reqID)
+		// Step 5: team-membership intersection.
+		if cr.validateTeamMembership(env) {
 			return
 		}
+		// Step 6: idempotent LiteLLM user provision.
+		userID, handled := cr.provisionUser()
+		if handled {
+			return
+		}
+		// Steps 7+8: mint + insert + success response.
+		cr.mintAndInsert(env, userID)
+	}
+}
 
-		// Step 4: AccessGroupSynced=True per D-12 step 3.
-		synced, err := deps.Store.EnvironmentAccessGroupSynced(ctx, req.Environment)
-		if err != nil {
-			deps.Logger.Error("envkeys.create: EnvironmentAccessGroupSynced failed", "env", req.Environment, "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		if !synced {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeNotReady,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeNotReady, "environment access group not yet synced", reqID)
-			return
-		}
+// createReq carries the per-request locals shared by CreateHandler's extracted
+// steps (CPLX-1). It is constructed once per request after decode+validate and
+// threaded through validateAndLoadEnv/validateTeamMembership/provisionUser/
+// mintAndInsert; each method reads the fields it needs and writes the terminal
+// HTTP response + audit event on its own rejection/success branch.
+type createReq struct {
+	deps   Deps
+	w      http.ResponseWriter
+	ctx    context.Context
+	req    CreateRequest
+	keyCtx middleware.KeyContext
+	actor  string
+	reqID  string
+	target *audit.Target
+}
 
-		// Step 5: team-membership intersection per D-12 step 4 / WARN-06.
-		// Imports the shared helper from internal/platformapi/teams (Plan
-		// 03-05 Task 3). NO inline lookupCallerTeams definition here.
-		callerTeams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
-		if err != nil {
-			st, oc, msg := classifyLitellmErr(err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   oc,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			deps.Logger.Error("envkeys.create: team lookup failed", "owner", keyCtx.OwnerEmail, "err", err)
-			render.Error(w, st, oc, msg, reqID)
-			return
-		}
-		if !hasIntersect(env.AuthorizedTeams, callerTeams) {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeUnauthorizedTeam,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "caller not in any authorized team", reqID)
-			return
-		}
+// emitInternalError audits + renders the §15.5 500 internal_error envelope
+// (DUP-1). Captured ctx/w/deps/actor/reqID/target via the createReq receiver.
+func (cr *createReq) emitInternalError(logMsg string, err error) {
+	cr.deps.Logger.Error(logMsg, "env", cr.req.Environment, "err", err)
+	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+		Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
+		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
+	})
+	render.Error(cr.w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", cr.reqID)
+}
 
-		// Step 6: idempotent LiteLLM user provision per D-12 step 5. We
-		// already called UserInfoByEmail above via LookupCallerTeams, but
-		// LookupCallerTeams swallows ErrNotFound into an empty slice — we
-		// can't distinguish "absent user" from "user present with empty
-		// Teams". A second targeted UserInfoByEmail surfaces the explicit
-		// 404 branch. This is the conservative implementation; Phase 4's
-		// cached lookup will collapse the two calls.
-		userInfo, err := deps.LiteLLM.UserInfoByEmail(ctx, keyCtx.OwnerEmail)
-		if err != nil && !isNotFound(err) {
-			st, oc, msg := classifyLitellmErr(err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   oc,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			deps.Logger.Error("envkeys.create: UserInfoByEmail failed", "owner", keyCtx.OwnerEmail, "err", err)
-			render.Error(w, st, oc, msg, reqID)
-			return
-		}
-		if userInfo == nil {
-			// First-time user — create + enroll in default team.
-			newInfo, err := deps.LiteLLM.UserNew(ctx, &litellm.UserNewRequest{
-				UserEmail: keyCtx.OwnerEmail,
-				Teams:     []string{defaultTeam},
-			})
-			if err != nil {
-				st, oc, msg := classifyLitellmErr(err)
-				audit.EmitAudit(ctx, deps.Audit, audit.Event{
-					Action:    audit.ActionEkCreate,
-					Outcome:   oc,
-					Actor:     actor,
-					RequestID: reqID,
-					Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-				})
-				deps.Logger.Error("envkeys.create: UserNew failed", "owner", keyCtx.OwnerEmail, "err", err)
-				render.Error(w, st, oc, msg, reqID)
-				return
-			}
-			userInfo = newInfo
-			if err := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeam, userInfo.UserID, "user"); err != nil {
-				// LiteLLM returns 4xx on duplicate add — caller swallows.
-				// Other errors are transient (logged but not fatal: the
-				// next call will retry the enrollment).
-				deps.Logger.Warn("envkeys.create: TeamMemberAdd error (likely duplicate or transient)",
-					"team", defaultTeam, "user", userInfo.UserID, "err", err)
-			}
-		}
+// emitLitellmError classifies a LiteLLM client error into (status, outcome,
+// message) and audits + renders it (DUP-1). The log line carries both the
+// owner email and the environment for correlation (the env attribute the
+// old KeyGenerate-failure block logged is preserved across all LiteLLM sites).
+func (cr *createReq) emitLitellmError(err error, logMsg string) {
+	st, oc, msg := classifyLitellmErr(err)
+	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+		Action: audit.ActionEkCreate, Outcome: oc,
+		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
+	})
+	cr.deps.Logger.Error(logMsg, "owner", cr.keyCtx.OwnerEmail, "env", cr.req.Environment, "err", err)
+	render.Error(cr.w, st, oc, msg, cr.reqID)
+}
 
-		// Step 7: server-side plaintext + key_id generation per D-13.
-		plaintext, err := keys.NewBearer(keys.PrefixEk)
-		if err != nil {
-			deps.Logger.Error("envkeys.create: NewBearer failed", "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
-				Actor: actor, RequestID: reqID,
-				Target: &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		keyID, err := keys.NewKeyID(keys.PrefixEkid)
-		if err != nil {
-			deps.Logger.Error("envkeys.create: NewKeyID failed", "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
-				Actor: actor, RequestID: reqID,
-				Target: &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
-		if err != nil {
-			deps.Logger.Error("envkeys.create: credhash.Hash failed", "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
-				Actor: actor, RequestID: reqID,
-				Target: &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
+// validateAndLoadEnv runs §8.2 steps 3+4: GetEnvironment (Postgres projection
+// per issue #34), the env-not-found(404) + terminating(404) + not-synced(503)
+// guards. OPT-1: the terminating + AccessGroupSynced predicates are derived
+// from the single in-hand env row (DeletionTimestamp + AccessGroupSyncedFromRow)
+// instead of two further SELECTs. On any rejection it writes the response +
+// audit and returns handled=true.
+func (cr *createReq) validateAndLoadEnv() (env *db.EnvironmentRow, handled bool) {
+	// db.GetEnvironmentByName returns (nil, nil) on a clean absence, so any
+	// non-nil err here is a genuine internal failure.
+	env, err := cr.deps.Store.GetEnvironment(cr.ctx, cr.req.Environment)
+	if err != nil {
+		cr.emitInternalError("envkeys.create: GetEnvironment failed", err)
+		return nil, true
+	}
+	if env == nil {
+		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeEnvironmentNotFound,
+			Actor:     cr.actor,
+			RequestID: cr.reqID,
+			Target:    cr.target,
+		})
+		render.Error(cr.w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "environment not found", cr.reqID)
+		return nil, true
+	}
 
-		// LiteLLM KeyGenerate (D-12 step 6). FIX01 §A.6: do NOT supply
-		// req.Key — LiteLLM owns its virtual-key plaintext format
-		// (sk-…) and ACH never persists or forwards it. ACH stores
-		// only the opaque keyResp.Token used for revoke + forwarder
-		// attribution. AccessGroups=[<environment>] +
-		// Tags=[<environment>] per §6.3 ek_ Environment tag;
-		// MaxBudget=nil per KEY-10.
-		keyReq := &litellm.KeyGenerateRequest{
-			UserID:       userInfo.UserID,
-			MaxBudget:    nil,
-			AccessGroups: []string{env.Name},
-			Tags:         []string{env.Name},
-			Metadata: map[string]string{
-				"ach_key_id":      keyID,
-				"ach_key_type":    "ek",
-				"ach_owner_email": keyCtx.OwnerEmail,
-				"ach_environment": env.Name,
-			},
-		}
-		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, keyReq)
-		if err != nil && isEnterpriseTagsRejection(err) {
-			// §6.3's `tags` is a LiteLLM Enterprise-only feature; an OSS
-			// LiteLLM rejects it with 403 "only available for LiteLLM
-			// Enterprise users: tags". Tags are best-effort attribution —
-			// the environment is also carried by AccessGroups and
-			// metadata.ach_environment — so degrade gracefully: drop tags
-			// and retry once. On Enterprise the first call succeeds and this
-			// retry never fires.
-			deps.Logger.Warn("envkeys.create: LiteLLM rejected Enterprise-only tags; retrying without tags",
-				"env", req.Environment)
-			keyReq.Tags = nil
-			keyResp, err = deps.LiteLLM.KeyGenerate(ctx, keyReq)
-		}
-		if err != nil {
-			st, oc, msg := classifyLitellmErr(err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   oc,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			deps.Logger.Error("envkeys.create: KeyGenerate failed", "env", req.Environment, "err", err)
-			render.Error(w, st, oc, msg, reqID)
-			return
-		}
-		llToken := keyResp.Token
-		llUserID := userInfo.UserID
+	// terminating envs treated as not-found per D-12 step 2.
+	if env.DeletionTimestamp != nil {
+		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeEnvironmentNotFound,
+			Actor:     cr.actor,
+			RequestID: cr.reqID,
+			Target:    cr.target,
+		})
+		render.Error(cr.w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "environment not found", cr.reqID)
+		return nil, true
+	}
 
-		// Step 8: INSERT row with WARN-03 retry policy.
-		//
-		// Two attempts maximum. Between attempts the LiteLLM key is
-		// REUSED (no compensation) — only the ekid_ key_id is regenerated
-		// — because credential_hash + plaintext + LiteLLM token are
-		// stable. On the second failure OR on a credential_hash collision
-		// at any time, run the LiteLLM compensation and surface 500.
-		insertRow := db.EkInsertRow{
-			KeyID:          keyID,
-			CredentialHash: credHash,
-			Environment:    req.Environment,
-			OwnerEmail:     keyCtx.OwnerEmail,
-			Name:           req.Name,
-			LiteLLMUserID:  &llUserID,
-			LiteLLMToken:   &llToken,
+	// AccessGroupSynced=True per D-12 step 3.
+	if !cr.deps.Store.AccessGroupSyncedFromRow(env) {
+		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeNotReady,
+			Actor:     cr.actor,
+			RequestID: cr.reqID,
+			Target:    cr.target,
+		})
+		render.Error(cr.w, http.StatusServiceUnavailable, audit.OutcomeNotReady, "environment access group not yet synced", cr.reqID)
+		return nil, true
+	}
+
+	return env, false
+}
+
+// validateTeamMembership runs §8.2 step 5 (D-12 step 4 / WARN-06): the
+// authorizedTeams ∩ caller-teams intersection. Imports the shared helper from
+// internal/platformapi/teams (Plan 03-05 Task 3). On a LiteLLM lookup error it
+// surfaces the classified error; on an empty intersection it emits the 403
+// unauthorized_team. Returns handled=true on any rejection.
+func (cr *createReq) validateTeamMembership(env *db.EnvironmentRow) (handled bool) {
+	callerTeams, err := achteams.LookupCallerTeams(cr.ctx, cr.deps.LiteLLM, cr.keyCtx.OwnerEmail)
+	if err != nil {
+		cr.emitLitellmError(err, "envkeys.create: team lookup failed")
+		return true
+	}
+	if !achteams.HasIntersect(env.AuthorizedTeams, callerTeams) {
+		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeUnauthorizedTeam,
+			Actor:     cr.actor,
+			RequestID: cr.reqID,
+			Target:    cr.target,
+		})
+		render.Error(cr.w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "caller not in any authorized team", cr.reqID)
+		return true
+	}
+	return false
+}
+
+// provisionUser runs §8.2 step 6 (D-12 step 5): idempotent LiteLLM user
+// provision. We already called UserInfoByEmail above via LookupCallerTeams, but
+// LookupCallerTeams swallows ErrNotFound into an empty slice — we can't
+// distinguish "absent user" from "user present with empty Teams". A second
+// targeted UserInfoByEmail surfaces the explicit 404 branch. This is the
+// conservative implementation; Phase 4's cached lookup will collapse the two
+// calls. Returns the resolved LiteLLM user_id and handled=true on a hard error.
+func (cr *createReq) provisionUser() (userID string, handled bool) {
+	userInfo, err := cr.deps.LiteLLM.UserInfoByEmail(cr.ctx, cr.keyCtx.OwnerEmail)
+	if err != nil && !isNotFound(err) {
+		cr.emitLitellmError(err, "envkeys.create: UserInfoByEmail failed")
+		return "", true
+	}
+	if userInfo == nil {
+		// First-time user — create + enroll in default team.
+		newInfo, err := cr.deps.LiteLLM.UserNew(cr.ctx, &litellm.UserNewRequest{
+			UserEmail: cr.keyCtx.OwnerEmail,
+			Teams:     []string{defaultTeam},
+		})
+		if err != nil {
+			cr.emitLitellmError(err, "envkeys.create: UserNew failed")
+			return "", true
 		}
-		insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)
-		if insertErr != nil {
-			class := classifyInsertError(insertErr)
-			if class == insertErrEkidCollision {
-				// Retry once with a fresh ekid_ (same plaintext + LiteLLM key reused).
-				newKeyID, kerr := keys.NewKeyID(keys.PrefixEkid)
-				if kerr == nil {
-					insertRow.KeyID = newKeyID
-					if retryErr := deps.DB.InsertEnvironmentKey(ctx, insertRow); retryErr == nil {
-						keyID = newKeyID
-						insertErr = nil
-					} else {
-						insertErr = retryErr
-					}
+		userInfo = newInfo
+		if err := cr.deps.LiteLLM.TeamMemberAdd(cr.ctx, defaultTeam, userInfo.UserID, "user"); err != nil {
+			// LiteLLM returns 4xx on duplicate add — caller swallows.
+			// Other errors are transient (logged but not fatal: the
+			// next call will retry the enrollment).
+			cr.deps.Logger.Warn("envkeys.create: TeamMemberAdd error (likely duplicate or transient)",
+				"team", defaultTeam, "user", userInfo.UserID, "err", err)
+		}
+	}
+	return userInfo.UserID, false
+}
+
+// mintAndInsert runs §8.2 steps 7+8: server-side plaintext + key_id generation
+// (D-13), the LiteLLM KeyGenerate with the Enterprise-tags drop-and-retry
+// fallback, the INSERT with the WARN-03 ekid_-collision single retry +
+// compensation RevokeKey under a fresh context, and the OutcomeCreated success
+// audit + 200 CreateResponse. This method writes the terminal response itself.
+func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
+	deps := cr.deps
+	w := cr.w
+	ctx := cr.ctx
+	reqID := cr.reqID
+
+	// Step 7: server-side plaintext + key_id generation per D-13.
+	plaintext, err := keys.NewBearer(keys.PrefixEk)
+	if err != nil {
+		cr.emitInternalError("envkeys.create: NewBearer failed", err)
+		return
+	}
+	keyID, err := keys.NewKeyID(keys.PrefixEkid)
+	if err != nil {
+		cr.emitInternalError("envkeys.create: NewKeyID failed", err)
+		return
+	}
+	credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
+	if err != nil {
+		cr.emitInternalError("envkeys.create: credhash.Hash failed", err)
+		return
+	}
+
+	// LiteLLM KeyGenerate (D-12 step 6). FIX01 §A.6: do NOT supply
+	// req.Key — LiteLLM owns its virtual-key plaintext format
+	// (sk-…) and ACH never persists or forwards it. ACH stores
+	// only the opaque keyResp.Token used for revoke + forwarder
+	// attribution. AccessGroups=[<environment>] +
+	// Tags=[<environment>] per §6.3 ek_ Environment tag;
+	// MaxBudget=nil per KEY-10.
+	keyReq := &litellm.KeyGenerateRequest{
+		UserID:       userID,
+		MaxBudget:    nil,
+		AccessGroups: []string{env.Name},
+		Tags:         []string{env.Name},
+		Metadata: map[string]string{
+			"ach_key_id":      keyID,
+			"ach_key_type":    "ek",
+			"ach_owner_email": cr.keyCtx.OwnerEmail,
+			"ach_environment": env.Name,
+		},
+	}
+	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, keyReq)
+	if err != nil && isEnterpriseTagsRejection(err) {
+		// §6.3's `tags` is a LiteLLM Enterprise-only feature; an OSS
+		// LiteLLM rejects it with 403 "only available for LiteLLM
+		// Enterprise users: tags". Tags are best-effort attribution —
+		// the environment is also carried by AccessGroups and
+		// metadata.ach_environment — so degrade gracefully: drop tags
+		// and retry once. On Enterprise the first call succeeds and this
+		// retry never fires.
+		deps.Logger.Warn("envkeys.create: LiteLLM rejected Enterprise-only tags; retrying without tags",
+			"env", cr.req.Environment)
+		keyReq.Tags = nil
+		keyResp, err = deps.LiteLLM.KeyGenerate(ctx, keyReq)
+	}
+	if err != nil {
+		cr.emitLitellmError(err, "envkeys.create: KeyGenerate failed")
+		return
+	}
+	llToken := keyResp.Token
+	llUserID := userID
+
+	// Step 8: INSERT row with WARN-03 retry policy.
+	//
+	// Two attempts maximum. Between attempts the LiteLLM key is
+	// REUSED (no compensation) — only the ekid_ key_id is regenerated
+	// — because credential_hash + plaintext + LiteLLM token are
+	// stable. On the second failure OR on a credential_hash collision
+	// at any time, run the LiteLLM compensation and surface 500.
+	insertRow := db.EkInsertRow{
+		KeyID:          keyID,
+		CredentialHash: credHash,
+		Environment:    cr.req.Environment,
+		OwnerEmail:     cr.keyCtx.OwnerEmail,
+		Name:           cr.req.Name,
+		LiteLLMUserID:  &llUserID,
+		LiteLLMToken:   &llToken,
+	}
+	insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)
+	if insertErr != nil {
+		class := classifyInsertError(insertErr)
+		if class == insertErrEkidCollision {
+			// Retry once with a fresh ekid_ (same plaintext + LiteLLM key reused).
+			newKeyID, kerr := keys.NewKeyID(keys.PrefixEkid)
+			if kerr == nil {
+				insertRow.KeyID = newKeyID
+				if retryErr := deps.DB.InsertEnvironmentKey(ctx, insertRow); retryErr == nil {
+					keyID = newKeyID
+					insertErr = nil
+				} else {
+					insertErr = retryErr
 				}
 			}
 		}
-		if insertErr != nil {
-			// Compensation: RevokeKey under a fresh context so caller
-			// cancellation cannot orphan the LiteLLM-side key.
-			compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, llToken); cleanupErr != nil {
-				deps.Logger.Error("envkeys.create: compensation RevokeKey failed",
-					"token", llToken, "err", cleanupErr)
-			}
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate,
-				Outcome:   audit.OutcomeDbInsertFailed,
-				Actor:     actor,
-				RequestID: reqID,
-				Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-			})
-			deps.Logger.Error("envkeys.create: InsertEnvironmentKey failed",
-				"key_id", keyID, "env", req.Environment, "err", insertErr)
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeDbInsertFailed, "db insert failed", reqID)
-			return
+	}
+	if insertErr != nil {
+		// Compensation: RevokeKey under a fresh context so caller
+		// cancellation cannot orphan the LiteLLM-side key.
+		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, llToken); cleanupErr != nil {
+			deps.Logger.Error("envkeys.create: compensation RevokeKey failed",
+				"token", llToken, "err", cleanupErr)
 		}
-
-		// Step 8 success: audit + respond.
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
 			Action:    audit.ActionEkCreate,
-			Outcome:   audit.OutcomeCreated,
-			Actor:     actor,
+			Outcome:   audit.OutcomeDbInsertFailed,
+			Actor:     cr.actor,
 			RequestID: reqID,
-			KeyID:     keyID,
-			Target:    &audit.Target{Kind: "environment", Name: req.Environment},
+			Target:    cr.target,
 		})
-		render.JSON(w, http.StatusOK, CreateResponse{
-			KeyID:       keyID,
-			Plaintext:   plaintext,
-			Environment: req.Environment,
-			Name:        req.Name,
-			OwnerEmail:  keyCtx.OwnerEmail,
-			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-		})
+		deps.Logger.Error("envkeys.create: InsertEnvironmentKey failed",
+			"key_id", keyID, "env", cr.req.Environment, "err", insertErr)
+		render.Error(w, http.StatusInternalServerError, audit.OutcomeDbInsertFailed, "db insert failed", reqID)
+		return
 	}
+
+	// Step 8 success: audit + respond.
+	audit.EmitAudit(ctx, deps.Audit, audit.Event{
+		Action:    audit.ActionEkCreate,
+		Outcome:   audit.OutcomeCreated,
+		Actor:     cr.actor,
+		RequestID: reqID,
+		KeyID:     keyID,
+		Target:    cr.target,
+	})
+	render.JSON(w, http.StatusOK, CreateResponse{
+		KeyID:       keyID,
+		Plaintext:   plaintext,
+		Environment: cr.req.Environment,
+		Name:        cr.req.Name,
+		OwnerEmail:  cr.keyCtx.OwnerEmail,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // insertErrClass enumerates the pgx 23505 unique-violation classes the
@@ -503,7 +513,6 @@ type insertErrClass int
 const (
 	insertErrOther insertErrClass = iota
 	insertErrEkidCollision
-	insertErrCredentialHashCollision
 )
 
 // classifyInsertError inspects a db.InsertEnvironmentKey error and
@@ -520,34 +529,14 @@ func classifyInsertError(err error) insertErrClass {
 		return insertErrOther
 	}
 	// Constraint names per db/migrations/000001_init.up.sql:
-	//   environment_keys_pkey               → PK on key_id  (ekid_ collision)
-	//   environment_keys_credential_hash_key → UNIQUE on credential_hash
-	switch pgErr.ConstraintName {
-	case "environment_keys_pkey":
+	//   environment_keys_pkey → PK on key_id (ekid_ collision). A
+	//   credential_hash UNIQUE violation is not distinguished — it falls
+	//   through to the generic compensation path identically to any other
+	//   unique violation.
+	if pgErr.ConstraintName == "environment_keys_pkey" {
 		return insertErrEkidCollision
-	case "environment_keys_credential_hash_key":
-		return insertErrCredentialHashCollision
 	}
 	return insertErrOther
-}
-
-// hasIntersect reports whether the two string slices share at least one
-// element. Used for the §8.2 step-4 authorizedTeams ∩ callerTeams check.
-// Empty slice in either argument short-circuits to false.
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // --------------------------------------------------------------------------

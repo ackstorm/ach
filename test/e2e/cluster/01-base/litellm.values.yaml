@@ -40,16 +40,19 @@ db:
   password: litellm
 
 # Bitnami postgresql subchart override (mirrors top-level
-# hydrate_postgres public.ecr.aws redirect). Bitnami pruned pinned
-# image tags from docker.io/bitnami/* in 2025; the AWS-hosted mirror
-# at public.ecr.aws/bitnami/* still serves them.
-# `allowInsecureImages: true` is required because the ECR mirror
-# does not carry the upstream Bitnami signature chain.
+# hydrate_postgres docker.io/bitnamilegacy redirect). Bitnami pruned
+# pinned image tags from docker.io/bitnami/* AND public.ecr.aws/bitnami/*
+# in 2025; the surviving source is docker.io/bitnamilegacy/*. Point the
+# registry at docker.io and override image.repository to the
+# bitnamilegacy/<name> path. `allowInsecureImages: true` is required
+# because the legacy namespace lacks the upstream signature chain.
 postgresql:
   global:
-    imageRegistry: public.ecr.aws
+    imageRegistry: docker.io
     security:
       allowInsecureImages: true
+  image:
+    repository: bitnamilegacy/postgresql
   auth:
     username: litellm
     password: litellm
@@ -58,9 +61,11 @@ postgresql:
 # Bitnami redis subchart override (same workaround).
 redis:
   global:
-    imageRegistry: public.ecr.aws
+    imageRegistry: docker.io
     security:
       allowInsecureImages: true
+  image:
+    repository: bitnamilegacy/redis
 
 # Chart key is `masterkey` (lowercase, no camelCase). When this value is
 # mistyped the chart silently auto-generates a random one and produces

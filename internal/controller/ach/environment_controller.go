@@ -868,20 +868,13 @@ func (r *EnvironmentReconciler) writeConflictWithUIRow(
 	env *achv1alpha1.Environment,
 	logger logr.Logger,
 ) (ctrl.Result, error) {
-	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
-		Type:               "AccessGroupSynced",
-		Status:             metav1.ConditionFalse,
-		Reason:             "ConflictWithUIRow",
-		Message:            "projection row owned by UI; operator declines to overwrite",
-		ObservedGeneration: env.Generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setConflictWithUIRowCondition(&env.Status.Conditions, "AccessGroupSynced", env.Generation)
 	env.Status.ObservedGeneration = env.Generation
 	desiredStatus := env.Status
 	if err := retryStatusUpdate(ctx, r.Client, env, func(fresh *achv1alpha1.Environment) {
 		fresh.Status = desiredStatus
 	}); err != nil {
-		logger.Error(err, "status update failed", "reason", "ConflictWithUIRow")
+		logger.Error(err, "status update failed", "reason", ReasonConflictWithUIRow)
 	}
 	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }

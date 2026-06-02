@@ -116,52 +116,26 @@ const upsertEnvironmentSQL = `
 `
 
 func UpsertEnvironment(ctx context.Context, pool *pgxpool.Pool, row EnvironmentRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertEnvironment(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertEnvironmentTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertEnvironment(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertEnvironmentTx(ctx, tx, row)
+	})
 }
 
-// upsertEnvironmentTx is the tx-form helper that controllers use via
+// UpsertEnvironmentTx is the tx-form helper that controllers use via
 // db.WithTxNotify so the projection write and the pg_notify call commit
-// atomically. The bare pool form above is retained for tests and callers
-// without an outer transaction.
-func upsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {
-	var ns string
-	err := tx.QueryRow(ctx, upsertEnvironmentSQL,
+// atomically. The pool form above is retained for tests and callers without
+// an outer transaction. ErrOriginConflict on UI-row collision (the
+// ON CONFLICT WHERE existing.origin='cr' filtered the row out), transient
+// pgconn 08/57 propagated raw, other errors wrapped with (namespace, name).
+func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {
+	return upsertReturning(ctx, tx, upsertEnvironmentSQL, "UpsertEnvironment("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name,
 		row.AuthorizedTeams, row.ContextPrompts, row.ContextPlugins, row.ContextArtifacts,
 		row.RuntimeModels, row.RuntimeMCPServers, row.RuntimeA2AAgents,
 		row.AvailableCondition, row.AccessGroupSyncedCondition,
 		row.ExecutionResourcesResolvedCondition,
 		row.ResourceVersion,
-	).Scan(&ns)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// ON CONFLICT WHERE existing.origin='cr' filtered the row out:
-			// the existing row is non-CR origin (UI-owned).
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertEnvironment(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	)
 }
 
 // GetEnvironmentByName reads the row keyed by (namespace, name). On
@@ -271,9 +245,9 @@ func SoftDeleteEnvironment(ctx context.Context, pool *pgxpool.Pool, ns, name str
 	return nil
 }
 
-// softDeleteEnvironmentTx mirrors SoftDeleteEnvironment for use inside an
+// SoftDeleteEnvironmentTx mirrors SoftDeleteEnvironment for use inside an
 // outer transaction (db.WithTxNotify). Same idempotent semantics.
-func softDeleteEnvironmentTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+func SoftDeleteEnvironmentTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeleteEnvironmentSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err

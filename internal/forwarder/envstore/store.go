@@ -46,9 +46,6 @@ func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Store {
 // retain it past the next Refresh.
 func (s *Store) Get(name string) (*db.EnvironmentRow, bool) {
 	m := s.rows.Load()
-	if m == nil {
-		return nil, false
-	}
 	r, ok := (*m)[name]
 	if !ok {
 		return nil, false
@@ -61,9 +58,6 @@ func (s *Store) Get(name string) (*db.EnvironmentRow, bool) {
 // ordering does not affect outcome.
 func (s *Store) List() []db.EnvironmentRow {
 	m := s.rows.Load()
-	if m == nil {
-		return nil
-	}
 	out := make([]db.EnvironmentRow, 0, len(*m))
 	for _, r := range *m {
 		out = append(out, r)
@@ -88,33 +82,8 @@ func (s *Store) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// Run implements manager.Runnable. Initial Refresh + LISTEN + 5-minute
-// ticker safety net. Returns ctx.Err() on shutdown.
+// Run implements manager.Runnable: initial refresh + LISTEN on Channel +
+// 5-minute ticker safety net. Blocks until ctx is cancelled.
 func (s *Store) Run(ctx context.Context) error {
-	if err := s.Refresh(ctx); err != nil {
-		s.log.Error(err, "initial envstore refresh failed; will retry on next NOTIFY or tick")
-	}
-
-	lis := db.NewListener(s.pool, s.log.WithName("listen"))
-	lis.Subscribe(Channel, func(_ string) {
-		if err := s.Refresh(ctx); err != nil {
-			s.log.Error(err, "envstore notify-driven refresh failed")
-		}
-	})
-	go func() {
-		_ = lis.Run(ctx)
-	}()
-
-	ticker := time.NewTicker(refreshInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := s.Refresh(ctx); err != nil {
-				s.log.Error(err, "envstore periodic refresh failed")
-			}
-		}
-	}
+	return db.RunRefreshLoop(ctx, s.pool, Channel, refreshInterval, s.log, s.Refresh)
 }

@@ -334,46 +334,6 @@ func TestClassifyBearer_OutOfAlphabetRejected(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------
-// ConstantTimeEqual tests (Task 3)
-// ---------------------------------------------------------------------
-
-func TestConstantTimeEqual_Match(t *testing.T) {
-	a := "pk_abcdefghij1234567890abcde"
-	b := "pk_abcdefghij1234567890abcde"
-	if !ConstantTimeEqual(a, b) {
-		t.Fatalf("ConstantTimeEqual identical inputs returned false")
-	}
-}
-
-func TestConstantTimeEqual_Mismatch(t *testing.T) {
-	a := "pk_abcdefghij1234567890abcde"
-	b := "pk_zbcdefghij1234567890abcde" // first suffix char differs
-	if ConstantTimeEqual(a, b) {
-		t.Fatalf("ConstantTimeEqual differing inputs returned true")
-	}
-}
-
-func TestConstantTimeEqual_DifferentLengths(t *testing.T) {
-	// crypto/subtle.ConstantTimeCompare returns 0 on length mismatch;
-	// our wrapper preserves that contract.
-	if ConstantTimeEqual("pk_short", "pk_abcdefghij1234567890abcde") {
-		t.Fatalf("ConstantTimeEqual short vs long returned true")
-	}
-	if ConstantTimeEqual("", "pk_abcdefghij1234567890abcde") {
-		t.Fatalf("ConstantTimeEqual empty vs non-empty returned true")
-	}
-	if ConstantTimeEqual("pk_abcdefghij1234567890abcde", "") {
-		t.Fatalf("ConstantTimeEqual non-empty vs empty returned true")
-	}
-}
-
-func TestConstantTimeEqual_BothEmpty(t *testing.T) {
-	if !ConstantTimeEqual("", "") {
-		t.Fatalf("ConstantTimeEqual empty vs empty returned false")
-	}
-}
-
 func TestKeyIDPrefixConstantsHaveExpectedValues(t *testing.T) {
 	if string(PrefixPkid) != PkidKeyIDPrefix {
 		t.Errorf("PrefixPkid = %q; want %q", PrefixPkid, PkidKeyIDPrefix)

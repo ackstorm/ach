@@ -18,30 +18,17 @@ import "github.com/prometheus/client_golang/prometheus"
 // behavior), so callers must hold the returned pointer in a single
 // process-scoped variable.
 //
+// reg accepts any prometheus.Registerer — *prometheus.Registry and
+// controller-runtime's RegistererGatherer both satisfy the interface,
+// so one function serves all four call sites.
+//
 // Label-value enum (§18.5 normative):
 //
 //	caller ∈ {"forwarder", "content_service", "platform_api", "operator"}
 //
 // Cardinality is bounded at 4 — adding a fifth caller requires
 // updating the §18.5 spec table first.
-func MustRegisterLitellmUnreachable(reg *prometheus.Registry) *prometheus.CounterVec {
-	return MustRegisterLitellmUnreachableOn(reg)
-}
-
-// MustRegisterLitellmUnreachableOn is the prometheus.Registerer-shaped
-// variant of MustRegisterLitellmUnreachable. Operator wiring (Plan
-// 05-06 Task 5) requires this overload because
-// sigs.k8s.io/controller-runtime/pkg/metrics.Registry is typed as a
-// RegistererGatherer interface (prometheus.Registerer +
-// prometheus.Gatherer), NOT a concrete *prometheus.Registry. The
-// content-service / forwarder / platform-api wires (Tasks 1, 3, 4) use
-// the *prometheus.Registry-shaped wrapper above; the operator wires
-// through this Registerer-shaped variant.
-//
-// Same identity, same label dimension, same panic-on-double-register
-// semantics — both functions construct the same CounterVec; the only
-// difference is the Register call site.
-func MustRegisterLitellmUnreachableOn(reg prometheus.Registerer) *prometheus.CounterVec {
+func MustRegisterLitellmUnreachable(reg prometheus.Registerer) *prometheus.CounterVec {
 	c := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "litellm_unreachable_total",

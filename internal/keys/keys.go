@@ -4,7 +4,6 @@ package keys
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base32"
 	"errors"
 	"strings"
@@ -191,21 +190,4 @@ func isBase32Lower(c byte) bool {
 		return true
 	}
 	return false
-}
-
-// ConstantTimeEqual returns true iff a and b are byte-for-byte equal,
-// performing the comparison in time that depends only on the input
-// lengths (not on the content). This is the canonical defense against
-// timing-oracle attacks on bearer-credential equality checks.
-//
-// Per crypto/subtle.ConstantTimeCompare semantics, a length mismatch
-// returns 0 immediately — this early-return is NOT a timing leak because
-// string length is not secret (the bearer grammar fixes it at 29 chars).
-//
-// The handler path calls ClassifyBearer first to enforce the 29-char
-// length; ConstantTimeEqual is the secondary compare used wherever a
-// credential equality check is needed outside the keystore resolver
-// (e.g. webhook-signature parity in future plans).
-func ConstantTimeEqual(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

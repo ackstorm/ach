@@ -44,7 +44,6 @@ type KeyInfo struct {
 	KeyID         string            `json:"key_id"`
 	KeyType       keys.BearerPrefix `json:"key_type"`
 	OwnerEmail    string            `json:"owner_email"`
-	Status        string            `json:"status"`
 	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
 	Environment   string            `json:"environment,omitempty"`
 	LiteLLMUserID *string           `json:"litellm_user_id,omitempty"`

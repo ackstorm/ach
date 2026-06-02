@@ -53,26 +53,6 @@ func (c *RESTClient) CreateTeam(ctx context.Context, req *NewTeamRequest) (*Team
 	return &out, nil
 }
 
-// UpdateTeam issues POST /team/update (POST — never the partial-update
-// verb; see Pitfall 2).
-func (c *RESTClient) UpdateTeam(ctx context.Context, req *UpdateTeamRequest) (*TeamListEntry, error) {
-	raw, err := c.makeRequest(ctx, "POST", "/team/update", req)
-	if err != nil {
-		return nil, err
-	}
-	var out TeamListEntry
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("litellm: decode POST /team/update: %w", err)
-	}
-	return &out, nil
-}
-
-// DeleteTeam issues POST /team/delete with body {"team_ids": [...]}.
-func (c *RESTClient) DeleteTeam(ctx context.Context, teamIDs []string) error {
-	_, err := c.makeRequest(ctx, "POST", "/team/delete", &DeleteTeamRequest{TeamIDs: teamIDs})
-	return err
-}
-
 // ListTeamsByAlias issues GET /v2/team/list?team_alias=<alias>&page_size=100
 // and returns ONLY teams whose TeamAlias exactly matches the requested
 // alias. LiteLLM's server-side filter is partial (substring) per spec

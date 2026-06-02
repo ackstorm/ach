@@ -49,12 +49,11 @@ func newTestDeps(t *testing.T, resolver keystore.Resolver) Deps {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return Deps{
-		Pool:         nil, // /readyz checks pool != nil and skips otherwise
-		Redis:        nil, // /readyz checks redis != nil and skips otherwise
-		LiteLLM:      nil, // Not exercised here
-		Pepper:       []byte("test-pepper-32-bytes-aaaaaaaaaaaaaaaaa"),
-		Allowlist:    map[string]struct{}{"admin@example.com": {}},
-		OIDCProvider: nil,
+		Pool:      nil, // /readyz checks pool != nil and skips otherwise
+		Redis:     nil, // /readyz checks redis != nil and skips otherwise
+		LiteLLM:   nil, // Not exercised here
+		Pepper:    []byte("test-pepper-32-bytes-aaaaaaaaaaaaaaaaa"),
+		Allowlist: map[string]struct{}{"admin@example.com": {}},
 		OAuth2Cfg: &oauth2.Config{
 			ClientID:     "test-client",
 			ClientSecret: "test-secret",
@@ -180,7 +179,6 @@ func TestServer_S4_MiddlewareOrder(t *testing.T) {
 			KeyID:      "pkid_test",
 			KeyType:    keys.PrefixPk,
 			OwnerEmail: "user@example.com",
-			Status:     "active",
 		},
 	})
 

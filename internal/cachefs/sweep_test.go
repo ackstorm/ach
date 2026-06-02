@@ -6,9 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/ackstorm/ach/internal/cachefs"
 )
@@ -181,98 +179,5 @@ func TestIsEmpty_StrayTmpFile(t *testing.T) {
 	}
 	if empty {
 		t.Fatalf("IsEmpty(stray top-level .tmp file) = true; want false (must NOT mask population)")
-	}
-}
-
-// TestSweepTmp_RemovesOldFiles asserts the §10.3 orphan-sweep core
-// behavior: files older than maxAge are removed; younger files are
-// retained.
-func TestSweepTmp_RemovesOldFiles(t *testing.T) {
-	root := t.TempDir()
-	if err := cachefs.EnsureLayout(root); err != nil {
-		t.Fatalf("EnsureLayout: %v", err)
-	}
-	tmp := filepath.Join(root, ".tmp")
-
-	oldA := filepath.Join(tmp, "stg-old-a")
-	oldB := filepath.Join(tmp, "stg-old-b")
-	fresh := filepath.Join(tmp, "stg-fresh")
-	for _, p := range []string{oldA, oldB, fresh} {
-		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", p, err)
-		}
-	}
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
-	for _, p := range []string{oldA, oldB} {
-		if err := os.Chtimes(p, twoHoursAgo, twoHoursAgo); err != nil {
-			t.Fatalf("Chtimes %s: %v", p, err)
-		}
-	}
-	// fresh keeps its default ModTime (≈ now).
-
-	if err := cachefs.SweepTmp(root, time.Hour); err != nil {
-		t.Fatalf("SweepTmp: %v", err)
-	}
-
-	for _, p := range []string{oldA, oldB} {
-		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("expected %s to be removed; stat err=%v", p, err)
-		}
-	}
-	if _, err := os.Stat(fresh); err != nil {
-		t.Fatalf("expected fresh file to survive; stat err=%v", err)
-	}
-}
-
-// TestSweepTmp_MissingTmpDir asserts the benign absent-dir branch:
-// the operator's hourly Runnable may call SweepTmp before
-// EnsureLayout has run; absent .tmp/ MUST return nil.
-func TestSweepTmp_MissingTmpDir(t *testing.T) {
-	root := t.TempDir()
-	// Deliberately do NOT call EnsureLayout — .tmp/ is absent.
-	if err := cachefs.SweepTmp(root, time.Hour); err != nil {
-		t.Fatalf("SweepTmp on root with no .tmp/ = %v, want nil", err)
-	}
-}
-
-// TestSweepTmp_RaceTolerance asserts the threat T-02-04-03
-// mitigation: a concurrent Remove (modeling a reconciler's
-// rename(2) winning the race) MUST NOT cause SweepTmp to return
-// non-nil. Whoever wins, SweepTmp's per-entry Remove tolerates
-// ErrNotExist silently.
-func TestSweepTmp_RaceTolerance(t *testing.T) {
-	root := t.TempDir()
-	if err := cachefs.EnsureLayout(root); err != nil {
-		t.Fatalf("EnsureLayout: %v", err)
-	}
-	tmp := filepath.Join(root, ".tmp")
-	victim := filepath.Join(tmp, "stg-racy")
-	if err := os.WriteFile(victim, []byte("x"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	// Set ModTime well in the past so the 1-nanosecond cutoff still
-	// classifies it as old.
-	past := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(victim, past, past); err != nil {
-		t.Fatalf("Chtimes: %v", err)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Race the sweeper: try to remove the victim ourselves.
-		// Whoever wins, both are no-ops or ErrNotExist; SweepTmp
-		// tolerates both per threat T-02-04-03 mitigation.
-		_ = os.Remove(victim)
-	}()
-
-	if err := cachefs.SweepTmp(root, time.Nanosecond); err != nil {
-		t.Fatalf("SweepTmp under race = %v, want nil", err)
-	}
-	wg.Wait()
-
-	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected victim removed by SOMEONE; stat err=%v", err)
 	}
 }

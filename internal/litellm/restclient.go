@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -159,15 +158,4 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 		}
 		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody, Transient: true}
 	}
-}
-
-// IsAuth401 is a typed-error convenience for callers who don't want to
-// import errors.As at every call site. Returns the *Auth401Error and
-// true if err is one; otherwise nil, false.
-func IsAuth401(err error) (*Auth401Error, bool) {
-	var a *Auth401Error
-	if errors.As(err, &a) {
-		return a, true
-	}
-	return nil, false
 }

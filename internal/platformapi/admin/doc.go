@@ -7,7 +7,8 @@
 //     Body: {"key_id":"pkid_..."} or {"key_id":"ekid_..."}
 //     Revokes an arbitrary key. The pk_ branch is DB-first (KEY-07 / D-14):
 //     the Postgres status flip IS the visible revocation barrier; LiteLLM
-//     RevokeKey and Redis DEL are best-effort downstream side effects.
+//     RevokeKey is a best-effort downstream side effect. (No revoke-time
+//     Redis DEL — see "Cache invalidation discipline" below.)
 //     The ek_ branch is LiteLLM-first (KEY-08 / D-15): LiteLLM is the load
 //     bearing barrier so its ack is required before the DB flip.
 //
@@ -49,7 +50,7 @@
 // ActionEkRevoke, ActionAdminRefresh, ActionAdminUsersRevokeKeys) on
 // success and on per-row failure.
 //
-// # Redis DEL discipline
+// # Cache invalidation discipline
 //
 // Per the keystore cache key shape ("ach:key:" + hex(HMAC-SHA-256(pepper,
 // plaintext))), the canonical revoke-time cache invalidation requires
@@ -57,10 +58,11 @@
 // from PkKeyInfo / EkKeyInfo per Hub §16.1 ("plaintext NEVER persisted"
 // and credential_hash NEVER flows into audit / logs). Within the
 // internal/platformapi/admin/ scope boundary the handlers MUST NOT
-// extend internal/db's row shape, so the Redis.Del call lands under a
-// per-key-id marker namespace ("ach:revoke:keyid:" + keyID) for
-// observability hygiene; the keystore-resolver's true cache entries are
-// reclaimed by the 60s TTL ceiling + the orphan-cleanup loop's
-// eventual-consistency mechanism per WARN-04. The Postgres flip is the
-// visible revocation barrier in either case.
+// extend internal/db's row shape, so the admin endpoints cannot
+// construct the real cache key to DEL it. The keystore-resolver's cache
+// entries are therefore reclaimed by the 60s TTL ceiling + the
+// orphan-cleanup loop's eventual-consistency mechanism per WARN-04 — the
+// Postgres flip is the visible revocation barrier. (A best-effort DEL
+// under a synthetic "ach:revoke:keyid:" marker namespace was removed as a
+// guaranteed-miss no-op; nothing SET or read that key.)
 package admin

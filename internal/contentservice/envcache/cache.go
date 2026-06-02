@@ -51,32 +51,27 @@ const cacheTTL = 60 * time.Second
 //
 // Field semantics:
 //
-//   - Namespace, Name: PK of the projection row; included in the payload
-//     for caller convenience (e.g. so the caller can log without
-//     re-threading the key parameters).
 //   - AuthorizedTeams: source for the pk_ Team intersection check
 //     (CS-03 / D-04 step 4).
 //   - ContextPrompts, ContextPlugins, ContextArtifacts: source for the
 //     content allowlist check (CS-04 / D-04 step 5 — cheaper-first
 //     ordering).
-//   - DeletionTimestamp: non-nil indicates Environment is draining
-//     (§6.5 / CS-09); Content Service continues to serve until full
-//     finalizer drain removes the row.
-//   - ResourceVersion: K8s resource_version of the underlying
-//     Environment CR — included so the caller can detect cache vs DB
-//     skew in tests / debug paths.
+//
+// Only the fields the pipeline reads are cached — the projection PK
+// (namespace/name), deletion timestamp, and resource_version are NOT
+// stored: staleness gates on the contentRow, not the EnvRow, so caching
+// them only bloats the Redis payload.
 //
 // JSON tags are explicit (not relying on Go field-name defaulting) so
-// the wire format is stable across struct-field renames.
+// the wire format is stable across struct-field renames. Dropping fields
+// is forward-safe: old cached entries carrying the extra keys still
+// deserialize (encoding/json ignores unknown keys; no
+// DisallowUnknownFields on the read path), so no cache flush is needed.
 type EnvRow struct {
-	Namespace         string     `json:"namespace"`
-	Name              string     `json:"name"`
-	AuthorizedTeams   []string   `json:"authorized_teams"`
-	ContextPrompts    []string   `json:"context_prompts"`
-	ContextPlugins    []string   `json:"context_plugins"`
-	ContextArtifacts  []string   `json:"context_artifacts"`
-	DeletionTimestamp *time.Time `json:"deletion_timestamp,omitempty"`
-	ResourceVersion   string     `json:"resource_version"`
+	AuthorizedTeams  []string `json:"authorized_teams"`
+	ContextPrompts   []string `json:"context_prompts"`
+	ContextPlugins   []string `json:"context_plugins"`
+	ContextArtifacts []string `json:"context_artifacts"`
 }
 
 // Loader is the function signature for the cache miss path. The

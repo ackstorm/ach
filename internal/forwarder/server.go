@@ -13,27 +13,16 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/forwarder/proxy"
 	"github.com/ackstorm/ach/internal/keystore"
-	"github.com/ackstorm/ach/internal/litellm"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Deps wires the forwarder traffic handler's runtime dependencies.
 //
 // BIPResolver and EnvProvider are Postgres-backed caches (issue #34 C1
-// + C2) that replaced the controller-runtime informers. K8sClient is
-// retained ONLY for the ach-jwt-signing-keys Secret hot-reload watcher
-// wired in cmd/ach/cmd/forwarder.go — the traffic path no longer reads
-// from the cached k8s client.
+// + C2) that replaced the controller-runtime informers — the traffic
+// path no longer reads from the cached k8s client.
 type Deps struct {
-	Pool             *pgxpool.Pool
-	Redis            *redis.Client
-	LiteLLM          litellm.Client
-	Pepper           []byte
-	K8sClient        client.Client
 	BIPResolver      proxy.BIPResolver
 	EnvProvider      precheck.EnvProvider
 	Resolver         keystore.Resolver
@@ -72,7 +61,6 @@ func New(deps Deps) http.Handler {
 		PrecheckDeps: precheck.Deps{
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
-			Namespace:     deps.Namespace,
 		},
 		BaseURL:   deps.BaseURL,
 		Namespace: deps.Namespace,

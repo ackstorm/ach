@@ -82,51 +82,6 @@ func New(spec *achv1alpha1.GitHubSource) (*Fetcher, error) {
 	}, nil
 }
 
-// extractToken returns the bearer token to send to GitHub, or empty
-// for anonymous fetch. Shared by both transport branches.
-//
-// Semantics (post Task 1 CRD shape relaxation):
-//
-//   - spec.AuthSecretRef == nil          → anonymous (token="").
-//   - spec.AuthSecretRef != nil,
-//     req.Secret == nil                  → ErrUnauthorized (operator
-//     declared intent for auth and we
-//     must not silently fall back to
-//     anonymous).
-//   - key resolves from f.spec.AuthSecretRef.Key, or — when empty —
-//     achv1alpha1.DefaultAuthSecretKey("github") == "GITHUB_TOKEN"
-//     so `kubectl create secret generic foo --from-literal=GITHUB_TOKEN=…`
-//     works zero-config.
-//   - resolved key missing from Secret.Data
-//     → ErrUnauthorized with the key NAME in the message (never the
-//     absent value — threat T-02-02-01).
-func (f *Fetcher) extractToken(req sources.FetchRequest) (string, error) {
-	if f.spec.AuthSecretRef == nil {
-		return "", nil
-	}
-	if req.Secret == nil {
-		return "", fmt.Errorf("github: auth secret %q is nil: %w",
-			f.spec.AuthSecretRef.Name, sources.ErrUnauthorized)
-	}
-	key := f.spec.AuthSecretRef.Key
-	defaulted := false
-	if key == "" {
-		key = achv1alpha1.DefaultAuthSecretKey("github")
-		defaulted = true
-	}
-	raw := req.Secret.Data[key]
-	if len(raw) == 0 {
-		if defaulted {
-			return "", fmt.Errorf(
-				"github: missing auth secret key %q (default for github; set authSecretRef.key to override): %w",
-				key, sources.ErrUnauthorized)
-		}
-		return "", fmt.Errorf("github: missing auth secret key %q: %w",
-			key, sources.ErrUnauthorized)
-	}
-	return string(raw), nil
-}
-
 // Fetch implements [sources.Fetcher]. See package doc for behavior.
 //
 // Dispatches by spec.Transport (Task 1 / FIX_GIT.txt):
@@ -140,7 +95,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	}
 
 	// ───── legacy REST branch ─────
-	token, err := f.extractToken(req)
+	token, err := sources.ExtractBearerToken("github", f.spec.AuthSecretRef, req.Secret)
 	if err != nil {
 		return nil, err
 	}
@@ -226,20 +181,13 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 			UpstreamRev: sha,
 			NotModified: false,
 		}, nil
-	case tarballResp.StatusCode == nethttp.StatusUnauthorized,
-		tarballResp.StatusCode == nethttp.StatusForbidden:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball %d on %s: %w",
-			tarballResp.StatusCode, f.spec.Repo, sources.ErrUnauthorized)
-	case tarballResp.StatusCode == nethttp.StatusNotFound:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball 404 on %s: %w", f.spec.Repo, sources.ErrNotFound)
-	case tarballResp.StatusCode >= 500:
-		drainAndClose(tarballResp.Body)
-		return nil, fmt.Errorf("github: tarball %d on %s: %w",
-			tarballResp.StatusCode, f.spec.Repo, sources.ErrUnreachable)
 	default:
-		drainAndClose(tarballResp.Body)
+		// Shared ladder for every non-200 tarball status; guard preserves
+		// the original default arm for the pathological 2xx-other case.
+		sources.DrainAndClose(tarballResp.Body)
+		if e := sources.ClassifyHTTPStatus("github", "tarball on "+f.spec.Repo, tarballResp.StatusCode); e != nil {
+			return nil, e
+		}
 		return nil, fmt.Errorf("github: tarball %d on %s: %w",
 			tarballResp.StatusCode, f.spec.Repo, sources.ErrUpstreamInvalid)
 	}
@@ -253,17 +201,13 @@ func classifyGitHubErr(err error, resp *gogithub.Response, op string) error {
 	if resp == nil || resp.Response == nil {
 		return fmt.Errorf("github: %s: %v: %w", op, err, sources.ErrUnreachable)
 	}
-	switch {
-	case resp.StatusCode == nethttp.StatusUnauthorized,
-		resp.StatusCode == nethttp.StatusForbidden:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUnauthorized)
-	case resp.StatusCode == nethttp.StatusNotFound:
-		return fmt.Errorf("github: %s 404: %w", op, sources.ErrNotFound)
-	case resp.StatusCode >= 500:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUnreachable)
-	default:
-		return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
+	if classified := sources.ClassifyHTTPStatus("github", op, resp.StatusCode); classified != nil {
+		return classified
 	}
+	// 2xx-with-err edge: ClassifyHTTPStatus returns nil for 2xx, but an
+	// SDK error paired with a 2xx still means the response was unusable —
+	// preserve the original default-arm UpstreamInvalid mapping.
+	return fmt.Errorf("github: %s %d: %w", op, resp.StatusCode, sources.ErrUpstreamInvalid)
 }
 
 // setHTTPClientForTesting is the test-only override that injects an

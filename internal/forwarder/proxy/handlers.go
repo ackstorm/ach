@@ -45,27 +45,24 @@ type HandlerDeps struct {
 	Namespace string
 }
 
-// HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
-// handles model-level auth via the shared key + key_id headers. FWD-06:
-// inject Environment attribution tag for ek_ traffic only.
-func HandlerV1(deps HandlerDeps) http.HandlerFunc {
+// taggedPassthrough builds the no-precheck passthrough handler shared by
+// /v1 and /gemini: inject the Environment attribution tag (FWD-06, ek_
+// traffic only) then forward. routeLabel is the metrics route dimension.
+func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
 	return func(w http.ResponseWriter, r *http.Request) {
 		maybeInjectEnvironmentTag(r)
-		metrics.IncRequests("/v1", keyTypeFor(r.Context()), "forwarded")
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
 		rp.ServeHTTP(w, r)
 	}
 }
 
+// HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
+// handles model-level auth via the shared key + key_id headers.
+func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v1") }
+
 // HandlerGemini mirrors HandlerV1 for /gemini/*.
-func HandlerGemini(deps HandlerDeps) http.HandlerFunc {
-	rp := New(deps.Deps)
-	return func(w http.ResponseWriter, r *http.Request) {
-		maybeInjectEnvironmentTag(r)
-		metrics.IncRequests("/gemini", keyTypeFor(r.Context()), "forwarded")
-		rp.ServeHTTP(w, r)
-	}
-}
+func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/gemini") }
 
 // maybeInjectEnvironmentTag is the FWD-06 ek_ guard shared by /v1 + /gemini.
 // pk_ traffic and bodyless requests pass through unmodified.
@@ -158,40 +155,44 @@ const (
 	outcomeInternalError        = "internal_error"
 )
 
-// classifyPrecheckErr maps typed sentinels to outcome + HTTP status +
-// envelope code per Hub §15.5.
-func classifyPrecheckErr(err error) (outcome string, status int, code string) {
-	switch {
-	case errors.Is(err, precheck.ErrUnauthorizedResource):
-		return outcomeUnauthorizedResource, http.StatusForbidden, outcomeUnauthorizedResource
-	case errors.Is(err, precheck.ErrUnauthorizedTeam):
-		return outcomeUnauthorizedTeam, http.StatusForbidden, outcomeUnauthorizedTeam
-	case errors.Is(err, precheck.ErrLiteLLMUnreachable):
-		return outcomeLitellmUnreachable, http.StatusServiceUnavailable, outcomeLitellmUnreachable
-	case errors.Is(err, precheck.ErrInvalidKeyType):
-		return outcomeInvalidKeyType, http.StatusUnauthorized, outcomeInvalidKeyType
-	case errors.Is(err, precheck.ErrEnvironmentNotFound):
-		return outcomeEnvironmentNotFound, http.StatusNotFound, outcomeEnvironmentNotFound
-	}
-	return outcomeInternalError, http.StatusInternalServerError, outcomeInternalError
+// precheckOutcomes binds each precheck outcome to its HTTP status + stable
+// message (Hub §15.5). Keyed by the outcome* constants so the taxonomy
+// lives in ONE place — classifyPrecheckErr and codeMessage both read it.
+var precheckOutcomes = map[string]struct {
+	status int
+	msg    string
+}{
+	outcomeUnauthorizedResource: {http.StatusForbidden, "name not authorized for bound environment"},
+	outcomeUnauthorizedTeam:     {http.StatusForbidden, "caller's teams do not grant access to this resource"},
+	outcomeLitellmUnreachable:   {http.StatusServiceUnavailable, "litellm reachability failure during teams resolve"},
+	outcomeInvalidKeyType:       {http.StatusUnauthorized, "invalid or missing key type for this route"},
+	outcomeEnvironmentNotFound:  {http.StatusNotFound, "environment not found"},
+	outcomeInternalError:        {http.StatusInternalServerError, "internal error"},
 }
 
-// codeMessage returns the stable human-readable message per Hub §15.5
-// outcome. v1alpha1 ships English literals; localization is v1beta1.
-func codeMessage(code string) string {
-	switch code {
-	case "unauthorized_resource":
-		return "name not authorized for bound environment"
-	case "unauthorized_team":
-		return "caller's teams do not grant access to this resource"
-	case "litellm_unreachable":
-		return "litellm reachability failure during teams resolve"
-	case "invalid_key_type":
-		return "invalid or missing key type for this route"
-	case "environment_not_found":
-		return "environment not found"
-	case "internal_error":
-		return "internal error"
+// classifyPrecheckErr maps typed sentinels to outcome + HTTP status +
+// envelope code per Hub §15.5. code is identical to outcome (the
+// outcome constant doubles as the envelope code).
+func classifyPrecheckErr(err error) (outcome string, status int, code string) {
+	oc := outcomeInternalError
+	switch {
+	case errors.Is(err, precheck.ErrUnauthorizedResource):
+		oc = outcomeUnauthorizedResource
+	case errors.Is(err, precheck.ErrUnauthorizedTeam):
+		oc = outcomeUnauthorizedTeam
+	case errors.Is(err, precheck.ErrLiteLLMUnreachable):
+		oc = outcomeLitellmUnreachable
+	case errors.Is(err, precheck.ErrInvalidKeyType):
+		oc = outcomeInvalidKeyType
+	case errors.Is(err, precheck.ErrEnvironmentNotFound):
+		oc = outcomeEnvironmentNotFound
 	}
-	return ""
+	return oc, precheckOutcomes[oc].status, oc
+}
+
+// codeMessage returns the stable human-readable message for an outcome
+// code (Hub §15.5). Unknown codes return "". v1alpha1 ships English
+// literals; localization is v1beta1.
+func codeMessage(code string) string {
+	return precheckOutcomes[code].msg
 }

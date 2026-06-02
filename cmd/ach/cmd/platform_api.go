@@ -125,7 +125,12 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	cfg.RedisPassword = os.Getenv("ACH_REDIS_PASSWORD")
 	cfg.RedisTLS = config.EnvBool("ACH_REDIS_TLS", false)
-	cfg.RedisDB, _ = config.MustEnvIntPositive("ACH_REDIS_DB", 0)
+	// ACH_REDIS_DB=0 is the default Redis logical DB and a legitimate value;
+	// EnvIntNonNeg permits 0 (MustEnvIntPositive would reject) and the error
+	// is surfaced, not dropped.
+	if cfg.RedisDB, err = config.EnvIntNonNeg("ACH_REDIS_DB", 0); err != nil {
+		return nil, err
+	}
 	if cfg.Namespace, err = config.MustEnvNonEmpty("POD_NAMESPACE"); err != nil {
 		return nil, err
 	}
@@ -250,7 +255,6 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		LiteLLM:         liteLLM,
 		Pepper:          cfg.Pepper,
 		Allowlist:       allowlist,
-		OIDCProvider:    oidcProvider,
 		IDTokenVerifier: idTokenVerifier,
 		OAuth2Cfg:       oauth2Cfg,
 		Store:           platformStore,

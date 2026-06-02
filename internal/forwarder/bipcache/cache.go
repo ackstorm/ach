@@ -65,9 +65,6 @@ func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Cache {
 // retain it past the next Refresh.
 func (c *Cache) Resolve(targetKind, targetName string) *db.BIPRow {
 	m := c.rows.Load()
-	if m == nil {
-		return nil
-	}
 	rows := (*m)[targetKey{Kind: targetKind, Name: targetName}]
 	if len(rows) == 0 {
 		return nil
@@ -103,40 +100,8 @@ func (c *Cache) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// Run implements manager.Runnable. It performs an initial refresh, then
-// drives two refresh paths in parallel:
-//
-//   - LISTEN on Channel via db.Listener for event-driven freshness.
-//   - 5-minute ticker as a safety net (db.Listener does not replay
-//     missed events on reconnect).
-//
-// Run blocks until ctx is cancelled and returns ctx.Err().
+// Run implements manager.Runnable: initial refresh + LISTEN on Channel +
+// 5-minute ticker safety net. Blocks until ctx is cancelled.
 func (c *Cache) Run(ctx context.Context) error {
-	if err := c.Refresh(ctx); err != nil {
-		c.log.Error(err, "initial bipcache refresh failed; will retry on next NOTIFY or tick")
-	}
-
-	lis := db.NewListener(c.pool, c.log.WithName("listen"))
-	lis.Subscribe(Channel, func(_ string) {
-		if err := c.Refresh(ctx); err != nil {
-			c.log.Error(err, "bipcache notify-driven refresh failed")
-		}
-	})
-	go func() {
-		// Listener returns ctx.Err() on shutdown — discard.
-		_ = lis.Run(ctx)
-	}()
-
-	ticker := time.NewTicker(refreshInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := c.Refresh(ctx); err != nil {
-				c.log.Error(err, "bipcache periodic refresh failed")
-			}
-		}
-	}
+	return db.RunRefreshLoop(ctx, c.pool, Channel, refreshInterval, c.log, c.Refresh)
 }

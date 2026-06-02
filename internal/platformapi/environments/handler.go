@@ -39,21 +39,13 @@ const (
 //     internal/platformapi/teams.LookupCallerTeams for the team-intersection
 //     filter on non-admin callers; the handler does not call any other
 //     LiteLLM method directly.
-//   - Allowlist is retained on the struct for parity with admin.Deps and
-//     hydrate.Deps; this handler does NOT consult it because BLK-02 ships
-//     keyCtx.IsAdmin populated by middleware.Authn.
 //   - Audit is the audit slog logger (audit.NewLogger result). Used only on
 //     litellm-unreachable / internal_error paths — environment listing is
 //     read-only and emits no audit per OBS-01.
-//   - Namespace is the deployment watch namespace; unused by this handler
-//     (the Store is already namespace-scoped at construction) but retained
-//     for symmetry.
 type Deps struct {
-	Store     *store.Store
-	LiteLLM   litellm.Client
-	Allowlist map[string]struct{}
-	Audit     *slog.Logger
-	Namespace string
+	Store   *store.Store
+	LiteLLM litellm.Client
+	Audit   *slog.Logger
 }
 
 // ListHandler returns GET /platform/environments. Filters by team
@@ -251,7 +243,7 @@ func GetHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.AuthorizedTeams, teams) {
+			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
 				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
 					"caller is not a member of any authorized team", reqID)
 				return
@@ -260,28 +252,4 @@ func GetHandler(deps Deps) http.HandlerFunc {
 
 		render.JSON(w, http.StatusOK, store.RowToView(*env))
 	}
-}
-
-// hasIntersect reports whether the two slices share at least one element.
-// O(len(a) + len(b)) via a hash-set on the smaller side; expected slice
-// sizes are single-digit so the constant factors matter little.
-//
-// Empty slice in either side short-circuits to false — an Environment with
-// no authorizedTeams is unreachable to non-admin callers (the CRD enforces
-// MinItems=1 so this branch is mostly defensive), and a caller with no team
-// memberships sees nothing.
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }

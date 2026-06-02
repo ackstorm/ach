@@ -108,43 +108,18 @@ const upsertPluginSQL = `
 `
 
 func UpsertPlugin(ctx context.Context, pool *pgxpool.Pool, row PluginRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPlugin(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := upsertPluginTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPlugin(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		return UpsertPluginTx(ctx, tx, row)
+	})
 }
 
-func upsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
-	var ns string
-	err := tx.QueryRow(ctx, upsertPluginSQL,
+// UpsertPluginTx — see UpsertEnvironmentTx.
+func UpsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
+	return upsertReturning(ctx, tx, upsertPluginSQL, "UpsertPlugin("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name, row.StorageLocation,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
-	).Scan(&ns)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrOriginConflict
-		}
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertPlugin(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
+	)
 }
 
 // GetPluginByName reads the plugins row keyed by (namespace, name).
@@ -188,7 +163,8 @@ func SoftDeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	return nil
 }
 
-func softDeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+// SoftDeletePluginTx — see SoftDeleteEnvironmentTx.
+func SoftDeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err

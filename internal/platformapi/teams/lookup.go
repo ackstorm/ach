@@ -26,7 +26,7 @@ import (
 //     handler emits 503 litellm_unreachable.
 //   - LiteLLM returns 200 with `teams` array: return ([...team names],
 //     nil). A nil or empty `teams` field is normalized to a zero-length
-//     slice so downstream `hasIntersect` consumers always see a real
+//     slice so downstream `HasIntersect` consumers always see a real
 //     slice.
 //
 // The dual-branch 404 detection (errors.Is + string-match) reflects

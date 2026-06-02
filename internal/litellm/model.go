@@ -9,56 +9,6 @@ import (
 	"net/url"
 )
 
-// CreateModel issues POST /model/new with the Deployment body.
-//
-// LiteLLM returns the freshly-created model record. Phase 3's Model
-// reconciler reads the top-level model_id from this response (per
-// 01-01-SUMMARY Probe 2 — both `model_id` AND `model_info.id` are
-// populated; top-level is canonical).
-func (c *RESTClient) CreateModel(ctx context.Context, req *Deployment) (*ModelInfoResponse, error) {
-	raw, err := c.makeRequest(ctx, "POST", "/model/new", req)
-	if err != nil {
-		return nil, err
-	}
-	var out ModelInfoResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("litellm: decode POST /model/new: %w", err)
-	}
-	return &out, nil
-}
-
-// UpdateModel issues POST /model/update with the updateDeployment body.
-//
-// CRITICAL Pitfall 2: the path is the literal string "/model/update".
-// The model id lives in req.ModelInfo.ID (top-level field of the
-// updateDeployment body), NOT in the URL. Do NOT generate the path by
-// embedding the id as a URL segment (the /model/<id>/update shape) —
-// that produces the spec-§5.1-violating partial-update shape even with
-// a POST verb, which is bbdsoftware/litellm-operator's actual bug.
-//
-// (§5.1 wholesale-replace contract: stands as-written per 01-01-SUMMARY
-// decisions; Phase 3's first integration test against the real model
-// reconciler will disambiguate against the spike's Probe 3 partial-merge
-// observation. Plan 01-03 codes the verb correctly; the body-construction
-// strategy is Phase 3's concern.)
-func (c *RESTClient) UpdateModel(ctx context.Context, req *updateDeployment) (*ModelInfoResponse, error) {
-	raw, err := c.makeRequest(ctx, "POST", "/model/update", req)
-	if err != nil {
-		return nil, err
-	}
-	var out ModelInfoResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("litellm: decode POST /model/update: %w", err)
-	}
-	return &out, nil
-}
-
-// DeleteModel issues POST /model/delete with body {"id": modelID}.
-func (c *RESTClient) DeleteModel(ctx context.Context, modelID string) error {
-	_, err := c.makeRequest(ctx, "POST", "/model/delete", &ModelDeleteRequest{ID: modelID})
-	return err
-}
-
 // ListModels issues GET /v1/model/info and returns the full registered
 // model set. Mirrors the ListMCPServers shape in mcp.go: GET against the
 // info endpoint, length-check len(list.Data), return ErrNotFound on
