@@ -35,7 +35,9 @@ type recordedSync struct {
 func swapUninstallSyncFn(t *testing.T, rec *recordedSync, stats hydrate.SyncStats, err error) {
 	t.Helper()
 	prevFn := uninstallSyncFn
-	uninstallSyncFn = func(prev, newFile *state.File, achDir, toolRoot string, opts hydrate.SyncOptions) (hydrate.SyncStats, error) {
+	uninstallSyncFn = func(
+		prev, newFile *state.File, achDir, toolRoot string, opts hydrate.SyncOptions,
+	) (hydrate.SyncStats, error) {
 		rec.called = true
 		rec.prev = prev
 		rec.scopedEmpty = newFile
@@ -66,8 +68,12 @@ func TestUninstall_DryRunWritesNothing(t *testing.T) {
 	prev := &state.File{
 		SchemaVersion: "2",
 		Environment:   "prod",
-		Plugins:       []state.FileEntry{{Target: "CLAUDE.md", Hash: "h", SourceHash: "s", Merge: "composite", Keys: []string{"foo"}}},
-		RuntimeFiles:  []state.FileEntry{{Target: ".mcp.json", Hash: "h2", SourceHash: "s2", Merge: "deep", Keys: []string{"mcpServers.x"}}},
+		Plugins: []state.FileEntry{
+			{Target: "CLAUDE.md", Hash: "h", SourceHash: "s", Merge: "composite", Keys: []string{"foo"}},
+		},
+		RuntimeFiles: []state.FileEntry{
+			{Target: ".mcp.json", Hash: "h2", SourceHash: "s2", Merge: "deep", Keys: []string{"mcpServers.x"}},
+		},
 	}
 	statePath := writeState(t, ws, prev)
 	before, err := os.ReadFile(statePath)
