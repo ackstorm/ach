@@ -26,5 +26,5 @@
 //     handler emits 503 litellm_unreachable.
 //   - LiteLLM returns 200 with `teams` array: return ([...team names],
 //     nil). A nil or empty `teams` field is normalized to a zero-length
-//     slice so downstream `hasIntersect` always sees a real slice.
+//     slice so downstream `HasIntersect` always sees a real slice.
 package teams

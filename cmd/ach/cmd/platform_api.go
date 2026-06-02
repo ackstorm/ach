@@ -255,7 +255,6 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		LiteLLM:         liteLLM,
 		Pepper:          cfg.Pepper,
 		Allowlist:       allowlist,
-		OIDCProvider:    oidcProvider,
 		IDTokenVerifier: idTokenVerifier,
 		OAuth2Cfg:       oauth2Cfg,
 		Store:           platformStore,

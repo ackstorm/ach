@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -24,16 +25,6 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
-
-// adminCacheKeyPrefix is the per-key-id namespace the admin revocation
-// handlers DEL on best-effort cache cleanup. The keystore Resolver
-// caches under "ach:key:<credential_hash>" which we cannot construct
-// from the admin endpoint (Plan 03-03 intentionally elides
-// credential_hash from PkKeyInfo/EkKeyInfo per Hub §16.1). The 60s TTL
-// ceiling + the orphan-cleanup loop bound the worst case; the per-id
-// marker is here for observability + to satisfy the structural
-// ordering invariant (db → litellm → redis per KEY-07).
-const adminCacheKeyPrefix = "ach:revoke:keyid:"
 
 // redisDeleter is the narrow Redis-Del seam admin handlers need. The
 // production type *redis.Client implements it (its Del method returns
@@ -57,7 +48,6 @@ type Deps struct {
 	Allowlist map[string]struct{} // loaded via LoadAllowlist at process start
 	Audit     *slog.Logger        // audit.NewLogger handle (audit=true)
 	Logger    *slog.Logger        // operational logger (NOT audit)
-	Pepper    []byte              // kept for compositional parity; admin handlers don't directly hash
 	Namespace string              // POD_NAMESPACE — composed into actor strings
 }
 
@@ -111,9 +101,9 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, reqID string, out any)
 // RevokeKeyHandler dispatches on the key_id prefix:
 //
 //   - pkid_… → revokePersonalKey: Postgres flip FIRST per KEY-07 (the
-//     visible barrier); LiteLLM RevokeKey + Redis DEL run best-effort.
+//     visible barrier); LiteLLM RevokeKey runs best-effort.
 //   - ekid_… → revokeEnvironmentKey: LiteLLM RevokeKey FIRST per KEY-08
-//     (the runtime barrier); DB flip + Redis DEL run after the ack.
+//     (the runtime barrier); DB flip runs after the ack.
 //
 // Either branch emits exactly one audit event (per-branch ActionPkRevoke
 // / ActionEkRevoke). The audit outcome captures partial completion
@@ -146,9 +136,11 @@ func RevokeKeyHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// revokePersonalKey is the pk_ branch — DB-first per KEY-07 + D-14.
-// Ordering is structurally fixed: the Postgres flip BEFORE the
-// LiteLLM call BEFORE the cache invalidation.
+// revokePersonalKey is the pk_ rendering handler — DB-first per KEY-07 +
+// D-14. The side-effect ordering (Postgres flip FIRST, then best-effort
+// LiteLLM RevokeKey) lives in revokePkInline so the single and bulk
+// paths share ONE ordering implementation; this handler owns only the
+// HTTP rendering + its OWN audit outcome policy.
 //
 // Per WARN-04: when LiteLLM is unreachable the handler returns 200
 // (NOT 503) — the Postgres flip already happened and IS the
@@ -156,10 +148,20 @@ func RevokeKeyHandler(deps Deps) http.HandlerFunc {
 // into retrying (against an already-revoked DB row). A stderr WARN log
 // captures the partial-completion signal; the orphan-cleanup loop
 // reconciles via ListActiveACHKeyTokens.
+//
+// Audit (reachability-aware, per D-14): OutcomeLitellmUnreachable when
+// the best-effort LiteLLM call failed, else OutcomeRevoked. This is the
+// DIVERGENT half of DUP-3 — the bulk caller always emits OutcomeRevoked.
 func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID string, w http.ResponseWriter) {
-	// Step 1 — DB UPDATE FIRST (the visible barrier).
-	row, err := db.RevokePersonalKey(ctx, deps.Pool, keyID)
+	litellmOK, err := revokePkInline(ctx, deps, keyID)
 	if err != nil {
+		if errors.Is(err, errKeyNotActive) {
+			// Already revoked, expired, or unknown. Per the helper's
+			// (nil,nil) DB contract these three are indistinguishable.
+			render.Error(w, http.StatusNotFound, audit.OutcomeExpiredOrRevoked, "key not found or already revoked", reqID)
+			return
+		}
+		// DB failure on the flip itself.
 		if deps.Logger != nil {
 			deps.Logger.Error("admin.pk-revoke: DB error", "key_id", keyID, "err", err)
 		}
@@ -172,36 +174,9 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 		return
 	}
-	if row == nil {
-		// Already revoked, expired, or unknown. Per the helper's
-		// (nil,nil) contract these three are indistinguishable.
-		render.Error(w, http.StatusNotFound, audit.OutcomeExpiredOrRevoked, "key not found or already revoked", reqID)
-		return
-	}
 
-	// Step 2 — LiteLLM RevokeKey (best-effort per WARN-04). We have
-	// already flipped the DB row; LiteLLM failure does NOT roll back.
-	litellmOK := true
-	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
-		if revErr := deps.LiteLLM.RevokeKey(ctx, *row.LiteLLMToken); revErr != nil {
-			litellmOK = false
-			if deps.Logger != nil {
-				// WARN-04 invariant: stderr WARN log on partial completion.
-				deps.Logger.Warn("admin.pk-revoke: LiteLLM unreachable; DB flip succeeded; orphan-loop will reconcile",
-					"key_id", keyID, "err", revErr)
-			}
-		}
-	}
-
-	// Step 3 — Redis DEL (best-effort). See doc.go on the
-	// per-key-id marker; the keystore's true cache entries are reclaimed
-	// by the 60s TTL ceiling.
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
-	}
-
-	// Step 4 — audit emission (single event, outcome reflects
-	// LiteLLM reachability per D-14).
+	// Audit emission (single event, outcome reflects LiteLLM
+	// reachability per D-14).
 	outcome := audit.OutcomeRevoked
 	if !litellmOK {
 		outcome = audit.OutcomeLitellmUnreachable
@@ -213,8 +188,8 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 		})
 	}
 
-	// Step 5 — response. 200 in BOTH success and litellm-unreachable
-	// per WARN-04: the Postgres flip IS the caller-observable barrier.
+	// Response. 200 in BOTH success and litellm-unreachable per WARN-04:
+	// the Postgres flip IS the caller-observable barrier.
 	render.JSON(w, http.StatusOK, revokeKeyResponse{KeyID: keyID, Status: "revoked"})
 }
 
@@ -223,7 +198,7 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 // can revoke any caller's ek_).
 //
 // Ordering is structurally fixed: deps.LiteLLM.RevokeKey BEFORE
-// db.RevokeEnvironmentKey BEFORE deps.Redis.Del.
+// db.RevokeEnvironmentKey.
 //
 // On LiteLLM-unreachable: return 503; the DB row STAYS active so the
 // caller can retry idempotently (per KEY-08 LiteLLM is the runtime
@@ -249,32 +224,29 @@ func revokeEnvironmentKey(ctx context.Context, deps Deps, keyID, actor, reqID st
 		return
 	}
 
-	// Step 2 — LiteLLM RevokeKey. LiteLLM-first means LiteLLM is the
-	// load-bearing barrier; failure here aborts the revoke + leaves the
-	// DB row active for a clean retry.
-	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
-		if revErr := deps.LiteLLM.RevokeKey(ctx, *row.LiteLLMToken); revErr != nil {
+	// Steps 2-3 — LiteLLM-first side effects + audit live in
+	// revokeEkInline (shared with the bulk path). It emits its OWN audit:
+	// OutcomeLitellmUnreachable on LiteLLM failure (errLitellmUnreachable
+	// sentinel) and OutcomeRevoked on success. The ONLY case it does NOT
+	// audit is a post-ack DB-flip failure (bare DB error) — the handler
+	// owns that OutcomeInternalError emission below, so there is no
+	// double-emit.
+	if err := revokeEkInline(ctx, deps, row, actor, reqID); err != nil {
+		if errors.Is(err, errLitellmUnreachable) {
+			// LiteLLM is the load-bearing barrier; failure aborts the
+			// revoke + leaves the DB row active for a clean retry (KEY-08).
+			// Audit (OutcomeLitellmUnreachable) already emitted by the helper.
 			if deps.Logger != nil {
 				deps.Logger.Warn("admin.ek-revoke: LiteLLM unreachable; DB row stays active per KEY-08",
-					"key_id", keyID, "err", revErr)
-			}
-			if deps.Audit != nil {
-				audit.EmitAudit(ctx, deps.Audit, audit.Event{
-					Action: audit.ActionEkRevoke, Outcome: audit.OutcomeLitellmUnreachable,
-					Actor: actor, RequestID: reqID, KeyID: keyID,
-				})
+					"key_id", keyID, "err", err)
 			}
 			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "LiteLLM unreachable; retry", reqID)
 			return
 		}
-	}
-
-	// Step 3 — DB UPDATE (post-LiteLLM-ack flip).
-	flipped, err := db.RevokeEnvironmentKey(ctx, deps.Pool, keyID)
-	if err != nil {
 		// LiteLLM already revoked; DB flip failed. Per KEY-08 surface a
 		// 500 — the LiteLLM-side is consistent (revoked); the orphan
-		// loop will eventually clean up the DB row on its next tick.
+		// loop will eventually clean up the DB row on its next tick. The
+		// helper did NOT audit this case, so the handler emits it here.
 		if deps.Logger != nil {
 			deps.Logger.Error("admin.ek-revoke: DB flip failed after LiteLLM ack", "key_id", keyID, "err", err)
 		}
@@ -287,20 +259,8 @@ func revokeEnvironmentKey(ctx context.Context, deps Deps, keyID, actor, reqID st
 		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 		return
 	}
-	_ = flipped // not surfaced to the response; the keyID is authoritative.
 
-	// Step 4 — Redis DEL (best-effort).
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
-	}
-
-	// Step 5 — audit + response.
-	if deps.Audit != nil {
-		audit.EmitAudit(ctx, deps.Audit, audit.Event{
-			Action: audit.ActionEkRevoke, Outcome: audit.OutcomeRevoked,
-			Actor: actor, RequestID: reqID, KeyID: keyID,
-		})
-	}
+	// Success — OutcomeRevoked audit already emitted by revokeEkInline.
 	render.JSON(w, http.StatusOK, revokeKeyResponse{KeyID: keyID, Status: "revoked"})
 }
 
@@ -345,9 +305,19 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 			if pk.Status != "active" {
 				continue
 			}
-			if e := revokePkInline(ctx, deps, pk.KeyID, actor, reqID); e != nil {
+			// Bulk pk_ audit policy DIVERGES from the single handler:
+			// OutcomeRevoked is emitted UNCONDITIONALLY (litellmOK ignored)
+			// — the DB flip is the visible barrier and the aggregate event
+			// does not surface per-row LiteLLM reachability.
+			if _, e := revokePkInline(ctx, deps, pk.KeyID); e != nil {
 				errs = append(errs, "pk:"+pk.KeyID+":"+e.Error())
 				continue
+			}
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action: audit.ActionPkRevoke, Outcome: audit.OutcomeRevoked,
+					Actor: actor, RequestID: reqID, KeyID: pk.KeyID,
+				})
 			}
 			revokedCount++
 		}
@@ -362,6 +332,9 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 			if ek.Status != "active" {
 				continue
 			}
+			// Bulk ek_ audit: revokeEkInline emits BOTH OutcomeLitellmUnreachable
+			// (on LiteLLM fail) and OutcomeRevoked (on success) itself — do NOT add
+			// an audit block here; it would double-emit (DUP-3 divergence guard).
 			if e := revokeEkInline(ctx, deps, &ek, actor, reqID); e != nil {
 				errs = append(errs, "ek:"+ek.KeyID+":"+e.Error())
 				continue
@@ -376,7 +349,7 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "user", Name: email},
-				Extra:     map[string]string{"revoked_count": itoa(revokedCount)},
+				Extra:     map[string]string{"revoked_count": strconv.Itoa(revokedCount)},
 			})
 		}
 
@@ -384,41 +357,79 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// revokePkInline runs the DB-first pk_ revocation sequence without
-// rendering an HTTP response. Used by RevokeUserKeysHandler for the
-// per-row iteration; errors are collected into the aggregate response.
-// LiteLLM-unreachable is NOT an error from this helper's perspective
-// (per WARN-04 the DB flip IS the visible barrier).
-func revokePkInline(ctx context.Context, deps Deps, keyID, actor, reqID string) error {
-	row, err := db.RevokePersonalKey(ctx, deps.Pool, keyID)
-	if err != nil {
-		return err
-	}
-	if row == nil {
-		return errors.New("not_active")
-	}
-	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
-		if revErr := deps.LiteLLM.RevokeKey(ctx, *row.LiteLLMToken); revErr != nil && deps.Logger != nil {
-			deps.Logger.Warn("admin.pk-revoke: LiteLLM unreachable in bulk revoke; DB flip succeeded",
-				"key_id", keyID, "err", revErr)
-		}
-	}
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
-	}
-	if deps.Audit != nil {
-		audit.EmitAudit(ctx, deps.Audit, audit.Event{
-			Action: audit.ActionPkRevoke, Outcome: audit.OutcomeRevoked,
-			Actor: actor, RequestID: reqID, KeyID: keyID,
-		})
-	}
-	return nil
+// errKeyNotActive is returned by revokePkInline when the pk_ DB row was
+// nil (already revoked, expired, or unknown — indistinguishable per the
+// helper's (nil,nil) contract). Its Error() string ("not_active")
+// matches the pre-DUP-3 inline value so the bulk aggregate `errors`
+// entry is byte-for-byte unchanged.
+var errKeyNotActive = errors.New("not_active")
+
+// errLitellmUnreachable is a sentinel for classification only. It is
+// returned by revokeEkInline wrapped around the underlying transport
+// error so callers can errors.Is() it (→ 503 in the single handler)
+// WITHOUT re-emitting audit. Its Error() string is TRANSPARENT — it
+// returns the wrapped error's message verbatim — so the bulk aggregate
+// `errors` entry is byte-for-byte unchanged from the pre-DUP-3 path
+// (which collected the bare transport error).
+var errLitellmUnreachable = errors.New("litellm_unreachable")
+
+// litellmUnreachableErr wraps the transport error from a failed LiteLLM
+// RevokeKey. It is errors.Is(errLitellmUnreachable) for classification,
+// errors.Is(wrapped) for the underlying cause, and its Error() forwards
+// the wrapped message verbatim (no "litellm_unreachable: " prefix) to
+// preserve the bulk path's collected error string.
+type litellmUnreachableErr struct{ wrapped error }
+
+func (e litellmUnreachableErr) Error() string { return e.wrapped.Error() }
+
+// Unwrap exposes the underlying transport error for errors.As / further unwrapping.
+func (e litellmUnreachableErr) Unwrap() error { return e.wrapped }
+func (e litellmUnreachableErr) Is(target error) bool {
+	return target == errLitellmUnreachable
 }
 
-// revokeEkInline runs the LiteLLM-first ek_ revocation sequence without
-// rendering an HTTP response. LiteLLM-unreachable IS an error from
-// this helper's perspective per KEY-08 — the row stays active and the
-// admin can retry the bulk operation.
+// revokePkInline performs the pk_ revoke side-effects in WARN-04 order:
+// DB flip first (the visible barrier), then best-effort LiteLLM RevokeKey.
+// Returns (litellmOK, err): err is non-nil only for DB failure / not_active
+// (errKeyNotActive); LiteLLM-unreachable is reported via litellmOK=false
+// (WARN-04: NOT an error).
+//
+// It does NOT emit audit — the caller emits with ITS OWN outcome policy so
+// the divergent single-vs-bulk audit semantics are preserved verbatim:
+// the single rendering handler is reachability-aware (OutcomeLitellmUnreachable
+// when !litellmOK, else OutcomeRevoked); the bulk caller emits OutcomeRevoked
+// UNCONDITIONALLY (litellmOK ignored). Because audit moved to the callers,
+// the helper no longer needs actor/reqID.
+func revokePkInline(ctx context.Context, deps Deps, keyID string) (litellmOK bool, err error) {
+	row, err := db.RevokePersonalKey(ctx, deps.Pool, keyID)
+	if err != nil {
+		return false, err
+	}
+	if row == nil {
+		return false, errKeyNotActive
+	}
+	litellmOK = true
+	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
+		if revErr := deps.LiteLLM.RevokeKey(ctx, *row.LiteLLMToken); revErr != nil {
+			litellmOK = false
+			if deps.Logger != nil {
+				// WARN-04 invariant: stderr WARN log on partial completion.
+				deps.Logger.Warn("admin.pk-revoke: LiteLLM unreachable; DB flip succeeded; orphan-loop will reconcile",
+					"key_id", keyID, "err", revErr)
+			}
+		}
+	}
+	return litellmOK, nil
+}
+
+// revokeEkInline runs the LiteLLM-first ek_ revocation side-effects and
+// emits audit for the cases it covers: OutcomeLitellmUnreachable when
+// LiteLLM RevokeKey fails (returns errLitellmUnreachable wrapping the
+// transport error; the row stays active per KEY-08 so the admin can
+// retry) and OutcomeRevoked on success. It does NOT audit a post-ack
+// DB-flip failure — it returns the bare DB error and the caller owns
+// that OutcomeInternalError emission (so the single rendering handler
+// can distinguish 503 vs 500 without a double-emit).
 func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, reqID string) error {
 	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
 		if revErr := deps.LiteLLM.RevokeKey(ctx, *row.LiteLLMToken); revErr != nil {
@@ -428,14 +439,11 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 					Actor: actor, RequestID: reqID, KeyID: row.KeyID,
 				})
 			}
-			return revErr
+			return litellmUnreachableErr{wrapped: revErr}
 		}
 	}
 	if _, err := db.RevokeEnvironmentKey(ctx, deps.Pool, row.KeyID); err != nil {
 		return err
-	}
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+row.KeyID).Err()
 	}
 	if deps.Audit != nil {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -545,29 +553,4 @@ func isRefreshableKind(kind string) bool {
 		return true
 	}
 	return false
-}
-
-// itoa is a tiny base-10 int-to-string formatter so we avoid pulling
-// strconv in just for the audit Extra value. Used by
-// RevokeUserKeysHandler's revoked_count attribute.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

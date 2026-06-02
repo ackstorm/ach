@@ -31,27 +31,22 @@ import (
 
 // Deps is the auth-package-scoped dependency bag for LoginHandler and
 // CallbackHandler. It is DISTINCT from the top-level platformapi server's
-// Deps — auth carves out exactly the deps it needs (OIDC provider, OAuth2
-// config, LiteLLM client, DB pool, pepper, audit logger, namespace) so the
-// SSO handlers stay narrowly coupled.
+// Deps — auth carves out exactly the deps it needs (ID-token verifier,
+// OAuth2 config, LiteLLM client, DB pool, pepper, audit logger, namespace)
+// so the SSO handlers stay narrowly coupled.
 //
 // cmd/platform-api/main.go (Plan 03-11) constructs this Deps and passes it
 // to LoginHandler(deps) and CallbackHandler(deps) — both mounted OUTSIDE
 // the Authn-gated chi.Group per D-02.
 type Deps struct {
-	// OIDCProvider is the discovery-derived Dex provider (constructed via
-	// oidc.NewProvider at process start; cached JWKS refreshed on
-	// signature-validation failure per go-oidc default).
-	OIDCProvider *oidc.Provider
-
-	// IDTokenVerifier wraps OIDCProvider.Verifier(&oidc.Config{ClientID})
+	// IDTokenVerifier wraps oidc.Provider.Verifier(&oidc.Config{ClientID})
 	// so unit tests can substitute a fake. Production code (Plan 03-11)
-	// assigns deps.IDTokenVerifier = deps.OIDCProvider.Verifier(...).
+	// assigns deps.IDTokenVerifier = oidcProvider.Verifier(...).
 	IDTokenVerifier IDTokenVerifier
 
 	// OAuth2Cfg is the OAuth2 client config — ClientID, ClientSecret,
 	// RedirectURL, Scopes, and the Endpoint (auth + token URLs derived from
-	// OIDCProvider.Endpoint at process start).
+	// oidcProvider.Endpoint() in the cmd wiring at process start).
 	OAuth2Cfg *oauth2.Config
 
 	// LiteLLM is the (cached) LiteLLM REST client. CallbackHandler uses
@@ -221,6 +216,21 @@ func (deps Deps) callbackNow() time.Time {
 	return time.Now()
 }
 
+// fail emits the SSO-login audit event AND the render.Error response with
+// a single outcome string, eliminating the hand-sync footgun in
+// CallbackHandler's ~14 failure branches. keyID is "" for branches before
+// the pk_ is minted (audit.Event.KeyID is omitempty, so "" is absent).
+func (deps Deps) fail(ctx context.Context, w http.ResponseWriter, actor, outcome string, status int, msg, reqID, keyID string) {
+	audit.EmitAudit(ctx, deps.Audit, audit.Event{
+		Action:    audit.ActionSSOLogin,
+		Outcome:   outcome,
+		Actor:     actor,
+		RequestID: reqID,
+		KeyID:     keyID,
+	})
+	render.Error(w, status, outcome, msg, reqID)
+}
+
 // idTokenClaims is the minimal subset of the Dex ID-token payload ACH
 // reads. The email claim is the SSO-resolved user identity per Hub §16
 // DB-05 (verbatim, never normalized).
@@ -274,14 +284,8 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		state, verifier, cookieErr := readSSOCookie(r, deps.InsecureCookie)
 		clearSSOCookie(w, deps.InsecureCookie)
 		if cookieErr != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeStateInvalid,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadRequest, audit.OutcomeStateInvalid,
-				"sso state cookie missing or malformed", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeStateInvalid, http.StatusBadRequest,
+				"sso state cookie missing or malformed", reqID, "")
 			return
 		}
 
@@ -303,27 +307,15 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 			urlState = urlState[:i]
 		}
 		if urlState == "" || urlState != state {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeStateInvalid,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadRequest, audit.OutcomeStateInvalid,
-				"sso state mismatch or missing", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeStateInvalid, http.StatusBadRequest,
+				"sso state mismatch or missing", reqID, "")
 			return
 		}
 
 		code := r.URL.Query().Get("code")
 		if code == "" {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadRequest, audit.OutcomeInternalError,
-				"missing authorization code", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadRequest,
+				"missing authorization code", reqID, "")
 			return
 		}
 
@@ -332,14 +324,8 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		token, err := deps.OAuth2Cfg.Exchange(ctx, code,
 			oauth2.SetAuthURLParam("code_verifier", verifier))
 		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadGateway, audit.OutcomeInternalError,
-				"sso code exchange failed", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadGateway,
+				"sso code exchange failed", reqID, "")
 			return
 		}
 
@@ -349,14 +335,8 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		// token.Extra("id_token").
 		rawIDToken, ok := token.Extra("id_token").(string)
 		if !ok || rawIDToken == "" {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadGateway, audit.OutcomeInternalError,
-				"sso id_token missing from token response", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadGateway,
+				"sso id_token missing from token response", reqID, "")
 			return
 		}
 
@@ -365,14 +345,8 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		// signature-validation failure per default config.
 		idToken, err := deps.IDTokenVerifier.Verify(ctx, rawIDToken)
 		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusUnauthorized, audit.OutcomeInternalError,
-				"sso id_token verification failed", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusUnauthorized,
+				"sso id_token verification failed", reqID, "")
 			return
 		}
 
@@ -380,25 +354,13 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		// normalization, case-sensitive storage).
 		var claims idTokenClaims
 		if err := idToken.Claims(&claims); err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"sso id_token claims decode failed", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusInternalServerError,
+				"sso id_token claims decode failed", reqID, "")
 			return
 		}
 		if claims.Email == "" {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     baseActor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusBadRequest, audit.OutcomeInternalError,
-				"sso id_token missing email claim", reqID)
+			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadRequest,
+				"sso id_token missing email claim", reqID, "")
 			return
 		}
 
@@ -409,165 +371,140 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 		userID, err := provisionUser(ctx, deps, claims.Email)
 		if err != nil {
 			outcome, status, msg := classifyProvisionError(err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   outcome,
-				Actor:     actor,
-				RequestID: reqID,
-			})
-			render.Error(w, status, outcome, msg, reqID)
+			deps.fail(ctx, w, actor, outcome, status, msg, reqID, "")
 			return
 		}
 
-		// Step 6: mint pk_ and pkid_ server-side; hash plaintext.
-		plaintext, err := keys.NewBearer(keys.PrefixPk)
-		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to mint bearer", reqID)
-			return
-		}
-		keyID, err := keys.NewKeyID(keys.PrefixPkid)
-		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to mint key id", reqID)
-			return
-		}
-		credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
-		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeInternalError,
-				Actor:     actor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to hash credential", reqID)
-			return
-		}
+		// Steps 6-8: mint pk_/pkid_, hash, KeyGenerate, INSERT (with
+		// LiteLLM compensation on failure), success audit, and the
+		// session-writeback (HTML) or legacy JSON response. The method
+		// writes the full response itself; this handler returns after it.
+		deps.mintAndPersistPK(ctx, w, claims.Email, userID, actor, reqID, sessionID)
+	}
+}
 
-		// Step 6b: LiteLLM key registration. ACH does NOT supply
-		// req.Key — LiteLLM owns its own virtual-key plaintext format
-		// (sk-…) and ACH never persists or forwards it (FIX01 §A.6
-		// decision; supersedes the obsolete D-13 "shared plaintext"
-		// design). ACH stores only the opaque keyResp.Token, which is
-		// the stable LiteLLM-side identifier used for revoke +
-		// forwarder attribution. KEY-10 invariant preserved:
-		// MaxBudget remains nil.
-		keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
-			UserID:    userID,
-			MaxBudget: nil,
-			Metadata: map[string]string{
-				"ach_key_id":      keyID,
-				"ach_key_type":    "pk",
-				"ach_owner_email": claims.Email,
-			},
-		})
-		if err != nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeLitellmUnreachable,
-				Actor:     actor,
-				RequestID: reqID,
-			})
-			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable,
-				"litellm key/generate unreachable", reqID)
-			return
+// mintAndPersistPK runs steps 6-8: mint pk_ + pkid_, hash with pepper,
+// LiteLLM KeyGenerate, INSERT personal_keys with LiteLLM compensation on
+// failure, success audit, and the session writeback (HTML) or legacy JSON.
+// Writes the full response itself; the caller returns immediately.
+func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, email, userID, actor, reqID, sessionID string) {
+	// Step 6: mint pk_ and pkid_ server-side; hash plaintext.
+	plaintext, err := keys.NewBearer(keys.PrefixPk)
+	if err != nil {
+		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
+			"failed to mint bearer", reqID, "")
+		return
+	}
+	keyID, err := keys.NewKeyID(keys.PrefixPkid)
+	if err != nil {
+		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
+			"failed to mint key id", reqID, "")
+		return
+	}
+	credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
+	if err != nil {
+		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
+			"failed to hash credential", reqID, "")
+		return
+	}
+
+	// Step 6b: LiteLLM key registration. ACH does NOT supply
+	// req.Key — LiteLLM owns its own virtual-key plaintext format
+	// (sk-…) and ACH never persists or forwards it (FIX01 §A.6
+	// decision; supersedes the obsolete D-13 "shared plaintext"
+	// design). ACH stores only the opaque keyResp.Token, which is
+	// the stable LiteLLM-side identifier used for revoke +
+	// forwarder attribution. KEY-10 invariant preserved:
+	// MaxBudget remains nil.
+	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
+		UserID:    userID,
+		MaxBudget: nil,
+		Metadata: map[string]string{
+			"ach_key_id":      keyID,
+			"ach_key_type":    "pk",
+			"ach_owner_email": email,
+		},
+	})
+	if err != nil {
+		deps.fail(ctx, w, actor, audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
+			"litellm key/generate unreachable", reqID, "")
+		return
+	}
+
+	// Step 7: INSERT row. On failure compensate by revoking the
+	// LiteLLM-side key (best-effort — RevokeKey error is logged but
+	// does NOT alter the 500 response).
+	expiresAt := deps.callbackNow().Add(pkExpiryWindow)
+	row := db.PkInsertRow{
+		KeyID:          keyID,
+		CredentialHash: credHash,
+		OwnerEmail:     email,
+		ExpiresAt:      expiresAt,
+		LiteLLMUserID:  &userID,
+		LiteLLMToken:   &keyResp.Token,
+	}
+	if err := deps.callbackInsertPK(ctx, row); err != nil {
+		// Compensation: revoke the LiteLLM-side key we just minted.
+		// Use a fresh context (the request ctx may already be cancelled
+		// when the DB INSERT failed). Best-effort: log on error, do
+		// NOT alter the 500 response per D-12 step 7 analog.
+		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
+			deps.Logger.Error("sso.callback: compensation revoke failed",
+				"err", cleanupErr, "litellm_token", keyResp.Token)
 		}
+		cancel()
 
-		// Step 7: INSERT row. On failure compensate by revoking the
-		// LiteLLM-side key (best-effort — RevokeKey error is logged but
-		// does NOT alter the 500 response).
-		expiresAt := deps.callbackNow().Add(pkExpiryWindow)
-		row := db.PkInsertRow{
-			KeyID:          keyID,
-			CredentialHash: credHash,
-			OwnerEmail:     claims.Email,
-			ExpiresAt:      expiresAt,
-			LiteLLMUserID:  &userID,
-			LiteLLMToken:   &keyResp.Token,
-		}
-		if err := deps.callbackInsertPK(ctx, row); err != nil {
-			// Compensation: revoke the LiteLLM-side key we just minted.
-			// Use a fresh context (the request ctx may already be cancelled
-			// when the DB INSERT failed). Best-effort: log on error, do
-			// NOT alter the 500 response per D-12 step 7 analog.
-			compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
-				deps.Logger.Error("sso.callback: compensation revoke failed",
-					"err", cleanupErr, "litellm_token", keyResp.Token)
-			}
-			cancel()
+		deps.fail(ctx, w, actor, audit.OutcomeDbInsertFailed, http.StatusInternalServerError,
+			"failed to persist personal key", reqID, keyID)
+		return
+	}
 
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionSSOLogin,
-				Outcome:   audit.OutcomeDbInsertFailed,
-				Actor:     actor,
-				RequestID: reqID,
-				KeyID:     keyID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeDbInsertFailed,
-				"failed to persist personal key", reqID)
-			return
-		}
+	// Step 8: emit success audit + render the one-time plaintext.
+	audit.EmitAudit(ctx, deps.Audit, audit.Event{
+		Action:    audit.ActionSSOLogin,
+		Outcome:   audit.OutcomeCreated,
+		Actor:     actor,
+		RequestID: reqID,
+		KeyID:     keyID,
+	})
 
-		// Step 8: emit success audit + render the one-time plaintext.
-		audit.EmitAudit(ctx, deps.Audit, audit.Event{
-			Action:    audit.ActionSSOLogin,
-			Outcome:   audit.OutcomeCreated,
-			Actor:     actor,
-			RequestID: reqID,
-			KeyID:     keyID,
-		})
-
-		// Phase 6 D-20: when the OAuth2 state carried a session_id
-		// suffix AND Redis is wired, write the pk_ payload to
-		// "ach:cli-session:<id>" so the polling /platform/auth/cli/
-		// token endpoint can hand it to the CLI. Render a friendly
-		// browser-side HTML page instead of the legacy JSON — the
-		// user is on a browser they're about to close, not a script
-		// that needs to parse the body.
-		//
-		// Absence-of-session_id preserves the pre-Phase-6 JSON
-		// branch verbatim so test/e2e/phase3_invariants browser-
-		// driven assertions remain valid (D-20 backward compat).
-		if sessionID != "" && deps.Redis != nil {
-			sess := cli.Session{
-				KeyID:      keyID,
-				Plaintext:  plaintext,
-				OwnerEmail: claims.Email,
-				CreatedAt:  deps.callbackNow().UTC().Format(time.RFC3339),
-			}
-			if putErr := cli.Put(ctx, deps.Redis, sessionID, sess, cli.DefaultSessionTTL); putErr != nil {
-				// Log the write failure but still render the HTML —
-				// the CLI's /token poll will eventually return 404
-				// session_not_found, surfacing the failure to the
-				// user without leaking the pk_ through the browser
-				// response.
-				deps.Logger.Error("sso.callback: cli session writeback failed",
-					"err", putErr, "request_id", reqID)
-			}
-			renderCallbackHTML(w)
-			return
-		}
-
-		render.JSON(w, http.StatusOK, callbackResponse{
+	// Phase 6 D-20: when the OAuth2 state carried a session_id
+	// suffix AND Redis is wired, write the pk_ payload to
+	// "ach:cli-session:<id>" so the polling /platform/auth/cli/
+	// token endpoint can hand it to the CLI. Render a friendly
+	// browser-side HTML page instead of the legacy JSON — the
+	// user is on a browser they're about to close, not a script
+	// that needs to parse the body.
+	//
+	// Absence-of-session_id preserves the pre-Phase-6 JSON
+	// branch verbatim so test/e2e/phase3_invariants browser-
+	// driven assertions remain valid (D-20 backward compat).
+	if sessionID != "" && deps.Redis != nil {
+		sess := cli.Session{
 			KeyID:      keyID,
 			Plaintext:  plaintext,
-			OwnerEmail: claims.Email,
-		})
+			OwnerEmail: email,
+			CreatedAt:  deps.callbackNow().UTC().Format(time.RFC3339),
+		}
+		if putErr := cli.Put(ctx, deps.Redis, sessionID, sess, cli.DefaultSessionTTL); putErr != nil {
+			// Log the write failure but still render the HTML —
+			// the CLI's /token poll will eventually return 404
+			// session_not_found, surfacing the failure to the
+			// user without leaking the pk_ through the browser
+			// response.
+			deps.Logger.Error("sso.callback: cli session writeback failed",
+				"err", putErr, "request_id", reqID)
+		}
+		renderCallbackHTML(w)
+		return
 	}
+
+	render.JSON(w, http.StatusOK, callbackResponse{
+		KeyID:      keyID,
+		Plaintext:  plaintext,
+		OwnerEmail: email,
+	})
 }
 
 // callbackHTMLPage is the browser-friendly success page rendered when
@@ -716,34 +653,7 @@ func isLiteLLMNotFound(err error) bool {
 	}
 	// makeRequest formats 4xx as fmt.Errorf("litellm: ... status: 404 ...");
 	// the substring check is robust across LiteLLM error-envelope shapes.
-	return err != nil && containsCaseInsensitive(err.Error(), "404")
-}
-
-// containsCaseInsensitive is a manual substring check — avoids the
-// strings.ToLower allocation on the auth hot path.
-func containsCaseInsensitive(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	if len(sub) > len(s) {
-		return false
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		match := true
-		for j := 0; j < len(sub); j++ {
-			a := s[i+j]
-			b := sub[j]
-			// Treat byte equality strictly — "404" is digits, no case folding needed.
-			if a != b {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
+	return err != nil && strings.Contains(err.Error(), "404")
 }
 
 // provisionKind is the failure-classification used by classifyProvisionError.

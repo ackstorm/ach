@@ -791,7 +791,6 @@ func runCallback(t *testing.T, tc *callbackTestCase) *httptest.ResponseRecorder 
 	// Build the Deps.
 	auditBuf := &bytes.Buffer{}
 	deps := Deps{
-		OIDCProvider:    tc.oidcFix.provider,
 		IDTokenVerifier: tc.oidcFix.provider.Verifier(&oidc.Config{ClientID: tc.oidcFix.clientID}),
 		OAuth2Cfg:       tc.oidcFix.cfg,
 		LiteLLM:         tc.litellm,
@@ -1329,7 +1328,6 @@ func TestCallbackHandler_URLStateEmpty(t *testing.T) {
 
 	auditBuf := &bytes.Buffer{}
 	deps := Deps{
-		OIDCProvider:    fix.provider,
 		IDTokenVerifier: fix.provider.Verifier(&oidc.Config{ClientID: fix.clientID}),
 		OAuth2Cfg:       fix.cfg,
 		LiteLLM:         flm,
@@ -1765,7 +1763,6 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 	// Build a callback driver mirroring runCallback but injecting Redis.
 	auditBuf := &bytes.Buffer{}
 	deps := Deps{
-		OIDCProvider:    fix.provider,
 		IDTokenVerifier: fix.provider.Verifier(&oidc.Config{ClientID: fix.clientID}),
 		OAuth2Cfg:       fix.cfg,
 		LiteLLM:         flm,

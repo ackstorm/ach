@@ -35,19 +35,12 @@ const SchemaVersion = "v1alpha1"
 //   - BaseURL    — ACH_BASE_URL; used to construct runtime endpoint and
 //     context downloadUrl values. MUST be the public ACH base
 //     URL (Phase 3 deployment-level config).
-//   - Allowlist  — admin allowlist (retained for parity with other Deps;
-//     this handler does NOT consult it, by design — hydrate
-//     is not an admin endpoint).
 //   - Audit      — slog logger (audit.NewLogger result).
-//   - Namespace  — deployment watch namespace (retained for symmetry; Store
-//     is already namespace-scoped at construction).
 type Deps struct {
-	Store     *store.Store
-	LiteLLM   litellm.Client
-	BaseURL   string
-	Allowlist map[string]struct{}
-	Audit     *slog.Logger
-	Namespace string
+	Store   *store.Store
+	LiteLLM litellm.Client
+	BaseURL string
+	Audit   *slog.Logger
 }
 
 // HydrateRequest is the strict JSON shape POST /platform/hydrate accepts.
@@ -238,7 +231,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 					"upstream LiteLLM unreachable", reqID)
 				return
 			}
-			if !hasIntersect(env.AuthorizedTeams, teams) {
+			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
 				if deps.Audit != nil {
 					audit.EmitAudit(ctx, deps.Audit, audit.Event{
 						Action:    audit.ActionHydrate,
@@ -374,24 +367,4 @@ func Mount(deps Deps) func(chi.Router) {
 	return func(r chi.Router) {
 		r.Post("/", HydrateHandler(deps))
 	}
-}
-
-// hasIntersect reports whether the two slices share at least one element.
-// Mirrors the helper in environments.handler.go; duplicated rather than
-// shared to keep package boundaries clean (each handler package is
-// self-contained beyond the explicit Deps + render + audit imports).
-func hasIntersect(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, s := range a {
-		set[s] = struct{}{}
-	}
-	for _, s := range b {
-		if _, ok := set[s]; ok {
-			return true
-		}
-	}
-	return false
 }
