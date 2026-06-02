@@ -216,4 +216,3 @@ func TestGetModelInfoByName_5xx(t *testing.T) {
 		t.Errorf("GetModelInfoByName: 5xx should not be *Auth401Error")
 	}
 }
-

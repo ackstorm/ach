@@ -259,4 +259,3 @@ func TestProcessLitellmError(t *testing.T) {
 		t.Errorf("message: want raw body for junk, got %q", msg2)
 	}
 }
-

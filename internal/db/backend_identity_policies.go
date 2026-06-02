@@ -239,4 +239,3 @@ func SoftDeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	}
 	return nil
 }
-

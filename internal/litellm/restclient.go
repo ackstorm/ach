@@ -159,4 +159,3 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody, Transient: true}
 	}
 }
-

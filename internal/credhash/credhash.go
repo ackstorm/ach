@@ -35,4 +35,3 @@ func Hash(pepper, plaintext []byte) (string, error) {
 	h.Write(plaintext)
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-
