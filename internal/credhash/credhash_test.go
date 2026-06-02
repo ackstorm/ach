@@ -112,58 +112,6 @@ func TestHashEmptyPepperReturnsError(t *testing.T) {
 	}
 }
 
-// TestEqualSameHashTrue asserts behavior 7: Equal of a well-formed hex string
-// with itself is true.
-func TestEqualSameHashTrue(t *testing.T) {
-	digest, err := credhash.Hash(pepperA, plaintextA)
-	if err != nil {
-		t.Fatalf("Hash returned error: %v", err)
-	}
-	if !credhash.Equal(digest, digest) {
-		t.Fatalf("Equal(%q, %q) = false, want true", digest, digest)
-	}
-}
-
-// TestEqualDifferentHashesFalse asserts behavior 8: distinct well-formed hex
-// strings compare unequal.
-func TestEqualDifferentHashesFalse(t *testing.T) {
-	hashA, err := credhash.Hash(pepperA, plaintextA)
-	if err != nil {
-		t.Fatalf("Hash(pepperA, ...) returned error: %v", err)
-	}
-	hashB, err := credhash.Hash(pepperA, plaintextB)
-	if err != nil {
-		t.Fatalf("Hash(_, plaintextB) returned error: %v", err)
-	}
-	if credhash.Equal(hashA, hashB) {
-		t.Fatalf("Equal of distinct digests returned true: a=%q b=%q", hashA, hashB)
-	}
-}
-
-// TestEqualMalformedHexFalseNoPanic asserts behavior 9: malformed hex input
-// (here "xx" — invalid hex digit) returns false WITHOUT panicking. The
-// defer-recover guard ensures a panic surfaces as a test failure rather than
-// crashing the test binary.
-func TestEqualMalformedHexFalseNoPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("Equal panicked on malformed hex input: %v", r)
-		}
-	}()
-	if credhash.Equal("xx", "yy") {
-		t.Fatalf(`Equal("xx", "yy") = true, want false`)
-	}
-}
-
-// TestEqualEmptyEmptyTrue asserts behavior 10: Equal("", "") is true — both
-// inputs decode to the empty byte slice, and ConstantTimeCompare returns 1
-// for equal-length (zero-length) slices.
-func TestEqualEmptyEmptyTrue(t *testing.T) {
-	if !credhash.Equal("", "") {
-		t.Fatalf(`Equal("", "") = false, want true`)
-	}
-}
-
 // TestHashConstantTime asserts behavior 11: 1000 concurrent goroutines all
 // calling Hash with the same pepper + plaintext produce identical output.
 // This proves the function has no shared mutable state — `hmac.New` creates

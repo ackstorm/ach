@@ -229,17 +229,6 @@ const softDeleteBIPSQL = `
 	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
 `
 
-// SoftDeleteBIP marks the row drain-mode. Idempotent.
-func SoftDeleteBIP(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeleteBIPSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteBIP(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
 // SoftDeleteBIPTx exposes the tx-form for callers inside db.WithTxNotify.
 func SoftDeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeleteBIPSQL, ns, name); err != nil {
@@ -251,14 +240,3 @@ func SoftDeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	return nil
 }
 
-// DeleteBIP removes the row outright. Called only after finalizer drain.
-func DeleteBIP(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM backend_identity_policies WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteBIP(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
