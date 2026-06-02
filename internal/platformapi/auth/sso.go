@@ -31,27 +31,22 @@ import (
 
 // Deps is the auth-package-scoped dependency bag for LoginHandler and
 // CallbackHandler. It is DISTINCT from the top-level platformapi server's
-// Deps — auth carves out exactly the deps it needs (OIDC provider, OAuth2
-// config, LiteLLM client, DB pool, pepper, audit logger, namespace) so the
-// SSO handlers stay narrowly coupled.
+// Deps — auth carves out exactly the deps it needs (ID-token verifier,
+// OAuth2 config, LiteLLM client, DB pool, pepper, audit logger, namespace)
+// so the SSO handlers stay narrowly coupled.
 //
 // cmd/platform-api/main.go (Plan 03-11) constructs this Deps and passes it
 // to LoginHandler(deps) and CallbackHandler(deps) — both mounted OUTSIDE
 // the Authn-gated chi.Group per D-02.
 type Deps struct {
-	// OIDCProvider is the discovery-derived Dex provider (constructed via
-	// oidc.NewProvider at process start; cached JWKS refreshed on
-	// signature-validation failure per go-oidc default).
-	OIDCProvider *oidc.Provider
-
-	// IDTokenVerifier wraps OIDCProvider.Verifier(&oidc.Config{ClientID})
+	// IDTokenVerifier wraps oidc.Provider.Verifier(&oidc.Config{ClientID})
 	// so unit tests can substitute a fake. Production code (Plan 03-11)
-	// assigns deps.IDTokenVerifier = deps.OIDCProvider.Verifier(...).
+	// assigns deps.IDTokenVerifier = oidcProvider.Verifier(...).
 	IDTokenVerifier IDTokenVerifier
 
 	// OAuth2Cfg is the OAuth2 client config — ClientID, ClientSecret,
 	// RedirectURL, Scopes, and the Endpoint (auth + token URLs derived from
-	// OIDCProvider.Endpoint at process start).
+	// oidcProvider.Endpoint() in the cmd wiring at process start).
 	OAuth2Cfg *oauth2.Config
 
 	// LiteLLM is the (cached) LiteLLM REST client. CallbackHandler uses

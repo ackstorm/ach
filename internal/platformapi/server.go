@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -48,12 +47,8 @@ type Deps struct {
 	// KeyContext.IsAdmin is populated uniformly per BLK-02.
 	Allowlist map[string]struct{}
 
-	// OIDCProvider is the Dex OIDC provider (constructed via
-	// oidc.NewProvider).
-	OIDCProvider *oidc.Provider
-
 	// IDTokenVerifier is the Dex ID-token verifier (constructed via
-	// OIDCProvider.Verifier).
+	// oidc.Provider.Verifier).
 	IDTokenVerifier auth.IDTokenVerifier
 
 	// OAuth2Cfg is the OAuth2 PKCE config.
@@ -89,23 +84,6 @@ type Deps struct {
 	InsecureCookie bool
 }
 
-// envKeysStoreAdapter wraps a *store.Store so it satisfies the
-// envkeys.envStore interface (which is unexported on the envkeys
-// package side). Since the interface is structural, *store.Store
-// already satisfies it directly — we keep this named type only to
-// document the dependency.
-//
-// Same is true for environments.Mount and hydrate.HydrateHandler — they
-// accept a *store.Store directly.
-
-// envkeysDBAdapter wires the db package helpers behind the envkeys.dbOps
-// structural interface. envkeys.dbOps is an unexported interface inside
-// the envkeys package so we cannot name it from here, but we can
-// satisfy it structurally because every method signature matches.
-//
-// Defined inline in the file that wires them — see envkeysDB / adminDB
-// below.
-
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
 // inner handler; server.go does NOT own the *http.Server lifecycle
 // (that belongs to runnable.go).
@@ -126,7 +104,6 @@ func New(deps Deps) http.Handler {
 
 	// SSO endpoints (unauthenticated; D-02 carve-out).
 	authDeps := auth.Deps{
-		OIDCProvider:    deps.OIDCProvider,
 		IDTokenVerifier: deps.IDTokenVerifier,
 		OAuth2Cfg:       deps.OAuth2Cfg,
 		LiteLLM:         deps.LiteLLM,
@@ -163,12 +140,10 @@ func New(deps Deps) http.Handler {
 		// BLK-03: hydrate.Deps now exposes LiteLLM litellm.Client as a
 		// first-class field (Plan 03-09 ships the contract).
 		hydrateDeps := hydrate.Deps{
-			Store:     deps.Store,
-			LiteLLM:   deps.LiteLLM,
-			BaseURL:   deps.BaseURL,
-			Allowlist: deps.Allowlist,
-			Audit:     deps.Audit,
-			Namespace: deps.Namespace,
+			Store:   deps.Store,
+			LiteLLM: deps.LiteLLM,
+			BaseURL: deps.BaseURL,
+			Audit:   deps.Audit,
 		}
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))
 
@@ -187,11 +162,9 @@ func New(deps Deps) http.Handler {
 		// WARN-06: environments.Deps now carries LiteLLM (for
 		// internal/platformapi/teams.LookupCallerTeams).
 		envDeps := environments.Deps{
-			Store:     deps.Store,
-			LiteLLM:   deps.LiteLLM,
-			Allowlist: deps.Allowlist,
-			Audit:     deps.Audit,
-			Namespace: deps.Namespace,
+			Store:   deps.Store,
+			LiteLLM: deps.LiteLLM,
+			Audit:   deps.Audit,
 		}
 		r.Route("/platform/environments", environments.Mount(envDeps))
 
@@ -202,7 +175,6 @@ func New(deps Deps) http.Handler {
 			Allowlist: deps.Allowlist,
 			Audit:     deps.Audit,
 			Logger:    deps.Logger,
-			Pepper:    deps.Pepper,
 			Namespace: deps.Namespace,
 		}
 		r.Route("/platform/admin", admin.Mount(adminDeps))

@@ -503,7 +503,6 @@ type insertErrClass int
 const (
 	insertErrOther insertErrClass = iota
 	insertErrEkidCollision
-	insertErrCredentialHashCollision
 )
 
 // classifyInsertError inspects a db.InsertEnvironmentKey error and
@@ -520,13 +519,12 @@ func classifyInsertError(err error) insertErrClass {
 		return insertErrOther
 	}
 	// Constraint names per db/migrations/000001_init.up.sql:
-	//   environment_keys_pkey               → PK on key_id  (ekid_ collision)
-	//   environment_keys_credential_hash_key → UNIQUE on credential_hash
-	switch pgErr.ConstraintName {
-	case "environment_keys_pkey":
+	//   environment_keys_pkey → PK on key_id (ekid_ collision). A
+	//   credential_hash UNIQUE violation is not distinguished — it falls
+	//   through to the generic compensation path identically to any other
+	//   unique violation.
+	if pgErr.ConstraintName == "environment_keys_pkey" {
 		return insertErrEkidCollision
-	case "environment_keys_credential_hash_key":
-		return insertErrCredentialHashCollision
 	}
 	return insertErrOther
 }

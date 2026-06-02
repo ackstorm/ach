@@ -35,19 +35,12 @@ const SchemaVersion = "v1alpha1"
 //   - BaseURL    — ACH_BASE_URL; used to construct runtime endpoint and
 //     context downloadUrl values. MUST be the public ACH base
 //     URL (Phase 3 deployment-level config).
-//   - Allowlist  — admin allowlist (retained for parity with other Deps;
-//     this handler does NOT consult it, by design — hydrate
-//     is not an admin endpoint).
 //   - Audit      — slog logger (audit.NewLogger result).
-//   - Namespace  — deployment watch namespace (retained for symmetry; Store
-//     is already namespace-scoped at construction).
 type Deps struct {
-	Store     *store.Store
-	LiteLLM   litellm.Client
-	BaseURL   string
-	Allowlist map[string]struct{}
-	Audit     *slog.Logger
-	Namespace string
+	Store   *store.Store
+	LiteLLM litellm.Client
+	BaseURL string
+	Audit   *slog.Logger
 }
 
 // HydrateRequest is the strict JSON shape POST /platform/hydrate accepts.

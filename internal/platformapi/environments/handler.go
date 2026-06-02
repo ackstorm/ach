@@ -39,21 +39,13 @@ const (
 //     internal/platformapi/teams.LookupCallerTeams for the team-intersection
 //     filter on non-admin callers; the handler does not call any other
 //     LiteLLM method directly.
-//   - Allowlist is retained on the struct for parity with admin.Deps and
-//     hydrate.Deps; this handler does NOT consult it because BLK-02 ships
-//     keyCtx.IsAdmin populated by middleware.Authn.
 //   - Audit is the audit slog logger (audit.NewLogger result). Used only on
 //     litellm-unreachable / internal_error paths — environment listing is
 //     read-only and emits no audit per OBS-01.
-//   - Namespace is the deployment watch namespace; unused by this handler
-//     (the Store is already namespace-scoped at construction) but retained
-//     for symmetry.
 type Deps struct {
-	Store     *store.Store
-	LiteLLM   litellm.Client
-	Allowlist map[string]struct{}
-	Audit     *slog.Logger
-	Namespace string
+	Store   *store.Store
+	LiteLLM litellm.Client
+	Audit   *slog.Logger
 }
 
 // ListHandler returns GET /platform/environments. Filters by team

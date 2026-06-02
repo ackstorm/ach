@@ -57,7 +57,6 @@ type Deps struct {
 	Allowlist map[string]struct{} // loaded via LoadAllowlist at process start
 	Audit     *slog.Logger        // audit.NewLogger handle (audit=true)
 	Logger    *slog.Logger        // operational logger (NOT audit)
-	Pepper    []byte              // kept for compositional parity; admin handlers don't directly hash
 	Namespace string              // POD_NAMESPACE — composed into actor strings
 }
 
