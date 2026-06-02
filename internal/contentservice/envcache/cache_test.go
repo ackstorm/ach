@@ -199,10 +199,18 @@ func TestGet_RedisDown_FallsThrough(t *testing.T) {
 	}
 }
 
-// waitInSingleflight blocks until at least n goroutines are parked waiting
-// for the shared singleflight result. With sfdetach.Do (DoChan-based),
-// followers park in the select inside sfdetach.Do rather than inside
-// singleflight.Group.Do itself, so we match either frame to stay robust.
+// waitInSingleflight blocks until at least n caller goroutines are parked
+// waiting for the shared singleflight result. With sfdetach.Do (DoChan-based)
+// the callers do NOT block inside singleflight.Group.Do — they block in the
+// select inside sfdetach.Do. We must count ONLY callers that are actually
+// blocked in that select ([select] goroutine state), because a goroutine
+// merely *executing* inside sfdetach.Do (before its g.DoChan call attaches it
+// to the in-flight group) has not yet joined; counting it would let the
+// barrier release the leader before that follower attaches, so the follower
+// would then start a SECOND loader call and the dedup assertion would flake.
+// The [select] state is the proof that g.DoChan returned (attachment is
+// synchronous under the group mutex) and the caller is now waiting on the
+// shared result channel.
 func waitInSingleflight(t *testing.T, n int) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -211,7 +219,12 @@ func waitInSingleflight(t *testing.T, n int) {
 		m := runtime.Stack(buf, true)
 		count := 0
 		for _, blk := range strings.Split(string(buf[:m]), "\n\ngoroutine ") {
-			if strings.Contains(blk, "/sync/singleflight.") ||
+			nl := strings.IndexByte(blk, '\n')
+			if nl < 0 {
+				continue
+			}
+			header := blk[:nl] // e.g. "123 [select]:" (or "goroutine 1 [running]:" for the first block)
+			if strings.Contains(header, "[select]") &&
 				strings.Contains(blk, "internal/sfdetach.Do") {
 				count++
 			}
@@ -220,7 +233,7 @@ func waitInSingleflight(t *testing.T, n int) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timeout: %d/%d goroutines parked in singleflight", count, n)
+			t.Fatalf("timeout: %d/%d caller goroutines parked in sfdetach.Do select", count, n)
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
