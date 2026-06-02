@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -24,16 +25,6 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
-
-// adminCacheKeyPrefix is the per-key-id namespace the admin revocation
-// handlers DEL on best-effort cache cleanup. The keystore Resolver
-// caches under "ach:key:<credential_hash>" which we cannot construct
-// from the admin endpoint (Plan 03-03 intentionally elides
-// credential_hash from PkKeyInfo/EkKeyInfo per Hub §16.1). The 60s TTL
-// ceiling + the orphan-cleanup loop bound the worst case; the per-id
-// marker is here for observability + to satisfy the structural
-// ordering invariant (db → litellm → redis per KEY-07).
-const adminCacheKeyPrefix = "ach:revoke:keyid:"
 
 // redisDeleter is the narrow Redis-Del seam admin handlers need. The
 // production type *redis.Client implements it (its Del method returns
@@ -110,9 +101,9 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, reqID string, out any)
 // RevokeKeyHandler dispatches on the key_id prefix:
 //
 //   - pkid_… → revokePersonalKey: Postgres flip FIRST per KEY-07 (the
-//     visible barrier); LiteLLM RevokeKey + Redis DEL run best-effort.
+//     visible barrier); LiteLLM RevokeKey runs best-effort.
 //   - ekid_… → revokeEnvironmentKey: LiteLLM RevokeKey FIRST per KEY-08
-//     (the runtime barrier); DB flip + Redis DEL run after the ack.
+//     (the runtime barrier); DB flip runs after the ack.
 //
 // Either branch emits exactly one audit event (per-branch ActionPkRevoke
 // / ActionEkRevoke). The audit outcome captures partial completion
@@ -192,14 +183,7 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 		}
 	}
 
-	// Step 3 — Redis DEL (best-effort). See doc.go on the
-	// per-key-id marker; the keystore's true cache entries are reclaimed
-	// by the 60s TTL ceiling.
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
-	}
-
-	// Step 4 — audit emission (single event, outcome reflects
+	// Step 3 — audit emission (single event, outcome reflects
 	// LiteLLM reachability per D-14).
 	outcome := audit.OutcomeRevoked
 	if !litellmOK {
@@ -222,7 +206,7 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 // can revoke any caller's ek_).
 //
 // Ordering is structurally fixed: deps.LiteLLM.RevokeKey BEFORE
-// db.RevokeEnvironmentKey BEFORE deps.Redis.Del.
+// db.RevokeEnvironmentKey.
 //
 // On LiteLLM-unreachable: return 503; the DB row STAYS active so the
 // caller can retry idempotently (per KEY-08 LiteLLM is the runtime
@@ -288,12 +272,7 @@ func revokeEnvironmentKey(ctx context.Context, deps Deps, keyID, actor, reqID st
 	}
 	_ = flipped // not surfaced to the response; the keyID is authoritative.
 
-	// Step 4 — Redis DEL (best-effort).
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
-	}
-
-	// Step 5 — audit + response.
+	// Step 4 — audit + response.
 	if deps.Audit != nil {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
 			Action: audit.ActionEkRevoke, Outcome: audit.OutcomeRevoked,
@@ -375,7 +354,7 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "user", Name: email},
-				Extra:     map[string]string{"revoked_count": itoa(revokedCount)},
+				Extra:     map[string]string{"revoked_count": strconv.Itoa(revokedCount)},
 			})
 		}
 
@@ -401,9 +380,6 @@ func revokePkInline(ctx context.Context, deps Deps, keyID, actor, reqID string) 
 			deps.Logger.Warn("admin.pk-revoke: LiteLLM unreachable in bulk revoke; DB flip succeeded",
 				"key_id", keyID, "err", revErr)
 		}
-	}
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+keyID).Err()
 	}
 	if deps.Audit != nil {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -432,9 +408,6 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 	}
 	if _, err := db.RevokeEnvironmentKey(ctx, deps.Pool, row.KeyID); err != nil {
 		return err
-	}
-	if deps.Redis != nil {
-		_ = deps.Redis.Del(ctx, adminCacheKeyPrefix+row.KeyID).Err()
 	}
 	if deps.Audit != nil {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -544,29 +517,4 @@ func isRefreshableKind(kind string) bool {
 		return true
 	}
 	return false
-}
-
-// itoa is a tiny base-10 int-to-string formatter so we avoid pulling
-// strconv in just for the audit Extra value. Used by
-// RevokeUserKeysHandler's revoked_count attribute.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

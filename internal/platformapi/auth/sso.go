@@ -711,34 +711,7 @@ func isLiteLLMNotFound(err error) bool {
 	}
 	// makeRequest formats 4xx as fmt.Errorf("litellm: ... status: 404 ...");
 	// the substring check is robust across LiteLLM error-envelope shapes.
-	return err != nil && containsCaseInsensitive(err.Error(), "404")
-}
-
-// containsCaseInsensitive is a manual substring check — avoids the
-// strings.ToLower allocation on the auth hot path.
-func containsCaseInsensitive(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	if len(sub) > len(s) {
-		return false
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		match := true
-		for j := 0; j < len(sub); j++ {
-			a := s[i+j]
-			b := sub[j]
-			// Treat byte equality strictly — "404" is digits, no case folding needed.
-			if a != b {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
+	return err != nil && strings.Contains(err.Error(), "404")
 }
 
 // provisionKind is the failure-classification used by classifyProvisionError.
