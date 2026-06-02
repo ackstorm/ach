@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/sfdetach"
 )
 
 // teamsCacheKeyPrefix is the Redis key namespace for cached LiteLLM
@@ -196,16 +197,15 @@ func (r *redisCachedTeamsResolver) Resolve(ctx context.Context, email string) ([
 		// the next SET overwrites and the 60s TTL caps the worst case.
 	}
 
-	// Single-flight base lookup. The leader holds the call; concurrent
-	// callers on the same email join via singleflight.Do.
-	v, sfErr, _ := r.sf.Do(email, func() (any, error) {
-		return r.base.Resolve(ctx, email)
-	})
-	if sfErr != nil {
-		// Propagate base error WITHOUT caching — see Resolve doc.
-		return nil, sfErr
+	// Detached-but-bounded leader so one caller's cancellation cannot
+	// cascade to live followers (C1).
+	teams, err := sfdetach.Do(ctx, &r.sf, email, sfLeaderTimeout,
+		func(c context.Context) ([]string, error) {
+			return r.base.Resolve(c, email)
+		})
+	if err != nil {
+		return nil, err
 	}
-	teams, _ := v.([]string)
 	if teams == nil {
 		teams = []string{}
 	}

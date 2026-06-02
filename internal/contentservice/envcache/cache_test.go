@@ -199,12 +199,10 @@ func TestGet_RedisDown_FallsThrough(t *testing.T) {
 	}
 }
 
-// waitInSingleflight blocks until at least n goroutines have a
-// golang.org/x/sync/singleflight frame on their stack (the held leader plus
-// its joined followers, all parked in Group.Do). Makes the single-flight
-// dedup test DETERMINISTIC under -p=GOMAXPROCS -race CPU oversubscription,
-// where a fixed-ms settle starves and a straggler reaches Do after the leader
-// is released (a spurious extra loader call).
+// waitInSingleflight blocks until at least n goroutines are parked waiting
+// for the shared singleflight result. With sfdetach.Do (DoChan-based),
+// followers park in the select inside sfdetach.Do rather than inside
+// singleflight.Group.Do itself, so we match either frame to stay robust.
 func waitInSingleflight(t *testing.T, n int) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -213,7 +211,8 @@ func waitInSingleflight(t *testing.T, n int) {
 		m := runtime.Stack(buf, true)
 		count := 0
 		for _, blk := range strings.Split(string(buf[:m]), "\n\ngoroutine ") {
-			if strings.Contains(blk, "/sync/singleflight.") {
+			if strings.Contains(blk, "/sync/singleflight.") ||
+				strings.Contains(blk, "internal/sfdetach.Do") {
 				count++
 			}
 		}

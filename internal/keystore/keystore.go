@@ -13,6 +13,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/sfdetach"
 )
 
 // defaultTTL is the hard 60-second ceiling on every cache entry per Hub
@@ -20,6 +21,11 @@ import (
 // revocation-propagation guarantee, anything shorter pointlessly raises
 // DB pressure.
 const defaultTTL = 60 * time.Second
+
+// sfLeaderTimeout bounds the detached singleflight leader DB lookup so a
+// per-request cancellation cannot kill the shared flight (finding C1) yet
+// the flight can never hang.
+const sfLeaderTimeout = 10 * time.Second
 
 // cacheKeyPrefix is the Redis key namespace for cached resolutions.
 // Format: "ach:key:" + hex(HMAC-SHA-256(pepper, plaintext)). The bearer
@@ -141,15 +147,15 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 		// SET on miss overwrites it (and the 60s TTL caps the worst case).
 	}
 
-	// Single-flight DB lookup. The leader holds the call; concurrent
-	// callers on the same hash join via singleflight.Do.
-	v, sfErr, _ := r.sf.Do(hash, func() (any, error) {
-		return r.inner.Resolve(ctx, plaintext)
-	})
-	if sfErr != nil {
-		return nil, sfErr
+	// Single-flight DB lookup on a detached-but-bounded leader context so
+	// one caller's cancellation cannot cascade to live followers (C1).
+	info, err := sfdetach.Do(ctx, &r.sf, hash, sfLeaderTimeout,
+		func(c context.Context) (*KeyInfo, error) {
+			return r.inner.Resolve(c, plaintext)
+		})
+	if err != nil {
+		return nil, err
 	}
-	info, _ := v.(*KeyInfo)
 	if info == nil {
 		// Revoked / expired / unknown — propagate (nil, nil) without
 		// caching. Caching nil would let a revoked credential survive

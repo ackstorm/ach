@@ -10,6 +10,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/ackstorm/ach/internal/sfdetach"
 )
 
 // envCacheKeyPrefix is the Redis key namespace for cached Environment
@@ -40,6 +42,9 @@ const envCacheKeyPrefix = "ach:env:"
 // package — both are §5.1 cache-budget consumers but their lifetimes
 // could diverge in a future spec revision.
 const cacheTTL = 60 * time.Second
+
+// sfLeaderTimeout bounds the detached singleflight loader (finding C1).
+const sfLeaderTimeout = 10 * time.Second
 
 // EnvRow is the cache payload — the subset of `internal/db.EnvironmentRow`
 // (Plan 05-02) that the Content Service pipeline (Plan 05-05) reads on
@@ -195,16 +200,15 @@ func (r *redisCachedEnvCache) Get(ctx context.Context, ns, name string) (*EnvRow
 		// worst case (D-07).
 	}
 
-	// Single-flight the loader call. The leader holds the call;
-	// concurrent callers on the same key join via singleflight.Do.
-	v, sfErr, _ := r.sf.Do(key, func() (any, error) {
-		return r.loader(ctx, ns, name)
-	})
-	if sfErr != nil {
-		// Propagate loader error WITHOUT caching — see Get doc.
-		return nil, sfErr
+	// Detached-but-bounded leader so one caller's cancellation cannot
+	// cascade to live followers (C1).
+	row, err := sfdetach.Do(ctx, &r.sf, key, sfLeaderTimeout,
+		func(c context.Context) (*EnvRow, error) {
+			return r.loader(c, ns, name)
+		})
+	if err != nil {
+		return nil, err
 	}
-	row, _ := v.(*EnvRow)
 	if row == nil {
 		// Loader said "no such row". Do NOT cache the negative answer.
 		return nil, nil //nolint:nilnil // (nil,nil) is the "absent" sentinel — see Loader doc.
