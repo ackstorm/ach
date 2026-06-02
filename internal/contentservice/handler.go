@@ -42,17 +42,6 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
-// PromptContentTypeLookup is RETAINED transitionally so the existing
-// cmd/ach/cmd/content_service.go stub patch keeps compiling between
-// Plan 05-05 (this plan) and Plan 05-06 (full wiring rewrite). Plan
-// 05-06 removes both this type and the deprecated PromptContentTypeFn
-// field below.
-//
-// Production no longer reads spec.contentType via the k8s informer —
-// content_type now flows from the prompts.content_type projection
-// column resolved in resolveContent (authz.go).
-type PromptContentTypeLookup func(ctx context.Context, name string) (string, error)
-
 // Deps bundles the handler's runtime collaborators per Plan 05-05 D-16.
 //
 // Required fields (request-path collaborators):
@@ -76,14 +65,6 @@ type PromptContentTypeLookup func(ctx context.Context, name string) (string, err
 // Optional fields (defaulted in RegisterRoutes):
 //   - Logger             — operational logger. Defaults to slog.Default().
 //
-// Deprecated transition-only fields:
-//   - PromptContentTypeFn — DEPRECATED. Pre-Plan-05-05 the handler
-//     resolved Prompt.spec.contentType via a k8s
-//     informer-cached lookup. Plan 05-05 moved the
-//     column into prompts.content_type so the
-//     lookup is now part of resolveContent.
-//     Plan 05-06 Task 1 removes this field.
-//
 // RegisterRoutes does NOT nil-guard the required fields — a request
 // that lands on a nil-Pool / nil-Resolver Deps panics at request time,
 // surfacing the wiring bug loudly rather than silently 500-ing every
@@ -92,17 +73,16 @@ type PromptContentTypeLookup func(ctx context.Context, name string) (string, err
 // build stays green between Plan 05-05 and Plan 05-06; that
 // configuration is NOT runtime-safe for content requests.
 type Deps struct {
-	CacheRoot           string
-	Namespace           string
-	PromptContentTypeFn PromptContentTypeLookup // DEPRECATED — Plan 05-06 removes
-	Pool                *pgxpool.Pool
-	EnvCache            envcache.Cache
-	Resolver            keystore.Resolver
-	Teams               keystore.TeamsResolver
-	Metrics             *metrics.ContentServiceCollectors
-	LiteLLMUnreachable  *prometheus.CounterVec
-	AuditLog            *slog.Logger
-	Logger              *slog.Logger
+	CacheRoot          string
+	Namespace          string
+	Pool               *pgxpool.Pool
+	EnvCache           envcache.Cache
+	Resolver           keystore.Resolver
+	Teams              keystore.TeamsResolver
+	Metrics            *metrics.ContentServiceCollectors
+	LiteLLMUnreachable *prometheus.CounterVec
+	AuditLog           *slog.Logger
+	Logger             *slog.Logger
 }
 
 // RegisterRoutes wires Content Service routes onto r. The router MUST
@@ -166,20 +146,29 @@ func (d Deps) serve(kind string) http.HandlerFunc {
 			d.Logger.Warn("content stream interrupted",
 				"kind", kind, "name", name, "bytes_written", n, "err", copyErr)
 		}
-		if d.AuditLog != nil {
-			audit.EmitAudit(ctx, d.AuditLog, audit.Event{
-				Action:    audit.ActionContentGet,
-				Outcome:   audit.OutcomeForwarded,
-				Actor:     actorFromInfo(row.KeyInfo),
-				RequestID: middleware.RequestIDFromCtx(ctx),
-				KeyID:     keyIDFromInfo(row.KeyInfo),
-				Target:    &audit.Target{Kind: kind, Name: name},
-			})
-		}
+		d.emitAudit(ctx, kind, name, audit.OutcomeForwarded, row.KeyInfo)
 		if d.Metrics != nil {
 			d.Metrics.IncRequest(kind, audit.OutcomeForwarded)
 			d.Metrics.AddBytesServed(kind, n)
 			d.Metrics.ObserveRequestDuration(kind, time.Since(start).Seconds())
 		}
 	}
+}
+
+// emitAudit emits a content.get audit event with the shared field set.
+// Both the forwarded-success path (serve) and the denial path
+// (writeError) call it so an audit-schema change is single-site. info
+// may be nil on gate-1 denials (actorFromInfo/keyIDFromInfo nil-tolerant).
+func (d Deps) emitAudit(ctx context.Context, kind, name, outcome string, info *keystore.KeyInfo) {
+	if d.AuditLog == nil {
+		return
+	}
+	audit.EmitAudit(ctx, d.AuditLog, audit.Event{
+		Action:    audit.ActionContentGet,
+		Outcome:   outcome,
+		Actor:     actorFromInfo(info),
+		RequestID: middleware.RequestIDFromCtx(ctx),
+		KeyID:     keyIDFromInfo(info),
+		Target:    &audit.Target{Kind: kind, Name: name},
+	})
 }

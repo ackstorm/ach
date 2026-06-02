@@ -121,7 +121,7 @@ func TestResolveAuthn(t *testing.T) {
 
 func TestResolveEnv_PK(t *testing.T) {
 	pkInfo := &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "alice@x.com"}
-	envRow := &envcache.EnvRow{Namespace: "ach-system", Name: "prod"}
+	envRow := &envcache.EnvRow{}
 
 	t.Run("missing header", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
@@ -169,7 +169,7 @@ func TestResolveEnv_PK(t *testing.T) {
 
 func TestResolveEnv_EK(t *testing.T) {
 	ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk, OwnerEmail: "bob@x.com", Environment: "prod"}
-	envRow := &envcache.EnvRow{Namespace: "ach-system", Name: "prod"}
+	envRow := &envcache.EnvRow{}
 
 	t.Run("header mismatch", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
@@ -215,8 +215,6 @@ func TestResolveEnv_EK(t *testing.T) {
 func TestEnforceTeams_PK(t *testing.T) {
 	pkInfo := &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "alice@x.com"}
 	envRow := &envcache.EnvRow{
-		Namespace:       "ach-system",
-		Name:            "prod",
 		AuthorizedTeams: []string{"team-a", "team-b"},
 	}
 
