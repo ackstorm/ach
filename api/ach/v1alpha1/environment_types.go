@@ -15,28 +15,41 @@ import (
 // so a manifest omitting a sub-field still surfaces an empty slice.
 type RuntimeBlock struct {
 	// Models lists LiteLLM model names (model_name) included in this Environment.
-	// Names are projected into LiteLLM API URLs (the access-group sync path);
-	// the looser runtime deny-pattern admits provider-prefixed ("openai/gpt-4")
-	// and tagged ("gpt-4o:latest") names while forbidding the URL-injection
-	// metacharacters ? # % plus whitespace and control chars (S2 defense-in-depth).
+	// Names are projected into LiteLLM API request bodies (not ACH URL routing),
+	// so the looser deny-pattern admits provider-prefixed ("openai/gpt-4") and
+	// tagged ("gpt-4o:latest") names while forbidding URL-injection metacharacters
+	// ? # % plus whitespace, control chars (U+0000-U+001F), and DEL (U+007F)
+	// (S2 defense-in-depth). Only Models uses the loose pattern; see MCPServers
+	// and A2AAgents below for why those must use the strict (no-slash) pattern.
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f\x7f]+$`
 	Models []string `json:"models,omitempty"`
 
 	// MCPServers lists LiteLLM MCP server names (server_name).
+	// Names are used as chi route parameters at the forwarder (/mcp/{name});
+	// a slash-containing name would be admitted but always 403 (chi matches
+	// raw "%2F"-encoded segment against the decoded DB value — never matches).
+	// The strict deny-pattern therefore also forbids "/" and "\" in addition
+	// to ? # % whitespace, control chars (U+0000-U+001F), and DEL (U+007F)
+	// (S2 defense-in-depth).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	MCPServers []string `json:"mcpServers,omitempty"`
 
 	// A2AAgents lists LiteLLM A2A agent names (agent_name).
+	// Names are used as chi route parameters at the forwarder (/a2a/{name});
+	// same routing constraint as MCPServers — slash-containing names always 403.
+	// The strict deny-pattern forbids "/" and "\" in addition to ? # %
+	// whitespace, control chars (U+0000-U+001F), and DEL (U+007F)
+	// (S2 defense-in-depth).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	A2AAgents []string `json:"a2aAgents,omitempty"`
 }
 
@@ -45,27 +58,31 @@ type RuntimeBlock struct {
 // or marketplace_plugins rows) and are served by the ACH Content Service.
 type ContextBlock struct {
 	// Prompts lists referenced Prompt names. Context names map to content
-	// filenames served by the Content Service, so the stricter deny-pattern
-	// also forbids "/" and "\" (path-traversal) in addition to ? # %
-	// whitespace and control chars (S2 defense-in-depth).
+	// filenames served by the Content Service, so the strict deny-pattern
+	// forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,
+	// control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	Prompts []string `json:"prompts,omitempty"`
 
 	// Plugins lists referenced Plugin (or marketplace plugin) names.
+	// Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace
+	// control chars or DEL).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	Plugins []string `json:"plugins,omitempty"`
 
 	// Artifacts lists referenced Artifact names.
+	// Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace
+	// control chars or DEL).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	Artifacts []string `json:"artifacts,omitempty"`
 }
 

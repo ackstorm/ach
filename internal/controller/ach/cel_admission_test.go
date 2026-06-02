@@ -159,12 +159,15 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "default",
 		},
-		// S2 CRD validation — element-level Pattern on the content/runtime
-		// name fields (api/ach/v1alpha1/environment_types.go). Context names
-		// map to filenames, so the strict deny-pattern forbids "/" → a
-		// path-traversal name is rejected. Runtime names allow "/" + ":" but
-		// the looser deny-pattern still forbids "?#%"/whitespace/control, so
-		// a query-injection model name is rejected too.
+		// S2 CRD validation — element-level Pattern on the content/runtime name
+		// fields (api/ach/v1alpha1/environment_types.go). Three patterns apply:
+		//   • Models (loose): allows "/" and ":" for provider-prefixed LiteLLM
+		//     names; forbids ? # % whitespace control-chars DEL.
+		//   • MCPServers, A2AAgents (strict): forbids "/" too — names are chi
+		//     route params (/mcp/{name}, /a2a/{name}); slash always 403s.
+		//   • Prompts, Plugins, Artifacts (strict): same, plus "\" (path-traversal).
+		// Path-traversal prompts name → rejected; query-injection models name →
+		// rejected; slash-containing mcpServers name → rejected (S2 review fix).
 		{
 			name:           "invalid_env_context_path_traversal",
 			fixturePath:    "../../../test/fixtures/invalid/environment_context_path_traversal.yaml",
@@ -176,6 +179,15 @@ func TestCELAdmission(t *testing.T) {
 			fixturePath:    "../../../test/fixtures/invalid/environment_runtime_query_injection.yaml",
 			shouldFail:     true,
 			errMustContain: "models",
+		},
+		// S2 review fix — mcpServers/a2aAgents now use the STRICT (no-slash)
+		// pattern because names become chi route params (/mcp/{name}, /a2a/{name});
+		// a slash would always 403 at the forwarder. Only models stays loose.
+		{
+			name:           "invalid_env_runtime_mcp_slash",
+			fixturePath:    "../../../test/fixtures/invalid/environment_runtime_mcp_slash.yaml",
+			shouldFail:     true,
+			errMustContain: "mcpServers",
 		},
 	}
 
