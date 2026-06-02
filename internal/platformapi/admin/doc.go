@@ -7,7 +7,8 @@
 //     Body: {"key_id":"pkid_..."} or {"key_id":"ekid_..."}
 //     Revokes an arbitrary key. The pk_ branch is DB-first (KEY-07 / D-14):
 //     the Postgres status flip IS the visible revocation barrier; LiteLLM
-//     RevokeKey and Redis DEL are best-effort downstream side effects.
+//     RevokeKey is a best-effort downstream side effect. (No revoke-time
+//     Redis DEL — see "Cache invalidation discipline" below.)
 //     The ek_ branch is LiteLLM-first (KEY-08 / D-15): LiteLLM is the load
 //     bearing barrier so its ack is required before the DB flip.
 //

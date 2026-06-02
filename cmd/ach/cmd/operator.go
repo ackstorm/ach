@@ -262,9 +262,9 @@ func runOperator(_ *cobra.Command, _ []string) error {
 
 	// ─── Phase 5 D-10 / OBS-05: register the shared
 	//     litellm_unreachable_total counter on controller-runtime's
-	//     global metrics Registry (typed as a RegistererGatherer
-	//     interface, NOT *prometheus.Registry — hence the
-	//     -On suffix overload in internal/metrics/shared.go).
+	//     global metrics Registry (typed as a RegistererGatherer, which
+	//     satisfies the prometheus.Registerer parameter of the single
+	//     MustRegisterLitellmUnreachable in internal/metrics/shared.go).
 	//     The Operator keeps controller-runtime's metricsserver
 	//     (:8443 HTTPS by default) — adding the ACH-namespaced shared
 	//     counter to crmetrics.Registry means /metrics on that server
