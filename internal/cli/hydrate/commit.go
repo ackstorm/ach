@@ -4,8 +4,10 @@ package hydrate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/lock"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -142,6 +145,20 @@ func newCommit(opts Opts) (*commit, error) {
 	}
 	achDir := filepath.Dir(statePath)
 
+	// D3 migration: relocate a legacy FLAT <cwd>/.ach/state.json (+ its content
+	// dirs) into the per-environment <cwd>/.ach/<env>/ layout introduced with
+	// namespacing. Project scope only — --global was always namespaced. Best-
+	// effort + idempotent: a no-op once migrated or when no legacy state exists.
+	if !opts.Global {
+		if err := migrateLegacyFlatState(workspaceCwd, opts.Stderr); err != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("migrate legacy flat .ach: %v", err),
+				Wrapped: err,
+			}
+		}
+	}
+
 	// Resolve toolRoot — the base for adapter runtime-config writes. In
 	// project scope it is the workspace root (the dir that CONTAINS
 	// .ach/). In --global scope adapter configs go under $HOME (the tools'
@@ -196,6 +213,73 @@ func newCommit(opts Opts) (*commit, error) {
 	c.injectSigkillAfterStep = readSigkillSeamFromEnv()
 
 	return c, nil
+}
+
+// legacyFlatMovableEntries is the closed set of flat <cwd>/.ach entries the D3
+// migration relocates into the per-environment subdir. `lock` is intentionally
+// excluded (recreated; may be held); existing env-namespace subdirs are never
+// in this set so a second env's dir is never swallowed.
+var legacyFlatMovableEntries = []string{"state.json", "plugin", "prompt", "artifact", "runtime", "tmp"}
+
+// migrateLegacyFlatState relocates a pre-namespacing flat
+// <workspaceCwd>/.ach/state.json (and its sibling content dirs) into
+// <workspaceCwd>/.ach/<legacyEnv>/, where legacyEnv is the Environment that
+// flat state was bound to. Idempotent + best-effort:
+//
+//   - no flat state.json present  → no-op (already namespaced, or fresh).
+//   - flat state has empty/unreadable Environment → left untouched (cannot
+//     choose a namespace safely).
+//   - target <legacyEnv>/state.json already exists → no-op (don't clobber).
+//
+// Only legacyFlatMovableEntries are moved (same-parent os.Rename, cheap), so a
+// sibling env-namespace dir from a prior migration is never relocated. Emits a
+// single stderr notice when it actually moves something.
+func migrateLegacyFlatState(workspaceCwd string, stderr io.Writer) error {
+	if workspaceCwd == "" {
+		return nil
+	}
+	achRoot := filepath.Join(workspaceCwd, ".ach")
+	flatState := filepath.Join(achRoot, "state.json")
+
+	loaded, err := state.Load(flatState)
+	if err != nil {
+		// A corrupt/legacy-schema flat state.json is not a migration blocker —
+		// leave it in place; the fresh namespaced hydrate proceeds independently.
+		return nil
+	}
+	if loaded == nil || loaded.Environment == "" {
+		return nil
+	}
+
+	targetDir := filepath.Join(achRoot, loaded.Environment)
+	if _, err := os.Stat(filepath.Join(targetDir, "state.json")); err == nil {
+		return nil // already migrated
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", targetDir, err)
+	}
+
+	moved := 0
+	for _, name := range legacyFlatMovableEntries {
+		src := filepath.Join(achRoot, name)
+		if _, err := os.Lstat(src); err != nil {
+			continue // entry absent — skip
+		}
+		dst := filepath.Join(targetDir, name)
+		if _, err := os.Lstat(dst); err == nil {
+			continue // already present at target — don't clobber
+		}
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("move %s -> %s: %w", src, dst, err)
+		}
+		moved++
+	}
+	if moved > 0 && stderr != nil {
+		_, _ = fmt.Fprintf(stderr,
+			"notice: migrated legacy flat .ach/ into .ach/%s/ (per-environment layout)\n",
+			loaded.Environment)
+	}
+	return nil
 }
 
 // run executes the §6.7 14-step commit sequence. Each stepN is an
@@ -343,6 +427,28 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 	c.maybeKill(10)
 
+	// Step 10b: runtime mirror. Serialize the manifest runtime block
+	// (mcp / a2a / models) into credential-free <achDir>/runtime/*.json
+	// snapshots so .ach/ is a complete record of what the Environment
+	// exposed — not just the context buckets. mcp/a2a are ALSO projected
+	// into each adapter's config by RenderRuntime (with the credential);
+	// the mirror is the canonical, secret-free cache + the state row that
+	// lets --sync/uninstall and drift see runtime entries (incl. models,
+	// which have no adapter destination). Gated on !DryRun.
+	var runtimeFiles []state.FileEntry
+	if !c.opts.DryRun {
+		rf, err := c.writeRuntimeMirror(m)
+		if err != nil {
+			return result, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("runtime mirror: %v", err),
+				Wrapped: err,
+			}
+		}
+		runtimeFiles = rf
+		result.FilesWritten += len(rf)
+	}
+
 	// Step 11: STATE-05 / D-16 inverse-merge sync. maybeKill(11)
 	// fires BEFORE the syncFn call so the SIGKILL injection point
 	// remains at the step-11 boundary as advertised by
@@ -375,7 +481,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 
 	// Step 12: atomic state write.
-	if err := c.step12WriteState(existingState, m, renderResult, adapterRan, result.PlatformID); err != nil {
+	if err := c.step12WriteState(existingState, m, renderResult, adapterRan, result.PlatformID, runtimeFiles); err != nil {
 		return result, err
 	}
 	c.maybeKill(12)
@@ -563,7 +669,10 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 	// idempotence and re-opens the survive-uninstall defect CR-01).
 	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, c.toolRoot, pruned)
 	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, wsRoot, pruned)
-	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, wsRoot, pruned)
+	// RuntimeFiles live UNDER achDir (.ach/runtime/*.json) in BOTH scopes —
+	// their Target is achDir-relative, so they stat against achDir (not wsRoot,
+	// which points at $HOME/.ach under --global and would mis-prune).
+	loaded.RuntimeFiles, pruned = c.pruneMissing(loaded.RuntimeFiles, c.achDir, pruned)
 	loaded.Adapter.Files, pruned = c.pruneMissing(loaded.Adapter.Files, c.toolRoot, pruned)
 	return loaded, pruned
 }
@@ -638,6 +747,15 @@ type diffTarget struct {
 	Ref manifest.ContentRef
 }
 
+// Context diffTarget kinds — extractable /content/{kind}/{name} resources.
+// Runtime kinds (model / mcpServer / a2aAgent) are NOT extractable (see
+// diffTarget.isExtractableContent).
+const (
+	kindPrompt   = "prompt"
+	kindPlugin   = "plugin"
+	kindArtifact = "artifact"
+)
+
 // isExtractableContent reports whether dt is a context kind whose Ref points at
 // a /content/{kind}/{name} tarball the extractor can fetch+stage. Runtime kinds
 // (model / mcpServer / a2aAgent) carry an {id, endpoint} instead and are
@@ -645,7 +763,7 @@ type diffTarget struct {
 // ExtractContent yields "content name: empty".
 func (dt diffTarget) isExtractableContent() bool {
 	switch dt.Kind {
-	case "prompt", "plugin", "artifact":
+	case kindPrompt, kindPlugin, kindArtifact:
 		return true
 	default:
 		return false
@@ -671,13 +789,13 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 
 	if includeContext && m.Context != nil {
 		for _, p := range m.Context.Prompts {
-			targets = append(targets, diffTarget{Kind: "prompt", Ref: p})
+			targets = append(targets, diffTarget{Kind: kindPrompt, Ref: p})
 		}
 		for _, p := range m.Context.Plugins {
-			targets = append(targets, diffTarget{Kind: "plugin", Ref: p})
+			targets = append(targets, diffTarget{Kind: kindPlugin, Ref: p})
 		}
 		for _, a := range m.Context.Artifacts {
-			targets = append(targets, diffTarget{Kind: "artifact", Ref: a})
+			targets = append(targets, diffTarget{Kind: kindArtifact, Ref: a})
 		}
 	}
 	if includeRuntime && m.Runtime != nil {
@@ -736,7 +854,7 @@ func (c *commit) warnDroppedComponents(dropped []string) {
 // drift / auto-claim (sc3 / sc4) cannot fire. The adapter section is replaced
 // only when the adapter actually ran this hydrate; a context-only run leaves
 // the prior adapter section untouched (spec §8.2 field rules).
-func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string) error {
+func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string, runtimeFiles []state.FileEntry) error {
 	if c.opts.DryRun {
 		return nil
 	}
@@ -779,6 +897,13 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 		next.Plugins = pluginsSectionFromRender(render)
 	}
 
+	// RuntimeFiles is composed from the fresh runtime mirror written at
+	// step 10b (replaces the carried-forward set). The mirror always runs
+	// on a non-dry-run hydrate, so an empty slice here means "the manifest
+	// exposed no runtime entries" — recorded faithfully so --sync prunes a
+	// now-empty bucket.
+	next.RuntimeFiles = runtimeFiles
+
 	if err := c.stateStore.Save(c.statePath, next); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -787,6 +912,62 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 		}
 	}
 	return nil
+}
+
+// runtimeMirrorBuckets is the closed set of runtime mirror files, in a
+// deterministic order so the written set + state rows are byte-stable.
+var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
+
+// writeRuntimeMirror serializes the manifest runtime block into
+// credential-free <achDir>/runtime/{mcp,a2a,model}.json snapshots and returns
+// the state.FileEntry rows (achDir-relative Target) for state.RuntimeFiles.
+//
+// The ContentRefs carry only {id, name, downloadUrl, endpoint} — the bearer
+// credential is injected exclusively at adapter render (RenderRuntime), never
+// here, so the cache holds NO secret (OBS-02). A bucket with no entries is not
+// written and any stale snapshot from a prior hydrate is removed so .ach/runtime
+// always reflects the current Environment. Returns the rows in
+// runtimeMirrorBuckets order.
+func (c *commit) writeRuntimeMirror(m *manifest.Manifest) ([]state.FileEntry, error) {
+	runtimeDir := filepath.Join(c.achDir, "runtime")
+	bucketRefs := map[string][]manifest.ContentRef{}
+	if m != nil && m.Runtime != nil {
+		bucketRefs["mcp"] = m.Runtime.MCPServers
+		bucketRefs["a2a"] = m.Runtime.A2AAgents
+		bucketRefs["model"] = m.Runtime.Models
+	}
+
+	entries := make([]state.FileEntry, 0, len(runtimeMirrorBuckets))
+	var madeDir bool
+	for _, name := range runtimeMirrorBuckets {
+		rel := filepath.Join("runtime", name+".json")
+		abs := filepath.Join(runtimeDir, name+".json")
+		refs := bucketRefs[name]
+		if len(refs) == 0 {
+			// Empty bucket: drop any stale snapshot so the cache is accurate.
+			if err := os.Remove(abs); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("remove stale %s: %w", rel, err)
+			}
+			continue
+		}
+		data, err := json.MarshalIndent(refs, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshal %s: %w", rel, err)
+		}
+		data = append(data, '\n')
+		if !madeDir {
+			if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+				return nil, fmt.Errorf("mkdir runtime dir: %w", err)
+			}
+			madeDir = true
+		}
+		if err := state.WriteAtomic(abs, data, 0o644); err != nil {
+			return nil, fmt.Errorf("write %s: %w", rel, err)
+		}
+		h := hash.HashBytes(data)
+		entries = append(entries, state.FileEntry{Target: rel, Hash: h, SourceHash: h})
+	}
+	return entries, nil
 }
 
 // adapterSectionFromRender projects a RenderResult into the

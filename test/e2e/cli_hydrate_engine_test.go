@@ -101,23 +101,20 @@ const (
 )
 
 // phase7StatePath returns the on-disk path of the engine's state.json.
-// WORKSPACE scope (these tests pass --output, never --global) is
-// <output>/.ach/state.json — NOT env-namespaced (only --global namespaces by
-// environment). Matches internal/cli/state.ResolvePath. The environment param
-// is retained for call-site symmetry but unused in workspace scope.
+// Per spec §8.1 the <ach-dir> is now per-environment namespaced in BOTH
+// scopes — workspace scope (these tests pass --output) is
+// <output>/.ach/<environment>/state.json. Matches internal/cli/state.ResolvePath.
 func phase7StatePath(output, environment string) string {
-	_ = environment
-	return filepath.Join(output, ".ach", "state.json")
+	return filepath.Join(output, ".ach", environment, "state.json")
 }
 
 // phase7AchTmpDir returns the on-disk <ach-dir>/tmp/ path the engine
 // uses for staging — swept on hydrate start per spec §6.7 step 2.
 // sc2_commit_sequence_sigkill plants a synthetic orphan staging dir here
 // (the killed run leaves none — StageAndPublish eager-cleans) and asserts
-// a clean re-run sweeps it.
+// a clean re-run sweeps it. Per-environment namespaced (spec §8.1).
 func phase7AchTmpDir(output, environment string) string {
-	_ = environment
-	return filepath.Join(output, ".ach", "tmp")
+	return filepath.Join(output, ".ach", environment, "tmp")
 }
 
 // TestPhase7CLIEngine is the single top-level umbrella for the Phase 7

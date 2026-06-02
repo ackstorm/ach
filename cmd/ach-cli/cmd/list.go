@@ -21,6 +21,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -79,25 +80,48 @@ empty JSON array under --json) and exits 0.`,
 				}
 			}
 
-			statePath, err := state.ResolvePath(cwd, flagEnvironment, flagGlobal)
-			if err != nil {
-				return &exit.CodedError{
-					Code:    exit.ConfigFile,
-					Msg:     fmt.Sprintf("list: resolve state path: %v", err),
-					Wrapped: err,
+			// Per-environment namespacing (spec §8.1): in project scope with no
+			// --environment, enumerate EVERY .ach/<env>/state.json so a multi-env
+			// project lists all its installed sets. A specific --environment (or
+			// any --global run, which always requires --environment) resolves a
+			// single state file.
+			var files []*state.File
+			if flagEnvironment == "" && !flagGlobal {
+				all, lerr := loadAllWorkspaceStates(cwd)
+				if lerr != nil {
+					return &exit.CodedError{
+						Code:    exit.ConfigFile,
+						Msg:     fmt.Sprintf("list: enumerate environments: %v", lerr),
+						Wrapped: lerr,
+					}
+				}
+				files = all
+			} else {
+				statePath, err := state.ResolvePath(cwd, flagEnvironment, flagGlobal)
+				if err != nil {
+					return &exit.CodedError{
+						Code:    exit.ConfigFile,
+						Msg:     fmt.Sprintf("list: resolve state path: %v", err),
+						Wrapped: err,
+					}
+				}
+				f, err := state.Load(statePath)
+				if err != nil {
+					return &exit.CodedError{
+						Code:    exit.ConfigFile,
+						Msg:     fmt.Sprintf("list: read state: %v", err),
+						Wrapped: err,
+					}
+				}
+				if f != nil {
+					files = []*state.File{f}
 				}
 			}
 
-			f, err := state.Load(statePath)
-			if err != nil {
-				return &exit.CodedError{
-					Code:    exit.ConfigFile,
-					Msg:     fmt.Sprintf("list: read state: %v", err),
-					Wrapped: err,
-				}
+			var entries []render.StateEntryView
+			for _, f := range files {
+				entries = append(entries, buildStateEntryViews(f)...)
 			}
-
-			entries := buildStateEntryViews(f)
 
 			if flagJSON {
 				out, jerr := render.FormatStateListJSON(entries)
@@ -118,9 +142,39 @@ empty JSON array under --json) and exits 0.`,
 	}
 	c.Flags().BoolVar(&flagJSON, "json", false, "Machine-readable JSON output")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Use $HOME/.ach/<env> scope instead of cwd/.ach")
-	c.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (REQUIRED with --global)")
+	c.Flags().StringVar(&flagEnvironment, "environment", "",
+		"Environment name (REQUIRED with --global; omit in project scope to list ALL envs)")
 	c.Flags().StringVar(&flagPlatform, "platform", "", "Override platform scope resolution")
 	return c
+}
+
+// loadAllWorkspaceStates enumerates <cwd>/.ach/<env>/state.json across every
+// per-environment subdir and returns the loaded *state.File set (skipping
+// unreadable / wrong-schema files so one bad env never blocks the listing). An
+// absent .ach/ yields an empty slice (→ "No resources installed"). A legacy
+// FLAT .ach/state.json is intentionally ignored here — it is migrated into the
+// namespaced layout on the next hydrate.
+func loadAllWorkspaceStates(cwd string) ([]*state.File, error) {
+	achRoot := filepath.Join(cwd, ".ach")
+	dirents, err := os.ReadDir(achRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]*state.File, 0, len(dirents))
+	for _, d := range dirents {
+		if !d.IsDir() {
+			continue
+		}
+		f, lerr := state.Load(filepath.Join(achRoot, d.Name(), "state.json"))
+		if lerr != nil || f == nil {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out, nil
 }
 
 // buildStateEntryViews flattens a loaded state.File into the render view

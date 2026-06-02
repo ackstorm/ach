@@ -176,12 +176,14 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			assertProjectedCommands(t, output, pe)
 			assertHooksDropped(t, pe.id, stderr)
 			assertStateJSON(t, output, pe.id)
+			assertPerEnvNamespacing(t, output)
+			assertRuntimeMirror(t, output, pk)
 		})
 	}
 
 	// ek_ credential path: prove `env-keys create` mints an ek_ and that
-	// `hydrate --env-key <label>` projects with it (the demo Environment is
-	// resolved server-side, so --environment is optional for ek_). One
+	// `hydrate --env-key <label>` projects with it. --environment is required
+	// (D1: engine state is namespaced by environment) even for ek_. One
 	// platform is enough to exercise the credential branch.
 	t.Run("ek_path_claude_code", func(t *testing.T) {
 		phase7SuiteGuard(t)
@@ -191,8 +193,11 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Fatalf("ek_path: env-keys create returned %q (want ek_ prefix)", ek)
 		}
 		output := t.TempDir()
+		// --environment is now required for any engine run (D1: the engine
+		// namespaces state by environment), incl. the ek_ credential path.
 		stdout, stderr, err := runAchDiskConfig(t, xdg,
 			"hydrate",
+			"--environment", phase7DemoEnvironment,
 			"--platform", "claude-code",
 			"--env-key", "allplatforms-ek",
 			"--output", output,
@@ -401,6 +406,43 @@ func assertStateJSON(t *testing.T, output, id string) {
 	}
 	if len(st.Adapter.Files) < 1 {
 		t.Errorf("%s: state.json adapter.files empty (want >= 1 runtime-config row)", id)
+	}
+}
+
+// assertPerEnvNamespacing asserts the engine wrote state under the
+// per-environment layout <output>/.ach/<env>/state.json (spec §8.1) and NOT the
+// legacy flat <output>/.ach/state.json.
+func assertPerEnvNamespacing(t *testing.T, output string) {
+	t.Helper()
+	nsState := filepath.Join(output, ".ach", phase7DemoEnvironment, "state.json")
+	if _, err := os.Stat(nsState); err != nil {
+		t.Errorf("per-env state.json missing at .ach/%s/state.json: %v", phase7DemoEnvironment, err)
+	}
+	flatState := filepath.Join(output, ".ach", "state.json")
+	if _, err := os.Stat(flatState); err == nil {
+		t.Errorf("legacy flat .ach/state.json must NOT exist under the namespaced layout")
+	}
+}
+
+// assertRuntimeMirror asserts the .ach/<env>/runtime/ snapshots exist for the
+// demo Environment (which exposes mcp + a2a + model) and are credential-free
+// (OBS-02: the bearer lives only in the adapter config, never in the cache).
+func assertRuntimeMirror(t *testing.T, output, cred string) {
+	t.Helper()
+	runtimeDir := filepath.Join(output, ".ach", phase7DemoEnvironment, "runtime")
+	for _, name := range []string{"mcp", "a2a", "model"} {
+		p := filepath.Join(runtimeDir, name+".json")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("runtime mirror .ach/%s/runtime/%s.json missing: %v", phase7DemoEnvironment, name, err)
+			continue
+		}
+		if !json.Valid(b) {
+			t.Errorf("runtime mirror %s.json is not valid JSON", name)
+		}
+		if bytes.Contains(b, []byte(cred)) || bytes.Contains(b, []byte("x-ach-key")) {
+			t.Errorf("runtime mirror %s.json leaked a credential (OBS-02 violation):\n%s", name, b)
+		}
 	}
 }
 

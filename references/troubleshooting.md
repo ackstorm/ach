@@ -182,6 +182,31 @@ mode is identical to a real schema drift (`schemaVersion` bump, new field,
 etc.), so documenting the gotcha protects future debuggers from chasing a
 phantom regression.
 
+### ❌ `ach-cli hydrate` exits 1 "--environment is required" ✅ pass --environment (engine namespaces state by env)
+The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
+(`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under
+`--global`) per CLI spec §8.1. So `--environment` (or `ACH_ENVIRONMENT`) is
+REQUIRED for any engine run — including the `ek_` credential path, which used to
+treat it as optional. `--raw` is exempt (it short-circuits before the engine).
+
+Two Environments hydrated into ONE project therefore get isolated caches +
+state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
+adapter-native projection (`.claude/`, `.codex/`, …) is single-path by
+construction — agents read fixed config locations — so two Environments UNION in
+the same `.claude/` (each surgically tracked + independently uninstallable via
+`ach-cli uninstall --environment <env>`).
+
+A pre-namespacing flat `<cwd>/.ach/state.json` is auto-migrated into
+`.ach/<env>/` on the next hydrate (a one-line stderr `notice:`). `ach-cli list`
+with no `--environment` (project scope) enumerates ALL `.ach/<env>/` so a
+multi-env project lists every installed set.
+
+`.ach/<env>/runtime/{mcp,a2a,model}.json` are credential-free snapshots of the
+Environment's runtime block (the bearer is injected ONLY into the adapter
+config, never the cache) — recorded in `state.runtimeFiles` so `--sync` /
+uninstall and drift cover runtime entries (incl. models, which have no adapter
+destination).
+
 ### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
 ```bash
 curl -i -H 'Authorization: Bearer pk_demo' https://forwarder.local/mcp/demo-mcp-echo

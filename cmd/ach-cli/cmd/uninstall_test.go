@@ -49,12 +49,16 @@ func swapUninstallSyncFn(t *testing.T, rec *recordedSync, stats hydrate.SyncStat
 	t.Cleanup(func() { uninstallSyncFn = prevFn })
 }
 
-// writeState writes a minimal valid v2 state.json into <dir>/.ach.
+// writeState writes a minimal valid v2 state.json into the per-environment
+// <dir>/.ach/<f.Environment>/ layout (env required — namespaced per spec §8.1).
 func writeState(t *testing.T, workspace string, f *state.File) string {
 	t.Helper()
-	achDir := filepath.Join(workspace, ".ach")
+	if f.Environment == "" {
+		t.Fatalf("writeState: state.File needs a non-empty Environment (namespaced layout)")
+	}
+	achDir := filepath.Join(workspace, ".ach", f.Environment)
 	if err := os.MkdirAll(achDir, 0o755); err != nil {
-		t.Fatalf("mkdir .ach: %v", err)
+		t.Fatalf("mkdir .ach/%s: %v", f.Environment, err)
 	}
 	statePath := filepath.Join(achDir, "state.json")
 	if err := state.Save(statePath, f); err != nil {
@@ -84,7 +88,7 @@ func TestUninstall_DryRunWritesNothing(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1, Preserved: 0}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws, "--dry-run")
+	stdout, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--dry-run")
 	if err != nil || code != exit.OK {
 		t.Fatalf("dry-run uninstall: code=%d err=%v", code, err)
 	}
@@ -121,7 +125,7 @@ func TestUninstall_MissingStateExitsZero(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws)
+	stdout, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod")
 	if err != nil {
 		t.Fatalf("missing-state uninstall returned error: %v", err)
 	}
@@ -142,7 +146,7 @@ func TestUninstall_ScopeFlagMutualExclusion(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--include-runtime", "--only-runtime")
+	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--include-runtime", "--only-runtime")
 	if err == nil {
 		t.Fatal("expected mutual-exclusion error, got nil")
 	}
@@ -170,7 +174,7 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 2}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--include-runtime")
+	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--include-runtime")
 	if err != nil || code != exit.OK {
 		t.Fatalf("full teardown: code=%d err=%v", code, err)
 	}
@@ -201,7 +205,7 @@ func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1}, nil)
 
 	// Default scope: removes context, retains runtime.
-	_, _, code, err := executeUninstall(t, "--output", ws)
+	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod")
 	if err != nil || code != exit.OK {
 		t.Fatalf("scoped uninstall: code=%d err=%v", code, err)
 	}
@@ -225,13 +229,14 @@ func TestUninstall_ForceFlagThreadsThrough(t *testing.T) {
 	ws := t.TempDir()
 	writeState(t, ws, &state.File{
 		SchemaVersion: "2",
+		Environment:   "prod",
 		Plugins:       []state.FileEntry{{Target: "CLAUDE.md", Hash: "h", SourceHash: "s"}},
 	})
 
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--force")
+	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--force")
 	if err != nil || code != exit.OK {
 		t.Fatalf("force uninstall: code=%d err=%v", code, err)
 	}

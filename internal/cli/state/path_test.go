@@ -11,36 +11,38 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
-// TestResolvePath_Workspace asserts the workspace-scope formula:
-// <workspaceCwd>/.ach/state.json.
+// TestResolvePath_Workspace asserts the workspace-scope formula (now
+// per-environment namespaced): <workspaceCwd>/.ach/<environment>/state.json.
 func TestResolvePath_Workspace(t *testing.T) {
 	cwd := t.TempDir()
-	got, err := state.ResolvePath(cwd, "", false)
+	got, err := state.ResolvePath(cwd, "demo", false)
 	if err != nil {
 		t.Fatalf("ResolvePath: %v", err)
 	}
-	want := filepath.Join(cwd, ".ach", "state.json")
+	want := filepath.Join(cwd, ".ach", "demo", "state.json")
 	if got != want {
 		t.Fatalf("ResolvePath(workspace) = %q, want %q", got, want)
 	}
 }
 
-// TestResolvePath_WorkspaceIgnoresEnvironment asserts that the
-// environment string is irrelevant in workspace scope: workspace
-// state lives under the workspace's own .ach/ dir, not under any
-// per-Environment global path.
-func TestResolvePath_WorkspaceIgnoresEnvironment(t *testing.T) {
+// TestResolvePath_WorkspaceNamespacesEnvironment asserts workspace scope is now
+// per-environment: distinct environments resolve to distinct dirs, and an empty
+// environment is rejected (ErrInvalidPath) — the namespace segment is required.
+func TestResolvePath_WorkspaceNamespacesEnvironment(t *testing.T) {
 	cwd := t.TempDir()
-	withEnv, err := state.ResolvePath(cwd, "engineering-prod", false)
+	a, err := state.ResolvePath(cwd, "env-a", false)
 	if err != nil {
-		t.Fatalf("ResolvePath with env: %v", err)
+		t.Fatalf("ResolvePath env-a: %v", err)
 	}
-	without, err := state.ResolvePath(cwd, "", false)
+	b, err := state.ResolvePath(cwd, "env-b", false)
 	if err != nil {
-		t.Fatalf("ResolvePath without env: %v", err)
+		t.Fatalf("ResolvePath env-b: %v", err)
 	}
-	if withEnv != without {
-		t.Fatalf("workspace scope must ignore environment\n withEnv: %q\n no env:  %q", withEnv, without)
+	if a == b {
+		t.Fatalf("distinct environments must resolve to distinct dirs; both = %q", a)
+	}
+	if _, err := state.ResolvePath(cwd, "", false); !errors.Is(err, state.ErrInvalidPath) {
+		t.Fatalf("empty environment in workspace scope: err = %v, want ErrInvalidPath", err)
 	}
 }
 

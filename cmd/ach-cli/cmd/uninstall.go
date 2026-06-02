@@ -114,7 +114,7 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 
 	// Reused hydrate flags (D-29) plus the D-26 scope pair.
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "",
-		"Target Environment name (namespaces the global <ach-dir>)")
+		"Target Environment name (REQUIRED — namespaces the <ach-dir> in project and --global scope)")
 	cmd.Flags().BoolVar(&flagForce, "force", false,
 		"Bypass drift refusal — remove user-edited projected files too")
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,

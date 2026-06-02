@@ -16,14 +16,21 @@ import (
 	"github.com/ackstorm/ach/internal/cli/render"
 )
 
-// writeListState writes a v2 state.json under <dir>/.ach/state.json and
+// writeListState writes a v2 state.json under the per-environment
+// <dir>/.ach/<environment>/state.json layout (env parsed from the body) and
 // returns the workspace dir. body is the raw JSON document.
 func writeListState(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	achDir := filepath.Join(dir, ".ach")
+	var meta struct {
+		Environment string `json:"environment"`
+	}
+	if err := json.Unmarshal([]byte(body), &meta); err != nil || meta.Environment == "" {
+		t.Fatalf("writeListState: body must carry a non-empty environment field: %v", err)
+	}
+	achDir := filepath.Join(dir, ".ach", meta.Environment)
 	if err := os.MkdirAll(achDir, 0o755); err != nil {
-		t.Fatalf("mkdir .ach: %v", err)
+		t.Fatalf("mkdir .ach/%s: %v", meta.Environment, err)
 	}
 	if err := os.WriteFile(filepath.Join(achDir, "state.json"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write state.json: %v", err)

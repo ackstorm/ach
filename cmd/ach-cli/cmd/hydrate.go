@@ -387,6 +387,18 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 			Msg:  "--environment is required when using a pk_ key (CLI-06 / spec §5.7)",
 		}
 	}
+	// The hydrate ENGINE namespaces state by environment
+	// (.ach/<environment>/ in both project and --global scope per spec §8.1),
+	// so --environment is required for any engine run regardless of credential
+	// kind (D1). --raw is exempt: it short-circuits before the engine/state
+	// path (Phase 6 verbatim POST+stream).
+	if !in.raw && effectiveEnv == "" {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: "--environment is required: the hydrate engine namespaces state by " +
+				"environment (.ach/<environment>/); pass --environment or set ACH_ENVIRONMENT",
+		}
+	}
 
 	stderr := cmd.ErrOrStderr()
 	if prefix == keys.PrefixPk && !in.noWarnings {

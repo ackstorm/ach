@@ -726,6 +726,146 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 	}
 }
 
+// TestRun_RuntimeMirror_WritesSnapshotsAndState asserts step 10b mirrors the
+// manifest runtime block into credential-free .ach/runtime/{mcp,a2a,model}.json
+// snapshots and records them in state.RuntimeFiles. Empty buckets are not
+// written. Re-running is byte-stable (same hash).
+func TestRun_RuntimeMirror_WritesSnapshotsAndState(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.opts.IncludeRuntime = true
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime: &manifest.RuntimeBlock{
+				Models:     []manifest.ContentRef{{ID: "demo-model", Endpoint: "http://local/v1"}},
+				MCPServers: []manifest.ContentRef{{ID: "demo-mcp-jwt", Endpoint: "http://local/mcp/demo-mcp-jwt"}},
+				A2AAgents:  nil, // empty bucket → no a2a.json
+			},
+			Context: &manifest.ContextBlock{},
+		}, nil
+	}
+	c.extractor = fakeExtractor{}
+	c.adapter = fakeAdapterDispatcher{result: RenderResult{}}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+
+	runtimeDir := filepath.Join(c.achDir, "runtime")
+	// mcp + model written; a2a NOT (empty bucket).
+	for _, name := range []string{"mcp", "model"} {
+		p := filepath.Join(runtimeDir, name+".json")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("runtime mirror %s.json missing: %v", name, err)
+		}
+		// Credential-free (OBS-02): the snapshot is id+endpoint only.
+		if bytes.Contains(b, []byte("x-ach-key")) || bytes.Contains(b, []byte("pk_")) || bytes.Contains(b, []byte("ek_")) {
+			t.Errorf("runtime mirror %s.json leaked a credential:\n%s", name, b)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "a2a.json")); !os.IsNotExist(err) {
+		t.Errorf("a2a.json should NOT exist (empty bucket); stat err=%v", err)
+	}
+
+	// state.RuntimeFiles records the 2 written snapshots (mcp, model).
+	if store.savedFile == nil {
+		t.Fatal("savedFile = nil")
+	}
+	rf := store.savedFile.RuntimeFiles
+	if len(rf) != 2 {
+		t.Fatalf("state.RuntimeFiles = %d entries, want 2 (mcp, model): %+v", len(rf), rf)
+	}
+	gotTargets := map[string]string{}
+	for _, e := range rf {
+		gotTargets[e.Target] = e.Hash
+		if e.Hash == "" || e.Hash != e.SourceHash {
+			t.Errorf("RuntimeFiles[%s]: hash=%q sourceHash=%q (want equal, non-empty)", e.Target, e.Hash, e.SourceHash)
+		}
+	}
+	if _, ok := gotTargets[filepath.Join("runtime", "mcp.json")]; !ok {
+		t.Errorf("RuntimeFiles missing runtime/mcp.json: %+v", rf)
+	}
+	if _, ok := gotTargets[filepath.Join("runtime", "model.json")]; !ok {
+		t.Errorf("RuntimeFiles missing runtime/model.json: %+v", rf)
+	}
+
+	// Byte-stable on re-run: same manifest → same hashes.
+	mcpHash1 := gotTargets[filepath.Join("runtime", "mcp.json")]
+	rf2, err := c.writeRuntimeMirror(mustRuntimeManifest())
+	if err != nil {
+		t.Fatalf("re-run writeRuntimeMirror: %v", err)
+	}
+	for _, e := range rf2 {
+		if e.Target == filepath.Join("runtime", "mcp.json") && e.Hash != mcpHash1 {
+			t.Errorf("mcp.json hash not stable across runs: %q vs %q", e.Hash, mcpHash1)
+		}
+	}
+}
+
+func mustRuntimeManifest() *manifest.Manifest {
+	return &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime: &manifest.RuntimeBlock{
+			Models:     []manifest.ContentRef{{ID: "demo-model", Endpoint: "http://local/v1"}},
+			MCPServers: []manifest.ContentRef{{ID: "demo-mcp-jwt", Endpoint: "http://local/mcp/demo-mcp-jwt"}},
+		},
+	}
+}
+
+// TestMigrateLegacyFlatState_RelocatesIntoEnvSubdir asserts the D3 migration:
+// a pre-namespacing flat <cwd>/.ach/state.json (+ content dirs) is relocated
+// into <cwd>/.ach/<env>/, is idempotent on a second call, and no-ops when no
+// flat state exists.
+func TestMigrateLegacyFlatState_RelocatesIntoEnvSubdir(t *testing.T) {
+	ws := t.TempDir()
+	achRoot := filepath.Join(ws, ".ach")
+	if err := os.MkdirAll(filepath.Join(achRoot, "plugin", "caveman"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(achRoot, "plugin", "caveman", "SKILL.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Legacy flat state bound to env "demo".
+	if err := state.Save(filepath.Join(achRoot, "state.json"), &state.File{
+		SchemaVersion: "2",
+		Environment:   "demo",
+		Plugins:       []state.FileEntry{{Target: ".claude/skills/caveman/SKILL.md", Hash: "h", SourceHash: "h"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateLegacyFlatState(ws, nil); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// Relocated into .ach/demo/.
+	if _, err := os.Stat(filepath.Join(achRoot, "demo", "state.json")); err != nil {
+		t.Errorf("state.json not relocated to .ach/demo/: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(achRoot, "demo", "plugin", "caveman", "SKILL.md")); err != nil {
+		t.Errorf("plugin dir not relocated to .ach/demo/plugin/: %v", err)
+	}
+	// Flat copies gone.
+	if _, err := os.Stat(filepath.Join(achRoot, "state.json")); !os.IsNotExist(err) {
+		t.Errorf("flat state.json should be gone after migration; stat err=%v", err)
+	}
+
+	// Idempotent: a second call is a clean no-op (target already present).
+	if err := migrateLegacyFlatState(ws, nil); err != nil {
+		t.Errorf("second migrate (idempotent) returned err: %v", err)
+	}
+
+	// No flat state → no-op.
+	fresh := t.TempDir()
+	if err := migrateLegacyFlatState(fresh, nil); err != nil {
+		t.Errorf("migrate on fresh workspace returned err: %v", err)
+	}
+}
+
 // TestRun_DryRun_SkipsExtractorAndAdapter asserts that --dry-run gates
 // every disk-touching call site introduced in 07-W5-01: extractor +
 // adapter MUST NOT be invoked. Result.FilesWritten stays at zero.
