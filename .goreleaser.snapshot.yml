@@ -66,6 +66,8 @@ dockers:
       - "ghcr.io/ackstorm/ach:main-amd64"
       - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-amd64"
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - db/migrations
     use: buildx
     goos: linux
     goarch: amd64
@@ -85,6 +87,8 @@ dockers:
       - "ghcr.io/ackstorm/ach:main-arm64"
       - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-arm64"
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - db/migrations
     use: buildx
     goos: linux
     goarch: arm64

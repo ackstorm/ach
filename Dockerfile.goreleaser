@@ -15,13 +15,15 @@ RUN apk add --no-cache git ca-certificates && \
 WORKDIR /
 
 # Copy the pre-built binary from GoReleaser build context.
-# Note: db/migrations is intentionally NOT baked here. goreleaser's
-# default docker build context only contains files staged by its
-# `builds:` block (i.e. the `ach` binary). Migrations are supplied to
-# release images via a ConfigMap mount in deploy/helm/ach. The
-# in-tree Dockerfile does bake them for local/e2e cycles where the
-# Helm chart doesn't synthesise the ConfigMap.
 COPY ach .
+
+# Bake the SQL migrations into the image at /db/migrations so `ach migrate`
+# (default ACH_MIGRATIONS_PATH=/db/migrations) finds them. goreleaser stages
+# db/migrations into the build context via each docker block's `extra_files:`.
+# Migrations are tiny, static, and version-locked to this binary — they ship
+# with it rather than drifting via a separate ConfigMap. Mirrors the in-tree
+# Dockerfile used for local/e2e builds.
+COPY db/migrations /db/migrations
 
 USER 65532:65532
 

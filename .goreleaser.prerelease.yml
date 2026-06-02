@@ -86,9 +86,11 @@ dockers:
   - id: ach-amd64
     ids: [ach]
     image_templates:
-      - "ghcr.io/ackstorm/ach:{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach:v{{ .Version }}-amd64"
       - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-amd64"
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - db/migrations
     use: buildx
     goos: linux
     goarch: amd64
@@ -105,9 +107,11 @@ dockers:
   - id: ach-arm64
     ids: [ach]
     image_templates:
-      - "ghcr.io/ackstorm/ach:{{ .Version }}-arm64"
+      - "ghcr.io/ackstorm/ach:v{{ .Version }}-arm64"
       - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-arm64"
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - db/migrations
     use: buildx
     goos: linux
     goarch: arm64
@@ -123,10 +127,10 @@ dockers:
       - "--label=org.opencontainers.image.description=Pre-release build"
 
 docker_manifests:
-  - name_template: "ghcr.io/ackstorm/ach:{{ .Version }}"
+  - name_template: "ghcr.io/ackstorm/ach:v{{ .Version }}"
     image_templates:
-      - "ghcr.io/ackstorm/ach:{{ .Version }}-amd64"
-      - "ghcr.io/ackstorm/ach:{{ .Version }}-arm64"
+      - "ghcr.io/ackstorm/ach:v{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach:v{{ .Version }}-arm64"
   - name_template: "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease"
     image_templates:
       - "ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease-amd64"
@@ -189,7 +193,7 @@ release:
 
     ### Container Images
 
-    - `ghcr.io/ackstorm/ach:{{ .Version }}`
+    - `ghcr.io/ackstorm/ach:v{{ .Version }}`
     - `ghcr.io/ackstorm/ach:{{ .Major }}.{{ .Minor }}-prerelease`
 
     ### Installation
