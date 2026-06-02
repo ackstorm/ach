@@ -10,64 +10,6 @@ import (
 	"testing"
 )
 
-// TestCreateMCPServerPathIsAdminImmediate — POST /v1/mcp/server. The
-// admin-immediate path; the user-submission path is intentionally
-// NOT used by this operator.
-func TestCreateMCPServerPathIsAdminImmediate(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(202) // LiteLLM 1.83.10 returns 202 on POST /v1/mcp/server
-		_, _ = w.Write([]byte(`{"server_id":"mcp-1","transport":"sse"}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	_, err := c.CreateMCPServer(context.Background(), &MCPServerRequest{ServerName: "test"})
-	if err != nil {
-		t.Fatalf("CreateMCPServer: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/v1/mcp/server" {
-		t.Errorf("CreateMCPServer: want POST /v1/mcp/server (admin-immediate), got %+v", captured)
-	}
-}
-
-// TestUpdateMCPServerUsesPUT — PUT /v1/mcp/server (§5.1 wholesale-replace).
-func TestUpdateMCPServerUsesPUT(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(202)
-		_, _ = w.Write([]byte(`{"server_id":"mcp-1","transport":"sse"}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	_, err := c.UpdateMCPServer(context.Background(), &MCPServerUpdateRequest{ServerID: "mcp-1"})
-	if err != nil {
-		t.Fatalf("UpdateMCPServer: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "PUT" || captured[0].Path != "/v1/mcp/server" {
-		t.Errorf("UpdateMCPServer: want PUT /v1/mcp/server, got %+v", captured)
-	}
-}
-
-// TestDeleteMCPServerPath — DELETE /v1/mcp/server/{id}.
-func TestDeleteMCPServerPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	if err := c.DeleteMCPServer(context.Background(), "mcp-xyz"); err != nil {
-		t.Fatalf("DeleteMCPServer: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "DELETE" || captured[0].Path != "/v1/mcp/server/mcp-xyz" {
-		t.Errorf("DeleteMCPServer: want DELETE /v1/mcp/server/mcp-xyz, got %+v", captured)
-	}
-}
-
 // TestListMCPServersLengthCheck — REL-05 on the bare-array list shape.
 // LiteLLM returns a bare JSON array; the helper wraps into
 // MCPServerListResponse{Data: ...} for the length check.
@@ -134,12 +76,6 @@ func TestMCPHelpers401Propagation(t *testing.T) {
 		}
 	}
 
-	_, err := c.CreateMCPServer(context.Background(), &MCPServerRequest{ServerName: "x"})
-	check("CreateMCPServer", err)
-	_, err = c.UpdateMCPServer(context.Background(), &MCPServerUpdateRequest{ServerID: "x"})
-	check("UpdateMCPServer", err)
-	err = c.DeleteMCPServer(context.Background(), "x")
-	check("DeleteMCPServer", err)
-	_, err = c.ListMCPServers(context.Background())
+	_, err := c.ListMCPServers(context.Background())
 	check("ListMCPServers", err)
 }

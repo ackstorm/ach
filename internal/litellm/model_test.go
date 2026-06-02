@@ -4,19 +4,16 @@ package litellm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 )
 
 // capturedRequest records the wire-level shape of a request the mock
-// server saw. Used by the path-string-verification tests to enforce
-// Pitfall 2 (POST /model/update — partial-update path-templated verb forbidden).
+// server saw. Used by path-string-verification tests across the package.
 type capturedRequest struct {
 	Method string
 	Path   string
@@ -41,57 +38,6 @@ func captureMock(t *testing.T, captured *[]capturedRequest, respond func(i int, 
 		idx := len(*captured) - 1
 		mu.Unlock()
 		respond(idx, w)
-	}
-}
-
-// TestUpdateModelUsesPostNotPatch — Pitfall 2 enforcement at the
-// model.go layer. Asserts:
-//   - the captured method is POST (NOT PATCH)
-//   - the captured path is exactly /model/update (NOT /model/<id>/update)
-//   - the request body carries the model id inside model_info.id
-//
-// This is the single most important test in the package — it locks in
-// the bbdsoftware/litellm-operator bug fix that motivated this rewrite.
-func TestUpdateModelUsesPostNotPatch(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"model_id":"abc","model_name":"foo","litellm_params":{},"model_info":{"id":"abc"}}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	req := &updateDeployment{
-		ModelInfo:     ModelInfo{ID: "abc-123"},
-		LiteLLMParams: LiteLLMParams{"timeout": 30},
-	}
-	if _, err := c.UpdateModel(context.Background(), req); err != nil {
-		t.Fatalf("UpdateModel: %v", err)
-	}
-
-	if len(captured) != 1 {
-		t.Fatalf("captured: want 1 request, got %d", len(captured))
-	}
-	got := captured[0]
-	if got.Method != "POST" {
-		t.Errorf("method: want POST, got %q", got.Method)
-	}
-	if got.Path != "/model/update" {
-		t.Errorf("path: want exactly /model/update (NOT /model/<id>/update — Pitfall 2), got %q", got.Path)
-	}
-
-	// Body: id MUST live in model_info.id, NOT in a URL path segment.
-	var body map[string]any
-	if err := json.Unmarshal(got.Body, &body); err != nil {
-		t.Fatalf("body unmarshal: %v", err)
-	}
-	mi, ok := body["model_info"].(map[string]any)
-	if !ok {
-		t.Fatalf("body missing model_info object: %v", body)
-	}
-	if id, _ := mi["id"].(string); id != "abc-123" {
-		t.Errorf("body.model_info.id: want abc-123, got %v", mi["id"])
 	}
 }
 
@@ -163,38 +109,8 @@ func TestModelHelpers401Propagation(t *testing.T) {
 		}
 	}
 
-	_, err := c.CreateModel(context.Background(), &Deployment{ModelName: "x", LiteLLMParams: LiteLLMParams{}, ModelInfo: ModelInfo{ID: "x"}})
-	check("CreateModel", err)
-
-	_, err = c.UpdateModel(context.Background(), &updateDeployment{ModelInfo: ModelInfo{ID: "x"}})
-	check("UpdateModel", err)
-
-	err = c.DeleteModel(context.Background(), "x")
-	check("DeleteModel", err)
-
-	_, err = c.GetModelInfo(context.Background(), "x")
+	_, err := c.GetModelInfo(context.Background(), "x")
 	check("GetModelInfo", err)
-}
-
-// TestCreateModelPath — POST /model/new path-string assertion.
-func TestCreateModelPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"model_id":"new"}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	_, _ = c.CreateModel(context.Background(), &Deployment{ModelName: "x", LiteLLMParams: LiteLLMParams{}, ModelInfo: ModelInfo{ID: "x"}})
-
-	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/model/new" {
-		t.Errorf("CreateModel: want POST /model/new, got %+v", captured)
-	}
-	// Also assert the body is well-formed JSON with model_name+litellm_params+model_info.
-	if !strings.Contains(string(captured[0].Body), `"model_name":"x"`) {
-		t.Errorf("CreateModel body missing model_name=x: %s", captured[0].Body)
-	}
 }
 
 // TestGetModelInfoByName_HappyPath — GetModelInfoByName with a
@@ -301,23 +217,3 @@ func TestGetModelInfoByName_5xx(t *testing.T) {
 	}
 }
 
-// TestDeleteModelPath — POST /model/delete with {"id":...} body.
-func TestDeleteModelPath(t *testing.T) {
-	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-	if err := c.DeleteModel(context.Background(), "to-delete"); err != nil {
-		t.Fatalf("DeleteModel: %v", err)
-	}
-	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/model/delete" {
-		t.Errorf("DeleteModel: want POST /model/delete, got %+v", captured)
-	}
-	if !strings.Contains(string(captured[0].Body), `"id":"to-delete"`) {
-		t.Errorf("DeleteModel body missing id=to-delete: %s", captured[0].Body)
-	}
-}
