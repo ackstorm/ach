@@ -35,10 +35,11 @@ import (
 // controller-runtime informer cache to the Postgres projection table.
 type envStore interface {
 	GetEnvironment(ctx context.Context, name string) (*db.EnvironmentRow, error)
-	EnvironmentTerminating(ctx context.Context, name string) (bool, error)
-	EnvironmentAccessGroupSynced(ctx context.Context, name string) (bool, error)
 	// AccessGroupSyncedFromRow derives AccessGroupSynced=True from an
-	// already-loaded row, avoiding a redundant SELECT (OPT-1).
+	// already-loaded row (OPT-1): CreateHandler reads terminating off the
+	// row's DeletionTimestamp and synced via this method, so the per-call
+	// EnvironmentTerminating/EnvironmentAccessGroupSynced SELECTs are no
+	// longer on the create path (they remain on *store.Store for other use).
 	AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool
 }
 
@@ -235,15 +236,16 @@ func (cr *createReq) emitInternalError(logMsg string, err error) {
 }
 
 // emitLitellmError classifies a LiteLLM client error into (status, outcome,
-// message) and audits + renders it (DUP-1). The log line carries the owner
-// email for correlation, mirroring the old inline blocks.
+// message) and audits + renders it (DUP-1). The log line carries both the
+// owner email and the environment for correlation (the env attribute the
+// old KeyGenerate-failure block logged is preserved across all LiteLLM sites).
 func (cr *createReq) emitLitellmError(err error, logMsg string) {
 	st, oc, msg := classifyLitellmErr(err)
 	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
 		Action: audit.ActionEkCreate, Outcome: oc,
 		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
 	})
-	cr.deps.Logger.Error(logMsg, "owner", cr.keyCtx.OwnerEmail, "err", err)
+	cr.deps.Logger.Error(logMsg, "owner", cr.keyCtx.OwnerEmail, "env", cr.req.Environment, "err", err)
 	render.Error(cr.w, st, oc, msg, cr.reqID)
 }
 
