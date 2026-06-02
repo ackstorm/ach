@@ -807,7 +807,22 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		}
 	}
 
-	outcome := NewDiffer().Compare(prior, onDiskHash, freshHash)
+	// LIFE-02 / D-30: Compare's third argument is the FRESH SOURCE hash (the
+	// upstream-change axis), NOT the emitted-output freshHash. For a CONVERTED
+	// projected file (D-23: Hash == output xxh3, SourceHash == pre-conversion
+	// source xxh3) the two diverge, so passing freshHash would spuriously trip
+	// the source-change axis on every converted Plugins[] entry. Derive the
+	// fresh source hash with the SAME rule the state-recording block below uses
+	// (fw.SourceHash, falling back to freshHash when empty — passthrough
+	// invariant: Hash == SourceHash). Both publishFile callers (findAdapterEntry
+	// runtime + findPluginEntry projection) thus evaluate the truth table
+	// correctly. onDiskHash (the user-drift axis) and the per-MergeKind freshHash
+	// (recorded as Hash, used for the no-op content identity) are unchanged.
+	freshSourceHash := freshHash
+	if fw.SourceHash != "" {
+		freshSourceHash = fw.SourceHash
+	}
+	outcome := NewDiffer().Compare(prior, onDiskHash, freshSourceHash)
 
 	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
 	// prior == nil (fresh hydrate) never refuses — there is nothing of ours
