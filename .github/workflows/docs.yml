@@ -36,7 +36,11 @@ jobs:
       - name: Generate API docs
         run: |
           echo "📚 Generating API documentation..."
-          make docs-build
+          # Only regenerate the CRD reference markdown. The full site build is
+          # mike's job in the Deploy step; running `make docs-build` here would
+          # `docker run mkdocs build` and leave site/ owned by root, so mike's
+          # later clean_directory() hits PermissionError on site/sitemap.xml.
+          make gen-crd-ref-docs
           echo "✅ API documentation generated successfully"
 
       - name: Validate semver tag
