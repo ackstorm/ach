@@ -1,0 +1,2004 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/plans/2026-05-26-environment-ready-composite/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Environment Available Composite Condition Implementation Plan - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#environment-available-composite-condition-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Environment Available Composite Condition Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#task-1-confirm-hub-66-closed-set-in-crd-doc-comment-matches-plan-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Confirm Hub §6.6 closed-set in CRD doc-comment matches plan decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-2-add-reason-constants-for-the-available-rollup-to-internalcontrollerachconditionsgo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Add reason constants for the Available rollup to internal/controller/ach/conditions.go
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-3-add-the-pure-computeavailable-helper-with-table-driven-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Add the pure computeAvailable helper with table-driven test
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-4-wire-computeavailable-into-the-steady-state-reconcile-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Wire computeAvailable into the steady-state reconcile path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-5-add-an-envtest-assertion-for-available-rollup-in-snapshotter-nil-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Add an envtest assertion for Available rollup in Snapshotter-nil mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-6-add-e2e-wait-gate-that-mirrors-todo-16-kubectl-wait" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Add e2e wait gate that mirrors TODO §16 kubectl wait
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-7-update-inline-doc-comment-in-environment_controllergo-to-reflect-new-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Update inline doc-comment in environment_controller.go to reflect new state
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-8-full-pre-push-gate-before-publishing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: Full pre-push gate before publishing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#acceptance-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acceptance summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-items-deferred-to-other-plans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open items deferred to other plans
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="environment-available-composite-condition-implementation-plan">Environment Available Composite Condition Implementation Plan<a class="headerlink" href="#environment-available-composite-condition-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For Claude:</strong> REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.</p>
+</blockquote>
+<p><strong>Goal:</strong> Emit <code>Environment.status.conditions[type=Available]</code> as a deterministic rollup of the three Hub §6.6 sub-conditions (<code>AccessGroupSynced</code>, <code>ContentReady</code>, <code>ExecutionResourcesResolved</code>) so <code>kubectl wait --for=condition=Available environment/demo --timeout=60s</code> exits 0 within 60s of a fully-resolved Environment.</p>
+<p><strong>Architecture:</strong> Pure helper <code>computeAvailable(conds []metav1.Condition) metav1.Condition</code> evaluates the three required sub-conditions and returns the rollup. Reconciler calls it ONCE at the end of the steady-state path, after <code>ExecutionResourcesResolved</code> (and Phase-1 placeholders for the others) have been set in memory, then issues the existing single <code>Status().Update</code>. Replaces the <code>aaa175b</code> placeholder block. No new dependencies, no new RBAC.</p>
+<p><strong>Tech Stack:</strong> Go, <code>k8s.io/apimachinery/pkg/api/meta</code>, controller-runtime envtest, kubectl in kind cluster.</p>
+<p><strong>Naming clarification (resolved upfront so the plan doesn't drift):</strong>
+- The composite condition type is <strong><code>Available</code></strong>, NOT <code>Ready</code>. TODO §9's symptom mentions <code>Ready</code> because that's what <code>kubectl wait</code> users habitually try first, but Hub §6.6 documents the closed set as <code>{Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced}</code>. The fix is to make the existing <code>Available</code> placeholder a real rollup — not to introduce a separate <code>Ready</code> type. The kubebuilder printcolumn at <code>api/ach/v1alpha1/environment_types.go:130</code> already advertises <code>Available</code>.
+- The True reason is <strong><code>AllSubConditionsTrue</code></strong> (matches TODO §16 line 563).
+- The False reason is <strong><code>SubConditionsNotReady</code></strong> (new; one of the three sub-conditions is <code>False</code>).
+- The Unknown reason is <strong><code>PendingSubConditions</code></strong> (carry-forward from <code>aaa175b</code> placeholder; one of the three sub-conditions is <code>Unknown</code> and none are <code>False</code>).</p>
+<p><strong>Mandatory-vs-optional sub-condition decision (resolved upfront):</strong>
+Hub §6.6 documents four condition types. <code>Available</code> is itself the rollup, so it's NEVER its own input. That leaves three candidates: <code>AccessGroupSynced</code>, <code>ContentReady</code>, <code>ExecutionResourcesResolved</code>. Of these:
+- <code>ExecutionResourcesResolved</code> — written today by the Snapshotter steady-state branch. <strong>REQUIRED.</strong>
+- <code>AccessGroupSynced</code> — written today as <code>Unknown</code> placeholder; TODO §7 will flip to real True/False. <strong>REQUIRED.</strong> (Per TODO §16 line 562: "IFF (a) AccessGroupSynced=True and (b) ExecutionResourcesResolved=True".)
+- <code>ContentReady</code> — no reconciler writes this today. Hub §6.6 lists it in the closed set but neither this repo nor <code>ach-old</code> emits it. <strong>OPTIONAL FOR ROLLUP</strong> in this plan. Rationale: if <code>Available</code> required a sub-condition no reconciler will ever write in Phase 2, <code>Available</code> would never reach True. We treat absent sub-conditions as "not blocking" — only explicit <code>False</code> or <code>Unknown</code> on a REQUIRED type degrades the rollup. When some future plan wires <code>ContentReady</code>, that reconciler can either (a) be added to the required set in <code>computeAvailable</code> or (b) be left optional — that's a one-line change to a single constant. The plan validates this decision via the table-driven test (a row asserting "missing ContentReady → still True iff the two required are True").</p>
+<p><strong>Cross-plan refs:</strong>
+- DEPENDS ON TODO §7 (AccessGroupSynced needs a real <code>True</code> writer — until §7 lands, the rollup will stay at <code>Unknown reason=PendingSubConditions</code> because the placeholder writes <code>Unknown</code>).
+- BLOCKS TODO §16 (validation gate explicitly chains §7+§9; cannot run end-to-end until both land).</p>
+<hr />
+<h2 id="task-1-confirm-hub-66-closed-set-in-crd-doc-comment-matches-plan-decisions">Task 1: Confirm Hub §6.6 closed-set in CRD doc-comment matches plan decisions<a class="headerlink" href="#task-1-confirm-hub-66-closed-set-in-crd-doc-comment-matches-plan-decisions" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Read-only: <code>api/ach/v1alpha1/environment_types.go:85-91</code> (Conditions field doc-comment)
+- Read-only: <code>internal/controller/ach/environment_controller.go:399-405</code> (writeStatus doc-comment listing closed set)
+- Read-only: <code>TODO.md:528-567</code> (§16 validation procedure with the expected <code>Available=True reason=AllSubConditionsTrue</code> shape)</p>
+<p><strong>Step 1: Sanity-check that the four condition types in the closed set are exactly what this plan assumes.</strong></p>
+<p>Run: <code>grep -n "Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced" api/ach/v1alpha1/environment_types.go internal/controller/ach/environment_controller.go</code></p>
+<p>Expected: at least one match in each file (api types doc-comment AND <code>writeStatus</code> doc-comment). If either is missing, the closed set has drifted and the plan needs revision before code lands.</p>
+<p><strong>Step 2: Sanity-check the §16 expected YAML shape.</strong></p>
+<p>Run: <code>sed -n '557,567p' TODO.md</code></p>
+<p>Expected output contains:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>- type: Available,                   status: True,  reason: AllSubConditionsTrue
+</code></pre></div></p>
+<p>If the reason string differs, update this plan's <code>ReasonAllSubConditionsTrue</code> constant to match, because §16 is the post-implementation acceptance contract.</p>
+<p><strong>Step 3: NO commit.</strong> This task is a pre-flight read-only check; nothing changes on disk.</p>
+<hr />
+<h2 id="task-2-add-reason-constants-for-the-available-rollup-to-internalcontrollerachconditionsgo">Task 2: Add reason constants for the Available rollup to <code>internal/controller/ach/conditions.go</code><a class="headerlink" href="#task-2-add-reason-constants-for-the-available-rollup-to-internalcontrollerachconditionsgo" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>internal/controller/ach/conditions.go</code> (add three new constants alongside the existing <code>Reason*</code> block at lines 21-109)</p>
+<p><strong>Step 1: Write the failing test</strong></p>
+<p>Create: <code>internal/controller/ach/environment_available_test.go</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1">// Tests for TODO §9: Environment Available composite-condition rollup.</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1">//</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1">// The helper under test is pure (no k8s client, no DB) so this file is a</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1">// stdlib `testing` table-driven unit test — NO envtest, NO suite_test</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1">// fixtures. It runs in milliseconds via `go test ./internal/controller/ach/</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1">// -run TestComputeAvailable`.</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="kn">package</span><span class="w"> </span><span class="nx">ach</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="s">&quot;testing&quot;</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nx">metav1</span><span class="w"> </span><span class="s">&quot;k8s.io/apimachinery/pkg/apis/meta/v1&quot;</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="p">)</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="c1">// TestAvailableReasonConstantsExist is a compile-time check that the three</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1">// reason constants required by the rollup helper exist with the documented</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="c1">// string values. The constants are referenced by computeAvailable AND by</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="c1">// the §16 acceptance test (TODO.md:563). If a future cleanup pass renames</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1">// them, this test catches the divergence before §16 fails.</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestAvailableReasonConstantsExist</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="nx">cases</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">        </span><span class="nx">name</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">,</span><span class="w"> </span><span class="nx">want</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="p">}{</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;AllSubConditionsTrue&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;AllSubConditionsTrue&quot;</span><span class="p">},</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;SubConditionsNotReady&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonSubConditionsNotReady</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;SubConditionsNotReady&quot;</span><span class="p">},</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;PendingSubConditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonPendingSubConditions</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;PendingSubConditions&quot;</span><span class="p">},</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">cases</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">got</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">want</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">            </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;%s = %q; want %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">name</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">got</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">want</span><span class="p">)</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">    </span><span class="c1">// Silence unused-import for metav1 — referenced once Task 3 lands.</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">    </span><span class="nx">_</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2: Run test to verify it fails</strong></p>
+<p>Run: <code>./scripts/dev.sh go test ./internal/controller/ach/ -run TestAvailableReasonConstantsExist -count=1</code></p>
+<p>Expected: BUILD FAIL with <code>undefined: ReasonAllSubConditionsTrue</code>, <code>undefined: ReasonSubConditionsNotReady</code>, <code>undefined: ReasonPendingSubConditions</code>.</p>
+<p><strong>Step 3: Add the constants</strong></p>
+<p>Edit <code>internal/controller/ach/conditions.go</code>. After the existing <code>ReasonUnsupportedPluginSource</code> block (line 108), and before the closing <code>)</code> of the const block, append:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="w">    </span><span class="c1">// ─── Hub §6.6 closed-set reasons for the Environment.Available</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="c1">// rollup (TODO §9). The Environment reconciler is the only writer.</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="c1">// ───────────────────────────────────────────────────────────────</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="c1">// ReasonAllSubConditionsTrue is the terminal positive outcome for</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="c1">// the Environment.Available rollup — every required sub-condition</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="c1">// (AccessGroupSynced, ExecutionResourcesResolved) is True. Mirrors</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="c1">// the §16 acceptance YAML shape (TODO.md:563) verbatim so the</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="c1">// validation gate compares against a stable string.</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;AllSubConditionsTrue&quot;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="c1">// ReasonSubConditionsNotReady is the degraded outcome — at least</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="c1">// one required sub-condition is False. message includes the failing</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="c1">// sub-condition names so operators reading `kubectl describe</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="c1">// environment` can pivot without re-querying.</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="nx">ReasonSubConditionsNotReady</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;SubConditionsNotReady&quot;</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="c1">// ReasonPendingSubConditions is the in-flight outcome — at least</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">    </span><span class="c1">// one required sub-condition is Unknown and none are False.</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">    </span><span class="c1">// Pre-§7 this is the steady-state because AccessGroupSynced is the</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">    </span><span class="c1">// J.6 placeholder Unknown.</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">    </span><span class="nx">ReasonPendingSubConditions</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;PendingSubConditions&quot;</span>
+</code></pre></div>
+<p><strong>Step 4: Run test to verify it passes</strong></p>
+<p>Run: <code>./scripts/dev.sh go test ./internal/controller/ach/ -run TestAvailableReasonConstantsExist -count=1</code></p>
+<p>Expected: PASS.</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/conditions.go<span class="w"> </span>internal/controller/ach/environment_available_test.go
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(environment): §9 step 1 — reason constants for Available rollup&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-3-add-the-pure-computeavailable-helper-with-table-driven-test">Task 3: Add the pure <code>computeAvailable</code> helper with table-driven test<a class="headerlink" href="#task-3-add-the-pure-computeavailable-helper-with-table-driven-test" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>internal/controller/ach/environment_controller.go</code> (add helper near <code>hasCondition</code> at line 281)
+- Modify: <code>internal/controller/ach/environment_available_test.go</code> (extend with the table-driven test)</p>
+<p><strong>Step 1: Write the failing table-driven test</strong></p>
+<p>Append to <code>internal/controller/ach/environment_available_test.go</code> (after the existing <code>TestAvailableReasonConstantsExist</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// TestComputeAvailable is the §9 rollup contract. Two sub-conditions are</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1">// REQUIRED for the rollup to be True: AccessGroupSynced and</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1">// ExecutionResourcesResolved. ContentReady is OPTIONAL (no reconciler in</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1">// Phase 2 writes it; absence does not degrade the rollup) per the plan&#39;s</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1">// &quot;Mandatory-vs-optional&quot; decision.</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1">//</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1">// Precedence rules (any False &gt; any Unknown &gt; all True):</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1">//   - any REQUIRED sub-condition False → Available=False, reason=SubConditionsNotReady</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1">//   - else any REQUIRED sub-condition Unknown or missing → Available=Unknown,</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1">//     reason=PendingSubConditions</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1">//   - all REQUIRED sub-conditions True → Available=True, reason=AllSubConditionsTrue</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="c1">//</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1">// The helper is pure: input is the conditions slice from</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1">// env.Status.Conditions; output is a metav1.Condition the caller pushes</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1">// back into the slice via apimeta.SetStatusCondition.</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestComputeAvailable</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="nx">cond</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">typ</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">status</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionStatus</span><span class="p">)</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span><span class="nx">Type</span><span class="p">:</span><span class="w"> </span><span class="nx">typ</span><span class="p">,</span><span class="w"> </span><span class="nx">Status</span><span class="p">:</span><span class="w"> </span><span class="nx">status</span><span class="p">,</span><span class="w"> </span><span class="nx">Reason</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;TestSeed&quot;</span><span class="p">}</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="nx">cases</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">        </span><span class="nx">name</span><span class="w">       </span><span class="kt">string</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">        </span><span class="nx">in</span><span class="w">         </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">        </span><span class="nx">wantStatus</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionStatus</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">        </span><span class="nx">wantReason</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">        </span><span class="c1">// wantMsgContains is a substring assertion — the helper composes</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="w">        </span><span class="c1">// a human-readable message that names the failing sub-conditions,</span>
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a><span class="w">        </span><span class="c1">// but the exact wording is not load-bearing for the rollup logic.</span>
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a><span class="w">        </span><span class="nx">wantMsgContains</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a><span class="w">    </span><span class="p">}{</span>
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all required True → Available True&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">,</span>
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w"> </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span>
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all required True + optional ContentReady True → Available True&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-43" name="__codelineno-4-43" href="#__codelineno-4-43"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-44" name="__codelineno-4-44" href="#__codelineno-4-44"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-45" name="__codelineno-4-45" href="#__codelineno-4-45"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ContentReady&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-46" name="__codelineno-4-46" href="#__codelineno-4-46"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-47" name="__codelineno-4-47" href="#__codelineno-4-47"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">,</span>
+<a id="__codelineno-4-48" name="__codelineno-4-48" href="#__codelineno-4-48"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w"> </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span>
+<a id="__codelineno-4-49" name="__codelineno-4-49" href="#__codelineno-4-49"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-50" name="__codelineno-4-50" href="#__codelineno-4-50"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-51" name="__codelineno-4-51" href="#__codelineno-4-51"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ContentReady missing entirely → still True (optional, not blocking)&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-52" name="__codelineno-4-52" href="#__codelineno-4-52"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-53" name="__codelineno-4-53" href="#__codelineno-4-53"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-54" name="__codelineno-4-54" href="#__codelineno-4-54"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-55" name="__codelineno-4-55" href="#__codelineno-4-55"></a><span class="w">                </span><span class="c1">// ContentReady absent — plan&#39;s optional-sub-condition decision.</span>
+<a id="__codelineno-4-56" name="__codelineno-4-56" href="#__codelineno-4-56"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-57" name="__codelineno-4-57" href="#__codelineno-4-57"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">,</span>
+<a id="__codelineno-4-58" name="__codelineno-4-58" href="#__codelineno-4-58"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w"> </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span>
+<a id="__codelineno-4-59" name="__codelineno-4-59" href="#__codelineno-4-59"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-60" name="__codelineno-4-60" href="#__codelineno-4-60"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-61" name="__codelineno-4-61" href="#__codelineno-4-61"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;one required False → Available False with reason SubConditionsNotReady&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-62" name="__codelineno-4-62" href="#__codelineno-4-62"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-63" name="__codelineno-4-63" href="#__codelineno-4-63"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-64" name="__codelineno-4-64" href="#__codelineno-4-64"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">),</span>
+<a id="__codelineno-4-65" name="__codelineno-4-65" href="#__codelineno-4-65"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-66" name="__codelineno-4-66" href="#__codelineno-4-66"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w">      </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">,</span>
+<a id="__codelineno-4-67" name="__codelineno-4-67" href="#__codelineno-4-67"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w">      </span><span class="nx">ReasonSubConditionsNotReady</span><span class="p">,</span>
+<a id="__codelineno-4-68" name="__codelineno-4-68" href="#__codelineno-4-68"></a><span class="w">            </span><span class="nx">wantMsgContains</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-69" name="__codelineno-4-69" href="#__codelineno-4-69"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-70" name="__codelineno-4-70" href="#__codelineno-4-70"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-71" name="__codelineno-4-71" href="#__codelineno-4-71"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;False beats Unknown — False outcome wins precedence&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-72" name="__codelineno-4-72" href="#__codelineno-4-72"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-73" name="__codelineno-4-73" href="#__codelineno-4-73"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">),</span>
+<a id="__codelineno-4-74" name="__codelineno-4-74" href="#__codelineno-4-74"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">),</span>
+<a id="__codelineno-4-75" name="__codelineno-4-75" href="#__codelineno-4-75"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-76" name="__codelineno-4-76" href="#__codelineno-4-76"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w">      </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">,</span>
+<a id="__codelineno-4-77" name="__codelineno-4-77" href="#__codelineno-4-77"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w">      </span><span class="nx">ReasonSubConditionsNotReady</span><span class="p">,</span>
+<a id="__codelineno-4-78" name="__codelineno-4-78" href="#__codelineno-4-78"></a><span class="w">            </span><span class="nx">wantMsgContains</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-79" name="__codelineno-4-79" href="#__codelineno-4-79"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-80" name="__codelineno-4-80" href="#__codelineno-4-80"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-81" name="__codelineno-4-81" href="#__codelineno-4-81"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;one required Unknown, none False → Available Unknown&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-82" name="__codelineno-4-82" href="#__codelineno-4-82"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-83" name="__codelineno-4-83" href="#__codelineno-4-83"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">),</span>
+<a id="__codelineno-4-84" name="__codelineno-4-84" href="#__codelineno-4-84"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-85" name="__codelineno-4-85" href="#__codelineno-4-85"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-86" name="__codelineno-4-86" href="#__codelineno-4-86"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w">      </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">,</span>
+<a id="__codelineno-4-87" name="__codelineno-4-87" href="#__codelineno-4-87"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w">      </span><span class="nx">ReasonPendingSubConditions</span><span class="p">,</span>
+<a id="__codelineno-4-88" name="__codelineno-4-88" href="#__codelineno-4-88"></a><span class="w">            </span><span class="nx">wantMsgContains</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-89" name="__codelineno-4-89" href="#__codelineno-4-89"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-90" name="__codelineno-4-90" href="#__codelineno-4-90"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-91" name="__codelineno-4-91" href="#__codelineno-4-91"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;required sub-condition missing entirely → Available Unknown (treated as Unknown)&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-92" name="__codelineno-4-92" href="#__codelineno-4-92"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-93" name="__codelineno-4-93" href="#__codelineno-4-93"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-94" name="__codelineno-4-94" href="#__codelineno-4-94"></a><span class="w">                </span><span class="c1">// AccessGroupSynced absent — required types not yet written</span>
+<a id="__codelineno-4-95" name="__codelineno-4-95" href="#__codelineno-4-95"></a><span class="w">                </span><span class="c1">// (e.g. pre-J.6, before placeholder commits).</span>
+<a id="__codelineno-4-96" name="__codelineno-4-96" href="#__codelineno-4-96"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-97" name="__codelineno-4-97" href="#__codelineno-4-97"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w">      </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">,</span>
+<a id="__codelineno-4-98" name="__codelineno-4-98" href="#__codelineno-4-98"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w">      </span><span class="nx">ReasonPendingSubConditions</span><span class="p">,</span>
+<a id="__codelineno-4-99" name="__codelineno-4-99" href="#__codelineno-4-99"></a><span class="w">            </span><span class="nx">wantMsgContains</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-100" name="__codelineno-4-100" href="#__codelineno-4-100"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-101" name="__codelineno-4-101" href="#__codelineno-4-101"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-102" name="__codelineno-4-102" href="#__codelineno-4-102"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w">            </span><span class="s">&quot;empty conditions → Available Unknown&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-103" name="__codelineno-4-103" href="#__codelineno-4-103"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w">              </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{},</span>
+<a id="__codelineno-4-104" name="__codelineno-4-104" href="#__codelineno-4-104"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w">      </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">,</span>
+<a id="__codelineno-4-105" name="__codelineno-4-105" href="#__codelineno-4-105"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w">      </span><span class="nx">ReasonPendingSubConditions</span><span class="p">,</span>
+<a id="__codelineno-4-106" name="__codelineno-4-106" href="#__codelineno-4-106"></a><span class="w">            </span><span class="nx">wantMsgContains</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-107" name="__codelineno-4-107" href="#__codelineno-4-107"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-108" name="__codelineno-4-108" href="#__codelineno-4-108"></a><span class="w">        </span><span class="p">{</span>
+<a id="__codelineno-4-109" name="__codelineno-4-109" href="#__codelineno-4-109"></a><span class="w">            </span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pre-existing Available in input is ignored (helper never reads its own type)&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-110" name="__codelineno-4-110" href="#__codelineno-4-110"></a><span class="w">            </span><span class="nx">in</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-4-111" name="__codelineno-4-111" href="#__codelineno-4-111"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-112" name="__codelineno-4-112" href="#__codelineno-4-112"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">),</span>
+<a id="__codelineno-4-113" name="__codelineno-4-113" href="#__codelineno-4-113"></a><span class="w">                </span><span class="nx">cond</span><span class="p">(</span><span class="s">&quot;Available&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">),</span><span class="w"> </span><span class="c1">// stale prior write</span>
+<a id="__codelineno-4-114" name="__codelineno-4-114" href="#__codelineno-4-114"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-4-115" name="__codelineno-4-115" href="#__codelineno-4-115"></a><span class="w">            </span><span class="nx">wantStatus</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">,</span>
+<a id="__codelineno-4-116" name="__codelineno-4-116" href="#__codelineno-4-116"></a><span class="w">            </span><span class="nx">wantReason</span><span class="p">:</span><span class="w"> </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span>
+<a id="__codelineno-4-117" name="__codelineno-4-117" href="#__codelineno-4-117"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-4-118" name="__codelineno-4-118" href="#__codelineno-4-118"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-119" name="__codelineno-4-119" href="#__codelineno-4-119"></a>
+<a id="__codelineno-4-120" name="__codelineno-4-120" href="#__codelineno-4-120"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">cases</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-121" name="__codelineno-4-121" href="#__codelineno-4-121"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Run</span><span class="p">(</span><span class="nx">tc</span><span class="p">.</span><span class="nx">name</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-122" name="__codelineno-4-122" href="#__codelineno-4-122"></a><span class="w">            </span><span class="nx">got</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">computeAvailable</span><span class="p">(</span><span class="nx">tc</span><span class="p">.</span><span class="nx">in</span><span class="p">)</span>
+<a id="__codelineno-4-123" name="__codelineno-4-123" href="#__codelineno-4-123"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Type</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;Available&quot;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-124" name="__codelineno-4-124" href="#__codelineno-4-124"></a><span class="w">                </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Type = %q; want %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Type</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Available&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-125" name="__codelineno-4-125" href="#__codelineno-4-125"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-4-126" name="__codelineno-4-126" href="#__codelineno-4-126"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantStatus</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-127" name="__codelineno-4-127" href="#__codelineno-4-127"></a><span class="w">                </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Status = %q; want %q (message=%q)&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantStatus</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Message</span><span class="p">)</span>
+<a id="__codelineno-4-128" name="__codelineno-4-128" href="#__codelineno-4-128"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-4-129" name="__codelineno-4-129" href="#__codelineno-4-129"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Reason</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantReason</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-130" name="__codelineno-4-130" href="#__codelineno-4-130"></a><span class="w">                </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Reason = %q; want %q (message=%q)&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Reason</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantReason</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Message</span><span class="p">)</span>
+<a id="__codelineno-4-131" name="__codelineno-4-131" href="#__codelineno-4-131"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-4-132" name="__codelineno-4-132" href="#__codelineno-4-132"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantMsgContains</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">!</span><span class="nx">contains</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Message</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantMsgContains</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-133" name="__codelineno-4-133" href="#__codelineno-4-133"></a><span class="w">                </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Message = %q; want substring %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Message</span><span class="p">,</span><span class="w"> </span><span class="nx">tc</span><span class="p">.</span><span class="nx">wantMsgContains</span><span class="p">)</span>
+<a id="__codelineno-4-134" name="__codelineno-4-134" href="#__codelineno-4-134"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-4-135" name="__codelineno-4-135" href="#__codelineno-4-135"></a><span class="w">        </span><span class="p">})</span>
+<a id="__codelineno-4-136" name="__codelineno-4-136" href="#__codelineno-4-136"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-137" name="__codelineno-4-137" href="#__codelineno-4-137"></a><span class="p">}</span>
+<a id="__codelineno-4-138" name="__codelineno-4-138" href="#__codelineno-4-138"></a>
+<a id="__codelineno-4-139" name="__codelineno-4-139" href="#__codelineno-4-139"></a><span class="c1">// contains is a tiny strings.Contains alias kept local so the test file</span>
+<a id="__codelineno-4-140" name="__codelineno-4-140" href="#__codelineno-4-140"></a><span class="c1">// imports stay minimal (no `strings` import for one helper).</span>
+<a id="__codelineno-4-141" name="__codelineno-4-141" href="#__codelineno-4-141"></a><span class="kd">func</span><span class="w"> </span><span class="nx">contains</span><span class="p">(</span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">sub</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-142" name="__codelineno-4-142" href="#__codelineno-4-142"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="o">+</span><span class="nb">len</span><span class="p">(</span><span class="nx">sub</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">s</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-143" name="__codelineno-4-143" href="#__codelineno-4-143"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">s</span><span class="p">[</span><span class="nx">i</span><span class="p">:</span><span class="nx">i</span><span class="o">+</span><span class="nb">len</span><span class="p">(</span><span class="nx">sub</span><span class="p">)]</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">sub</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-144" name="__codelineno-4-144" href="#__codelineno-4-144"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-4-145" name="__codelineno-4-145" href="#__codelineno-4-145"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-4-146" name="__codelineno-4-146" href="#__codelineno-4-146"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-147" name="__codelineno-4-147" href="#__codelineno-4-147"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-4-148" name="__codelineno-4-148" href="#__codelineno-4-148"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2: Run test to verify it fails</strong></p>
+<p>Run: <code>./scripts/dev.sh go test ./internal/controller/ach/ -run TestComputeAvailable -count=1</code></p>
+<p>Expected: BUILD FAIL with <code>undefined: computeAvailable</code>.</p>
+<p><strong>Step 3: Implement the helper</strong></p>
+<p>Edit <code>internal/controller/ach/environment_controller.go</code>. After the <code>hasCondition</code> helper (ends at line 288), insert:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">// requiredAvailableSubConditions is the closed set of condition types whose</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1">// status drives the Environment.Available rollup. Per TODO §9 and TODO §16</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1">// the contract is: Available=True IFF every required sub-condition is True.</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1">// ContentReady is intentionally OMITTED — Hub §6.6 lists it in the closed</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1">// set but no reconciler writes it in Phase 2; including it would pin the</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1">// rollup at Unknown indefinitely. When a future plan wires ContentReady,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1">// add it to this slice in one line.</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="kd">var</span><span class="w"> </span><span class="nx">requiredAvailableSubConditions</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="p">}</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1">// computeAvailable is the pure §9 rollup. Given the current conditions</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1">// slice, return the Available condition the reconciler should write back.</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1">// The helper is independent of env.Generation (the caller stamps that)</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1">// and of LastTransitionTime (apimeta.SetStatusCondition preserves it</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="c1">// when the (Type, Status, Reason) tuple is unchanged).</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="c1">//</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="c1">// Precedence:</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="c1">//</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="c1">//  1. Any REQUIRED sub-condition False → Available=False reason=SubConditionsNotReady</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="c1">//  2. Else any REQUIRED sub-condition Unknown or absent → Available=Unknown reason=PendingSubConditions</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="c1">//  3. All REQUIRED sub-conditions True → Available=True reason=AllSubConditionsTrue</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="c1">//</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="c1">// The pre-existing &quot;Available&quot; entry in conds (if any) is ignored — the</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="c1">// helper recomputes from scratch every call, so a stale prior write does</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="c1">// not influence the new outcome.</span>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="kd">func</span><span class="w"> </span><span class="nx">computeAvailable</span><span class="p">(</span><span class="nx">conds</span><span class="w"> </span><span class="p">[]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">)</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="w">    </span><span class="c1">// Build a quick lookup so we walk conds once.</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">    </span><span class="nx">byType</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionStatus</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">conds</span><span class="p">))</span>
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">conds</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">        </span><span class="nx">byType</span><span class="p">[</span><span class="nx">c</span><span class="p">.</span><span class="nx">Type</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">Status</span>
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">falseTypes</span><span class="p">,</span><span class="w"> </span><span class="nx">unknownOrMissing</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span>
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">requiredAvailableSubConditions</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">        </span><span class="k">switch</span><span class="w"> </span><span class="nx">byType</span><span class="p">[</span><span class="nx">t</span><span class="p">]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">:</span>
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">            </span><span class="c1">// happy path — accumulates implicitly</span>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">:</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">            </span><span class="nx">falseTypes</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">falseTypes</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="p">)</span>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">        </span><span class="k">default</span><span class="p">:</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">            </span><span class="c1">// metav1.ConditionUnknown OR map zero-value (missing entirely).</span>
+<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">            </span><span class="nx">unknownOrMissing</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">unknownOrMissing</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="p">)</span>
+<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a>
+<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">falseTypes</span><span class="p">)</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">            </span><span class="nx">Type</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;Available&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="w">            </span><span class="nx">Status</span><span class="p">:</span><span class="w">  </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionFalse</span><span class="p">,</span>
+<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="w">            </span><span class="nx">Reason</span><span class="p">:</span><span class="w">  </span><span class="nx">ReasonSubConditionsNotReady</span><span class="p">,</span>
+<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="w">            </span><span class="nx">Message</span><span class="p">:</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;sub-conditions False: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">falseTypes</span><span class="p">),</span>
+<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">unknownOrMissing</span><span class="p">)</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">            </span><span class="nx">Type</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;Available&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">            </span><span class="nx">Status</span><span class="p">:</span><span class="w">  </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">,</span>
+<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">            </span><span class="nx">Reason</span><span class="p">:</span><span class="w">  </span><span class="nx">ReasonPendingSubConditions</span><span class="p">,</span>
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">            </span><span class="nx">Message</span><span class="p">:</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;sub-conditions Unknown or not yet written: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">unknownOrMissing</span><span class="p">),</span>
+<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="w">    </span><span class="k">default</span><span class="p">:</span>
+<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="w">            </span><span class="nx">Type</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;Available&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="w">            </span><span class="nx">Status</span><span class="p">:</span><span class="w">  </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="p">,</span>
+<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="w">            </span><span class="nx">Reason</span><span class="p">:</span><span class="w">  </span><span class="nx">ReasonAllSubConditionsTrue</span><span class="p">,</span>
+<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="w">            </span><span class="nx">Message</span><span class="p">:</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;all required sub-conditions True: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">requiredAvailableSubConditions</span><span class="p">),</span>
+<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 4: Run test to verify it passes</strong></p>
+<p>Run: <code>./scripts/dev.sh go test ./internal/controller/ach/ -run TestComputeAvailable -count=1 -v</code></p>
+<p>Expected: PASS on all 9 subtests.</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/environment_controller.go<span class="w"> </span>internal/controller/ach/environment_available_test.go
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(environment): §9 step 2 — computeAvailable pure helper + table tests&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-4-wire-computeavailable-into-the-steady-state-reconcile-path">Task 4: Wire <code>computeAvailable</code> into the steady-state reconcile path<a class="headerlink" href="#task-4-wire-computeavailable-into-the-steady-state-reconcile-path" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>internal/controller/ach/environment_controller.go</code> lines 256-266 (the §9 placeholder block) and the <code>if r.Snapshotter == nil</code> branch at 162-171.</p>
+<p><strong>Step 1: Run the existing envtest to confirm baseline green</strong></p>
+<p>Run: <code>./scripts/dev.sh make envtest-pkg PKG=./internal/controller/ach/... FOCUS=TestEnvironmentFinalizerAddRemove</code></p>
+<p>Expected: PASS in ~30s. This is the safety net — if Task 4 breaks the finalizer test, we have a regression.</p>
+<p><strong>Step 2: Replace the §9 placeholder block with the rollup call</strong></p>
+<p>In <code>internal/controller/ach/environment_controller.go</code>, locate the placeholder block at lines 256-266 (begins with <code>// Placeholder: TODO §9 owns the composite rollup.</code>). Replace it with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">    </span><span class="c1">// §9: composite Available rollup. Called AFTER the two writes above</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span><span class="c1">// (ExecutionResourcesResolved + the AccessGroupSynced placeholder</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="c1">// or its real successor when §7 lands) so the helper reads the</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="c1">// freshly-set sub-conditions. The previous J.6 placeholder Unknown</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="c1">// is now superseded — apimeta.SetStatusCondition replaces the</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="c1">// in-memory entry regardless of prior status/reason because the</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="c1">// reason changes between calls.</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nx">available</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">computeAvailable</span><span class="p">(</span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">)</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nx">available</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">env</span><span class="p">.</span><span class="nx">Generation</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nx">available</span><span class="p">.</span><span class="nx">LastTransitionTime</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Now</span><span class="p">()</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">SetStatusCondition</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">available</span><span class="p">)</span>
+</code></pre></div>
+<p>The deletion is the entire <code>if !hasCondition(env.Status.Conditions, "Available") { ... }</code> block. The insertion is the four lines above.</p>
+<p><strong>Step 3: Also wire the helper into the Snapshotter-nil branch (unit-test mode)</strong></p>
+<p>The <code>if r.Snapshotter == nil</code> branch at lines 162-171 currently calls <code>r.writeStatus(...)</code> for <code>AccessGroupSynced=Unknown</code> and returns immediately — <code>Available</code> never gets written in this branch. Replace the body of that <code>if</code> with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Snapshotter</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">        </span><span class="c1">// Phase 1 unit-test back-compat: emit AccessGroupSynced=Unknown</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">        </span><span class="c1">// (J.6 placeholder), then run the §9 rollup over the resulting</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">        </span><span class="c1">// conditions slice so envtest assertions on Available are</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">        </span><span class="c1">// stable even without a wired Snapshotter.</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">        </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">SetStatusCondition</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Condition</span><span class="p">{</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">            </span><span class="nx">Type</span><span class="p">:</span><span class="w">               </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">            </span><span class="nx">Status</span><span class="p">:</span><span class="w">             </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">,</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">            </span><span class="nx">Reason</span><span class="p">:</span><span class="w">             </span><span class="nx">ReasonInitializing</span><span class="p">,</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">            </span><span class="nx">Message</span><span class="p">:</span><span class="w">            </span><span class="s">&quot;snapshotter not wired (unit-test mode)&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">            </span><span class="nx">ObservedGeneration</span><span class="p">:</span><span class="w"> </span><span class="nx">env</span><span class="p">.</span><span class="nx">Generation</span><span class="p">,</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">            </span><span class="nx">LastTransitionTime</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Now</span><span class="p">(),</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">        </span><span class="p">})</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">        </span><span class="nx">available</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">computeAvailable</span><span class="p">(</span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">)</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">        </span><span class="nx">available</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">env</span><span class="p">.</span><span class="nx">Generation</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">        </span><span class="nx">available</span><span class="p">.</span><span class="nx">LastTransitionTime</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">Now</span><span class="p">()</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">        </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">SetStatusCondition</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">available</span><span class="p">)</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">        </span><span class="nx">env</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">env</span><span class="p">.</span><span class="nx">Generation</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Status</span><span class="p">().</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">env</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="w">            </span><span class="nx">logger</span><span class="p">.</span><span class="nx">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;status update failed&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">ctrl</span><span class="p">.</span><span class="nx">Result</span><span class="p">{</span><span class="nx">RequeueAfter</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">},</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+<p>This replaces the previous <code>r.writeStatus(...)</code> call. The reason is that <code>writeStatus</code> issues its own <code>Status().Update</code>, but we now want the rollup in the same payload — so we inline the SetStatusCondition + single Update.</p>
+<p><strong>Step 4: Remove the now-unused <code>hasCondition</code> helper if it has zero callers</strong></p>
+<p>Run: <code>grep -n "hasCondition" internal/controller/ach/*.go</code></p>
+<p>Expected (after step 2's deletion): only the helper definition at lines 281-288 remains. Delete the helper. If any test or other file still references it, leave it in place.</p>
+<p><strong>Step 5: Run the envtest suite</strong></p>
+<p>Run: <code>./scripts/dev.sh make envtest-pkg PKG=./internal/controller/ach/...</code></p>
+<p>Expected: ALL existing envtests still PASS. Specifically <code>TestEnvironmentFinalizerAddRemove</code> (the finalizer test that runs Reconcile against the Snapshotter-nil branch) must stay green — its assertion is unchanged (it only checks the LiteLLM counter), but the Snapshotter-nil branch is now executing one extra SetStatusCondition + the rollup. Any failure here means Step 3 perturbed the branch in a way that broke the finalizer test.</p>
+<p><strong>Step 6: Run the full unit + envtest matrix to catch package-wide build breakage</strong></p>
+<p>Run: <code>./scripts/dev.sh make unit &amp;&amp; ./scripts/dev.sh make envtest-run</code></p>
+<p>Expected: PASS.</p>
+<p><strong>Step 7: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/environment_controller.go
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(environment): §9 step 3 — wire computeAvailable into Reconcile (replaces J.6 placeholder)&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-5-add-an-envtest-assertion-for-available-rollup-in-snapshotter-nil-mode">Task 5: Add an envtest assertion for Available rollup in Snapshotter-nil mode<a class="headerlink" href="#task-5-add-an-envtest-assertion-for-available-rollup-in-snapshotter-nil-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>internal/controller/ach/environment_available_test.go</code> (append envtest)</p>
+<p><strong>Why this exists</strong>: Task 3's unit test covers the helper in isolation. Task 4 wires it into the reconciler. This task closes the loop: a real <code>Reconcile</code> cycle in envtest produces an <code>Available</code> condition in <code>env.Status.Conditions</code>. The Snapshotter-nil branch is the unit-test mode (the suite does not wire <code>r.Snapshotter</code>), so the expected outcome is <code>Available=Unknown reason=PendingSubConditions</code> (because <code>AccessGroupSynced=Unknown</code> is the placeholder; the rollup correctly propagates Unknown). True-path coverage lives in the e2e suite (Task 6) where a real Snapshotter is wired.</p>
+<p><strong>Step 1: Write the failing envtest</strong></p>
+<p>Append to <code>internal/controller/ach/environment_available_test.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1">// TestEnvironmentAvailableConditionEmittedInUnitTestMode verifies that</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="c1">// a Reconcile against the envtest API server (with Snapshotter nil)</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1">// writes an Available condition with status=Unknown reason=</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1">// PendingSubConditions. This proves Task 4&#39;s wiring landed: the rollup</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1">// is called in BOTH branches (Snapshotter-nil unit-test branch AND the</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="c1">// steady-state branch), and the resulting Available condition is</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1">// persisted via the same Status().Update as AccessGroupSynced.</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="c1">//</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1">// Pre-§7 the AccessGroupSynced placeholder is Unknown, so the rollup</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="c1">// MUST be Unknown — this test will start failing the day §7 lands and</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="c1">// flips AccessGroupSynced to True (at which point this test should be</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="c1">// REPLACED by a True-path version, not patched, because the §7 plan</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="c1">// will assume Available=True is the new steady state).</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestEnvironmentAvailableConditionEmittedInUnitTestMode</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="nx">ctx</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">()</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nx">cr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">Environment</span><span class="p">{</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">        </span><span class="nx">ObjectMeta</span><span class="p">:</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ObjectMeta</span><span class="p">{</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">            </span><span class="nx">Name</span><span class="p">:</span><span class="w">      </span><span class="s">&quot;test-env-available&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">            </span><span class="nx">Namespace</span><span class="p">:</span><span class="w"> </span><span class="nx">WatchNamespace</span><span class="p">,</span>
+<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">        </span><span class="nx">Spec</span><span class="p">:</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">EnvironmentSpec</span><span class="p">{</span>
+<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="w">            </span><span class="nx">AuthorizedTeams</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">&quot;default&quot;</span><span class="p">},</span>
+<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">            </span><span class="nx">Runtime</span><span class="p">:</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">RuntimeBlock</span><span class="p">{</span>
+<a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">                </span><span class="nx">Models</span><span class="p">:</span><span class="w">     </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">                </span><span class="nx">MCPServers</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="w">                </span><span class="nx">A2AAgents</span><span class="p">:</span><span class="w">  </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="w">            </span><span class="nx">Context</span><span class="p">:</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">ContextBlock</span><span class="p">{</span>
+<a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a><span class="w">                </span><span class="nx">Prompts</span><span class="p">:</span><span class="w">   </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a><span class="w">                </span><span class="nx">Plugins</span><span class="p">:</span><span class="w">   </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a><span class="w">                </span><span class="nx">Artifacts</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{},</span>
+<a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a><span class="w">            </span><span class="p">},</span>
+<a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a><span class="w">        </span><span class="p">},</span>
+<a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-36" name="__codelineno-10-36" href="#__codelineno-10-36"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Create</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cr</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-37" name="__codelineno-10-37" href="#__codelineno-10-37"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;create Environment: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-10-38" name="__codelineno-10-38" href="#__codelineno-10-38"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-39" name="__codelineno-10-39" href="#__codelineno-10-39"></a><span class="w">    </span><span class="nx">t</span><span class="p">.</span><span class="nx">Cleanup</span><span class="p">(</span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Delete</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">(),</span><span class="w"> </span><span class="nx">cr</span><span class="p">)</span><span class="w"> </span><span class="p">})</span>
+<a id="__codelineno-10-40" name="__codelineno-10-40" href="#__codelineno-10-40"></a>
+<a id="__codelineno-10-41" name="__codelineno-10-41" href="#__codelineno-10-41"></a><span class="w">    </span><span class="c1">// Poll: wait until BOTH AccessGroupSynced and Available are written</span>
+<a id="__codelineno-10-42" name="__codelineno-10-42" href="#__codelineno-10-42"></a><span class="w">    </span><span class="c1">// to status.conditions. The reconciler emits both in a single</span>
+<a id="__codelineno-10-43" name="__codelineno-10-43" href="#__codelineno-10-43"></a><span class="w">    </span><span class="c1">// Status().Update, so they land atomically — but the informer cache</span>
+<a id="__codelineno-10-44" name="__codelineno-10-44" href="#__codelineno-10-44"></a><span class="w">    </span><span class="c1">// takes a beat to propagate.</span>
+<a id="__codelineno-10-45" name="__codelineno-10-45" href="#__codelineno-10-45"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">Eventually</span><span class="p">(</span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-46" name="__codelineno-10-46" href="#__codelineno-10-46"></a><span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="nx">got</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">Environment</span>
+<a id="__codelineno-10-47" name="__codelineno-10-47" href="#__codelineno-10-47"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">ObjectKeyFromObject</span><span class="p">(</span><span class="nx">cr</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">got</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-48" name="__codelineno-10-48" href="#__codelineno-10-48"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-10-49" name="__codelineno-10-49" href="#__codelineno-10-49"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-10-50" name="__codelineno-10-50" href="#__codelineno-10-50"></a><span class="w">        </span><span class="nx">ags</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">FindStatusCondition</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;AccessGroupSynced&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-51" name="__codelineno-10-51" href="#__codelineno-10-51"></a><span class="w">        </span><span class="nx">avail</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">FindStatusCondition</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Available&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-52" name="__codelineno-10-52" href="#__codelineno-10-52"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">ags</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">avail</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-10-53" name="__codelineno-10-53" href="#__codelineno-10-53"></a><span class="w">    </span><span class="p">},</span><span class="w"> </span><span class="mi">15</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">,</span><span class="w"> </span><span class="mi">250</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Millisecond</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-54" name="__codelineno-10-54" href="#__codelineno-10-54"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;AccessGroupSynced + Available conditions never both written within 15s&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-55" name="__codelineno-10-55" href="#__codelineno-10-55"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-56" name="__codelineno-10-56" href="#__codelineno-10-56"></a>
+<a id="__codelineno-10-57" name="__codelineno-10-57" href="#__codelineno-10-57"></a><span class="w">    </span><span class="c1">// Re-Get and assert the rollup outcome.</span>
+<a id="__codelineno-10-58" name="__codelineno-10-58" href="#__codelineno-10-58"></a><span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">got</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">Environment</span>
+<a id="__codelineno-10-59" name="__codelineno-10-59" href="#__codelineno-10-59"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">ObjectKeyFromObject</span><span class="p">(</span><span class="nx">cr</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">got</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-60" name="__codelineno-10-60" href="#__codelineno-10-60"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;re-get Environment: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-10-61" name="__codelineno-10-61" href="#__codelineno-10-61"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-62" name="__codelineno-10-62" href="#__codelineno-10-62"></a><span class="w">    </span><span class="nx">avail</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">apimeta</span><span class="p">.</span><span class="nx">FindStatusCondition</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Available&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-63" name="__codelineno-10-63" href="#__codelineno-10-63"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">avail</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-64" name="__codelineno-10-64" href="#__codelineno-10-64"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;Available condition missing after Eventually returned true (race or wiring bug)&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-65" name="__codelineno-10-65" href="#__codelineno-10-65"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-66" name="__codelineno-10-66" href="#__codelineno-10-66"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Status</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-67" name="__codelineno-10-67" href="#__codelineno-10-67"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Available.Status = %q; want %q (rollup should propagate AccessGroupSynced=Unknown placeholder)&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-68" name="__codelineno-10-68" href="#__codelineno-10-68"></a><span class="w">            </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Status</span><span class="p">,</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionUnknown</span><span class="p">)</span>
+<a id="__codelineno-10-69" name="__codelineno-10-69" href="#__codelineno-10-69"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-70" name="__codelineno-10-70" href="#__codelineno-10-70"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Reason</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">ReasonPendingSubConditions</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-71" name="__codelineno-10-71" href="#__codelineno-10-71"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Available.Reason = %q; want %q&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-72" name="__codelineno-10-72" href="#__codelineno-10-72"></a><span class="w">            </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Reason</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonPendingSubConditions</span><span class="p">)</span>
+<a id="__codelineno-10-73" name="__codelineno-10-73" href="#__codelineno-10-73"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-74" name="__codelineno-10-74" href="#__codelineno-10-74"></a><span class="w">    </span><span class="nx">t</span><span class="p">.</span><span class="nx">Logf</span><span class="p">(</span><span class="s">&quot;OK: Available=%s reason=%s message=%q&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-75" name="__codelineno-10-75" href="#__codelineno-10-75"></a><span class="w">        </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Status</span><span class="p">,</span><span class="w"> </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Reason</span><span class="p">,</span><span class="w"> </span><span class="nx">avail</span><span class="p">.</span><span class="nx">Message</span><span class="p">)</span>
+<a id="__codelineno-10-76" name="__codelineno-10-76" href="#__codelineno-10-76"></a><span class="p">}</span>
+</code></pre></div>
+<p>This requires adding three new imports to the test file's import block (insert after the existing <code>metav1</code> import in the same group):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="w">    </span><span class="nx">apimeta</span><span class="w"> </span><span class="s">&quot;k8s.io/apimachinery/pkg/api/meta&quot;</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="s">&quot;sigs.k8s.io/controller-runtime/pkg/client&quot;</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nx">achv1alpha1</span><span class="w"> </span><span class="s">&quot;github.com/ackstorm/ach/api/ach/v1alpha1&quot;</span>
+</code></pre></div>
+<p>Also add <code>"context"</code> and <code>"time"</code> to the standard-library import group.</p>
+<p><strong>Step 2: Run the test to verify it passes</strong></p>
+<p>Run: <code>./scripts/dev.sh make envtest-pkg PKG=./internal/controller/ach/... FOCUS=TestEnvironmentAvailableConditionEmittedInUnitTestMode</code></p>
+<p>Expected: PASS in ~5-15s. The test creates an Environment, polls for the two conditions to appear, then asserts the rollup outcome.</p>
+<p>If it fails with "Available condition missing":
+- Confirm Task 4 step 3 wrote BOTH <code>SetStatusCondition</code> calls inside the Snapshotter-nil branch. The bug is that <code>Available</code> never gets written.</p>
+<p>If it fails with "Available.Reason = ...; want PendingSubConditions":
+- Confirm Task 2's <code>ReasonPendingSubConditions = "PendingSubConditions"</code> constant matches the helper's reason string.</p>
+<p><strong>Step 3: Run the full ach controller envtest suite to confirm no regression</strong></p>
+<p>Run: <code>./scripts/dev.sh make envtest-pkg PKG=./internal/controller/ach/...</code></p>
+<p>Expected: PASS for all tests (finalizer tests, CEL admission test, external-ref refresh tests, all unchanged).</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/environment_available_test.go
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(environment): §9 step 4 — envtest covers Available emission in unit-test mode&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-6-add-e2e-wait-gate-that-mirrors-todo-16-kubectl-wait">Task 6: Add e2e wait gate that mirrors TODO §16 kubectl wait<a class="headerlink" href="#task-6-add-e2e-wait-gate-that-mirrors-todo-16-kubectl-wait" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>test/e2e/phase3_invariants_test.go</code> OR a new <code>test/e2e/phase4_environment_available_test.go</code> (decide in step 1 based on which is more appropriate)</p>
+<p><strong>Why this exists</strong>: The TODO §9 acceptance is "<code>kubectl wait --for=condition=Available environment/demo --timeout=60s</code> exits 0 within 60s of a fully-resolved environment." Mirror that in Ginkgo against the kind cluster.</p>
+<p><strong>Step 1: Decide on file placement</strong></p>
+<p>Run: <code>grep -l "Environment" test/e2e/*.go</code></p>
+<p>If a Ginkgo test file already declares Environment-related specs, append to that file. Otherwise create <code>test/e2e/phase4_environment_available_test.go</code>. Phase 4 is the next-up file slot per the existing <code>phase{1,2,3}_*</code> naming.</p>
+<p>For the rest of this task, assume the new file path.</p>
+<p><strong>Step 2: Write the failing test</strong></p>
+<p>Create: <code>test/e2e/phase4_environment_available_test.go</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="c1">// E2E acceptance for TODO §9: kubectl wait --for=condition=Available</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1">// returns within 60s for an Environment whose required sub-conditions</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1">// all reach True. Mirrors TODO §16 line 539 verbatim.</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1">//</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1">// Pre-§7 the AccessGroupSynced placeholder is Unknown, so the</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="c1">// Available rollup is Unknown — the wait will TIME OUT today. That</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="c1">// matches the J.6 placeholder reality and proves the rollup correctly</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1">// blocks on the placeholder; the assertion logic is:</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="c1">//</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="c1">//   - if §7 has NOT landed → expect timeout exit code (60s wait fails)</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="c1">//   - if §7 HAS landed     → expect zero exit code (Available=True</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="c1">//                            within 60s)</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="c1">//</span>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="c1">// We DON&#39;T branch the test on a runtime check (too brittle). Instead,</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="c1">// we use Ginkgo&#39;s `It` with a deferred decision: the spec is named</span>
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="c1">// such that a maintainer running §7 can flip the expected outcome in</span>
+<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="c1">// one place. Today the spec is SKIPPED so CI stays green.</span>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a>
+<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="kn">package</span><span class="w"> </span><span class="nx">e2e</span>
+<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a>
+<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="w">    </span><span class="s">&quot;context&quot;</span>
+<a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a><span class="w">    </span><span class="s">&quot;os/exec&quot;</span>
+<a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a><span class="w">    </span><span class="s">&quot;time&quot;</span>
+<a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a>
+<a id="__codelineno-13-28" name="__codelineno-13-28" href="#__codelineno-13-28"></a><span class="w">    </span><span class="p">.</span><span class="w"> </span><span class="s">&quot;github.com/onsi/ginkgo/v2&quot;</span>
+<a id="__codelineno-13-29" name="__codelineno-13-29" href="#__codelineno-13-29"></a><span class="w">    </span><span class="p">.</span><span class="w"> </span><span class="s">&quot;github.com/onsi/gomega&quot;</span>
+<a id="__codelineno-13-30" name="__codelineno-13-30" href="#__codelineno-13-30"></a><span class="p">)</span>
+<a id="__codelineno-13-31" name="__codelineno-13-31" href="#__codelineno-13-31"></a>
+<a id="__codelineno-13-32" name="__codelineno-13-32" href="#__codelineno-13-32"></a><span class="kd">var</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">Describe</span><span class="p">(</span><span class="s">&quot;Environment Available composite condition (TODO §9)&quot;</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-33" name="__codelineno-13-33" href="#__codelineno-13-33"></a><span class="w">    </span><span class="c1">// SKIPPED until TODO §7 (AccessGroupSynced real writer) lands and</span>
+<a id="__codelineno-13-34" name="__codelineno-13-34" href="#__codelineno-13-34"></a><span class="w">    </span><span class="c1">// flips the placeholder Unknown to True. At that point delete the</span>
+<a id="__codelineno-13-35" name="__codelineno-13-35" href="#__codelineno-13-35"></a><span class="w">    </span><span class="c1">// Skip() call and the spec becomes the §16 acceptance contract.</span>
+<a id="__codelineno-13-36" name="__codelineno-13-36" href="#__codelineno-13-36"></a><span class="w">    </span><span class="nx">BeforeEach</span><span class="p">(</span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-37" name="__codelineno-13-37" href="#__codelineno-13-37"></a><span class="w">        </span><span class="nx">Skip</span><span class="p">(</span><span class="s">&quot;blocked by TODO §7 — AccessGroupSynced still emits Unknown placeholder; Available rollup correctly stays Unknown&quot;</span><span class="p">)</span>
+<a id="__codelineno-13-38" name="__codelineno-13-38" href="#__codelineno-13-38"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-13-39" name="__codelineno-13-39" href="#__codelineno-13-39"></a>
+<a id="__codelineno-13-40" name="__codelineno-13-40" href="#__codelineno-13-40"></a><span class="w">    </span><span class="nx">It</span><span class="p">(</span><span class="s">&quot;transitions Environment/demo to Available=True within 60s&quot;</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-41" name="__codelineno-13-41" href="#__codelineno-13-41"></a><span class="w">        </span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cancel</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">(),</span><span class="w"> </span><span class="mi">90</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+<a id="__codelineno-13-42" name="__codelineno-13-42" href="#__codelineno-13-42"></a><span class="w">        </span><span class="k">defer</span><span class="w"> </span><span class="nx">cancel</span><span class="p">()</span>
+<a id="__codelineno-13-43" name="__codelineno-13-43" href="#__codelineno-13-43"></a>
+<a id="__codelineno-13-44" name="__codelineno-13-44" href="#__codelineno-13-44"></a><span class="w">        </span><span class="c1">// Assumes examples/04-environment-demo.yaml is already applied</span>
+<a id="__codelineno-13-45" name="__codelineno-13-45" href="#__codelineno-13-45"></a><span class="w">        </span><span class="c1">// by the cluster-up flow (verify via the standard fixtures</span>
+<a id="__codelineno-13-46" name="__codelineno-13-46" href="#__codelineno-13-46"></a><span class="w">        </span><span class="c1">// helper if/when one exists).</span>
+<a id="__codelineno-13-47" name="__codelineno-13-47" href="#__codelineno-13-47"></a><span class="w">        </span><span class="nx">cmd</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">exec</span><span class="p">.</span><span class="nx">CommandContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span>
+<a id="__codelineno-13-48" name="__codelineno-13-48" href="#__codelineno-13-48"></a><span class="w">            </span><span class="s">&quot;kubectl&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;wait&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-49" name="__codelineno-13-49" href="#__codelineno-13-49"></a><span class="w">            </span><span class="s">&quot;--for=condition=Available&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-50" name="__codelineno-13-50" href="#__codelineno-13-50"></a><span class="w">            </span><span class="s">&quot;environment/demo&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-51" name="__codelineno-13-51" href="#__codelineno-13-51"></a><span class="w">            </span><span class="s">&quot;-n&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ach-system&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-52" name="__codelineno-13-52" href="#__codelineno-13-52"></a><span class="w">            </span><span class="s">&quot;--timeout=60s&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-53" name="__codelineno-13-53" href="#__codelineno-13-53"></a><span class="w">        </span><span class="p">)</span>
+<a id="__codelineno-13-54" name="__codelineno-13-54" href="#__codelineno-13-54"></a><span class="w">        </span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">cmd</span><span class="p">.</span><span class="nx">CombinedOutput</span><span class="p">()</span>
+<a id="__codelineno-13-55" name="__codelineno-13-55" href="#__codelineno-13-55"></a><span class="w">        </span><span class="nx">Expect</span><span class="p">(</span><span class="nx">err</span><span class="p">).</span><span class="nx">NotTo</span><span class="p">(</span><span class="nx">HaveOccurred</span><span class="p">(),</span>
+<a id="__codelineno-13-56" name="__codelineno-13-56" href="#__codelineno-13-56"></a><span class="w">            </span><span class="s">&quot;kubectl wait failed: %s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">string</span><span class="p">(</span><span class="nx">out</span><span class="p">))</span>
+<a id="__codelineno-13-57" name="__codelineno-13-57" href="#__codelineno-13-57"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-13-58" name="__codelineno-13-58" href="#__codelineno-13-58"></a><span class="p">})</span>
+</code></pre></div>
+<p><strong>Step 3: Verify the test compiles and is properly SKIPPED in the current state</strong></p>
+<p>Run: <code>./scripts/dev.sh make e2e-keep</code> followed by <code>./scripts/dev.sh make e2e-focus FOCUS="Available"</code></p>
+<p>Expected: the spec runs but is SKIPPED with the explanatory message. NO failures.</p>
+<p>If the test FAILS to compile (e.g. import path drift, Ginkgo version mismatch), check sibling phase3 file for the canonical imports and copy them.</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e/phase4_environment_available_test.go
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(e2e): §9 step 5 — phase4 Available wait gate (skipped pending §7)&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-7-update-inline-doc-comment-in-environment_controllergo-to-reflect-new-state">Task 7: Update inline doc-comment in <code>environment_controller.go</code> to reflect new state<a class="headerlink" href="#task-7-update-inline-doc-comment-in-environment_controllergo-to-reflect-new-state" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>internal/controller/ach/environment_controller.go</code> lines 219-231 (the "Placeholder" comment block at the top of the steady-state block)</p>
+<p><strong>Step 1: Replace the now-stale comment</strong></p>
+<p>Locate the comment block that begins <code>// Patch the unresolved field on env.Status, then emit all three §6.6</code> and reads:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>// ExecutionResourcesResolved is the only condition this reconciler
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>// computes today. AccessGroupSynced and Available are written as
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>// placeholder Unknown values so the kubebuilder printcolumns surface
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>// SOMETHING (operators reading `kubectl get environment` see
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>// &quot;Unknown&quot; instead of an empty cell). When TODO §7 lands, the
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>// access-group binding step overrides AccessGroupSynced to True /
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>// False with the real reason. When TODO §9 lands, the composite
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>// rollup overrides Available.
+</code></pre></div>
+<p>Replace with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>// Three conditions are emitted in one Status().Update for atomicity:
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>//
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>//   - ExecutionResourcesResolved: computed above from the Snapshotter
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>//     set-difference (Resolved / ResourceUnresolved).
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>//   - AccessGroupSynced: J.6 placeholder Unknown reason=Initializing
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>//     until TODO §7 lands and emits the real True/False per Hub §6.6.
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>//     SetStatusCondition is gated by hasCondition so the placeholder
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>//     does NOT clobber a future §7 True write.
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>//   - Available: §9 composite rollup. computeAvailable reads the
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>//     two REQUIRED sub-conditions (AccessGroupSynced,
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>//     ExecutionResourcesResolved) from the in-memory conditions
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>//     slice and produces True/False/Unknown per the documented
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>//     precedence. Pre-§7 the rollup is Unknown reason=
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>//     PendingSubConditions because AccessGroupSynced is Unknown;
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>//     once §7 lands the rollup becomes True iff both required
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a>//     sub-conditions are True.
+</code></pre></div>
+<p>Note: the AccessGroupSynced placeholder block (lines 246-255) still uses <code>hasCondition</code>. That's fine — keep it. The Available placeholder block (the deleted one) was the only call site to be removed.</p>
+<p><strong>Step 2: Verify build still passes</strong></p>
+<p>Run: <code>./scripts/dev.sh go build ./...</code></p>
+<p>Expected: PASS. Doc-only change.</p>
+<p><strong>Step 3: Run lint to confirm no comment-induced lint warnings</strong></p>
+<p>Run: <code>./scripts/dev.sh make lint-changed</code></p>
+<p>Expected: PASS.</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/environment_controller.go
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(environment): §9 step 6 — refresh reconciler comment for Available rollup&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-8-full-pre-push-gate-before-publishing">Task 8: Full pre-push gate before publishing<a class="headerlink" href="#task-8-full-pre-push-gate-before-publishing" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong> None directly modified — this task is the publication gate.</p>
+<p><strong>Step 1: Run the full local verification matrix</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-run
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>make<span class="w"> </span>pre-push
+</code></pre></div>
+<p>Expected: all PASS. <code>make pre-push</code> enforces the 17-gate publication contract (gitleaks, govulncheck, SPDX headers, license, full lint, unit, ...).</p>
+<p>If <code>pre-push</code> fails on the SPDX-header gate, confirm the new test file <code>environment_available_test.go</code> starts with <code>// SPDX-License-Identifier: Apache-2.0</code> (it should — Task 2 step 1 wrote the line).</p>
+<p>If <code>pre-push</code> fails on govulncheck drift, that's an unrelated regression; do NOT bypass — investigate and either patch deps or update <code>references/security/govulncheck-acknowledged.md</code> per the existing policy.</p>
+<p><strong>Step 2: Inspect the commit history before push</strong></p>
+<p>Run: <code>git log --oneline origin/main..HEAD</code></p>
+<p>Expected: 5 commits in order:
+1. <code>feat(environment): §9 step 1 — reason constants for Available rollup</code>
+2. <code>feat(environment): §9 step 2 — computeAvailable pure helper + table tests</code>
+3. <code>feat(environment): §9 step 3 — wire computeAvailable into Reconcile (replaces J.6 placeholder)</code>
+4. <code>test(environment): §9 step 4 — envtest covers Available emission in unit-test mode</code>
+5. <code>test(e2e): §9 step 5 — phase4 Available wait gate (skipped pending §7)</code>
+6. <code>docs(environment): §9 step 6 — refresh reconciler comment for Available rollup</code></p>
+<p>(Six commits in total — the count above off by one in the prose; the actual sequence is 6.)</p>
+<p><strong>Step 3: Push</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main
+</code></pre></div>
+<p>Or open a PR if working on a branch (preferred per ACKstorm git guidelines).</p>
+<hr />
+<h2 id="acceptance-summary">Acceptance summary<a class="headerlink" href="#acceptance-summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Acceptance criterion</th>
+<th>Verified by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>computeAvailable</code> returns the correct rollup for True / False / Unknown / missing sub-conditions</td>
+<td>Task 3 table test (9 subtests)</td>
+</tr>
+<tr>
+<td><code>Environment.status.conditions[type=Available]</code> is written by the reconciler in the Snapshotter-nil branch</td>
+<td>Task 5 envtest</td>
+</tr>
+<tr>
+<td>Pre-§7: <code>Available=Unknown reason=PendingSubConditions</code> because <code>AccessGroupSynced</code> is the J.6 placeholder Unknown</td>
+<td>Task 5 envtest + Task 6 e2e Skip rationale</td>
+</tr>
+<tr>
+<td>Post-§7: <code>kubectl wait --for=condition=Available environment/demo --timeout=60s</code> exits 0 within 60s</td>
+<td>Task 6 e2e (un-Skip after §7) — fulfils TODO §9 + TODO §16 acceptance</td>
+</tr>
+<tr>
+<td>No regression in existing envtest suite (finalizer, CEL, external-ref refresh)</td>
+<td>Task 4 step 5 + Task 8 step 1 (full <code>envtest-run</code>)</td>
+</tr>
+<tr>
+<td>Pre-push gate passes (lint, security, SPDX, govulncheck)</td>
+<td>Task 8 step 1</td>
+</tr>
+</tbody>
+</table>
+<h2 id="open-items-deferred-to-other-plans">Open items deferred to other plans<a class="headerlink" href="#open-items-deferred-to-other-plans" title="Permanent link">&para;</a></h2>
+<ul>
+<li>TODO §7 — the real <code>AccessGroupSynced=True/False</code> writer. Until that lands, the rollup correctly emits <code>Unknown</code>. When §7 lands, Task 6's e2e spec becomes unblocked: delete the <code>Skip()</code> call and verify the kubectl wait exits 0.</li>
+<li>TODO §16 — the full validation gate (apply <code>examples/04-environment-demo.yaml</code>, seed 5 LiteLLM resources, assert <code>Available=True reason=AllSubConditionsTrue</code>). The reason vocabulary <code>AllSubConditionsTrue</code> is established by this plan so §16 has a stable string to compare against.</li>
+<li><code>ContentReady</code> reconciler — Hub §6.6 lists it but no Phase 2 plan writes it. If a future plan introduces a <code>ContentReady</code> writer AND the rollup contract changes to require it, the one-line patch is appending <code>"ContentReady"</code> to <code>requiredAvailableSubConditions</code> in <code>environment_controller.go</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

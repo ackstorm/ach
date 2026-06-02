@@ -1,0 +1,1957 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-synced-cluster-fixtures/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Synced-Cluster Fixtures + Assert-Only Tests Implementation Plan - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#synced-cluster-fixtures-assert-only-tests-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Synced-Cluster Fixtures + Assert-Only Tests Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#file-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#object-inventory-what-04-objects-05-environment-hold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object inventory (what 04-objects/ + 05-environment/ hold)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-a-synced-cluster-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PHASE A — Synced cluster pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PHASE A — Synced cluster pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-dev-secrets-as-a-kustomize-secretgenerator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Dev secrets as a kustomize secretGenerator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-extract-test-backends-mcp-echo-out-of-the-helm-chart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Extract test backends (mcp-echo) out of the Helm chart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-move-the-object-crs-into-04-objects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Move the object CRs into 04-objects/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-move-the-environments-into-05-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Move the Environments into 05-environment/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-rewire-reconcile_all-into-the-full-staged-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Rewire reconcile_all into the full staged pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-the-06-verify-readiness-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: The 06-verify readiness gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-update-preflight-comments-docs-for-the-new-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Update preflight + comments + docs for the new stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-b-assert-only-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PHASE B — Assert-only tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PHASE B — Assert-only tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-8-11f-finalizer-drain-on-a-throwaway-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: §11f finalizer-drain on a throwaway Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-9-assert-only-sweep-across-the-e2e-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9: Assert-only sweep across the e2e suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-10-full-e2e-green-against-the-synced-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10: Full e2e green against the synced cluster
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#self-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-Review
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="synced-cluster-fixtures-assert-only-tests-implementation-plan">Synced-Cluster Fixtures + Assert-Only Tests Implementation Plan<a class="headerlink" href="#synced-cluster-fixtures-assert-only-tests-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Make <code>cluster.sh</code> sync a complete, demo-ready cluster (all ACH objects + Environments) verified healthy before tests run, and refactor the e2e suite so tests only <em>assert</em> against that synced state instead of applying their own fixtures.</p>
+<p><strong>Architecture:</strong> Extend the numbered-stage bring-up under <code>test/e2e/cluster/</code> with two new declarative stages — <code>04-objects/</code> (all non-Environment ACH CRs) and <code>05-environment/</code> (the Environments, last, since they reference the objects) — plus a <code>06-verify</code> readiness gate that blocks until every CR reaches its healthy condition. Dev secrets move to a kustomize <code>secretGenerator</code> in <code>02-ach/</code>. Tests stop calling <code>kubectl apply</code>; steady-state tests assert against the synced cluster, lifecycle tests (finalizer-drain) operate on throwaway resources. <code>examples/</code> becomes curated user-facing docs, distinct from the synced fixture set.</p>
+<p><strong>Tech Stack:</strong> bash (<code>scripts/cluster.sh</code>), kustomize (<code>kubectl apply -k</code>), kubectl wait, Helm, Go e2e tests (<code>-tags e2e</code>), kind.</p>
+<p><strong>Source decision (locked):</strong> Option <strong>B</strong> — synced objects use their <strong>real upstreams</strong> (GitHub). Viable because the default outer transport is <code>git</code> (no per-IP REST 60/h limit; see CLAUDE.md "Resolution as of 2026-05-27"). Every fetched CR keeps <code>refresh.interval: 1h</code> so steady-state stays well under any quota.</p>
+<hr />
+<h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
+<p><strong>New (created):</strong>
+- <code>test/e2e/cluster/02-ach/secrets/kustomization.yaml</code> — <code>secretGenerator</code> for the 3 static dev secrets.
+- <code>test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml</code> — the JWT-validating MCP backend, extracted from the Helm chart (Task 2).
+- <code>test/e2e/cluster/03-test-backends/kustomization.yaml</code> — gateway + mcp-echo (renamed from <code>03-gateway/</code>).
+- <code>test/e2e/cluster/04-objects/kustomization.yaml</code> — lists all non-Environment ACH CRs.
+- <code>test/e2e/cluster/04-objects/*.yaml</code> — the object CRs (moved from <code>examples/</code>, see Task 3).
+- <code>test/e2e/cluster/05-environment/kustomization.yaml</code> — the Environments.
+- <code>test/e2e/cluster/05-environment/*.yaml</code> — <code>demo</code> + <code>demo-unresolved</code> (moved from <code>examples/</code>).
+- <code>test/e2e/fixtures/phase4_drain_environment.yaml</code> — throwaway Environment for the §11f finalizer-drain test.</p>
+<p><strong>Modified:</strong>
+- <code>deploy/helm/ach/values.yaml</code> — <strong>remove</strong> the entire <code>testMocks:</code> block (Task 2).
+- <code>test/e2e/cluster/02-ach/ach.values.yaml</code> — <strong>remove</strong> the <code>testMocks:</code> block (Task 2).
+- <code>scripts/cluster.sh</code> — extract mcp-echo to our manifest; new stages <code>reconcile_objects</code>, <code>reconcile_environments</code>, <code>verify_all</code>; secrets via kustomize; <code>reconcile_all</code> reordered.
+- <code>test/e2e/phase4_promotion_test.go</code> — §11f uses the throwaway Environment; stop mutating shared <code>demo</code>.
+- Test files in the assert-only sweep (Task 9) — remove <code>kubectl apply</code> of now-synced fixtures.
+- <code>examples/README.md</code>, <code>CLAUDE.md</code>, <code>test/e2e/mcp-echo/README.md</code> — document the examples-vs-fixtures split and that mcp-echo is no longer a chart toggle.</p>
+<p><strong>Deleted:</strong>
+- <code>deploy/helm/ach/templates/test-mocks.yaml</code> — <strong>the whole template</strong> (Task 2). The user-facing chart ships zero test scaffolding. Legacy <code>ach-mock-litellm</code>/<code>ach-mock-mcp</code> (unused) are dropped, not re-created.
+- <code>config/samples/ach_v1alpha1_litellmconnection.yaml</code> reference from <code>cluster.sh</code> (the duplicate; the synced LiteLLMConnection lives in <code>04-objects/</code>).
+- <code>03-gateway/</code> directory (renamed to <code>03-test-backends/</code>).</p>
+<h3 id="object-inventory-what-04-objects-05-environment-hold">Object inventory (what <code>04-objects/</code> + <code>05-environment/</code> hold)<a class="headerlink" href="#object-inventory-what-04-objects-05-environment-hold" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>CR (kind / name)</th>
+<th>from examples/</th>
+<th>healthy condition (06-verify)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>04-objects</td>
+<td>LiteLLMConnection/default</td>
+<td>01</td>
+<td><code>Ready=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>PluginMarketplace/anthropic</td>
+<td>05</td>
+<td><code>Synced=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>PluginMarketplace/caveman</td>
+<td>05b</td>
+<td><code>Synced=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>Plugin/caveman</td>
+<td>06</td>
+<td><code>SourceReachable=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>Prompt/claude-code-system-prompt</td>
+<td>07</td>
+<td><code>SourceReachable=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>Artifact/openclaw-templates</td>
+<td>08</td>
+<td><code>SourceReachable=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>BackendIdentityPolicy/context7</td>
+<td>09</td>
+<td><code>Synced=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>BackendIdentityPolicy/duplicate-demo</td>
+<td>10</td>
+<td><code>Synced=True</code> (or documented duplicate state)</td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>BackendIdentityPolicy/bip-demo-mcp-jwt</td>
+<td>11</td>
+<td><code>Synced=True</code></td>
+</tr>
+<tr>
+<td>04-objects</td>
+<td>BackendIdentityPolicy/bip-demo-mcp-nojwt</td>
+<td>16</td>
+<td><code>Synced=True</code></td>
+</tr>
+<tr>
+<td>05-environment</td>
+<td>Environment/demo</td>
+<td>04</td>
+<td><code>Available=True</code></td>
+</tr>
+<tr>
+<td>05-environment</td>
+<td>Environment/demo-unresolved</td>
+<td>04b</td>
+<td><code>AccessGroupSynced=False/UnresolvedReferences</code> (intentional negative)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MCP JWT/no-JWT validation backend <code>ach-mcp-echo</code> moves OUT of the Helm chart (Task 2).</strong> Today it ships in the user-facing chart gated on <code>testMocks.mcpEcho.enabled</code> — which is scaffolding that does not belong in a chart users install. Task 2 extracts it into <code>test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml</code> (our manifest), removes the whole <code>testMocks</code> block from the chart, and has <code>cluster.sh</code> build+load+apply it. It still gets registered in LiteLLM as <code>demo-mcp-jwt</code>/<code>demo-mcp-nojwt</code> by <code>reconcile_litellm</code> and driven by <code>bip-demo-mcp-jwt</code>/<code>bip-demo-mcp-nojwt</code> (04-objects); it verifies JWTs against the forwarder JWKS, so it must come after <code>02-ach</code>.</p>
+<p><strong>ToolHive CRs (12-15: MCPRemoteProxy, MCPServer×3)</strong> are stale/legacy <code>toolhive.stacklok.dev</code> examples, unrelated to the MCP validation path above. They stay in <code>examples/</code> (candidates for deletion as stale) — <strong>no plan task includes them in the synced set.</strong></p>
+<hr />
+<h2 id="phase-a-synced-cluster-pipeline">PHASE A — Synced cluster pipeline<a class="headerlink" href="#phase-a-synced-cluster-pipeline" title="Permanent link">&para;</a></h2>
+<h3 id="task-1-dev-secrets-as-a-kustomize-secretgenerator">Task 1: Dev secrets as a kustomize secretGenerator<a class="headerlink" href="#task-1-dev-secrets-as-a-kustomize-secretgenerator" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>test/e2e/cluster/02-ach/secrets/kustomization.yaml</code>
+- Modify: <code>scripts/cluster.sh</code> (reconcile_ach — replace inline secret creates with <code>apply -k</code>)</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the secretGenerator</strong></li>
+</ul>
+<p>Create <code>test/e2e/cluster/02-ach/secrets/kustomization.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kustomize.config.k8s.io/v1beta1</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kustomization</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Dev-only secrets faked for e2e/kind. Production mounts its own (ExternalSecrets/</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># SealedSecrets); the chart references these by name only. disableNameSuffixHash</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># keeps the names stable (ach-db-url, not ach-db-url-&lt;hash&gt;) so the chart resolves</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># them. NOT ach-jwt-signing-keys — that is random per run (openssl), kept imperative.</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nt">generatorOptions</span><span class="p">:</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">disableNameSuffixHash</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nt">secretGenerator</span><span class="p">:</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-db-url</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">literals</span><span class="p">:</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url=postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach?sslmode=disable</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-credential-hash-pepper</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">literals</span><span class="p">:</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pepper=dev-pepper-32-bytes-minimum-for-hmac-do-not-reuse</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">litellm-master-key</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="nt">literals</span><span class="p">:</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">masterKey=sk-test-master-key</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Verify it builds</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh kustomize build test/e2e/cluster/02-ach/secrets</code>
+Expected: three <code>kind: Secret</code> documents named exactly <code>ach-db-url</code>, <code>ach-credential-hash-pepper</code>, <code>litellm-master-key</code> (no hash suffix).</p>
+<ul>
+<li>[ ] <strong>Step 3: Replace the inline secret creates in reconcile_ach</strong></li>
+</ul>
+<p>In <code>scripts/cluster.sh</code> <code>reconcile_ach()</code>, replace the two <code>kubectl create secret … --from-literal … | kubectl apply -f -</code> blocks (ach-credential-hash-pepper, ach-db-url) AND remove the <code>litellm-master-key</code> create from <code>reconcile_fixtures</code>, with a single line applied BEFORE the <code>helm upgrade</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="w">  </span><span class="c1"># Dev secrets (chart prerequisites) — declarative, applied before helm so the</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="c1"># pods find them at boot. ach-jwt-signing-keys stays generated below (random).</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_DIR</span><span class="si">}</span><span class="s2">/02-ach/secrets&quot;</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Verify via cluster-sync</strong></li>
+</ul>
+<p>Run: <code>make cluster-sync</code> then
+<code>./scripts/dev.sh kubectl -n ach-system get secret ach-db-url ach-credential-hash-pepper litellm-master-key</code>
+Expected: all three present; <code>make cluster-sync</code> exits 0.</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e/cluster/02-ach/secrets<span class="w"> </span>scripts/cluster.sh
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cluster.sh): dev secrets via kustomize secretGenerator&quot;</span>
+</code></pre></div>
+<h3 id="task-2-extract-test-backends-mcp-echo-out-of-the-helm-chart">Task 2: Extract test backends (mcp-echo) out of the Helm chart<a class="headerlink" href="#task-2-extract-test-backends-mcp-echo-out-of-the-helm-chart" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Delete: <code>deploy/helm/ach/templates/test-mocks.yaml</code>
+- Modify: <code>deploy/helm/ach/values.yaml</code> (remove the <code>testMocks:</code> block), <code>test/e2e/cluster/02-ach/ach.values.yaml</code> (remove its <code>testMocks:</code> block)
+- Rename: <code>test/e2e/cluster/03-gateway/</code> → <code>test/e2e/cluster/03-test-backends/</code>
+- Create: <code>test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml</code>
+- Modify: <code>scripts/cluster.sh</code> (reconcile_ach image build no longer gated on a chart value; gateway stage path)</p>
+<ul>
+<li>[ ] <strong>Step 1: Capture the current rendered mcp-echo manifest (faithful copy incl. ACH_JWKS_URL)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>template<span class="w"> </span>ach<span class="w"> </span>deploy/helm/ach<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--set<span class="w"> </span>testMocks.mcpEcho.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--values<span class="w"> </span>test/e2e/cluster/02-ach/ach.values.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--show-only<span class="w"> </span>templates/test-mocks.yaml
+</code></pre></div>
+Expected: the <code>ach-mcp-echo</code> Deployment + Service. Record the 4 env values: <code>ACH_JWKS_URL</code>, <code>ACH_EXPECTED_ISS</code> (<code>http://localhost:8080</code>), <code>ACH_EXPECTED_AUD</code> (<code>mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt</code>), <code>ACH_REQUIRE_JWT</code> (<code>false</code>).</p>
+<ul>
+<li>[ ] <strong>Step 2: Rename the gateway stage and author the mcp-echo manifest</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>mv<span class="w"> </span>test/e2e/cluster/03-gateway<span class="w"> </span>test/e2e/cluster/03-test-backends
+</code></pre></div>
+Create <code>test/e2e/cluster/03-test-backends/ach-mcp-echo.yaml</code> — the Deployment+Service from Step 1, with the env values as <strong>literals</strong> (image <code>ach-mcp-echo:e2e</code>, ns <code>ach-system</code>, Deployment name <code>ach-mcp-echo</code>, container port 9090, Service <code>ach-mcp-echo</code>). Keep the name <code>ach-mcp-echo</code> exactly — <code>phase4_bip_loop_test.go</code> waits on that Deployment.</p>
+<p>Update <code>test/e2e/cluster/03-test-backends/kustomization.yaml</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kustomize.config.k8s.io/v1beta1</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kustomization</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Stage 03 — local test backends (post-ach; need the ach Services / forwarder</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># JWKS). Both are test-only scaffolding kept OUT of the user-facing Helm chart.</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nt">resources</span><span class="p">:</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-local-gateway.yaml</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-mcp-echo.yaml</span>
+</code></pre></div></p>
+<ul>
+<li>[ ] <strong>Step 3: Verify it builds</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh kustomize build test/e2e/cluster/03-test-backends | grep -E '^kind:|  name:'</code>
+Expected: gateway (ConfigMap/Deployment/Service) + <code>ach-mcp-echo</code> (Deployment/Service).</p>
+<ul>
+<li>[ ] <strong>Step 4: Strip testMocks from the chart</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>git<span class="w"> </span>rm<span class="w"> </span>deploy/helm/ach/templates/test-mocks.yaml
+</code></pre></div>
+Remove the entire <code>testMocks:</code> block from <code>deploy/helm/ach/values.yaml</code>, and the <code>testMocks:</code> block from <code>test/e2e/cluster/02-ach/ach.values.yaml</code>. (This also drops the unused <code>ach-mock-litellm</code>/<code>ach-mock-mcp</code> legacy mocks — e2e drives the real LiteLLM, nothing uses them.)</p>
+<ul>
+<li>[ ] <strong>Step 5: Update cluster.sh — build mcp-echo unconditionally, apply via the renamed stage</strong></li>
+</ul>
+<p>In <code>reconcile_ach</code>, replace the <code>grep -A3 … mcpEcho … ach.values.yaml</code>-gated image build with an unconditional build+load (e2e always needs the backend):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] building </span><span class="si">${</span><span class="nv">MCP_ECHO_IMAGE</span><span class="si">}</span><span class="s2">...&quot;</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>make<span class="w"> </span>build-image-mcp-echo
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>kind<span class="w"> </span>load<span class="w"> </span>docker-image<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">MCP_ECHO_IMAGE</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_NAME</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+And update the gateway apply in <code>reconcile_fixtures</code> to the renamed stage:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="w">  </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_DIR</span><span class="si">}</span><span class="s2">/03-test-backends&quot;</span>
+</code></pre></div></p>
+<ul>
+<li>[ ] <strong>Step 6: Chart renders clean (no test scaffolding)</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach | grep -ciE 'ach-mock|ach-mcp-echo|testMocks'</code>
+Expected: <code>0</code>.</p>
+<ul>
+<li>[ ] <strong>Step 7: cluster-sync + assert mcp-echo comes from our manifest</strong></li>
+</ul>
+<p>Run: <code>make cluster-sync</code> then
+<code>./scripts/dev.sh kubectl -n ach-system get deploy ach-mcp-echo -o jsonpath='{.metadata.managedFields[*].manager}'</code>
+Expected: applied via <code>kubectl</code>/kustomize (not Helm); <code>make cluster-sync</code> exits 0; <code>phase4_bip_loop_test</code> prerequisites (ach-mcp-echo Ready) still hold.</p>
+<ul>
+<li>[ ] <strong>Step 8: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>git<span class="w"> </span>add<span class="w"> </span>-A
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(helm): remove testMocks from chart; mcp-echo is a test/e2e/cluster manifest&quot;</span>
+</code></pre></div>
+<h3 id="task-3-move-the-object-crs-into-04-objects">Task 3: Move the object CRs into 04-objects/<a class="headerlink" href="#task-3-move-the-object-crs-into-04-objects" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>test/e2e/cluster/04-objects/*.yaml</code> (10 CRs, moved from examples/)
+- Create: <code>test/e2e/cluster/04-objects/kustomization.yaml</code></p>
+<ul>
+<li>[ ] <strong>Step 1: git mv the 10 object CRs</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>test/e2e/cluster/04-objects
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/01-litellmconnection.yaml<span class="w">            </span>test/e2e/cluster/04-objects/litellmconnection.yaml
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/05-pluginmarketplace-anthropic.yaml<span class="w">  </span>test/e2e/cluster/04-objects/marketplace-anthropic.yaml
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/05b-pluginmarketplace-caveman.yaml<span class="w">   </span>test/e2e/cluster/04-objects/marketplace-caveman.yaml
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/06-plugin-caveman.yaml<span class="w">               </span>test/e2e/cluster/04-objects/plugin-caveman.yaml
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/07-prompt-claudecode-leak.yaml<span class="w">       </span>test/e2e/cluster/04-objects/prompt-claude-code.yaml
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/08-artifact-openclaw-templates.yaml<span class="w">  </span>test/e2e/cluster/04-objects/artifact-openclaw.yaml
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/09-backendidentitypolicy-context7.yaml<span class="w">   </span>test/e2e/cluster/04-objects/bip-context7.yaml
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/10-backendidentitypolicy-duplicate.yaml<span class="w">  </span>test/e2e/cluster/04-objects/bip-duplicate.yaml
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/11-backendidentitypolicy-demo-mcp-jwt.yaml<span class="w">   </span>test/e2e/cluster/04-objects/bip-demo-mcp-jwt.yaml
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/16-backendidentitypolicy-demo-mcp-nojwt.yaml<span class="w"> </span>test/e2e/cluster/04-objects/bip-demo-mcp-nojwt.yaml
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Write the kustomization</strong></li>
+</ul>
+<p>Create <code>test/e2e/cluster/04-objects/kustomization.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kustomize.config.k8s.io/v1beta1</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kustomization</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Stage 04 — all non-Environment ACH objects, applied post-ach (CRDs exist),</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># pre-Environment (Environments in 05 reference these by name). Sources are the</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="c1"># real upstreams (option B); each CR pins refresh.interval=1h so steady-state</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="c1"># stays under any anonymous GitHub quota (default git transport, no REST limit).</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="nt">resources</span><span class="p">:</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">litellmconnection.yaml</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">marketplace-anthropic.yaml</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">marketplace-caveman.yaml</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plugin-caveman.yaml</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt-claude-code.yaml</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">artifact-openclaw.yaml</span>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-context7.yaml</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-duplicate.yaml</span>
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-demo-mcp-jwt.yaml</span>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-demo-mcp-nojwt.yaml</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Verify it builds</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh kustomize build test/e2e/cluster/04-objects | grep -c '^kind:'</code>
+Expected: <code>10</code>.</p>
+<ul>
+<li>[ ] <strong>Step 4: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e/cluster/04-objects<span class="w"> </span>examples
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(fixtures): move ACH object CRs into test/e2e/cluster/04-objects&quot;</span>
+</code></pre></div>
+<h3 id="task-4-move-the-environments-into-05-environment">Task 4: Move the Environments into 05-environment/<a class="headerlink" href="#task-4-move-the-environments-into-05-environment" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>test/e2e/cluster/05-environment/*.yaml</code> (moved from examples/04, 04b)
+- Create: <code>test/e2e/cluster/05-environment/kustomization.yaml</code></p>
+<ul>
+<li>[ ] <strong>Step 1: git mv the Environments</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>test/e2e/cluster/05-environment
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/04-environment-demo.yaml<span class="w">        </span>test/e2e/cluster/05-environment/demo.yaml
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>git<span class="w"> </span>mv<span class="w"> </span>examples/04b-environment-unresolved.yaml<span class="w"> </span>test/e2e/cluster/05-environment/demo-unresolved.yaml
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Write the kustomization</strong></li>
+</ul>
+<p>Create <code>test/e2e/cluster/05-environment/kustomization.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kustomize.config.k8s.io/v1beta1</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kustomization</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Stage 05 — Environments LAST. demo references the 04-objects (plugins/prompts/</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># artifacts) + LiteLLM-seeded models/mcp/agents; it can only resolve once those</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="c1"># exist. demo-unresolved is the intentional negative-path fixture.</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="nt">resources</span><span class="p">:</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo.yaml</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-unresolved.yaml</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Verify it builds</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh kustomize build test/e2e/cluster/05-environment | grep -c '^kind:'</code>
+Expected: <code>2</code>.</p>
+<ul>
+<li>[ ] <strong>Step 4: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e/cluster/05-environment<span class="w"> </span>examples
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(fixtures): move demo Environments into test/e2e/cluster/05-environment&quot;</span>
+</code></pre></div>
+<h3 id="task-5-rewire-reconcile_all-into-the-full-staged-pipeline">Task 5: Rewire reconcile_all into the full staged pipeline<a class="headerlink" href="#task-5-rewire-reconcile_all-into-the-full-staged-pipeline" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>scripts/cluster.sh</code> (reconcile_fixtures → split; new reconcile_objects/reconcile_environments; reconcile_all reorder)</p>
+<ul>
+<li>[ ] <strong>Step 1: Replace reconcile_fixtures + reconcile_examples with staged functions</strong></li>
+</ul>
+<p>In <code>scripts/cluster.sh</code>, replace <code>reconcile_fixtures()</code> and <code>reconcile_examples()</code> with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>reconcile_fixtures<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="c1"># JWT signing keys (FWD-09) — random per run, so generated not declarative.</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>ach-jwt-signing-keys<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span><span class="nb">local</span><span class="w"> </span>jwttmp<span class="p">;</span><span class="w"> </span><span class="nv">jwttmp</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>mktemp<span class="w"> </span>-d<span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">    </span><span class="nb">trap</span><span class="w"> </span><span class="s2">&quot;rm -rf &#39;</span><span class="si">${</span><span class="nv">jwttmp</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="w"> </span>RETURN
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span>openssl<span class="w"> </span>rand<span class="w"> </span><span class="m">32</span><span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">jwttmp</span><span class="si">}</span><span class="s2">/current.seed&quot;</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">    </span><span class="nb">printf</span><span class="w"> </span><span class="s1">&#39;dev-%s&#39;</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>date<span class="w"> </span>+%s<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">jwttmp</span><span class="si">}</span><span class="s2">/current.kid&quot;</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">    </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>ach-jwt-signing-keys<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">      </span>--from-file<span class="o">=</span>current.kid<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">jwttmp</span><span class="si">}</span><span class="s2">/current.kid&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">      </span>--from-file<span class="o">=</span>current.seed<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">jwttmp</span><span class="si">}</span><span class="s2">/current.seed&quot;</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">  </span><span class="k">else</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] ach-jwt-signing-keys already present — leaving as-is.&quot;</span>
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">  </span><span class="k">fi</span>
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">  </span><span class="c1"># Stage 03 — test backends: gateway + mcp-echo (post-ach; gateway&#39;s static</span>
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">  </span><span class="c1"># nginx upstreams and mcp-echo&#39;s JWKS verify both need the ach Services).</span>
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] applying test backends (stage 03)...&quot;</span>
+<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">  </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_DIR</span><span class="si">}</span><span class="s2">/03-test-backends&quot;</span>
+<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="o">}</span>
+<a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a>
+<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a>reconcile_objects<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="w">  </span><span class="c1"># Stage 04 — all non-Environment ACH objects (CRDs from the 02 chart exist now).</span>
+<a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] applying objects (stage 04)...&quot;</span>
+<a id="__codelineno-16-23" name="__codelineno-16-23" href="#__codelineno-16-23"></a><span class="w">  </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_DIR</span><span class="si">}</span><span class="s2">/04-objects&quot;</span>
+<a id="__codelineno-16-24" name="__codelineno-16-24" href="#__codelineno-16-24"></a><span class="o">}</span>
+<a id="__codelineno-16-25" name="__codelineno-16-25" href="#__codelineno-16-25"></a>
+<a id="__codelineno-16-26" name="__codelineno-16-26" href="#__codelineno-16-26"></a>reconcile_environments<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-16-27" name="__codelineno-16-27" href="#__codelineno-16-27"></a><span class="w">  </span><span class="c1"># Stage 05 — Environments last (reference the 04 objects).</span>
+<a id="__codelineno-16-28" name="__codelineno-16-28" href="#__codelineno-16-28"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] applying Environments (stage 05)...&quot;</span>
+<a id="__codelineno-16-29" name="__codelineno-16-29" href="#__codelineno-16-29"></a><span class="w">  </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CLUSTER_DIR</span><span class="si">}</span><span class="s2">/05-environment&quot;</span>
+<a id="__codelineno-16-30" name="__codelineno-16-30" href="#__codelineno-16-30"></a><span class="o">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Reorder reconcile_all</strong></li>
+</ul>
+<p>Replace <code>reconcile_all()</code> body with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>reconcile_all<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span>reconcile_postgres
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span>reconcile_valkey
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span>reconcile_dex
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span>reconcile_litellm
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">  </span>reconcile_toolhive
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span>reconcile_ach<span class="w">          </span><span class="c1"># operator chart + secrets (Task 1) + build/load mcp-echo (Task 2)</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">  </span>reconcile_fixtures<span class="w">     </span><span class="c1"># jwt keys + test backends (gateway + mcp-echo, stage 03)</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span>reconcile_objects<span class="w">      </span><span class="c1"># stage 04</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">  </span>reconcile_environments<span class="w"> </span><span class="c1"># stage 05</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span>wait_ach
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">  </span>verify_all<span class="w">             </span><span class="c1"># stage 06 (Task 6)</span>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="o">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Syntax check</strong></li>
+</ul>
+<p>Run: <code>bash -n scripts/cluster.sh</code>
+Expected: no output (exit 0).</p>
+<ul>
+<li>[ ] <strong>Step 4: Full sync run</strong></li>
+</ul>
+<p>Run: <code>make cluster-sync</code>
+Expected: exits 0; logs show stages 04 (objects) and 05 (Environments) applying.</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>git<span class="w"> </span>add<span class="w"> </span>scripts/cluster.sh
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cluster.sh): stage 04-objects + 05-environment in reconcile_all&quot;</span>
+</code></pre></div>
+<h3 id="task-6-the-06-verify-readiness-gate">Task 6: The 06-verify readiness gate<a class="headerlink" href="#task-6-the-06-verify-readiness-gate" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>scripts/cluster.sh</code> (add <code>verify_all</code>; dispatch case)</p>
+<ul>
+<li>[ ] <strong>Step 1: Write verify_all</strong></li>
+</ul>
+<p>Add to <code>scripts/cluster.sh</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>verify_all<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="c1"># Stage 06 — block until every synced object reaches its healthy condition.</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="c1"># This is the &quot;everything is OK before we run tests&quot; gate the e2e suite relies</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">  </span><span class="c1"># on (tests assert, they do not apply). WAIT_TIMEOUT default 300s per resource.</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">  </span><span class="nb">local</span><span class="w"> </span><span class="nv">to</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">VERIFY_TIMEOUT</span><span class="k">:-</span><span class="nv">300s</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] verifying all synced objects healthy (stage 06)...&quot;</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">  </span><span class="c1"># Test backends (stage 03) up before asserting the JWT/MCP path.</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deploy/ach-mcp-echo<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w">          </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>litellmconnection/default
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>SourceReachable<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>plugin/caveman
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>SourceReachable<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>prompt/claude-code-system-prompt
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>SourceReachable<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>artifact/openclaw-templates
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Synced<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>pluginmarketplace/anthropic
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Synced<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>pluginmarketplace/caveman
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span>b<span class="w"> </span><span class="k">in</span><span class="w"> </span>bip-context7<span class="w"> </span>bip-demo-mcp-jwt<span class="w"> </span>bip-demo-mcp-nojwt<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="w">    </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Synced<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>backendidentitypolicy/<span class="s2">&quot;</span><span class="nv">$b</span><span class="s2">&quot;</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">  </span><span class="k">done</span>
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">  </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Available<span class="w"> </span>--timeout<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$to</span><span class="s2">&quot;</span><span class="w"> </span>environment/demo
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;[cluster.sh] all synced objects healthy.&quot;</span>
+<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="o">}</span>
+</code></pre></div>
+<blockquote>
+<p>Note: <code>bip-duplicate</code> and <code>demo-unresolved</code> are intentional negative/edge fixtures — do NOT gate on them (they never reach the "happy" condition). If <code>kubectl wait</code> reports an unknown condition for a kind, run <code>kubectl get &lt;kind&gt;/&lt;name&gt; -o yaml</code> to read the actual condition <code>type</code> and correct the line.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 2: Add the dispatch case</strong></li>
+</ul>
+<p>In the <code>case "${1:-}"</code> block, add <code>verify_all</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="w">  </span>wait_ach<span class="o">)</span><span class="w"> </span>wait_ach<span class="w"> </span><span class="p">;;</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span>verify_all<span class="o">)</span><span class="w"> </span>verify_all<span class="w"> </span><span class="p">;;</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Run it against the synced cluster</strong></li>
+</ul>
+<p>Run: <code>make cluster-sync</code> (now ends with verify_all)
+Expected: exits 0; final log <code>all synced objects healthy.</code> If a <code>wait</code> times out, inspect with <code>kubectl get &lt;kind&gt;/&lt;name&gt; -o yaml</code> — that is a real unhealthy object, fix the CR/source, not the gate.</p>
+<ul>
+<li>[ ] <strong>Step 4: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>git<span class="w"> </span>add<span class="w"> </span>scripts/cluster.sh
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(cluster.sh): 06-verify gate — block until all synced objects healthy&quot;</span>
+</code></pre></div>
+<h3 id="task-7-update-preflight-comments-docs-for-the-new-stages">Task 7: Update preflight + comments + docs for the new stages<a class="headerlink" href="#task-7-update-preflight-comments-docs-for-the-new-stages" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>scripts/cluster.sh</code> (header comment + preflight), <code>references/makefile.md</code>, <code>CLAUDE.md</code>, <code>examples/README.md</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Extend the header stage map</strong></li>
+</ul>
+<p>Update the <code>CLUSTER_DIR</code> header comment in <code>scripts/cluster.sh</code> to list <code>04-objects/</code>, <code>05-environment/</code>, and the <code>06-verify</code> step.</p>
+<ul>
+<li>[ ] <strong>Step 2: Document the examples-vs-fixtures split</strong></li>
+</ul>
+<p>In <code>examples/README.md</code> and the <code>CLAUDE.md</code> repo-layout section, state: <code>test/e2e/cluster/{04-objects,05-environment}/</code> holds the <strong>synced test fixtures</strong>; <code>examples/</code> holds <strong>curated user-facing examples</strong> (the remaining <code>12-15</code> ToolHive + <code>prometheus-servicemonitor</code> + any re-added generic samples). They are independent.</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>git<span class="w"> </span>add<span class="w"> </span>scripts/cluster.sh<span class="w"> </span>references/makefile.md<span class="w"> </span>CLAUDE.md<span class="w"> </span>examples/README.md
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs: document staged synced-fixtures pipeline + examples split&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="phase-b-assert-only-tests">PHASE B — Assert-only tests<a class="headerlink" href="#phase-b-assert-only-tests" title="Permanent link">&para;</a></h2>
+<h3 id="task-8-11f-finalizer-drain-on-a-throwaway-environment">Task 8: §11f finalizer-drain on a throwaway Environment<a class="headerlink" href="#task-8-11f-finalizer-drain-on-a-throwaway-environment" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>test/e2e/fixtures/phase4_drain_environment.yaml</code>
+- Modify: <code>test/e2e/phase4_promotion_test.go:380-407</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Author the throwaway Environment</strong></li>
+</ul>
+<p>Create <code>test/e2e/fixtures/phase4_drain_environment.yaml</code> — a copy of the demo Environment renamed so it never collides with the synced <code>demo</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach.ackstorm.ai/v1alpha1</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-drain</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="w">  </span><span class="nt">authorizedTeams</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">default</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="w">  </span><span class="nt">runtime</span><span class="p">:</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="w">    </span><span class="nt">models</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">demo-model</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="w">    </span><span class="nt">mcpServers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">demo-mcp-jwt</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">demo-mcp-nojwt</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="w">    </span><span class="nt">a2aAgents</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">demo-agent</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a><span class="w">  </span><span class="nt">context</span><span class="p">:</span>
+<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a><span class="w">    </span><span class="nt">prompts</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">claude-code-system-prompt</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a><span class="w">    </span><span class="nt">plugins</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">caveman</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a><span class="w">    </span><span class="nt">artifacts</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openclaw-templates</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Rewrite §11f.Environment to use demo-drain</strong></li>
+</ul>
+<p>Replace the bundle-apply + delete-demo + reapply block (<code>phase4_promotion_test.go</code> lines ~380-407) with: apply ONLY the throwaway, assert resolve, delete it (finalizer drain), no reapply. The referenced objects (plugin/prompt/artifact/conn) are already synced by <code>04-objects</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="w">        </span><span class="c1">// Finalizer-drain on a THROWAWAY Environment — never touches the synced</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">        </span><span class="c1">// &quot;demo&quot; (other specs assert against it). The execution resources it</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">        </span><span class="c1">// references are pre-synced by cluster.sh (04-objects).</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">        </span><span class="kd">const</span><span class="w"> </span><span class="nx">drain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;../../test/e2e/fixtures/phase4_drain_environment.yaml&quot;</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">runCmd</span><span class="p">(</span><span class="s">&quot;kubectl&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;apply&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-f&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">drain</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a><span class="w">            </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;§11f.Env apply drain: %v\n%s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="nx">out</span><span class="p">)</span>
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a><span class="w">        </span><span class="nx">waitForCondition</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;environment&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;demo-drain&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a><span class="w">            </span><span class="s">&quot;ExecutionResourcesResolved&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;True&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">runCmdLonger</span><span class="p">(</span><span class="mi">120</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">,</span>
+<a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a><span class="w">            </span><span class="s">&quot;kubectl&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;environment&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;demo-drain&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">namespace</span><span class="p">,</span>
+<a id="__codelineno-24-12" name="__codelineno-24-12" href="#__codelineno-24-12"></a><span class="w">            </span><span class="s">&quot;--wait=true&quot;</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-24-13" name="__codelineno-24-13" href="#__codelineno-24-13"></a><span class="w">            </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;§11f.Env finalizer drain: %v\n%s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="nx">out</span><span class="p">)</span>
+<a id="__codelineno-24-14" name="__codelineno-24-14" href="#__codelineno-24-14"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Compile-check</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh go vet -tags e2e ./test/e2e/...</code>
+Expected: exit 0.</p>
+<ul>
+<li>[ ] <strong>Step 4: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e/fixtures/phase4_drain_environment.yaml<span class="w"> </span>test/e2e/phase4_promotion_test.go
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(e2e): §11f finalizer-drain uses throwaway demo-drain, not shared demo&quot;</span>
+</code></pre></div>
+<h3 id="task-9-assert-only-sweep-across-the-e2e-suite">Task 9: Assert-only sweep across the e2e suite<a class="headerlink" href="#task-9-assert-only-sweep-across-the-e2e-suite" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> Audit + edit the test files that call <code>kubectl apply</code>/<code>create</code>. Inventory (from <code>grep -cE '"(apply|create)"'</code>): <code>phase4_promotion_test.go</code> (8), <code>phase2_invariants_test.go</code> (6), <code>phase1_invariants_test.go</code> (6), <code>e2e_suite_test.go</code> (2), <code>plugin_filter_test.go</code> (1), <code>phase5_invariants_test.go</code> (1), <code>phase5_helpers_test.go</code> (1), <code>phase4_promotion_helpers_test.go</code> (1), <code>phase3_helpers_test.go</code> (1), <code>cli_login_hydrate_test.go</code> (1).</p>
+<ul>
+<li>[ ] <strong>Step 1: Classify each apply call</strong></li>
+</ul>
+<p>Run: <code>grep -nE '"(apply|create)"' test/e2e/*.go</code>. For each call, classify as:
+- <strong>(a) steady-state pre-apply of a now-synced object</strong> → DELETE the apply (+ any cleanup delete); the test asserts against the synced cluster. (e.g. the demo bundle in §11f's downstream subtests, the <code>01/05b/09/10</code> applies in promotion subtests.)
+- <strong>(b) lifecycle test</strong> (creates→mutates→deletes its subject, e.g. conflict/promotion/finalizer) → convert to a <strong>throwaway</strong> resource under <code>test/e2e/fixtures/</code> (pattern from Task 8); never mutate a synced object.
+- <strong>(c) genuinely transient negative fixture</strong> not in the synced set → keep, but point at a <code>test/e2e/fixtures/</code> file, not <code>examples/</code>.</p>
+<ul>
+<li>[ ] <strong>Step 2: Apply the classification per file</strong></li>
+</ul>
+<p>Edit each file. For (a): remove the apply and the <code>t.Cleanup</code>/<code>defer delete</code>; keep the <code>waitForCondition</code>/assert. For (b)/(c): repoint the path to a <code>test/e2e/fixtures/</code> throwaway. Remove any helper (e.g. another <code>mustKubectl</code>-style wrapper) that becomes unused, and drop now-orphaned imports.</p>
+<ul>
+<li>[ ] <strong>Step 3: Compile-check after each file</strong></li>
+</ul>
+<p>Run: <code>./scripts/dev.sh go vet -tags e2e ./test/e2e/...</code>
+Expected: exit 0 after every file's edits.</p>
+<ul>
+<li>[ ] <strong>Step 4: Grep for stale examples/ references</strong></li>
+</ul>
+<p>Run: <code>grep -rn '\.\./\.\./examples/' test/e2e/*.go</code>
+Expected: only references to files that STILL live in <code>examples/</code> (e.g. <code>hydrate.json</code>, ToolHive 12-15 if not moved). No reference to a moved object/Environment file.</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>git<span class="w"> </span>add<span class="w"> </span>test/e2e
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(e2e): assert against synced cluster, stop applying fixtures&quot;</span>
+</code></pre></div>
+<h3 id="task-10-full-e2e-green-against-the-synced-cluster">Task 10: Full e2e green against the synced cluster<a class="headerlink" href="#task-10-full-e2e-green-against-the-synced-cluster" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> none (verification task).</p>
+<ul>
+<li>[ ] <strong>Step 1: Clean-room run</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>make<span class="w"> </span>cluster-down
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>make<span class="w"> </span>e2e-full
+</code></pre></div>
+Expected: cluster comes up through all stages, <code>06-verify</code> passes, e2e suite passes with tests asserting against synced state (no test applies a moved fixture).</p>
+<ul>
+<li>[ ] <strong>Step 2: Focused promotion run (the lifecycle path)</strong></li>
+</ul>
+<p>Run: <code>make e2e-keep</code> then <code>make e2e-focus RUN='TestPhase4Promotion'</code>
+Expected: PASS; <code>demo-drain</code> created+deleted, shared <code>demo</code> untouched (assert <code>kubectl get environment demo -n ach-system</code> still present after).</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit any fixups</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>git<span class="w"> </span>add<span class="w"> </span>-A
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>git<span class="w"> </span>commit<span class="w"> </span>--no-verify<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(e2e): green against fully-synced verified cluster&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="self-review">Self-Review<a class="headerlink" href="#self-review" title="Permanent link">&para;</a></h2>
+<p><strong>Spec coverage:</strong>
+- "Apply all objects in a generic stage" → Task 2 (<code>04-objects</code>).
+- "Environment last (phase six)" → Task 3 (<code>05-environment</code>) + Task 4 ordering.
+- "Make everything OK, then run tests" → Task 5 (<code>06-verify</code>).
+- "plugin/prompt/artifact/marketplace by default" → Task 2 inventory (06/07/08/05/05b).
+- "Option B real upstreams" → locked in header; <code>04-objects</code> CRs keep their real <code>github:</code> sources + 1h refresh.
+- "Tests don't apply" → Task 8 (§11f) + Task 9 (sweep).
+- "examples vs test-fixtures split" → Task 7 docs + the moves in Tasks 3/4.
+- Secrets cleanup → Task 1.
+- "Test mocks/mcp-echo out of the user-facing Helm chart" → Task 2 (strip <code>testMocks</code>, mcp-echo becomes our <code>03-test-backends/</code> manifest). ToolHive 12-15 are stale legacy, excluded.</p>
+<p><strong>Open items deliberately deferred (not placeholders):</strong>
+- Task 2 Step 2 mcp-echo manifest body is a faithful copy of the Step 1 <code>helm template</code> render (exact env values captured at execution).
+- Task 9 per-file edits are an audit-then-convert with two concrete documented patterns; exact line content depends on each file and is resolved at execution by classification (a)/(b)/(c).</p>
+<p><strong>Risk to watch:</strong> <code>06-verify</code> on Option B waits for <code>SourceReachable=True</code> on real GitHub-sourced CRs. If a clean-room <code>make e2e-full</code> flakes there, it is the documented anonymous-rate-limit/transport issue (CLAUDE.md "❌ SourceReachable=False reason=Unauthorized") — mitigate via the default <code>git</code> transport and the 1h refresh interval already on each CR, not by weakening the gate.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

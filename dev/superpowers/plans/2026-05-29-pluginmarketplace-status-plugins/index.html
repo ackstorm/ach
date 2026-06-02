@@ -1,0 +1,1695 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-pluginmarketplace-status-plugins/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>PluginMarketplace Status: Synced Plugin Count + Per-Plugin Detail (issue #53) Implementation Plan - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#pluginmarketplace-status-synced-plugin-count-per-plugin-detail-issue-53-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              PluginMarketplace Status: Synced Plugin Count + Per-Plugin Detail (issue #53) Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-root-cause-read-before-starting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — root cause (read before starting)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-1-fix-statusplugins-pluginscount-persistence-regression-tdd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Fix status.plugins[] / pluginsCount persistence regression (TDD)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-2-surface-the-synced-plugin-count-in-the-syncedtrue-message" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Surface the synced plugin count in the Synced=True message
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-3-regenerate-the-api-reference-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Regenerate the api-reference docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-4-verify-gates-branch-push-and-open-the-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Verify gates, branch, push, and open the PR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#self-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-Review
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="pluginmarketplace-status-synced-plugin-count-per-plugin-detail-issue-53-implementation-plan">PluginMarketplace Status: Synced Plugin Count + Per-Plugin Detail (issue #53) Implementation Plan<a class="headerlink" href="#pluginmarketplace-status-synced-plugin-count-per-plugin-detail-issue-53-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Make <code>kubectl get pluginmarketplace &lt;name&gt; -o yaml</code> actually show the synced plugin count + per-plugin detail by fixing a persistence regression, surfacing the count in the <code>Synced=True</code> message, and regenerating the api-reference docs.</p>
+<p><strong>Architecture:</strong> The <code>status.plugins[]</code> / <code>status.pluginsCount</code> field surface, the print column, the CRD schema, and the reconciler code that <em>computes</em> the materialized set already exist (commit <code>2035908</code>). A later conflict-retry refactor (<code>c28eeff</code>, "closes #18") rewrote <code>markSynced{True,False}</code> to write a freshly-<code>Get</code>-ed CR copy that carries only <code>Conditions</code>/<code>ObservedGeneration</code>/<code>LastSuccessfulRefresh</code> — silently dropping the caller-computed <code>Plugins</code>/<code>PluginsCount</code> on every write. The fix is to carry those two fields onto the fresh copy. We then append <code>plugins=&lt;N&gt;</code> to the success message and regenerate the api-reference markdown (stale since <code>2035908</code> never ran <code>gen-crd-ref-docs</code>).</p>
+<p><strong>Tech Stack:</strong> Go, controller-runtime (envtest), kubebuilder/controller-gen, crd-ref-docs, Make (devtools container auto-routing).</p>
+<hr />
+<h2 id="background-root-cause-read-before-starting">Background — root cause (read before starting)<a class="headerlink" href="#background-root-cause-read-before-starting" title="Permanent link">&para;</a></h2>
+<p><code>internal/controller/ach/pluginmarketplace_controller.go</code>:
+- The success path (Stage-final, ~line 446-460) computes <code>successful</code> (the materialized <code>[]MarketplacePluginRef</code>), assigns it to <code>cr.Status.Plugins</code> / <code>cr.Status.PluginsCount</code>, then calls <code>r.markSyncedTrue(ctx, &amp;cr, finalMsg, requeue)</code>.
+- <code>markSyncedTrue</code> (and <code>markSyncedFalse</code>) do <code>r.Get(ctx, key, &amp;fresh)</code> into a <em>new</em> <code>fresh</code> struct, apply only <code>Conditions</code>/<code>ObservedGeneration</code>/<code>LastSuccessfulRefresh</code> onto <code>fresh</code>, <code>r.Status().Update(ctx, &amp;fresh)</code>, then <code>cr.Status = fresh.Status</code>.
+- Because <code>fresh.Status.Plugins</code>/<code>PluginsCount</code> are never set from <code>cr</code>, the computed set is discarded on write, and <code>cr.Status = fresh.Status</code> clobbers the caller's local copy too. Net effect: the fields are persisted as empty/0 on every reconcile.</p>
+<p>This was <strong>proven empirically</strong> with a focused envtest (reproduced below as Task 1's test) that fails on current <code>main</code> with <code>status.pluginsCount = 0, want 2</code> and passes once the carry is added.</p>
+<p><strong>Scope decisions (kept OUT of this PR, documented in the PR body):</strong>
+- Per-plugin <code>reachable</code> and <code>lastSynced</code> fields on <code>MarketplacePluginRef</code> — current model encodes reachability by presence (successful entries are listed; failures land in the <code>Synced</code> message's <code>stage-2:</code> summary), and <code>lastSynced</code> is tracked per-plugin in the <code>marketplace_plugins</code> DB row but not surfaced on the CR. Deferred — not required by the acceptance criteria.
+- The stale "Phase 1 ships the field surface; Phase 2 fills the reconciler logic" prose in the <code>PluginMarketplaceStatus</code> Go doc comment — cosmetic; editing it forces a <code>gen-manifests</code> + <code>helm-sync</code> cascade. Deferred to keep this PR minimal.</p>
+<h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+<th>Touched in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>internal/controller/ach/pluginmarketplace_envtest_test.go</code></td>
+<td>New regression test <code>TestPMR_Stage2_StatusPluginsPopulated</code> (asserts status fields + message)</td>
+<td>Task 1 (add), Task 2 (extend)</td>
+</tr>
+<tr>
+<td><code>internal/controller/ach/pluginmarketplace_controller.go</code></td>
+<td>Fix <code>markSynced{True,False}</code> to carry <code>Plugins</code>/<code>PluginsCount</code>; append <code>plugins=&lt;N&gt;</code> to success message</td>
+<td>Task 1, Task 2</td>
+</tr>
+<tr>
+<td><code>docs/api-reference/ach.ackstorm.ai.md</code></td>
+<td>Regenerated api-reference (adds <code>plugins</code>/<code>pluginsCount</code> rows)</td>
+<td>Task 3 (generated, do not hand-edit)</td>
+</tr>
+</tbody>
+</table>
+<p>No new files; no new types (the type surface already exists in <code>api/ach/v1alpha1/pluginmarketplace_types.go</code>).</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<ul>
+<li>All <code>make test-*</code> / <code>gen-*</code> targets auto-route into the devtools container — run them bare (no <code>./scripts/dev.sh</code> prefix).</li>
+<li><code>make test-envtest-pkg</code> maps <code>FOCUS=</code> to <code>go test -run</code>. <strong>Do not</strong> add a trailing <code>$</code> anchor — it is mangled through the make/container layers and matches zero tests. The bare name <code>TestPMR_Stage2_StatusPluginsPopulated</code> is a unique prefix.</li>
+<li>Commit messages: Conventional Commits, imperative subject &lt; 72 chars, end with the <code>Co-Authored-By</code> trailer.</li>
+<li>Both target <code>.go</code> files already carry the <code>// SPDX-License-Identifier: Apache-2.0</code> header — preserve it (do not duplicate).</li>
+</ul>
+<hr />
+<h2 id="task-1-fix-statusplugins-pluginscount-persistence-regression-tdd">Task 1: Fix <code>status.plugins[]</code> / <code>pluginsCount</code> persistence regression (TDD)<a class="headerlink" href="#task-1-fix-statusplugins-pluginscount-persistence-regression-tdd" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Test: <code>internal/controller/ach/pluginmarketplace_envtest_test.go</code> (add one test function)
+- Modify: <code>internal/controller/ach/pluginmarketplace_controller.go</code> (<code>markSyncedTrue</code> and <code>markSyncedFalse</code>)</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing regression test</strong></li>
+</ul>
+<p>In <code>internal/controller/ach/pluginmarketplace_envtest_test.go</code>, insert the following function immediately <strong>after</strong> the closing brace of <code>TestPMR_Stage2_PartialFailure_StatusMessage</code> and <strong>before</strong> <code>func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {</code>. It reuses the existing helpers (<code>pmrCR</code>, <code>applyMarketplaceCR</code>, <code>waitForFinalizer</code>, <code>newMarketplaceFakeFactory</code>, <code>withFakeGitFetcher</code>, <code>mkGitSubdirPlugin</code>, <code>mustMarketplaceJSON</code>, <code>mustPluginTarGz</code>, <code>shaForName</code>, <code>drainReconcileUntil</code>, <code>syncedCondition</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1">// TestPMR_Stage2_StatusPluginsPopulated proves issue #53&#39;s acceptance</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">// criterion #1: a successful multi-plugin reconcile must surface the</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1">// materialized set on status.plugins[] + status.pluginsCount so an</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1">// operator running `kubectl get pluginmarketplace -o yaml` can see what</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1">// the catalog actually resolved to.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1">//</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1">// REGRESSION GUARD: commit 2035908 (&quot;surface materialized plugins on</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1">// status.plugins[]&quot;) wired these fields and persisted them via</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1">// `r.Status().Update(ctx, cr)`. The issue #18 conflict-retry refactor</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1">// (c28eeff) then rewrote markSynced{True,False} to Get a FRESH CR and</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1">// copy ONLY Conditions/ObservedGeneration/LastSuccessfulRefresh onto it</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1">// before Update — silently dropping the caller-set Plugins/PluginsCount</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1">// on every write. On that regressed code this test fails with</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1">// pluginsCount=0 and an empty plugins list.</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestPMR_Stage2_StatusPluginsPopulated</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nx">ctx</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">()</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nx">cr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">pmrCR</span><span class="p">(</span><span class="s">&quot;s2-status-plugins&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="nx">root</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newCacheRoot</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="nx">stage1Key</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">applyMarketplaceCR</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cr</span><span class="p">)</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">    </span><span class="nx">waitForFinalizer</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cr</span><span class="p">)</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="c1">// Two plugins, BOTH succeed → status.plugins must list both.</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">    </span><span class="nx">mktBody</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">mustMarketplaceJSON</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">ClaudeCodeMarketplace</span><span class="p">{</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">        </span><span class="nx">Name</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;m&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">        </span><span class="nx">Plugins</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="nx">ClaudeCodeMarketplacePlugin</span><span class="p">{</span><span class="nx">mkGitSubdirPlugin</span><span class="p">(</span><span class="s">&quot;alpha&quot;</span><span class="p">),</span><span class="w"> </span><span class="nx">mkGitSubdirPlugin</span><span class="p">(</span><span class="s">&quot;beta&quot;</span><span class="p">)},</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">    </span><span class="nx">factory</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newMarketplaceFakeFactory</span><span class="p">()</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">    </span><span class="nx">factory</span><span class="p">.</span><span class="nx">register</span><span class="p">(</span><span class="nx">stage1Key</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">keyedFakeFetcher</span><span class="p">{</span><span class="nx">body</span><span class="p">:</span><span class="w"> </span><span class="nx">mktBody</span><span class="p">})</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="nx">gitReg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">withFakeGitFetcher</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">    </span><span class="nx">gitReg</span><span class="p">.</span><span class="nx">register</span><span class="p">(</span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;alpha&quot;</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fakeGitFetcher</span><span class="p">{</span><span class="nx">body</span><span class="p">:</span><span class="w"> </span><span class="nx">mustPluginTarGz</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;plugins/alpha&quot;</span><span class="p">),</span><span class="w"> </span><span class="nx">rev</span><span class="p">:</span><span class="w"> </span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;alpha&quot;</span><span class="p">)})</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">    </span><span class="nx">gitReg</span><span class="p">.</span><span class="nx">register</span><span class="p">(</span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;beta&quot;</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fakeGitFetcher</span><span class="p">{</span><span class="nx">body</span><span class="p">:</span><span class="w"> </span><span class="nx">mustPluginTarGz</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;plugins/beta&quot;</span><span class="p">),</span><span class="w"> </span><span class="nx">rev</span><span class="p">:</span><span class="w"> </span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;beta&quot;</span><span class="p">)})</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">    </span><span class="nx">r</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">PluginMarketplaceReconciler</span><span class="p">{</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">        </span><span class="nx">Client</span><span class="p">:</span><span class="w">    </span><span class="nx">k8sClient</span><span class="p">,</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">        </span><span class="nx">Namespace</span><span class="p">:</span><span class="w"> </span><span class="nx">WatchNamespace</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">        </span><span class="nx">Log</span><span class="p">:</span><span class="w">       </span><span class="nx">logr</span><span class="p">.</span><span class="nx">Discard</span><span class="p">(),</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">        </span><span class="nx">CacheRoot</span><span class="p">:</span><span class="w"> </span><span class="nx">root</span><span class="p">,</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">        </span><span class="nx">Fetchers</span><span class="p">:</span><span class="w">  </span><span class="nx">factory</span><span class="p">.</span><span class="nx">factory</span><span class="p">(),</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">    </span><span class="c1">// Drain until Synced=True lands. In correct code the plugins list is</span>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">    </span><span class="c1">// written in the SAME Status().Update as the Synced condition, so once</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">    </span><span class="c1">// Synced=True is observed the fields are at their final value (the</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">    </span><span class="c1">// within-interval gate then skips subsequent fetches, freezing status).</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">    </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">drainReconcileUntil</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">cr</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">got</span><span class="w"> </span><span class="o">*</span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">PluginMarketplace</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">        </span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">syncedCondition</span><span class="p">(</span><span class="nx">got</span><span class="p">)</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">Status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">metav1</span><span class="p">.</span><span class="nx">ConditionTrue</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">Reason</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">ReasonSynced</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;never observed Synced=True&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">    </span><span class="c1">// THE ASSERTION issue #53 is about.</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">got</span><span class="w"> </span><span class="nx">achv1alpha1</span><span class="p">.</span><span class="nx">PluginMarketplace</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">ObjectKeyFromObject</span><span class="p">(</span><span class="nx">cr</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">got</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;get CR: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;status.pluginsCount = %d, want 2&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span><span class="p">)</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Fatalf</span><span class="p">(</span><span class="s">&quot;len(status.plugins) = %d, want 2 (entries: %+v)&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="p">),</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="p">)</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">    </span><span class="c1">// Entries are sorted by Name → [alpha, beta], each carrying its</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">    </span><span class="c1">// resolved UpstreamRev.</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">    </span><span class="nx">wantRev</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="s">&quot;alpha&quot;</span><span class="p">:</span><span class="w"> </span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;alpha&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;beta&quot;</span><span class="p">:</span><span class="w"> </span><span class="nx">shaForName</span><span class="p">(</span><span class="s">&quot;beta&quot;</span><span class="p">)}</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">got</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">wantRev</span><span class="p">[</span><span class="nx">p</span><span class="p">.</span><span class="nx">Name</span><span class="p">]</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">UpstreamRev</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">            </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;status.plugins[%q].upstreamRev = %q, want %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">Name</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">UpstreamRev</span><span class="p">,</span><span class="w"> </span><span class="nx">wantRev</span><span class="p">[</span><span class="nx">p</span><span class="p">.</span><span class="nx">Name</span><span class="p">])</span>
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">        </span><span class="nb">delete</span><span class="p">(</span><span class="nx">wantRev</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">Name</span><span class="p">)</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">wantRev</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;status.plugins missing expected entries: %v&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">wantRev</span><span class="p">)</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Run the test to verify it FAILS (proves the regression)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_Stage2_StatusPluginsPopulated&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected: FAIL, with these lines in the output:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>    pluginmarketplace_envtest_test.go:NNN: status.pluginsCount = 0, want 2
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    pluginmarketplace_envtest_test.go:NNN: len(status.plugins) = 0, want 2 (entries: [])
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>--- FAIL: TestPMR_Stage2_StatusPluginsPopulated
+</code></pre></div>
+(If it does not match <code>-run</code>, confirm you used the bare name with no trailing <code>$</code>.)</p>
+<ul>
+<li>[ ] <strong>Step 3: Fix <code>markSyncedTrue</code> — carry the discovery set onto <code>fresh</code></strong></li>
+</ul>
+<p>In <code>internal/controller/ach/pluginmarketplace_controller.go</code>, inside <code>markSyncedTrue</code>'s <code>retry.RetryOnConflict</code> closure, change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="w">        </span><span class="nx">applyReconcileConditions</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonSynced</span><span class="p">,</span><span class="w"> </span><span class="nx">message</span><span class="p">,</span><span class="w"> </span><span class="nx">desiredGen</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">desiredGen</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">LastSuccessfulRefresh</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">now</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Status</span><span class="p">().</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">);</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<p>to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="w">        </span><span class="nx">applyReconcileConditions</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">ReasonSynced</span><span class="p">,</span><span class="w"> </span><span class="nx">message</span><span class="p">,</span><span class="w"> </span><span class="nx">desiredGen</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">desiredGen</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">LastSuccessfulRefresh</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">now</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">        </span><span class="c1">// Carry the caller-computed discovery set onto the fresh copy —</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">        </span><span class="c1">// the Reconcile body set these on `cr` and the fresh Get would</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">        </span><span class="c1">// otherwise drop them (issue #53 regression introduced by c28eeff).</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">cr</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">cr</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Status</span><span class="p">().</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">);</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Fix <code>markSyncedFalse</code> — same carry (loser-branch correctness)</strong></li>
+</ul>
+<p>In the same file, inside <code>markSyncedFalse</code>'s <code>retry.RetryOnConflict</code> closure, change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="w">        </span><span class="nx">applyReconcileConditions</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="p">,</span><span class="w"> </span><span class="nx">message</span><span class="p">,</span><span class="w"> </span><span class="nx">desiredGen</span><span class="p">)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">desiredGen</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Status</span><span class="p">().</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">);</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<p>to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="w">        </span><span class="nx">applyReconcileConditions</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Conditions</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="p">,</span><span class="w"> </span><span class="nx">message</span><span class="p">,</span><span class="w"> </span><span class="nx">desiredGen</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">ObservedGeneration</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">desiredGen</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">        </span><span class="c1">// Carry the caller&#39;s discovery set (issue #53 regression: c28eeff).</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">        </span><span class="c1">// The marketplace-loser branch zeroes cr.Status.Plugins before</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">        </span><span class="c1">// calling this so the stale set is cleared; other failure paths</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">        </span><span class="c1">// pass through the prior value loaded at the top of Reconcile.</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">cr</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">Plugins</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">        </span><span class="nx">fresh</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">cr</span><span class="p">.</span><span class="nx">Status</span><span class="p">.</span><span class="nx">PluginsCount</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Status</span><span class="p">().</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fresh</span><span class="p">);</span><span class="w"> </span><span class="nx">u</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<blockquote>
+<p>Note: the <code>markSyncedFalse</code> carry is exercised end-to-end only by the DB-backed integration test <code>TestPMR_NameConflict_AlphabeticalPriority</code> (the loser branch needs <code>listOtherMarketplaceCatalogs</code>, which requires <code>r.DB</code>). It is <code>t.Skip</code>-ed in the Docker-free envtest run; that is expected. The success-path carry (<code>markSyncedTrue</code>) is what Step 1's test proves.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 5: Run the test to verify it PASSES</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_Stage2_StatusPluginsPopulated&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>--- PASS: TestPMR_Stage2_StatusPluginsPopulated
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>PASS
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>ok      github.com/ackstorm/ach/internal/controller/ach
+</code></pre></div></p>
+<ul>
+<li>[ ] <strong>Step 6: Run the full PMR suite to confirm no collateral breakage</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected: all <code>TestPMR_*</code> PASS except <code>TestPMR_Stage3_DeleteSweep</code> and <code>TestPMR_NameConflict_AlphabeticalPriority</code> which SKIP (DB-only). No FAIL.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/pluginmarketplace_controller.go<span class="w"> </span>internal/controller/ach/pluginmarketplace_envtest_test.go
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;fix(pmr): persist status.plugins[]/pluginsCount through markSynced (#53)</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="s2">c28eeff (closes #18) rewrote markSynced{True,False} to write a freshly</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="s2">Get-ed CR copy carrying only Conditions/ObservedGeneration/</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="s2">LastSuccessfulRefresh, silently dropping the caller-computed</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="s2">Plugins/PluginsCount set by the Stage-final success path. The fields</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="s2">were therefore persisted as empty/0 on every reconcile, defeating the</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="s2">2035908 feature and the Plugins print column. Carry both fields onto the</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="s2">fresh copy in both helpers; add an envtest regression guard.</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-2-surface-the-synced-plugin-count-in-the-syncedtrue-message">Task 2: Surface the synced plugin count in the <code>Synced=True</code> message<a class="headerlink" href="#task-2-surface-the-synced-plugin-count-in-the-syncedtrue-message" title="Permanent link">&para;</a></h2>
+<p>The issue asks the count to appear in the condition message (which already carries <code>transport=&lt;git|rest&gt;</code>). We append <code>plugins=&lt;N&gt;</code> where N is the number of successfully materialized plugins, between the transport label and any partial-failure summary.</p>
+<p><strong>Files:</strong>
+- Test: <code>internal/controller/ach/pluginmarketplace_envtest_test.go</code> (extend <code>TestPMR_Stage2_StatusPluginsPopulated</code>)
+- Modify: <code>internal/controller/ach/pluginmarketplace_controller.go</code> (Stage-final message composition)</p>
+<ul>
+<li>[ ] <strong>Step 1: Add the failing message assertion to the existing test</strong></li>
+</ul>
+<p>In <code>internal/controller/ach/pluginmarketplace_envtest_test.go</code>, inside <code>TestPMR_Stage2_StatusPluginsPopulated</code>, append this block at the <strong>end</strong> of the function (after the <code>wantRev</code> loop, before the closing <code>}</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="w">    </span><span class="c1">// Issue #53 acceptance #2: the synced count is surfaced in the</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="c1">// Synced=True message alongside transport=.</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">syncedCondition</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">got</span><span class="p">);</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">!</span><span class="nx">strings</span><span class="p">.</span><span class="nx">Contains</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">Message</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;plugins=2&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="nx">m</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">            </span><span class="nx">m</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">Message</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">        </span><span class="p">}</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Synced message = %q, want it to contain %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">m</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;plugins=2&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+<p>(<code>strings</code> is already imported in this file.)</p>
+<ul>
+<li>[ ] <strong>Step 2: Run the test to verify the new assertion FAILS</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_Stage2_StatusPluginsPopulated&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected: FAIL with a line like:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>    pluginmarketplace_envtest_test.go:NNN: Synced message = &quot;transport=git&quot;, want it to contain &quot;plugins=2&quot;
+</code></pre></div>
+(The status-field assertions from Task 1 still pass; only the message assertion fails.)</p>
+<ul>
+<li>[ ] <strong>Step 3: Append <code>plugins=&lt;N&gt;</code> to the success message</strong></li>
+</ul>
+<p>In <code>internal/controller/ach/pluginmarketplace_controller.go</code>, in the Stage-final block, change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="w">    </span><span class="nx">finalMsg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">sourceReachableMessage</span><span class="p">(</span><span class="nx">sourceSpec</span><span class="p">)</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">        </span><span class="nx">finalMsg</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">finalMsg</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">msg</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+<p>to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="w">    </span><span class="c1">// transport=&lt;…&gt; plugins=&lt;N&gt; [stage-2 partial-failure summary]</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span><span class="nx">finalMsg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;%s plugins=%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">sourceReachableMessage</span><span class="p">(</span><span class="nx">sourceSpec</span><span class="p">),</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">successful</span><span class="p">))</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">        </span><span class="nx">finalMsg</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">finalMsg</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">msg</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+<p>(<code>fmt</code> is already imported. <code>successful</code> is in scope here — it is the <code>[]MarketplacePluginRef</code> assigned to <code>cr.Status.Plugins</code> just below. Do <strong>not</strong> touch <code>sourceReachableMessage</code> itself; it is shared by the Plugin/Prompt/Artifact controllers and must stay <code>transport=</code>-only. The <code>NotModified</code> 304 path at the top of Stage-1 is intentionally left as transport-only — the marketplace catalog fetch always passes <code>PriorRev=""</code>, so that branch is unreachable for marketplaces.)</p>
+<ul>
+<li>[ ] <strong>Step 4: Run the test to verify it PASSES</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_Stage2_StatusPluginsPopulated&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected: <code>--- PASS: TestPMR_Stage2_StatusPluginsPopulated</code>.</p>
+<ul>
+<li>[ ] <strong>Step 5: Re-run the full PMR suite (the partial-failure tests assert message substrings)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>8m
+</code></pre></div>
+Expected: all PASS (2 SKIP). In particular <code>TestPMR_Stage2_PartialFailure_StatusMessage</code>, <code>TestPMR_Stage2_UnsupportedNpm</code>, <code>TestPMR_Stage2_Truncation</code>, <code>TestPMR_Stage2_PluginTooLarge</code>, and <code>TestPMR_PluginCRDBeatsMarketplace</code> must still pass — they assert <code>strings.Contains</code> substrings that the new <code>plugins=&lt;N&gt;</code> prefix does not remove. If any fail, the message format change broke an expected substring; re-read the failing assertion and reconcile.</p>
+<ul>
+<li>[ ] <strong>Step 6: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/pluginmarketplace_controller.go<span class="w"> </span>internal/controller/ach/pluginmarketplace_envtest_test.go
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(pmr): surface synced plugin count in Synced=True message (#53)</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="s2">Append plugins=&lt;N&gt; (count of successfully materialized plugins) to the</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="s2">PluginMarketplace Synced=True condition message, alongside the existing</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="s2">transport=&lt;git|rest&gt; label and the stage-2 partial-failure summary.</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-3-regenerate-the-api-reference-docs">Task 3: Regenerate the api-reference docs<a class="headerlink" href="#task-3-regenerate-the-api-reference-docs" title="Permanent link">&para;</a></h2>
+<p>The api-reference markdown has been stale since <code>2035908</code> (the <code>gen-crd-ref-docs</code> step was never run). <code>crd-ref-docs</code> reads the Go types, which already declare <code>plugins</code> / <code>pluginsCount</code>, so regeneration alone adds the missing rows — no CRD/Helm change needed.</p>
+<p><strong>Files:</strong>
+- Modify (generated, do not hand-edit): <code>docs/api-reference/ach.ackstorm.ai.md</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Confirm the doc is currently missing the fields (baseline)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>grep<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;pluginsCount&quot;</span><span class="w"> </span>docs/api-reference/ach.ackstorm.ai.md
+</code></pre></div>
+Expected: <code>0</code> (confirms the stale state before regeneration).</p>
+<ul>
+<li>[ ] <strong>Step 2: Regenerate</strong></li>
+</ul>
+<p>Run (both auto-route into the devtools container; the first installs the <code>crd-ref-docs</code> binary if absent):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>make<span class="w"> </span>crd-ref-docs<span class="w"> </span>gen-crd-ref-docs
+</code></pre></div>
+Expected: <code>API documentation generated at docs/api-reference/api-generated.md</code> (and <code>ach.ackstorm.ai.md</code> rewritten).</p>
+<ul>
+<li>[ ] <strong>Step 3: Verify the fields now appear, and the diff is docs-only</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;pluginsCount&quot;</span><span class="w"> </span>docs/api-reference/ach.ackstorm.ai.md
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>git<span class="w"> </span>status<span class="w"> </span>--short
+</code></pre></div>
+Expected: <code>grep</code> now returns a <code>pluginsCount</code> row under <code>PluginMarketplaceStatus</code>; <code>git status</code> shows <strong>only</strong> <code>docs/api-reference/</code> files modified (commonly <code>ach.ackstorm.ai.md</code> and possibly <code>api-generated.md</code>). If any non-docs file appears in <code>git status</code>, stop and investigate — the doc regen should not touch code, CRDs, or Helm.</p>
+<ul>
+<li>[ ] <strong>Step 4: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>git<span class="w"> </span>add<span class="w"> </span>docs/api-reference/
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(api-reference): regenerate PluginMarketplace status (plugins[], pluginsCount) (#53)</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="s2">Stale since 2035908 added the status fields without running</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="s2">gen-crd-ref-docs. Regeneration surfaces status.plugins[] and</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="s2">status.pluginsCount in the rendered API reference.</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-4-verify-gates-branch-push-and-open-the-pr">Task 4: Verify gates, branch, push, and open the PR<a class="headerlink" href="#task-4-verify-gates-branch-push-and-open-the-pr" title="Permanent link">&para;</a></h2>
+<p>This task touches <code>internal/controller/</code> — per <code>CLAUDE.md</code>, never push such a change without confirming envtest (and ideally e2e) green. The pre-push git hook runs the 17-gate <code>pre-push</code> (lint + unit + secrets + SPDX + …) automatically on <code>git push</code>; do not run it manually first.</p>
+<p><strong>Files:</strong> none (verification + git/PR operations).</p>
+<ul>
+<li>[ ] <strong>Step 1: Full envtest gate for the controller package (race)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>make<span class="w"> </span>test-envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s1">&#39;TestPMR_&#39;</span><span class="w"> </span><span class="nv">TIMEOUT</span><span class="o">=</span>10m
+</code></pre></div>
+Expected: all <code>TestPMR_*</code> PASS (2 SKIP). This is the authoritative coverage for the change.</p>
+<ul>
+<li>[ ] <strong>Step 2: Fast regression + scoped lint</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>make<span class="w"> </span>test-unit
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>make<span class="w"> </span>qa-lint-changed
+</code></pre></div>
+Expected: <code>test-unit</code> PASS; <code>qa-lint-changed</code> reports no issues on the touched packages. Fix any <code>gofmt</code>/lint findings before proceeding (the new test uses tabs and matches surrounding style).</p>
+<ul>
+<li>[ ] <strong>Step 3: E2E sanity (kept-cluster loop)</strong></li>
+</ul>
+<p>The e2e suite does not assert on <code>status.pluginsCount</code>, but the controller change must not regress marketplace reconcile. Bring up (or reuse) the kept cluster and confirm the marketplace fixtures stay healthy:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>make<span class="w"> </span>e2e-keep
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nv">KUBECONFIG</span><span class="o">=</span><span class="nv">$PWD</span>/.gocache/kube/config<span class="w"> </span>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>get<span class="w"> </span>pluginmarketplace<span class="w"> </span>-o<span class="w"> </span>wide
+</code></pre></div>
+Expected: <code>marketplace-caveman</code> / <code>marketplace-anthropic</code> show <code>Synced=True</code> and a non-zero <code>Plugins</code> column (the print column the fix restores). If a cluster is already up from prior work, run <code>make cluster-sync</code> first to roll the rebuilt image, then re-check.</p>
+<blockquote>
+<p>If a full clean-room gate is preferred over the kept-cluster loop, run <code>make e2e-full</code> instead (~10 min) and confirm green.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 4: Create the feature branch (we are on <code>main</code>)</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>git<span class="w"> </span>switch<span class="w"> </span>-c<span class="w"> </span>fix/53-pluginmarketplace-status-plugins
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 5: Push (the pre-push hook runs the 17 gates)</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>fix/53-pluginmarketplace-status-plugins
+</code></pre></div>
+Expected: pre-push gates pass and the branch publishes. If a gate fails, fix the root cause — do not <code>--no-verify</code>.</p>
+<ul>
+<li>[ ] <strong>Step 6: Open the PR</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="w">  </span>--base<span class="w"> </span>main<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="w">  </span>--title<span class="w"> </span><span class="s2">&quot;fix(pmr): report synced plugin count + per-plugin detail (#53)&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="w">  </span>--body<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>cat<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="s">## Summary</span>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="s">Closes #53. Makes `kubectl get pluginmarketplace &lt;name&gt; -o yaml` actually show the synced plugin count + per-plugin detail.</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="s">Most of the field surface already existed (commit 2035908: `status.plugins[]`, `status.pluginsCount`, the `Plugins` print column, CRD schema). The reconciler computed the set but it was **never persisted** — the issue #18 conflict-retry refactor (c28eeff) rewrote `markSynced{True,False}` to write a freshly-`Get`-ed CR copy that carried only `Conditions`/`ObservedGeneration`/`LastSuccessfulRefresh`, dropping the caller-computed `Plugins`/`PluginsCount` on every write.</span>
+<a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a>
+<a id="__codelineno-28-10" name="__codelineno-28-10" href="#__codelineno-28-10"></a><span class="s">## Changes</span>
+<a id="__codelineno-28-11" name="__codelineno-28-11" href="#__codelineno-28-11"></a><span class="s">- **fix(pmr):** carry `Plugins`/`PluginsCount` onto the fresh copy in `markSynced{True,False}` so the materialized set is persisted (success path) and the loser-branch zeroing is honored (failure path). Regression guard envtest `TestPMR_Stage2_StatusPluginsPopulated` fails on the old code (`pluginsCount=0`) and passes on the fix.</span>
+<a id="__codelineno-28-12" name="__codelineno-28-12" href="#__codelineno-28-12"></a><span class="s">- **feat(pmr):** append `plugins=&lt;N&gt;` to the `Synced=True` message, alongside `transport=&lt;git|rest&gt;`.</span>
+<a id="__codelineno-28-13" name="__codelineno-28-13" href="#__codelineno-28-13"></a><span class="s">- **docs:** regenerate the api-reference (stale since 2035908) to surface `plugins`/`pluginsCount`.</span>
+<a id="__codelineno-28-14" name="__codelineno-28-14" href="#__codelineno-28-14"></a>
+<a id="__codelineno-28-15" name="__codelineno-28-15" href="#__codelineno-28-15"></a><span class="s">## Acceptance (issue #53)</span>
+<a id="__codelineno-28-16" name="__codelineno-28-16" href="#__codelineno-28-16"></a><span class="s">- [x] `kubectl get pluginmarketplace &lt;n&gt; -o yaml` shows the synced plugin count + per-plugin detail (name + upstreamRev).</span>
+<a id="__codelineno-28-17" name="__codelineno-28-17" href="#__codelineno-28-17"></a><span class="s">- [x] Count surfaced in the `Synced=True` condition message.</span>
+<a id="__codelineno-28-18" name="__codelineno-28-18" href="#__codelineno-28-18"></a><span class="s">- [x] api-reference docs regenerated in the same change.</span>
+<a id="__codelineno-28-19" name="__codelineno-28-19" href="#__codelineno-28-19"></a>
+<a id="__codelineno-28-20" name="__codelineno-28-20" href="#__codelineno-28-20"></a><span class="s">## Deferred (out of scope, by design)</span>
+<a id="__codelineno-28-21" name="__codelineno-28-21" href="#__codelineno-28-21"></a><span class="s">- Per-plugin `reachable` / `lastSynced` on `MarketplacePluginRef`: reachability is encoded by presence (successful entries listed; failures in the `stage-2:` message summary); `lastSynced` lives in the `marketplace_plugins` DB row. Not required by the acceptance criteria.</span>
+<a id="__codelineno-28-22" name="__codelineno-28-22" href="#__codelineno-28-22"></a><span class="s">- Cleanup of the stale &quot;Phase 1/Phase 2&quot; prose in the `PluginMarketplaceStatus` Go doc comment (would force a `gen-manifests` + `helm-sync` cascade; kept separate to keep this PR minimal).</span>
+<a id="__codelineno-28-23" name="__codelineno-28-23" href="#__codelineno-28-23"></a>
+<a id="__codelineno-28-24" name="__codelineno-28-24" href="#__codelineno-28-24"></a><span class="s">## Verification</span>
+<a id="__codelineno-28-25" name="__codelineno-28-25" href="#__codelineno-28-25"></a><span class="s">- `make test-envtest-pkg PKG=./internal/controller/ach/... FOCUS=&#39;TestPMR_&#39;` → all PASS (2 DB-only SKIP).</span>
+<a id="__codelineno-28-26" name="__codelineno-28-26" href="#__codelineno-28-26"></a><span class="s">- `make test-unit`, `make qa-lint-changed` → clean.</span>
+<a id="__codelineno-28-27" name="__codelineno-28-27" href="#__codelineno-28-27"></a><span class="s">- e2e: marketplace fixtures `Synced=True` with non-zero `Plugins` column.</span>
+<a id="__codelineno-28-28" name="__codelineno-28-28" href="#__codelineno-28-28"></a>
+<a id="__codelineno-28-29" name="__codelineno-28-29" href="#__codelineno-28-29"></a><span class="s">🤖 Generated with [Claude Code](https://claude.com/claude-code)</span>
+<a id="__codelineno-28-30" name="__codelineno-28-30" href="#__codelineno-28-30"></a><span class="s">EOF</span>
+<a id="__codelineno-28-31" name="__codelineno-28-31" href="#__codelineno-28-31"></a><span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+Expected: PR created against <code>main</code>; CI (<code>ci.yml</code>) runs lint/unit/envtest/security/e2e on the PR.</p>
+<hr />
+<h2 id="self-review">Self-Review<a class="headerlink" href="#self-review" title="Permanent link">&para;</a></h2>
+<p><strong>1. Spec coverage (issue #53 acceptance):</strong>
+- "shows synced plugin count + per-plugin detail" → Task 1 restores <code>status.plugins[]</code> (name + upstreamRev) and <code>status.pluginsCount</code> persistence; proven by <code>TestPMR_Stage2_StatusPluginsPopulated</code>. ✓
+- "Surface the count in the <code>Synced=True</code> condition message" → Task 2 appends <code>plugins=&lt;N&gt;</code>. ✓
+- "api-reference docs regenerated in the same change" → Task 3. ✓
+- "Where: types / controller + marketplace_parse / regenerate CRDs+docs" → types already correct (no change needed); controller fixed (Task 1/2); docs regenerated (Task 3). The CRD base already contains the fields (no <code>gen-manifests</code> needed). <code>marketplace_parse.go</code> needs no change — population already happens in the controller's Stage-2 loop. ✓</p>
+<p><strong>2. Placeholder scan:</strong> No TBD/TODO/"handle edge cases"/"similar to". Every code step shows exact before/after. ✓</p>
+<p><strong>3. Type consistency:</strong> <code>MarketplacePluginRef{Name, UpstreamRev}</code>, <code>Status.Plugins</code>, <code>Status.PluginsCount</code> used consistently across tasks and match <code>api/ach/v1alpha1/pluginmarketplace_types.go</code>. Helper names (<code>pmrCR</code>, <code>drainReconcileUntil</code>, <code>syncedCondition</code>, <code>mkGitSubdirPlugin</code>, <code>mustMarketplaceJSON</code>, <code>mustPluginTarGz</code>, <code>shaForName</code>, <code>fakeGitFetcher</code>, <code>keyedFakeFetcher</code>, <code>withFakeGitFetcher</code>, <code>newMarketplaceFakeFactory</code>) all exist in the current <code>pluginmarketplace_envtest_test.go</code>. <code>successful</code> / <code>sourceReachableMessage</code> / <code>finalMsg</code> match the controller. ✓</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

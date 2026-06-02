@@ -1,0 +1,2605 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/plans/2026-05-26-default-team-alias/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Make LiteLLM default-team alias configurable at operator startup - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#make-litellm-default-team-alias-configurable-at-operator-startup" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Make LiteLLM default-team alias configurable at operator startup
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-branch-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Branch setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 0 — Branch setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-01-confirm-cwd-and-create-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 0.1: Confirm cwd and create branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-pre-flight-inventory-no-code-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Pre-flight inventory (no code changes)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1 — Pre-flight inventory (no code changes)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-11-enumerate-every-hardcoded-default-and-every-ensuredefaultteam-call-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1.1: Enumerate every hardcoded "default" and every EnsureDefaultTeam call site
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-widen-the-litellm-client-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Widen the LiteLLM Client interface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 — Widen the LiteLLM Client interface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-21-add-the-alias-parameter-to-the-interface-and-every-implementor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.1: Add the alias parameter to the interface and every implementor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-22-update-every-test-fake-and-the-temporary-controller-call-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.2: Update every test fake and the temporary controller call site
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-23-new-unit-test-restclientensuredefaultteam-uses-the-supplied-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2.3: New unit test — RESTClient.EnsureDefaultTeam uses the supplied alias
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-add-the-cobra-flag-env-mirror-to-both-operator-and-platform-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Add the cobra flag + env-mirror to both operator and platform-api
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3 — Add the cobra flag + env-mirror to both operator and platform-api">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-31-add-the-flag-to-cmdachcmdoperatorgo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.1: Add the flag to cmd/ach/cmd/operator.go
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-32-add-the-flag-to-cmdachcmdplatform_apigo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.2: Add the flag to cmd/ach/cmd/platform_api.go
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-33-unit-test-the-flagenv-precedence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3.3: Unit test the flag/env precedence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-wire-the-alias-into-litellmconnectionreconciler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Wire the alias into LiteLLMConnectionReconciler
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 — Wire the alias into LiteLLMConnectionReconciler">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-41-add-defaultteamalias-field-on-the-reconciler-struct" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.1: Add DefaultTeamAlias field on the reconciler struct
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-42-wire-the-value-from-operatorgo-into-the-reconciler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.2: Wire the value from operator.go into the reconciler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-43-unit-test-reconciler-passes-its-configured-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4.3: Unit test — reconciler passes its configured alias
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-wire-the-alias-into-platformapi-authdeps-and-envkeysdeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Wire the alias into platformapi auth.Deps and envkeys.Deps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5 — Wire the alias into platformapi auth.Deps and envkeys.Deps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-51-add-defaultteamalias-field-on-authdeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.1: Add DefaultTeamAlias field on auth.Deps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-52-add-defaultteamalias-field-on-envkeysdeps-remove-the-package-constant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.2: Add DefaultTeamAlias field on envkeys.Deps; remove the package constant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-53-thread-cfgdefaultteamalias-through-platformapideps-into-both-sub-deps-constructors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.3: Thread cfg.DefaultTeamAlias through platformapi.Deps into both sub-Deps constructors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-54-unit-tests-deps-wiring-handler-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5.4: Unit tests — Deps wiring + handler behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-helm-chart-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — Helm chart wiring
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6 — Helm chart wiring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-61-add-defaultteamalias-to-valuesyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.1: Add defaultTeamAlias to values.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-62-wire-the-env-var-into-both-deployment-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.2: Wire the env var into both Deployment templates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-63-helm-template-smoke-lint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.3: Helm-template smoke + lint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-64-unit-test-the-chart-with-helm-unittest-if-already-used-or-with-a-go-based-template-assertion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6.4: Unit test the chart with helm-unittest (if already used) OR with a Go-based template assertion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-end-to-end-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — End-to-end validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 7 — End-to-end validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-71-new-e2e-ginkgo-case-non-default-alias-propagates-through-both-deployments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7.1: New e2e Ginkgo case — non-default alias propagates through both Deployments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Documentation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 8 — Documentation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-81-update-claudemd-common-failure-modes-with-the-alias-mismatch-trap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.1: Update CLAUDE.md "Common failure modes" with the alias-mismatch trap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-82-update-the-inline-doc-comments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.2: Update the inline doc comments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-83-append-to-changelogmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8.3: Append to CHANGELOG.md
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-9-final-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 — Final gate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 9 — Final gate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-91-run-the-full-pre-commit-pre-push-battery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.1: Run the full pre-commit / pre-push battery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-92-self-audit-against-todo-15-acceptance-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.2: Self-audit against TODO §15 acceptance criteria
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-93-push-and-open-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9.3: Push and open PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="make-litellm-default-team-alias-configurable-at-operator-startup">Make LiteLLM default-team alias configurable at operator startup<a class="headerlink" href="#make-litellm-default-team-alias-configurable-at-operator-startup" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For Claude:</strong> REQUIRED SUB-SKILL: Use <code>superpowers:executing-plans</code> to implement this plan task-by-task.</p>
+</blockquote>
+<p><strong>Goal:</strong> Replace the three hardcoded LiteLLM team-alias <code>"default"</code> literals with a single deployer-controlled value sourced from <code>--default-team-alias</code> (cobra flag) / <code>ACH_DEFAULT_TEAM_ALIAS</code> (env mirror). Operator-bootstrapped team (commit <code>10a845c</code> J.5) and every SSO callback (commits <code>aaa175b</code>, <code>10a845c</code> J.4 + J.5) MUST resolve the same alias from the same canonical source.</p>
+<p><strong>Architecture:</strong> Single value, two wiring fan-outs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>        ┌────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │ cobra flag --default-team-alias│
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        │  env mirror ACH_DEFAULT_TEAM_  │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        │            ALIAS               │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        │  default literal &quot;default&quot;     │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        └────────────────┬───────────────┘
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                         │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>              ┌──────────┴──────────┐
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>              ▼                     ▼
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>   `ach operator`              `ach platform-api`
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │                            │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        │                  ┌─────────┼──────────┐
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        ▼                  ▼         ▼          ▼
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>LiteLLMConnection-     auth.Deps   envkeys.Deps  …
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>Reconciler.            .DefaultTeam .DefaultTeam
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>DefaultTeamAlias       Alias        Alias
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        │                  │         │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>        ▼                  ▼         ▼
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>client.EnsureDefault   provisionUser CreateHandler
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>Team(ctx, alias)       (reads from   (reads from
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>                       deps.DTA)     deps.DTA)
+</code></pre></div>
+<p><strong>Severity:</strong> LOW (enhancement). The literal <code>"default"</code> continues to work for the bootstrap deployment topology; this plan opens the door to tenant-specific aliases without code patches.</p>
+<p><strong>Tech Stack (no churn):</strong>
+- cobra/viper (already used in <code>cmd/ach/cmd/</code>)
+- <code>internal/config</code> helpers: <code>EnvOr(key, fallback string) string</code> (the pattern every other env-mirror flag in <code>operator.go</code> and <code>platform_api.go</code> already follows)
+- Go 1.26 + controller-runtime v0.24.1 (no version bump)
+- Helm chart at <code>deploy/helm/ach/</code> (template edit only)</p>
+<p><strong>Working directory:</strong> <code>/home/jcm/Projects/ach/</code></p>
+<p><strong>Branch:</strong> <code>feat/default-team-alias-configurable</code></p>
+<p><strong>Cross-plan refs:</strong>
+- DEPENDS ON the §2 domain port (<code>docs/plans/2026-05-25-ach-domain-port.md</code>) for the SSO <code>auth.Deps</code> + EnvKey <code>envkeys.Deps</code> surfaces. Both have landed (commit <code>10a845c</code> for J.4 + J.5, baseline already in <code>main</code>).
+- INDEPENDENT of TODO §1, §3, §5, §6, §7, §8, §9, §10, §11, §16 — no overlapping files.
+- Closes TODO §15.</p>
+<p><strong>Out of scope (DO NOT touch in this plan):</strong>
+- Forwarder (<code>internal/forwarder/</code>) — does not touch the default team; nothing to configure there.
+- Content-service (<code>internal/contentservice/</code>) — same.
+- CRD-level configuration of the alias (e.g. a field on <code>LiteLLMConnection.Spec</code>). The decision is "startup config, not CR field" because the alias is a per-deployment identity-model knob, not a per-CR runtime parameter; threading it through the CRD would force every reconcile to re-read the spec and would let a single CR override the operator-wide identity model. Out of scope; revisit only if multi-tenant per-CR aliases become a documented requirement.
+- The bootstrap deployment topology (chart <code>defaults</code> ship <code>defaultTeamAlias: "default"</code> so existing deployers see zero behavior change).
+- Renaming <code>OutcomeDefaultTeamMissing</code> audit outcome string — even when the alias is <code>"engineering"</code>, the outcome name remains <code>default_team_missing</code> because the <strong>semantic</strong> "the operator's canonical bootstrap team is unreachable" is unchanged. Renaming would force a breaking change in downstream audit-log consumers. The user-visible message in <code>classifyProvisionError</code> already says "default team unreachable" — that phrasing stays; deployers reading it know their canonical team alias is whatever they configured.</p>
+<p><strong>Definition of done for this plan:</strong>
+1. <code>git grep -nE '"default"' internal/litellm/team.go internal/platformapi/auth/sso.go internal/platformapi/envkeys/handler.go</code> returns ZERO matches in production code (test fixtures may still use <code>"default"</code> because that is the chart default).
+2. <code>git grep -n 'defaultTeamAlias\b\|defaultTeam\b' internal/</code> shows the constants are GONE; only field/parameter names remain.
+3. <code>./scripts/dev.sh make unit</code> PASS. New unit tests assert: (a) every <code>Deps</code> constructor wires <code>DefaultTeamAlias</code> through, (b) <code>provisionUser</code> and <code>envkeys.CreateHandler</code> use the dep value (not a string literal), (c) <code>RESTClient.EnsureDefaultTeam(ctx, "engineering")</code> calls <code>ListTeamsByAlias(ctx, "engineering")</code> and on empty calls <code>CreateTeam(...)</code> with <code>TeamAlias: "engineering"</code>.
+4. <code>./scripts/dev.sh make envtest-run</code> PASS — the LiteLLMConnectionReconciler envtest exercises the new <code>DefaultTeamAlias</code> field via the kept wiring (re-uses existing <code>wiringFakeLiteLLM</code>).
+5. <code>./scripts/dev.sh make e2e-focus FOCUS="default team alias configurable"</code> PASS — new e2e case deploys with <code>--set defaultTeamAlias=engineering</code>, asserts (a) team with alias=engineering exists in LiteLLM, (b) operator and platform-api Deployments carry <code>ACH_DEFAULT_TEAM_ALIAS=engineering</code> in env (<code>kubectl describe deploy</code>), (c) <code>kubectl logs deploy/ach-operator | grep -F 'default team alias'</code> shows the configured value at boot.
+6. <code>make pre-push</code> GREEN (15/15) including SPDX + lint + govulncheck.
+7. Single commit per phase using conventional commit format (<code>feat(litellm)</code>, <code>feat(platform-api)</code>, <code>feat(operator)</code>, <code>feat(helm)</code>, <code>docs(claude-md)</code>).</p>
+<hr />
+<h2 id="phase-0-branch-setup">Phase 0 — Branch setup<a class="headerlink" href="#phase-0-branch-setup" title="Permanent link">&para;</a></h2>
+<h3 id="task-01-confirm-cwd-and-create-branch">Task 0.1: Confirm cwd and create branch<a class="headerlink" href="#task-01-confirm-cwd-and-create-branch" title="Permanent link">&para;</a></h3>
+<p><strong>Step 1:</strong> Verify cwd.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>/home/jcm/Projects/ach
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">pwd</span><span class="w">                       </span><span class="c1"># must print: /home/jcm/Projects/ach</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>branch<span class="w"> </span>--show-current
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>git<span class="w"> </span>status<span class="w"> </span>--short
+</code></pre></div>
+<p><strong>Expected:</strong> <code>pwd</code> is <code>/home/jcm/Projects/ach</code>. The pre-existing modified files in <code>git status --short</code> (<code>.gitignore</code>, <code>go.sum</code>, <code>internal/platformapi/auth/sso.go</code>, <code>TODO</code>) are unrelated work; DO NOT include them in this plan's commits.</p>
+<p><strong>Step 2:</strong> Stash unrelated WIP and branch from <code>main</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>stash<span class="w"> </span>push<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;pre-default-team-alias WIP&quot;</span><span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>.gitignore<span class="w"> </span>go.sum<span class="w"> </span>internal/platformapi/auth/sso.go<span class="w"> </span>TODO<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>git<span class="w"> </span>fetch<span class="w"> </span>origin<span class="w"> </span>main
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>git<span class="w"> </span>checkout<span class="w"> </span>-B<span class="w"> </span>feat/default-team-alias-configurable<span class="w"> </span>origin/main
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>-5
+</code></pre></div>
+<p><strong>Expected:</strong> HEAD matches <code>origin/main</code> HEAD (last commit <code>aaa175b fix(environment): J.6 ...</code>).</p>
+<p><strong>Step 3:</strong> Pop stash if created.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>stash<span class="w"> </span>list
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>stash<span class="w"> </span>pop<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+</code></pre></div>
+<p><strong>Commit:</strong> none.</p>
+<hr />
+<h2 id="phase-1-pre-flight-inventory-no-code-changes">Phase 1 — Pre-flight inventory (no code changes)<a class="headerlink" href="#phase-1-pre-flight-inventory-no-code-changes" title="Permanent link">&para;</a></h2>
+<h3 id="task-11-enumerate-every-hardcoded-default-and-every-ensuredefaultteam-call-site">Task 1.1: Enumerate every hardcoded <code>"default"</code> and every <code>EnsureDefaultTeam</code> call site<a class="headerlink" href="#task-11-enumerate-every-hardcoded-default-and-every-ensuredefaultteam-call-site" title="Permanent link">&para;</a></h3>
+<p><strong>Why first:</strong> Before widening the interface we need an exhaustive list of touch points so later tasks land them all in one atomic widening (no partial migration leaves the <code>Client</code> interface broken). Output of this task is a single sanity-check command output saved as a scratch list — NOT a commit.</p>
+<p><strong>Step 1:</strong> Run the three discovery greps from the repo root.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">cd</span><span class="w"> </span>/home/jcm/Projects/ach
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># A. The two production sites that use the literal &quot;default&quot; as alias</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>git<span class="w"> </span>grep<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;&quot;default&quot;&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>internal/litellm/team.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>internal/platformapi/auth/sso.go<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span>internal/platformapi/envkeys/handler.go
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># B. Every implementor / caller of EnsureDefaultTeam</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>git<span class="w"> </span>grep<span class="w"> </span>-nE<span class="w"> </span><span class="s1">&#39;EnsureDefaultTeam&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">  </span>internal/litellm<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span>internal/connection<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span>internal/controller<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">  </span>internal/platformapi<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">  </span>internal/orphan
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="c1"># C. Package-level constants we will remove</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>git<span class="w"> </span>grep<span class="w"> </span>-nE<span class="w"> </span><span class="s1">&#39;const\s+(defaultTeamAlias|defaultTeam)\b&#39;</span><span class="w"> </span>internal/
+</code></pre></div>
+<p><strong>Step 2:</strong> Confirm output matches expected snapshot (snapshot taken at plan-write time against commit <code>aaa175b</code>):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Line</th>
+<th>Token</th>
+<th>Disposition (later phases)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>internal/litellm/team.go</code></td>
+<td>18</td>
+<td><code>const defaultTeamAlias = "default"</code></td>
+<td>DELETE; alias becomes a method parameter</td>
+</tr>
+<tr>
+<td><code>internal/litellm/team.go</code></td>
+<td>30</td>
+<td><code>ListTeamsByAlias(ctx, defaultTeamAlias)</code></td>
+<td>use parameter</td>
+</tr>
+<tr>
+<td><code>internal/litellm/team.go</code></td>
+<td>32</td>
+<td><code>%q, defaultTeamAlias)</code></td>
+<td>use parameter</td>
+</tr>
+<tr>
+<td><code>internal/litellm/team.go</code></td>
+<td>37</td>
+<td><code>TeamAlias: defaultTeamAlias</code></td>
+<td>use parameter</td>
+</tr>
+<tr>
+<td><code>internal/litellm/team.go</code></td>
+<td>38</td>
+<td><code>%q, defaultTeamAlias)</code></td>
+<td>use parameter</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/auth/sso.go</code></td>
+<td>503</td>
+<td><code>ListTeamsByAlias(ctx, "default")</code></td>
+<td>read from <code>deps.DefaultTeamAlias</code></td>
+</tr>
+<tr>
+<td><code>internal/platformapi/auth/sso.go</code></td>
+<td>510</td>
+<td><code>"LiteLLM has no team with alias 'default'"</code></td>
+<td>template the alias into the error</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/auth/sso.go</code></td>
+<td>522</td>
+<td><code>Teams: []string{"default"}</code></td>
+<td><code>[]string{deps.DefaultTeamAlias}</code></td>
+</tr>
+<tr>
+<td><code>internal/platformapi/envkeys/handler.go</code></td>
+<td>120</td>
+<td><code>const defaultTeam = "default"</code></td>
+<td>DELETE; field on <code>Deps</code></td>
+</tr>
+<tr>
+<td><code>internal/platformapi/envkeys/handler.go</code></td>
+<td>314</td>
+<td><code>Teams: []string{defaultTeam}</code></td>
+<td><code>[]string{deps.DefaultTeamAlias}</code></td>
+</tr>
+<tr>
+<td><code>internal/platformapi/envkeys/handler.go</code></td>
+<td>329</td>
+<td><code>TeamMemberAdd(ctx, defaultTeam, ...)</code></td>
+<td><code>TeamMemberAdd(ctx, deps.DefaultTeamAlias, ...)</code> (see Pitfall §2 below)</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/envkeys/handler.go</code></td>
+<td>334</td>
+<td><code>"team", defaultTeam</code></td>
+<td><code>"team", deps.DefaultTeamAlias</code></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th><code>EnsureDefaultTeam</code> site</th>
+<th>Disposition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>internal/litellm/client.go:150</code></td>
+<td>Widen interface: <code>EnsureDefaultTeam(ctx context.Context, alias string) error</code></td>
+</tr>
+<tr>
+<td><code>internal/litellm/team.go:29</code></td>
+<td>Method signature changes; body uses parameter</td>
+</tr>
+<tr>
+<td><code>internal/litellm/noop.go:142</code></td>
+<td>Signature changes; body logs the alias</td>
+</tr>
+<tr>
+<td><code>internal/connection/client.go:137</code></td>
+<td>Wrapper forwards <code>alias</code></td>
+</tr>
+<tr>
+<td><code>internal/controller/ach/litellmconnection_controller.go:165</code></td>
+<td>Caller passes <code>r.DefaultTeamAlias</code></td>
+</tr>
+<tr>
+<td><code>internal/controller/ach/main_wiring_envtest_test.go:117</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/teams/lookup_test.go:177</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/hydrate/handler_test.go:585</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/admin/handler_test.go:491</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/envkeys/handler_test.go:1362</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/platformapi/environments/handler_test.go:574</code></td>
+<td>Test fake signature update</td>
+</tr>
+<tr>
+<td><code>internal/orphan/runnable_test.go:485</code></td>
+<td>Test fake signature update</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Pitfalls captured by this inventory:</strong></p>
+<ol>
+<li>
+<p>The <code>envkeys/handler.go:329</code> call site is <code>TeamMemberAdd(ctx, defaultTeam, userInfo.UserID, "user")</code> — note that it passes the <strong>alias</strong> as the <code>team_id</code> argument. The SSO callback (<code>auth/sso.go</code>) takes the more-correct route of resolving the team_id from the alias via <code>ListTeamsByAlias</code> before calling <code>TeamMemberAdd</code>. The envkeys path is "incorrect but tolerated" because LiteLLM treats unknown team_ids gracefully under the duplicate-add-tolerant comment immediately below. This plan PRESERVES that behavior verbatim — passing <code>deps.DefaultTeamAlias</code> through is the literal substitution. Fixing the alias-vs-team_id confusion is a separate concern (call it TODO §15-followup) and would change observable error handling; out of scope here.</p>
+</li>
+<li>
+<p>The <code>EnsureDefaultTeam</code> interface widening MUST land atomically with every implementor (RESTClient + NoopClient + connection.Client) AND every test fake — otherwise the build breaks. Phase 2 below does the widening as a single commit.</p>
+</li>
+</ol>
+<p><strong>Commit:</strong> none (discovery only; output is for the implementer's eyes).</p>
+<hr />
+<h2 id="phase-2-widen-the-litellm-client-interface">Phase 2 — Widen the LiteLLM Client interface<a class="headerlink" href="#phase-2-widen-the-litellm-client-interface" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Every downstream change in Phases 3-5 depends on <code>EnsureDefaultTeam</code> accepting an alias parameter. If we widen the interface in a later phase, the intermediate phases leave the build broken. Phase 2 is one atomic commit that:
+- changes <code>Client.EnsureDefaultTeam</code> signature
+- changes <code>RESTClient</code>, <code>NoopClient</code>, <code>connection.Client</code> implementations
+- changes every test-fake satisfier across the 7 files in the inventory
+- temporarily leaves <code>LiteLLMConnectionReconciler.Reconcile</code> calling <code>client.EnsureDefaultTeam(ctx, "default")</code> — Phase 4 will replace the literal with <code>r.DefaultTeamAlias</code></p>
+<p>This phase changes ZERO behavior (still alias="default") so its tests can be a strict drop-in: add <code>, "default"</code> to every existing call.</p>
+<h3 id="task-21-add-the-alias-parameter-to-the-interface-and-every-implementor">Task 2.1: Add the alias parameter to the interface and every implementor<a class="headerlink" href="#task-21-add-the-alias-parameter-to-the-interface-and-every-implementor" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- <code>internal/litellm/client.go</code> (interface signature + docstring)
+- <code>internal/litellm/team.go</code> (RESTClient body — drop the const, use the parameter)
+- <code>internal/litellm/noop.go</code> (NoopClient body — log the alias)
+- <code>internal/connection/client.go</code> (wrapper forwards)</p>
+<p><strong>Step 1:</strong> Edit <code>internal/litellm/client.go</code> around line 140-150.</p>
+<p>Replace the interface method signature:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1">// EnsureDefaultTeam is the operator-side bootstrap call that</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1">// guarantees LiteLLM has at least one Team with the configured</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1">// alias (sourced from --default-team-alias / ACH_DEFAULT_TEAM_ALIAS</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1">// at operator startup; default &quot;default&quot; preserves the historical</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1">// bootstrap topology). Idempotent: list by alias first, only POST</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1">// /team/new on empty. Called by the LiteLLMConnection reconciler</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1">// after a successful probe so we never need the deployer to</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1">// hand-seed the team via cluster.sh / curl.</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1">//</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1">// The alias is a startup-time configuration value and stays stable</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1">// across the operator process lifetime; the parameter exists so</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1">// the same RESTClient can be reused by tests that want to assert</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1">// against multiple aliases without recompiling.</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1">//</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="c1">// Returns nil on success (team already present OR newly created).</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1">// Returns wrapped error on LiteLLM unreachable / 5xx / unauthorized</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="c1">// — caller logs and continues; the next reconcile retries.</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> Edit <code>internal/litellm/team.go</code>:
+- DELETE lines 12-18 (the <code>defaultTeamAlias</code> constant block — comment too).
+- Change the method signature on line 29 to <code>func (c *RESTClient) EnsureDefaultTeam(ctx context.Context, alias string) error</code>.
+- Replace every body reference to <code>defaultTeamAlias</code> with <code>alias</code> (lines 30, 32, 37, 38 per the inventory).
+- Update the function-level docstring to mention "the configured alias" instead of "defaultTeamAlias".</p>
+<p>The resulting body MUST be:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1">// EnsureDefaultTeam guarantees LiteLLM has at least one Team with</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="c1">// the configured alias. Idempotent — list-first via</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1">// ListTeamsByAlias, only POST /team/new on empty. Called by the</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1">// LiteLLMConnection reconciler after a successful probe so the</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1">// operator-side bootstrap converges without deployer intervention.</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1">//</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1">// The alias is supplied by the caller (sourced from</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1">// --default-team-alias / ACH_DEFAULT_TEAM_ALIAS at operator</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="c1">// startup). Tests may invoke this directly with arbitrary</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="c1">// aliases to assert behavior across multi-tenant configurations.</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="c1">//</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="c1">// Returns nil if the team already exists OR was just created.</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="c1">// Returns wrapped error on LiteLLM unreachable / 5xx /</span>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="c1">// unauthorized — caller logs and continues.</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">RESTClient</span><span class="p">)</span><span class="w"> </span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="nx">existing</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">ListTeamsByAlias</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="p">)</span>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;ensure default team: list by alias %q: %w&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">existing</span><span class="p">)</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">CreateTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">NewTeamRequest</span><span class="p">{</span><span class="nx">TeamAlias</span><span class="p">:</span><span class="w"> </span><span class="nx">alias</span><span class="p">});</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;ensure default team: create %q: %w&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 3:</strong> Edit <code>internal/litellm/noop.go</code> around line 142.</p>
+<p>Replace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">NoopClient</span><span class="p">)</span><span class="w"> </span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">_</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span><span class="nx">c</span><span class="p">.</span><span class="nx">Log</span><span class="p">.</span><span class="nx">Info</span><span class="p">(</span><span class="s">&quot;stub: would ensure LiteLLM default team&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">}</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">NoopClient</span><span class="p">)</span><span class="w"> </span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">_</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span><span class="nx">c</span><span class="p">.</span><span class="nx">Log</span><span class="p">.</span><span class="nx">Info</span><span class="p">(</span><span class="s">&quot;stub: would ensure LiteLLM default team&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;alias&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 4:</strong> Edit <code>internal/connection/client.go</code> around line 137-143.</p>
+<p>Replace the wrapper signature + body:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">current</span><span class="p">()</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">err</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="p">)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 5:</strong> Build (compile-only) to confirm the interface assertions on <code>RESTClient</code>, <code>NoopClient</code>, <code>connection.Client</code> still hold.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./internal/litellm/...<span class="w"> </span>./internal/connection/...
+</code></pre></div>
+<p><strong>Expected:</strong> clean build (no error). The next step updates the controller + test fakes that still call the old signature; those packages will not build YET, which is fine — Task 2.2 closes the gap atomically in the same commit.</p>
+<h3 id="task-22-update-every-test-fake-and-the-temporary-controller-call-site">Task 2.2: Update every test fake and the temporary controller call site<a class="headerlink" href="#task-22-update-every-test-fake-and-the-temporary-controller-call-site" title="Permanent link">&para;</a></h3>
+<p><strong>Why same commit:</strong> A widening of <code>EnsureDefaultTeam</code> that leaves any caller compiling against the old signature is a broken commit. Land all the touch-ups together.</p>
+<p><strong>Files (in inventory order):</strong>
+- <code>internal/controller/ach/litellmconnection_controller.go:165</code> — TEMPORARILY pass the literal <code>"default"</code>. Phase 4 replaces with <code>r.DefaultTeamAlias</code>.
+- <code>internal/controller/ach/main_wiring_envtest_test.go:117</code>
+- <code>internal/platformapi/teams/lookup_test.go:177</code>
+- <code>internal/platformapi/hydrate/handler_test.go:585</code>
+- <code>internal/platformapi/admin/handler_test.go:491</code>
+- <code>internal/platformapi/envkeys/handler_test.go:1362</code>
+- <code>internal/platformapi/environments/handler_test.go:574</code>
+- <code>internal/orphan/runnable_test.go:485</code></p>
+<p><strong>Step 1:</strong> Edit <code>internal/controller/ach/litellmconnection_controller.go</code> around line 165.</p>
+<p>Replace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default&quot;</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+</code></pre></div>
+<p>Leave the surrounding comment block alone (Phase 4 rewrites it).</p>
+<p><strong>Step 2:</strong> For each test fake, change the method signature from <code>EnsureDefaultTeam(_ context.Context) error</code> to <code>EnsureDefaultTeam(_ context.Context, _ string) error</code>. The bodies are all <code>return nil</code> — leave them.</p>
+<p>The minimal edit per file is the signature line; no test assertions reference the alias yet.</p>
+<p><strong>Step 3:</strong> Compile-and-test.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./...
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint-changed
+</code></pre></div>
+<p><strong>Expected:</strong> all green. Unit suite previously green stays green because no behavior changed — just signatures.</p>
+<h3 id="task-23-new-unit-test-restclientensuredefaultteam-uses-the-supplied-alias">Task 2.3: New unit test — RESTClient.EnsureDefaultTeam uses the supplied alias<a class="headerlink" href="#task-23-new-unit-test-restclientensuredefaultteam-uses-the-supplied-alias" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/litellm/team_test.go</code> (the file already exists per the directory listing).</p>
+<p><strong>Step 1:</strong> Read the existing test file once to match its setup style (httptest fakeserver + RESTClient wiring).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>head<span class="w"> </span>-80<span class="w"> </span>/home/jcm/Projects/ach/internal/litellm/team_test.go
+</code></pre></div>
+<p><strong>Step 2:</strong> Add a new sub-test <code>TestRESTClient_EnsureDefaultTeam_UsesSuppliedAlias</code> that:
+1. Spins a fake httptest server with two routed handlers:
+   - <code>GET /v2/team/list?team_alias=engineering&amp;page_size=100</code> → returns empty <code>{"teams":[]}</code> JSON
+   - <code>POST /team/new</code> → assert request body decodes to <code>NewTeamRequest{TeamAlias:"engineering"}</code>; respond with <code>{"team_id":"t-abc","team_alias":"engineering"}</code> JSON
+2. Constructs a RESTClient pointed at the fake server.
+3. Calls <code>c.EnsureDefaultTeam(ctx, "engineering")</code>.
+4. Asserts the call returns nil AND that both fake handlers were hit exactly once.</p>
+<p>Also add <code>TestRESTClient_EnsureDefaultTeam_NoCreateWhenPresent</code>:
+1. Fake <code>GET /v2/team/list?team_alias=tenant-a&amp;page_size=100</code> returns one team <code>{"teams":[{"team_id":"t-1","team_alias":"tenant-a"}]}</code>.
+2. Fake <code>POST /team/new</code> handler asserts it is NEVER called (record a hit counter; the test fails if &gt;0 after the call).
+3. Calls <code>c.EnsureDefaultTeam(ctx, "tenant-a")</code>.
+4. Asserts nil error AND the create handler hit counter is 0.</p>
+<p><strong>Step 3:</strong> Run.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/litellm/...
+</code></pre></div>
+<p><strong>Expected:</strong> both new tests PASS plus the pre-existing suite.</p>
+<p><strong>Commit (single commit for Phase 2):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>feat(litellm): TODO §15 — widen EnsureDefaultTeam interface to accept alias
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>The Client interface&#39;s EnsureDefaultTeam method now accepts the team
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>alias as an explicit parameter instead of reading a package-level
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>constant. RESTClient, NoopClient, and the connection.Client wrapper
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>forward the alias verbatim. Every test fake satisfies the new
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>signature.
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>This is a refactor-only step: the LiteLLMConnectionReconciler caller
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>still passes the literal &quot;default&quot;, so observable behavior is
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>unchanged. The downstream wiring (Phase 3-5) will source the alias
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>from the new --default-team-alias flag.
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-3-add-the-cobra-flag-env-mirror-to-both-operator-and-platform-api">Phase 3 — Add the cobra flag + env-mirror to both <code>operator</code> and <code>platform-api</code><a class="headerlink" href="#phase-3-add-the-cobra-flag-env-mirror-to-both-operator-and-platform-api" title="Permanent link">&para;</a></h2>
+<p><strong>Why two subcommands:</strong> Both modes need the alias — the operator-side bootstrap (Phase 4) AND the SSO/EnvKey paths (Phase 5). They run in separate Pods with separate flag-sets; the flag MUST be declared on each so both Deployments can carry the env var.</p>
+<h3 id="task-31-add-the-flag-to-cmdachcmdoperatorgo">Task 3.1: Add the flag to <code>cmd/ach/cmd/operator.go</code><a class="headerlink" href="#task-31-add-the-flag-to-cmdachcmdoperatorgo" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>cmd/ach/cmd/operator.go</code></p>
+<p><strong>Step 1:</strong> Locate the flag-declaration block near line 86-107 (between <code>metricsAddr</code> and the <code>zap.Options{}</code> line). Choose to add the new flag right after the <code>enableHTTP2</code> declaration so the visual grouping puts "ACH-domain configuration" together (vs the controller-runtime infra flags above).</p>
+<p><strong>Step 2:</strong> Add a local variable and flag declaration:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kd">var</span><span class="w"> </span><span class="nx">defaultTeamAlias</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nx">flag</span><span class="p">.</span><span class="nx">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">defaultTeamAlias</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default-team-alias&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span><span class="nx">config</span><span class="p">.</span><span class="nx">EnvOr</span><span class="p">(</span><span class="s">&quot;ACH_DEFAULT_TEAM_ALIAS&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default&quot;</span><span class="p">),</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="s">&quot;LiteLLM team alias every SSO-provisioned user is enrolled into &quot;</span><span class="o">+</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">        </span><span class="s">&quot;and the operator bootstraps on LiteLLMConnection sync. &quot;</span><span class="o">+</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">        </span><span class="s">&quot;Defaults to \&quot;default\&quot;; deployers may pick \&quot;engineering\&quot;, &quot;</span><span class="o">+</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">        </span><span class="s">&quot;\&quot;tenant-a\&quot;, etc. Must be the SAME value across operator and &quot;</span><span class="o">+</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">        </span><span class="s">&quot;platform-api Pods (the chart wires both from the single &quot;</span><span class="o">+</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">        </span><span class="s">&quot;`defaultTeamAlias` value).&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Step 3:</strong> Log the resolved value at startup (right after the existing <code>operatorSetupLog.Info("plugin size limit configured", ...)</code> line near 137):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nx">operatorSetupLog</span><span class="p">.</span><span class="nx">Info</span><span class="p">(</span><span class="s">&quot;default team alias configured&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;alias&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">defaultTeamAlias</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Step 4:</strong> Pass the value into <code>LiteLLMConnectionReconciler</code> (Phase 4 adds the field; for now we just thread the variable into scope so Phase 4 is a one-line struct edit).</p>
+<p>Locate the reconciler construction at lines 270-278. The full struct literal will be updated in Phase 4; for Phase 3 we ONLY add the local variable and the log line.</p>
+<p><strong>Step 5:</strong> Build + lint.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint-changed
+</code></pre></div>
+<p><strong>Expected:</strong> clean. The variable <code>defaultTeamAlias</code> will be flagged as "declared but not used" — that's intentional and resolved in Phase 4. To keep this phase green-compile, add <code>_ = defaultTeamAlias</code> immediately after the log line as a temporary marker (delete in Phase 4).</p>
+<h3 id="task-32-add-the-flag-to-cmdachcmdplatform_apigo">Task 3.2: Add the flag to <code>cmd/ach/cmd/platform_api.go</code><a class="headerlink" href="#task-32-add-the-flag-to-cmdachcmdplatform_apigo" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>cmd/ach/cmd/platform_api.go</code></p>
+<p><strong>Step 1:</strong> Add <code>DefaultTeamAlias string</code> to the <code>platformAPIConfig</code> struct (alongside <code>Namespace string</code> near line 91).</p>
+<p><strong>Step 2:</strong> In <code>validatePlatformAPIConfig</code> (line 93+), source the value:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nx">cfg</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">config</span><span class="p">.</span><span class="nx">EnvOr</span><span class="p">(</span><span class="s">&quot;ACH_DEFAULT_TEAM_ALIAS&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Add this line right before <code>cfg.AllowlistPath = ...</code> so the ACH-domain config sits together.</p>
+<p><strong>Step 3:</strong> Log the value in <code>runPlatformAPI</code> (line 301 block). Replace the existing <code>logger.Info</code> call's args with the additional kv:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nx">logger</span><span class="p">.</span><span class="nx">Info</span><span class="p">(</span><span class="s">&quot;platform-api starting&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">    </span><span class="s">&quot;bind&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">BindAddr</span><span class="p">,</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">    </span><span class="s">&quot;namespace&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">Namespace</span><span class="p">,</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">    </span><span class="s">&quot;baseURL&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">BaseURL</span><span class="p">,</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">    </span><span class="s">&quot;defaultTeamAlias&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">,</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="p">)</span>
+</code></pre></div>
+<p><strong>Step 4:</strong> Thread <code>cfg.DefaultTeamAlias</code> into the <code>platformapi.Deps</code> struct construction (lines 247-263). Add a new key — but the field doesn't exist yet on <code>platformapi.Deps</code>. Phase 5 owns that struct addition; for Phase 3 we add a temporary marker:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nx">_</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="w"> </span><span class="c1">// wired into Deps in Phase 5</span>
+</code></pre></div>
+<p>after the <code>out.server = platformapi.Deps{...}</code> construction.</p>
+<p><strong>Step 5:</strong> Build + lint.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint-changed
+</code></pre></div>
+<p><strong>Expected:</strong> clean.</p>
+<h3 id="task-33-unit-test-the-flagenv-precedence">Task 3.3: Unit test the flag/env precedence<a class="headerlink" href="#task-33-unit-test-the-flagenv-precedence" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> new file <code>cmd/ach/cmd/operator_flag_test.go</code> (and analogous <code>platform_api_flag_test.go</code>).</p>
+<p>Use <code>t.Setenv</code> (stdlib <code>testing</code> since Go 1.17) to assert that <code>config.EnvOr("ACH_DEFAULT_TEAM_ALIAS", "default")</code> honors the env var. Two sub-tests:</p>
+<ol>
+<li><code>Unset</code> → returns <code>"default"</code>.</li>
+<li><code>Set=engineering</code> → returns <code>"engineering"</code>.</li>
+</ol>
+<p>This is a thin assertion that doesn't require booting the whole cobra command (which would need a kubeconfig); it exercises the env-var-mirror contract that Phase 4 and 5 depend on.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./cmd/ach/...
+</code></pre></div>
+<p><strong>Commit (single commit for Phase 3):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>feat(operator,platform-api): TODO §15 — add --default-team-alias flag
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>Operator and platform-api subcommands now accept --default-team-alias
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>(env mirror ACH_DEFAULT_TEAM_ALIAS, default &quot;default&quot;). The value is
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>logged at startup but not yet wired into the reconciler / Deps; that
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>wiring lands in Phase 4 (operator) and Phase 5 (platform-api).
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-4-wire-the-alias-into-litellmconnectionreconciler">Phase 4 — Wire the alias into LiteLLMConnectionReconciler<a class="headerlink" href="#phase-4-wire-the-alias-into-litellmconnectionreconciler" title="Permanent link">&para;</a></h2>
+<h3 id="task-41-add-defaultteamalias-field-on-the-reconciler-struct">Task 4.1: Add <code>DefaultTeamAlias</code> field on the reconciler struct<a class="headerlink" href="#task-41-add-defaultteamalias-field-on-the-reconciler-struct" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/controller/ach/litellmconnection_controller.go</code></p>
+<p><strong>Step 1:</strong> Add the field to the struct near line 37-43:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">LiteLLMConnectionReconciler</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">    </span><span class="nx">client</span><span class="p">.</span><span class="nx">Client</span>
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="w">    </span><span class="nx">Scheme</span><span class="w">           </span><span class="o">*</span><span class="nx">runtime</span><span class="p">.</span><span class="nx">Scheme</span>
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="w">    </span><span class="nx">Cache</span><span class="w">            </span><span class="nx">connection</span><span class="p">.</span><span class="nx">CacheReader</span>
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a><span class="w">    </span><span class="nx">Namespace</span><span class="w">        </span><span class="kt">string</span>
+<a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a><span class="w">    </span><span class="c1">// DefaultTeamAlias is the LiteLLM team alias the operator</span>
+<a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a><span class="w">    </span><span class="c1">// bootstraps on every successful Reconcile (the &quot;operator-side</span>
+<a id="__codelineno-27-8" name="__codelineno-27-8" href="#__codelineno-27-8"></a><span class="w">    </span><span class="c1">// bootstrap&quot; branch at the end of Reconcile). Sourced from the</span>
+<a id="__codelineno-27-9" name="__codelineno-27-9" href="#__codelineno-27-9"></a><span class="w">    </span><span class="c1">// process-startup flag --default-team-alias / env var</span>
+<a id="__codelineno-27-10" name="__codelineno-27-10" href="#__codelineno-27-10"></a><span class="w">    </span><span class="c1">// ACH_DEFAULT_TEAM_ALIAS in cmd/ach/cmd/operator.go; defaulting</span>
+<a id="__codelineno-27-11" name="__codelineno-27-11" href="#__codelineno-27-11"></a><span class="w">    </span><span class="c1">// to &quot;default&quot; preserves the historical bootstrap topology.</span>
+<a id="__codelineno-27-12" name="__codelineno-27-12" href="#__codelineno-27-12"></a><span class="w">    </span><span class="c1">// All SSO-provisioned users are enrolled into the team with</span>
+<a id="__codelineno-27-13" name="__codelineno-27-13" href="#__codelineno-27-13"></a><span class="w">    </span><span class="c1">// this alias by the platform-api SSO callback (which reads the</span>
+<a id="__codelineno-27-14" name="__codelineno-27-14" href="#__codelineno-27-14"></a><span class="w">    </span><span class="c1">// same value from auth.Deps.DefaultTeamAlias) — operator and</span>
+<a id="__codelineno-27-15" name="__codelineno-27-15" href="#__codelineno-27-15"></a><span class="w">    </span><span class="c1">// platform-api MUST be configured with the same value, enforced</span>
+<a id="__codelineno-27-16" name="__codelineno-27-16" href="#__codelineno-27-16"></a><span class="w">    </span><span class="c1">// by the Helm chart wiring a single value into both env vars.</span>
+<a id="__codelineno-27-17" name="__codelineno-27-17" href="#__codelineno-27-17"></a><span class="w">    </span><span class="nx">DefaultTeamAlias</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-27-18" name="__codelineno-27-18" href="#__codelineno-27-18"></a><span class="w">    </span><span class="nx">Log</span><span class="w">              </span><span class="nx">logr</span><span class="p">.</span><span class="nx">Logger</span>
+<a id="__codelineno-27-19" name="__codelineno-27-19" href="#__codelineno-27-19"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> Update the call site at line 165 in <code>Reconcile</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="w">    </span><span class="nx">r</span><span class="p">.</span><span class="nx">Log</span><span class="p">.</span><span class="nx">Info</span><span class="p">(</span><span class="s">&quot;EnsureDefaultTeam failed; will retry on next reconcile&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="w">        </span><span class="s">&quot;alias&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;err&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">.</span><span class="nx">Error</span><span class="p">())</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="p">}</span>
+</code></pre></div>
+<p>Also update the surrounding comment block (lines 158-164) to reference "the configured team alias" instead of "canonical <code>default</code> team":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="c1">// Operator-side bootstrap: guarantee LiteLLM has the configured</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="c1">// team (alias from r.DefaultTeamAlias) before any SSO callback</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="c1">// fires. Idempotent — list-first, create only on empty. Failure</span>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="c1">// is logged + tolerated; the next reconcile (5 minutes) retries.</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="c1">// We deliberately do not fail the reconcile on this: the</span>
+<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a><span class="c1">// LiteLLMConnection itself is Synced=True (probe succeeded);</span>
+<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a><span class="c1">// only the team-seed side effect failed, which a transient</span>
+<a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a><span class="c1">// LiteLLM hiccup might cause.</span>
+</code></pre></div>
+<h3 id="task-42-wire-the-value-from-operatorgo-into-the-reconciler">Task 4.2: Wire the value from operator.go into the reconciler<a class="headerlink" href="#task-42-wire-the-value-from-operatorgo-into-the-reconciler" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>cmd/ach/cmd/operator.go</code></p>
+<p><strong>Step 1:</strong> Locate the reconciler construction at lines 270-278. Replace with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">(</span><span class="o">&amp;</span><span class="nx">achcontroller</span><span class="p">.</span><span class="nx">LiteLLMConnectionReconciler</span><span class="p">{</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="w">    </span><span class="nx">Client</span><span class="p">:</span><span class="w">           </span><span class="nx">mgr</span><span class="p">.</span><span class="nx">GetClient</span><span class="p">(),</span>
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a><span class="w">    </span><span class="nx">Scheme</span><span class="p">:</span><span class="w">           </span><span class="nx">mgr</span><span class="p">.</span><span class="nx">GetScheme</span><span class="p">(),</span>
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a><span class="w">    </span><span class="nx">Cache</span><span class="p">:</span><span class="w">            </span><span class="nx">connCache</span><span class="p">,</span>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="w">    </span><span class="nx">Namespace</span><span class="p">:</span><span class="w">        </span><span class="nx">watchNS</span><span class="p">,</span>
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a><span class="w">    </span><span class="nx">DefaultTeamAlias</span><span class="p">:</span><span class="w"> </span><span class="nx">defaultTeamAlias</span><span class="p">,</span>
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a><span class="w">    </span><span class="nx">Log</span><span class="p">:</span><span class="w">              </span><span class="nx">ctrl</span><span class="p">.</span><span class="nx">Log</span><span class="p">.</span><span class="nx">WithName</span><span class="p">(</span><span class="s">&quot;controller&quot;</span><span class="p">).</span><span class="nx">WithName</span><span class="p">(</span><span class="s">&quot;LiteLLMConnection&quot;</span><span class="p">),</span>
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a><span class="p">}).</span><span class="nx">SetupWithManager</span><span class="p">(</span><span class="nx">mgr</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-30-9" name="__codelineno-30-9" href="#__codelineno-30-9"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;unable to create controller LiteLLMConnection: %w&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-30-10" name="__codelineno-30-10" href="#__codelineno-30-10"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> Remove the temporary <code>_ = defaultTeamAlias</code> marker added in Phase 3.</p>
+<h3 id="task-43-unit-test-reconciler-passes-its-configured-alias">Task 4.3: Unit test — reconciler passes its configured alias<a class="headerlink" href="#task-43-unit-test-reconciler-passes-its-configured-alias" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/controller/ach/litellmconnection_controller_test.go</code> (already exists per the directory listing).</p>
+<p><strong>Step 1:</strong> Read existing test setup pattern (envtest+fake LiteLLM via <code>wiringFakeLiteLLM</code> at <code>main_wiring_envtest_test.go:117</code>).</p>
+<p><strong>Step 2:</strong> Promote <code>wiringFakeLiteLLM.EnsureDefaultTeam</code> to capture the received alias:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">wiringFakeLiteLLM</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="w">    </span><span class="c1">// ... existing fields ...</span>
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a><span class="w">    </span><span class="nx">lastEnsureAlias</span><span class="w"> </span><span class="kt">string</span>
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a><span class="p">}</span>
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">f</span><span class="w"> </span><span class="o">*</span><span class="nx">wiringFakeLiteLLM</span><span class="p">)</span><span class="w"> </span><span class="nx">EnsureDefaultTeam</span><span class="p">(</span><span class="nx">_</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">alias</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a><span class="w">    </span><span class="nx">f</span><span class="p">.</span><span class="nx">lastEnsureAlias</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">alias</span>
+<a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<a id="__codelineno-31-9" name="__codelineno-31-9" href="#__codelineno-31-9"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 3:</strong> Add a new sub-test <code>TestLiteLLMConnectionReconciler_EnsureDefaultTeam_UsesConfiguredAlias</code>:
+1. Construct reconciler with <code>DefaultTeamAlias: "engineering"</code>.
+2. Trigger a successful reconcile (the existing happy-path setup applies).
+3. Assert <code>fake.lastEnsureAlias == "engineering"</code>.</p>
+<p><strong>Step 4:</strong> Add <code>TestLiteLLMConnectionReconciler_EnsureDefaultTeam_DefaultAlias</code>:
+1. Construct reconciler with <code>DefaultTeamAlias: "default"</code> (the historical literal).
+2. Run reconcile.
+3. Assert <code>fake.lastEnsureAlias == "default"</code> — locks in the no-behavior-change for the default deployment.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/controller/ach/...<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span>TestLiteLLMConnectionReconciler_EnsureDefaultTeam
+</code></pre></div>
+<p><strong>Commit (single commit for Phase 4):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>feat(operator): TODO §15 — LiteLLMConnectionReconciler honors --default-team-alias
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>The operator-side bootstrap (EnsureDefaultTeam call after a
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a>successful LiteLLMConnection probe) now uses the alias from the
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>new --default-team-alias / ACH_DEFAULT_TEAM_ALIAS startup config
+<a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a>instead of the hardcoded literal &quot;default&quot;. Default value
+<a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a>preserves historical behavior.
+<a id="__codelineno-33-8" name="__codelineno-33-8" href="#__codelineno-33-8"></a>
+<a id="__codelineno-33-9" name="__codelineno-33-9" href="#__codelineno-33-9"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-5-wire-the-alias-into-platformapi-authdeps-and-envkeysdeps">Phase 5 — Wire the alias into platformapi <code>auth.Deps</code> and <code>envkeys.Deps</code><a class="headerlink" href="#phase-5-wire-the-alias-into-platformapi-authdeps-and-envkeysdeps" title="Permanent link">&para;</a></h2>
+<h3 id="task-51-add-defaultteamalias-field-on-authdeps">Task 5.1: Add <code>DefaultTeamAlias</code> field on <code>auth.Deps</code><a class="headerlink" href="#task-51-add-defaultteamalias-field-on-authdeps" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/platformapi/auth/sso.go</code></p>
+<p><strong>Step 1:</strong> Add the field to the <code>Deps</code> struct (around line 38-90). Place it right after <code>Namespace</code> and before <code>InsertPKFn</code> so it sits with the other namespace-scope ACH-domain config:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1">// DefaultTeamAlias is the LiteLLM team alias every SSO-</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="c1">// provisioned user is enrolled into (Hub §17 / API-02 fail-loud).</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="c1">// Sourced at process start from --default-team-alias /</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="c1">// ACH_DEFAULT_TEAM_ALIAS via cmd/ach/cmd/platform_api.go; the</span>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="c1">// chart wires the same value into the operator Deployment so the</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="c1">// operator-bootstrapped team and the SSO enrollment converge on</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="c1">// the same name. Default &quot;default&quot; preserves historical behavior.</span>
+<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a><span class="nx">DefaultTeamAlias</span><span class="w"> </span><span class="kt">string</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> Replace the literal <code>"default"</code> in <code>provisionUser</code> at lines 498-553.</p>
+<p>Line 503 — replace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="nx">defaultTeams</span><span class="p">,</span><span class="w"> </span><span class="nx">ltErr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">deps</span><span class="p">.</span><span class="nx">LiteLLM</span><span class="p">.</span><span class="nx">ListTeamsByAlias</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="nx">defaultTeams</span><span class="p">,</span><span class="w"> </span><span class="nx">ltErr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">deps</span><span class="p">.</span><span class="nx">LiteLLM</span><span class="p">.</span><span class="nx">ListTeamsByAlias</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">deps</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">)</span>
+</code></pre></div>
+<p>Line 510 — replace the error message:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="nx">err</span><span class="p">:</span><span class="w">  </span><span class="nx">errors</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="s">&quot;LiteLLM has no team with alias &#39;default&#39;&quot;</span><span class="p">),</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="nx">err</span><span class="p">:</span><span class="w">  </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;LiteLLM has no team with alias %q&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">deps</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">),</span>
+</code></pre></div>
+<p>(this requires <code>fmt</code> already imported in the file — confirm; it is not currently imported in <code>sso.go</code>. Add <code>"fmt"</code> to the import block.)</p>
+<p>Line 522 — replace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="nx">Teams</span><span class="p">:</span><span class="w">     </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">&quot;default&quot;</span><span class="p">},</span>
+</code></pre></div>
+<p>with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="nx">Teams</span><span class="p">:</span><span class="w">     </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="nx">deps</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">},</span>
+</code></pre></div>
+<p><strong>Step 3:</strong> The two <code>TeamMemberAdd</code> call sites at lines 532 and 550 use <code>defaultTeamID</code> (resolved from <code>ListTeamsByAlias</code>), NOT a string literal — those lines are already correct and need no change. Confirm with <code>grep -n 'TeamMemberAdd' internal/platformapi/auth/sso.go</code>.</p>
+<h3 id="task-52-add-defaultteamalias-field-on-envkeysdeps-remove-the-package-constant">Task 5.2: Add <code>DefaultTeamAlias</code> field on <code>envkeys.Deps</code>; remove the package constant<a class="headerlink" href="#task-52-add-defaultteamalias-field-on-envkeysdeps-remove-the-package-constant" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/platformapi/envkeys/handler.go</code></p>
+<p><strong>Step 1:</strong> DELETE the package constant block at lines 116-120:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="c1">// defaultTeam is the LiteLLM Team alias every first-SSO user gets</span>
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="c1">// enrolled into per Hub §17 (deployer concern). When LiteLLM rejects</span>
+<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="c1">// the TeamMemberAdd because the default Team does not exist, the</span>
+<a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a><span class="c1">// handler emits OutcomeDefaultTeamMissing.</span>
+<a id="__codelineno-41-5" name="__codelineno-41-5" href="#__codelineno-41-5"></a><span class="kd">const</span><span class="w"> </span><span class="nx">defaultTeam</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;default&quot;</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> Add the field to the <code>Deps</code> struct (around line 79-88). After <code>Namespace string</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="c1">// DefaultTeamAlias is the LiteLLM team alias every first-SSO user</span>
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a><span class="c1">// is enrolled into during the §8.2 CreateHandler flow. Sourced at</span>
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a><span class="c1">// process start from --default-team-alias / ACH_DEFAULT_TEAM_ALIAS</span>
+<a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a><span class="c1">// via cmd/ach/cmd/platform_api.go; the chart wires the same value</span>
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a><span class="c1">// into the operator Deployment so the operator-bootstrapped team</span>
+<a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a><span class="c1">// and the envkeys enrollment converge on the same name. Default</span>
+<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a><span class="c1">// &quot;default&quot; preserves historical behavior. NOTE: this handler</span>
+<a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a><span class="c1">// passes the alias as the team_id argument to TeamMemberAdd —</span>
+<a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a><span class="c1">// see the comment at the call site for the historical rationale</span>
+<a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a><span class="c1">// (preserved verbatim by TODO §15 to avoid scope creep).</span>
+<a id="__codelineno-42-11" name="__codelineno-42-11" href="#__codelineno-42-11"></a><span class="nx">DefaultTeamAlias</span><span class="w"> </span><span class="kt">string</span>
+</code></pre></div>
+<p><strong>Step 3:</strong> Replace the three <code>defaultTeam</code> references at lines 314, 329, 334:</p>
+<p>Line 314 — <code>Teams: []string{defaultTeam}</code> → <code>Teams: []string{deps.DefaultTeamAlias}</code>.</p>
+<p>Line 329 — <code>deps.LiteLLM.TeamMemberAdd(ctx, defaultTeam, userInfo.UserID, "user")</code> → <code>deps.LiteLLM.TeamMemberAdd(ctx, deps.DefaultTeamAlias, userInfo.UserID, "user")</code>.</p>
+<p>Line 334 — <code>"team", defaultTeam</code> → <code>"team", deps.DefaultTeamAlias</code>.</p>
+<h3 id="task-53-thread-cfgdefaultteamalias-through-platformapideps-into-both-sub-deps-constructors">Task 5.3: Thread <code>cfg.DefaultTeamAlias</code> through <code>platformapi.Deps</code> into both sub-Deps constructors<a class="headerlink" href="#task-53-thread-cfgdefaultteamalias-through-platformapideps-into-both-sub-deps-constructors" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>internal/platformapi/server.go</code> (or wherever <code>platformapi.New(deps)</code> reads <code>Deps</code> to construct the auth and envkeys handlers) — locate via:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;auth.Deps{\|envkeys.Deps{&quot;</span><span class="w"> </span>/home/jcm/Projects/ach/internal/platformapi/
+</code></pre></div>
+<p><strong>Step 1:</strong> Add <code>DefaultTeamAlias string</code> to <code>platformapi.Deps</code> (the top-level struct in <code>internal/platformapi/</code>, likely <code>server.go</code> or <code>deps.go</code>).</p>
+<p><strong>Step 2:</strong> Locate every construction of <code>auth.Deps{...}</code> and <code>envkeys.Deps{...}</code> inside <code>platformapi/</code>. For each, add <code>DefaultTeamAlias: deps.DefaultTeamAlias</code>.</p>
+<p><strong>Step 3:</strong> Edit <code>cmd/ach/cmd/platform_api.go</code> (line 247-263) — add <code>DefaultTeamAlias: cfg.DefaultTeamAlias,</code> to the <code>platformapi.Deps{...}</code> literal. Remove the temporary <code>_ = cfg.DefaultTeamAlias</code> marker added in Phase 3.</p>
+<h3 id="task-54-unit-tests-deps-wiring-handler-behavior">Task 5.4: Unit tests — Deps wiring + handler behavior<a class="headerlink" href="#task-54-unit-tests-deps-wiring-handler-behavior" title="Permanent link">&para;</a></h3>
+<p><strong>File 1:</strong> <code>internal/platformapi/auth/sso_test.go</code> (assumed to exist; if not, create it next to the production file).</p>
+<p>Add <code>TestProvisionUser_UsesDefaultTeamAliasFromDeps</code>:
+1. Build a fake LiteLLM that records every method call (<code>ListTeamsByAlias</code> arg, <code>UserNew.Teams</code> slice).
+2. Construct <code>auth.Deps{DefaultTeamAlias: "tenant-a", ...}</code>.
+3. Trigger <code>provisionUser(ctx, deps, "user@example.com")</code> directly (the function is package-private; reach it via the same package).
+4. Assert (a) <code>ListTeamsByAlias</code> was called with <code>"tenant-a"</code>, (b) on the not-found branch <code>UserNew.Teams</code> was <code>["tenant-a"]</code>.</p>
+<p>Add <code>TestProvisionUser_DefaultTeamMissing_MessageUsesAlias</code>:
+1. Fake <code>ListTeamsByAlias</code> returns empty.
+2. <code>DefaultTeamAlias: "engineering"</code>.
+3. Run provisionUser, capture the returned error.
+4. Assert the wrapped error message contains the substring <code>"engineering"</code>.</p>
+<p><strong>File 2:</strong> <code>internal/platformapi/envkeys/handler_test.go</code> (already exists).</p>
+<p>Add <code>TestCreateHandler_UsesDefaultTeamAliasFromDeps</code>:
+1. Build <code>envkeys.Deps{DefaultTeamAlias: "qa", LiteLLM: fakeRecordingClient, ...}</code>.
+2. Set up the fake LiteLLM so <code>UserInfoByEmail</code> returns 404 (first-time user branch).
+3. POST to CreateHandler.
+4. Assert recorded <code>UserNew.Teams == ["qa"]</code> and recorded <code>TeamMemberAdd(team_id, ...) == "qa"</code>.</p>
+<p><strong>File 3:</strong> <code>cmd/ach/cmd/platform_api_flag_test.go</code> (added in Phase 3) — extend to assert the value reaches <code>platformapi.Deps.DefaultTeamAlias</code>. Since <code>validatePlatformAPIConfig</code> returns the validated cfg, the assertion is simply:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a><span class="nx">t</span><span class="p">.</span><span class="nx">Setenv</span><span class="p">(</span><span class="s">&quot;ACH_DEFAULT_TEAM_ALIAS&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;tenant-a&quot;</span><span class="p">)</span>
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a><span class="c1">// + all the other required env vars to make validatePlatformAPIConfig succeed</span>
+<a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a><span class="nx">cfg</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">validatePlatformAPIConfig</span><span class="p">()</span>
+<a id="__codelineno-44-4" name="__codelineno-44-4" href="#__codelineno-44-4"></a><span class="nx">require</span><span class="p">.</span><span class="nx">NoError</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-44-5" name="__codelineno-44-5" href="#__codelineno-44-5"></a><span class="nx">require</span><span class="p">.</span><span class="nx">Equal</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;tenant-a&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="p">.</span><span class="nx">DefaultTeamAlias</span><span class="p">)</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/platformapi/auth/...
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./internal/platformapi/envkeys/...
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit-pkg<span class="w"> </span><span class="nv">PKG</span><span class="o">=</span>./cmd/ach/...
+</code></pre></div>
+<p><strong>Expected:</strong> all PASS.</p>
+<p><strong>Commit (single commit for Phase 5):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>feat(platform-api): TODO §15 — SSO + EnvKey handlers read DefaultTeamAlias from Deps
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>
+<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>auth.Deps and envkeys.Deps gain a DefaultTeamAlias field; the SSO
+<a id="__codelineno-46-4" name="__codelineno-46-4" href="#__codelineno-46-4"></a>provisionUser path and the EnvKey CreateHandler path now source the
+<a id="__codelineno-46-5" name="__codelineno-46-5" href="#__codelineno-46-5"></a>team alias from Deps instead of from package-level string literals.
+<a id="__codelineno-46-6" name="__codelineno-46-6" href="#__codelineno-46-6"></a>The cmd/ach/cmd/platform_api.go wiring feeds cfg.DefaultTeamAlias
+<a id="__codelineno-46-7" name="__codelineno-46-7" href="#__codelineno-46-7"></a>(from --default-team-alias / ACH_DEFAULT_TEAM_ALIAS) into both.
+<a id="__codelineno-46-8" name="__codelineno-46-8" href="#__codelineno-46-8"></a>
+<a id="__codelineno-46-9" name="__codelineno-46-9" href="#__codelineno-46-9"></a>The hardcoded literal &quot;default&quot; is GONE from internal/litellm/team.go,
+<a id="__codelineno-46-10" name="__codelineno-46-10" href="#__codelineno-46-10"></a>internal/platformapi/auth/sso.go, and internal/platformapi/envkeys/
+<a id="__codelineno-46-11" name="__codelineno-46-11" href="#__codelineno-46-11"></a>handler.go.
+<a id="__codelineno-46-12" name="__codelineno-46-12" href="#__codelineno-46-12"></a>
+<a id="__codelineno-46-13" name="__codelineno-46-13" href="#__codelineno-46-13"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-6-helm-chart-wiring">Phase 6 — Helm chart wiring<a class="headerlink" href="#phase-6-helm-chart-wiring" title="Permanent link">&para;</a></h2>
+<h3 id="task-61-add-defaultteamalias-to-valuesyaml">Task 6.1: Add <code>defaultTeamAlias</code> to values.yaml<a class="headerlink" href="#task-61-add-defaultteamalias-to-valuesyaml" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>deploy/helm/ach/values.yaml</code></p>
+<p><strong>Step 1:</strong> Insert after the <code>watchNamespace: ""</code> line (around line 28-29):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="c1"># defaultTeamAlias: the LiteLLM team alias the operator bootstraps on</span>
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a><span class="c1"># every successful LiteLLMConnection sync, and every SSO-provisioned</span>
+<a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a><span class="c1"># user is enrolled into. Maps to ACH_DEFAULT_TEAM_ALIAS on BOTH the</span>
+<a id="__codelineno-47-4" name="__codelineno-47-4" href="#__codelineno-47-4"></a><span class="c1"># operator and platformApi Deployments — keeping them in lockstep is</span>
+<a id="__codelineno-47-5" name="__codelineno-47-5" href="#__codelineno-47-5"></a><span class="c1"># the chart&#39;s responsibility. Default &quot;default&quot; matches the historical</span>
+<a id="__codelineno-47-6" name="__codelineno-47-6" href="#__codelineno-47-6"></a><span class="c1"># bootstrap topology. Multi-tenant deployers may pick &quot;engineering&quot;,</span>
+<a id="__codelineno-47-7" name="__codelineno-47-7" href="#__codelineno-47-7"></a><span class="c1"># &quot;tenant-a&quot;, etc.; the alias is purely a string identifier.</span>
+<a id="__codelineno-47-8" name="__codelineno-47-8" href="#__codelineno-47-8"></a><span class="nt">defaultTeamAlias</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;default&quot;</span>
+</code></pre></div>
+<h3 id="task-62-wire-the-env-var-into-both-deployment-templates">Task 6.2: Wire the env var into both Deployment templates<a class="headerlink" href="#task-62-wire-the-env-var-into-both-deployment-templates" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- <code>deploy/helm/ach/templates/operator-deployment.yaml</code>
+- <code>deploy/helm/ach/templates/platform-api-deployment.yaml</code></p>
+<p><strong>Step 1:</strong> In each Deployment's container <code>env:</code> block (line 71 for operator, line 68 for platform-api), add after the <code>ACH_NAMESPACE</code> entry:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACH_DEFAULT_TEAM_ALIAS</span>
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a><span class="w">              </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">.Values.defaultTeamAlias | quote</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+</code></pre></div>
+<p>The <code>| quote</code> filter ensures even single-token values render as YAML strings (defense against an unquoted boolean-looking alias like <code>"yes"</code> that YAML 1.1 would coerce).</p>
+<h3 id="task-63-helm-template-smoke-lint">Task 6.3: Helm-template smoke + lint<a class="headerlink" href="#task-63-helm-template-smoke-lint" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>lint<span class="w"> </span>deploy/helm/ach/
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>template<span class="w"> </span>ach<span class="w"> </span>deploy/helm/ach/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a><span class="w">  </span>--set<span class="w"> </span><span class="nv">defaultTeamAlias</span><span class="o">=</span>engineering<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-49-4" name="__codelineno-49-4" href="#__codelineno-49-4"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A1<span class="w"> </span>ACH_DEFAULT_TEAM_ALIAS
+</code></pre></div>
+<p><strong>Expected:</strong>
+- <code>helm lint</code> exits 0.
+- The grep prints the env var TWICE (once on the operator Deployment, once on platform-api), each followed by <code>value: "engineering"</code>.</p>
+<h3 id="task-64-unit-test-the-chart-with-helm-unittest-if-already-used-or-with-a-go-based-template-assertion">Task 6.4: Unit test the chart with helm-unittest (if already used) OR with a Go-based template assertion<a class="headerlink" href="#task-64-unit-test-the-chart-with-helm-unittest-if-already-used-or-with-a-go-based-template-assertion" title="Permanent link">&para;</a></h3>
+<p><strong>Step 1:</strong> Check if the chart already has unit tests.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a>ls<span class="w"> </span>/home/jcm/Projects/ach/deploy/helm/ach/tests/<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;no chart tests yet&quot;</span>
+</code></pre></div>
+<p><strong>Step 2:</strong> If no chart tests exist, skip — the e2e (Phase 7) covers it. If they do, add an assertion file that:
+1. Renders the chart with <code>defaultTeamAlias: engineering</code>.
+2. Asserts the operator Deployment env contains <code>ACH_DEFAULT_TEAM_ALIAS=engineering</code>.
+3. Asserts the platform-api Deployment env contains <code>ACH_DEFAULT_TEAM_ALIAS=engineering</code>.</p>
+<p><strong>Commit (single commit for Phase 6):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>feat(helm): TODO §15 — defaultTeamAlias chart value wires both Deployments
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>New top-level value `defaultTeamAlias` (default &quot;default&quot;) renders
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>ACH_DEFAULT_TEAM_ALIAS on the operator AND platformApi Deployments,
+<a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a>keeping the two modes in lockstep on a single deployer-controlled
+<a id="__codelineno-51-6" name="__codelineno-51-6" href="#__codelineno-51-6"></a>team alias.
+<a id="__codelineno-51-7" name="__codelineno-51-7" href="#__codelineno-51-7"></a>
+<a id="__codelineno-51-8" name="__codelineno-51-8" href="#__codelineno-51-8"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-7-end-to-end-validation">Phase 7 — End-to-end validation<a class="headerlink" href="#phase-7-end-to-end-validation" title="Permanent link">&para;</a></h2>
+<h3 id="task-71-new-e2e-ginkgo-case-non-default-alias-propagates-through-both-deployments">Task 7.1: New e2e Ginkgo case — non-default alias propagates through both Deployments<a class="headerlink" href="#task-71-new-e2e-ginkgo-case-non-default-alias-propagates-through-both-deployments" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>test/e2e/e2e_test.go</code> (or wherever the suite's "default team" coverage lives — search with <code>grep -rn 'default team\|EnsureDefaultTeam' test/e2e/</code>).</p>
+<p><strong>Step 1:</strong> Add a Describe block <code>Configurable default team alias (TODO §15)</code> with one It:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>It(&quot;propagates a non-default alias through operator + platform-api Deployments&quot;, func() {
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>    // Helm upgrade with defaultTeamAlias=engineering.
+<a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a>    // Wait for operator + platform-api rollouts.
+<a id="__codelineno-52-4" name="__codelineno-52-4" href="#__codelineno-52-4"></a>    // (a) kubectl describe deploy ach-operator | grep ACH_DEFAULT_TEAM_ALIAS → &quot;engineering&quot;
+<a id="__codelineno-52-5" name="__codelineno-52-5" href="#__codelineno-52-5"></a>    // (b) kubectl describe deploy ach-platform-api | grep ACH_DEFAULT_TEAM_ALIAS → &quot;engineering&quot;
+<a id="__codelineno-52-6" name="__codelineno-52-6" href="#__codelineno-52-6"></a>    // (c) Hit LiteLLM /v2/team/list?team_alias=engineering, assert one team returned (operator bootstrap worked).
+<a id="__codelineno-52-7" name="__codelineno-52-7" href="#__codelineno-52-7"></a>    // (d) Tail operator logs, grep -F &quot;default team alias configured&quot; &quot;alias&quot;:&quot;engineering&quot;
+<a id="__codelineno-52-8" name="__codelineno-52-8" href="#__codelineno-52-8"></a>})
+</code></pre></div>
+<p>Use the existing <code>make wait-operator</code> and <code>make wait-platform-api</code> blessed targets for readiness — NO naked polling loops.</p>
+<p><strong>Step 2:</strong> Run focused.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>make<span class="w"> </span>cluster-keep
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>e2e-focus<span class="w"> </span><span class="nv">FOCUS</span><span class="o">=</span><span class="s2">&quot;default team alias configurable&quot;</span>
+</code></pre></div>
+<p><strong>Expected:</strong> PASS.</p>
+<p><strong>Step 3:</strong> Final clean-room run before commit.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>make<span class="w"> </span>cluster-down
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>e2e-full
+</code></pre></div>
+<p><strong>Expected:</strong> entire suite PASS.</p>
+<p><strong>Commit (single commit for Phase 7):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>test(e2e): TODO §15 — assert configurable default team alias end-to-end
+<a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a>
+<a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>Adds an e2e case that deploys with defaultTeamAlias=engineering
+<a id="__codelineno-55-4" name="__codelineno-55-4" href="#__codelineno-55-4"></a>and asserts (a) both Deployments carry the env var, (b) the
+<a id="__codelineno-55-5" name="__codelineno-55-5" href="#__codelineno-55-5"></a>operator bootstrapped a LiteLLM team with the configured alias,
+<a id="__codelineno-55-6" name="__codelineno-55-6" href="#__codelineno-55-6"></a>(c) the operator startup log records the alias.
+<a id="__codelineno-55-7" name="__codelineno-55-7" href="#__codelineno-55-7"></a>
+<a id="__codelineno-55-8" name="__codelineno-55-8" href="#__codelineno-55-8"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-8-documentation">Phase 8 — Documentation<a class="headerlink" href="#phase-8-documentation" title="Permanent link">&para;</a></h2>
+<h3 id="task-81-update-claudemd-common-failure-modes-with-the-alias-mismatch-trap">Task 8.1: Update <code>CLAUDE.md</code> "Common failure modes" with the alias-mismatch trap<a class="headerlink" href="#task-81-update-claudemd-common-failure-modes-with-the-alias-mismatch-trap" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>CLAUDE.md</code></p>
+<p><strong>Step 1:</strong> Locate the "Common failure modes" section (after the existing <code>### ❌ Invalid Postgres / Redis URLs in dev hydration</code> block).</p>
+<p><strong>Step 2:</strong> Add a new entry:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a><span class="gu">### ❌ Operator and platform-api configured with different default team aliases</span>
+<a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a><span class="sb">```bash</span>
+<a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>ach<span class="w"> </span>…<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a><span class="w">  </span>--set<span class="w"> </span>operator.extraEnv<span class="o">[</span><span class="m">0</span><span class="o">]</span>.name<span class="o">=</span>ACH_DEFAULT_TEAM_ALIAS<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-56-5" name="__codelineno-56-5" href="#__codelineno-56-5"></a><span class="w">  </span>--set<span class="w"> </span>operator.extraEnv<span class="o">[</span><span class="m">0</span><span class="o">]</span>.value<span class="o">=</span>engineering<span class="w">   </span><span class="c1"># operator only — platform-api still &quot;default&quot;</span>
+<a id="__codelineno-56-6" name="__codelineno-56-6" href="#__codelineno-56-6"></a><span class="c1"># operator bootstraps team alias=&quot;engineering&quot;</span>
+<a id="__codelineno-56-7" name="__codelineno-56-7" href="#__codelineno-56-7"></a><span class="c1"># SSO callback looks up team alias=&quot;default&quot; → 500 default_team_missing</span>
+<a id="__codelineno-56-8" name="__codelineno-56-8" href="#__codelineno-56-8"></a><span class="sb">```</span>
+<a id="__codelineno-56-9" name="__codelineno-56-9" href="#__codelineno-56-9"></a>✅ Always set the chart&#39;s top-level <span class="sb">`defaultTeamAlias`</span> value — it wires
+<a id="__codelineno-56-10" name="__codelineno-56-10" href="#__codelineno-56-10"></a>BOTH Deployments to the same alias:
+<a id="__codelineno-56-11" name="__codelineno-56-11" href="#__codelineno-56-11"></a><span class="sb">```bash</span>
+<a id="__codelineno-56-12" name="__codelineno-56-12" href="#__codelineno-56-12"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>ach<span class="w"> </span>…<span class="w"> </span>--set<span class="w"> </span><span class="nv">defaultTeamAlias</span><span class="o">=</span>engineering
+<a id="__codelineno-56-13" name="__codelineno-56-13" href="#__codelineno-56-13"></a><span class="sb">```</span>
+<a id="__codelineno-56-14" name="__codelineno-56-14" href="#__codelineno-56-14"></a>WHY IT FAILS: The operator-side bootstrap and the SSO/EnvKey enrollment
+<a id="__codelineno-56-15" name="__codelineno-56-15" href="#__codelineno-56-15"></a>read the alias from independent process-startup config values. The
+<a id="__codelineno-56-16" name="__codelineno-56-16" href="#__codelineno-56-16"></a>chart&#39;s top-level <span class="sb">`defaultTeamAlias`</span> exists specifically to keep the
+<a id="__codelineno-56-17" name="__codelineno-56-17" href="#__codelineno-56-17"></a>two Pods in lockstep; setting <span class="sb">`extraEnv`</span> on only one Deployment breaks
+<a id="__codelineno-56-18" name="__codelineno-56-18" href="#__codelineno-56-18"></a>that invariant and leaves the SSO path failing with <span class="sb">`default_team_missing`</span>
+<a id="__codelineno-56-19" name="__codelineno-56-19" href="#__codelineno-56-19"></a>until the other Pod is also reconfigured.
+</code></pre></div>
+<h3 id="task-82-update-the-inline-doc-comments">Task 8.2: Update the inline doc comments<a class="headerlink" href="#task-82-update-the-inline-doc-comments" title="Permanent link">&para;</a></h3>
+<p>No additional Hub §8.1 amendment is needed beyond what already lives in the inline docstrings (this plan added them in Phases 2, 4, 5). The <code>docs/</code> mkdocs site auto-renders the CRD reference, not the cobra flag set — there is no public-facing markdown file claiming "the alias is always <code>default</code>" that needs editing. Confirm with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s1">&#39;&quot;default&quot;&#39;</span><span class="w"> </span>docs/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>api-reference/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;\.(yaml|json):&#39;</span>
+</code></pre></div>
+<p><strong>Expected:</strong> zero matches in narrative <code>.md</code> content (the api-reference/ tree is auto-generated; ignore). If the grep returns hits, edit each to mention "the configured team alias (default <code>default</code>)".</p>
+<h3 id="task-83-append-to-changelogmd">Task 8.3: Append to CHANGELOG.md<a class="headerlink" href="#task-83-append-to-changelogmd" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>CHANGELOG.md</code></p>
+<p>Under the <code>Unreleased</code> heading add an entry:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>### Added
+<a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>- Operator + platform-api now accept `--default-team-alias` (env mirror
+<a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>  `ACH_DEFAULT_TEAM_ALIAS`, default `&quot;default&quot;`). The Helm chart&#39;s new
+<a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a>  top-level `defaultTeamAlias` value wires BOTH the operator and
+<a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>  platform-api Deployments to the same alias so the operator-bootstrapped
+<a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a>  team and the SSO-callback enrollment converge on a single
+<a id="__codelineno-58-7" name="__codelineno-58-7" href="#__codelineno-58-7"></a>  deployer-controlled identity. (TODO §15)
+</code></pre></div>
+<p><strong>Commit (single commit for Phase 8):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>docs(claude-md,changelog): TODO §15 — default-team-alias config notes
+<a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a>
+<a id="__codelineno-59-3" name="__codelineno-59-3" href="#__codelineno-59-3"></a>Documents the new --default-team-alias flag, the Helm chart value, and
+<a id="__codelineno-59-4" name="__codelineno-59-4" href="#__codelineno-59-4"></a>the lockstep invariant between the operator and platform-api
+<a id="__codelineno-59-5" name="__codelineno-59-5" href="#__codelineno-59-5"></a>Deployments (added as a &quot;Common failure modes&quot; entry).
+<a id="__codelineno-59-6" name="__codelineno-59-6" href="#__codelineno-59-6"></a>
+<a id="__codelineno-59-7" name="__codelineno-59-7" href="#__codelineno-59-7"></a>Refs: TODO §15
+</code></pre></div>
+<hr />
+<h2 id="phase-9-final-gate">Phase 9 — Final gate<a class="headerlink" href="#phase-9-final-gate" title="Permanent link">&para;</a></h2>
+<h3 id="task-91-run-the-full-pre-commit-pre-push-battery">Task 9.1: Run the full pre-commit / pre-push battery<a class="headerlink" href="#task-91-run-the-full-pre-commit-pre-push-battery" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="nb">cd</span><span class="w"> </span>/home/jcm/Projects/ach
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>
+<a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a><span class="c1"># Fast iteration loop:</span>
+<a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+<a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint
+<a id="__codelineno-60-6" name="__codelineno-60-6" href="#__codelineno-60-6"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>envtest-run
+<a id="__codelineno-60-7" name="__codelineno-60-7" href="#__codelineno-60-7"></a>
+<a id="__codelineno-60-8" name="__codelineno-60-8" href="#__codelineno-60-8"></a><span class="c1"># Security + supply chain:</span>
+<a id="__codelineno-60-9" name="__codelineno-60-9" href="#__codelineno-60-9"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>security
+<a id="__codelineno-60-10" name="__codelineno-60-10" href="#__codelineno-60-10"></a>
+<a id="__codelineno-60-11" name="__codelineno-60-11" href="#__codelineno-60-11"></a><span class="c1"># Final publication gate:</span>
+<a id="__codelineno-60-12" name="__codelineno-60-12" href="#__codelineno-60-12"></a>make<span class="w"> </span>pre-push
+</code></pre></div>
+<p><strong>Expected:</strong> 15/15 PASS on <code>make pre-push</code>. Any new govulncheck advisories MUST be triaged against <code>references/security/govulncheck-acknowledged.md</code> per the CLAUDE.md gate.</p>
+<h3 id="task-92-self-audit-against-todo-15-acceptance-criteria">Task 9.2: Self-audit against TODO §15 acceptance criteria<a class="headerlink" href="#task-92-self-audit-against-todo-15-acceptance-criteria" title="Permanent link">&para;</a></h3>
+<p>Re-read the source TODO §15 acceptance block:</p>
+<blockquote>
+<p>Acceptance: operator started with <code>--default-team-alias=engineering</code> (a) creates team with that alias on first startup (idempotent), (b) enrolls every SSO-provisioned user into it, (c) makes value visible in <code>kubectl describe deploy ach-operator</code> env.</p>
+</blockquote>
+<p>Confirm:
+- (a) Covered by the unit test in Task 2.3 + the e2e in Task 7.1 step c.
+- (b) Covered by the unit test in Task 5.4 (auth Deps) + the e2e e2e covers operator-side; the SSO callback assertion is inherent in the unit test on <code>provisionUser</code>.
+- (c) Covered by the e2e in Task 7.1 step a + b.</p>
+<h3 id="task-93-push-and-open-pr">Task 9.3: Push and open PR<a class="headerlink" href="#task-93-push-and-open-pr" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>feat/default-team-alias-configurable
+<a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;feat: TODO §15 — configurable LiteLLM default-team alias&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a><span class="w">  </span>--body<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>cat<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<a id="__codelineno-61-4" name="__codelineno-61-4" href="#__codelineno-61-4"></a><span class="s">## Summary</span>
+<a id="__codelineno-61-5" name="__codelineno-61-5" href="#__codelineno-61-5"></a><span class="s">- Adds `--default-team-alias` (env mirror `ACH_DEFAULT_TEAM_ALIAS`) to the</span>
+<a id="__codelineno-61-6" name="__codelineno-61-6" href="#__codelineno-61-6"></a><span class="s">  `ach operator` and `ach platform-api` subcommands.</span>
+<a id="__codelineno-61-7" name="__codelineno-61-7" href="#__codelineno-61-7"></a><span class="s">- Widens the LiteLLM Client interface: `EnsureDefaultTeam(ctx, alias string)`.</span>
+<a id="__codelineno-61-8" name="__codelineno-61-8" href="#__codelineno-61-8"></a><span class="s">- Threads the alias through `LiteLLMConnectionReconciler`,</span>
+<a id="__codelineno-61-9" name="__codelineno-61-9" href="#__codelineno-61-9"></a><span class="s">  `internal/platformapi/auth/Deps`, and `internal/platformapi/envkeys/Deps`.</span>
+<a id="__codelineno-61-10" name="__codelineno-61-10" href="#__codelineno-61-10"></a><span class="s">- Helm chart gains a top-level `defaultTeamAlias` value (default `&quot;default&quot;`)</span>
+<a id="__codelineno-61-11" name="__codelineno-61-11" href="#__codelineno-61-11"></a><span class="s">  that wires the env var into BOTH the operator and platform-api Deployments.</span>
+<a id="__codelineno-61-12" name="__codelineno-61-12" href="#__codelineno-61-12"></a>
+<a id="__codelineno-61-13" name="__codelineno-61-13" href="#__codelineno-61-13"></a><span class="s">## Test plan</span>
+<a id="__codelineno-61-14" name="__codelineno-61-14" href="#__codelineno-61-14"></a><span class="s">- [x] `./scripts/dev.sh make unit` PASS — new unit tests for RESTClient, provisionUser, envkeys CreateHandler.</span>
+<a id="__codelineno-61-15" name="__codelineno-61-15" href="#__codelineno-61-15"></a><span class="s">- [x] `./scripts/dev.sh make envtest-run` PASS — new envtest sub-test asserts the reconciler passes its configured alias.</span>
+<a id="__codelineno-61-16" name="__codelineno-61-16" href="#__codelineno-61-16"></a><span class="s">- [x] `./scripts/dev.sh make e2e-focus FOCUS=&quot;default team alias configurable&quot;` PASS — deploys with `defaultTeamAlias=engineering`, asserts env on both Deployments + operator-bootstrapped team in LiteLLM.</span>
+<a id="__codelineno-61-17" name="__codelineno-61-17" href="#__codelineno-61-17"></a><span class="s">- [x] `make pre-push` PASS (15/15).</span>
+<a id="__codelineno-61-18" name="__codelineno-61-18" href="#__codelineno-61-18"></a>
+<a id="__codelineno-61-19" name="__codelineno-61-19" href="#__codelineno-61-19"></a><span class="s">Closes TODO §15.</span>
+<a id="__codelineno-61-20" name="__codelineno-61-20" href="#__codelineno-61-20"></a>
+<a id="__codelineno-61-21" name="__codelineno-61-21" href="#__codelineno-61-21"></a><span class="s">🤖 Generated with [Claude Code](https://claude.com/claude-code)</span>
+<a id="__codelineno-61-22" name="__codelineno-61-22" href="#__codelineno-61-22"></a><span class="s">EOF</span>
+<a id="__codelineno-61-23" name="__codelineno-61-23" href="#__codelineno-61-23"></a><span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p><strong>Commit (Phase 9):</strong> none — the work is in Phases 2-8; Phase 9 is verification + push only.</p>
+<hr />
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Tasks</th>
+<th>Commits</th>
+<th>What lands</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+<td>branch setup</td>
+</tr>
+<tr>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>discovery (no code change)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>3</td>
+<td>1</td>
+<td><code>feat(litellm)</code>: widen Client.EnsureDefaultTeam signature + all implementor/test-fake updates + RESTClient alias unit test</td>
+</tr>
+<tr>
+<td>3</td>
+<td>3</td>
+<td>1</td>
+<td><code>feat(operator,platform-api)</code>: cobra flag + env mirror + flag-precedence unit test</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3</td>
+<td>1</td>
+<td><code>feat(operator)</code>: LiteLLMConnectionReconciler.DefaultTeamAlias wiring + envtest assertion</td>
+</tr>
+<tr>
+<td>5</td>
+<td>4</td>
+<td>1</td>
+<td><code>feat(platform-api)</code>: auth.Deps + envkeys.Deps DefaultTeamAlias + handler unit tests</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4</td>
+<td>1</td>
+<td><code>feat(helm)</code>: chart value + both Deployment templates</td>
+</tr>
+<tr>
+<td>7</td>
+<td>1</td>
+<td>1</td>
+<td><code>test(e2e)</code>: deploy-with-non-default-alias case</td>
+</tr>
+<tr>
+<td>8</td>
+<td>3</td>
+<td>1</td>
+<td><code>docs(claude-md,changelog)</code>: CLAUDE.md failure mode + CHANGELOG entry</td>
+</tr>
+<tr>
+<td>9</td>
+<td>3</td>
+<td>0</td>
+<td>final gate + PR open</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Total: 26 tasks across 10 phases (0-9); 7 commits.</strong></p>
+<p>Each phase's commit is independently reviewable and revertable. Phases 2, 3, 6, 8 carry zero behavior change (refactor, scaffolding, chart wiring, docs). Phases 4, 5, 7 are the load-bearing behavior changes.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

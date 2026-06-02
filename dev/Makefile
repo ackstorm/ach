@@ -24,7 +24,10 @@ else
 endif
 
 .PHONY: api-docs
-gen-crd-ref-docs: ## Generate API reference documentation from Go types.
+# $(CRD_REF_DOCS) prereq builds/installs the binary on demand (target defined in
+# the root Makefile, which `include`s this file). Without it, CI's bare
+# `make docs-build` fails with "bin/crd-ref-docs: No such file or directory".
+gen-crd-ref-docs: $(CRD_REF_DOCS) ## Generate API reference documentation from Go types.
 	@echo "Generating API reference documentation..."
 	@mkdir -p $(OUTPUT_DIR)
 	$(CRD_REF_DOCS) \

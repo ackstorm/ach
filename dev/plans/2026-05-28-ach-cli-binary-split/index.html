@@ -1,0 +1,2084 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/plans/2026-05-28-ach-cli-binary-split/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>ach-cli Binary Split (Option B — Clean Separation) Implementation Plan - ACH — Agent Configuration Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ach-cli-binary-split-option-b-clean-separation-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-header__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Configuration Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ach-cli Binary Split (Option B — Clean Separation) Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Configuration Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Configuration Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Configuration Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pre-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-1-extract-typed-error-dispatch-helper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Extract typed-error dispatch helper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-2-create-cmdach-cli-skeleton-with-empty-cobra-root" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Create cmd/ach-cli/ skeleton with empty cobra root
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-3-move-login-subcommand-proof-of-refactor-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Move login subcommand — proof of refactor pattern
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-4-move-logout-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Move logout subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-5-move-whoami-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Move whoami subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-6-move-config-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Move config subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-7-move-env-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Move env subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-8-move-env-keys-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: Move env-keys subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-9-move-hydrate-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9: Move hydrate subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-10-move-admin-subcommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10: Move admin subcommand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-11-move-shared-test-helpers-cross-cmd-guard-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 11: Move shared test helpers + cross-cmd guard test
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-12-update-cmdachcmdrootgo-long-help-drop-cli-surface-mention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 12: Update cmd/ach/cmd/root.go long-help — drop CLI surface mention
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-13-add-ach-cli-build-block-to-goreleaseryml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 13: Add ach-cli build block to .goreleaser.yml
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-14-container-image-keep-ach-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 14: Container image — keep ach only
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-15-helm-chart-no-change-required-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 15: Helm chart — no change required, verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-16-e2e-suite-point-phase6runach-at-ach-cli-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 16: E2E suite — point phase6RunAch at ach-cli binary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-17-docs-sweep-claudemd-readme-runbook-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 17: Docs sweep — CLAUDE.md, README, runbook, examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-18-binary-size-validation-final-full-suite-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 18: Binary-size validation + final full-suite verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-19-open-pr-spec-follow-up-phase-7-prep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 19: Open PR + spec follow-up Phase 7 prep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#done" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Done
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes / risks
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ach-cli-binary-split-option-b-clean-separation-implementation-plan">ach-cli Binary Split (Option B — Clean Separation) Implementation Plan<a class="headerlink" href="#ach-cli-binary-split-option-b-clean-separation-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For Claude:</strong> REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.</p>
+</blockquote>
+<p><strong>Goal:</strong> Ship <code>ach-cli</code> as a separate Go binary containing only user-facing subcommands (login/logout/whoami/config/env/env-keys/hydrate/admin). The <code>ach</code> binary keeps only the long-running service modes (operator/platform-api/forwarder/content-service/migrate). Both binaries share the existing <code>internal/cli/*</code> libraries unchanged.</p>
+<p><strong>Architecture:</strong> New <code>cmd/ach-cli/</code> tree with its own <code>main.go</code> + <code>cmd/</code> cobra root. Move (git mv, preserve history) the 8 user-facing <code>*.go</code> + their <code>*_test.go</code> from <code>cmd/ach/cmd/</code> to <code>cmd/ach-cli/cmd/</code>. Extract the typed-error dispatch loop from <code>cmd/ach/main.go</code> to a shared <code>internal/cli/exit/dispatch.go</code> consumed by both entrypoints. Goreleaser builds + signs + SBOMs both binaries; container image keeps only <code>ach</code> (CLI ships as goreleaser archives). Helm chart unchanged.</p>
+<p><strong>Tech Stack:</strong> Go 1.x cobra, controller-runtime (service side only), goreleaser v2, cosign keyless OIDC, cyclonedx-gomod, kind+Helm e2e suite. Toolchain entirely via <code>./scripts/dev.sh</code> (no host Go).</p>
+<p><strong>Scope discipline:</strong> Pure refactor + release-pipeline change. No new behavior, no new flags, no new tests beyond what file-move requires + 1 binary-size smoke test. CLI binary size target: &lt; 50% of <code>ach</code> size (drops k8s.io/* + controller-runtime).</p>
+<hr />
+<h2 id="pre-flight">Pre-flight<a class="headerlink" href="#pre-flight" title="Permanent link">&para;</a></h2>
+<p><strong>Branch:</strong> Create <code>feat/ach-cli-binary-split</code> off <code>main</code>. Worktree-isolated execution recommended (<code>@superpowers:using-git-worktrees</code>).</p>
+<p><strong>Baseline capture:</strong> Before any change, record:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ls<span class="w"> </span>-la<span class="w"> </span>bin/ach
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./cmd/ach/...<span class="w"> </span>./internal/cli/...<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-5
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Capture test count + binary size for diff at end.</span>
+</code></pre></div>
+<p>Expected: <code>bin/ach</code> size ~50-80 MB, all CLI tests PASS (existing Phase 6 suite).</p>
+<hr />
+<h2 id="task-1-extract-typed-error-dispatch-helper">Task 1: Extract typed-error dispatch helper<a class="headerlink" href="#task-1-extract-typed-error-dispatch-helper" title="Permanent link">&para;</a></h2>
+<p><strong>Why first:</strong> Both binaries' <code>main.go</code> need the same <code>*ServerError</code>/<code>*CodedError</code>/fallthrough dispatch. Pull it out once before either binary needs a copy.</p>
+<p><strong>Files:</strong>
+- Create: <code>internal/cli/exit/dispatch.go</code>
+- Create: <code>internal/cli/exit/dispatch_test.go</code>
+- Modify: <code>cmd/ach/main.go</code> (replace dispatch block with call into new helper)</p>
+<p><strong>Step 1: Write the failing test</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// internal/cli/exit/dispatch_test.go</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">package</span><span class="w"> </span><span class="nx">exit_test</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="s">&quot;errors&quot;</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="s">&quot;testing&quot;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/internal/cli/exit&quot;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/internal/cli/httpclient&quot;</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestDispatch_OK</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nx">code</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Dispatch</span><span class="p">(</span><span class="kc">nil</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">code</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">OK</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;nil err → exit.OK; got %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">code</span><span class="p">)</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="p">}</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestDispatch_ServerError</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="nx">sErr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">httpclient</span><span class="p">.</span><span class="nx">ServerError</span><span class="p">{</span><span class="nx">StatusCode</span><span class="p">:</span><span class="w"> </span><span class="mi">403</span><span class="p">,</span><span class="w"> </span><span class="nx">Code</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;not_admin&quot;</span><span class="p">}</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="nx">code</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Dispatch</span><span class="p">(</span><span class="nx">sErr</span><span class="p">)</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">code</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">AuthN</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;not_admin → AuthN; got %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">code</span><span class="p">)</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="p">}</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestDispatch_CodedError</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="nx">cErr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">exit</span><span class="p">.</span><span class="nx">CodedError</span><span class="p">{</span><span class="nx">Code</span><span class="p">:</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Usage</span><span class="p">,</span><span class="w"> </span><span class="nx">Err</span><span class="p">:</span><span class="w"> </span><span class="nx">errors</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="s">&quot;bad flag&quot;</span><span class="p">)}</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="nx">code</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Dispatch</span><span class="p">(</span><span class="nx">cErr</span><span class="p">)</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">code</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Usage</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;CodedError preserves Code; got %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">code</span><span class="p">)</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="p">}</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestDispatch_Fallthrough</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">    </span><span class="nx">code</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">Dispatch</span><span class="p">(</span><span class="nx">errors</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="s">&quot;unrecognized&quot;</span><span class="p">))</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">code</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">exit</span><span class="p">.</span><span class="nx">General</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;unknown err → General; got %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">code</span><span class="p">)</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2: Run test — verify it fails</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./internal/cli/exit/...<span class="w"> </span>-run<span class="w"> </span>TestDispatch<span class="w"> </span>-v
+</code></pre></div>
+<p>Expected: FAIL with <code>undefined: exit.Dispatch</code>.</p>
+<p><strong>Step 3: Write minimal implementation</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1">// internal/cli/exit/dispatch.go</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">package</span><span class="w"> </span><span class="nx">exit</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="s">&quot;errors&quot;</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="s">&quot;fmt&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="s">&quot;io&quot;</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/internal/cli/httpclient&quot;</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1">// Dispatch resolves any error returned from cobra.Execute() to the</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="c1">// process exit Code per CLI spec §9.3. nil → OK; *httpclient.ServerError</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1">// → MapServerError; *CodedError → its Code; anything else → General.</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="c1">//</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="c1">// Use DispatchAndRender from main() when you also want to print the</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="c1">// error to stderr before exiting.</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="kd">func</span><span class="w"> </span><span class="nx">Dispatch</span><span class="p">(</span><span class="nx">err</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="nx">Code</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">OK</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">sErr</span><span class="w"> </span><span class="o">*</span><span class="nx">httpclient</span><span class="p">.</span><span class="nx">ServerError</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">errors</span><span class="p">.</span><span class="nx">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">sErr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">MapServerError</span><span class="p">(</span><span class="nx">sErr</span><span class="p">)</span>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">cErr</span><span class="w"> </span><span class="o">*</span><span class="nx">CodedError</span>
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">errors</span><span class="p">.</span><span class="nx">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">cErr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">cErr</span><span class="p">.</span><span class="nx">Code</span>
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">General</span>
+<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a><span class="p">}</span>
+<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a>
+<a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a><span class="c1">// DispatchAndRender resolves the exit Code and writes the error string</span>
+<a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a><span class="c1">// to stderr (when err is non-nil). main() should call os.Exit(int(code))</span>
+<a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a><span class="c1">// with the returned Code.</span>
+<a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a><span class="kd">func</span><span class="w"> </span><span class="nx">DispatchAndRender</span><span class="p">(</span><span class="nx">err</span><span class="w"> </span><span class="kt">error</span><span class="p">,</span><span class="w"> </span><span class="nx">stderr</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Writer</span><span class="p">)</span><span class="w"> </span><span class="nx">Code</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a><span class="w">    </span><span class="nx">code</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">Dispatch</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-3-39" name="__codelineno-3-39" href="#__codelineno-3-39"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a><span class="w">        </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Fprintln</span><span class="p">(</span><span class="nx">stderr</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>
+<a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-42" name="__codelineno-3-42" href="#__codelineno-3-42"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">code</span>
+<a id="__codelineno-3-43" name="__codelineno-3-43" href="#__codelineno-3-43"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 4: Run test — verify it passes</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./internal/cli/exit/...<span class="w"> </span>-run<span class="w"> </span>TestDispatch<span class="w"> </span>-v
+</code></pre></div>
+<p>Expected: PASS all four.</p>
+<p><strong>Step 5: Refactor <code>cmd/ach/main.go</code> to consume <code>DispatchAndRender</code></strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">// cmd/ach/main.go</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1">// (header comment unchanged — keeps the §9.3 contract docs)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kn">package</span><span class="w"> </span><span class="nx">main</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="s">&quot;os&quot;</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/cmd/ach/cmd&quot;</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/internal/cli/exit&quot;</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="p">)</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="kd">func</span><span class="w"> </span><span class="nx">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nx">os</span><span class="p">.</span><span class="nx">Exit</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="nx">exit</span><span class="p">.</span><span class="nx">DispatchAndRender</span><span class="p">(</span><span class="nx">cmd</span><span class="p">.</span><span class="nx">Execute</span><span class="p">(),</span><span class="w"> </span><span class="nx">os</span><span class="p">.</span><span class="nx">Stderr</span><span class="p">)))</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 6: Verify nothing regressed</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+</code></pre></div>
+<p>Expected: build clean, unit suite PASS.</p>
+<p><strong>Step 7: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/cli/exit/dispatch.go<span class="w"> </span>internal/cli/exit/dispatch_test.go<span class="w"> </span>cmd/ach/main.go
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(exit): hoist typed-error dispatch to internal/cli/exit for binary split&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-2-create-cmdach-cli-skeleton-with-empty-cobra-root">Task 2: Create <code>cmd/ach-cli/</code> skeleton with empty cobra root<a class="headerlink" href="#task-2-create-cmdach-cli-skeleton-with-empty-cobra-root" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Get the new entrypoint compiling before any subcommand moves. Smoke-tests the <code>cmd/ach-cli</code> package structure under goreleaser-eligible path.</p>
+<p><strong>Files:</strong>
+- Create: <code>cmd/ach-cli/main.go</code>
+- Create: <code>cmd/ach-cli/cmd/root.go</code></p>
+<p><strong>Step 1: Write the root</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1">// cmd/ach-cli/cmd/root.go</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">package</span><span class="w"> </span><span class="nx">cmd</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="s">&quot;fmt&quot;</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="s">&quot;github.com/spf13/cobra&quot;</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="p">)</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="c1">// Version is overridden via -ldflags at build time (see Makefile build target).</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="kd">var</span><span class="w"> </span><span class="nx">Version</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;dev&quot;</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="kd">var</span><span class="w"> </span><span class="nx">rootCmd</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">cobra</span><span class="p">.</span><span class="nx">Command</span><span class="p">{</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="nx">Use</span><span class="p">:</span><span class="w">   </span><span class="s">&quot;ach-cli&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">    </span><span class="nx">Short</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ACH CLI — operator/developer client for the ACH control plane&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">    </span><span class="nx">Long</span><span class="p">:</span><span class="w"> </span><span class="s">`ach-cli is the user-facing client for the ACH (Agent Configuration Hub)</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="s">control plane. Subcommands:</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="s">  login        Authenticate against the platform-api</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="s">  logout       Revoke local session</span>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="s">  whoami       Show current identity</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="s">  config       Inspect / mutate local config</span>
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a><span class="s">  env          List + switch environments</span>
+<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a><span class="s">  env-keys     Create / list / revoke environment keys</span>
+<a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a><span class="s">  hydrate      Materialize workspace artifacts</span>
+<a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a><span class="s">  admin        Admin subcommands (keys revoke, users revoke-keys, refresh)</span>
+<a id="__codelineno-8-28" name="__codelineno-8-28" href="#__codelineno-8-28"></a>
+<a id="__codelineno-8-29" name="__codelineno-8-29" href="#__codelineno-8-29"></a><span class="s">For service-mode commands (operator, platform-api, forwarder,</span>
+<a id="__codelineno-8-30" name="__codelineno-8-30" href="#__codelineno-8-30"></a><span class="s">content-service, migrate), use the &#39;ach&#39; binary instead.`</span><span class="p">,</span>
+<a id="__codelineno-8-31" name="__codelineno-8-31" href="#__codelineno-8-31"></a><span class="w">    </span><span class="nx">Version</span><span class="p">:</span><span class="w"> </span><span class="nx">Version</span><span class="p">,</span>
+<a id="__codelineno-8-32" name="__codelineno-8-32" href="#__codelineno-8-32"></a><span class="w">    </span><span class="nx">RunE</span><span class="p">:</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">cmd</span><span class="w"> </span><span class="o">*</span><span class="nx">cobra</span><span class="p">.</span><span class="nx">Command</span><span class="p">,</span><span class="w"> </span><span class="nx">args</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-33" name="__codelineno-8-33" href="#__codelineno-8-33"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">cmd</span><span class="p">.</span><span class="nx">Help</span><span class="p">()</span>
+<a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-8-35" name="__codelineno-8-35" href="#__codelineno-8-35"></a><span class="p">}</span>
+<a id="__codelineno-8-36" name="__codelineno-8-36" href="#__codelineno-8-36"></a>
+<a id="__codelineno-8-37" name="__codelineno-8-37" href="#__codelineno-8-37"></a><span class="kd">func</span><span class="w"> </span><span class="nx">Execute</span><span class="p">()</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">rootCmd</span><span class="p">.</span><span class="nx">Execute</span><span class="p">()</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-8-38" name="__codelineno-8-38" href="#__codelineno-8-38"></a>
+<a id="__codelineno-8-39" name="__codelineno-8-39" href="#__codelineno-8-39"></a><span class="kd">func</span><span class="w"> </span><span class="nx">init</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-40" name="__codelineno-8-40" href="#__codelineno-8-40"></a><span class="w">    </span><span class="nx">rootCmd</span><span class="p">.</span><span class="nx">SetVersionTemplate</span><span class="p">(</span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;ach-cli %s\n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">Version</span><span class="p">))</span>
+<a id="__codelineno-8-41" name="__codelineno-8-41" href="#__codelineno-8-41"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2: Write the entrypoint</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1">// cmd/ach-cli/main.go</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1">// SPDX-License-Identifier: Apache-2.0</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1">// `ach-cli` is the user-facing client binary for the ACH control plane.</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1">// Sibling to `ach` (services-only). Exit-code dispatch is shared via</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="c1">// internal/cli/exit.DispatchAndRender per CLI spec §9.3.</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="kn">package</span><span class="w"> </span><span class="nx">main</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="s">&quot;os&quot;</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/cmd/ach-cli/cmd&quot;</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="s">&quot;github.com/ackstorm/ach/internal/cli/exit&quot;</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="p">)</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="kd">func</span><span class="w"> </span><span class="nx">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">    </span><span class="nx">os</span><span class="p">.</span><span class="nx">Exit</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="nx">exit</span><span class="p">.</span><span class="nx">DispatchAndRender</span><span class="p">(</span><span class="nx">cmd</span><span class="p">.</span><span class="nx">Execute</span><span class="p">(),</span><span class="w"> </span><span class="nx">os</span><span class="p">.</span><span class="nx">Stderr</span><span class="p">)))</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 3: Build smoke</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>/tmp/ach-cli-smoke<span class="w"> </span>./cmd/ach-cli/...
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>/tmp/ach-cli-smoke<span class="w"> </span>--help
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;EXIT=</span><span class="nv">$?</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Expected: build clean; <code>--help</code> prints the Long block; exit 0. No subcommands listed yet (next tasks add them).</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/main.go<span class="w"> </span>cmd/ach-cli/cmd/root.go
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(ach-cli): scaffold ach-cli binary skeleton (empty cobra root)&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-3-move-login-subcommand-proof-of-refactor-pattern">Task 3: Move <code>login</code> subcommand — proof of refactor pattern<a class="headerlink" href="#task-3-move-login-subcommand-proof-of-refactor-pattern" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Establish the pattern once. All 7 remaining subcommands repeat steps 1-4 verbatim with their own filenames.</p>
+<p><strong>Files:</strong>
+- Move: <code>cmd/ach/cmd/login.go</code> → <code>cmd/ach-cli/cmd/login.go</code>
+- Move: <code>cmd/ach/cmd/login_test.go</code> → <code>cmd/ach-cli/cmd/login_test.go</code></p>
+<p><strong>Step 1: Move files (preserves git history)</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/login.go<span class="w"> </span>cmd/ach-cli/cmd/login.go
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/login_test.go<span class="w"> </span>cmd/ach-cli/cmd/login_test.go
+</code></pre></div>
+<p><strong>Step 2: Build to surface any cross-file dependencies</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+</code></pre></div>
+<p>Expected output: BOTH builds succeed. <code>login.go</code> references <code>rootCmd</code> from its package — package name didn't change (<code>package cmd</code>), so the new <code>cmd/ach-cli/cmd/root.go::rootCmd</code> resolves identically. If anything fails (e.g., login.go references a helper that lives in another <code>cmd/ach/cmd/</code> file), capture the error and resolve before continuing.</p>
+<p>Likely culprits if step fails:
+- shared helpers in another file not yet moved (defer move until that helper lands too)
+- import of a symbol from <code>cmd/ach/cmd</code> (rare — login.go imports <code>internal/cli/*</code> only)</p>
+<p><strong>Step 3: Smoke the wired command</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>/tmp/ach-cli-smoke<span class="w"> </span>./cmd/ach-cli/...
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>/tmp/ach-cli-smoke<span class="w"> </span>login<span class="w"> </span>--help<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-5
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;EXIT=</span><span class="nv">$?</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Expected: help block prints "Authenticate against the platform-api" or similar; exit 0.</p>
+<p><strong>Step 4: Test moved file in new location</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./cmd/ach-cli/cmd/...<span class="w"> </span>-run<span class="w"> </span>TestLogin<span class="w"> </span>-v<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10
+</code></pre></div>
+<p>Expected: every previously-passing TestLogin* subtest PASSES from the new path. If a test references <code>executeCommand</code> (defined in <code>helpers_test.go</code>, not yet moved), the test won't compile until Task 11 — that's OK; defer this verification step to Task 11.</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/login.go<span class="w"> </span>cmd/ach-cli/cmd/login_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move login subcommand from cmd/ach/cmd to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-4-move-logout-subcommand">Task 4: Move <code>logout</code> subcommand<a class="headerlink" href="#task-4-move-logout-subcommand" title="Permanent link">&para;</a></h2>
+<p>Repeat Task 3 pattern verbatim:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/logout.go<span class="w"> </span>cmd/ach-cli/cmd/logout.go
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/logout_test.go<span class="w"> </span>cmd/ach-cli/cmd/logout_test.go
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/logout.go<span class="w"> </span>cmd/ach-cli/cmd/logout_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move logout subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-5-move-whoami-subcommand">Task 5: Move <code>whoami</code> subcommand<a class="headerlink" href="#task-5-move-whoami-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/whoami.go<span class="w"> </span>cmd/ach-cli/cmd/whoami.go
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/whoami_test.go<span class="w"> </span>cmd/ach-cli/cmd/whoami_test.go
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/whoami.go<span class="w"> </span>cmd/ach-cli/cmd/whoami_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move whoami subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-6-move-config-subcommand">Task 6: Move <code>config</code> subcommand<a class="headerlink" href="#task-6-move-config-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/config.go<span class="w"> </span>cmd/ach-cli/cmd/config.go
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/config_test.go<span class="w"> </span>cmd/ach-cli/cmd/config_test.go
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/config.go<span class="w"> </span>cmd/ach-cli/cmd/config_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move config subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-7-move-env-subcommand">Task 7: Move <code>env</code> subcommand<a class="headerlink" href="#task-7-move-env-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/env.go<span class="w"> </span>cmd/ach-cli/cmd/env.go
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/env_test.go<span class="w"> </span>cmd/ach-cli/cmd/env_test.go
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/env.go<span class="w"> </span>cmd/ach-cli/cmd/env_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move env subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-8-move-env-keys-subcommand">Task 8: Move <code>env-keys</code> subcommand<a class="headerlink" href="#task-8-move-env-keys-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/env_keys.go<span class="w"> </span>cmd/ach-cli/cmd/env_keys.go
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/env_keys_test.go<span class="w"> </span>cmd/ach-cli/cmd/env_keys_test.go
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/env_keys.go<span class="w"> </span>cmd/ach-cli/cmd/env_keys_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move env-keys subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-9-move-hydrate-subcommand">Task 9: Move <code>hydrate</code> subcommand<a class="headerlink" href="#task-9-move-hydrate-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/hydrate.go<span class="w"> </span>cmd/ach-cli/cmd/hydrate.go
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/hydrate_test.go<span class="w"> </span>cmd/ach-cli/cmd/hydrate_test.go
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/hydrate.go<span class="w"> </span>cmd/ach-cli/cmd/hydrate_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move hydrate subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-10-move-admin-subcommand">Task 10: Move <code>admin</code> subcommand<a class="headerlink" href="#task-10-move-admin-subcommand" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/admin.go<span class="w"> </span>cmd/ach-cli/cmd/admin.go
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/admin_test.go<span class="w"> </span>cmd/ach-cli/cmd/admin_test.go
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach-cli/...<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/admin.go<span class="w"> </span>cmd/ach-cli/cmd/admin_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move admin subcommand to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-11-move-shared-test-helpers-cross-cmd-guard-test">Task 11: Move shared test helpers + cross-cmd guard test<a class="headerlink" href="#task-11-move-shared-test-helpers-cross-cmd-guard-test" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> <code>helpers_test.go::executeCommand</code> is consumed by every <code>*_test.go</code> in the CLI tree. <code>synthetic_guard_test.go</code> enumerates every user-facing subcommand and asserts each one wires <code>synthetic.GuardCommand</code>. Both must follow the subcommands.</p>
+<p><strong>Files:</strong>
+- Move: <code>cmd/ach/cmd/helpers_test.go</code> → <code>cmd/ach-cli/cmd/helpers_test.go</code>
+- Move: <code>cmd/ach/cmd/synthetic_guard_test.go</code> → <code>cmd/ach-cli/cmd/synthetic_guard_test.go</code></p>
+<p><strong>Step 1: Move</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/helpers_test.go<span class="w"> </span>cmd/ach-cli/cmd/helpers_test.go
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>git<span class="w"> </span>mv<span class="w"> </span>cmd/ach/cmd/synthetic_guard_test.go<span class="w"> </span>cmd/ach-cli/cmd/synthetic_guard_test.go
+</code></pre></div>
+<p><strong>Step 2: Run the full CLI test suite from new location</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./cmd/ach-cli/cmd/...<span class="w"> </span>-v<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-30
+</code></pre></div>
+<p>Expected: ALL Phase 6 tests PASS from the new location. Test counts should match the baseline captured in Pre-flight. If <code>synthetic_guard_test.go</code> enumerates commands by hard-coded list, no edit needed — the commands all live in the same package now.</p>
+<p><strong>Step 3: Run the service-side test suite (regression)</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./cmd/ach/cmd/...<span class="w"> </span>-v<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10
+</code></pre></div>
+<p>Expected: service-mode tests (operator/platform-api/forwarder/content-service/migrate) PASS. Service-mode <code>*.go</code> files have no <code>*_test.go</code> partners pre-move, so this should be a quick no-op pass or just compile.</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach-cli/cmd/helpers_test.go<span class="w"> </span>cmd/ach-cli/cmd/synthetic_guard_test.go<span class="w"> </span>cmd/ach/cmd/
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(ach-cli): move helpers_test + synthetic_guard_test to cmd/ach-cli/cmd&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-12-update-cmdachcmdrootgo-long-help-drop-cli-surface-mention">Task 12: Update <code>cmd/ach/cmd/root.go</code> long-help — drop CLI surface mention<a class="headerlink" href="#task-12-update-cmdachcmdrootgo-long-help-drop-cli-surface-mention" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Service-mode rootCmd's <code>Long</code> field currently mentions "Run as CLI: invoke without a subcommand (CLI surface lands in Phase 6)." After split, <code>ach</code> no longer ships CLI; the Long text is stale.</p>
+<p><strong>Files:</strong>
+- Modify: <code>cmd/ach/cmd/root.go</code> (Long field only)</p>
+<p><strong>Step 1: Edit</strong></p>
+<p>Replace the Long block with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="w">    </span><span class="nx">Long</span><span class="p">:</span><span class="w"> </span><span class="s">`ach is the service-mode binary for the ACH control plane.</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="s">Run a long-running service:</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="s">  ach operator</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="s">  ach platform-api</span>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="s">  ach forwarder</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="s">  ach content-service</span>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a>
+<a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a><span class="s">Run a one-shot job:</span>
+<a id="__codelineno-28-10" name="__codelineno-28-10" href="#__codelineno-28-10"></a><span class="s">  ach migrate</span>
+<a id="__codelineno-28-11" name="__codelineno-28-11" href="#__codelineno-28-11"></a>
+<a id="__codelineno-28-12" name="__codelineno-28-12" href="#__codelineno-28-12"></a><span class="s">For the user-facing CLI (login/whoami/logout/config/env/env-keys/</span>
+<a id="__codelineno-28-13" name="__codelineno-28-13" href="#__codelineno-28-13"></a><span class="s">hydrate/admin), use the sibling &#39;ach-cli&#39; binary.`</span><span class="p">,</span>
+</code></pre></div>
+<p><strong>Step 2: Build smoke</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>./cmd/ach/...
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>./bin/ach<span class="w"> </span>--help<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-15
+</code></pre></div>
+<p>Expected: help text references <code>ach-cli</code> for user CLI; no mention of login/hydrate/etc. as <code>ach</code> subcommands.</p>
+<p><strong>Step 3: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>git<span class="w"> </span>add<span class="w"> </span>cmd/ach/cmd/root.go
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(ach): update root --help to point users at ach-cli for user CLI&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-13-add-ach-cli-build-block-to-goreleaseryml">Task 13: Add <code>ach-cli</code> build block to <code>.goreleaser.yml</code><a class="headerlink" href="#task-13-add-ach-cli-build-block-to-goreleaseryml" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Stable release config must produce both binaries + per-binary archives + per-binary SBOMs + cosign signatures.</p>
+<p><strong>Files:</strong>
+- Modify: <code>.goreleaser.yml</code></p>
+<p><strong>Step 1: Read existing <code>builds:</code> block</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>sed<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;/^builds:/,/^[a-z]/p&#39;</span><span class="w"> </span>.goreleaser.yml<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-50
+</code></pre></div>
+<p>Capture: <code>id</code>, <code>main</code>, <code>binary</code>, <code>env</code>, <code>goos</code>, <code>goarch</code>, <code>ldflags</code>. The new entry mirrors the existing one with <code>id: ach-cli</code>, <code>main: ./cmd/ach-cli</code>, <code>binary: ach-cli</code>.</p>
+<p><strong>Step 2: Add second <code>builds:</code> entry</strong></p>
+<p>Append (after the existing <code>ach</code> block, before the next top-level key):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-cli</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="w">    </span><span class="nt">main</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./cmd/ach-cli</span>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="w">    </span><span class="nt">binary</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-cli</span>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="w">    </span><span class="nt">env</span><span class="p">:</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CGO_ENABLED=0</span>
+<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="w">    </span><span class="nt">goos</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">darwin</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">windows</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-32-7" name="__codelineno-32-7" href="#__codelineno-32-7"></a><span class="w">    </span><span class="nt">goarch</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">amd64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">arm64</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-32-8" name="__codelineno-32-8" href="#__codelineno-32-8"></a><span class="w">    </span><span class="nt">ldflags</span><span class="p">:</span>
+<a id="__codelineno-32-9" name="__codelineno-32-9" href="#__codelineno-32-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-s -w</span>
+<a id="__codelineno-32-10" name="__codelineno-32-10" href="#__codelineno-32-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version={{.Version}}</span>
+</code></pre></div>
+<p>(Match the existing block's <code>env</code> / <code>goos</code> / <code>goarch</code> / <code>ldflags</code> verbatim — only <code>id</code>, <code>main</code>, <code>binary</code>, and the <code>-X</code> package path differ.)</p>
+<p><strong>Step 3: Add separate <code>archives:</code> entry if existing archives is filtered by build id</strong></p>
+<p>Read the <code>archives:</code> block. If it lists <code>builds: [ach]</code>, add a sibling entry for <code>ach-cli</code>. If it uses the default (all builds), no edit needed.</p>
+<p><strong>Step 4: Validate config</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>./scripts/dev.sh<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;goreleaser check --config .goreleaser.yml&#39;</span>
+</code></pre></div>
+<p>Expected: exit 0, no warnings about missing fields.</p>
+<p><strong>Step 5: Repeat for <code>.goreleaser.prerelease.yml</code> and <code>.goreleaser.snapshot.yml</code></strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1"># Add the same ach-cli build block + archive entry to both configs.</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>./scripts/dev.sh<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;goreleaser check --config .goreleaser.prerelease.yml&#39;</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>./scripts/dev.sh<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;goreleaser check --config .goreleaser.snapshot.yml&#39;</span>
+</code></pre></div>
+<p>Expected: both check exit 0.</p>
+<p><strong>Step 6: Snapshot release rehearsal</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>./scripts/dev.sh<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;goreleaser release --snapshot --clean --config .goreleaser.snapshot.yml&#39;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>ls<span class="w"> </span>-la<span class="w"> </span>dist/ach_linux_amd64*/ach<span class="w"> </span>dist/ach-cli_linux_amd64*/ach-cli<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span>
+</code></pre></div>
+<p>Expected: both binaries exist in <code>dist/</code>. Both have non-zero size. <code>ach-cli</code> should be visibly smaller than <code>ach</code> (drops k8s deps).</p>
+<p><strong>Step 7: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>git<span class="w"> </span>add<span class="w"> </span>.goreleaser.yml<span class="w"> </span>.goreleaser.prerelease.yml<span class="w"> </span>.goreleaser.snapshot.yml
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;build(release): add ach-cli binary build to all three goreleaser configs&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-14-container-image-keep-ach-only">Task 14: Container image — keep <code>ach</code> only<a class="headerlink" href="#task-14-container-image-keep-ach-only" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Service Deployments run <code>ach &lt;mode&gt;</code>; they do not need <code>ach-cli</code> inside the image. Keeping the image lean preserves the size benefit of the split.</p>
+<p><strong>Files:</strong>
+- Modify: <code>Dockerfile</code> (no change expected — already only builds <code>ach</code>)
+- Modify: <code>Dockerfile.goreleaser</code> (no change expected)</p>
+<p><strong>Step 1: Verify current Dockerfile only builds <code>ach</code></strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;cmd/ach[-/]|COPY.*ach[-/ ]|ENTRYPOINT|CMD&#39;</span><span class="w"> </span>Dockerfile<span class="w"> </span>Dockerfile.goreleaser
+</code></pre></div>
+<p>Expected: no references to <code>ach-cli</code>. If anything builds <code>cmd/ach/...</code> as a wildcard, narrow to <code>cmd/ach</code> (no trailing dash variant matches by accident).</p>
+<p><strong>Step 2: Verify goreleaser <code>dockers:</code> block targets <code>ach</code> only</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>sed<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;/^dockers:/,/^[a-z]/p&#39;</span><span class="w"> </span>.goreleaser.yml<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-20
+</code></pre></div>
+<p>Expected: image_templates reference <code>ach</code> only; if it copies <code>ach-cli</code>, remove that line so the image stays lean.</p>
+<p><strong>Step 3: Snapshot Docker build sanity (already exercised by Task 13's snapshot rehearsal)</strong></p>
+<p>The goreleaser snapshot already attempts the container build. If it succeeded in Task 13 step 6, this task is verification-only.</p>
+<p><strong>Step 4: If any change was made, commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>git<span class="w"> </span>add<span class="w"> </span>Dockerfile<span class="w"> </span>Dockerfile.goreleaser<span class="w"> </span>.goreleaser.yml
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;build(docker): keep ach-cli out of the service container image&quot;</span>
+</code></pre></div>
+<p>(Skip the commit if no change was needed.)</p>
+<hr />
+<h2 id="task-15-helm-chart-no-change-required-verify">Task 15: Helm chart — no change required, verify<a class="headerlink" href="#task-15-helm-chart-no-change-required-verify" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Deployments in <code>deploy/helm/ach/templates/*.yaml</code> set <code>args: ["&lt;mode&gt;"]</code> on the operator/platform-api/forwarder/content-service Pods. They never reference login/hydrate/etc., so no edits needed. Verify there's no stale reference.</p>
+<p><strong>Files:</strong>
+- Read-only check: <code>deploy/helm/ach/templates/*.yaml</code></p>
+<p><strong>Step 1: Grep for CLI-only subcommands in Helm templates</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>grep<span class="w"> </span>-rE<span class="w"> </span><span class="s1">&#39;login|whoami|logout|hydrate|env-keys|admin&#39;</span><span class="w"> </span>deploy/helm/ach/templates/<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span>
+</code></pre></div>
+<p>Expected: NO matches. (Some <code>env:</code> blocks may match the literal word "env" — narrow to whole-word if false positives: <code>grep -rwE '...'</code>.)</p>
+<p><strong>Step 2: If grep finds a stale reference, capture + fix</strong></p>
+<p>Report the location; edit + commit. If clean, no commit.</p>
+<hr />
+<h2 id="task-16-e2e-suite-point-phase6runach-at-ach-cli-binary">Task 16: E2E suite — point <code>phase6RunAch</code> at <code>ach-cli</code> binary<a class="headerlink" href="#task-16-e2e-suite-point-phase6runach-at-ach-cli-binary" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> <code>test/e2e/phase6_helpers_test.go::phase6RunAch</code> invokes <code>./bin/ach &lt;args&gt;</code>. After split, user-CLI args land on <code>ach-cli</code>. Helper must invoke the new binary.</p>
+<p><strong>Files:</strong>
+- Modify: <code>test/e2e/phase6_helpers_test.go</code> (helper binary path)
+- Modify: <code>Makefile</code> <code>build</code> target (build both binaries)</p>
+<p><strong>Step 1: Update the Makefile <code>build</code> target</strong></p>
+<p>Read current target:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="s1">&#39;^build:&#39;</span><span class="w"> </span>Makefile
+</code></pre></div>
+<p>Add a second <code>go build</code> line (or extend the existing) so both binaries land in <code>bin/</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="nf">build</span><span class="o">:</span>
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a><span class="w">    </span>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>-ldflags<span class="w"> </span><span class="s2">&quot;-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=</span><span class="k">$(</span>VERSION<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-o<span class="w"> </span>bin/ach<span class="w"> </span>./cmd/ach
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a><span class="w">    </span>./scripts/dev.sh<span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>-ldflags<span class="w"> </span><span class="s2">&quot;-s -w -X github.com/ackstorm/ach/cmd/ach-cli/cmd.Version=</span><span class="k">$(</span>VERSION<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-o<span class="w"> </span>bin/ach-cli<span class="w"> </span>./cmd/ach-cli
+</code></pre></div>
+<p>(Preserve existing flags / -X paths from the current target.)</p>
+<p><strong>Step 2: Update <code>phase6RunAch</code> to invoke <code>bin/ach-cli</code></strong></p>
+<p>Open <code>test/e2e/phase6_helpers_test.go</code>; find the line that exec's <code>./bin/ach</code>. Change to <code>./bin/ach-cli</code>.</p>
+<p><strong>Step 3: Rebuild + run a focused subset</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build
+<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>ls<span class="w"> </span>-la<span class="w"> </span>bin/ach<span class="w"> </span>bin/ach-cli
+</code></pre></div>
+<p>Expected: both binaries exist.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a><span class="c1"># Smoke each subcommand exists in ach-cli:</span>
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a><span class="k">for</span><span class="w"> </span>sub<span class="w"> </span><span class="k">in</span><span class="w"> </span>login<span class="w"> </span><span class="nb">logout</span><span class="w"> </span>whoami<span class="w"> </span>config<span class="w"> </span>env<span class="w"> </span>env-keys<span class="w"> </span>hydrate<span class="w"> </span>admin<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a><span class="w">  </span>./bin/ach-cli<span class="w"> </span><span class="nv">$sub</span><span class="w"> </span>--help<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;OK: </span><span class="nv">$sub</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;FAIL: </span><span class="nv">$sub</span><span class="s2">&quot;</span>
+<a id="__codelineno-44-4" name="__codelineno-44-4" href="#__codelineno-44-4"></a><span class="k">done</span>
+</code></pre></div>
+<p>Expected: 8 OK lines.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="c1"># Confirm service subcommands stayed on ach:</span>
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a><span class="k">for</span><span class="w"> </span>sub<span class="w"> </span><span class="k">in</span><span class="w"> </span>operator<span class="w"> </span>platform-api<span class="w"> </span>forwarder<span class="w"> </span>content-service<span class="w"> </span>migrate<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a><span class="w">  </span>./bin/ach<span class="w"> </span><span class="nv">$sub</span><span class="w"> </span>--help<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;OK: </span><span class="nv">$sub</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;FAIL: </span><span class="nv">$sub</span><span class="s2">&quot;</span>
+<a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a><span class="k">done</span>
+</code></pre></div>
+<p>Expected: 5 OK lines.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a><span class="c1"># Confirm cross-binary surface separation:</span>
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>./bin/ach<span class="w"> </span>login<span class="w"> </span>--help<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-3<span class="w">   </span><span class="c1"># expect &quot;unknown command &#39;login&#39;&quot;</span>
+<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>./bin/ach-cli<span class="w"> </span>operator<span class="w"> </span>--help<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-3<span class="w">   </span><span class="c1"># expect &quot;unknown command &#39;operator&#39;&quot;</span>
+</code></pre></div>
+<p><strong>Step 4: Run a focused e2e to validate the binary path swap</strong></p>
+<p>If a kept cluster is available:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="nv">ACH_E2E_PHASE6</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">ACH_E2E_PHASE6_PK</span><span class="o">=</span>pk_&lt;...&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a><span class="w">  </span>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>e2e-focus<span class="w"> </span><span class="nv">RUN</span><span class="o">=</span><span class="s1">&#39;TestPhase6CLI/login_device_code&#39;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10
+</code></pre></div>
+<p>Expected: PASS. Other subtests can wait until full e2e in Task 18.</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>git<span class="w"> </span>add<span class="w"> </span>Makefile<span class="w"> </span>test/e2e/phase6_helpers_test.go
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test(e2e): point phase6RunAch at ach-cli binary; Makefile builds both binaries&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-17-docs-sweep-claudemd-readme-runbook-examples">Task 17: Docs sweep — CLAUDE.md, README, runbook, examples<a class="headerlink" href="#task-17-docs-sweep-claudemd-readme-runbook-examples" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Every <code>./bin/ach login</code> / <code>./bin/ach hydrate</code> reference in docs is stale.</p>
+<p><strong>Files:</strong>
+- Modify: <code>CLAUDE.md</code>
+- Modify: <code>README.md</code>
+- Modify: <code>docs/runbooks/phase6-cli-e2e-verification.md</code>
+- Modify: <code>examples/README.md</code></p>
+<p><strong>Step 1: Find all references</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>grep<span class="w"> </span>-rnE<span class="w"> </span><span class="s1">&#39;ach (login|logout|whoami|config|env|env-keys|hydrate|admin)&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a><span class="w">  </span>CLAUDE.md<span class="w"> </span>README.md<span class="w"> </span>examples/README.md<span class="w"> </span>docs/<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-30
+</code></pre></div>
+<p>Expected: a list of locations. For each:
+- <code>./bin/ach login</code> → <code>./bin/ach-cli login</code>
+- <code>ach login</code> (bare, in prose) → <code>ach-cli login</code>
+- Mode tables / repo-layout diagrams referencing the user CLI on <code>ach</code> → move to a sibling <code>ach-cli</code> table or annotate</p>
+<p><strong>Step 2: Update CLAUDE.md Mode table</strong></p>
+<p>The "Each long-running service runs the same <code>ach</code> image with a cobra subcommand as <code>args:</code>" table stays (service modes only). Add a sibling section directly below it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a>The user-facing CLI ships as a separate binary, <span class="sb">`ach-cli`</span>:
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>
+<a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>| Subcommand   | Owns                                           |
+<a id="__codelineno-50-4" name="__codelineno-50-4" href="#__codelineno-50-4"></a>|--------------|------------------------------------------------|
+<a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>| <span class="sb">`ach-cli login`</span>       | Device-code SSO login                  |
+<a id="__codelineno-50-6" name="__codelineno-50-6" href="#__codelineno-50-6"></a>| <span class="sb">`ach-cli whoami`</span>      | Display current identity               |
+<a id="__codelineno-50-7" name="__codelineno-50-7" href="#__codelineno-50-7"></a>| <span class="sb">`ach-cli logout`</span>      | Revoke local session                   |
+<a id="__codelineno-50-8" name="__codelineno-50-8" href="#__codelineno-50-8"></a>| <span class="sb">`ach-cli config`</span>      | Inspect / mutate local config          |
+<a id="__codelineno-50-9" name="__codelineno-50-9" href="#__codelineno-50-9"></a>| <span class="sb">`ach-cli env`</span>         | List + switch environments             |
+<a id="__codelineno-50-10" name="__codelineno-50-10" href="#__codelineno-50-10"></a>| <span class="sb">`ach-cli env-keys`</span>    | Create / list / revoke env keys        |
+<a id="__codelineno-50-11" name="__codelineno-50-11" href="#__codelineno-50-11"></a>| <span class="sb">`ach-cli hydrate`</span>     | Materialize workspace artifacts        |
+<a id="__codelineno-50-12" name="__codelineno-50-12" href="#__codelineno-50-12"></a>| <span class="sb">`ach-cli admin`</span>       | Admin keys revoke / users revoke-keys / refresh |
+</code></pre></div>
+<p><strong>Step 3: Update CLAUDE.md repo layout</strong></p>
+<p>Find the <code>cmd/ach/cmd/</code> section. Add a sibling <code>cmd/ach-cli/</code> entry:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>├── cmd/ach/main.go          ← service-mode entrypoint
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>├── cmd/ach/cmd/              ← cobra root + service-mode subcommands
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>│   ├── root.go               (Version, services root cmd)
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>│   ├── operator.go, platform_api.go, forwarder.go,
+<a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a>│   ├── content_service.go, migrate.go
+<a id="__codelineno-51-6" name="__codelineno-51-6" href="#__codelineno-51-6"></a>├── cmd/ach-cli/main.go      ← user CLI entrypoint
+<a id="__codelineno-51-7" name="__codelineno-51-7" href="#__codelineno-51-7"></a>├── cmd/ach-cli/cmd/          ← cobra root + user-facing subcommands
+<a id="__codelineno-51-8" name="__codelineno-51-8" href="#__codelineno-51-8"></a>│   ├── root.go               (Version, cli root cmd)
+<a id="__codelineno-51-9" name="__codelineno-51-9" href="#__codelineno-51-9"></a>│   ├── login.go, logout.go, whoami.go, config.go,
+<a id="__codelineno-51-10" name="__codelineno-51-10" href="#__codelineno-51-10"></a>│   ├── env.go, env_keys.go, hydrate.go, admin.go
+</code></pre></div>
+<p><strong>Step 4: Update README.md Quick Start</strong></p>
+<p>Find the "Quick Start" section (added by Plan 06-09). Replace every <code>./bin/ach &lt;user-cmd&gt;</code> with <code>./bin/ach-cli &lt;user-cmd&gt;</code>. Service-mode invocations (<code>./bin/ach operator</code>) stay on <code>ach</code>.</p>
+<p><strong>Step 5: Update docs/runbooks/phase6-cli-e2e-verification.md</strong></p>
+<p>CHECK 1: replace <code>./bin/ach --help</code> smoke with two checks — <code>./bin/ach --help</code> (services only) and <code>./bin/ach-cli --help</code> (user CLI). Expected subcommand lists split accordingly.</p>
+<p><strong>Step 6: Update examples/README.md</strong></p>
+<p>Find the "End-to-end demo" section. Replace every <code>ach login</code> / <code>ach hydrate</code> with <code>ach-cli login</code> / <code>ach-cli hydrate</code>.</p>
+<p><strong>Step 7: Confirm grep is clean</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>grep<span class="w"> </span>-rnE<span class="w"> </span><span class="s1">&#39;\./bin/ach (login|logout|whoami|config|env|env-keys|hydrate|admin)&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a><span class="w">  </span>CLAUDE.md<span class="w"> </span>README.md<span class="w"> </span>examples/README.md<span class="w"> </span>docs/<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span>
+</code></pre></div>
+<p>Expected: no matches.</p>
+<p><strong>Step 8: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>git<span class="w"> </span>add<span class="w"> </span>CLAUDE.md<span class="w"> </span>README.md<span class="w"> </span>docs/<span class="w"> </span>examples/README.md
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs: split user-CLI references to ach-cli binary (Option B refactor)&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="task-18-binary-size-validation-final-full-suite-verification">Task 18: Binary-size validation + final full-suite verification<a class="headerlink" href="#task-18-binary-size-validation-final-full-suite-verification" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Confirm the size benefit landed; confirm nothing regressed.</p>
+<p><strong>Step 1: Build both binaries clean</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>bin/
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build
+<a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a>ls<span class="w"> </span>-la<span class="w"> </span>bin/ach<span class="w"> </span>bin/ach-cli
+<a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a>du<span class="w"> </span>-sh<span class="w"> </span>bin/ach<span class="w"> </span>bin/ach-cli
+</code></pre></div>
+<p><strong>Step 2: Record sizes in the commit message</strong></p>
+<p>Capture:
+- <code>bin/ach</code> size (service-only — should be roughly unchanged from baseline)
+- <code>bin/ach-cli</code> size (user-CLI only — target &lt; 50% of <code>ach</code> size)</p>
+<p>If <code>ach-cli</code> is NOT visibly smaller, investigate: <code>go build -ldflags '-s -w' ...</code> should have stripped symbols; check that no test code or <code>_ = "import"</code> style import-for-side-effect leaks k8s.io into the CLI binary.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>./scripts/dev.sh<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;go list -deps ./cmd/ach-cli/... | grep k8s.io&#39;</span>
+</code></pre></div>
+<p>Expected: NO matches. If any <code>k8s.io/*</code> package shows up in ach-cli's transitive deps, find the import and remove it (likely a stray import in one of the moved subcommand files that was already dead code in the monolithic binary).</p>
+<p><strong>Step 3: Run the full unit suite</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>unit
+</code></pre></div>
+<p>Expected: PASS. Test count should match (or exceed by 4) the baseline captured in Pre-flight (4 = the new <code>TestDispatch*</code> tests from Task 1).</p>
+<p><strong>Step 4: Run the full lint sweep</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>lint
+</code></pre></div>
+<p>Expected: clean.</p>
+<p><strong>Step 5: Run a full Phase 6 e2e (cluster required)</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a><span class="nv">ACH_E2E_PHASE6</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">ACH_E2E_PHASE6_PK</span><span class="o">=</span>pk_&lt;...&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a><span class="w">  </span>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>e2e-focus<span class="w"> </span><span class="nv">RUN</span><span class="o">=</span><span class="s1">&#39;TestPhase6CLI&#39;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+</code></pre></div>
+<p>Expected: all 5 subtests PASS against the new <code>ach-cli</code> binary.</p>
+<p><strong>Step 6: Run <code>make pre-push</code></strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>make<span class="w"> </span>pre-push<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10
+</code></pre></div>
+<p>Expected: 17 gates pass, exit 0.</p>
+<p><strong>Step 7: Commit size + verification receipt</strong></p>
+<p>If anything was tweaked in steps 1-6, commit each fix as it was found. If steps 1-6 were all clean, no commit needed — the verification is documented in the PR description.</p>
+<hr />
+<h2 id="task-19-open-pr-spec-follow-up-phase-7-prep">Task 19: Open PR + spec follow-up Phase 7 prep<a class="headerlink" href="#task-19-open-pr-spec-follow-up-phase-7-prep" title="Permanent link">&para;</a></h2>
+<p><strong>Why:</strong> Capture the refactor as a discrete PR for review independent of Phase 6 + flag the Phase 7 implications (CR-01 fix, brew/scoop taps).</p>
+<p><strong>Step 1: Open PR against <code>main</code></strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>feat/ach-cli-binary-split
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;refactor: split ach-cli into separate binary (Option B)&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a><span class="w">  </span>--body<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>cat<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a><span class="s">## Summary</span>
+<a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a>
+<a id="__codelineno-60-6" name="__codelineno-60-6" href="#__codelineno-60-6"></a><span class="s">Splits the `ach` monolithic binary into two siblings:</span>
+<a id="__codelineno-60-7" name="__codelineno-60-7" href="#__codelineno-60-7"></a>
+<a id="__codelineno-60-8" name="__codelineno-60-8" href="#__codelineno-60-8"></a><span class="s">- `ach` — service-mode only (operator, platform-api, forwarder, content-service, migrate)</span>
+<a id="__codelineno-60-9" name="__codelineno-60-9" href="#__codelineno-60-9"></a><span class="s">- `ach-cli` — user-facing CLI only (login, logout, whoami, config, env, env-keys, hydrate, admin)</span>
+<a id="__codelineno-60-10" name="__codelineno-60-10" href="#__codelineno-60-10"></a>
+<a id="__codelineno-60-11" name="__codelineno-60-11" href="#__codelineno-60-11"></a><span class="s">Pure refactor. No behavior change. Shared library code (`internal/cli/*`) unchanged.</span>
+<a id="__codelineno-60-12" name="__codelineno-60-12" href="#__codelineno-60-12"></a>
+<a id="__codelineno-60-13" name="__codelineno-60-13" href="#__codelineno-60-13"></a><span class="s">## Binary sizes</span>
+<a id="__codelineno-60-14" name="__codelineno-60-14" href="#__codelineno-60-14"></a>
+<a id="__codelineno-60-15" name="__codelineno-60-15" href="#__codelineno-60-15"></a><span class="s">| Binary | Before | After | Δ |</span>
+<a id="__codelineno-60-16" name="__codelineno-60-16" href="#__codelineno-60-16"></a><span class="s">|--------|--------|-------|----|</span>
+<a id="__codelineno-60-17" name="__codelineno-60-17" href="#__codelineno-60-17"></a><span class="s">| ach    | &lt;N MB&gt; | &lt;N MB&gt; | &lt;0 to +1 MB&gt; |</span>
+<a id="__codelineno-60-18" name="__codelineno-60-18" href="#__codelineno-60-18"></a><span class="s">| ach-cli | (n/a) | &lt;M MB&gt; | new, &lt; 50% of ach |</span>
+<a id="__codelineno-60-19" name="__codelineno-60-19" href="#__codelineno-60-19"></a>
+<a id="__codelineno-60-20" name="__codelineno-60-20" href="#__codelineno-60-20"></a><span class="s">## Tasks</span>
+<a id="__codelineno-60-21" name="__codelineno-60-21" href="#__codelineno-60-21"></a>
+<a id="__codelineno-60-22" name="__codelineno-60-22" href="#__codelineno-60-22"></a><span class="s">- [x] Task 1: extract `internal/cli/exit.Dispatch`</span>
+<a id="__codelineno-60-23" name="__codelineno-60-23" href="#__codelineno-60-23"></a><span class="s">- [x] Task 2: scaffold `cmd/ach-cli/`</span>
+<a id="__codelineno-60-24" name="__codelineno-60-24" href="#__codelineno-60-24"></a><span class="s">- [x] Tasks 3-10: move 8 user subcommands</span>
+<a id="__codelineno-60-25" name="__codelineno-60-25" href="#__codelineno-60-25"></a><span class="s">- [x] Task 11: move shared test helpers</span>
+<a id="__codelineno-60-26" name="__codelineno-60-26" href="#__codelineno-60-26"></a><span class="s">- [x] Task 12: update service rootCmd --help</span>
+<a id="__codelineno-60-27" name="__codelineno-60-27" href="#__codelineno-60-27"></a><span class="s">- [x] Task 13: goreleaser builds + archives both</span>
+<a id="__codelineno-60-28" name="__codelineno-60-28" href="#__codelineno-60-28"></a><span class="s">- [x] Task 14: container image keeps ach only</span>
+<a id="__codelineno-60-29" name="__codelineno-60-29" href="#__codelineno-60-29"></a><span class="s">- [x] Task 15: Helm chart unchanged (verified)</span>
+<a id="__codelineno-60-30" name="__codelineno-60-30" href="#__codelineno-60-30"></a><span class="s">- [x] Task 16: e2e suite targets ach-cli</span>
+<a id="__codelineno-60-31" name="__codelineno-60-31" href="#__codelineno-60-31"></a><span class="s">- [x] Task 17: docs sweep</span>
+<a id="__codelineno-60-32" name="__codelineno-60-32" href="#__codelineno-60-32"></a><span class="s">- [x] Task 18: size + full suite + pre-push</span>
+<a id="__codelineno-60-33" name="__codelineno-60-33" href="#__codelineno-60-33"></a>
+<a id="__codelineno-60-34" name="__codelineno-60-34" href="#__codelineno-60-34"></a><span class="s">## Follow-ups (deferred)</span>
+<a id="__codelineno-60-35" name="__codelineno-60-35" href="#__codelineno-60-35"></a>
+<a id="__codelineno-60-36" name="__codelineno-60-36" href="#__codelineno-60-36"></a><span class="s">- Brew tap formula for ach-cli (separate PR)</span>
+<a id="__codelineno-60-37" name="__codelineno-60-37" href="#__codelineno-60-37"></a><span class="s">- Scoop bucket manifest for ach-cli (separate PR)</span>
+<a id="__codelineno-60-38" name="__codelineno-60-38" href="#__codelineno-60-38"></a><span class="s">- CR-01 fix (remove `DisallowUnknownFields` in `internal/cli/httpclient/client.go:229`) — flagged in 06-REVIEW.md, unrelated to this refactor but recommended before Phase 7</span>
+<a id="__codelineno-60-39" name="__codelineno-60-39" href="#__codelineno-60-39"></a>
+<a id="__codelineno-60-40" name="__codelineno-60-40" href="#__codelineno-60-40"></a><span class="s">## Test plan</span>
+<a id="__codelineno-60-41" name="__codelineno-60-41" href="#__codelineno-60-41"></a>
+<a id="__codelineno-60-42" name="__codelineno-60-42" href="#__codelineno-60-42"></a><span class="s">- [x] `./scripts/dev.sh make unit` — PASS (baseline + 4 new TestDispatch* tests)</span>
+<a id="__codelineno-60-43" name="__codelineno-60-43" href="#__codelineno-60-43"></a><span class="s">- [x] `./scripts/dev.sh make lint` — clean</span>
+<a id="__codelineno-60-44" name="__codelineno-60-44" href="#__codelineno-60-44"></a><span class="s">- [x] `make pre-push` — 17 gates pass</span>
+<a id="__codelineno-60-45" name="__codelineno-60-45" href="#__codelineno-60-45"></a><span class="s">- [x] `./bin/ach --help` + `./bin/ach-cli --help` — surface separation correct</span>
+<a id="__codelineno-60-46" name="__codelineno-60-46" href="#__codelineno-60-46"></a><span class="s">- [x] `goreleaser release --snapshot --clean` — both binaries build + sign</span>
+<a id="__codelineno-60-47" name="__codelineno-60-47" href="#__codelineno-60-47"></a><span class="s">- [ ] Phase 6 e2e suite against kept kind cluster — gated on engineer access</span>
+<a id="__codelineno-60-48" name="__codelineno-60-48" href="#__codelineno-60-48"></a><span class="s">EOF</span>
+<a id="__codelineno-60-49" name="__codelineno-60-49" href="#__codelineno-60-49"></a><span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p><strong>Step 2: Note in <code>.planning/STATE.md</code></strong></p>
+<p>This isn't a numbered phase; document in STATE.md "Current focus" line so <code>/gsd-progress</code> surfaces the open refactor branch.</p>
+<hr />
+<h2 id="done">Done<a class="headerlink" href="#done" title="Permanent link">&para;</a></h2>
+<p>Final state:</p>
+<ul>
+<li><code>cmd/ach/main.go</code> — 1-line entrypoint, calls <code>exit.DispatchAndRender</code></li>
+<li><code>cmd/ach/cmd/</code> — root.go + 5 service-mode files (~1500 LOC)</li>
+<li><code>cmd/ach-cli/main.go</code> — 1-line entrypoint, same dispatcher</li>
+<li><code>cmd/ach-cli/cmd/</code> — new root.go + 8 user-CLI files + 2 test helpers (~6500 LOC)</li>
+<li><code>internal/cli/exit/dispatch.go</code> — shared dispatch + tests</li>
+<li>Both binaries built by Makefile + goreleaser, signed + SBOM'd</li>
+<li>Container image stays lean (services only)</li>
+<li>Phase 6 e2e suite targets <code>ach-cli</code></li>
+<li>Docs reflect the split</li>
+</ul>
+<h2 id="notes-risks">Notes / risks<a class="headerlink" href="#notes-risks" title="Permanent link">&para;</a></h2>
+<ul>
+<li>This refactor compounds with the unmerged <code>feat/ach-cli-binary-split</code> branch — coordinate with any in-flight Phase 7 work that may also touch <code>cmd/ach/cmd/</code>. If Phase 7 lands first, redo Tasks 3-11 as a single squashed commit on top.</li>
+<li><code>CR-01</code> (httpclient <code>DisallowUnknownFields</code>) is independent and not touched here — fix as a separate PR before Phase 7 ships extended envelopes.</li>
+<li>Brew/scoop taps are out of scope — add as discrete follow-up PRs once ach-cli is on GitHub Releases.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
