@@ -122,7 +122,7 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	cmd.Flags().StringVar(&flagPlatform, "platform", "",
-		"Override platform autodetection (claude-code / codex / gemini-cli / opencode)")
+		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
 		"Wait up to <d> for the workspace lock instead of failing fast")
 	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,

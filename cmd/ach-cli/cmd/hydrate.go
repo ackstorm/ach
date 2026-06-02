@@ -168,8 +168,8 @@ I/O:
   --output <dir>      Workspace root override (default: cwd).
   --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
   --platform <id>     Override platform autodetection (claude-code /
-                      codex / gemini-cli / opencode + case-folded
-                      aliases). When omitted, the engine scans cwd
+                      codex / gemini-cli / opencode / pimono +
+                      case-folded aliases). When omitted, the engine scans cwd
                       (or $HOME under --global) and picks the
                       single match; zero or multiple matches → exit 1.
 
@@ -260,7 +260,7 @@ Exit codes (spec §9.3):
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Relax SAFE-01 tar policy's symlink reject (unsafe escape hatch)")
 	cmd.Flags().StringVar(&flagPlatform, "platform", "",
-		"Override platform autodetection (claude-code / codex / gemini-cli / opencode)")
+		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
 
