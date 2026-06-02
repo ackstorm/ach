@@ -43,7 +43,9 @@ const envCacheKeyPrefix = "ach:env:"
 // could diverge in a future spec revision.
 const cacheTTL = 60 * time.Second
 
-// sfLeaderTimeout bounds the detached singleflight loader (finding C1).
+// sfLeaderTimeout bounds the detached singleflight loader so one caller's
+// cancellation cannot cascade to live followers (C1) yet the flight can
+// never hang. See internal/sfdetach for the mechanism.
 const sfLeaderTimeout = 10 * time.Second
 
 // EnvRow is the cache payload — the subset of `internal/db.EnvironmentRow`

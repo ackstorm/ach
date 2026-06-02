@@ -22,9 +22,10 @@ import (
 // DB pressure.
 const defaultTTL = 60 * time.Second
 
-// sfLeaderTimeout bounds the detached singleflight leader DB lookup so a
-// per-request cancellation cannot kill the shared flight (finding C1) yet
-// the flight can never hang.
+// sfLeaderTimeout bounds the detached singleflight leader lookup so a
+// per-request cancellation cannot kill the shared flight (C1) yet the
+// flight can never hang. 10s sits under the 30s LiteLLM HTTP client /
+// server ReadTimeout, so a slow-but-valid lookup still has ample room.
 const sfLeaderTimeout = 10 * time.Second
 
 // cacheKeyPrefix is the Redis key namespace for cached resolutions.

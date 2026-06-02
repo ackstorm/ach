@@ -20,6 +20,7 @@ import (
 // Do executes fn under g keyed by key, isolating the shared flight from
 // per-caller cancellation. Followers joined on the same key receive the
 // leader's value/error; a follower whose own ctx ends returns ctx.Err().
+// The leader context inherits the caller's values (trace/request IDs) but not its cancellation signal.
 func Do[T any](
 	ctx context.Context,
 	g *singleflight.Group,

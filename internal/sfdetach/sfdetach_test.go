@@ -24,10 +24,26 @@ func TestDo_CallerCancelReturnsCtxErr(t *testing.T) {
 	var g singleflight.Group
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := Do(ctx, &g, "k", time.Second,
-		func(context.Context) (int, error) { return 1, nil })
+	release := make(chan struct{})
+	defer close(release) // let the detached leader finish after Do returns
+	_, err := Do(ctx, &g, "k", time.Second, func(context.Context) (int, error) {
+		<-release // block so the result channel is never ready before select sees ctx.Done()
+		return 1, nil
+	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context.Canceled, got %v", err)
+	}
+}
+
+func TestDo_LeaderTimeoutExpires(t *testing.T) {
+	var g singleflight.Group
+	_, err := Do(context.Background(), &g, "k", 10*time.Millisecond,
+		func(c context.Context) (int, error) {
+			<-c.Done() // leader ctx must expire via leaderTimeout
+			return 0, c.Err()
+		})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want context.DeadlineExceeded, got %v", err)
 	}
 }
 
