@@ -1,0 +1,26 @@
+{{- if .Values.litellmConnection.enabled }}
+# LiteLLMConnection/default — the single ACH↔LiteLLM wire. The operator
+# reconciles it into the Postgres projection that the forwarder + the
+# Environment controller read (issue #34). platform-api + content-service
+# get the same coordinates as ACH_LITELLM_* env, derived from this same
+# block via the ach.litellmConnectionEnv helper — so LiteLLM is configured
+# ONCE here, never also in extraEnv.
+#
+# Only the name "default" is admitted per namespace (the resolver's
+# CRName). masterKeySecretRef points at a Secret in THIS namespace (the
+# resolver reads the Secret in the connection's own namespace — there is
+# no spec.masterKeySecretRef.namespace field).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: LiteLLMConnection
+metadata:
+  name: default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm-connection
+spec:
+  endpoint: {{ required "litellmConnection.endpoint is required when litellmConnection.enabled" .Values.litellmConnection.endpoint | quote }}
+  masterKeySecretRef:
+    name: {{ required "litellmConnection.masterKeySecretRef.name is required" .Values.litellmConnection.masterKeySecretRef.name | quote }}
+    key: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
+{{- end }}

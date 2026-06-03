@@ -117,6 +117,25 @@ forwarder:
   # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
 
+# litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
+# Configure endpoint + master-key Secret ref here ONCE; the chart fans it
+# out to every consumer:
+#   - renders LiteLLMConnection/default (operator reconciles it → Postgres
+#     projection that the forwarder + Environment controller read), and
+#   - derives ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY env for
+#     platform-api + content-service (via the ach.litellmConnectionEnv
+#     helper), and
+#   - points the forwarder's master-key Secret RBAC at the same Secret.
+# Do NOT also set ACH_LITELLM_* in extraEnv — that is the duplication this
+# block removes. The Secret named here must exist in the release namespace
+# (create it out-of-band, e.g. a pre-install step).
+litellmConnection:
+  enabled: true
+  endpoint: http://litellm.litellm.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: master_key
+
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one
 # origin so the public Ingress targets a single Service. It performs no

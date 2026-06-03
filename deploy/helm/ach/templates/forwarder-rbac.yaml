@@ -1,6 +1,16 @@
 {{- if .Values.forwarder.enabled }}
-{{- $masterKeyNS := default .Release.Namespace .Values.forwarder.litellmMasterKey.namespace -}}
-{{- $masterKeyName := default .Values.forwarder.litellmMasterSecretName .Values.forwarder.litellmMasterKey.name -}}
+{{/* Single-source the master-key Secret off litellmConnection when enabled
+     (the CR resolver reads it in the connection's namespace = release ns);
+     fall back to the deprecated forwarder.litellmMasterKey.* for charts
+     not yet migrated to the litellmConnection block. */}}
+{{- $masterKeyNS := .Release.Namespace -}}
+{{- $masterKeyName := "" -}}
+{{- if .Values.litellmConnection.enabled -}}
+{{- $masterKeyName = .Values.litellmConnection.masterKeySecretRef.name -}}
+{{- else -}}
+{{- $masterKeyNS = default .Release.Namespace .Values.forwarder.litellmMasterKey.namespace -}}
+{{- $masterKeyName = default .Values.forwarder.litellmMasterSecretName .Values.forwarder.litellmMasterKey.name -}}
+{{- end -}}
 ---
 # Forwarder reads (issue #34 C7 — Postgres-only trim):
 #   - ach-jwt-signing-keys Secret (FWD-09 JWT seed hot-reload via

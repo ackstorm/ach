@@ -27,3 +27,23 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{ toYaml . }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+ach.litellmConnectionEnv — derives the LiteLLM coordinates that
+platform-api + content-service read from env (ACH_LITELLM_BASE_URL +
+ACH_LITELLM_MASTER_KEY) from the single litellmConnection values block,
+so LiteLLM is configured ONCE. The same block also renders
+LiteLLMConnection/default (templates/litellmconnection.yaml) for the
+forwarder + operator. Emitted only when litellmConnection.enabled.
+*/}}
+{{- define "ach.litellmConnectionEnv" -}}
+{{- if .Values.litellmConnection.enabled -}}
+- name: ACH_LITELLM_BASE_URL
+  value: {{ required "litellmConnection.endpoint is required when litellmConnection.enabled" .Values.litellmConnection.endpoint | quote }}
+- name: ACH_LITELLM_MASTER_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "litellmConnection.masterKeySecretRef.name is required" .Values.litellmConnection.masterKeySecretRef.name | quote }}
+      key: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
+{{- end -}}
+{{- end -}}

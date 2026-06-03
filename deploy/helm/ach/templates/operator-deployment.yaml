@@ -160,6 +160,9 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+            # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
+            # single litellmConnection block — do NOT also set them in extraEnv.
+            {{- include "ach.litellmConnectionEnv" . | nindent 12 }}
           volumeMounts:
             - name: cache
               mountPath: /var/cache/ach
