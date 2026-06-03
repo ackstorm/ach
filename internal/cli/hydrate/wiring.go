@@ -427,6 +427,13 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
 	}
 
+	if result.ProjectedByKind == nil {
+		result.ProjectedByKind = map[string]int{}
+	}
+	if result.DroppedByKind == nil {
+		result.DroppedByKind = map[string][]string{}
+	}
+
 	// Dedup dropped kinds across all plugin trees (route.Project already
 	// dedups per-run; aggregating across multiple plugin subdirs needs a
 	// second-layer dedup) and stable-sort for byte-stable stderr (D-12).
@@ -464,11 +471,14 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		pluginSrc := filepath.Join(pluginRoot, ent.Name())
 		// source == "" : Phase-1 ungated arm (no claude-plugin provenance
 		// axis yet). The gated branch exists for Phase 2.
-		projected, drops, perr := route.Project(rules, pluginSrc, "")
+		pr, perr := route.Project(rules, pluginSrc, "")
 		if perr != nil {
 			return fmt.Errorf("adapter %s project plugin %s: %w", d.platformID, ent.Name(), perr)
 		}
-		for _, fw := range projected {
+		for k, n := range pr.KeptByKind {
+			result.ProjectedByKind[k] += n
+		}
+		for _, fw := range pr.FileWrites {
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
 			}
@@ -522,11 +532,12 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 			}
 			result.ProjectedFiles = append(result.ProjectedFiles, entry)
 		}
-		for _, dr := range drops {
+		for _, dr := range pr.Dropped {
 			if !seen[dr] {
 				seen[dr] = true
 				dropped = append(dropped, dr)
 			}
+			result.DroppedByKind[dr] = appendUniqueSorted(result.DroppedByKind[dr], ent.Name())
 		}
 	}
 
@@ -1635,6 +1646,18 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 		// non-empty directories; we silently swallow per D-16.
 		_ = os.Remove(d)
 	}
+}
+
+// appendUniqueSorted inserts name into xs if absent, keeping xs sorted.
+func appendUniqueSorted(xs []string, name string) []string {
+	for _, x := range xs {
+		if x == name {
+			return xs
+		}
+	}
+	xs = append(xs, name)
+	sort.Strings(xs)
+	return xs
 }
 
 // taggedEntry preserves bucket provenance for Sync — entries whose projected

@@ -290,6 +290,61 @@ func TestProjectPlugins_RuntimeWins_AllCollide_SkipsPublish(t *testing.T) {
 	}
 }
 
+// fakeSkillsAdapter routes skills/**/* → .claude/skills/**/* (MergeReplace).
+// hooks/ is a KnownComponentKind with no rule here → will be dropped.
+// .claude-plugin/ and README.md are metadata/docs → silently skipped (not dropped).
+type fakeSkillsAdapter struct{ fakeProjAdapter }
+
+func (fakeSkillsAdapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
+	}
+}
+
+// TestProjectPlugins_DroppedByKind_AndProjectedByKind proves that:
+//   - ProjectedByKind["skills"] > 0 after projecting a skills/ entry,
+//   - DroppedByKind["hooks"] == [pluginName] (hooks/ is a KNOWN kind with no rule),
+//   - .claude-plugin/ and README.md are SILENTLY skipped (NOT in DroppedByKind).
+func TestProjectPlugins_DroppedByKind_AndProjectedByKind(t *testing.T) {
+	const pluginName = "my-plugin"
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	// Stage: skills/foo.md (routed), hooks/pre.sh (known, unrouted → dropped),
+	// .claude-plugin/manifest.json + README.md (metadata/docs → silently skipped).
+	stageTree(t, achDir, pluginName, map[string]string{
+		"skills/foo.md":               "# Foo skill\n",
+		"hooks/pre.sh":                "#!/bin/sh\necho hi\n",
+		".claude-plugin/manifest.json": `{"name":"my-plugin"}`,
+		"README.md":                   "# My Plugin\n",
+	})
+
+	d := &adapterDispatcherImpl{platformID: "fakeskills"}
+	var result RenderResult
+	if err := d.projectPlugins(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+		t.Fatalf("projectPlugins: %v", err)
+	}
+
+	// .claude-plugin must NOT appear in DroppedByKind (it is metadata — silently skipped).
+	if _, ok := result.DroppedByKind[".claude-plugin"]; ok {
+		t.Errorf("metadata .claude-plugin must not be dropped; got %v", result.DroppedByKind)
+	}
+	// README.md is docs — must also be absent.
+	if _, ok := result.DroppedByKind["README.md"]; ok {
+		t.Errorf("docs README.md must not be dropped; got %v", result.DroppedByKind)
+	}
+
+	// hooks/ is a KnownComponentKind with no rule → exactly one plugin attributed.
+	if got := result.DroppedByKind["hooks"]; len(got) != 1 || got[0] != pluginName {
+		t.Errorf("DroppedByKind[hooks] = %v; want [%s]", got, pluginName)
+	}
+
+	// skills/ was routed → tally must be > 0.
+	if result.ProjectedByKind["skills"] == 0 {
+		t.Errorf("ProjectedByKind[skills] = 0; want > 0")
+	}
+}
+
 // stageTree writes a plugin source tree under <achDir>/plugin/<name>/ (internal
 // sibling of the external-package stagePluginTree helper).
 func stageTree(t *testing.T, achDir, name string, files map[string]string) {

@@ -44,6 +44,16 @@ type Result struct {
 	// (pass-through).
 	DroppedComponents []string
 
+	// ProjectedByKind tallies projected regular files per source kind
+	// (e.g. {"commands":12,"agents":8}) rolled up from RenderResult.
+	// Feeds the hydrate success summary.
+	ProjectedByKind map[string]int
+
+	// DroppedByKind maps a dropped KNOWN component kind to the sorted unique
+	// plugin names that shipped it but whose content the active platform has
+	// no destination for. Drives the attributed end-of-run warning.
+	DroppedByKind map[string][]string
+
 	// PlatformID is the adapter id used for this Run — either the
 	// caller's opts.Platform or the autodetected match (ADAPT-02 /
 	// D-06). Surfaced in --verbose stderr; recorded into
@@ -105,6 +115,16 @@ type RenderResult struct {
 	// the active adapter cannot meaningfully translate (e.g.
 	// claude-code "hooks/" against the Codex adapter).
 	DroppedComponents []string
+
+	// ProjectedByKind tallies projected regular files per source kind
+	// (e.g. {"commands":12,"agents":8}) aggregated across every plugin tree.
+	// Feeds the hydrate success summary.
+	ProjectedByKind map[string]int
+
+	// DroppedByKind maps a dropped KNOWN component kind to the sorted unique
+	// plugin names that shipped it but whose content the active platform has
+	// no destination for. Drives the attributed end-of-run warning.
+	DroppedByKind map[string][]string
 }
 
 // Extractor is the safe-tar + auto-claim cascade interface (CLI spec
