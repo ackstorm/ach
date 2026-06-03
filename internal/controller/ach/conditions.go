@@ -4,9 +4,9 @@
 // Artifact reconcilers' SourceReachable condition (Hub §6.6 closed set).
 //
 // PluginMarketplace's Synced condition reason vocabulary
-// (NameConflict / UpstreamInvalid / InvalidConfig /
-// UnsupportedPluginSource) is owned by Plan 02-06 and is intentionally
-// not declared here — the marketplace reconciler imports a superset of
+// (UpstreamInvalid / InvalidConfig / UnsupportedPluginSource /
+// DuplicateName) is owned by Plan 02-06 and is intentionally not
+// declared here — the marketplace reconciler imports a superset of
 // these constants AND its own.
 
 package ach
@@ -83,28 +83,12 @@ const (
 	// writes the deletion-path or pre-fetch path may produce.
 	ReasonInitializing = "Initializing"
 
-	// ReasonNameConflict (Plan 02-06) — PluginMarketplace Synced=False
-	// when ANY of this marketplace's post-filter candidates lost the
-	// cross-marketplace name-conflict resolution to an alphabetically-
-	// earlier marketplace (OP-08 / Hub §12.3). The status.message lists
-	// the specific plugin name(s) that lost; the winning marketplace
-	// keeps Synced=True. Plugin-CRD-wins drops do NOT flip Synced —
-	// they're recorded with ReasonPluginCRDPrecedence (below) as
-	// informational status.message annotations only.
-	ReasonNameConflict = "NameConflict"
-
-	// ReasonPluginCRDPrecedence (Plan 02-06 / WR-09) — used in
-	// per-entry pluginFailure records when a marketplace plugin entry
-	// was dropped because a Plugin CRD owns the same name (Hub §12.3
-	// conflict resolution: Plugin CRDs take precedence over
-	// marketplace entries). The marketplace's Synced condition is NOT
-	// flipped by this drop — only ReasonNameConflict (a
-	// marketplace-loser to another marketplace) flips Synced.
-	// status.message reports the dropped plugin with this distinct
-	// reason so an operator reading
-	// `kubectl describe pluginmarketplace` can tell Plugin-CRD-wins
-	// drops apart from marketplace-loser drops at a glance.
-	ReasonPluginCRDPrecedence = "PluginCRDPrecedence"
+	// ReasonDuplicateName (handoff item 5) — a per-plugin SOFT skip when a
+	// single marketplace.json lists the same plugin name more than once;
+	// first-wins keeps the first, the rest are recorded in status.message.
+	// Never flips Synced (not passed to markSyncedFalse) → no
+	// reasonToConditionStates entry.
+	ReasonDuplicateName = "DuplicateName"
 
 	// ReasonUnsupportedPluginSource (Plan 02-06 / issue #15) — a
 	// marketplace entry resolved to Source.Kind="" because its wire
@@ -235,9 +219,7 @@ const (
 //	PluginTooLarge           True             False   (got bytes, oversized)
 //	StaleCacheExpired        False            False
 //	InvalidConfig            Unknown          False   (no fetch attempted)
-//	NameConflict             Unknown          False   (pre-fetch decision)
 //	UnsupportedPluginSource  Unknown          False   (pre-fetch)
-//	PluginCRDPrecedence      Unknown          False   (pre-fetch)
 //	Initializing             Unknown          False   (no fetch yet)
 //	<any other>              Unknown          False   (conservative default)
 func reasonToConditionStates(reason string) (sourceReachable, synced metav1.ConditionStatus) {
@@ -249,12 +231,11 @@ func reasonToConditionStates(reason string) (sourceReachable, synced metav1.Cond
 	case ReasonUpstreamInvalid, ReasonPluginTooLarge:
 		return metav1.ConditionTrue, metav1.ConditionFalse
 	default:
-		// InvalidConfig, NameConflict, UnsupportedPluginSource,
-		// PluginCRDPrecedence, Initializing, and any reason the closed
-		// enum gains in the future without a matrix update fall here.
-		// Unknown is the conservative SourceReachable answer when no
-		// fetch was attempted or the post-fetch outcome doesn't pin
-		// connectivity either way.
+		// InvalidConfig, UnsupportedPluginSource, Initializing, and any
+		// reason the closed enum gains in the future without a matrix
+		// update fall here. Unknown is the conservative SourceReachable
+		// answer when no fetch was attempted or the post-fetch outcome
+		// doesn't pin connectivity either way.
 		return metav1.ConditionUnknown, metav1.ConditionFalse
 	}
 }

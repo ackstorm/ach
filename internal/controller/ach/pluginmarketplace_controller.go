@@ -54,9 +54,9 @@ const marketplaceJSONMaxBytes = 5 << 20 // 5 MiB
 // the Hub §12.4 three-stage refresh (Plan 02-06):
 //
 //   - Stage 1: fetch + parse marketplace.json, apply RE2 include/exclude
-//     filters, run cross-marketplace name-conflict resolution. ANY Stage-1
-//     failure → Synced=False with the §12.4 reason; ZERO marketplace_plugins
-//     writes or deletes.
+//     filters, perform intra-marketplace dedup (first-wins, normalized key).
+//     ANY Stage-1 failure → Synced=False with the §12.4 reason; ZERO
+//     marketplace_plugins writes or deletes.
 //   - Stage 2: per-surviving-plugin materialization via the same §10.3
 //     fetch→stage→fsync→rename(2)→UPSERT loop as the Plugin reconciler.
 //     SERIAL (D-09); per-plugin failures recorded in status.message
@@ -198,7 +198,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
-	// ─── Stage 1: fetch + parse + filter + conflict resolve. ───
+	// ─── Stage 1: fetch + parse + filter. ───
 
 	// 1a: Build the marketplace-file SourceSpec + resolve auth Secret.
 	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
@@ -296,53 +296,36 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.markSyncedFalse(ctx, &cr, ReasonUpstreamInvalid, "stage-1 filters.include matched zero plugins", requeue, nil)
 	}
 
-	// 1d: Cross-marketplace conflict resolution.
-	pluginCRNames, err := listPluginCRNames(ctx, r.Client, r.Namespace)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("stage-1 list Plugin CRs: %w", err)
-	}
-	otherCatalogs, err := listOtherMarketplaceCatalogs(ctx, r.Client, r.DB, r.Namespace, cr.Name)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("stage-1 list other marketplaces: %w", err)
-	}
-	decisions := resolveConflicts(cr.Name, filtered, otherCatalogs, pluginCRNames)
-
 	// ─── Stage 2: serial per-plugin materialization (D-09). ───
 
 	var failures []pluginFailure
 	// successful collects the per-entry (name, upstreamRev) pairs that
 	// passed Stage-2 — feeds status.plugins[] so operators can `kubectl
 	// get pluginmarketplace -o yaml` to see exactly what materialized.
-	// Capacity = len(decisions) is the upper bound (every decision Kept
-	// AND materialized); the actual length will be smaller when there
-	// are filters or per-entry failures.
-	successful := make([]achv1alpha1.MarketplacePluginRef, 0, len(decisions))
-	// Track whether ANY decision was a marketplace-loser (vs Plugin-CRD-wins)
-	// — only marketplace-losers flip Synced=False reason=NameConflict per
-	// the Plan 02-06 spec-interpretation choice. Plugin-CRD-wins drops are
-	// informational only (status.message annotation, no Synced flip).
-	marketplaceLoserFound := false
+	// Capacity = len(filtered) is the upper bound; the actual length will
+	// be smaller when there are filters or per-entry failures.
+	successful := make([]achv1alpha1.MarketplacePluginRef, 0, len(filtered))
 
-	for i, d := range decisions {
-		if !d.Kept {
-			// WR-09: distinguish Plugin-CRD-wins drops (informational)
-			// from marketplace-loser drops (Synced=False). The
-			// conflict-resolver labels marketplace-loser drops with
-			// reason strings starting with "marketplace "; Plugin-
-			// CRD-wins drops start with "Plugin CRD ". Use a distinct
-			// pluginFailure reason for the latter so an operator
-			// reading status.message can tell the two cases apart at
-			// a glance.
-			reason := ReasonNameConflict
-			if strings.HasPrefix(d.Reason, "marketplace ") {
-				marketplaceLoserFound = true
-			} else if strings.HasPrefix(d.Reason, "Plugin CRD ") {
-				reason = ReasonPluginCRDPrecedence
-			}
-			failures = append(failures, pluginFailure{name: d.PluginName, reason: reason})
+	// Intra-marketplace dedup (handoff item 5): first-wins over the ordered
+	// candidate slice, normalized key (case-fold + trim) so Foo/foo variants
+	// collide HERE, not at the late path write. Empty name → UpstreamInvalid.
+	seen := make(map[string]struct{}, len(filtered))
+	deduped := make([]ClaudeCodeMarketplacePlugin, 0, len(filtered))
+	for _, entry := range filtered {
+		if strings.TrimSpace(entry.Name) == "" {
+			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
 			continue
 		}
-		entry := filtered[i]
+		key := strings.ToLower(strings.TrimSpace(entry.Name))
+		if _, dup := seen[key]; dup {
+			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonDuplicateName})
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, entry)
+	}
+	for i := range deduped {
+		entry := deduped[i]
 		// Per-entry Kind="" → unsupported source wire-format shape (e.g.
 		// an old npm-shaped entry). Short-circuit before the fetcher so
 		// no live git remote is touched.
@@ -373,19 +356,13 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("stage-3 list: %w", err)
 		}
-		currentNames := make(map[string]struct{}, len(decisions))
-		for i, d := range decisions {
-			if d.Kept {
-				// Only Kept plugins that successfully materialized belong
-				// in currentNames — failed Stage-2 entries that ALSO had
-				// a prior row should be retained (the prior file is still
-				// served; the failure is in status.message). To match this
-				// behavior, treat any plugin name present in the upstream
-				// catalog's KEPT set as "currently expected". A more
-				// nuanced policy (drop only if upstream removed) is what
-				// we want.
-				currentNames[filtered[i].Name] = struct{}{}
-			}
+		// currentNames is the set of all deduplicated plugin names present
+		// in the upstream catalog — both materialized and failed Stage-2
+		// entries are retained so a prior cached file is still served while
+		// the failure is reported in status.message.
+		currentNames := make(map[string]struct{}, len(deduped))
+		for _, entry := range deduped {
+			currentNames[entry.Name] = struct{}{}
 		}
 		for _, row := range priorRows {
 			if _, kept := currentNames[row.Name]; kept {
@@ -425,20 +402,6 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// otherwise the listMapKey marshal order tracks reconcile iteration
 	// order and reads like a flicker between successive reconciles.
 	sort.Slice(successful, func(i, j int) bool { return successful[i].Name < successful[j].Name })
-
-	// Spec-interpretation choice (Plan 02-06): a marketplace whose name lost
-	// the cross-marketplace tiebreaker flips Synced=False reason=NameConflict
-	// even when Stage-1 succeeded. Per-plugin Stage-2 fetch failures and
-	// Plugin-CRD-wins drops do NOT flip Synced.
-	if marketplaceLoserFound {
-		// Loser → no plugins materialized under this CR's name; zero the
-		// discovery list so an operator inspecting the CR doesn't see a
-		// stale set of plugins that aren't being served from this
-		// marketplace anymore.
-		cr.Status.Plugins = nil
-		cr.Status.PluginsCount = 0
-		return r.markSyncedFalse(ctx, &cr, ReasonNameConflict, msg, requeue, nil)
-	}
 
 	// transport=<…> plugins=<N> [stage-2 partial-failure summary]
 	finalMsg := fmt.Sprintf("%s plugins=%d", sourceReachableMessage(sourceSpec), len(successful))
@@ -711,7 +674,7 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 // the failure-dispatch retry policy:
 //
 //   - terminal/configuration-derived reasons (InvalidConfig, Unauthorized,
-//     NotFound, UpstreamInvalid, NameConflict, UnsupportedPluginSource,
+//     NotFound, UpstreamInvalid, UnsupportedPluginSource,
 //     PluginTooLarge) return (Result{RequeueAfter}, nil) so the reconciler
 //     does not hot-loop on errors that won't change by retrying.
 //   - transient reasons (Unreachable, StaleCacheExpired) return
@@ -732,9 +695,8 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 		applyReconcileConditions(&fresh.Status.Conditions, reason, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		// Carry the caller's discovery set (issue #53 regression: c28eeff).
-		// The marketplace-loser branch zeroes cr.Status.Plugins before
-		// calling this so the stale set is cleared; other failure paths
-		// pass through the prior value loaded at the top of Reconcile.
+		// Failure paths pass through the prior value loaded at the top of
+		// Reconcile.
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
 		if u := r.Status().Update(ctx, &fresh); u != nil {
@@ -753,7 +715,6 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 		ReasonUnauthorized,
 		ReasonNotFound,
 		ReasonUpstreamInvalid,
-		ReasonNameConflict,
 		ReasonUnsupportedPluginSource,
 		ReasonPluginTooLarge:
 		return ctrl.Result{RequeueAfter: requeue}, nil
