@@ -738,14 +738,10 @@ _Appears in:_
 PluginMarketplaceStatus defines the observed state of PluginMarketplace.
 
 In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
-Synced condition (§6.6) with reasons UpstreamInvalid,
-InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+Synced condition (§6.6) with reasons UpstreamInvalid, InvalidConfig,
+UnsupportedPluginSource (plus per-plugin soft-skip reasons in the
+message such as DuplicateName), plus the materialized plugin set
 (Plugins / PluginsCount) populated on each successful reconcile.
-NameConflict is removed — plugin references are marketplace-scoped
-(`name@marketplace`), so two marketplaces exposing the same plugin name
-coexist under distinct scopes with no conflict. Intra-marketplace
-duplicates (same name twice in marketplace.json) soft-skip with reason
-DuplicateName in the Synced condition message; Synced stays True.
 
 
 
