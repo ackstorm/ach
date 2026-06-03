@@ -255,7 +255,10 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		{
 			name:       "ExpiredOrRevoked",
 			path:       "/content/plugin/plugin-valid",
-			key:        "pk_DEADBEEFDEADBEEFDEADBEEFDEADBEEF",
+			// Format-valid (pk- + 64 base64url chars) but absent from the
+			// keystore → passes the format gate, resolver returns nil → 401
+			// expired_or_revoked (NOT 400 invalid_key_format).
+			key:        "pk-DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF",
 			envHeader:  env,
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "expired_or_revoked",
