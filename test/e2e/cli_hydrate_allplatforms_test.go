@@ -188,7 +188,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		phase7SuiteGuard(t)
 		xdg := phase7SeedXdgConfig(t, baseURL, pk)
 		ek := phase7CreateEkKey(t, xdg, "allplatforms-ek")
-		if !strings.HasPrefix(ek, "ek_") {
+		if !strings.HasPrefix(ek, "ek-") {
 			t.Fatalf("ek_path: env-keys create returned %q (want ek_ prefix)", ek)
 		}
 		output := t.TempDir()
@@ -403,8 +403,8 @@ func assertStateJSON(t *testing.T, output, id string) {
 	if err := json.Unmarshal(b, &st); err != nil {
 		t.Fatalf("%s: parse state.json: %v\n%s", id, err, b)
 	}
-	if st.SchemaVersion != "2" {
-		t.Errorf("%s: state.json schemaVersion=%q, want \"2\"", id, st.SchemaVersion)
+	if st.SchemaVersion != "3" {
+		t.Errorf("%s: state.json schemaVersion=%q, want \"3\"", id, st.SchemaVersion)
 	}
 	if st.Adapter.ID != id {
 		t.Errorf("%s: state.json adapter.id=%q, want %q", id, st.Adapter.ID, id)
@@ -537,7 +537,7 @@ func ssoMintPK(t *testing.T, baseURL string) string {
 	if err := json.Unmarshal(lastBody, &out); err != nil {
 		t.Fatalf("ssoMintPK: parse pk_ JSON from final response: %v\nbody=%s", err, truncate(lastBody, 600))
 	}
-	if !strings.HasPrefix(out.Plaintext, "pk_") {
+	if !strings.HasPrefix(out.Plaintext, "pk-") {
 		t.Fatalf("ssoMintPK: final response carried no pk_ plaintext\nbody=%s", truncate(lastBody, 600))
 	}
 	// CLI-04 / OBS-02 no-leak: never log the raw pk_; the owner email is safe.

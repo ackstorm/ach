@@ -146,9 +146,11 @@ var projectionDescriptors = []projectionDescriptor{
 	},
 	{
 		platformID: phase7PlatformCodex, // "codex"
-		// codex routes agents(*.md)→.codex/agents/*.toml and skills→.agents/skills/.
-		// caveman commands are .toml, not .md → not projected by codex.
-		nativeDirs:     []string{".codex/agents", ".agents/skills"},
+		// codex routes agents(*.md)→.codex/agents/*.toml, commands(*.md)→
+		// .codex/prompts/, and skills→.agents/skills/. caveman commands are
+		// .toml (not projected), but the demo env's feature-dev plugin ships
+		// .md commands → they land under .codex/prompts/.
+		nativeDirs:     []string{".codex/agents", ".codex/prompts", ".agents/skills"},
 		mustNotProject: []string{"agents", "skills"},
 		coOwnedFile:    ".codex/config.toml",
 		coOwnedKind:    "toml-mcp",
@@ -179,8 +181,10 @@ var projectionDescriptors = []projectionDescriptor{
 	{
 		platformID: phase7PlatformPimono, // "pimono"
 		// pimono routes commands(*.md)→.pi/agent/prompts/ and skills→.pi/agent/skills/.
-		// caveman commands are .toml → not projected; only skills land.
-		nativeDirs:     []string{".pi/agent/skills"},
+		// caveman commands are .toml → not projected, but the demo env's
+		// feature-dev plugin ships .md commands → they land under
+		// .pi/agent/prompts/.
+		nativeDirs:     []string{".pi/agent/skills", ".pi/agent/prompts"},
 		mustNotProject: []string{"skills"},
 		coOwnedFile:    ".pi/mcp.json",
 		coOwnedKind:    "json-pi",
@@ -302,8 +306,8 @@ func assertStateRecordsPlugins(t *testing.T, statePath string, d projectionDescr
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("%s: parse state.json: %v\nbytes=%s", d.platformID, err, raw)
 	}
-	if doc.SchemaVersion != "2" {
-		t.Errorf("%s: state.json schemaVersion=%q, want \"2\"", d.platformID, doc.SchemaVersion)
+	if doc.SchemaVersion != "3" {
+		t.Errorf("%s: state.json schemaVersion=%q, want \"3\"", d.platformID, doc.SchemaVersion)
 	}
 	if len(doc.Plugins) == 0 {
 		t.Fatalf("%s: state.json Plugins[] is empty — projected caveman resources not recorded\nbytes=%s",

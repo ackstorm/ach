@@ -200,7 +200,7 @@ func phase6WriteTempConfig(t *testing.T, baseURL, pk string) string {
 	cfgPath := filepath.Join(achDir, "config.yaml")
 	contents := fmt.Sprintf(""+
 		"default: demo\n"+
-		"deployments:\n"+
+		"profiles:\n"+
 		"    demo:\n"+
 		"        url: %s\n"+
 		"        pk: %s\n",

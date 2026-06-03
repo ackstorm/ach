@@ -257,7 +257,7 @@ func phase7SeedXdgConfig(t *testing.T, baseURL, pk string) string {
 	cfgPath := filepath.Join(achDir, "config.yaml")
 	contents := fmt.Sprintf(""+
 		"default: demo\n"+
-		"deployments:\n"+
+		"profiles:\n"+
 		"    demo:\n"+
 		"        url: %s\n"+
 		"        pk: %s\n",
@@ -319,7 +319,7 @@ func phase7CreateEkKey(t *testing.T, xdgHome, label string) string {
 func phase7ParseEkPlaintext(out []byte) string {
 	for _, field := range strings.Fields(string(out)) {
 		field = strings.TrimRight(field, ",.;:\n\r\t ")
-		if strings.HasPrefix(field, "ek_") {
+		if strings.HasPrefix(field, "ek-") {
 			return field
 		}
 	}

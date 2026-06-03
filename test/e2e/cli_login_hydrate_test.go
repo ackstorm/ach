@@ -118,7 +118,7 @@ func testPhase6WhoamiVerifyPk(t *testing.T) {
 	if !phase6Contains(stdout, "demo") {
 		t.Errorf("ach whoami --verify: stdout missing deployment 'demo'; got=%s", stdout)
 	}
-	if !phase6Contains(stdout, "pk_****") {
+	if !phase6Contains(stdout, "pk-****") {
 		t.Errorf("ach whoami --verify: stdout missing masked pk_ tail (CLI-04); got=%s", stdout)
 	}
 	// No raw pk_ leak per OBS-02 / Pattern S5. The masked form (pk_****)
@@ -194,7 +194,7 @@ func testPhase6EnvKeysCreate(t *testing.T) {
 			code, stdout, stderr)
 	}
 	// Mint must surface the ek_ plaintext exactly once per CLI-04.
-	if !phase6Contains(stdout, "ek_") {
+	if !phase6Contains(stdout, "ek-") {
 		t.Errorf("ach env-keys create: stdout missing minted ek_ plaintext; got=%s", stdout)
 	}
 }
