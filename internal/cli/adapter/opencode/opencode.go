@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -348,8 +349,22 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 				obj[k] = b
 			}
 			doc["tools"] = obj
+		case string:
+			// Claude also permits a comma-separated string (e.g.
+			// "Read, Write, Bash") — the form upstream feature-dev agents use.
+			// Split, trim, drop empties; each named tool → true. An empty
+			// string yields an empty object (a tools: key with no entries).
+			toolsObj := map[string]bool{}
+			for _, part := range strings.Split(tv, ",") {
+				name := strings.TrimSpace(part)
+				if name == "" {
+					continue
+				}
+				toolsObj[name] = true
+			}
+			doc["tools"] = toolsObj
 		default:
-			return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools is %T, want sequence or object", srcRel, rawTools)
+			return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools is %T, want sequence, object, or comma-separated string", srcRel, rawTools)
 		}
 	}
 

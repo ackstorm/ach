@@ -449,6 +449,43 @@ func TestOpencodeAgentTools_ToolsArrayToObject(t *testing.T) {
 	}
 }
 
+// TestOpencodeAgentTools_ToolsStringToObject proves the Claude comma-separated
+// string form (tools: "Read, Write, Bash") is split + coerced to {name:true},
+// the shape upstream feature-dev agents ship (anthropics/claude-plugins-official).
+func TestOpencodeAgentTools_ToolsStringToObject(t *testing.T) {
+	in := []byte("---\ntools: Read, Write , Bash\nmodel: anthropic/claude\n---\nB")
+	out, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	s := string(out)
+	for _, want := range []string{`"Read": true`, `"Write": true`, `"Bash": true`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("string tools not split/coerced (missing %s):\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "Read, Write") {
+		t.Errorf("tools still emitted as a raw string:\n%s", s)
+	}
+}
+
+// TestOpencodeAgentTools_ToolsStringIsIdempotent proves a second pass over the
+// converted output (now an object) stays byte-identical (FMT-05).
+func TestOpencodeAgentTools_ToolsStringIsIdempotent(t *testing.T) {
+	in := []byte("---\ntools: Read, Write\n---\nB")
+	first, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	second, _, err := opencodeAgentTools("agents/x.md", first)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Errorf("not idempotent:\nfirst=%q\nsecond=%q", first, second)
+	}
+}
+
 // TestOpencodeAgentTools_PreservesClaudeExtras: claude-only frontmatter keys
 // (skills, hooks, disallowedTools) survive the re-encode.
 func TestOpencodeAgentTools_PreservesClaudeExtras(t *testing.T) {
