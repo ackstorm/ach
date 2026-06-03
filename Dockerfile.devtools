@@ -91,10 +91,22 @@ RUN go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_
 RUN go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
     && go clean -cache -modcache
 
-# Pre-download envtest assets for k8s 1.31.0 so test runs don't fetch them on first use.
-# Path is content-addressed under /opt/envtest; setup-envtest -p path resolves it.
+# Pre-download envtest assets for k8s ${ENVTEST_K8S_VERSION} so test runs don't
+# fetch them on first use. Path is content-addressed under /opt/envtest;
+# setup-envtest -p path resolves it. The Makefile points --bin-dir at
+# $(ENVTEST_BIN_DIR), which the ENV below sets to /opt/envtest — so every
+# in-container envtest run reads these baked assets with ZERO download.
+#
+# chmod 1777: the container runs as the host's UID:GID (scripts/dev.sh
+# --user), not root. Read-resolve of the baked version works at any mode,
+# but if go.mod bumps k8s.io/api to a version NOT baked here (drift before
+# the image is rebuilt), setup-envtest must DOWNLOAD into this dir — which a
+# non-root user cannot do against a root-owned 0755 dir. Sticky-world-writable
+# lets the drift case fall back to a download instead of a hard permission
+# failure, while the matched-version case still reads instantly.
 RUN mkdir -p /opt/envtest \
     && setup-envtest use ${ENVTEST_K8S_VERSION} --bin-dir /opt/envtest \
+    && chmod -R 1777 /opt/envtest \
     && go clean -cache -modcache
 # ^ Keep the k8s control-plane binaries under /opt/envtest; only the Go
 #   build/module caches are cleaned (go clean never touches /opt/envtest).

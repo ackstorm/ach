@@ -12,7 +12,9 @@
 #     Docker daemon (used by kind / docker-based test harnesses)
 #   * adds the docker group so the in-container user can write to the socket
 #   * persists Go module and build caches under .gocache/ for fast reruns
-#   * resolves the envtest assets path (KUBEBUILDER_ASSETS)
+#   * leaves ENVTEST_BIN_DIR at the image default (/opt/envtest, set in
+#     Dockerfile.devtools) so the Makefile's setup-envtest --bin-dir reads the
+#     BAKED k8s control-plane assets with zero download
 #
 # Usage:
 #   ./scripts/dev.sh go build ./...
@@ -42,7 +44,6 @@ fi
 # Persisted caches (gitignored). Pre-create so docker doesn't mkdir them as root.
 mkdir -p "${WORKSPACE}/.gocache/gopath" \
          "${WORKSPACE}/.gocache/build" \
-         "${WORKSPACE}/.gocache/envtest" \
          "${WORKSPACE}/.gocache/kube"
 
 # Keep the container-mounted kubeconfig (.gocache/kube/config, exported as
@@ -124,7 +125,6 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     -e GOPATH=/workspace/.gocache/gopath \
     -e GOCACHE=/workspace/.gocache/build \
     -e GOMODCACHE=/workspace/.gocache/gopath/pkg/mod \
-    -e ENVTEST_BIN_DIR=/workspace/.gocache/envtest \
     -e KUBECONFIG=/workspace/.gocache/kube/config \
     -e HOST_PWD="${WORKSPACE}" \
     -w /workspace \
