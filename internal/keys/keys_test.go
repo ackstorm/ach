@@ -274,11 +274,11 @@ func TestClassifyBearer_EmptyRejected(t *testing.T) {
 
 func TestClassifyBearer_WrongLengthRejected(t *testing.T) {
 	for _, in := range []string{
-		"pk_abc",
-		"ek_abc",
-		"pk_",
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaaaa", // 27 chars after prefix
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa",   // 25 chars after prefix
+		"pk-abc",
+		"ek-abc",
+		"pk-",
+		"pk-" + strings.Repeat("a", 65), // 65 chars after prefix
+		"pk-" + strings.Repeat("a", 63), // 63 chars after prefix
 	} {
 		got, err := ClassifyBearer(in)
 		if !errors.Is(err, ErrInvalidBearer) {
@@ -290,36 +290,12 @@ func TestClassifyBearer_WrongLengthRejected(t *testing.T) {
 	}
 }
 
-func TestClassifyBearer_UppercaseRejected(t *testing.T) {
-	// Get a valid lowercase suffix, then upper-case it / the prefix.
-	plaintext, err := NewBearer(PrefixPk)
-	if err != nil {
-		t.Fatalf("NewBearer: %v", err)
-	}
-	for _, in := range []string{
-		"PK_" + plaintext[3:],                  // upper prefix
-		strings.ToUpper(plaintext),             // all upper
-		"pk_" + strings.ToUpper(plaintext[3:]), // upper suffix only
-	} {
-		got, err := ClassifyBearer(in)
-		if !errors.Is(err, ErrInvalidBearer) {
-			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)
-		}
-		if got != "" {
-			t.Errorf("ClassifyBearer(%q) prefix = %q; want zero", in, got)
-		}
-	}
-}
 
 func TestClassifyBearer_OutOfAlphabetRejected(t *testing.T) {
-	// Suffix length 26 but contains chars outside [a-z2-7].
-	for _, in := range []string{
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa1", // contains '1' (not in base32 lowered)
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa0", // contains '0'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa8", // contains '8'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa9", // contains '9'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa!", // contains '!'
-	} {
+	// 64-char suffix but one char outside [A-Za-z0-9_-].
+	base := strings.Repeat("a", 63)
+	for _, bad := range []string{".", "!", "@", "+", "/", "=", " "} {
+		in := "pk-" + base + bad
 		got, err := ClassifyBearer(in)
 		if !errors.Is(err, ErrInvalidBearer) {
 			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)

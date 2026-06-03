@@ -139,20 +139,20 @@ func NewKeyID(prefix KeyIDPrefix) (string, error) {
 //
 // Accepted forms (strict):
 //
-//   - "pk_" followed by exactly 26 chars from the lowercase RFC 4648
-//     base32-no-pad alphabet [a-z2-7] → returns (PrefixPk, nil).
-//   - "ek_" followed by the same suffix grammar → returns (PrefixEk, nil).
+//   - "pk-" followed by exactly 64 chars from the RFC 4648 base64url
+//     alphabet [A-Za-z0-9_-] → returns (PrefixPk, nil).
+//   - "ek-" followed by the same suffix grammar → returns (PrefixEk, nil).
 //
 // Rejected (returns ("", ErrInvalidBearer)):
 //
-//   - Empty string, wrong length, uppercase prefix or suffix, chars
-//     outside [a-z2-7], and any pkid_*/ekid_* keyID values (those are
-//     opaque identifiers, not bearer plaintexts).
+//   - Empty string, wrong length, chars outside [A-Za-z0-9_-], and any
+//     pkid_*/ekid_* keyID values (those are opaque identifiers, not bearer
+//     plaintexts).
 //
 // The parser is deliberately manual (not regexp) to avoid the allocation
 // overhead of regexp.MatchString on the resolver hot path.
 func ClassifyBearer(s string) (BearerPrefix, error) {
-	const fullLen = 3 + bearerSuffixLen // "pk_" or "ek_" + 26 chars = 29
+	const fullLen = 3 + bearerSuffixLen // "pk-" or "ek-" + 64 chars = 67
 	if len(s) != fullLen {
 		return "", ErrInvalidBearer
 	}
@@ -165,23 +165,24 @@ func ClassifyBearer(s string) (BearerPrefix, error) {
 	default:
 		return "", ErrInvalidBearer
 	}
-	// Suffix must be exactly 26 chars from [a-z2-7].
+	// Suffix must be exactly 64 chars from the base64url alphabet [A-Za-z0-9_-].
 	for i := 3; i < fullLen; i++ {
 		c := s[i]
-		if !isBase32Lower(c) {
+		if !isBase64URL(c) {
 			return "", ErrInvalidBearer
 		}
 	}
 	return prefix, nil
 }
 
-// isBase32Lower reports whether c is in the RFC 4648 base32-no-pad
-// alphabet, lowercased: [a-z2-7].
-func isBase32Lower(c byte) bool {
+// isBase64URL reports whether c is in the RFC 4648 base64url alphabet:
+// [A-Za-z0-9_-].
+func isBase64URL(c byte) bool {
 	switch {
-	case c >= 'a' && c <= 'z':
-		return true
-	case c >= '2' && c <= '7':
+	case c >= 'A' && c <= 'Z',
+		c >= 'a' && c <= 'z',
+		c >= '0' && c <= '9',
+		c == '-', c == '_':
 		return true
 	}
 	return false
