@@ -26,12 +26,12 @@
 // Decisions baked in (Phase 6 set, preserved through the engine path
 // too):
 //   - D-09: surface-only `--raw` path — no on-disk write, no diff.
-//   - D-10: stderr §6.6 pk_ warning emitted BEFORE the HTTP call;
+//   - D-10: stderr §6.6 pk- warning emitted BEFORE the HTTP call;
 //     suppressed by --no-warnings. Applies to BOTH dispatch modes.
 //   - D-11: mutex credential sources (--api-key, --env-key,
 //     ACH_API_KEY, ACH_ENV_KEY). Explicit closed list — adding a new
 //     source requires editing assertMutexCreds.
-//   - D-12: --environment REQUIRED for pk_; OPTIONAL for ek_.
+//   - D-12: --environment REQUIRED for pk-; OPTIONAL for ek-.
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
 // Adapter registration: the 4 platform adapters
@@ -172,22 +172,22 @@ I/O:
 
 Credential resolution (D-11 mutex — all four sources mutually
 exclusive; >1 set → exit 1):
-  --api-key <pk_|ek_>      Override credential (raw plaintext)
+  --api-key <pk-|ek->      Override credential (raw plaintext)
   --env-key <label>        Reference profiles.<active>.ek.<label>
-  ACH_API_KEY=<pk_|ek_>    Env var equivalent of --api-key
+  ACH_API_KEY=<pk-|ek->    Env var equivalent of --api-key
   ACH_ENV_KEY=<label>      Env var equivalent of --env-key
 
 If none of the above is set, the CLI uses the active profile's pk: field
 from ~/.config/ach/config.yaml. Seed that profile with ach login (SSO) or,
-on a headless box, ach config add --api-key <pk_|ek_>. To skip disk config
+on a headless box, ach config add --api-key <pk-|ek->. To skip disk config
 entirely, export ACH_BASE_URL + ACH_API_KEY (synthetic mode) — every
 command then uses them with no per-command --api-key.
 
---environment is REQUIRED when the resolved credential is a pk_ (D-12);
-OPTIONAL for ek_ (server-side mismatch yields 403 wrong_environment →
+--environment is REQUIRED when the resolved credential is a pk- (D-12);
+OPTIONAL for ek- (server-side mismatch yields 403 wrong_environment →
 exit 1).
 
-A stderr warning is emitted when the resolved credential is a pk_
+A stderr warning is emitted when the resolved credential is a pk-
 (spec §6.6); suppress with --no-warnings.
 
 Exit codes (spec §9.3):
@@ -228,15 +228,15 @@ Exit codes (spec §9.3):
 
 	// Phase 6 surface flags — preserved.
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "",
-		"Target Environment name (REQUIRED for pk_, OPTIONAL for ek_)")
+		"Target Environment name (REQUIRED for pk-, OPTIONAL for ek-)")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
-		"Suppress the §6.6 pk_ stderr warning")
+		"Suppress the §6.6 pk- stderr warning")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false,
 		"Dump redacted request headers to stderr")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "",
-		"Override credential (pk_… or ek_… raw plaintext)")
+		"Override credential (pk-… or ek-… raw plaintext)")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "",
-		"ek_ label resolved against profiles.<active>.ek.<label>")
+		"ek- label resolved against profiles.<active>.ek.<label>")
 	cmd.Flags().StringVar(&flagProfile, "profile", "",
 		"Override profile selection")
 
@@ -329,7 +329,7 @@ type hydrateInputs struct {
 //  3. assertScopeFlags — mutual exclusion of --include-runtime /
 //     --only-runtime and --wait / --lock-timeout.
 //  4. Resolve credential (synthetic OR config-disk path).
-//  5. D-12 pk_/--environment gate + pk_ warning emit.
+//  5. D-12 pk-/--environment gate + pk- warning emit.
 //  6. plaintext-transport warning if http://.
 //  7. Dispatch: flagRaw → runHydrateRaw (Phase 6 verbatim);
 //     otherwise → runHydrateEngine (full 14-step commit sequence).
@@ -368,7 +368,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		return err
 	}
 
-	// D-12: pk_ classification + --environment gate.
+	// D-12: pk- classification + --environment gate.
 	prefix, classifyErr := keys.ClassifyBearer(bearer)
 	if classifyErr != nil {
 		return &exit.CodedError{
@@ -384,7 +384,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	if prefix == keys.PrefixPk && effectiveEnv == "" {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  "--environment is required when using a pk_ key (CLI-06 / spec §5.7)",
+			Msg:  "--environment is required when using a pk- key (CLI-06 / spec §5.7)",
 		}
 	}
 	// The hydrate ENGINE namespaces state by environment
@@ -484,15 +484,15 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		HTTPClient: hydrateHTTPClient,
 	}
 
-	// CLI-03: pk_ content GETs must carry the target Environment in an
+	// CLI-03: pk- content GETs must carry the target Environment in an
 	// x-ach-environment header so the Content Service can resolve scope
 	// (resolveEnv in internal/contentservice/authz.go returns 400
-	// missing_environment for a pk_ request without it). An ek_ binds its
+	// missing_environment for a pk- request without it). An ek- binds its
 	// own Environment, so the header is omitted — see the credential-
 	// agnostic contract documented on internal/cli/extract.FetchContent.
 	// The surface manifest POST carries the Environment in its body; only
 	// these per-artifact content GETs rely on the header. effectiveEnv is
-	// guaranteed non-empty for pk_ by the D-12 gate in runHydrate.
+	// guaranteed non-empty for pk- by the D-12 gate in runHydrate.
 	if prefix, perr := keys.ClassifyBearer(bearer); perr == nil && prefix == keys.PrefixPk {
 		// Security 2.10 (defense-in-depth): reject CRLF / NUL / control bytes
 		// in the env name before assigning to a header value. The Go stdlib's
@@ -667,7 +667,7 @@ func pickBearer(in hydrateInputs, name string, dep *config.Profile) (string, err
 // hydrate caller to pass --raw.
 //
 // NO json.Unmarshal / json.Marshal — the byte-equal contract depends
-// on io.Copy. effectiveEnv == "" omits the body environment field (ek_
+// on io.Copy. effectiveEnv == "" omits the body environment field (ek-
 // + no --environment).
 func runHydrateRaw(cmd *cobra.Command, baseURL, bearer, effectiveEnv string, verbose bool) error {
 	var body any

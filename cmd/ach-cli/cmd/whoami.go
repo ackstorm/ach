@@ -5,11 +5,11 @@
 // --verify it performs an asymmetric remote check per CLI spec §5.3 /
 // D-13:
 //
-//   - pk_ → GET /platform/environments?limit=1
-//   - ek_ → POST /platform/hydrate {} with Accept-Encoding: gzip
+//   - pk- → GET /platform/environments?limit=1
+//   - ek- → POST /platform/hydrate {} with Accept-Encoding: gzip
 //
 // Exit codes per D-14: 0 on 2xx, 3 on 401, 6 on network failure. The
-// pk_ vs ek_ branch uses internal/keys.ClassifyBearer for prefix
+// pk- vs ek- branch uses internal/keys.ClassifyBearer for prefix
 // classification (already shipped Phase 3).
 //
 // Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) is supported
@@ -75,8 +75,8 @@ Default (no --verify) reads ~/.config/ach/config.yaml and prints:
   (no remote check)
 
 With --verify, performs an asymmetric remote check per CLI spec §5.3:
-  pk_  → GET  /platform/environments?limit=1
-  ek_  → POST /platform/hydrate {}  (Accept-Encoding: gzip; body discarded)
+  pk-  → GET  /platform/environments?limit=1
+  ek-  → POST /platform/hydrate {}  (Accept-Encoding: gzip; body discarded)
 
 Exit codes (D-14):
   0  success
@@ -91,8 +91,8 @@ Exit codes (D-14):
 	cmd.Flags().BoolVar(&flagVerify, "verify", false, "Probe the server with the resolved key")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag (synthetic-mode path)")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag (synthetic-mode path)")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
 
 	return cmd
 }
@@ -127,7 +127,7 @@ func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey 
 		return nil
 	}
 
-	// --verify: classify pk_ vs ek_ and call the right endpoint.
+	// --verify: classify pk- vs ek- and call the right endpoint.
 	prefix, classifyErr := keys.ClassifyBearer(bearer)
 	if classifyErr != nil {
 		return &exit.CodedError{
@@ -177,7 +177,7 @@ func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey 
 // + a minimal bearer resolution chain (W1 scope; full mutex
 // enforcement lands in W3-P1):
 //
-//  1. Synthetic mode (ACH_BASE_URL + ACH_API_KEY) — use the env pk_
+//  1. Synthetic mode (ACH_BASE_URL + ACH_API_KEY) — use the env pk-
 //     directly; profile-flag/env REJECTED with exit 1.
 //  2. --api-key flag — use it as the bearer, profile for URL only.
 //  3. --env-key flag — resolve against profiles.<active>.ek.<label>.

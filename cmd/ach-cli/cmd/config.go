@@ -4,7 +4,7 @@
 // §5.4) — six children that read and write ~/.config/ach/config.yaml
 // without ever contacting the server:
 //
-//   - add     Register a profile from an existing pk_/ek_ (the headless
+//   - add     Register a profile from an existing pk-/ek- (the headless
 //             counterpart to `ach login` — no browser SSO). Stores the
 //             credential in Profile.PK; --env-key seeds the EK label map.
 //   - list    Print the profiles table (NAME, URL, PK presence, EK count).
@@ -50,9 +50,9 @@ func newConfigCmd() *cobra.Command {
 		Long: `Manage the local CLI configuration at ~/.config/ach/config.yaml.
 
 Children:
-  add       Register a profile from an existing pk_/ek_ (no SSO)
+  add       Register a profile from an existing pk-/ek- (no SSO)
   list      Print the profiles table
-  show      Print one profile (--reveal unmasks pk_/ek_)
+  show      Print one profile (--reveal unmasks pk-/ek-)
   use       Set default: to <name>
   remove    Delete a profile (--force required for active default)
   rename    Rename a map key (preserves PK + EK map)
@@ -102,7 +102,7 @@ func newConfigShowCmd() *cobra.Command {
 	var reveal bool
 	c := &cobra.Command{
 		Use:   "show [profile]",
-		Short: "Print one profile (pk_/ek_ masked unless --reveal)",
+		Short: "Print one profile (pk-/ek- masked unless --reveal)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := configSyntheticGuard("show"); err != nil {
@@ -134,7 +134,7 @@ func newConfigShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk_/ek_ for the named profile only (D-05)")
+	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk-/ek- for the named profile only (D-05)")
 	return c
 }
 
@@ -289,16 +289,16 @@ func newConfigRenameCmd() *cobra.Command {
 }
 
 // newConfigAddCmd returns the `ach config add` leaf — the headless
-// counterpart to `ach login`. Where login mints a pk_ via the browser
+// counterpart to `ach login`. Where login mints a pk- via the browser
 // SSO round-trip, `config add` registers a profile from a credential
-// the caller ALREADY holds: a pk_ copied from a login on another
-// machine, or an ek_ from `ach env-keys create`. This is the
+// the caller ALREADY holds: a pk- copied from a login on another
+// machine, or an ek- from `ach env-keys create`. This is the
 // agent/CI path — no server contact, no browser.
 //
 // The --api-key plaintext is stored in Profile.PK, the profile's
 // default-bearer slot (hydrate's no-flag credential path reads it).
-// PK here means "default bearer for this profile"; an ek_ is a valid
-// value for a service profile. Per-environment ek_ belong in the
+// PK here means "default bearer for this profile"; an ek- is a valid
+// value for a service profile. Per-environment ek- belong in the
 // Profile.EK label map (see `--env-key`, added separately).
 func newConfigAddCmd() *cobra.Command {
 	var (
@@ -310,15 +310,15 @@ func newConfigAddCmd() *cobra.Command {
 		flagForce   bool
 	)
 	c := &cobra.Command{
-		Use:   "add --profile <name> --url <url> --api-key <pk_|ek_>",
-		Short: "Register a profile from an existing pk_/ek_ (no SSO)",
+		Use:   "add --profile <name> --url <url> --api-key <pk-|ek->",
+		Short: "Register a profile from an existing pk-/ek- (no SSO)",
 		Long: `Register a profile from a credential you already hold — the headless
 counterpart to ach login (which needs a browser SSO round-trip).
 
-Use this on an agent/CI box: mint an ek_ with ach env-keys create (or
-copy a pk_ from a login elsewhere), then seed a working profile here.
+Use this on an agent/CI box: mint an ek- with ach env-keys create (or
+copy a pk- from a login elsewhere), then seed a working profile here.
 
-  ach config add --profile prod --url https://hub.example --api-key ek_...
+  ach config add --profile prod --url https://hub.example --api-key ek-...
 
 The credential is written to Profile.PK (the default bearer used by
 ach hydrate when no --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY is set).
@@ -330,11 +330,11 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 	}
 	c.Flags().StringVar(&flagProfile, "profile", "", "Profile name to create (DNS-1123 label)")
 	c.Flags().StringVar(&flagURL, "url", "", "Hub URL (http:// or https://)")
-	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk_ or ek_ plaintext to store")
+	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk- or ek- plaintext to store")
 	c.Flags().BoolVar(&flagDefault, "default", false, "Set this profile as the default")
 	c.Flags().BoolVar(&flagForce, "force", false, "Overwrite an existing profile of the same name")
 	c.Flags().StringArrayVar(&flagEnvKeys, "env-key", nil,
-		"Seed a labelled ek_ into profiles.<name>.ek (label=ek_...); repeatable")
+		"Seed a labelled ek- into profiles.<name>.ek (label=ek-...); repeatable")
 	_ = c.MarkFlagRequired("profile")
 	_ = c.MarkFlagRequired("url")
 	_ = c.MarkFlagRequired("api-key")
@@ -363,16 +363,16 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
 		return &exit.CodedError{Code: exit.General, Msg: "url must be http:// or https://"}
 	}
-	// Validate credential shape — pk_ or ek_, canonical 29-char length.
+	// Validate credential shape — pk- or ek-, canonical 29-char length.
 	if _, err := keys.ClassifyBearer(apiKey); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
-			Msg:     fmt.Sprintf("--api-key is not a valid pk_/ek_ bearer: %v", err),
+			Msg:     fmt.Sprintf("--api-key is not a valid pk-/ek- bearer: %v", err),
 			Wrapped: err,
 		}
 	}
-	// Parse --env-key label=ek_ specs. Each value MUST be an ek_ bearer
-	// (a pk_ is the profile default, not a per-environment key).
+	// Parse --env-key label=ek- specs. Each value MUST be an ek- bearer
+	// (a pk- is the profile default, not a per-environment key).
 	ekMap := map[string]string{}
 	for _, spec := range envKeys {
 		label, ek, ok := strings.Cut(spec, "=")
@@ -380,21 +380,21 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string
 			// No '=' at all: spec is a bare label (no secret) — safe to quote.
 			return &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q: missing '=' separator; expected label=ek_...", spec),
+				Msg:  fmt.Sprintf("--env-key %q: missing '=' separator; expected label=ek-...", spec),
 			}
 		}
 		if label == "" {
-			// spec is "=<value>"; do NOT quote spec — it carries the ek_ plaintext.
+			// spec is "=<value>"; do NOT quote spec — it carries the ek- plaintext.
 			return &exit.CodedError{
 				Code: exit.General,
-				Msg:  "--env-key: label must not be empty; expected label=ek_...",
+				Msg:  "--env-key: label must not be empty; expected label=ek-...",
 			}
 		}
 		prefix, err := keys.ClassifyBearer(ek)
 		if err != nil || prefix != keys.PrefixEk {
 			return &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q value is not a valid ek_ bearer", label),
+				Msg:  fmt.Sprintf("--env-key %q value is not a valid ek- bearer", label),
 			}
 		}
 		ekMap[label] = ek

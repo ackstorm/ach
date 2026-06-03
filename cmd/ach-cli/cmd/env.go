@@ -138,8 +138,8 @@ func newEnvListCmd() *cobra.Command {
 	c.Flags().IntVar(&flagLimit, "limit", defaultEnvListLimit, "Per-page limit (server cap is 500)")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
+	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
 	return c
 }
 
@@ -201,8 +201,8 @@ func newEnvDescribeCmd() *cobra.Command {
 		"Skip the /platform/hydrate call (faster, env metadata only)")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
+	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
 	return c
 }
 

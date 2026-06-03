@@ -248,7 +248,7 @@ func GuardCommand(p Params) error {
 			return &exit.CodedError{
 				Code: exit.General,
 				Msg: "--env-key / ACH_ENV_KEY cannot be used in synthetic mode " +
-					"(ek_ labels require the config registry; CLI-09 / spec §3.3)",
+					"(ek- labels require the config registry; CLI-09 / spec §3.3)",
 			}
 		}
 	}

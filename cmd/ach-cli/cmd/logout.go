@@ -9,7 +9,7 @@
 // Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) → exit 1 per
 // CLI spec §3.3 (D-06).
 //
-// Note: server-side, the pk_ remains valid for its sliding-window TTL
+// Note: server-side, the pk- remains valid for its sliding-window TTL
 // (Hub §7.1) — by design, so a re-login on the same device resumes
 // against an unexpired key. An operator who wants immediate
 // revocation runs `ach admin keys revoke pkid_…` (06-08).
@@ -33,14 +33,14 @@ func newLogoutCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Wipe the active profile's pk_ (preserve url:)",
-		Long: `Wipe the active profile's pk_ from ~/.config/ach/config.yaml.
+		Short: "Wipe the active profile's pk- (preserve url:)",
+		Long: `Wipe the active profile's pk- from ~/.config/ach/config.yaml.
 
 URL and EK map are preserved; the profile entry stays and
 default: is untouched. A subsequent ach login resumes against the
 same profile without re-prompting for the URL.
 
-Server-side, the pk_ remains valid for its sliding-window TTL (Hub
+Server-side, the pk- remains valid for its sliding-window TTL (Hub
 §7.1). For immediate revocation, use ach admin keys revoke pkid_….
 
 Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) exits 1 per

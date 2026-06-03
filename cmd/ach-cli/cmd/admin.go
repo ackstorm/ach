@@ -16,7 +16,7 @@
 // exit 1 on client-side validation failure.
 //
 // CLI-13: `keys revoke` accepts BOTH `pkid_…` AND `ekid_…` key IDs;
-// raw `pk_…`/`ek_…` plaintext is rejected client-side BEFORE any HTTP
+// raw `pk-…`/`ek-…` plaintext is rejected client-side BEFORE any HTTP
 // call (prevents a misplaced plaintext from landing in the audit
 // event Target / appearing in shell history).
 //
@@ -28,8 +28,8 @@
 // v1alpha1.
 //
 // Synthetic mode (CLI-07): admin works normally — admin endpoints
-// accept pk_ only, and a synthetic pk_ + allowlisted email behaves
-// identically to a config-loaded pk_. The synthetic.GuardCommand
+// accept pk- only, and a synthetic pk- + allowlisted email behaves
+// identically to a config-loaded pk-. The synthetic.GuardCommand
 // call uses GateAdmin to gate --profile / --env-key / half-set
 // per the cross-gate rules (see 06-07 SUMMARY for the matrix).
 //
@@ -85,8 +85,8 @@ func registerAdminCredFlags(cmd *cobra.Command, f *adminCredFlags, withYes bool)
 		cmd.Flags().BoolVar(&f.Yes, "yes", false, "Bypass interactive confirmation")
 	}
 	cmd.Flags().StringVar(&f.Profile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&f.APIKey, "api-key", "", "Override pk_ from flag")
-	cmd.Flags().StringVar(&f.EnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().StringVar(&f.APIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&f.EnvKey, "env-key", "", "Override with stored ek- label")
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false,
 		"Dump request headers to stderr (x-ach-key redacted)")
 }
@@ -174,15 +174,15 @@ type adminRefreshResponse struct {
 func newAdminCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "admin",
-		Short: "Admin operations (key revocation, force-refresh) — requires allowlisted pk_",
-		Long: `Operator-facing admin surface. Every subcommand requires a pk_ whose
+		Short: "Admin operations (key revocation, force-refresh) — requires allowlisted pk-",
+		Long: `Operator-facing admin surface. Every subcommand requires a pk- whose
 owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + `
 or the equivalent Helm value). Non-allowlisted callers receive
 ` + "`403 not_admin`" + ` and the CLI exits 3 (CLI-10).
 
 Subcommands:
   keys revoke <key-id>             Revoke a key by ID (pkid_… or ekid_…).
-                                    Raw pk_…/ek_… plaintext is rejected
+                                    Raw pk-…/ek-… plaintext is rejected
                                     client-side (CLI-13).
   users revoke-keys <email>        Revoke ALL keys owned by <email>.
                                     Returns {revoked_count, errors}.
@@ -226,7 +226,7 @@ func newAdminKeysRevokeCmd() *cobra.Command {
 	f := &adminCredFlags{}
 	// SilenceUsage + SilenceErrors per Pattern S5 — cobra would
 	// otherwise echo its Usage block (containing flag descriptions
-	// referencing pk_/ek_) to the SetOut writer on a non-nil RunE
+	// referencing pk-/ek-) to the SetOut writer on a non-nil RunE
 	// return. cmd/ach/main.go owns the err render via the typed-
 	// error dispatch (Pattern P12).
 	cmd := &cobra.Command{
@@ -297,7 +297,7 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 }
 
 // validateAdminKeyID enforces the CLI-13 client-side classification:
-// only pkid_ / ekid_ key IDs are accepted; raw pk_ / ek_ plaintext is
+// only pkid_ / ekid_ key IDs are accepted; raw pk- / ek- plaintext is
 // rejected with a clear message; everything else is rejected as
 // invalid. Returns nil when the key ID is well-formed.
 func validateAdminKeyID(keyID string) error {
@@ -344,7 +344,7 @@ func newAdminUsersRevokeKeysCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "revoke-keys",
 		Short:         "Revoke ALL keys owned by <email>. Usage: ach admin users revoke-keys <email>",
-		Long:          "Bulk-revoke every pk_ and ek_ owned by the given email. Returns {revoked_count, errors}.",
+		Long:          "Bulk-revoke every pk- and ek- owned by the given email. Returns {revoked_count, errors}.",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -515,7 +515,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 // httpclient.Client.APIKey; never into a print/log call.
 //
 // We accept --env-key here for compositional parity even though
-// admin endpoints reject ek_ at the server side (AdminOnly
+// admin endpoints reject ek- at the server side (AdminOnly
 // middleware in internal/platformapi/admin/mount.go) — the server
 // emits a clear `invalid_key_type` outcome and the CLI maps it to
 // exit 3 via MapServerError, which is the correct user experience

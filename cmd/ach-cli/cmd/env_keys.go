@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach env-keys` is the ek_ Environment Key lifecycle CLI surface:
+// `ach env-keys` is the ek- Environment Key lifecycle CLI surface:
 // three sub-subcommands (create / list / revoke) backed by the
 // `/platform/env-keys` REST endpoints already shipped by Phase 3
 // (internal/platformapi/envkeys/handler.go).
 //
 // D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
 // spec divergence): `ach env-keys create` ALWAYS persists the
-// returned `ek_` plaintext to `profiles.<active>.ek.<server-name>`
+// returned `ek-` plaintext to `profiles.<active>.ek.<server-name>`
 // in the active profile. The spec's `--save-as` flag is removed;
-// `--no-save` opts out of persist (ek_ flows to stdout only — for
+// `--no-save` opts out of persist (ek- flows to stdout only — for
 // CI / vault-piping workflows). See:
 //   - .planning/REQUIREMENTS.md CLI-09 row (marked DEVIATED, D-07).
 //   - spec/ach_cli_spec_v20260515_FINALv4.md changelog (always-persist
@@ -19,14 +19,14 @@
 // ACH_API_KEY) requires `--no-save` — without it, the CLI exits 1
 // because synthetic mode never has a writable config file.
 //
-// CLI-04 (S5 plaintext lifecycle): ek_ printed to stdout EXACTLY
+// CLI-04 (S5 plaintext lifecycle): ek- printed to stdout EXACTLY
 // ONCE at the success branch of `create`. NEVER echoed by `list` or
 // `revoke`. On non-2xx the partial body is consumed by the §15.5
 // envelope decoder in `httpclient` — no path leaks plaintext on
 // failure.
 //
 // CLI-13: `revoke` enforces the `ekid_…` key-id prefix CLIENT-side
-// BEFORE any HTTP call. Raw plaintext (`ek_…`) is rejected with a
+// BEFORE any HTTP call. Raw plaintext (`ek-…`) is rejected with a
 // message that surfaces the mistake to stderr; `pkid_…` is rejected
 // with a pointer to `ach admin keys revoke` (which W3-P2 / 06-08
 // will accept).
@@ -101,20 +101,20 @@ type envKeysListResponse struct {
 func newEnvKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "env-keys",
-		Short: "Manage ek_ Environment Keys (create, list, revoke)",
-		Long: `Manage ek_ Environment Keys. All three sub-subcommands require pk_ auth.
+		Short: "Manage ek- Environment Keys (create, list, revoke)",
+		Long: `Manage ek- Environment Keys. All three sub-subcommands require pk- auth.
 
 Sub-subcommands:
-  create  Issue a new ek_ for an Environment (D-07: always-persists to
+  create  Issue a new ek- for an Environment (D-07: always-persists to
           ~/.config/ach/config.yaml unless --no-save).
   list    Paginate the env-keys visible to the caller (server-side
           filters by owner email for non-admins).
-  revoke  Delete an ek_ by its ekid_ identifier.
+  revoke  Delete an ek- by its ekid_ identifier.
 
-D-07 (spec deviation): ek_ create ALWAYS persists the returned plaintext
+D-07 (spec deviation): ek- create ALWAYS persists the returned plaintext
 to profiles.<active>.ek.<server-name> in the active profile. The
-spec's --save-as flag is REMOVED; --no-save opts out (ek_ flows to stdout
-only — useful for CI scripts piping ek_ into a vault).
+spec's --save-as flag is REMOVED; --no-save opts out (ek- flows to stdout
+only — useful for CI scripts piping ek- into a vault).
 
 D-08: In synthetic mode (ACH_BASE_URL + ACH_API_KEY both set), create
 without --no-save exits 1.
@@ -143,12 +143,12 @@ func newEnvKeysCreateCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Issue a new ek_ for an Environment (D-07 always-persists)",
+		Short: "Issue a new ek- for an Environment (D-07 always-persists)",
 		// SilenceUsage + SilenceErrors: cobra otherwise echoes its
-		// Usage block (containing the "ek_" flag descriptions) to
+		// Usage block (containing the "ek-" flag descriptions) to
 		// the writer attached via SetOut when a RunE returns
 		// non-nil. That would clobber CLI-04 — stdout must NEVER
-		// emit any ek_ fragment on a non-2xx response. Errors
+		// emit any ek- fragment on a non-2xx response. Errors
 		// surface through cmd/ach/main.go's typed-error dispatch
 		// (Pattern P12); the cobra-side echo is redundant.
 		SilenceUsage:  true,
@@ -159,12 +159,12 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (required)")
-	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek_ (required)")
+	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (required)")
 	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
-		"Do NOT persist ek_ to ~/.config/ach/config.yaml (D-07 escape hatch)")
+		"Do NOT persist ek- to ~/.config/ach/config.yaml (D-07 escape hatch)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label (rare for create)")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label (rare for create)")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	_ = cmd.MarkFlagRequired("environment")
 	_ = cmd.MarkFlagRequired("name")
@@ -272,7 +272,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 	if saveErr := config.Save(cfgPath, file); saveErr != nil {
 		// Plaintext already on stdout (exactly once per CLI-04); do
 		// NOT re-print it here. Surface the config write failure.
-		_, _ = fmt.Fprintf(stderr, "warning: failed to persist ek_ to config: %v\n", saveErr)
+		_, _ = fmt.Fprintf(stderr, "warning: failed to persist ek- to config: %v\n", saveErr)
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: saveErr.Error(), Wrapped: saveErr}
 	}
 	return nil
@@ -295,7 +295,7 @@ func newEnvKeysListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:           "list",
-		Short:         "List ek_ Environment Keys visible to the caller",
+		Short:         "List ek- Environment Keys visible to the caller",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -308,8 +308,8 @@ func newEnvKeysListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	return cmd
 }
@@ -407,7 +407,7 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 		// Keeps the `grep -c '"revoke"'` count == 3 in the
 		// 06-05 plan acceptance text.
 		Use:           "revoke",
-		Short:         "Revoke an ek_ by its ekid_ identifier (CLI-13). Usage: ach env-keys revoke <ekid_…>",
+		Short:         "Revoke an ek- by its ekid_ identifier (CLI-13). Usage: ach env-keys revoke <ekid_…>",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -418,8 +418,8 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	return cmd
 }

@@ -14,10 +14,10 @@
 // does the minimal inline check now so the dependency arrow is
 // "synthetic enforces, login asserts".
 //
-// CLI-04 plaintext lifecycle: the pk_ plaintext flows from
+// CLI-04 plaintext lifecycle: the pk- plaintext flows from
 // devicecode.TokenResponse.Plaintext into config.File.Profiles[name].PK
 // via config.Save (yaml write to mode-0600 file). The ONLY stdout
-// emission of the pk is the masked tail `pk_****<last-4>` via
+// emission of the pk is the masked tail `pk-****<last-4>` via
 // config.Mask, printed exactly once at success.
 
 package cmd
@@ -68,15 +68,15 @@ func newLoginCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate against a Hub via device-code SSO and persist pk_",
+		Short: "Authenticate against a Hub via device-code SSO and persist pk-",
 		Long: `Authenticate against an ACH Hub via the device-code SSO flow.
 
 Flow:
   1. POST /platform/auth/cli/init to mint a session_id + verification_url.
   2. Open the verification_url in the browser (or print it with --no-browser).
   3. Poll POST /platform/auth/cli/token until the SSO round-trip lands
-     the pk_ on the server.
-  4. Persist the pk_ to ~/.config/ach/config.yaml at mode 0600.
+     the pk- on the server.
+  4. Persist the pk- to ~/.config/ach/config.yaml at mode 0600.
 
 Interactive prompts (skipped when --profile / --base-url are set):
   Profile name  DNS-1123 label, e.g. "prod"
@@ -223,7 +223,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
 
-	// Step 10 — success line. CLI-04: pk_ printed ONLY as the masked
+	// Step 10 — success line. CLI-04: pk- printed ONLY as the masked
 	// tail. The full plaintext lives in tokenResp.Plaintext →
 	// file.Profiles[name].PK → on-disk yaml only.
 	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", tokenResp.OwnerEmail, config.Mask(tokenResp.Plaintext))
