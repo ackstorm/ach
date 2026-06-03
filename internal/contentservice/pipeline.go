@@ -126,19 +126,33 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 	// Gate 8 — D-02 early open. Compose the on-disk path from the
 	// resolved row's scope (artifact) and open EARLY so a subsequent
 	// rename(2) does not unhook the inode mid-response.
-	path, err := ResolvePath(d.CacheRoot, kind, name, row.Scope)
-	if err != nil {
-		// validateName / kind / scope errors are caller-side
-		// invariants — treat as 404 (router only registers known
-		// kinds; envRow.context allowlist already passed). On scope
-		// invalid this is a projection-write bug; still 404 from the
-		// client's perspective.
-		if errors.Is(err, ErrInvalidName) {
-			return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+	//
+	// Plugin special case: the resolved row's StorageLocation is used
+	// directly instead of recomputing via ResolvePath. A scoped ref such
+	// as "shared@mkt-b" carries '@' in the URL-param name, which would
+	// produce "plugin/shared@mkt-b.tar.gz" — the wrong path. The operator
+	// materialises marketplace plugins under "plugin/<name>.tar.gz" (no
+	// marketplace qualifier on disk), so the absolute StorageLocation from
+	// the projection row is always authoritative for plugins.
+	var path string
+	if kind == kindPlugin {
+		path = row.StorageLocation
+	} else {
+		var err error
+		path, err = ResolvePath(d.CacheRoot, kind, name, row.Scope)
+		if err != nil {
+			// validateName / kind / scope errors are caller-side
+			// invariants — treat as 404 (router only registers known
+			// kinds; envRow.context allowlist already passed). On scope
+			// invalid this is a projection-write bug; still 404 from the
+			// client's perspective.
+			if errors.Is(err, ErrInvalidName) {
+				return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+			}
+			return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
 		}
-		return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
 	}
-	f, err := os.Open(path) // #nosec G304 — path is filepath.Join(d.CacheRoot, kind, validatedName[+.tar.gz])
+	f, err := os.Open(path) // #nosec G304 — path validated by ResolvePluginByName (plugin) or ResolvePath (other kinds)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 			// Projection row claims the file exists; the cache file is

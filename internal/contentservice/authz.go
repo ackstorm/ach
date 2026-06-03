@@ -39,6 +39,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/pluginref"
 )
 
 // contentRow holds the per-request resolved row that gate 7 (staleness)
@@ -231,6 +232,9 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 		return errUnauthorizedContent()
 	}
 	for _, n := range list {
+		// Comparison is intentionally on the FULL ref (e.g. "shared@mkt-b"),
+		// which matches the Environment's stored allowlist entry verbatim —
+		// no parsing needed for the allowlist gate.
 		if n == name {
 			return nil
 		}
@@ -271,7 +275,8 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			ContentType:           row.ContentType,
 		}, nil
 	case kindPlugin:
-		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, name)
+		pname, marketplace, _ := pluginref.Parse(name)
+		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, pname, marketplace)
 		if err != nil {
 			return nil, errInternal()
 		}
