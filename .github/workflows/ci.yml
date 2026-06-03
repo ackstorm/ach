@@ -106,10 +106,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6  # v4.3.1
 
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v5  # v4.9.0
-        with:
-          fail-on-severity: high
+      # NOTE: actions/dependency-review-action is intentionally NOT used here.
+      # It requires GitHub Advanced Security + Dependency Graph, neither of
+      # which is enabled on this repo (private, no GHAS plan) — the step
+      # hard-fails ("Advanced Security must be enabled") and, having no
+      # `if: always()` successor, SKIPS the real security gate below. It was
+      # dropped deliberately in 8554dc8 (govulncheck is the canonical
+      # supply-chain gate) then re-introduced by the alitellm alignment in
+      # 6afb915; this re-drops it. Re-add only once GHAS is enabled.
 
       - name: Set up devtools (pull or build)
         uses: ./.github/actions/setup-devtools
