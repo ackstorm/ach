@@ -105,6 +105,19 @@ spec:
                   fieldPath: metadata.namespace
             - name: ACH_CACHE_ROOT
               value: /var/cache/ach
+            {{- if .Values.litellmConnection.enabled }}
+            # LiteLLMConnection/default bootstrap coordinates (issue #34). The
+            # operator get-or-creates the canonical CR on boot from these —
+            # Helm cannot apply a CR of a templates-rendered CRD in the install
+            # release ("no matches for kind"), so the operator owns it. Only the
+            # Secret REFERENCE is passed; the master-key VALUE is never in env.
+            - name: ACH_LITELLM_CONNECTION_ENDPOINT
+              value: {{ required "litellmConnection.endpoint is required when litellmConnection.enabled" .Values.litellmConnection.endpoint | quote }}
+            - name: ACH_LITELLM_CONNECTION_SECRET_NAME
+              value: {{ required "litellmConnection.masterKeySecretRef.name is required" .Values.litellmConnection.masterKeySecretRef.name | quote }}
+            - name: ACH_LITELLM_CONNECTION_SECRET_KEY
+              value: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
