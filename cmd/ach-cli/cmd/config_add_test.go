@@ -11,11 +11,11 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// validEK is a canonical 29-char ek_ bearer (ek_ + 26 base32 chars).
-const validEK = "ek_abcdefghijklmnopqrstuvwxyz"
+// validEK is a canonical ek- bearer (ek- + 64 base64url chars, 67 total).
+const validEK = "ek-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 
-// validPK is a canonical 29-char pk_ bearer (pk_ + 26 base32 chars).
-const validPK = "pk_abcdefghijklmnopqrstuvwxyz"
+// validPK is a canonical pk- bearer (pk- + 64 base64url chars, 67 total).
+const validPK = "pk-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestConfigAdd_WritesProfile_FirstBecomesDefault(t *testing.T) {
 	dir := configTestEnv(t)
