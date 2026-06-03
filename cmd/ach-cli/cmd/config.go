@@ -422,7 +422,8 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string
 	if _, exists := file.Profiles[name]; exists && !force {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("profile %q already exists; pass --force to overwrite or run `ach config remove %s` first", name, name),
+			Msg: fmt.Sprintf("profile %q already exists; pass --force to overwrite "+
+				"or run `ach config remove %s` first", name, name),
 		}
 	}
 
