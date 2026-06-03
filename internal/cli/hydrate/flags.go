@@ -96,9 +96,9 @@ type Opts struct {
 	// Caller layer resolves from ACH_BASE_URL or config (D-11).
 	BaseURL string
 
-	// Bearer is the resolved credential (pk_<…> or ek_<…>) for the
+	// Bearer is the resolved credential (pk-<…> or ek-<…>) for the
 	// POST /platform/hydrate Authorization header. Caller layer
-	// resolves per D-11 mutex / D-12 pk_ + --environment gate.
+	// resolves per D-11 mutex / D-12 pk- + --environment gate.
 	Bearer string
 
 	// --- behavior + test seams ---

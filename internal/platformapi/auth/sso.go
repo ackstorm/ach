@@ -239,7 +239,7 @@ type idTokenClaims struct {
 }
 
 // callbackResponse is the §15.5 SSO callback success body. plaintext is
-// the pk_<…> bearer; key_id is the pkid_<…> opaque id. The body is the
+// the pk-<…> bearer; key_id is the pkid_<…> opaque id. The body is the
 // SOLE place plaintext appears (per Hub §16.1 Specifics block).
 type callbackResponse struct {
 	KeyID      string `json:"key_id"`

@@ -137,7 +137,7 @@ const defaultTeam = "default"
 //     empty → 403 unauthorized_team.
 //  6. Idempotent LiteLLM user provision: UserInfoByEmail; on absent run
 //     UserNew + TeamMemberAdd(default, user_id, "user").
-//  7. Generate server-side plaintext (ek_<26>) + key_id (ekid_<26>);
+//  7. Generate server-side plaintext (ek-<64>) + key_id (ekid_<26>);
 //     hash plaintext with the pepper; call litellm.KeyGenerate — LiteLLM
 //     owns its virtual-key plaintext format (ACH does NOT supply Key);
 //     ACH supplies AccessGroups=[<env>] + MaxBudget=nil (KEY-10).

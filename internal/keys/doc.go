@@ -2,13 +2,13 @@
 
 // Package keys is the single owner of the ACH bearer/key-id namespace.
 //
-// The pk_, ek_, pkid_, ekid_ prefixes are load-bearing invariants:
+// The pk-, ek-, pkid_, ekid_ prefixes are load-bearing invariants:
 //
-//   - pk_<26-char base32-no-pad-lowercase>: Personal Key plaintext bearer
-//     (Hub §3, §7). 16 random bytes from crypto/rand → 26 base32 chars
-//     yields ~130 bits of entropy.
-//   - ek_<26-char base32-no-pad-lowercase>: Environment Key plaintext bearer
-//     (Hub §3, §8). Same entropy source as pk_.
+//   - pk-<64-char base64url-no-pad>: Personal Key plaintext bearer
+//     (Hub §3, §7). 48 random bytes from crypto/rand → 64 base64url
+//     chars yields 384 bits of entropy. CASE-SIGNIFICANT.
+//   - ek-<64-char base64url-no-pad>: Environment Key plaintext bearer
+//     (Hub §3, §8). Same entropy source as pk-.
 //   - pkid_<26-char ULID base32-lowercase>: opaque key_id for the
 //     personal_keys.key_id column. The CHECK (key_id LIKE 'pkid_%')
 //     constraint in db/migrations/000001_init.up.sql is load-bearing.
@@ -18,7 +18,7 @@
 //
 // Discipline (binding on every importer):
 //
-//   - Plaintext bearer values (pk_*/ek_*) MUST NOT be logged, persisted, or
+//   - Plaintext bearer values (pk-*/ek-*) MUST NOT be logged, persisted, or
 //     transmitted anywhere except:
 //
 //   - the one-time return body of POST /platform/auth/sso/callback
@@ -39,7 +39,7 @@
 //     metrics, and admin URLs. They MUST NEVER be confused with plaintext
 //     bearer values: ClassifyBearer rejects pkid_*/ekid_* inputs.
 //
-// Underlying randomness: crypto/rand (16 bytes → 130 bits) for bearers.
+// Underlying randomness: crypto/rand (48 bytes → 384 bits) for bearers.
 // Underlying ULID: github.com/oklog/ulid/v2 (time-ordered for DB-index
 // locality and audit-log readability).
 package keys

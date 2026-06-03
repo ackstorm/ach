@@ -11,9 +11,9 @@ import (
 // KeyGenerate issues POST /key/generate.
 //
 // Phase 3 D-13 contract: ACH generates the bearer plaintext SERVER-SIDE
-// (crypto/rand → base32 no-pad → "pk_<26>" or "ek_<26>") and passes it
+// (crypto/rand → base64url no-pad → "pk-<64>" or "ek-<64>") and passes it
 // via req.Key. LiteLLM stores ACH's plaintext verbatim in its `key`
-// column so the LiteLLM virtual key inherits the ACH `pk_*`/`ek_*`
+// column so the LiteLLM virtual key inherits the ACH `pk-*`/`ek-*`
 // prefix; the LiteLLM-INTERNAL opaque hex `token` (a different identifier)
 // is returned in KeyGenerateResponse.Token and stored by Phase 3 into
 // personal_keys.litellm_token / environment_keys.litellm_token
@@ -25,7 +25,7 @@ import (
 // callers pass nil and the field drops from the wire payload entirely.
 // LiteLLM falls back to whatever default the deployer configured server-side.
 //
-// AccessGroups carries the LiteLLM access-group name list — Phase 3 ek_
+// AccessGroups carries the LiteLLM access-group name list — Phase 3 ek-
 // creation passes a single-element slice ([]string{"<environment>"}) so
 // LiteLLM applies the access-group budget policy at request time.
 //

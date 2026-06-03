@@ -3,7 +3,7 @@
 // Package envkeys ships the four HTTP handlers + chi router subtree
 // for the /platform/env-keys endpoint family per Hub §15.5:
 //
-//   - POST   /platform/env-keys           — §8.2 8-step ek_ create flow.
+//   - POST   /platform/env-keys           — §8.2 8-step ek- create flow.
 //   - GET    /platform/env-keys           — paginated list (caller-scoped
 //     non-admin; admin override via ?owner_email=).
 //   - GET    /platform/env-keys/{key_id}  — single-row read with ekid_
@@ -13,14 +13,14 @@
 //
 // Discipline:
 //
-//   - Plaintext-once invariant. The bearer plaintext (ek_<26>) is
+//   - Plaintext-once invariant. The bearer plaintext (ek-<64>) is
 //     generated server-side via internal/keys.NewBearer in CreateHandler
 //     and returned EXACTLY ONCE in the POST response body. It is NEVER
 //     written to the DB (only the credhash hex), NEVER logged, NEVER
 //     emitted in audit records, NEVER cached, and NEVER returned by
 //     ListHandler / GetHandler / RevokeHandler. The only other handler
 //     in the codebase that emits plaintext is the SSO callback (Plan
-//     03-07 — pk_); this package is the second and final emitter.
+//     03-07 — pk-); this package is the second and final emitter.
 //
 //   - Asymmetric revocation (KEY-08, D-15). RevokeHandler runs §8.5
 //     verbatim: read row → call litellm.RevokeKey FIRST → flip DB row
@@ -55,10 +55,10 @@
 //     matches here by design.
 //
 //   - Caller-type discipline. Every handler in this file gates on
-//     keyCtx.KeyType == keys.PrefixPk before doing any other work; ek_
+//     keyCtx.KeyType == keys.PrefixPk before doing any other work; ek-
 //     callers receive 401 invalid_key_type without further side
 //     effects (no DB, no LiteLLM, no Redis). Management endpoints are
-//     pk_-only per API-11.
+//     pk--only per API-11.
 //
 //   - DisallowUnknownFields. POST request bodies are parsed via
 //     json.Decoder with DisallowUnknownFields() set; any unknown field
