@@ -27,6 +27,8 @@
 //  1. lock        — flock(LOCK_EX) on <ach-dir>/lock (mode dispatch:
 //     FailFast / Wait / WithTimeout per opts.Wait + opts.LockTimeout).
 //  2. sweep-tmp   — unconditional state.SweepTmp(achDir). Errors swallowed.
+//     Then dropLegacyPluginCache: best-effort RemoveAll of the pre-ephemeral
+//     persistent <achDir>/plugin projection-cache (context scope, !DryRun).
 //  3. read-state  — state.Load + state.GuardEnvironment. Schema mismatch
 //     → exit 5 unless --force; environment mismatch → exit 4 unless --force.
 //  4. reconcile   — silent prune of state entries whose target is missing
@@ -38,11 +40,17 @@
 //     remain UNTOUCHED.
 //  7. fetch       — STATE-11 unconditional GET of every downloadUrl.
 //     W1 STUB — concrete impl lands in 07-W2.
-//  8. extract     — safe tar policy + bomb defense + auto-claim.
+//  8. extract     — safe tar policy + bomb defense + auto-claim. Plugins
+//     extract to the per-run ephemeral pluginStageRoot (<achDir>/tmp, swept
+//     at steps 2 + 13) — NO persistent plugin cache; prompts/artifacts keep
+//     their <achDir>/<kind> deliverable path (CLI §6.4).
 //     W1 STUB — 07-W2.
 //  9. hash        — xxh3 of bytes written vs upstream-source; feed
 //     drift.Compare for STATE-04 four-outcome classification.
-//  10. adapter     — per-platform runtime + plugin transformation.
+//  10. adapter     — per-platform runtime + plugin transformation. The plugin
+//     projection leg reads the ephemeral pluginStageRoot, so a plugin removed
+//     from the Environment can never linger on disk and be re-projected (the
+//     cross-plugin destination-collision bug class).
 //     W1 STUB — 07-W3.
 //  11. sync        — opts.Sync inverse-merge deletion (STATE-05).
 //     W1 STUB — 07-W2/W3.
