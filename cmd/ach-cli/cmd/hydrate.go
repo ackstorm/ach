@@ -62,14 +62,11 @@ import (
 )
 
 // pkWarning is the spec §6.6 stderr warning emitted when `ach-cli hydrate`
-// runs with a pk_ credential. Text is verbatim from
-// spec/ach_cli_spec_v20260515_FINALv4.md §6.6 (mirrors Hub spec §15.3).
-// The trailing newline is part of the const so Fprintf composes cleanly.
-const pkWarning = `warning: hydrating with pk_; runtime spend is attributed to your
-user/Team budgets, not the Environment budget (Hub spec §8.6).
-For Environment-scoped workloads, use ek_:
-    ach env-keys create <environment> --name <alias>
-`
+// runs with a pk- credential. Trimmed from the original §6.6 verbatim text
+// (the budget-attribution prose was redundant for users) to a single
+// actionable line. The trailing newline is part of the const so Fprintf
+// composes cleanly.
+const pkWarning = "warning: hydrating with pk-; for Environment-scoped workloads, use ek-\n"
 
 // hydrateHTTPClient is a test-only seam: when non-nil it replaces the
 // default *http.Client inside the httpclient.Client built by hydrate.

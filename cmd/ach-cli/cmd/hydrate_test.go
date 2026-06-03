@@ -152,11 +152,11 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
 	}
-	if !strings.Contains(stderr, "hydrating with pk_") {
+	if !strings.Contains(stderr, "hydrating with pk-") {
 		t.Errorf("stderr missing §6.6 warning; stderr: %q", stderr)
 	}
-	if !strings.Contains(stderr, "ach env-keys create") {
-		t.Errorf("stderr missing ek_ hint; stderr: %q", stderr)
+	if !strings.Contains(stderr, "use ek-") {
+		t.Errorf("stderr missing ek- hint; stderr: %q", stderr)
 	}
 }
 
