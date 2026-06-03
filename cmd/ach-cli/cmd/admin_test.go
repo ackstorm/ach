@@ -43,7 +43,7 @@ func seedAdminConfig(t *testing.T, baseURL string) string {
 		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: baseURL,
-				PK:  "pk_admintestadminadminadminxyz",
+				PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnxyz",
 			},
 		},
 	}
@@ -599,11 +599,11 @@ func TestAdminKeysRevoke_Verbose_RedactsAchKey(t *testing.T) {
 	if code != exit.OK {
 		t.Fatalf("exit code = %d; want 0", code)
 	}
-	// Verbose should dump x-ach-key with a redacted pk_*** value.
-	if !strings.Contains(stderr, "pk_***") {
-		t.Errorf("expected stderr to contain 'pk_***' (redacted header); got:\n%s", stderr)
+	// Verbose should dump x-ach-key with a redacted pk-*** value.
+	if !strings.Contains(stderr, "pk-***") {
+		t.Errorf("expected stderr to contain 'pk-***' (redacted header); got:\n%s", stderr)
 	}
-	if strings.Contains(stderr, "pk_admintestadminadminadminxyz") {
-		t.Errorf("CLI-04/T-06-08-02 leak: unredacted pk_ in stderr; got:\n%s", stderr)
+	if strings.Contains(stderr, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnxyz") {
+		t.Errorf("CLI-04/T-06-08-02 leak: unredacted pk- in stderr; got:\n%s", stderr)
 	}
 }

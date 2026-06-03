@@ -77,7 +77,7 @@ func TestWhoami_NoNet_PrintsIdentityBlock(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: "https://hub.example",
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 
 	var calls int32
@@ -100,7 +100,7 @@ func TestWhoami_NoNet_PrintsIdentityBlock(t *testing.T) {
 	if !strings.Contains(stdout, "https://hub.example") {
 		t.Errorf("missing URL; stdout: %s", stdout)
 	}
-	if !strings.Contains(stdout, "pk_****wxyz") {
+	if !strings.Contains(stdout, "pk-****wxyz") {
 		t.Errorf("missing masked pk tail; stdout: %s", stdout)
 	}
 	if !strings.Contains(stdout, "no remote check") {
@@ -129,7 +129,7 @@ func TestWhoami_Verify_PK_Calls_Environments(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaabcde",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbcde",
 	})
 	swapHTTPClientForTest(t, ts.Client())
 
@@ -146,8 +146,8 @@ func TestWhoami_Verify_PK_Calls_Environments(t *testing.T) {
 	if sawPath != "/platform/environments?limit=1" {
 		t.Errorf("path = %q; want /platform/environments?limit=1", sawPath)
 	}
-	if sawAchKey != "pk_aaaaaaaaaaaaaaaaaaaaaabcde" {
-		t.Errorf("x-ach-key = %q; want pk_aaaaaaaaaaaaaaaaaaaaaabcde", sawAchKey)
+	if sawAchKey != "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbcde" {
+		t.Errorf("x-ach-key = %q; want pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbcde", sawAchKey)
 	}
 	if !strings.Contains(stdout, "Verified: yes") {
 		t.Errorf("stdout missing 'Verified: yes'; stdout: %s", stdout)
@@ -174,7 +174,7 @@ func TestWhoami_Verify_EK_Calls_Hydrate(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
+		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
 	swapHTTPClientForTest(t, ts.Client())
 
@@ -218,7 +218,7 @@ func TestWhoami_Verify_401_Exit3(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHTTPClientForTest(t, ts.Client())
 
@@ -245,7 +245,7 @@ func TestWhoami_Verify_NetworkRefused_Exit6(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: closedURL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	// Restore the package-level HTTPClient seam to nil so the call
 	// uses the default client (we want a real connection-refused).
@@ -293,7 +293,7 @@ func TestWhoami_Verbose_RedactsKey(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHTTPClientForTest(t, ts.Client())
 
@@ -305,11 +305,11 @@ func TestWhoami_Verbose_RedactsKey(t *testing.T) {
 		t.Errorf("code = %d; want 0", code)
 	}
 	// httpclient.HeaderDump canonicalizes header to X-Ach-Key.
-	if !strings.Contains(stderr, "X-Ach-Key: pk_***") {
-		t.Errorf("stderr missing redacted X-Ach-Key: pk_***; stderr: %s", stderr)
+	if !strings.Contains(stderr, "X-Ach-Key: pk-***") {
+		t.Errorf("stderr missing redacted X-Ach-Key: pk-***; stderr: %s", stderr)
 	}
 	// CLI-04: the full pk plaintext MUST NOT appear in stderr.
-	if strings.Contains(stderr, "pk_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+	if strings.Contains(stderr, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
 		t.Errorf("CLI-04 leak in stderr: %s", stderr)
 	}
 }
