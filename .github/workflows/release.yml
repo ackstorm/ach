@@ -67,9 +67,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
+      # Pull the pre-baked devtools image from GHCR (Go + setup-envtest +
+      # pre-downloaded envtest assets all baked) instead of cold-building it.
+      # Mirrors ci.yml. Removes the per-release docker.io cold build AND the
+      # per-run envtest-asset fetch — make test-* run inside the pulled image.
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
 
       - name: Run tests
         # ci.yml uses envtest-fast (no -race) because the race detector
@@ -92,6 +95,13 @@ jobs:
           # contents:write on the workflow's GITHUB_TOKEN lets us push
           # the bot bump commit (and later the tag) back to main.
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pull the pre-baked devtools image so `make gen-code helm-sync-check`
+      # (controller-gen) runs inside it instead of cold-building the devtools
+      # container from docker.io. setup-go below stays — goreleaser +
+      # cyclonedx-gomod run natively on the runner.
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
 
       - name: Configure git identity
         run: |
