@@ -48,8 +48,8 @@ const (
 
 // Locker is the single-method interface the CLI hydrate orchestrator
 // holds. The POSIX impl lives behind //go:build !windows in
-// lock_unix.go; Phase 7.1 adds lock_windows.go without touching this
-// file (D-19 + D-23).
+// lock_unix.go; the Windows LockFileEx impl lives behind //go:build
+// windows in lock_windows.go (D-19 + D-23).
 type Locker interface {
 	// Acquire opens the lock file at the Locker's configured path and
 	// blocks (or fails fast) per mode. On success returns a Lease the
@@ -98,11 +98,10 @@ var ErrLockTimeout = errors.New("lock: acquisition timed out")
 // fall through to the default branch.
 var ErrInvalidMode = errors.New("lock: invalid acquire mode")
 
-// The public NewLocker constructor is defined in lock_unix.go (and
-// Phase 7.1's lock_windows.go) behind build tags, so the cross-OS
-// dispatch happens at compile time rather than via runtime.GOOS
-// branching. Phase 7 ships linux-amd64 only per D-18; on Windows the
-// package fails to link until Phase 7.1 adds lock_windows.go.
+// The public NewLocker constructor is defined in lock_unix.go and
+// lock_windows.go behind build tags, so the cross-OS dispatch happens
+// at compile time rather than via runtime.GOOS branching (D-23). Both
+// the unix (flock) and windows (LockFileEx) variants link cleanly.
 //
 // Callers should resolve the lock-file path via Path(achDir) so
 // every hydrate run agrees on the same `<ach-dir>/lock` location.

@@ -12,9 +12,9 @@
 //     lives in lock.go with NO build tag — it is the cross-OS shape
 //     downstream packages compile against.
 //   - The POSIX implementation (flock(LOCK_EX)) lives in lock_unix.go
-//     behind `//go:build !windows`. Per CONTEXT.md D-18, Phase 7 ships
-//     `linux-amd64` only; the windows-amd64 build (and `lock_windows.go`
-//     using `LockFileEx`) lands in Phase 7.1 per D-23.
+//     behind `//go:build !windows`; the Windows implementation
+//     (LockFileEx) lives in lock_windows.go behind `//go:build windows`
+//     (D-23). Go selects one at compile time — no runtime.GOOS branch.
 //   - A test seam (`newLocker(path)`) is the package-private constructor;
 //     callers go through `NewLocker(path)` (re-exported here). This
 //     keeps the OS dispatch hidden behind one entry point and lets

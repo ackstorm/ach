@@ -2,9 +2,8 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-// Package lock — POSIX flock(LOCK_EX) implementation. Windows
-// LockFileEx ships in Phase 7.1 alongside the windows-amd64
-// goreleaser build (CLI spec §6.7 / D-23).
+// Package lock — POSIX flock(LOCK_EX) implementation. The Windows
+// LockFileEx variant lives in lock_windows.go (CLI spec §6.7 / D-23).
 package lock
 
 import (

@@ -31,12 +31,20 @@ builds:
     binary: ach-cli
     env:
       - CGO_ENABLED=0
+    # User CLI: ships for the three desktop OSes. Windows is amd64-only
+    # per ROADMAP Phase 7 distribution targets (windows/arm64 ignored
+    # below); linux + darwin ship both arches. The Windows advisory lock
+    # uses LockFileEx (internal/cli/lock/lock_windows.go, D-23).
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
     flags:
       - -trimpath
     ldflags:
@@ -54,6 +62,10 @@ archives:
       - ach
   - id: cli-binaries
     name_template: "ach-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Windows users expect a .zip; linux/darwin stay tar.gz (default).
+    format_overrides:
+      - goos: windows
+        formats: [ 'zip' ]
     files:
       - README.md
       - LICENSE
