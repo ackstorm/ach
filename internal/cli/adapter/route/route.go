@@ -312,9 +312,13 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 
 		rule, ok := matchRule(rules, topLevel, source)
 		if !ok {
-			// No matching rule → record the top-level kind once and skip
-			// recursion into the unrouted dir.
-			dropped.add(topLevel)
+			// Only KNOWN component kinds are reported as dropped (so the user
+			// learns the target lacks support); metadata, docs, and
+			// unrecognized top-levels are skipped silently to keep the
+			// warning surface focused.
+			if KnownComponentKinds[topLevel] {
+				dropped.add(topLevel)
+			}
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

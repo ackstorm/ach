@@ -395,6 +395,32 @@ func TestProject_TransformErrorAborts(t *testing.T) {
 	}
 }
 
+// TestProject_DropsOnlyKnownKinds asserts that metadata dirs (.claude-plugin,
+// .codex-plugin), doc files (README.md), and unrecognized top-levels
+// (random-dir) are silently skipped — only known component kinds (hooks)
+// appear in Dropped.
+func TestProject_DropsOnlyKnownKinds(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"hooks/pre.sh":             "#!/bin/sh\n",
+		".claude-plugin/plugin.json": "{}",
+		".codex-plugin/x.json":      "{}",
+		"README.md":                 "# docs\n",
+		"random-dir/x.txt":          "x",
+		"skills/a/SKILL.md":         "s",
+	})
+
+	rules := []Rule{
+		{FromGlob: "skills/**/*", ToGlob: ".x/skills/**/*", Merge: adapter.MergeReplace},
+	}
+	pr, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project = %v", err)
+	}
+	if got := pr.Dropped; len(got) != 1 || got[0] != "hooks" {
+		t.Fatalf("Dropped = %v; want exactly [hooks] (metadata/docs/unknown must be silent)", got)
+	}
+}
+
 // TestResolveTarget_NestedAndGuard exercises the remap helper directly.
 func TestResolveTarget_NestedAndGuard(t *testing.T) {
 	dest, err := resolveRecursiveGlobTarget("rules/**/*.md", ".claude/rules/**/*.md", "rules/foo/bar.md")
