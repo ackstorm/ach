@@ -114,9 +114,9 @@ func lockFileFailFast(file *os.File) error {
 	err := windows.LockFileEx(
 		windows.Handle(file.Fd()),
 		windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
-		0,            // reserved — must be 0
-		lockBytesLow, // nNumberOfBytesToLockLow
-		0,            // nNumberOfBytesToLockHigh
+		0,                     // reserved — must be 0
+		lockBytesLow,          // nNumberOfBytesToLockLow
+		0,                     // nNumberOfBytesToLockHigh
 		&windows.Overlapped{}, // offset 0
 	)
 	switch {
