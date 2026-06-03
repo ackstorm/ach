@@ -137,6 +137,22 @@ type EnvironmentStatus struct {
 	// +optional
 	UnresolvedRuntime *UnresolvedRuntime `json:"unresolvedRuntime,omitempty"`
 
+	// UnresolvedContextPlugins lists context.plugins entries whose content
+	// has not yet been synced (last_successful_refresh IS NULL in the
+	// plugins or marketplace_plugins projection row). A non-empty list
+	// blocks ExecutionResourcesResolved from becoming True — prevents the
+	// Available=True false-green that would otherwise let hydrate issue a
+	// 404 at runtime.
+	//
+	// Bare entries (no @) resolve against the plugins (CRD) projection
+	// table; scoped entries (name@marketplace) resolve against
+	// marketplace_plugins. Both arms require last_successful_refresh to
+	// be non-null before the plugin is considered content-present.
+	//
+	// +optional
+	// +kubebuilder:default={}
+	UnresolvedContextPlugins []string `json:"unresolvedContextPlugins,omitempty"`
+
 	// LitellmAccessGroup is the synced LiteLLM access group name (§6.4).
 	// Echoed for operator visibility; equals metadata.name when set.
 	//
