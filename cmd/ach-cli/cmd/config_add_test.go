@@ -242,3 +242,22 @@ func TestConfigAdd_ForceEnvKey_OverridesMatchingLabel(t *testing.T) {
 		t.Errorf("team-b (untouched) should be preserved; got %q", dep.EK["team-b"])
 	}
 }
+
+func TestConfigParentHelp_MentionsAdd(t *testing.T) {
+	configTestEnv(t)
+	stdout, _, _, _ := executeConfig(t) // bare `config` prints help
+	if !strings.Contains(stdout, "add") {
+		t.Errorf("config help should list the 'add' child; stdout: %q", stdout)
+	}
+}
+
+func TestConfigUse_UnknownProfile_Exit1(t *testing.T) {
+	dir := configTestEnv(t)
+	seedConfigFile(t, dir, &config.File{
+		Profiles: map[string]*config.Profile{"prod": {URL: "https://prod.example", PK: validPK}},
+	})
+	_, _, code, err := executeConfig(t, "use", "ghost")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 on unknown profile; code=%d err=%v", code, err)
+	}
+}
