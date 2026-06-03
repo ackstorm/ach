@@ -309,6 +309,19 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	c.step2SweepTmp()
 	c.maybeKill(2)
 
+	// Drop the legacy persistent plugin projection-cache. Pre-ephemeral builds
+	// extracted plugins to <achDir>/plugin and kept the tree across runs, which
+	// let a plugin removed from the Environment linger on disk and be
+	// re-projected (the cross-plugin destination-collision bug). The projection
+	// source is now the per-run <achDir>/tmp stage (swept at steps 2 + 13), so
+	// the old dir is both dead weight and a stale source — remove it. Scoped to
+	// context hydrations (plugins are out of scope under --only-runtime) and
+	// skipped under --dry-run (read-only). Prompts/artifacts are hydrator-core
+	// deliverables (CLI §6.4), never touched here.
+	if !c.opts.DryRun && !c.opts.OnlyRuntime {
+		c.dropLegacyPluginCache()
+	}
+
 	// Step 3: read state + GuardEnvironment.
 	existingState, err := c.step3ReadState()
 	if err != nil {
@@ -354,7 +367,17 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 			if !dt.isExtractableContent() {
 				continue
 			}
-			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, c.achDir, existingState)
+			// Plugins are projection CACHE (projectPlugins disk-walks the
+			// extracted tree); extract them to the per-run ephemeral
+			// pluginStageRoot so the projection source holds ONLY this run's
+			// diffTargets and a removed plugin can never linger and be
+			// re-projected. Prompts/artifacts are hydrator-core deliverables
+			// (CLI §6.4) and keep their <achDir>/<kind> destination.
+			extractBase := c.achDir
+			if dt.Kind == kindPlugin {
+				extractBase = c.pluginStageRoot()
+			}
+			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, extractBase, existingState)
 			if err != nil {
 				// adapter / extractor errors that already carry a
 				// CodedError envelope (e.g. exit.CollisionRefuse) flow
@@ -398,7 +421,11 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// the orchestrator where c.opts is in scope (per D-11/PATTERNS),
 		// NOT inside Render.
 		projectPlugins := !c.opts.OnlyRuntime
-		rr, err := c.adapter.Render(renderCtx, m, existingState, c.achDir, c.toolRoot, projectPlugins)
+		// projectPlugins reads <base>/plugin; plugins were extracted to the
+		// ephemeral pluginStageRoot above, so the projection source is
+		// <achDir>/tmp/plugin (this run's diffTargets only). RenderRuntime
+		// uses toolRoot, not this base, so the tmp base affects projection only.
+		rr, err := c.adapter.Render(renderCtx, m, existingState, c.pluginStageRoot(), c.toolRoot, projectPlugins)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
@@ -587,6 +614,27 @@ func (c *commit) step1Lock(ctx context.Context) (lock.Lease, error) {
 // hydrate").
 func (c *commit) step2SweepTmp() {
 	_ = state.SweepTmp(c.achDir)
+}
+
+// pluginStageRoot is the per-run ephemeral base under which plugin content is
+// extracted (<root>/plugin/<name>) AND from which projectPlugins reads. It
+// lives under <achDir>/tmp so SweepTmp (steps 2 + 13) reclaims it every run —
+// the projection source therefore only ever contains the current run's plugins
+// (no persistent cache, no orphan re-projection of a removed plugin). The
+// extract call and the Render call MUST use this same root or projection reads
+// an empty tree, so it is centralized here rather than duplicated at both sites.
+func (c *commit) pluginStageRoot() string {
+	return filepath.Join(c.achDir, "tmp")
+}
+
+// dropLegacyPluginCache removes the pre-ephemeral persistent plugin
+// projection-cache at <achDir>/plugin. Best-effort + idempotent: a missing dir
+// is a no-op and any error is swallowed (a residual cache dir never blocks a
+// hydrate, matching SweepTmp's benign-cleanup contract). ONLY the plugin cache
+// is removed — <achDir>/{prompt,artifact} hold hydrator-core deliverables
+// (CLI §6.4), not projection cache, and are left intact.
+func (c *commit) dropLegacyPluginCache() {
+	_ = os.RemoveAll(filepath.Join(c.achDir, "plugin"))
 }
 
 // step3ReadState — state.Load + GuardEnvironment. Schema mismatch
