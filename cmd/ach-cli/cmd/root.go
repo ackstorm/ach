@@ -28,6 +28,12 @@ control plane. Subcommands:
 For service-mode commands (operator, platform-api, forwarder,
 content-service, migrate), use the 'ach' binary instead.`,
 	Version: Version,
+	// main.go renders errors via exit.DispatchAndRender (the single §9.3
+	// renderer). Silence cobra's own error + usage dump so failures
+	// surface exactly once, without an unhelpful flags listing on a
+	// plain user error (e.g. "login canceled").
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
