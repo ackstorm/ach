@@ -499,11 +499,26 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	logger := log.FromContext(ctx).WithValues("environment", env.Name)
 
 	// Step 1: resolve names → IDs (on-demand each reconcile per #17 §1).
+	//
+	// ListMCPServers / ListA2AAgents return litellm.ErrNotFound when the
+	// LiteLLM list endpoint responds 200 with an empty array (REL-05
+	// length-check). Per the client contract (internal/litellm/client.go),
+	// callers MUST translate ErrNotFound → empty slice: a LiteLLM with zero
+	// registered MCP servers / A2A agents is a valid empty closed-set, not a
+	// resolve failure. Without this an Environment referencing no MCP/A2A
+	// entries can never reach Available on a fresh LiteLLM. Mirrors the
+	// Snapshotter's handling (internal/snapshot/snapshot.go).
 	mcpEntries, mcpErr := r.LiteLLM.ListMCPServers(ctx)
+	if errors.Is(mcpErr, litellm.ErrNotFound) {
+		mcpEntries, mcpErr = nil, nil
+	}
 	if mcpErr != nil {
 		return resolveFailed(env, "ListMCPServers", mcpErr)
 	}
 	agentEntries, agentErr := r.LiteLLM.ListA2AAgents(ctx)
+	if errors.Is(agentErr, litellm.ErrNotFound) {
+		agentEntries, agentErr = nil, nil
+	}
 	if agentErr != nil {
 		return resolveFailed(env, "ListA2AAgents", agentErr)
 	}
