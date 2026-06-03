@@ -11,9 +11,10 @@ resources:
   # reconciles it; verify_all still gates on litellmconnection/default Ready.
   - marketplace-anthropic.yaml
   - marketplace-caveman.yaml
-  # Phase 02 SC#3 alphabetical name-conflict pair — both point at the real
-  # anthropic catalogue filtered to `feature-dev`; conflict-mkt-a wins
-  # (Synced=True), conflict-mkt-b loses (Synced=False reason=NameConflict).
+  # Phase 02 SC#3 same-plugin-name pair — both point at the real
+  # anthropic catalogue filtered to `feature-dev`; under the scoped grammar
+  # both settle Synced=True (feature-dev@conflict-mkt-a and
+  # feature-dev@conflict-mkt-b are independent scoped references).
   - marketplace-conflict-a.yaml
   - marketplace-conflict-b.yaml
   - plugin-caveman.yaml

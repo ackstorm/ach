@@ -564,9 +564,11 @@ verify_all() {
   # Excluded from the happy-state gate on purpose (intentional negative/edge
   # fixtures): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
   # demo) and environment/demo-unresolved (UnresolvedReferences). The Phase 5
-  # *-invalid fixtures AND the Phase 02 SC#3 loser pluginmarketplace/conflict-mkt-b
-  # ARE gated below — on their EXPECTED failure state (SourceReachable=False /
-  # Synced=False) — so "everything is in its known state" still holds.
+  # *-invalid fixtures ARE gated below — on their EXPECTED failure state
+  # (SourceReachable=False) — so "everything is in its known state" still holds.
+  # pluginmarketplace/conflict-mkt-b is now in the POSITIVE gate (Synced=True)
+  # under the scoped grammar: both conflict-mkt-* marketplaces resolve without
+  # conflict.
   local to="${VERIFY_TIMEOUT:-300s}"
   echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
@@ -579,14 +581,13 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/openclaw-templates
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/anthropic-code
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/caveman
-  # Phase 02 SC#3 alphabetical name-conflict pair (both filter the real
-  # anthropic catalogue to `feature-dev`): conflict-mkt-a is the alphabetical
-  # winner (Synced=True); conflict-mkt-b is the loser, gated on its EXPECTED
-  # failure state (Synced=False reason=NameConflict). Their 1m refresh.interval
-  # makes the loser converge well inside this timeout even if it wins the
-  # initial apply-race.
+  # Phase 02 SC#3 same-plugin-name pair (both filter the real anthropic
+  # catalogue to `feature-dev`): under the scoped grammar both reach
+  # Synced=True — `feature-dev@conflict-mkt-a` and `feature-dev@conflict-mkt-b`
+  # are independent references with no cross-marketplace name conflict.
+  # Their 1m refresh.interval keeps convergence well inside the timeout.
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-a
-  kubectl -n ach-system wait --for=condition=Synced=false    --timeout="${to}" pluginmarketplace/conflict-mkt-b
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-b
   for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
     wait_bip_reconciled "${b}" "${to}"
   done

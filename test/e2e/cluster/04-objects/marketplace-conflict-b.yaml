@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# PluginMarketplace — Phase 02 SC#3 (alphabetical name-conflict) LOSER.
+# PluginMarketplace — Phase 02 SC#3 (same plugin name under two marketplaces).
 #
 # Identical spec to conflict-mkt-a (same repo, same `^feature-dev$` filter),
-# differing only in metadata.name. Because "conflict-mkt-b" sorts AFTER
-# "conflict-mkt-a", the §12.3 alphabetical rule makes this CR the loser:
-# the feature-dev candidate it would otherwise materialize is dropped, the
-# CR settles Synced=False reason=NameConflict, and status.plugins is zeroed.
-#
-# Excluded from the verify_all happy-state gate the same way the other
-# negative fixtures (plugin-invalid, environment/demo-unresolved) are —
-# verify_all instead asserts its EXPECTED failure state (Synced=False).
+# differing only in metadata.name. Under the marketplace-scoped plugin grammar
+# both marketplaces settle Synced=True: `feature-dev@conflict-mkt-b` is an
+# independent scoped reference distinct from `feature-dev@conflict-mkt-a`.
+# There is no cross-marketplace name conflict.
 #
 # See marketplace-conflict-a.yaml for the full rationale (why feature-dev,
 # why the short refresh.interval).

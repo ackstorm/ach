@@ -485,6 +485,34 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 		// adequately covered by Plan 05-02 integration tests.
 	})
 
+	// ScopedMarketplacePlugin200 exercises the name@marketplace scoped
+	// resolution path end-to-end: the demo Environment fixture includes
+	// `feature-dev@conflict-mkt-a` in context.plugins (no Plugin CRD backs
+	// this name), so the content-service must resolve via the marketplace
+	// branch of the §12.3 CTE. A 200 response confirms the scoped ref was
+	// parsed, resolved, and served. The `demo` environment is used here
+	// because `env-valid` does not include the scoped ref.
+	t.Run("ScopedMarketplacePlugin200", func(t *testing.T) {
+		// Acquire a pk_ bound to the demo environment (the Environment fixture
+		// that includes feature-dev@conflict-mkt-a in context.plugins).
+		demoPK := mustAcquirePk(t)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+			csURL+"/content/plugin/feature-dev@conflict-mkt-a", nil)
+		req.Header.Set("x-ach-key", demoPK)
+		req.Header.Set("x-ach-environment", "demo")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			dumpOperatorLogs(t)
+			t.Fatalf("scoped plugin fetch: status=%d want=200 "+
+				"(feature-dev@conflict-mkt-a must resolve via §12.3 marketplace branch)", resp.StatusCode)
+		}
+	})
+
 	t.Run("DeletionDrainStillServes", func(t *testing.T) {
 		// Apply a transient Plugin "drainable", wait Ready, delete it,
 		// then immediately curl. Expect either 200 (envcache hit during
