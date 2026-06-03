@@ -339,7 +339,7 @@ func dispPriorState(env string, r hydrate.RenderResult) *state.File {
 		})
 	}
 	return &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   env,
 		Adapter:       state.AdapterSection{ID: "claude-code", Files: files},
 	}
@@ -373,7 +373,7 @@ func TestSync_DeepestFirst_Order(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Artifacts: []state.FileEntry{
 			{Target: deep, Hash: hashOf(t, "x")},
@@ -381,7 +381,7 @@ func TestSync_DeepestFirst_Order(t *testing.T) {
 			{Target: shallow, Hash: hashOf(t, "x")},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	var stderr bytes.Buffer
 	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr})
@@ -420,13 +420,13 @@ func TestSync_LocalEdit_PreservesAndWarns(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Artifacts: []state.FileEntry{
 			{Target: target, Hash: hashOf(t, "engine wrote this")},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	var stderr bytes.Buffer
 	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr})
@@ -465,7 +465,7 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Adapter: state.AdapterSection{
 			ID: "claude-code",
@@ -479,7 +479,7 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 			},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	var stderr bytes.Buffer
 	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
@@ -516,7 +516,7 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Adapter: state.AdapterSection{
 			ID: "claude-code",
@@ -531,7 +531,7 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 			},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{}); err != nil {
 		t.Fatalf("Sync: %v", err)
@@ -563,13 +563,13 @@ func TestSync_Force_BypassesDriftWins(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Artifacts: []state.FileEntry{
 			{Target: target, Hash: hashOf(t, "engine wrote this")},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Force: true})
 	if err != nil {
@@ -631,7 +631,7 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	}
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Artifacts: []state.FileEntry{
 			{Target: replaceTarget, Hash: hashOf(t, replaceBody)},
@@ -644,7 +644,7 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 			},
 		},
 	}
-	newFile := &state.File{SchemaVersion: "2", Environment: "demo"}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
 
 	var stderr bytes.Buffer
 	stats, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{DryRun: true, Stderr: &stderr})
@@ -767,7 +767,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir(t *testing.T) 
 	}
 
 	// Re-render against the prior Plugins[] state → byte no-op.
-	prior := &state.File{SchemaVersion: "2"}
+	prior := &state.File{SchemaVersion: "3"}
 	prior.Plugins = append(prior.Plugins, state.FileEntry{
 		Target:     pf.Target,
 		Hash:       pf.Hash,

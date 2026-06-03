@@ -13,7 +13,7 @@
 //               (CLI-12 graceful admin fallback).
 //
 // Synthetic-mode posture: env list + describe are READ-ONLY and work
-// in synthetic mode — the deployment resolution falls back to
+// in synthetic mode — the profile resolution falls back to
 // (ACH_BASE_URL, ACH_API_KEY) via the same resolveActiveBearer path
 // used by whoami. NO synthetic-mode short-circuit here (config/login/
 // logout/env-keys-create are the gated commands).
@@ -101,11 +101,11 @@ describe gracefully degrades on 403 unauthorized_team — printing
 // newEnvListCmd returns the `ach env list` leaf.
 func newEnvListCmd() *cobra.Command {
 	var (
-		flagLimit      int
-		flagVerbose    bool
-		flagDeployment string
-		flagAPIKey     string
-		flagEnvKey     string
+		flagLimit   int
+		flagVerbose bool
+		flagProfile string
+		flagAPIKey  string
+		flagEnvKey  string
 	)
 	c := &cobra.Command{
 		Use:   "list",
@@ -113,17 +113,17 @@ func newEnvListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
-			// half-set, --deployment, --env-key) — runs BEFORE the
+			// half-set, --profile, --env-key) — runs BEFORE the
 			// credential resolution so half-set wins over disk errors.
 			if err := synthetic.GuardCommand(synthetic.Params{
-				Gate:           synthetic.GateEnvList,
-				APIKeyFlag:     flagAPIKey,
-				EnvKeyFlag:     flagEnvKey,
-				DeploymentFlag: flagDeployment,
+				Gate:        synthetic.GateEnvList,
+				APIKeyFlag:  flagAPIKey,
+				EnvKeyFlag:  flagEnvKey,
+				ProfileFlag: flagProfile,
 			}); err != nil {
 				return err
 			}
-			hc, err := buildEnvHTTPClient(flagDeployment, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
+			hc, err := buildEnvHTTPClient(flagProfile, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -137,9 +137,9 @@ func newEnvListCmd() *cobra.Command {
 	}
 	c.Flags().IntVar(&flagLimit, "limit", defaultEnvListLimit, "Per-page limit (server cap is 500)")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	c.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against deployments.<active>.ek.<label>")
+	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
 	return c
 }
 
@@ -148,7 +148,7 @@ func newEnvDescribeCmd() *cobra.Command {
 	var (
 		flagMetadataOnly bool
 		flagVerbose      bool
-		flagDeployment   string
+		flagProfile      string
 		flagAPIKey       string
 		flagEnvKey       string
 	)
@@ -158,17 +158,17 @@ func newEnvDescribeCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
-			// half-set, --deployment, --env-key).
+			// half-set, --profile, --env-key).
 			if err := synthetic.GuardCommand(synthetic.Params{
-				Gate:           synthetic.GateEnvDescribe,
-				APIKeyFlag:     flagAPIKey,
-				EnvKeyFlag:     flagEnvKey,
-				DeploymentFlag: flagDeployment,
+				Gate:        synthetic.GateEnvDescribe,
+				APIKeyFlag:  flagAPIKey,
+				EnvKeyFlag:  flagEnvKey,
+				ProfileFlag: flagProfile,
 			}); err != nil {
 				return err
 			}
 			name := args[0]
-			hc, err := buildEnvHTTPClient(flagDeployment, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
+			hc, err := buildEnvHTTPClient(flagProfile, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -200,21 +200,21 @@ func newEnvDescribeCmd() *cobra.Command {
 	c.Flags().BoolVar(&flagMetadataOnly, "metadata-only", false,
 		"Skip the /platform/hydrate call (faster, env metadata only)")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	c.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against deployments.<active>.ek.<label>")
+	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
 	return c
 }
 
-// buildEnvHTTPClient resolves the active deployment + bearer via the
+// buildEnvHTTPClient resolves the active profile + bearer via the
 // shared resolveActiveBearer helper from whoami.go, then constructs
 // an httpclient.Client wired to envHTTPClient (test-seam aware).
 func buildEnvHTTPClient(
-	flagDeployment, flagAPIKey, flagEnvKey string,
+	flagProfile, flagAPIKey, flagEnvKey string,
 	verbose bool,
 	stderr io.Writer,
 ) (*httpclient.Client, error) {
-	_, dep, bearer, err := resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	_, dep, bearer, err := resolveActiveBearer(flagProfile, flagAPIKey, flagEnvKey)
 	if err != nil {
 		return nil, err
 	}

@@ -95,7 +95,7 @@ func TestExtractorImpl_ReHydrate_NoOpAndReplace(t *testing.T) {
 
 	// Build prior state mirroring what step-12 composition records for this
 	// content: one entry per written file, all sharing the archive SourceHash.
-	prev := &state.File{SchemaVersion: "2"}
+	prev := &state.File{SchemaVersion: "3"}
 	for _, fw := range res1.WrittenFiles {
 		prev.Plugins = append(prev.Plugins, state.FileEntry{
 			Target:     fw.Target,

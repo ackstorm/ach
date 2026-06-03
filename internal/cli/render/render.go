@@ -84,28 +84,29 @@ type ContextItem struct {
 }
 
 // FormatConfigList returns the deterministic multi-line table for
-// `ach config list`. Rows are sorted alphabetically by deployment
-// name; the default deployment is marked with " (default)" suffix.
-// The PK column is "yes"/"no" (presence flag, never plaintext); the
-// EK column is the count of entries in the ek map.
+// `ach config list`. Rows are sorted alphabetically by profile name.
+// The leading CURRENT column carries "*" on the default (active-when-
+// unspecified) profile — kubectl `config get-contexts` idiom — and is
+// blank otherwise. The PK column is "yes"/"no" (presence flag, never
+// plaintext); the EK column is the count of entries in the ek map.
 func FormatConfigList(f *config.File) string {
-	if f == nil || len(f.Deployments) == 0 {
-		return "No deployments configured\n"
+	if f == nil || len(f.Profiles) == 0 {
+		return "No profiles configured\n"
 	}
-	names := make([]string, 0, len(f.Deployments))
-	for n := range f.Deployments {
+	names := make([]string, 0, len(f.Profiles))
+	for n := range f.Profiles {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tURL\tPK\tEK")
+	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tPK\tEK")
 	for _, name := range names {
-		dep := f.Deployments[name]
-		display := name
+		dep := f.Profiles[name]
+		current := ""
 		if name == f.Default {
-			display = name + " (default)"
+			current = "*"
 		}
 		pkPresent := "no"
 		if dep != nil && dep.PK != "" {
@@ -119,21 +120,21 @@ func FormatConfigList(f *config.File) string {
 		if dep != nil {
 			url = dep.URL
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", display, url, pkPresent, ekCount)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, url, pkPresent, ekCount)
 	}
 	_ = tw.Flush()
 	return sb.String()
 }
 
-// FormatConfigShow returns the block for `ach config show [deployment]`.
+// FormatConfigShow returns the block for `ach config show [profile]`.
 // When reveal=false (default), the PK and every EK value pass through
 // config.Mask so only the "<prefix>_****<last-4>" tail is rendered;
 // when reveal=true (D-05 opt-in unmask), the values flow through
-// verbatim. The unmask is scoped to ONE named deployment per
+// verbatim. The unmask is scoped to ONE named profile per
 // invocation (the caller picks; this function trusts its input).
-func FormatConfigShow(name string, dep *config.Deployment, reveal bool) string {
+func FormatConfigShow(name string, dep *config.Profile, reveal bool) string {
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Deployment: %s\n", name)
+	_, _ = fmt.Fprintf(&sb, "Profile: %s\n", name)
 	if dep == nil {
 		_, _ = fmt.Fprintln(&sb, "URL: (missing)")
 		return sb.String()

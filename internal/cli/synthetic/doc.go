@@ -12,9 +12,9 @@
 //   - `ach login`, `ach logout`, `ach config *` are unavailable
 //     (config-mutating; no disk registry to mutate). Exit 1.
 //   - `ach env-keys create` requires --no-save (D-08). Exit 1 without.
-//   - --deployment / ACH_DEPLOYMENT are rejected on every subcommand
-//     (the deployment-resolution chain bypasses disk entirely; the
-//     conceptual deployment is named "(env)"). Exit 1.
+//   - --profile / ACH_PROFILE are rejected on every subcommand
+//     (the profile-resolution chain bypasses disk entirely; the
+//     conceptual profile is named "(env)"). Exit 1.
 //   - --env-key / ACH_ENV_KEY are rejected on every read-side command
 //     (hydrate, whoami, env list/describe, env-keys list/revoke) —
 //     ek_ labels can only be dereferenced against the on-disk EK map,
@@ -27,8 +27,8 @@
 //
 // The package exports:
 //
-//   - SyntheticDeploymentLabel = "(env)" — the constant the Phase 7
-//     state.json writer records as the deployment name when synthetic
+//   - SyntheticProfileLabel = "(env)" — the constant the Phase 7
+//     state.json writer records as the profile name when synthetic
 //     mode is active. Surfaced here so callers across phases agree on
 //     the literal string.
 //   - Gate (typed int) + GateLogin/GateLogout/GateConfig/

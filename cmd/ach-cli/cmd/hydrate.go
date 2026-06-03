@@ -109,7 +109,7 @@ func newHydrateCmd() *cobra.Command {
 		flagVerbose     bool
 		flagAPIKey      string
 		flagEnvKey      string
-		flagDeployment  string
+		flagProfile     string
 
 		// Phase 7 engine flags (D-03).
 		flagIncludeRuntime bool
@@ -176,11 +176,11 @@ I/O:
 Credential resolution (D-11 mutex — all four sources mutually
 exclusive; >1 set → exit 1):
   --api-key <pk_|ek_>      Override credential (raw plaintext)
-  --env-key <label>        Reference deployments.<active>.ek.<label>
+  --env-key <label>        Reference profiles.<active>.ek.<label>
   ACH_API_KEY=<pk_|ek_>    Env var equivalent of --api-key
   ACH_ENV_KEY=<label>      Env var equivalent of --env-key
 
-If none of the above is set, the CLI uses the active deployment's
+If none of the above is set, the CLI uses the active profile's
 pk: field from ~/.config/ach/config.yaml (run ach login first).
 
 --environment is REQUIRED when the resolved credential is a pk_ (D-12);
@@ -209,7 +209,7 @@ Exit codes (spec §9.3):
 				verbose:        flagVerbose,
 				flagAPIKey:     flagAPIKey,
 				flagEnvKey:     flagEnvKey,
-				flagDeployment: flagDeployment,
+				flagProfile:    flagProfile,
 				includeRuntime: flagIncludeRuntime,
 				onlyRuntime:    flagOnlyRuntime,
 				sync:           flagSync,
@@ -236,9 +236,9 @@ Exit codes (spec §9.3):
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "",
 		"Override credential (pk_… or ek_… raw plaintext)")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "",
-		"ek_ label resolved against deployments.<active>.ek.<label>")
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "",
-		"Override deployment selection")
+		"ek_ label resolved against profiles.<active>.ek.<label>")
+	cmd.Flags().StringVar(&flagProfile, "profile", "",
+		"Override profile selection")
 
 	// Phase 7 engine flags (D-03).
 	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
@@ -291,12 +291,12 @@ type hydrateCredSource struct {
 // here keeps the flow function flat (low cyclomatic complexity) and
 // makes the closed-list nature of D-11 visible at the field level.
 type hydrateInputs struct {
-	environment    string
-	noWarnings     bool
-	verbose        bool
-	flagAPIKey     string
-	flagEnvKey     string
-	flagDeployment string
+	environment string
+	noWarnings  bool
+	verbose     bool
+	flagAPIKey  string
+	flagEnvKey  string
+	flagProfile string
 
 	// Phase 7 engine fields (D-03).
 	includeRuntime bool
@@ -317,7 +317,7 @@ type hydrateInputs struct {
 	envAPIKey      string
 	envEnvKey      string
 	envBaseURL     string
-	envDeployment  string
+	envProfile     string
 	envEnvironment string
 	envPlatform    string
 }
@@ -337,7 +337,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	in.envAPIKey = os.Getenv("ACH_API_KEY")
 	in.envEnvKey = os.Getenv("ACH_ENV_KEY")
 	in.envBaseURL = os.Getenv("ACH_BASE_URL")
-	in.envDeployment = os.Getenv("ACH_DEPLOYMENT")
+	in.envProfile = os.Getenv("ACH_PROFILE")
 	in.envEnvironment = os.Getenv("ACH_ENVIRONMENT")
 	in.envPlatform = os.Getenv("ACH_PLATFORM")
 
@@ -347,10 +347,10 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	}
 	// CLI-07 synthetic gate.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateHydrate,
-		APIKeyFlag:     in.flagAPIKey,
-		EnvKeyFlag:     in.flagEnvKey,
-		DeploymentFlag: in.flagDeployment,
+		Gate:        synthetic.GateHydrate,
+		APIKeyFlag:  in.flagAPIKey,
+		EnvKeyFlag:  in.flagEnvKey,
+		ProfileFlag: in.flagProfile,
 	}); err != nil {
 		return err
 	}
@@ -404,12 +404,12 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	if prefix == keys.PrefixPk && !in.noWarnings {
 		_, _ = fmt.Fprint(stderr, pkWarning)
 	}
-	// Plaintext-transport warning: http:// deployment URLs are accepted
-	// (config.validateDeployments no longer rejects them), but credentials
+	// Plaintext-transport warning: http:// profile URLs are accepted
+	// (config.validateProfiles no longer rejects them), but credentials
 	// ride unencrypted. Emit a one-line stderr warning unless suppressed.
 	if !in.noWarnings && strings.HasPrefix(baseURL, "http://") {
 		_, _ = fmt.Fprintf(stderr,
-			"warning: deployment %q uses plaintext http:// — credentials are sent "+
+			"warning: profile %q uses plaintext http:// — credentials are sent "+
 				"unencrypted (safe only on trusted/internal networks)\n", baseURL)
 	}
 
@@ -582,7 +582,7 @@ func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, er
 
 // resolveBearer returns (baseURL, bearer) for the request, dispatching
 // between synthetic mode (env-only) and config-disk mode. The disk
-// path applies CLI-08 precedence (--deployment / ACH_DEPLOYMENT /
+// path applies CLI-08 precedence (--profile / ACH_PROFILE /
 // default / sole-entry) then the bearer-source switch.
 func resolveBearer(in hydrateInputs) (string, string, error) {
 	if in.envBaseURL != "" && (in.envAPIKey != "" || in.flagAPIKey != "") {
@@ -603,10 +603,10 @@ func resolveBearer(in hydrateInputs) (string, string, error) {
 	if file == nil {
 		return "", "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  "no deployment configured; run `ach login` or set ACH_API_KEY + ACH_BASE_URL (CLI-08)",
+			Msg:  "no profile configured; run `ach login` or set ACH_API_KEY + ACH_BASE_URL (CLI-08)",
 		}
 	}
-	name, dep, err := config.ResolveActive(file, in.flagDeployment, in.envDeployment)
+	name, dep, err := config.ResolveActive(file, in.flagProfile, in.envProfile)
 	if err != nil {
 		return "", "", &exit.CodedError{
 			Code:    exit.General,
@@ -630,7 +630,7 @@ func resolveBearer(in hydrateInputs) (string, string, error) {
 // pickBearer applies the bearer-source switch under the disk-config
 // branch. Mutex was already asserted upstream, so at most one of the
 // four sources is non-empty.
-func pickBearer(in hydrateInputs, name string, dep *config.Deployment) (string, error) {
+func pickBearer(in hydrateInputs, name string, dep *config.Profile) (string, error) {
 	switch {
 	case in.flagAPIKey != "":
 		return in.flagAPIKey, nil
@@ -639,7 +639,7 @@ func pickBearer(in hydrateInputs, name string, dep *config.Deployment) (string, 
 		if !ok {
 			return "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q not found in deployments.%s.ek", in.flagEnvKey, name),
+				Msg:  fmt.Sprintf("--env-key %q not found in profiles.%s.ek", in.flagEnvKey, name),
 			}
 		}
 		return ek, nil
@@ -650,7 +650,7 @@ func pickBearer(in hydrateInputs, name string, dep *config.Deployment) (string, 
 		if !ok {
 			return "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in deployments.%s.ek", in.envEnvKey, name),
+				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in profiles.%s.ek", in.envEnvKey, name),
 			}
 		}
 		return ek, nil

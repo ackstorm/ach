@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package cli holds the shared internals every `ach` cobra subcommand
-// imports — yaml multi-deployment config registry (CLI spec §3.2), the
+// imports — yaml multi-profile config registry (CLI spec §3.2), the
 // outbound HTTP client that carries the `x-ach-key` header into the
 // Platform API, the §15.5 error-envelope decoder, the redaction helper
 // for `--verbose` header dumps, and the typed exit-code matrix from

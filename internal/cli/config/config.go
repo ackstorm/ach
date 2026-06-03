@@ -5,7 +5,7 @@
 // disk at mode 0600. The schema is CLI spec §3.2 verbatim:
 //
 //	default: <name>
-//	deployments:
+//	profiles:
 //	  <name>:
 //	    url:  https://...
 //	    pk:   pk_...
@@ -21,7 +21,7 @@
 //   - Atomic publication via tmp+rename in the same dir (TOCTOU-safe).
 //   - `url:` must be http:// or https:// — validated on BOTH Load AND
 //     Save. http:// is accepted; the command layer warns about plaintext
-//     transport when the active deployment is http://.
+//     transport when the active profile is http://.
 package config
 
 import (
@@ -39,13 +39,13 @@ import (
 // File is the §3.2 schema. The yaml tags use ",omitempty" so a fresh
 // File round-trips to a minimal yaml document without empty maps.
 type File struct {
-	Default     string                 `yaml:"default,omitempty"`
-	Deployments map[string]*Deployment `yaml:"deployments,omitempty"`
+	Default  string              `yaml:"default,omitempty"`
+	Profiles map[string]*Profile `yaml:"profiles,omitempty"`
 }
 
-// Deployment is one named entry under `deployments:` — a URL plus the
+// Profile is one named entry under `profiles:` — a URL plus the
 // optional pk_/ek_ map. `url:` is the only required field.
-type Deployment struct {
+type Profile struct {
 	URL string            `yaml:"url"`
 	PK  string            `yaml:"pk,omitempty"`
 	EK  map[string]string `yaml:"ek,omitempty"`
@@ -54,19 +54,19 @@ type Deployment struct {
 // Sentinel errors. Callers gate behavior via errors.Is.
 var (
 	// ErrInvalidURLScheme is returned by Load and Save when any
-	// deployment's `url:` is neither http:// nor https:// (empty, ftp,
-	// etc.). The error string includes the offending deployment name so
+	// profile's `url:` is neither http:// nor https:// (empty, ftp,
+	// etc.). The error string includes the offending profile name so
 	// the operator can fix it; the URL itself is omitted. http:// is
 	// accepted (the command layer warns about plaintext transport).
-	ErrInvalidURLScheme = errors.New("config: deployment url must be http:// or https://")
+	ErrInvalidURLScheme = errors.New("config: profile url must be http:// or https://")
 
 	// ErrConfigParse wraps yaml.v3 decode failures so callers can
-	// distinguish "file is corrupt" from "deployment is misconfigured".
+	// distinguish "file is corrupt" from "profile is misconfigured".
 	ErrConfigParse = errors.New("config: parse failed")
 
-	// ErrNoDeployment is returned by ResolveActive when no deployment
+	// ErrNoProfile is returned by ResolveActive when no profile
 	// can be selected via flag / env / default / sole entry.
-	ErrNoDeployment = errors.New("config: no deployment resolved")
+	ErrNoProfile = errors.New("config: no profile resolved")
 )
 
 // Path returns the canonical config file location, honoring
@@ -85,7 +85,7 @@ func Path() (string, error) {
 // Load reads + parses the config file. Returns (nil, nil) when the
 // file is absent (fresh install / synthetic mode). Returns
 // ErrConfigParse-wrapped error on yaml decode failure. Returns
-// ErrInvalidURLScheme when any deployment's URL is neither http:// nor https://.
+// ErrInvalidURLScheme when any profile's URL is neither http:// nor https://.
 //
 // Warns to stderr via a default logger seam when the file mode is
 // more permissive than 0600 — see LoadWith for a test-friendly
@@ -124,7 +124,7 @@ func LoadWith(path string, warn func(format string, args ...any)) (*File, error)
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: %v", ErrConfigParse, err)
 	}
-	if err := validateDeployments(&f); err != nil {
+	if err := validateProfiles(&f); err != nil {
 		return nil, err
 	}
 	return &f, nil
@@ -133,12 +133,12 @@ func LoadWith(path string, warn func(format string, args ...any)) (*File, error)
 // Save writes the file to `path` atomically: encode to a sibling
 // tmp file in the same dir, chmod 0600, then os.Rename onto the
 // target. Ensures the parent dir exists with mode 0700. Refuses to
-// write any deployment whose URL is neither http:// nor https://.
+// write any profile whose URL is neither http:// nor https://.
 func Save(path string, f *File) error {
 	if f == nil {
 		return errors.New("config: Save called with nil File")
 	}
-	if err := validateDeployments(f); err != nil {
+	if err := validateProfiles(f); err != nil {
 		return err
 	}
 	dir := filepath.Dir(path)
@@ -195,53 +195,53 @@ func Mask(s string) string {
 }
 
 // ResolveActive applies the CLI-08 precedence rule: flag → env →
-// file.Default → sole entry → ErrNoDeployment. Returns the resolved
-// name + pointer into f.Deployments (never a copy — callers may
+// file.Default → sole entry → ErrNoProfile. Returns the resolved
+// name + pointer into f.Profiles (never a copy — callers may
 // mutate via Save).
-func ResolveActive(f *File, flagDeployment, envDeployment string) (string, *Deployment, error) {
-	if f == nil || len(f.Deployments) == 0 {
-		return "", nil, ErrNoDeployment
+func ResolveActive(f *File, flagProfile, envProfile string) (string, *Profile, error) {
+	if f == nil || len(f.Profiles) == 0 {
+		return "", nil, ErrNoProfile
 	}
-	pick := func(name string) (string, *Deployment, error) {
-		dep, ok := f.Deployments[name]
+	pick := func(name string) (string, *Profile, error) {
+		dep, ok := f.Profiles[name]
 		if !ok {
-			return "", nil, fmt.Errorf("%w: %q not found in deployments", ErrNoDeployment, name)
+			return "", nil, fmt.Errorf("%w: %q not found in profiles", ErrNoProfile, name)
 		}
 		return name, dep, nil
 	}
-	if flagDeployment != "" {
-		return pick(flagDeployment)
+	if flagProfile != "" {
+		return pick(flagProfile)
 	}
-	if envDeployment != "" {
-		return pick(envDeployment)
+	if envProfile != "" {
+		return pick(envProfile)
 	}
 	if f.Default != "" {
 		return pick(f.Default)
 	}
-	if len(f.Deployments) == 1 {
-		for n, d := range f.Deployments {
+	if len(f.Profiles) == 1 {
+		for n, d := range f.Profiles {
 			return n, d, nil
 		}
 	}
-	return "", nil, ErrNoDeployment
+	return "", nil, ErrNoProfile
 }
 
-// validateDeployments accepts http:// and https:// on every entry and
+// validateProfiles accepts http:// and https:// on every entry and
 // rejects any other scheme (empty, ftp://, ...). http:// is permitted so
-// the CLI can target local/internal deployments (e.g. the kind+Helm
+// the CLI can target local/internal profiles (e.g. the kind+Helm
 // ach-local-gateway on http://localhost:8080); the command layer emits a
-// plaintext-transport warning when the active deployment is http://. The
-// error names the offending deployment but omits the URL itself (it can
+// plaintext-transport warning when the active profile is http://. The
+// error names the offending profile but omits the URL itself (it can
 // carry secrets in some pathological misconfigurations).
-func validateDeployments(f *File) error {
-	for name, dep := range f.Deployments {
+func validateProfiles(f *File) error {
+	for name, dep := range f.Profiles {
 		if dep == nil {
 			continue
 		}
 		if strings.HasPrefix(dep.URL, "https://") || strings.HasPrefix(dep.URL, "http://") {
 			continue
 		}
-		return fmt.Errorf("%w: deployment %q (must be http:// or https://)", ErrInvalidURLScheme, name)
+		return fmt.Errorf("%w: profile %q (must be http:// or https://)", ErrInvalidURLScheme, name)
 	}
 	return nil
 }

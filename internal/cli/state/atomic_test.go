@@ -18,7 +18,7 @@ import (
 func TestWriteAtomic_TargetExistsAfterWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	payload := []byte(`{"schemaVersion":"2","environment":"e","deployment":"d"}`)
+	payload := []byte(`{"schemaVersion":"3","environment":"e","profile":"d"}`)
 
 	if err := state.WriteAtomic(path, payload, 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)

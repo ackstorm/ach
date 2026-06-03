@@ -23,7 +23,7 @@ func TestGuard_FreshState_ReturnsNil(t *testing.T) {
 // branch: an existing File whose Environment field is empty (should
 // not occur in v2 but tolerated) is treated as fresh state.
 func TestGuard_EmptyEnvironment_ReturnsNil(t *testing.T) {
-	existing := &state.File{SchemaVersion: "2", Environment: ""}
+	existing := &state.File{SchemaVersion: "3", Environment: ""}
 	if err := state.GuardEnvironment(existing, "engineering-prod", false); err != nil {
 		t.Fatalf("GuardEnvironment(empty env, ...) = %v, want nil", err)
 	}
@@ -34,7 +34,7 @@ func TestGuard_EmptyEnvironment_ReturnsNil(t *testing.T) {
 // state is the canonical hydrate flow and MUST NOT trip the guard.
 func TestGuard_SameEnvironment_ReturnsNil(t *testing.T) {
 	existing := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "engineering-prod",
 	}
 	if err := state.GuardEnvironment(existing, "engineering-prod", false); err != nil {
@@ -51,7 +51,7 @@ func TestGuard_SameEnvironment_ReturnsNil(t *testing.T) {
 // downstream callers.
 func TestGuard_DifferentEnvironment_ReturnsErrEnvironmentGuard(t *testing.T) {
 	existing := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "engineering-prod",
 	}
 	err := state.GuardEnvironment(existing, "marketing-prod", false)
@@ -73,7 +73,7 @@ func TestGuard_DifferentEnvironment_ReturnsErrEnvironmentGuard(t *testing.T) {
 // print, this function stays pure).
 func TestGuard_DifferentEnvironment_WithForce_ReturnsNil(t *testing.T) {
 	existing := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "engineering-prod",
 	}
 	if err := state.GuardEnvironment(existing, "marketing-prod", true); err != nil {

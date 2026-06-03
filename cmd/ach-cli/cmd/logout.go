@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach logout` wipes the `pk:` field from the active deployment per
+// `ach logout` wipes the `pk:` field from the active profile per
 // CLI spec §5.2 / D-06. URL + EK map are preserved so a subsequent
-// `ach login` resumes against the same deployment without re-prompting
-// for the URL. The deployment entry itself stays, and `default:` is
+// `ach login` resumes against the same profile without re-prompting
+// for the URL. The profile entry itself stays, and `default:` is
 // untouched.
 //
 // Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) → exit 1 per
@@ -29,16 +29,16 @@ import (
 
 // newLogoutCmd returns a fresh `ach logout` cobra.Command.
 func newLogoutCmd() *cobra.Command {
-	var flagDeployment string
+	var flagProfile string
 
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Wipe the active deployment's pk_ (preserve url:)",
-		Long: `Wipe the active deployment's pk_ from ~/.config/ach/config.yaml.
+		Short: "Wipe the active profile's pk_ (preserve url:)",
+		Long: `Wipe the active profile's pk_ from ~/.config/ach/config.yaml.
 
-URL and EK map are preserved; the deployment entry stays and
+URL and EK map are preserved; the profile entry stays and
 default: is untouched. A subsequent ach login resumes against the
-same deployment without re-prompting for the URL.
+same profile without re-prompting for the URL.
 
 Server-side, the pk_ remains valid for its sliding-window TTL (Hub
 §7.1). For immediate revocation, use ach admin keys revoke pkid_….
@@ -47,23 +47,23 @@ Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) exits 1 per
 CLI spec §3.3.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return doLogout(cmd, flagDeployment)
+			return doLogout(cmd, flagProfile)
 		},
 	}
 
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	return cmd
 }
 
 // doLogout is the RunE body.
-func doLogout(cmd *cobra.Command, flagDeployment string) error {
+func doLogout(cmd *cobra.Command, flagProfile string) error {
 	stdout := cmd.OutOrStdout()
 
 	// Synthetic-mode gate via the centralized 06-07 helper (D-06).
 	// Also rejects half-set before any disk read.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateLogout,
-		DeploymentFlag: flagDeployment,
+		Gate:        synthetic.GateLogout,
+		ProfileFlag: flagProfile,
 	}); err != nil {
 		return err
 	}
@@ -77,16 +77,16 @@ func doLogout(cmd *cobra.Command, flagDeployment string) error {
 	if err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	if file == nil || len(file.Deployments) == 0 {
+	if file == nil || len(file.Profiles) == 0 {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  "no deployment configured; nothing to log out of",
+			Msg:  "no profile configured; nothing to log out of",
 		}
 	}
 
-	// Resolve active deployment (CLI-08 precedence).
-	envDeployment := os.Getenv("ACH_DEPLOYMENT")
-	name, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	// Resolve active profile (CLI-08 precedence).
+	envProfile := os.Getenv("ACH_PROFILE")
+	name, dep, err := config.ResolveActive(file, flagProfile, envProfile)
 	if err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,

@@ -56,20 +56,20 @@ func swapHTTPClientForTest(t interface {
 // newWhoamiCmd returns a fresh `ach whoami` cobra.Command.
 func newWhoamiCmd() *cobra.Command {
 	var (
-		flagVerify     bool
-		flagVerbose    bool
-		flagDeployment string
-		flagAPIKey     string
-		flagEnvKey     string
+		flagVerify  bool
+		flagVerbose bool
+		flagProfile string
+		flagAPIKey  string
+		flagEnvKey  string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "whoami",
 		Short: "Print the active identity (no remote check unless --verify)",
-		Long: `Print the identity block for the active deployment.
+		Long: `Print the identity block for the active profile.
 
 Default (no --verify) reads ~/.config/ach/config.yaml and prints:
-  Deployment:  <name>
+  Profile:  <name>
   URL:         <url>
   Key:         <prefix>_****<last-4>
   (no remote check)
@@ -84,39 +84,39 @@ Exit codes (D-14):
   6  network failure
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return doWhoami(cmd, flagVerify, flagVerbose, flagDeployment, flagAPIKey, flagEnvKey)
+			return doWhoami(cmd, flagVerify, flagVerbose, flagProfile, flagAPIKey, flagEnvKey)
 		},
 	}
 
 	cmd.Flags().BoolVar(&flagVerify, "verify", false, "Probe the server with the resolved key")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag (synthetic-mode path)")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against deployments.<active>.ek.<label>")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "ek_ label resolved against profiles.<active>.ek.<label>")
 
 	return cmd
 }
 
 // doWhoami is the RunE body.
-func doWhoami(cmd *cobra.Command, verify, verbose bool, deployment, apiKey, envKey string) error {
+func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey string) error {
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
-	// --deployment, --env-key) — runs BEFORE resolveActiveBearer so
+	// --profile, --env-key) — runs BEFORE resolveActiveBearer so
 	// the centralized half-set message wins over any disk-config
 	// disposition.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateWhoami,
-		APIKeyFlag:     apiKey,
-		EnvKeyFlag:     envKey,
-		DeploymentFlag: deployment,
+		Gate:        synthetic.GateWhoami,
+		APIKeyFlag:  apiKey,
+		EnvKeyFlag:  envKey,
+		ProfileFlag: profile,
 	}); err != nil {
 		return err
 	}
 
-	// Resolve the active deployment + bearer credential.
-	name, dep, bearer, err := resolveActiveBearer(deployment, apiKey, envKey)
+	// Resolve the active profile + bearer credential.
+	name, dep, bearer, err := resolveActiveBearer(profile, apiKey, envKey)
 	if err != nil {
 		return err
 	}
@@ -173,35 +173,35 @@ func doWhoami(cmd *cobra.Command, verify, verbose bool, deployment, apiKey, envK
 	return nil
 }
 
-// resolveActiveBearer applies the CLI-08 precedence for the deployment
+// resolveActiveBearer applies the CLI-08 precedence for the profile
 // + a minimal bearer resolution chain (W1 scope; full mutex
 // enforcement lands in W3-P1):
 //
 //  1. Synthetic mode (ACH_BASE_URL + ACH_API_KEY) — use the env pk_
-//     directly; deployment-flag/env REJECTED with exit 1.
-//  2. --api-key flag — use it as the bearer, deployment for URL only.
-//  3. --env-key flag — resolve against deployments.<active>.ek.<label>.
+//     directly; profile-flag/env REJECTED with exit 1.
+//  2. --api-key flag — use it as the bearer, profile for URL only.
+//  3. --env-key flag — resolve against profiles.<active>.ek.<label>.
 //  4. ACH_API_KEY env — same as --api-key.
 //  5. ACH_ENV_KEY env — same as --env-key.
-//  6. default — deployment's pk: from config.
+//  6. default — profile's pk: from config.
 //
-// Returns the resolved deployment NAME (for the identity block),
-// *Deployment (URL + optional EK map), bearer plaintext.
-func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string, *config.Deployment, string, error) {
+// Returns the resolved profile NAME (for the identity block),
+// *Profile (URL + optional EK map), bearer plaintext.
+func resolveActiveBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, *config.Profile, string, error) {
 	envBaseURL := os.Getenv("ACH_BASE_URL")
 	envAPIKey := os.Getenv("ACH_API_KEY")
 	envEnvKey := os.Getenv("ACH_ENV_KEY")
-	envDeployment := os.Getenv("ACH_DEPLOYMENT")
+	envProfile := os.Getenv("ACH_PROFILE")
 
 	// Synthetic-mode bearer synthesis. The synthetic.GuardCommand call
-	// in doWhoami already rejected --deployment / --env-key / half-set
-	// for this code path; here we just synthesize a one-off Deployment
+	// in doWhoami already rejected --profile / --env-key / half-set
+	// for this code path; here we just synthesize a one-off Profile
 	// from the env bearer + URL. The label "(env)" matches
-	// synthetic.SyntheticDeploymentLabel (Phase 7 consumes that const
+	// synthetic.SyntheticProfileLabel (Phase 7 consumes that const
 	// directly when writing state.json).
 	if envBaseURL != "" && envAPIKey != "" {
-		dep := &config.Deployment{URL: envBaseURL}
-		return synthetic.SyntheticDeploymentLabel, dep, envAPIKey, nil
+		dep := &config.Profile{URL: envBaseURL}
+		return synthetic.SyntheticProfileLabel, dep, envAPIKey, nil
 	}
 
 	// Disk-config path: load + resolve active.
@@ -216,10 +216,10 @@ func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string,
 	if file == nil {
 		return "", nil, "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  "no deployment configured; run `ach login` (CLI-08)",
+			Msg:  "no profile configured; run `ach login` (CLI-08)",
 		}
 	}
-	name, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	name, dep, err := config.ResolveActive(file, flagProfile, envProfile)
 	if err != nil {
 		return "", nil, "", &exit.CodedError{
 			Code: exit.General,
@@ -236,7 +236,7 @@ func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string,
 		if !ok {
 			return "", nil, "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q not found in deployments.%s.ek", flagEnvKey, name),
+				Msg:  fmt.Sprintf("--env-key %q not found in profiles.%s.ek", flagEnvKey, name),
 			}
 		}
 		return name, dep, ek, nil
@@ -247,7 +247,7 @@ func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string,
 		if !ok {
 			return "", nil, "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in deployments.%s.ek", envEnvKey, name),
+				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in profiles.%s.ek", envEnvKey, name),
 			}
 		}
 		return name, dep, ek, nil
@@ -256,15 +256,15 @@ func resolveActiveBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string,
 	}
 	return "", nil, "", &exit.CodedError{
 		Code: exit.General,
-		Msg:  fmt.Sprintf("no bearer for deployment %q; run `ach login`", name),
+		Msg:  fmt.Sprintf("no bearer for profile %q; run `ach login`", name),
 	}
 }
 
 // formatIdentityBlock renders the four-line identity header used by
 // both the no-net default AND --verify (the latter appends "Verified: yes").
-func formatIdentityBlock(name string, dep *config.Deployment, bearer string) string {
+func formatIdentityBlock(name string, dep *config.Profile, bearer string) string {
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Deployment: %s\n", name)
+	_, _ = fmt.Fprintf(&sb, "Profile: %s\n", name)
 	_, _ = fmt.Fprintf(&sb, "URL: %s\n", dep.URL)
 	_, _ = fmt.Fprintf(&sb, "Key: %s\n", config.Mask(bearer))
 	return sb.String()

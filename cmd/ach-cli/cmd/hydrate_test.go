@@ -102,7 +102,7 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -139,7 +139,7 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -165,7 +165,7 @@ func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -189,7 +189,7 @@ func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -216,7 +216,7 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		EK:  map[string]string{"local-laptop": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
 	})
@@ -264,7 +264,7 @@ func TestHydrate_MutexCreds_Exit1_NoHTTP(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
@@ -300,7 +300,7 @@ func TestHydrate_MutexCreds_EnvAndFlag_Exit1(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
 	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
 	})
@@ -325,7 +325,7 @@ func TestHydrate_NoCredential_Exit1(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
 	// Seed config with URL only — no pk_, no ek_.
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
@@ -370,7 +370,7 @@ func TestHydrate_SyntheticMode_PK_Works(t *testing.T) {
 }
 
 // Test 9b: synthetic mode + --env-key → exit 1 (--env-key requires
-// config-resolved deployment per spec §6.1 / D-11).
+// config-resolved profile per spec §6.1 / D-11).
 func TestHydrate_SyntheticMode_EnvKey_Exit1(t *testing.T) {
 	whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
@@ -419,7 +419,7 @@ func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID stri
 	t.Helper()
 	dir := whoamiTestEnv(t)
 	ts := newErrorServer(t, status, errCode, errMsg, reqID)
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 		EK:  map[string]string{"l": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
@@ -464,7 +464,7 @@ func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	t.Setenv("ACH_ENVIRONMENT", "demo")
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -497,7 +497,7 @@ func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
 		"wait", "lock-timeout", "output", "allow-symlinks", "platform",
 		"global", "raw",
 		// Phase 6 surface preserved.
-		"environment", "no-warnings", "verbose", "api-key", "env-key", "deployment",
+		"environment", "no-warnings", "verbose", "api-key", "env-key", "profile",
 	}
 	for _, name := range wantFlags {
 		if f := cmd.Flags().Lookup(name); f == nil {
@@ -527,7 +527,7 @@ func TestRunHydrate_RawDispatchesToLegacy(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -571,7 +571,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 	// Server returns canonical hydrate JSON for the manifest fetch
 	// (engine reads it during step 5).
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -623,7 +623,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -651,7 +651,7 @@ func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
 func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -676,7 +676,7 @@ func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 func TestRunHydrate_UnknownPlatform(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -702,7 +702,7 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 func TestRunHydrate_AliasPlatform(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})

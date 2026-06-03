@@ -13,9 +13,9 @@ import (
 // five buckets so each scope assertion can prove the right survivors.
 func fullPrev() *state.File {
 	return &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
-		Deployment:    "main",
+		Profile:       "main",
 		Prompts: []state.FileEntry{
 			{Target: ".ach/prompts/a.md", Hash: "h1", SourceHash: "s1"},
 		},
@@ -51,11 +51,11 @@ func TestBuildScopedEmpty(t *testing.T) {
 		if ctx != 0 || runtime != 0 {
 			t.Fatalf("full teardown must empty all buckets, got context=%d runtime=%d", ctx, runtime)
 		}
-		if got.SchemaVersion != "2" {
+		if got.SchemaVersion != "3" {
 			t.Fatalf("SchemaVersion = %q, want \"2\"", got.SchemaVersion)
 		}
-		if got.Environment != "prod" || got.Deployment != "main" {
-			t.Fatalf("Environment/Deployment not carried: env=%q dep=%q", got.Environment, got.Deployment)
+		if got.Environment != "prod" || got.Profile != "main" {
+			t.Fatalf("Environment/Profile not carried: env=%q dep=%q", got.Environment, got.Profile)
 		}
 	})
 
@@ -106,7 +106,7 @@ func TestBuildScopedEmpty(t *testing.T) {
 		if got == nil {
 			t.Fatal("nil prev must yield a non-nil empty File")
 		}
-		if got.SchemaVersion != "2" {
+		if got.SchemaVersion != "3" {
 			t.Fatalf("SchemaVersion = %q, want \"2\"", got.SchemaVersion)
 		}
 		ctx, runtime := bucketCounts(got)

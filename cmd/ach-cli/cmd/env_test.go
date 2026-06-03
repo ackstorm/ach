@@ -24,18 +24,18 @@ func envTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	return dir
 }
 
-// seedEnvConfig writes a config.yaml with one deployment under the
+// seedEnvConfig writes a config.yaml with one profile under the
 // test XDG home, returning the resolved config path.
-func seedEnvConfig(t *testing.T, dir, name string, dep *config.Deployment) string {
+func seedEnvConfig(t *testing.T, dir, name string, dep *config.Profile) string {
 	t.Helper()
 	path := filepath.Join(dir, "ach", "config.yaml")
 	f := &config.File{
-		Default:     name,
-		Deployments: map[string]*config.Deployment{name: dep},
+		Default:  name,
+		Profiles: map[string]*config.Profile{name: dep},
 	}
 	if err := config.Save(path, f); err != nil {
 		t.Fatalf("seed config: %v", err)
@@ -68,7 +68,7 @@ func TestEnv_List_SinglePage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -119,7 +119,7 @@ func TestEnv_List_Pagination(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -156,7 +156,7 @@ func TestEnv_List_LimitFlag(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -185,7 +185,7 @@ func TestEnv_List_401_Exit3(t *testing.T) {
 	dir := envTestEnv(t)
 	ts := newUnauthorized401Server(t, "invalid_key", "key rejected")
 	defer ts.Close()
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -261,7 +261,7 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 	ts := httptest.NewTLSServer(mux)
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -309,7 +309,7 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 	ts := httptest.NewTLSServer(mux)
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -378,7 +378,7 @@ func TestEnv_Describe_PaginatedFind(t *testing.T) {
 	ts := httptest.NewTLSServer(mux)
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -422,7 +422,7 @@ func TestEnv_Describe_MetadataOnly(t *testing.T) {
 	ts := httptest.NewTLSServer(mux)
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -465,7 +465,7 @@ func TestEnv_Describe_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedEnvConfig(t, dir, "prod", &config.Deployment{
+	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -500,7 +500,7 @@ func TestEnv_Describe_UnknownFlag(t *testing.T) {
 // TestEnv_SyntheticMode_Allowed asserts env list/describe DO work in
 // synthetic mode (read-only commands; per plan note, config-mutating
 // commands like login/logout/config gate on synthetic, but env list/
-// describe are synthetic-friendly per CLI-08 deployment resolution).
+// describe are synthetic-friendly per CLI-08 profile resolution).
 func TestEnv_SyntheticMode_Allowed(t *testing.T) {
 	envTestEnv(t)
 

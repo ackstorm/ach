@@ -28,18 +28,18 @@ func whoamiTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	return dir
 }
 
 // seedConfig writes a config.yaml under the test XDG home with the
-// supplied deployment, returning the resolved config path.
-func seedConfig(t *testing.T, dir, name string, dep *config.Deployment) string {
+// supplied profile, returning the resolved config path.
+func seedConfig(t *testing.T, dir, name string, dep *config.Profile) string {
 	t.Helper()
 	path := filepath.Join(dir, "ach", "config.yaml")
 	f := &config.File{
-		Default:     name,
-		Deployments: map[string]*config.Deployment{name: dep},
+		Default:  name,
+		Profiles: map[string]*config.Profile{name: dep},
 	}
 	if err := config.Save(path, f); err != nil {
 		t.Fatalf("seed config: %v", err)
@@ -75,7 +75,7 @@ func executeWhoami(t *testing.T, args ...string) (string, string, exit.Code, err
 // on-disk config only, prints identity block, makes ZERO HTTP calls.
 func TestWhoami_NoNet_PrintsIdentityBlock(t *testing.T) {
 	dir := whoamiTestEnv(t)
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: "https://hub.example",
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -95,7 +95,7 @@ func TestWhoami_NoNet_PrintsIdentityBlock(t *testing.T) {
 		t.Errorf("exit code = %d; want 0", code)
 	}
 	if !strings.Contains(stdout, "prod") {
-		t.Errorf("missing deployment name 'prod'; stdout: %s", stdout)
+		t.Errorf("missing profile name 'prod'; stdout: %s", stdout)
 	}
 	if !strings.Contains(stdout, "https://hub.example") {
 		t.Errorf("missing URL; stdout: %s", stdout)
@@ -127,7 +127,7 @@ func TestWhoami_Verify_PK_Calls_Environments(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaabcde",
 	})
@@ -172,7 +172,7 @@ func TestWhoami_Verify_EK_Calls_Hydrate(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
 	})
@@ -216,7 +216,7 @@ func TestWhoami_Verify_401_Exit3(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -243,7 +243,7 @@ func TestWhoami_Verify_NetworkRefused_Exit6(t *testing.T) {
 	closedURL := ts.URL
 	ts.Close()
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: closedURL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
@@ -291,7 +291,7 @@ func TestWhoami_Verbose_RedactsKey(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	seedConfig(t, dir, "prod", &config.Deployment{
+	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})

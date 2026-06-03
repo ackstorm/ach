@@ -6,7 +6,7 @@
 // the centralized internal/cli/synthetic.GuardCommand fires the same
 // way (or stronger) for the cases that weren't previously covered:
 //
-//   - --deployment rejection in synthetic on every subcommand
+//   - --profile rejection in synthetic on every subcommand
 //   - --env-key rejection in synthetic on hydrate/whoami/env list/
 //     env-describe/env-keys list/env-keys revoke
 //   - half-set (ACH_BASE_URL set, NO credential) rejection on every
@@ -24,14 +24,14 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// TestSyntheticGuard_DeploymentFlagRejected covers every subcommand
-// that accepts --deployment AND is in the synthetic.GuardCommand
+// TestSyntheticGuard_ProfileFlagRejected covers every subcommand
+// that accepts --profile AND is in the synthetic.GuardCommand
 // allow-set (the disposition under synthetic must be "allowed except
-// for --deployment / --env-key / half-set"). The deny-set
+// for --profile / --env-key / half-set"). The deny-set
 // (login/logout/config) is tested separately via the per-subcommand
 // SyntheticMode_Exit1 tests already in place — those commands reject
-// regardless of --deployment because the gate denies first.
-func TestSyntheticGuard_DeploymentFlagRejected(t *testing.T) {
+// regardless of --profile because the gate denies first.
+func TestSyntheticGuard_ProfileFlagRejected(t *testing.T) {
 	cases := []struct {
 		name string
 		run  func(t *testing.T) (string, string, exit.Code, error)
@@ -39,26 +39,26 @@ func TestSyntheticGuard_DeploymentFlagRejected(t *testing.T) {
 		{
 			name: "whoami",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeWhoami(t, "--deployment", "prod")
+				return executeWhoami(t, "--profile", "prod")
 			},
 		},
 		{
 			name: "hydrate",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeHydrate(t, "--deployment", "prod",
+				return executeHydrate(t, "--profile", "prod",
 					"--environment", "demo", "--no-warnings")
 			},
 		},
 		{
 			name: "env-list",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "list", "--deployment", "prod")
+				return executeEnv(t, "list", "--profile", "prod")
 			},
 		},
 		{
 			name: "env-describe",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "describe", "demo", "--deployment", "prod")
+				return executeEnv(t, "describe", "demo", "--profile", "prod")
 			},
 		},
 		{
@@ -66,20 +66,20 @@ func TestSyntheticGuard_DeploymentFlagRejected(t *testing.T) {
 			run: func(t *testing.T) (string, string, exit.Code, error) {
 				return executeEnvKeys(t, "", "create",
 					"--environment", "demo", "--name", "x",
-					"--no-save", "--deployment", "prod")
+					"--no-save", "--profile", "prod")
 			},
 		},
 		{
 			name: "env-keys-list",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "list", "--deployment", "prod")
+				return executeEnvKeys(t, "", "list", "--profile", "prod")
 			},
 		},
 		{
 			name: "env-keys-revoke",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
 				return executeEnvKeys(t, "", "revoke", "ekid_abc",
-					"--yes", "--deployment", "prod")
+					"--yes", "--profile", "prod")
 			},
 		},
 	}
@@ -92,13 +92,13 @@ func TestSyntheticGuard_DeploymentFlagRejected(t *testing.T) {
 
 			_, _, code, err := tc.run(t)
 			if err == nil {
-				t.Fatalf("%s: expected --deployment rejection in synthetic; got nil err", tc.name)
+				t.Fatalf("%s: expected --profile rejection in synthetic; got nil err", tc.name)
 			}
 			if code != exit.General {
 				t.Errorf("%s: code = %d; want 1", tc.name, code)
 			}
-			if !strings.Contains(err.Error(), "--deployment") {
-				t.Errorf("%s: err missing '--deployment' hint: %q", tc.name, err.Error())
+			if !strings.Contains(err.Error(), "--profile") {
+				t.Errorf("%s: err missing '--profile' hint: %q", tc.name, err.Error())
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func TestSyntheticGuard_HalfSetRejected(t *testing.T) {
 		{
 			name: "login",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeLogin(t, "--deployment", "prod",
+				return executeLogin(t, "--profile", "prod",
 					"--base-url", "https://hub.test", "--no-browser")
 			},
 		},

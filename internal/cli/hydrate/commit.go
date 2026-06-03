@@ -861,12 +861,12 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 
 	// Build the next-state from the prior + the manifest environment.
 	next := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   c.opts.Environment,
 	}
 	if existing != nil {
 		// Preserve everything not (re)composed this hydrate.
-		next.Deployment = existing.Deployment
+		next.Profile = existing.Profile
 		next.Prompts = existing.Prompts
 		next.Plugins = existing.Plugins
 		next.Artifacts = existing.Artifacts

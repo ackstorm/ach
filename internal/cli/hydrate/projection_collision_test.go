@@ -136,7 +136,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	}
 
 	// Compose prior state.Plugins[] from both entries (commit.go step12 shape).
-	prior := &state.File{SchemaVersion: "2", Environment: "demo"}
+	prior := &state.File{SchemaVersion: "3", Environment: "demo"}
 	for _, pf := range res1.ProjectedFiles {
 		prior.Plugins = append(prior.Plugins, state.FileEntry{
 			Target:     pf.Target,

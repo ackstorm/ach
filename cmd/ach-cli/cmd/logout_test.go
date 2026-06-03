@@ -34,11 +34,11 @@ func executeLogout(t *testing.T, args ...string) (string, string, exit.Code, err
 }
 
 // TestLogout_WipesPK_PreservesURL is Test 9: ach logout removes pk
-// from active deployment, leaves URL + EK map intact, preserves
+// from active profile, leaves URL + EK map intact, preserves
 // default.
 func TestLogout_WipesPK_PreservesURL(t *testing.T) {
 	dir := whoamiTestEnv(t) // reuse synthetic-clean env helper
-	path := seedConfig(t, dir, "prod", &config.Deployment{
+	path := seedConfig(t, dir, "prod", &config.Profile{
 		URL: "https://hub.example",
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
@@ -59,9 +59,9 @@ func TestLogout_WipesPK_PreservesURL(t *testing.T) {
 	if f.Default != "prod" {
 		t.Errorf("default = %q; want prod (preserved)", f.Default)
 	}
-	dep := f.Deployments["prod"]
+	dep := f.Profiles["prod"]
 	if dep == nil {
-		t.Fatal("deployments.prod removed (should only wipe pk)")
+		t.Fatal("profiles.prod removed (should only wipe pk)")
 	}
 	if dep.URL != "https://hub.example" {
 		t.Errorf("url wiped: %q", dep.URL)
@@ -73,7 +73,7 @@ func TestLogout_WipesPK_PreservesURL(t *testing.T) {
 		t.Errorf("ek map clobbered: %+v", dep.EK)
 	}
 	if !strings.Contains(stdout, "prod") {
-		t.Errorf("stdout missing deployment name; got: %s", stdout)
+		t.Errorf("stdout missing profile name; got: %s", stdout)
 	}
 }
 
@@ -95,15 +95,15 @@ func TestLogout_SyntheticMode_Exit1(t *testing.T) {
 	}
 }
 
-// TestLogout_NoDeployment_Exit1 is Test 11: no resolvable deployment
+// TestLogout_NoProfile_Exit1 is Test 11: no resolvable profile
 // → exit 1.
-func TestLogout_NoDeployment_Exit1(t *testing.T) {
+func TestLogout_NoProfile_Exit1(t *testing.T) {
 	whoamiTestEnv(t)
 	// No seed config; XDG_CONFIG_HOME is empty.
 
 	_, _, code, err := executeLogout(t)
 	if err == nil {
-		t.Fatal("expected no-deployment error")
+		t.Fatal("expected no-profile error")
 	}
 	if code != exit.General {
 		t.Errorf("code = %d; want 1", code)

@@ -4,14 +4,14 @@
 // §5.4) — five children that read and write ~/.config/ach/config.yaml
 // without ever contacting the server:
 //
-//   - list    Print the deployments table (NAME, URL, PK presence, EK count).
-//   - show    Print one deployment's URL + pk + ek map. --reveal opts
-//             into the full plaintext unmask for the named deployment
+//   - list    Print the profiles table (NAME, URL, PK presence, EK count).
+//   - show    Print one profile's URL + pk + ek map. --reveal opts
+//             into the full plaintext unmask for the named profile
 //             only (D-05 — masked-by-default is the contract).
 //   - use     Set `default:` to <name>. Refuses unknown names.
-//   - remove  Delete a deployment. Active default removal needs --force
+//   - remove  Delete a profile. Active default removal needs --force
 //             AND clears `default:` so subsequent commands don't silently
-//             route to an unintended deployment.
+//             route to an unintended profile.
 //   - rename  Rename a map key, preserving PK + EK map. Refuses rename
 //             onto an existing target. Updates `default:` when it was
 //             pointing at <old>.
@@ -41,14 +41,14 @@ import (
 func newConfigCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "config",
-		Short: "Manage ~/.config/ach/config.yaml (deployments registry)",
+		Short: "Manage ~/.config/ach/config.yaml (profiles registry)",
 		Long: `Manage the local CLI configuration at ~/.config/ach/config.yaml.
 
 Children:
-  list      Print the deployments table
-  show      Print one deployment (--reveal unmasks pk_/ek_)
+  list      Print the profiles table
+  show      Print one profile (--reveal unmasks pk_/ek_)
   use       Set default: to <name>
-  remove    Delete a deployment (--force required for active default)
+  remove    Delete a profile (--force required for active default)
   rename    Rename a map key (preserves PK + EK map)
 
 All children exit 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY
@@ -74,7 +74,7 @@ env, so the on-disk registry has no role.
 func newConfigListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "Print the deployments table",
+		Short: "Print the profiles table",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := configSyntheticGuard("list"); err != nil {
@@ -90,12 +90,12 @@ func newConfigListCmd() *cobra.Command {
 	}
 }
 
-// newConfigShowCmd returns the `ach config show [deployment]` leaf.
+// newConfigShowCmd returns the `ach config show [profile]` leaf.
 func newConfigShowCmd() *cobra.Command {
 	var reveal bool
 	c := &cobra.Command{
-		Use:   "show [deployment]",
-		Short: "Print one deployment (pk_/ek_ masked unless --reveal)",
+		Use:   "show [profile]",
+		Short: "Print one profile (pk_/ek_ masked unless --reveal)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := configSyntheticGuard("show"); err != nil {
@@ -105,10 +105,10 @@ func newConfigShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if f == nil || len(f.Deployments) == 0 {
+			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no deployments configured; run `ach login`",
+					Msg:  "no profiles configured; run `ach login`",
 				}
 			}
 			var name string
@@ -127,7 +127,7 @@ func newConfigShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk_/ek_ for the named deployment only (D-05)")
+	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk_/ek_ for the named profile only (D-05)")
 	return c
 }
 
@@ -149,17 +149,17 @@ func newConfigUseCmd() *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 			}
-			if f == nil || len(f.Deployments) == 0 {
+			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no deployments configured; run `ach login`",
+					Msg:  "no profiles configured; run `ach login`",
 				}
 			}
 			name := args[0]
-			if _, ok := f.Deployments[name]; !ok {
+			if _, ok := f.Profiles[name]; !ok {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("deployment %q not found", name),
+					Msg:  fmt.Sprintf("profile %q not found", name),
 				}
 			}
 			f.Default = name
@@ -177,7 +177,7 @@ func newConfigRemoveCmd() *cobra.Command {
 	var force bool
 	c := &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Delete a deployment (--force required for active default)",
+		Short: "Delete a profile (--force required for active default)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := configSyntheticGuard("remove"); err != nil {
@@ -191,17 +191,17 @@ func newConfigRemoveCmd() *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 			}
-			if f == nil || len(f.Deployments) == 0 {
+			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no deployments configured; nothing to remove",
+					Msg:  "no profiles configured; nothing to remove",
 				}
 			}
 			name := args[0]
-			if _, ok := f.Deployments[name]; !ok {
+			if _, ok := f.Profiles[name]; !ok {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("deployment %q not found", name),
+					Msg:  fmt.Sprintf("profile %q not found", name),
 				}
 			}
 			if f.Default == name && !force {
@@ -210,10 +210,10 @@ func newConfigRemoveCmd() *cobra.Command {
 					Msg:  fmt.Sprintf("cannot remove active default %q; use --force", name),
 				}
 			}
-			delete(f.Deployments, name)
+			delete(f.Profiles, name)
 			if f.Default == name {
 				// T-06-04-02 mitigation: clear default so subsequent
-				// commands don't silently route to a vanished deployment.
+				// commands don't silently route to a vanished profile.
 				f.Default = ""
 			}
 			if err := config.Save(path, f); err != nil {
@@ -223,7 +223,7 @@ func newConfigRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&force, "force", false, "Required to remove the active default deployment")
+	c.Flags().BoolVar(&force, "force", false, "Required to remove the active default profile")
 	return c
 }
 
@@ -231,7 +231,7 @@ func newConfigRemoveCmd() *cobra.Command {
 func newConfigRenameCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rename <old> <new>",
-		Short: "Rename a deployment map key (preserves PK + EK map)",
+		Short: "Rename a profile map key (preserves PK + EK map)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := configSyntheticGuard("rename"); err != nil {
@@ -245,21 +245,21 @@ func newConfigRenameCmd() *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 			}
-			if f == nil || len(f.Deployments) == 0 {
+			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no deployments configured; nothing to rename",
+					Msg:  "no profiles configured; nothing to rename",
 				}
 			}
 			oldName, newName := args[0], args[1]
-			dep, ok := f.Deployments[oldName]
+			dep, ok := f.Profiles[oldName]
 			if !ok {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("deployment %q not found", oldName),
+					Msg:  fmt.Sprintf("profile %q not found", oldName),
 				}
 			}
-			if _, exists := f.Deployments[newName]; exists {
+			if _, exists := f.Profiles[newName]; exists {
 				// T-06-04-03 mitigation: target exists → exit 1; never
 				// silently merge.
 				return &exit.CodedError{
@@ -267,8 +267,8 @@ func newConfigRenameCmd() *cobra.Command {
 					Msg:  fmt.Sprintf("rename target %q already exists; remove it first", newName),
 				}
 			}
-			delete(f.Deployments, oldName)
-			f.Deployments[newName] = dep
+			delete(f.Profiles, oldName)
+			f.Profiles[newName] = dep
 			if f.Default == oldName {
 				f.Default = newName
 			}

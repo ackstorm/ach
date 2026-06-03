@@ -66,9 +66,9 @@ func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exi
 // renders a table containing each Target and the correct derived KIND.
 func TestList_Table(t *testing.T) {
 	body := `{
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "environment": "prod",
-  "deployment": "default",
+  "profile": "default",
   "prompts": [
     {"target": ".claude/prompts/review.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
   ],
@@ -117,9 +117,9 @@ func TestList_MissingState(t *testing.T) {
 // back to the entry set, with the correct derived kinds + targets.
 func TestList_JSON(t *testing.T) {
 	body := `{
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "environment": "stg",
-  "deployment": "default",
+  "profile": "default",
   "plugins": [
     {"target": ".claude/plugins/a", "hash": "xxh3:1", "sourceHash": "xxh3:1"},
     {"target": ".claude/plugins/b", "hash": "xxh3:2", "sourceHash": "xxh3:2"}
@@ -164,9 +164,9 @@ func TestList_JSON(t *testing.T) {
 // injected buffer), never directly to os.Stdout.
 func TestList_OutToBuffer(t *testing.T) {
 	body := `{
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "environment": "prod",
-  "deployment": "default",
+  "profile": "default",
   "prompts": [
     {"target": ".claude/prompts/x.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
   ]
