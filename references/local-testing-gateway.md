@@ -1,6 +1,6 @@
 # Local Unified testing, SSO login & Gateway Reference
 
-This document outlines the local unifed gateway architecture and testing procedures on Kind for the Agent Configuration Hub (ACH) platform.
+This document outlines the local unifed gateway architecture and testing procedures on Kind for the Agent Capability Hub (ACH) platform.
 
 ---
 

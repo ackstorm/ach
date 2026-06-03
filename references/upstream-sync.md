@@ -146,7 +146,7 @@ independent of the chart.
 | `Makefile` (build-installer) | same | Originally fed the now-retired `kustomize-to-helm.sh` veneer; `build-installer` is now a standalone kustomize install bundle (`kubectl apply -f dist/install.yaml`). The `kustomize edit set image controller=controller:latest` pin is a no-op (config/manager already pins `ghcr.io/ackstorm/ach`), kept for kubebuilder-convention parity. |
 | `config/manager/manager.yaml` (command/args) | n/a (kubebuilder default) | Adapted to single-binary cobra: `command: [/manager]` → `command: [/ach]`, prepended `operator` to `args`. The Dockerfile ENTRYPOINT already produces `/ach`; this aligns the kustomize source with the actual binary path. |
 | `deploy/helm/ach/values.yaml` | `deploy/helm/alitellm-operator/values.yaml` | Rewritten: dropped `safetyRelistInterval` (alitellm-specific knob, has no ACH analog); added `operator`, `platformApi`, `forwarder`, `contentService`, `migrate` per-mode blocks with `{enabled, replicas, resources, args}` shape; added `postgres.external` + `redis.external` flags; kept `installCRDs`, `image`, `watchNamespace`, `toolhive`, `metrics.serviceMonitor`, `extraEnv` from alitellm verbatim. |
-| `deploy/helm/ach/Chart.yaml` | same | Reset version `0.4.7` → `0.0.1` and description from "LiteLLM operator …" to "ACH — Agent Configuration Hub. Kubernetes operator + platform API + forwarder + content service for declarative agent configuration management." |
+| `deploy/helm/ach/Chart.yaml` | same | Reset version `0.4.7` → `0.0.1` and description from "LiteLLM operator …" to "ACH — Agent Capability Hub. Kubernetes operator + platform API + forwarder + content service for declarative agent configuration management." |
 
 ## 2026-05-25 (Task 11.2) — deploy/kustomize snapshot
 

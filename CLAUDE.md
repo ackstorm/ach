@@ -30,7 +30,7 @@ that revealed it.
 
 ## Quick context
 
-ACH — Agent Configuration Hub. Multi-service Kubernetes control plane for
+ACH — Agent Capability Hub. Multi-service Kubernetes control plane for
 declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI

@@ -1,4 +1,4 @@
-# ACH — Agent Configuration Hub
+# ACH — Agent Capability Hub
 
 ACH is the control plane for managing AI agent configurations across environments.
 

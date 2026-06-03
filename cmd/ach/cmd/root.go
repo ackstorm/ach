@@ -12,7 +12,7 @@ var Version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "ach",
-	Short: "ACH — Agent Configuration Hub",
+	Short: "ACH — Agent Capability Hub",
 	Long: `ach is the service-mode binary for the ACH control plane.
 
 Run a long-running service:

@@ -119,7 +119,7 @@ format:
         For usage examples and guides, see the [User Guide](../user-guide/index.md).
 
     !!! tip "Quick Navigation"
-        - [ACH Resources](#api-group-achackstormai) - Agent Configuration Hub custom resources
+        - [ACH Resources](#api-group-achackstormai) - Agent Capability Hub custom resources
 
 # Processing options
 processing:

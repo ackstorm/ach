@@ -1,4 +1,4 @@
-site_name: ACH — Agent Configuration Hub
+site_name: ACH — Agent Capability Hub
 site_description: Kubernetes control plane for managing AI agent configurations declaratively
 site_url: https://ackstorm.github.io/ach/
 repo_url: https://github.com/ackstorm/ach

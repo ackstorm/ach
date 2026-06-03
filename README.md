@@ -1,4 +1,4 @@
-# ACH — Agent Configuration Hub
+# ACH — Agent Capability Hub
 
 Multi-service Kubernetes control plane for managing AI agent configurations:
 operator + platform API + forwarder + content service + CLI. The long-running

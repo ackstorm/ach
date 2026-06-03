@@ -13,7 +13,7 @@ var Version = "dev"
 var rootCmd = &cobra.Command{
 	Use:   "ach-cli",
 	Short: "ACH CLI — operator/developer client for the ACH control plane",
-	Long: `ach-cli is the user-facing client for the ACH (Agent Configuration Hub)
+	Long: `ach-cli is the user-facing client for the ACH (Agent Capability Hub)
 control plane. Subcommands:
 
   login        Authenticate against the platform-api

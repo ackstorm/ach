@@ -4,7 +4,7 @@ version: 0.2.6
 appVersion: v0.2.6
 kubeVersion: ">= 1.27.0-0"
 description: >-
-  ACH — Agent Configuration Hub. Kubernetes operator + platform API + forwarder
+  ACH — Agent Capability Hub. Kubernetes operator + platform API + forwarder
   + content service for declarative agent configuration management.
 type: application
 sources:
