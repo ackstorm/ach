@@ -2755,7 +2755,7 @@ or marketplace_plugins rows) and are served by the ACH Content Service.</p>
 </tr>
 <tr>
 <td><code>plugins</code> <em>string array</em></td>
-<td>Plugins lists referenced Plugin (or marketplace plugin) names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL).</td>
+<td>Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator.</td>
 <td>{  }</td>
 <td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
@@ -2945,6 +2945,12 @@ CRD-02 at admission.</p>
 <td><code>unresolvedRuntime</code> <em><a href="#unresolvedruntime">UnresolvedRuntime</a></em></td>
 <td>UnresolvedRuntime lists runtime references not currently registered in<br />LiteLLM. Surfaced for <code>kubectl describe environment</code> per §6.4. The<br />field contract belongs here from Phase 1; the reconciler in Phase 2<br />rewrites it on every reconcile.</td>
 <td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>unresolvedContextPlugins</code> <em>string array</em></td>
+<td>UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present.</td>
+<td>{  }</td>
 <td></td>
 </tr>
 <tr>
@@ -3722,8 +3728,9 @@ CRD-04: spec.refresh.maxStaleness is REQUIRED.</p>
 <h4 id="pluginmarketplacestatus">PluginMarketplaceStatus<a class="headerlink" href="#pluginmarketplacestatus" title="Permanent link">&para;</a></h4>
 <p>PluginMarketplaceStatus defines the observed state of PluginMarketplace.</p>
 <p>In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
-Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
-InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+Synced condition (§6.6) with reasons UpstreamInvalid, InvalidConfig,
+UnsupportedPluginSource (plus per-plugin soft-skip reasons in the
+message such as DuplicateName), plus the materialized plugin set
 (Plugins / PluginsCount) populated on each successful reconcile.</p>
 <p><em>Appears in:</em>
 - <a href="#pluginmarketplace">PluginMarketplace</a></p>
