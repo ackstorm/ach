@@ -30,10 +30,11 @@
 // when the binary or cluster is missing, so a non-e2e run is a clean skip.
 //
 // Known gap asserted here (NOT a bug): plugin hooks (caveman's src/hooks/)
-// are dropped for every platform — no adapter ProjectionRule routes
-// src/ or hooks/. When hooks support lands, assertHooksDropped will fail
-// and must be updated alongside the per-platform hook-destination
-// assertions. See .planning/todos/pending/*-support-plugin-hooks-projection.md.
+// are NOT projected for any platform — no adapter ProjectionRule routes src/,
+// and src is non-Known metadata so it is now SILENTLY skipped (no warning).
+// assertHooksDropped asserts that silence. When hooks support lands it must be
+// updated alongside the per-platform hook-destination assertions. See
+// .planning/todos/pending/*-support-plugin-hooks-projection.md.
 
 package e2e
 
@@ -353,21 +354,27 @@ func assertProjectedCommands(t *testing.T, output string, pe allPlatformExpect) 
 	}
 }
 
-// assertHooksDropped locks in the CURRENT (v0.2.0) behavior: plugin hooks
-// are not projected for any platform, surfaced as a single end-of-hydration
-// stderr warning naming the unrouted top-level dirs (src, .claude-plugin).
-// When hooks support lands this assertion MUST be updated alongside the new
-// per-platform hook-destination checks — see the hooks-support TODO.
+// assertHooksDropped locks in the CURRENT behavior: caveman's plugin hooks
+// ship under the src/ top-level, which route.KnownComponentKinds does NOT list,
+// so src (and the hooks nested in it) are SILENTLY skipped for every platform —
+// they never appear in the attributed drop warning. (Pre-Phase-1 src polluted a
+// generic "dropped unsupported components" line; that cry-wolf line is gone.)
+// When a real top-level hooks/ kind + a KnownComponentKinds entry land, this
+// MUST be updated alongside the per-platform hook-destination assertions — see
+// .planning/todos/pending/*-support-plugin-hooks-projection.md.
 func assertHooksDropped(t *testing.T, id string, stderr []byte) {
 	t.Helper()
 	s := string(stderr)
-	if !strings.Contains(s, "dropped unsupported components") {
-		t.Errorf("%s: expected a dropped-components warning on stderr (hooks gap); stderr=%s", id, s)
-		return
+	marker := "warning: platform " + id + " does not support"
+	if !strings.Contains(s, marker) {
+		return // no attributed warning at all → src/hooks correctly silent
 	}
-	if !strings.Contains(s, "src") {
-		t.Errorf("%s: dropped-components warning should name the hooks source dir 'src' "+
-			"(known v0.2.0 gap — update this assertion when hook projection lands); stderr=%s", id, s)
+	body := dropBody(s, marker)
+	for _, silent := range []string{"src", "hooks"} {
+		if strings.Contains(body, silent) {
+			t.Errorf("%s: %q must be silently skipped, not warned (metadata-silent contract)\nbody=%q",
+				id, silent, body)
+		}
 	}
 }
 

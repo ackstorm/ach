@@ -52,13 +52,19 @@
 //	              intersects caveman's kinds — `agents` appears in the WIRE-03
 //	              end-of-hydration stderr warning.)
 //
-// The WIRE-03 / D-12 stderr warning format (commit.go warnDroppedComponents):
+// The WIRE-03 / D-12 stderr warning format (commit.go warnDropped) is an
+// attributed multi-line block, emitted ONLY when a KNOWN component kind has no
+// rule for the active platform:
 //
-//	"warning: dropped unsupported components for platform <id>: <kind, kind, …>"
+//	"warning: platform <id> does not support some plugin components — they were skipped:"
+//	"    <kind> (plugins: <name, …>)"
 //
-// where the list is the deduped+sorted set of UNMATCHED top-level kinds. Every
-// adapter drops caveman's non-resource top-levels (.claude-plugin, src,
-// LICENSE, README.md) — assertDropsWarned therefore checks for the presence of
+// Metadata/docs/unknown top-levels (.claude-plugin, .codex-plugin, src,
+// LICENSE, README.md) are now SILENTLY skipped — they never appear in the
+// warning (route.KnownComponentKinds gates the drop set). So an adapter that
+// routes all of caveman's component kinds (claude-code/codex/gemini/opencode)
+// prints NO drop warning at all; only pimono (no `agents` rule) warns, naming
+// `agents` + the caveman plugin. assertDropsWarned checks for the presence of
 // the kinds we KNOW must (or must not) be dropped, not for an exact full list.
 
 package e2e
@@ -180,8 +186,10 @@ var projectionDescriptors = []projectionDescriptor{
 		coOwnedKind:    "json-pi",
 		// pimono has NO agents rule (D-35 drop set {rules, agents, AGENTS.md});
 		// caveman ships agents/ → `agents` is dropped + warned.
-		mustDrop:    []string{"agents"},
-		mustNotDrop: []string{"skills"},
+		mustDrop: []string{"agents"},
+		// skills is routed; .claude-plugin / README.md are now silently
+		// skipped metadata — none may appear in the attributed warning.
+		mustNotDrop: []string{"skills", ".claude-plugin", "README.md"},
 	},
 }
 
@@ -222,70 +230,55 @@ func assertProjectedNativeDirs(t *testing.T, output string, d projectionDescript
 	}
 }
 
-// assertDropsWarned checks the WIRE-03 / D-12 single end-of-hydration stderr
-// warning. For each kind in d.mustDrop it asserts the warning line names the
-// kind; for each in d.mustNotDrop it asserts the kind is absent. When d.mustDrop
-// is empty the only assertion is the negative (no projected kind is dropped) —
-// the warning may still be present (caveman's non-resource top-levels like
-// `src` / `.claude-plugin` are always dropped), so the absence of a warning is
-// NOT required.
+// assertDropsWarned checks the WIRE-03 / D-12 attributed drop warning. For
+// each kind in d.mustDrop it asserts the warning block names the kind; for each
+// in d.mustNotDrop it asserts the kind is absent from the block. When d.mustDrop
+// is empty there is no "does not support" block at all (metadata/docs are now
+// silent), so the negative assertions are vacuously satisfied.
 func assertDropsWarned(t *testing.T, platformID string, stderr []byte, d projectionDescriptor) {
 	t.Helper()
 	s := string(stderr)
-	const marker = "warning: dropped unsupported components for platform "
+	marker := "warning: platform " + platformID + " does not support"
 
 	if len(d.mustDrop) > 0 {
 		if !strings.Contains(s, marker) {
-			t.Errorf("%s: expected a WIRE-03 drop warning (kinds %v) but stderr had none\nstderr=%s",
+			t.Errorf("%s: expected an attributed drop warning (kinds %v) but stderr had none\nstderr=%s",
 				platformID, d.mustDrop, stderr)
 			return
 		}
-		line := dropWarningLine(s, marker)
+		body := dropBody(s, marker)
 		for _, kind := range d.mustDrop {
-			if !dropLineMentions(line, kind) {
-				t.Errorf("%s: drop warning missing expected kind %q\nline=%q", platformID, kind, line)
+			if !strings.Contains(body, kind) {
+				t.Errorf("%s: drop warning missing expected kind %q\nbody=%q", platformID, kind, body)
 			}
 		}
 	}
 
-	// Negative invariant: a projected kind must never be reported as dropped.
+	// Negative invariant: a projected kind (or benign metadata) must never be
+	// reported as dropped. Only meaningful when a block exists.
 	if strings.Contains(s, marker) {
-		line := dropWarningLine(s, marker)
+		body := dropBody(s, marker)
 		for _, kind := range d.mustNotDrop {
-			if dropLineMentions(line, kind) {
-				t.Errorf("%s: drop warning wrongly lists projected kind %q\nline=%q", platformID, kind, line)
+			if strings.Contains(body, kind) {
+				t.Errorf("%s: drop warning wrongly lists kind %q\nbody=%q", platformID, kind, body)
 			}
 		}
 	}
 }
 
-// dropWarningLine returns the single stderr line carrying the WIRE-03 marker
-// (commit.go emits exactly one). Returns "" if none.
-func dropWarningLine(stderr, marker string) string {
-	for _, ln := range strings.Split(stderr, "\n") {
-		if strings.Contains(ln, marker) {
-			return ln
-		}
+// dropBody returns the attributed-warning block: the substring from marker up
+// to (but excluding) the next distinct "warning:" line (the MCP-shadow warning
+// or pk_ warnings), so kind checks scan only the "does not support" body.
+func dropBody(s, marker string) string {
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return ""
 	}
-	return ""
-}
-
-// dropLineMentions reports whether the warning line names kind as a discrete
-// comma-separated token (so "agents" does not spuriously match "agents-extra").
-func dropLineMentions(line, kind string) bool {
-	// Format: "...platform <id>: a, b, c". Split on the LAST ": " which
-	// separates the platform id from the comma-joined kind list.
-	last := strings.LastIndex(line, ": ")
-	if last < 0 {
-		return false
+	rest := s[i:]
+	if j := strings.Index(rest[len(marker):], "\nwarning:"); j >= 0 {
+		return rest[:len(marker)+j]
 	}
-	list := line[last+2:]
-	for _, tok := range strings.Split(list, ",") {
-		if strings.TrimSpace(tok) == kind {
-			return true
-		}
-	}
-	return false
+	return rest
 }
 
 // assertStateRecordsPlugins reads state.json v2 and asserts (a) schemaVersion
