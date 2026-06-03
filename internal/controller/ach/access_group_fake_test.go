@@ -180,9 +180,18 @@ func (f *accessGroupFakeImpl) DeleteAccessGroup(ctx context.Context, name string
 // Resolver overrides — the reconciler calls these on each pass to build
 // name→ID maps for the AccessGroupCreateRequest body.
 
+// ListMCPServers mirrors the real RESTClient contract: an empty list is
+// reported as litellm.ErrNotFound (REL-05 length-check), NOT an empty
+// slice. Callers MUST translate ErrNotFound → empty. A prior empty-slice
+// fake masked the env-controller bug where a LiteLLM with zero registered
+// MCP servers wedged every Environment at AccessGroupSynced=False/
+// ResolveFailed — see TestAccessGroupSynced_True_OnEmptyLiteLLMLists.
 func (f *accessGroupFakeImpl) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(f.mcps) == 0 {
+		return nil, litellm.ErrNotFound
+	}
 	out := make([]litellm.MCPServerEntry, 0, len(f.mcps))
 	for name, id := range f.mcps {
 		out = append(out, litellm.MCPServerEntry{ServerID: id, ServerName: name})
@@ -190,9 +199,13 @@ func (f *accessGroupFakeImpl) ListMCPServers(_ context.Context) ([]litellm.MCPSe
 	return out, nil
 }
 
+// ListA2AAgents mirrors the real RESTClient contract: empty → ErrNotFound.
 func (f *accessGroupFakeImpl) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(f.agents) == 0 {
+		return nil, litellm.ErrNotFound
+	}
 	out := make([]litellm.AgentEntry, 0, len(f.agents))
 	for name, id := range f.agents {
 		out = append(out, litellm.AgentEntry{AgentID: id, AgentName: name})

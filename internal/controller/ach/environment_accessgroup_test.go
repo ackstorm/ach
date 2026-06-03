@@ -93,6 +93,60 @@ func TestAccessGroupSynced_True_WhenCreateSucceeds(t *testing.T) {
 	}
 }
 
+// TestAccessGroupSynced_True_OnEmptyLiteLLMLists is the regression guard
+// for the prod incident where Environment `platform` wedged at
+// AccessGroupSynced=False/ResolveFailed "LiteLLM ListMCPServers failed:
+// litellm: not found". Root cause: a LiteLLM with zero registered MCP
+// servers / A2A agents makes ListMCPServers/ListA2AAgents return
+// litellm.ErrNotFound (empty-list REL-05 contract); reconcileAccessGroup
+// must translate ErrNotFound → empty, NOT treat it as a resolve failure.
+// The env here references nothing, so an empty upstream is a valid empty
+// closed-set and the access group must still sync.
+//
+// The fake's ListMCPServers/ListA2AAgents return ErrNotFound on empty
+// (mirroring the real RESTClient) — so this test fails if the
+// translation is ever removed from the controller.
+func TestAccessGroupSynced_True_OnEmptyLiteLLMLists(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
+	// Deliberately seed NO mcp / NO agent → fake returns ErrNotFound.
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-ag-emptylists",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		c := agCondition(&got)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
+	}, 15*time.Second, 250*time.Millisecond) {
+		var got achv1alpha1.Environment
+		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
+		t.Fatalf("expected True/Synced on empty LiteLLM lists (ErrNotFound must be tolerated), conditions = %+v", got.Status.Conditions)
+	}
+
+	last := accessGroupFake.LastCreate("test-env-ag-emptylists")
+	if len(last.AccessMCPServerIDs) != 0 || len(last.AccessAgentIDs) != 0 {
+		t.Errorf("create body should carry empty mcp/agent IDs; got mcp=%v agent=%v", last.AccessMCPServerIDs, last.AccessAgentIDs)
+	}
+}
+
 // TestAccessGroupSynced_False_OnUnresolvedTeam asserts the
 // UnresolvedReferences branch: a team in spec.authorizedTeams that
 // does not resolve via ListTeamsByAlias flips AccessGroupSynced to
