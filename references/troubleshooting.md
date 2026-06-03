@@ -59,6 +59,29 @@ startup; a missing Secret turns the whole JWT trust path unreachable,
 which would silently degrade upstream auth. Refusing to start is the
 correct posture — fix the seed, not the check.
 
+### ❌ `helm install` aborts: `no matches for kind "LiteLLMConnection"`
+```bash
+# Error: failed post-install: ... resource mapping not found for name: "default"
+#   ... no matches for kind "LiteLLMConnection" in version "ach.ackstorm.ai/v1alpha1"
+```
+✅ This is fixed — the chart no longer ships the CR. The operator
+bootstraps `LiteLLMConnection/default` on boot
+(`internal/operator/litellmconnboot.EnsureConnection`, run before
+`mgr.Start` like the JWT-key mint). WHY THE CHART CAN'T: ACH CRDs render
+as ordinary `templates/` (managed-upgrade strategy, NOT Helm's `crds/`
+dir). Helm builds its REST mapper once per action and only refreshes it
+after a `crds/` install — never after a `templates/`-rendered CRD. So
+within the install release NO manifest (normal template OR post-install
+hook) can be mapped to the just-created kind; both fail with the error
+above. The operator's live-discovery client has no such limitation.
+Config flows in via `litellmConnection.{endpoint,masterKeySecretRef}` →
+operator env `ACH_LITELLM_CONNECTION_{ENDPOINT,SECRET_NAME,SECRET_KEY}`
+(Secret *reference* only — the master-key value is never put in env). The
+bootstrap is idempotent + drift-correcting; `litellmConnection.enabled:
+false` (empty endpoint) skips it. If `default` is missing after install,
+check `kubectl -n ach-system logs deploy/ach-operator -c operator | grep
+litellmconnboot`.
+
 ### ❌ "SourceReachable=False reason=Unauthorized" on a public GitHub repo
 ```bash
 kubectl get plugin/caveman -o jsonpath='{.status.conditions[0]}'

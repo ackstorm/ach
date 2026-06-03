@@ -49,8 +49,10 @@ import (
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/operator/jwtkeys"
+	"github.com/ackstorm/ach/internal/operator/litellmconnboot"
 	"github.com/ackstorm/ach/internal/operator/refreshsignal"
 	"github.com/ackstorm/ach/internal/operator/resync"
 	"github.com/ackstorm/ach/internal/orphan"
@@ -86,6 +88,14 @@ var (
 		metricsCertName      string
 		metricsCertKey       string
 		enableHTTP2          bool
+
+		// LiteLLMConnection/default bootstrap coordinates (issue #34). The
+		// chart's litellmConnection block feeds these; the operator
+		// get-or-creates the canonical CR on boot (see litellmconnboot). Only
+		// the Secret REFERENCE is passed here — never the master-key value.
+		litellmEndpoint      string
+		litellmKeySecretName string
+		litellmKeySecretKey  string
 	}
 	operatorZapOpts = zap.Options{Development: true}
 )
@@ -115,6 +125,16 @@ func init() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&operatorFlags.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&operatorFlags.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.StringVar(&operatorFlags.litellmEndpoint, "litellm-endpoint",
+		config.EnvOr("ACH_LITELLM_CONNECTION_ENDPOINT", ""),
+		"Base URL of the LiteLLM instance. When non-empty, the operator "+
+			"bootstraps LiteLLMConnection/default with it (issue #34). Empty disables bootstrap.")
+	flag.StringVar(&operatorFlags.litellmKeySecretName, "litellm-master-key-secret-name",
+		config.EnvOr("ACH_LITELLM_CONNECTION_SECRET_NAME", ""),
+		"Name of the same-namespace Secret holding the LiteLLM master key (referenced by the bootstrapped CR; the value is never read here).")
+	flag.StringVar(&operatorFlags.litellmKeySecretKey, "litellm-master-key-secret-key",
+		config.EnvOr("ACH_LITELLM_CONNECTION_SECRET_KEY", ""),
+		"Data key inside the master-key Secret referenced by the bootstrapped LiteLLMConnection.")
 	flag.BoolVar(&operatorFlags.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	operatorZapOpts.BindFlags(flag.CommandLine)
@@ -338,6 +358,19 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 	if err := jwtkeys.EnsureSigningKeys(context.Background(), bootClient, watchNS, jwt.SecretName, ctrl.Log.WithName("jwtkeys")); err != nil {
 		return fmt.Errorf("unable to ensure jwt signing keys: %w", err)
+	}
+
+	// ─── Bootstrap LiteLLMConnection/default (issue #34) ───
+	// The chart renders ACH CRDs as templates (managed-upgrade strategy), so
+	// Helm cannot map the LiteLLMConnection kind within the install release —
+	// a CR template/hook fails "no matches for kind". The operator creates it
+	// here instead, with its live-discovery client. Idempotent + drift-aware;
+	// no-op when --litellm-endpoint is empty (litellmConnection disabled).
+	if err := litellmconnboot.EnsureConnection(context.Background(), bootClient, watchNS,
+		litellmconn.CRName, operatorFlags.litellmEndpoint,
+		operatorFlags.litellmKeySecretName, operatorFlags.litellmKeySecretKey,
+		ctrl.Log.WithName("litellmconnboot")); err != nil {
+		return fmt.Errorf("unable to bootstrap LiteLLMConnection: %w", err)
 	}
 
 	// ─── Phase 2: pre-warm corev1.Secret informer (D-11) ───

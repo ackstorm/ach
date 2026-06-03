@@ -195,7 +195,7 @@ test-envtest: ## Controller envtest with -race (CI gate, ~7m).
 _test-envtest: gen-manifests gen-code fmt vet setup-envtest
 	@# Runs envtest packages concurrently. Green runs show package status
 	@# plus slow tests; failed packages dump their captured logs.
-	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
+	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
 	scripts/run-envtest-packages.sh --race --timeout 15m --coverprofile cover-envtest.out -- ./internal/controller/...
 
@@ -205,7 +205,7 @@ test-envtest-fast: ## Controller envtest WITHOUT -race (dev loop, ~3m).
 _test-envtest-fast: setup-envtest
 	@# Runs envtest packages concurrently. Green runs show package status
 	@# plus slow tests; failed packages dump their captured logs.
-	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
+	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
 	scripts/run-envtest-packages.sh --timeout 10m -- ./internal/controller/...
 
@@ -228,26 +228,26 @@ test-envtest-pkg: ## envtest for one package. Usage: make test-envtest-pkg PKG=.
 _test-envtest-pkg: setup-envtest
 	@test -n "$(PKG)" || (echo "ERROR: PKG=... required" >&2; exit 1)
 	# `script -q /dev/null -c "..."` fakes a TTY so -v output streams.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" \
 		script -q /dev/null -c "go test -v -count=1 -timeout $(or $(TIMEOUT),10m) $(if $(FOCUS),-run $(FOCUS),) $(PKG)"
 
 .PHONY: test-smoke-idempotency
 test-smoke-idempotency: ## Accelerated AC-R1 idempotency smoke (10s window).
 	$(call container_target,_test-smoke-idempotency)
 _test-smoke-idempotency: gen-manifests gen-code fmt vet setup-envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 60s -run TestIdempotencyNoMutationSteadyState ./internal/controller/...
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 60s -run TestIdempotencyNoMutationSteadyState ./internal/controller/...
 
 .PHONY: test-smoke-idempotency-long
 test-smoke-idempotency-long: ## Real 35-min AC-R1 idempotency test (nightly).
 	$(call container_target,_test-smoke-idempotency-long)
 _test-smoke-idempotency-long: gen-manifests gen-code fmt vet setup-envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 40m -tags=longidempotency -run TestIdempotency35MinReal ./internal/controller/...
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 40m -tags=longidempotency -run TestIdempotency35MinReal ./internal/controller/...
 
 .PHONY: test-leak-soak
 test-leak-soak: ## REL-03 1000-reconcile leak harness (nightly).
 	$(call container_target,_test-leak-soak)
 _test-leak-soak: gen-manifests gen-code fmt vet setup-envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 -timeout 5m -tags=longidempotency -run TestLeakHarness_1000Reconciles ./internal/controller/...
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 5m -tags=longidempotency -run TestLeakHarness_1000Reconciles ./internal/controller/...
 
 .PHONY: qa-lint
 qa-lint: ## golangci-lint full sweep.
@@ -477,6 +477,14 @@ LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
+# Directory envtest reads/writes its k8s control-plane assets (kube-apiserver,
+# etcd, kubectl). Defaults to $(LOCALBIN) for the host-native fallback; the
+# devtools container overrides it to the BAKED /opt/envtest (Dockerfile.devtools
+# ENV) so CI/release/local runs resolve the pre-downloaded assets with ZERO
+# fetch. Previously every envtest run re-downloaded into the empty fresh-checkout
+# $(LOCALBIN), ignoring the baked assets entirely (#34 follow-up).
+ENVTEST_BIN_DIR ?= $(LOCALBIN)
+
 ## Tool Binaries
 KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
@@ -517,7 +525,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
 	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
-	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path || { \
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path || { \
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
