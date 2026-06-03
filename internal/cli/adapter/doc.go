@@ -8,32 +8,31 @@
 //
 //   - claude-code (subpackage internal/cli/adapter/claudecode): the
 //     pass-through reference impl per CONTEXT.md D-05. Plugin canonical
-//     format = Claude Code format per ADAPT-04, so claude-code's
-//     TransformPlugin is a verbatim copy and RenderRuntime emits
-//     .claude/.mcp.json directly from manifest.Runtime entries.
+//     format = Claude Code format per ADAPT-04, so RenderRuntime emits
+//     .claude/settings.json directly from manifest.Runtime entries and
+//     route.Project routes plugin components verbatim.
 //
 //   - codex (subpackage internal/cli/adapter/codex, plan 07-W3-02):
-//     TOML merge into .codex/config.toml + plugin distribution into
-//     .codex/{prompts,agents,skills}/<name>/ + agent frontmatter
-//     rewrite. Silently drops hooks/ + commands/ components per
-//     ADAPT-07.
+//     TOML merge into .codex/config.toml + plugin projection via
+//     route.Project + ProjectionRules (agent frontmatter rewrite via
+//     Transform). hooks/, rules/, AGENTS.md fall into route.Project's
+//     drop set (no matching rule).
 //
 //   - gemini-cli (subpackage internal/cli/adapter/gemini,
 //     plan 07-W3-03): JSON merge into .gemini/settings.json + plugin
-//     distribution into .gemini/extensions/<name>/. Silently drops
-//     hooks/ per ADAPT-07.
+//     projection via route.Project + ProjectionRules. hooks/ and rules/
+//     fall into route.Project's drop set.
 //
 //   - opencode (subpackage internal/cli/adapter/opencode,
-//     plan 07-W3-04): platform-specific merge + plugin distribution
-//     per spec §7.4 opencode.
+//     plan 07-W3-04): platform-specific merge + plugin projection via
+//     route.Project + ProjectionRules per spec §7.4 opencode.
 //
 //   - pimono (subpackage internal/cli/adapter/pimono, Phase 5 D-33):
 //     the optional 5th target (Pi / pi-mono). RenderRuntime deep-merges
 //     Environment runtime MCP servers into .pi/mcp.json (MergeDeep) and
 //     a 3-row ProjectionRules table passes plugin commands/skills
-//     verbatim through 2 .pi/-prefixed globs. Silently drops
-//     {rules, agents, AGENTS.md} per the route.Project accumulate-once
-//     drop set.
+//     verbatim through 2 .pi/-prefixed globs. rules/, agents/, AGENTS.md,
+//     hooks/ fall into route.Project's drop set.
 //
 // Boundary discipline (CONTEXT.md D-07 + D-09):
 //
@@ -68,11 +67,10 @@
 //
 // Silent-drop accounting (ADAPT-07 / CONTEXT.md D-08):
 //
-// PluginWrite.Dropped is declared in adapter.go so the three sibling
-// adapter plans (07-W3-02/03/04) can populate it without racing
-// modifications to this file. Each adapter's TransformPlugin returns
-// the names of the source-tree components it could not meaningfully
-// translate (e.g. "hooks", "commands" for codex). The orchestrator
-// emits a single end-of-hydration stderr warning; exit code is
-// unchanged.
+// Each adapter's ProjectionRules table omits rules for components the
+// platform cannot meaningfully use (e.g. hooks/ for all adapters,
+// commands/ for gemini-cli). route.Project accumulates each unrouted
+// top-level kind exactly once into the drop set returned to the
+// orchestrator. The orchestrator emits a single end-of-hydration stderr
+// warning; exit code is unchanged.
 package adapter

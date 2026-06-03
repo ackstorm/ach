@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -268,197 +267,6 @@ func TestRenderRuntime_NilManifest_Errors(t *testing.T) {
 	}
 }
 
-func TestTransformPlugin_ExtensionLayout(t *testing.T) {
-	a := &Adapter{}
-
-	src := filepath.Join(t.TempDir(), "caveman")
-	dst := filepath.Join(t.TempDir(), "extensions")
-
-	// Seed src with a realistic Claude-format plugin tree.
-	files := map[string]string{
-		".claude-plugin/plugin.json": `{"name": "caveman", "version": "1.2.3"}`,
-		"agents/cave-agent.md":       "---\nname: cave\n---\nhello",
-		"commands/grunt.md":          "# grunt",
-		"prompts/intro.md":           "# intro",
-		"skills/fire/skill.md":       "# fire",
-		"hooks/preflight.sh":         "#!/bin/sh\necho hi",
-		"hooks/postflight.sh":        "#!/bin/sh\necho bye",
-		".mcp.json":                  `{"mcpServers": {}}`,
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-
-	// dst/caveman/ must contain agents/, prompts/, commands/, skills/.
-	pluginDst := filepath.Join(dst, "caveman")
-	for _, comp := range []string{"agents", "prompts", "commands", "skills"} {
-		info, err := os.Stat(filepath.Join(pluginDst, comp))
-		if err != nil || !info.IsDir() {
-			t.Errorf("missing component dir %s/ — got err=%v", comp, err)
-		}
-	}
-
-	// hooks/ MUST NOT appear under dst — silent drop per ADAPT-07.
-	if _, err := os.Stat(filepath.Join(pluginDst, "hooks")); err == nil {
-		t.Errorf("hooks/ subdir present under dst/caveman/ — gemini-cli must silently drop hooks")
-	}
-
-	// .mcp.json MUST NOT appear under dst — consumed by RenderRuntime.
-	if _, err := os.Stat(filepath.Join(pluginDst, ".mcp.json")); err == nil {
-		t.Errorf(".mcp.json appeared under dst — should be consumed by RenderRuntime")
-	}
-
-	// agents/cave-agent.md round-trips byte-for-byte.
-	got, err := os.ReadFile(filepath.Join(pluginDst, "agents", "cave-agent.md"))
-	if err != nil {
-		t.Fatalf("ReadFile agents/cave-agent.md: %v", err)
-	}
-	if string(got) != files["agents/cave-agent.md"] {
-		t.Errorf("agents/cave-agent.md content mismatch\ngot:  %q\nwant: %q", got, files["agents/cave-agent.md"])
-	}
-
-	// extension.json manifest must exist and carry name + version + components.
-	manifestBytes, err := os.ReadFile(filepath.Join(pluginDst, "extension.json"))
-	if err != nil {
-		t.Fatalf("ReadFile extension.json: %v", err)
-	}
-	var manifestGot struct {
-		Name       string   `json:"name"`
-		Version    string   `json:"version"`
-		Components []string `json:"components"`
-	}
-	if err := json.Unmarshal(manifestBytes, &manifestGot); err != nil {
-		t.Fatalf("Unmarshal extension.json: %v", err)
-	}
-	if manifestGot.Name != "caveman" {
-		t.Errorf("extension.json name = %q, want %q", manifestGot.Name, "caveman")
-	}
-	if manifestGot.Version != "1.2.3" {
-		t.Errorf("extension.json version = %q, want %q", manifestGot.Version, "1.2.3")
-	}
-	expectedComponents := []string{"agents", "commands", "prompts", "skills"}
-	gotComponents := append([]string{}, manifestGot.Components...)
-	sort.Strings(gotComponents)
-	if len(gotComponents) != len(expectedComponents) {
-		t.Errorf("extension.json components count = %d, want %d", len(gotComponents), len(expectedComponents))
-	}
-	for i := range expectedComponents {
-		if i >= len(gotComponents) || gotComponents[i] != expectedComponents[i] {
-			t.Errorf("extension.json components[%d] = %q, want %q",
-				i, safeIdx(gotComponents, i), expectedComponents[i])
-		}
-	}
-
-	// ExtractedFiles must contain agents/prompts/commands/skills entries
-	// PLUS extension.json — all relative to dst, all under caveman/.
-	for _, want := range []string{
-		filepath.Join("caveman", "agents", "cave-agent.md"),
-		filepath.Join("caveman", "prompts", "intro.md"),
-		filepath.Join("caveman", "commands", "grunt.md"),
-		filepath.Join("caveman", "skills", "fire", "skill.md"),
-		filepath.Join("caveman", "extension.json"),
-	} {
-		if !containsString(pw.ExtractedFiles, want) {
-			t.Errorf("ExtractedFiles missing %q; got %v", want, pw.ExtractedFiles)
-		}
-	}
-	// Ensure no hooks/ paths leaked into ExtractedFiles. filepath's
-	// HasPrefix is deprecated (does not respect separator boundaries);
-	// use a separator-aware check instead.
-	hooksPrefix := filepath.Join("caveman", "hooks") + string(filepath.Separator)
-	for _, f := range pw.ExtractedFiles {
-		if f == filepath.Join("caveman", "hooks") ||
-			(len(f) > len(hooksPrefix) && f[:len(hooksPrefix)] == hooksPrefix) {
-			t.Errorf("ExtractedFiles leaked a hooks/ entry: %q", f)
-		}
-	}
-}
-
-func TestTransformPlugin_Hooks_Dropped(t *testing.T) {
-	a := &Adapter{}
-
-	src := filepath.Join(t.TempDir(), "caveman")
-	dst := filepath.Join(t.TempDir(), "extensions")
-
-	files := map[string]string{
-		".claude-plugin/plugin.json": `{"name": "caveman", "version": "0.0.1"}`,
-		"prompts/intro.md":           "# intro",
-		"hooks/preflight.sh":         "#!/bin/sh",
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-
-	// Dropped MUST contain "hooks" exactly once.
-	if len(pw.Dropped) != 1 {
-		t.Fatalf("PluginWrite.Dropped = %v, want exactly [\"hooks\"]", pw.Dropped)
-	}
-	if pw.Dropped[0] != "hooks" {
-		t.Errorf("PluginWrite.Dropped[0] = %q, want %q", pw.Dropped[0], "hooks")
-	}
-}
-
-func TestTransformPlugin_NoHooks_DroppedNil(t *testing.T) {
-	a := &Adapter{}
-
-	src := filepath.Join(t.TempDir(), "caveman")
-	dst := filepath.Join(t.TempDir(), "extensions")
-
-	files := map[string]string{
-		".claude-plugin/plugin.json": `{"name": "caveman", "version": "0.0.1"}`,
-		"prompts/intro.md":           "# intro",
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-	if pw.Dropped != nil {
-		t.Errorf("PluginWrite.Dropped = %v, want nil when no hooks present", pw.Dropped)
-	}
-}
-
-func TestTransformPlugin_EmptyPaths_Errors(t *testing.T) {
-	a := &Adapter{}
-	if _, err := a.TransformPlugin(context.Background(), "", "/tmp/dst"); err == nil {
-		t.Error("TransformPlugin(empty src) returned nil error; want error")
-	}
-	if _, err := a.TransformPlugin(context.Background(), "/tmp/src", ""); err == nil {
-		t.Error("TransformPlugin(empty dst) returned nil error; want error")
-	}
-}
-
 func TestRegistry_RegistersOnImport(t *testing.T) {
 	// This file imports github.com/ackstorm/ach/internal/cli/adapter
 	// and is itself in the gemini package — so init() has fired by the
@@ -478,23 +286,6 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	if _, ok := adapter.Lookup("GEMINI"); !ok {
 		t.Error("adapter.Lookup(\"GEMINI\") returned false; case-insensitive alias missed")
 	}
-}
-
-// containsString reports whether haystack contains needle.
-func containsString(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func safeIdx(s []string, i int) string {
-	if i < 0 || i >= len(s) {
-		return "<out-of-bounds>"
-	}
-	return s[i]
 }
 
 // TestCopyFile_SurfacesCloseError_OnDevFull asserts that copyFile
@@ -669,25 +460,25 @@ func TestProjectionRules_HooksDropped(t *testing.T) {
 	mustWrite("hooks/foo.sh", "#!/bin/sh\necho hi\n")
 
 	rules := (&Adapter{}).ProjectionRules()
-	fws, dropped, err := route.Project(rules, src, "")
+	pr, err := route.Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("route.Project returned error: %v", err)
 	}
 
 	// "hooks" must be recorded in the dropped set exactly once.
 	foundHooksDrop := false
-	for _, d := range dropped {
+	for _, d := range pr.Dropped {
 		if d == "hooks" {
 			foundHooksDrop = true
 		}
 	}
 	if !foundHooksDrop {
-		t.Errorf("dropped = %v, want to contain %q", dropped, "hooks")
+		t.Errorf("dropped = %v, want to contain %q", pr.Dropped, "hooks")
 	}
 
 	// No FileWrite may target a path under hooks/.
 	sawAgent := false
-	for _, w := range fws {
+	for _, w := range pr.FileWrites {
 		if strings.HasPrefix(filepath.ToSlash(w.Path), "hooks/") || strings.Contains(filepath.ToSlash(w.Path), "/hooks/") {
 			t.Errorf("FileWrite targets a hooks path %q; hooks must be dropped", w.Path)
 		}
@@ -696,7 +487,7 @@ func TestProjectionRules_HooksDropped(t *testing.T) {
 		}
 	}
 	if !sawAgent {
-		t.Errorf("expected a FileWrite for .gemini/agents/x.md, got %d writes: %+v", len(fws), fws)
+		t.Errorf("expected a FileWrite for .gemini/agents/x.md, got %d writes: %+v", len(pr.FileWrites), pr.FileWrites)
 	}
 }
 
@@ -797,19 +588,19 @@ func TestGemini_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
 	mustWrite("hooks/pre.sh", "#!/bin/sh\n")
 
 	rules := (&Adapter{}).ProjectionRules()
-	fws, dropped, err := route.Project(rules, src, "")
+	pr, err := route.Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("route.Project: %v", err)
 	}
 
 	var agentFW *adapter.FileWrite
-	for i := range fws {
-		if filepath.ToSlash(fws[i].Path) == ".gemini/agents/cave.md" {
-			agentFW = &fws[i]
+	for i := range pr.FileWrites {
+		if filepath.ToSlash(pr.FileWrites[i].Path) == ".gemini/agents/cave.md" {
+			agentFW = &pr.FileWrites[i]
 		}
 	}
 	if agentFW == nil {
-		t.Fatalf("no FileWrite for .gemini/agents/cave.md; got %+v", fws)
+		t.Fatalf("no FileWrite for .gemini/agents/cave.md; got %+v", pr.FileWrites)
 	}
 	if string(agentFW.Content) != agent {
 		t.Errorf("claude-vanilla agent was rewritten (gemini must be verbatim passthrough):\ngot:  %q\nwant: %q", agentFW.Content, agent)
@@ -818,7 +609,7 @@ func TestGemini_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
 		t.Errorf("agent Merge = %v, want MergeReplace (file-owned, no transform)", agentFW.Merge)
 	}
 	// hooks is the ONLY drop for gemini-cli.
-	if len(dropped) != 1 || dropped[0] != "hooks" {
-		t.Errorf("dropped = %v, want exactly [\"hooks\"]", dropped)
+	if len(pr.Dropped) != 1 || pr.Dropped[0] != "hooks" {
+		t.Errorf("dropped = %v, want exactly [\"hooks\"]", pr.Dropped)
 	}
 }

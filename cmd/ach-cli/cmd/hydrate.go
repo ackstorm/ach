@@ -47,6 +47,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -120,6 +121,7 @@ func newHydrateCmd() *cobra.Command {
 		flagAllowSymlinks  bool
 		flagPlatform       string
 		flagGlobal         bool
+		flagConflict       string
 
 		// D-04 hidden flag — surface preserved for the W3-P3 golden-
 		// diff anchor.
@@ -203,6 +205,10 @@ Exit codes (spec §9.3):
   8  config file parse or write error
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			conflict, err := hydrate.ParseConflictPolicy(flagConflict)
+			if err != nil {
+				return &exit.CodedError{Code: exit.General, Msg: err.Error()}
+			}
 			return runHydrate(cmd, hydrateInputs{
 				environment:    flagEnvironment,
 				noWarnings:     flagNoWarnings,
@@ -221,6 +227,7 @@ Exit codes (spec §9.3):
 				allowSymlinks:  flagAllowSymlinks,
 				platform:       flagPlatform,
 				global:         flagGlobal,
+				conflict:       conflict,
 				raw:            flagRaw,
 			})
 		},
@@ -263,6 +270,8 @@ Exit codes (spec §9.3):
 		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
+	cmd.Flags().StringVar(&flagConflict, "conflict", "namespace",
+		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
 
 	// D-04 hidden: --raw preserves the Phase 6 POST+stream byte-for-byte
 	// contract. Hidden so --help advertises only the engine surface.
@@ -310,6 +319,7 @@ type hydrateInputs struct {
 	allowSymlinks  bool
 	platform       string
 	global         bool
+	conflict       hydrate.ConflictPolicy
 
 	// D-04 hidden raw flag.
 	raw bool
@@ -510,7 +520,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	// NewWiring constructs the default Extractor + AdapterDispatcher;
 	// both are threaded into Opts so commit.run()'s steps 7-10 invoke
 	// real impls (07-W5-01 gap closure).
-	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force, in.global)
+	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force, in.global, in.conflict)
 
 	opts := hydrate.Opts{
 		Environment:       effectiveEnv,
@@ -520,6 +530,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		OnlyRuntime:       in.onlyRuntime,
 		Sync:              in.sync,
 		Force:             in.force,
+		Conflict:          in.conflict,
 		DryRun:            in.dryRun,
 		AllowSymlinks:     in.allowSymlinks,
 		Output:            in.output,
@@ -534,10 +545,37 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		AdapterDispatcher: ad,
 	}
 
-	if _, err := hydrateRunFn(cmd.Context(), opts); err != nil {
+	res, err := hydrateRunFn(cmd.Context(), opts)
+	if err != nil {
 		return err
 	}
+	if !in.dryRun {
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res))
+	}
 	return nil
+}
+
+// summaryFromResult renders the post-hydrate success summary printed to
+// stdout. Per-kind counts come from Result.ProjectedByKind (sorted for a
+// byte-stable line); the totals come from the engine counters.
+func summaryFromResult(res hydrate.Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Hydrated for %s\n", res.PlatformID)
+	if len(res.ProjectedByKind) > 0 {
+		kinds := make([]string, 0, len(res.ProjectedByKind))
+		for k := range res.ProjectedByKind {
+			kinds = append(kinds, k)
+		}
+		sort.Strings(kinds)
+		parts := make([]string, 0, len(kinds))
+		for _, k := range kinds {
+			parts = append(parts, fmt.Sprintf("%d %s", res.ProjectedByKind[k], k))
+		}
+		fmt.Fprintf(&b, "  ✓ %s\n", strings.Join(parts, ", "))
+	}
+	fmt.Fprintf(&b, "  ✓ %d files written, %d preserved\n",
+		res.FilesWritten, res.FilesPreserved)
+	return b.String()
 }
 
 // resolvePlatformOrAutodetect dispatches platform resolution per

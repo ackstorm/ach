@@ -83,7 +83,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
 	if err != nil {

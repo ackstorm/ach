@@ -479,14 +479,14 @@ func TestPimono_GlobalOnly_Conformance(t *testing.T) {
 	mustWrite("AGENTS.md", "agents prose\n")
 
 	rules := (&Adapter{}).ProjectionRules()
-	fws, dropped, err := route.Project(rules, src, "")
+	pr, err := route.Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("route.Project: %v", err)
 	}
 
 	byPath := map[string]*adapter.FileWrite{}
-	for i := range fws {
-		byPath[filepath.ToSlash(fws[i].Path)] = &fws[i]
+	for i := range pr.FileWrites {
+		byPath[filepath.ToSlash(pr.FileWrites[i].Path)] = &pr.FileWrites[i]
 	}
 
 	// (a) commands → .pi/agent/prompts/ verbatim MergeReplace.
@@ -527,8 +527,8 @@ func TestPimono_GlobalOnly_Conformance(t *testing.T) {
 
 	// (c) drop set EXACTLY {AGENTS.md, agents, rules} — mcp NOT dropped (D-33).
 	wantDropped := []string{"AGENTS.md", "agents", "rules"}
-	if !reflect.DeepEqual(dropped, wantDropped) {
-		t.Errorf("dropped = %v, want %v (mcp must NOT be dropped — D-33)", dropped, wantDropped)
+	if !reflect.DeepEqual(pr.Dropped, wantDropped) {
+		t.Errorf("dropped = %v, want %v (mcp must NOT be dropped — D-33)", pr.Dropped, wantDropped)
 	}
 }
 

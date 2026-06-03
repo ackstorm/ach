@@ -3,8 +3,7 @@
 // Package gemini is the Google Gemini CLI platform Adapter implementation
 // per CONTEXT.md D-07 and CLI spec §7.4 (gemini-cli adapter).
 //
-// Unlike the claudecode pass-through reference, the gemini-cli adapter
-// performs two real transformations:
+// The gemini-cli adapter handles:
 //
 //   - Runtime-config: rendered into .gemini/settings.json as JSON with
 //     top-level mcpServers + a2aAgents maps (CLI spec §7.4 + §7.2 row
@@ -14,14 +13,10 @@
 //     {type, url, headers} per server. The merge target differs (a
 //     different file in a different directory), but the JSON shape on
 //     each entry is identical.
-//   - Plugin transformation: distributes Claude-format plugin pieces
-//     into .gemini/extensions/<plugin-name>/ per the plan's
-//     <must_haves.truths> contract. agents/ + prompts/ + commands/ +
-//     skills/ are copied verbatim into the per-component subdir.
-//     hooks/ is SILENTLY DROPPED per ADAPT-07 + CONTEXT.md D-08 (Gemini
-//     has no hook system); the adapter accumulates "hooks" into
-//     PluginWrite.Dropped exactly once when at least one hooks/* entry
-//     is seen.
+//   - Plugin projection: routes Claude-format plugin components into the
+//     .gemini/ layout via route.Project + ProjectionRules. hooks/ has no
+//     rule and falls into route.Project's dropped set (Gemini has no hook
+//     system).
 //
 // ADAPT-06 scope rule: this adapter emits ONLY .gemini/-prefixed paths.
 //
@@ -54,20 +49,7 @@ const (
 	settingsJSONPath = ".gemini/settings.json"
 
 	// canonicalID + the alias list match CLI spec §7.2 row 3.
-	//
-	// TransformPlugin distributes per-plugin pieces under
-	// .gemini/extensions/<plugin-name>/ per the plan's
-	// <must_haves.truths> contract for ADAPT-04. The .gemini/extensions
-	// root is the orchestrator-provided dst arg; the prefix is encoded
-	// at the call-site in cmd/ach-cli/cmd/hydrate.go (W3-05) — the
-	// adapter itself receives an already-joined absolute path.
 	canonicalID = "gemini-cli"
-
-	// extensionManifestName is the per-extension manifest the adapter
-	// writes alongside the component subdirs. The plan's <action> notes
-	// that when spec §7.4 is silent on the shape, a minimal {name,
-	// version, components} object suffices.
-	extensionManifestName = "extension.json"
 )
 
 // Adapter is the empty struct holding the gemini-cli Adapter impl.
@@ -255,240 +237,6 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}, nil
 }
 
-// extensionManifest is the minimal per-extension JSON manifest written
-// to .gemini/extensions/<plugin>/extension.json per the plan's <action>
-// fallback shape when spec §7.4 is silent on the format.
-type extensionManifest struct {
-	Name       string   `json:"name"`
-	Version    string   `json:"version"`
-	Components []string `json:"components"`
-}
-
-// componentMapping pins which top-level src subdirs map to which
-// destination subdirs under .gemini/extensions/<plugin>/. Top-level
-// names not in this map are silently dropped per ADAPT-07.
-//
-// Kept components (verbatim copy):
-//   - agents/  → agents/ (Gemini extensions support Claude-format agents per the plan)
-//   - prompts/ → prompts/
-//   - commands/ → commands/
-//   - skills/   → skills/
-//
-// Dropped components (per ADAPT-07 + CONTEXT.md D-08):
-//   - hooks/    — Gemini has no hook system; accumulated into PluginWrite.Dropped exactly once.
-//
-// .mcp.json is consumed by RenderRuntime (not by TransformPlugin) so it
-// is not in the kept-or-dropped mapping; if present at src root it is
-// simply ignored here (NOT added to ExtractedFiles).
-//
-// .claude-plugin/plugin.json is read for the extension manifest's
-// version field if present; not copied to dst.
-var componentKept = map[string]bool{
-	"agents":   true,
-	"prompts":  true,
-	"commands": true,
-	"skills":   true,
-}
-
-// componentDropped lists src top-level subdirs that gemini-cli silently
-// drops. Each name surfaces in PluginWrite.Dropped exactly once when at
-// least one entry under that subdir is encountered.
-var componentDropped = map[string]bool{
-	"hooks": true,
-}
-
-// TransformPlugin walks the src Claude-format plugin tree and writes
-// the platform-native pieces under
-// .gemini/extensions/<filepath.Base(src)>/. Kept components are copied
-// verbatim; dropped components accumulate into PluginWrite.Dropped per
-// ADAPT-07.
-//
-// File mode discipline: every regular file is chmod'd to 0644;
-// directories to 0755. Symlinks/devices/FIFOs are silently skipped
-// (defense-in-depth against any W2-01 safe-extract regression).
-func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.PluginWrite, error) {
-	if src == "" || dst == "" {
-		return adapter.PluginWrite{}, fmt.Errorf("gemini: TransformPlugin requires non-empty src and dst")
-	}
-
-	pluginName := filepath.Base(src)
-	if pluginName == "." || pluginName == "/" || pluginName == "" {
-		return adapter.PluginWrite{}, fmt.Errorf("gemini: TransformPlugin cannot derive plugin name from src=%q", src)
-	}
-
-	// Final destination root for this plugin's pieces.
-	pluginDst := filepath.Join(dst, pluginName)
-	if err := os.MkdirAll(pluginDst, 0o755); err != nil {
-		return adapter.PluginWrite{}, fmt.Errorf("gemini: MkdirAll(%q): %w", pluginDst, err)
-	}
-
-	extracted := make([]string, 0, 16)
-	droppedSet := make(map[string]bool)
-
-	// Read plugin metadata for the extension.json version field. Best-
-	// effort: if .claude-plugin/plugin.json is absent or malformed, we
-	// emit version="" rather than fail.
-	version := readPluginVersion(filepath.Join(src, ".claude-plugin", "plugin.json"))
-
-	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return fmt.Errorf("gemini: rel(%q, %q): %w", src, path, err)
-		}
-		if rel == "." {
-			return nil
-		}
-
-		// Classify by top-level component (first path element).
-		topLevel := adapter.TopLevelComponent(rel)
-
-		// .claude-plugin/ metadata is consumed for version above; not
-		// copied to dst.
-		if topLevel == ".claude-plugin" {
-			return nil
-		}
-
-		// .mcp.json at root is consumed by RenderRuntime; not part of
-		// per-plugin ExtractedFiles.
-		if rel == ".mcp.json" {
-			return nil
-		}
-
-		// Silent-drop accounting: components in the dropped set never
-		// reach dst; their top-level name is recorded once per
-		// PluginWrite.
-		if componentDropped[topLevel] {
-			droppedSet[topLevel] = true
-			return nil
-		}
-
-		// Unknown top-level components (anything not kept, not dropped,
-		// not metadata) are silently dropped per ADAPT-07. We do NOT
-		// record them in Dropped to keep the warning surface focused on
-		// the documented-but-unsupported components (hooks for gemini).
-		if !componentKept[topLevel] {
-			return nil
-		}
-
-		// Kept component → copy verbatim.
-		dstPath := filepath.Join(pluginDst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-			return err
-		}
-		if err := adapter.CopyFile(path, dstPath); err != nil {
-			return err
-		}
-
-		// ExtractedFiles paths are recorded relative to dst (the
-		// destination root the orchestrator hands us) so the
-		// orchestrator's state writer can hash + index each entry
-		// without re-deriving the plugin prefix.
-		relToDst, err := filepath.Rel(dst, dstPath)
-		if err != nil {
-			return fmt.Errorf("gemini: rel(%q, %q): %w", dst, dstPath, err)
-		}
-		extracted = append(extracted, relToDst)
-		return nil
-	})
-	if err != nil {
-		return adapter.PluginWrite{}, err
-	}
-
-	// Sort kept-component names so the extension manifest is deterministic.
-	components := make([]string, 0, len(componentKept))
-	for k := range componentKept {
-		// Only list components that actually have at least one file under
-		// the dst tree — otherwise the manifest claims components the
-		// plugin doesn't contribute.
-		componentDir := filepath.Join(pluginDst, k)
-		if _, err := os.Stat(componentDir); err == nil {
-			components = append(components, k)
-		}
-	}
-	sort.Strings(components)
-
-	// Write extension.json manifest. The plan's <action> notes a minimal
-	// {name, version, components} JSON object is the right shape when
-	// spec §7.4 is silent on the format.
-	manifestBytes, err := encodeExtensionManifest(extensionManifest{
-		Name:       pluginName,
-		Version:    version,
-		Components: components,
-	})
-	if err != nil {
-		return adapter.PluginWrite{}, err
-	}
-	manifestPath := filepath.Join(pluginDst, extensionManifestName)
-	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
-		return adapter.PluginWrite{}, fmt.Errorf("gemini: write extension.json: %w", err)
-	}
-	relManifest, err := filepath.Rel(dst, manifestPath)
-	if err != nil {
-		return adapter.PluginWrite{}, fmt.Errorf("gemini: rel(%q, %q): %w", dst, manifestPath, err)
-	}
-	extracted = append(extracted, relManifest)
-
-	sort.Strings(extracted)
-
-	dropped := make([]string, 0, len(droppedSet))
-	for k := range droppedSet {
-		dropped = append(dropped, k)
-	}
-	sort.Strings(dropped)
-	if len(dropped) == 0 {
-		dropped = nil
-	}
-
-	return adapter.PluginWrite{
-		ExtractedFiles: extracted,
-		Dropped:        dropped,
-	}, nil
-}
-
-// readPluginVersion parses the version field from a
-// .claude-plugin/plugin.json file. Best-effort: returns "" on any
-// error (missing file, unreadable, malformed JSON, no version key).
-func readPluginVersion(path string) string {
-	data, err := os.ReadFile(path) //nolint:gosec // path is under our staging dir
-	if err != nil {
-		return ""
-	}
-	var meta struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return ""
-	}
-	return meta.Version
-}
-
-// encodeExtensionManifest renders the extension.json bytes
-// deterministically (sorted keys via encoding/json; struct fields
-// emit in declaration order).
-func encodeExtensionManifest(m extensionManifest) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(m); err != nil {
-		return nil, fmt.Errorf("gemini: encode extension.json: %w", err)
-	}
-	return buf.Bytes(), nil
-}
-
 // mcpDeepKeys is the gemini-cli adapter's only non-nil route.Rule.Transform
 // (D-09/D-12). It is wired onto the `mcp/**/*` ProjectionRules row and serves a
 // single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
@@ -556,8 +304,7 @@ func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error
 // ProjectionRules returns the gemini-cli projection table satisfying
 // route.RuleProvider (the D-06 seam), extended per D-12. The four file-owned
 // resource kinds (agents/, prompts/, commands/, skills/) route verbatim into
-// .gemini/<kind>/ as MergeReplace — current-behavior-equivalent to gemini's
-// TransformPlugin componentKept set.
+// .gemini/<kind>/ as MergeReplace.
 //
 // Two non-file rows complete the D-12 contract:
 //   - AGENTS.md → GEMINI.md as MergeComposite: the plugin's top-level AGENTS.md
@@ -569,11 +316,11 @@ func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error
 //     Transform enumerates the contributed keys without altering the bytes.
 //
 // hooks/ has NO rule and falls into route.Project's dropped set (D-12 "drop
-// hooks": Gemini has no hook system — matching componentDropped{hooks}). gemini-
-// cli has no OpenPackage reference; ACH's existing gemini.go is canonical
-// (PROJECT.md key decision) — this extends it, it does NOT retrofit foreign
-// rules. TransformPlugin is LEFT AS-IS — projection runs via the plan-02 Render
-// leg (ProjectionRules -> route.Project). This method is pure data — no I/O.
+// hooks": Gemini has no hook system). gemini-cli has no OpenPackage reference;
+// ACH's existing gemini.go is canonical (PROJECT.md key decision) — this
+// extends it, it does NOT retrofit foreign rules. Projection runs via the
+// plan-02 Render leg (ProjectionRules -> route.Project). This method is pure
+// data — no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "agents/**/*", ToGlob: ".gemini/agents/**/*", Merge: adapter.MergeReplace},

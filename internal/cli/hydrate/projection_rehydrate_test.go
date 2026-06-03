@@ -45,7 +45,7 @@ func TestProjection_ReHydrate_NativeDestAndByteNoOp(t *testing.T) {
 		"rules/foo.md": ruleBody,
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Environment:   "demo",

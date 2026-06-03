@@ -102,9 +102,9 @@ type RuleProvider interface {
 	ProjectionRules() []Rule
 }
 
-// droppedSet is the shared dedup-and-append primitive (promoted from
-// codex's TransformPlugin) D-12 needs: a top-level source kind with no
-// matching Rule is recorded exactly ONCE across the whole walk.
+// droppedSet is the shared dedup-and-append primitive D-12 needs: a
+// top-level source kind with no matching Rule is recorded exactly ONCE
+// across the whole walk.
 type droppedSet struct {
 	seen map[string]bool
 	out  []string
@@ -255,27 +255,40 @@ func matchRule(rules []Rule, topLevel, source string) (Rule, bool) {
 	return Rule{}, false
 }
 
+// ProjectResult is the structured return of Project. FileWrites is the
+// sorted projected-file list; KeptByKind tallies how many regular files
+// were projected per source component kind (e.g. {"commands":12,"agents":8})
+// for the hydrate success summary; Dropped is the deduped+sorted set of
+// KNOWN component kinds present in the source tree that this adapter's rule
+// table has no destination for. Metadata, docs, and unrecognized top-levels
+// are silently skipped and never appear in Dropped.
+type ProjectResult struct {
+	FileWrites []adapter.FileWrite
+	KeptByKind map[string]int
+	Dropped    []string
+}
+
 // Project walks the plugin source tree at src, classifies each regular
 // file by its top-level source kind (parts[0]), routes matched kinds to
 // per-adapter destinations via the recursive-glob remap, and records
 // unrouted kinds in a deduped dropped set. The source argument carries
 // the D-02 provenance signal threaded to ProvenanceGate matching.
 //
-// Project NEVER writes to disk (D-05): it returns []adapter.FileWrite
-// (the dispatcher publishes each via publishRuntimeFile in plan 02). The
-// returned []FileWrite is sorted by Path and the dropped []string is
-// sorted so emitted order is byte-stable (VER-03 idempotence).
+// Project NEVER writes to disk (D-05): it returns a ProjectResult whose
+// FileWrites is sorted by Path and Dropped is sorted so emitted order is
+// byte-stable (VER-03 idempotence).
 //
 // Phase-1 behavior on both provenance arms is verbatim passthrough copy
 // of the source bytes; the per-adapter transform arm is a documented
 // stub Phases 2-3 fill.
-func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, error) {
+func Project(rules []Rule, src, source string) (ProjectResult, error) {
 	if src == "" {
-		return nil, nil, fmt.Errorf("route: Project requires non-empty src")
+		return ProjectResult{}, fmt.Errorf("route: Project requires non-empty src")
 	}
 
 	var fws []adapter.FileWrite
 	dropped := newDroppedSet()
+	kept := map[string]int{}
 
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -299,9 +312,13 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 
 		rule, ok := matchRule(rules, topLevel, source)
 		if !ok {
-			// No matching rule → record the top-level kind once and skip
-			// recursion into the unrouted dir.
-			dropped.add(topLevel)
+			// Only KNOWN component kinds are reported as dropped (so the user
+			// learns the target lacks support); metadata, docs, and
+			// unrecognized top-levels are skipped silently to keep the
+			// warning surface focused.
+			if KnownComponentKinds[topLevel] {
+				dropped.add(topLevel)
+			}
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -385,6 +402,7 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 			keys = tkeys
 		}
 
+		kept[topLevel]++
 		fws = append(fws, adapter.FileWrite{
 			Path:       dest,
 			Content:    content,
@@ -395,12 +413,16 @@ func Project(rules []Rule, src, source string) ([]adapter.FileWrite, []string, e
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return ProjectResult{}, err
 	}
 
 	// Stable ordering for byte-stable emission (VER-03).
 	sort.Slice(fws, func(i, j int) bool { return fws[i].Path < fws[j].Path })
 	sort.Strings(dropped.out)
 
-	return fws, dropped.out, nil
+	return ProjectResult{
+		FileWrites: fws,
+		KeptByKind: kept,
+		Dropped:    dropped.out,
+	}, nil
 }

@@ -296,8 +296,8 @@ func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, runtimePath st
 	if err := json.Unmarshal(stateBytes, &stateDoc); err != nil {
 		t.Fatalf("sc1: parse state.json: %v\nbytes=%s", err, stateBytes)
 	}
-	if stateDoc.SchemaVersion != "2" {
-		t.Errorf("sc1: state.json schemaVersion=%q, want \"2\"\nbytes=%s",
+	if stateDoc.SchemaVersion != "3" {
+		t.Errorf("sc1: state.json schemaVersion=%q, want \"3\"\nbytes=%s",
 			stateDoc.SchemaVersion, stateBytes)
 	}
 }
@@ -1461,9 +1461,9 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 		t.Fatalf("sc4 autoclaim rotate: parse first-hydrate state.json: %v\nbytes=%s",
 			err, stateBytes)
 	}
-	if seedState.SchemaVersion != "2" {
+	if seedState.SchemaVersion != "3" {
 		t.Fatalf("sc4 autoclaim rotate: blocker follow-up plan required — "+
-			"first hydrate produced state.json with schemaVersion=%q (want \"2\"); "+
+			"first hydrate produced state.json with schemaVersion=%q (want \"3\"); "+
 			"the W5-03 path-comparison gate cannot be exercised without a v2 state.json. "+
 			"This is not a sc4 regression — surface it to the verifier.",
 			seedState.SchemaVersion)

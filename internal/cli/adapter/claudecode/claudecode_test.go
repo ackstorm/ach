@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -248,122 +247,6 @@ func TestRenderRuntime_NilManifest_Errors(t *testing.T) {
 	_, err := a.RenderRuntime(context.Background(), nil, nil)
 	if err == nil {
 		t.Fatal("RenderRuntime(nil manifest) returned nil error; want error")
-	}
-}
-
-func TestTransformPlugin_PassThrough(t *testing.T) {
-	a := &Adapter{}
-
-	src := t.TempDir()
-	dst := filepath.Join(t.TempDir(), "out")
-
-	// Seed src with a realistic Claude-format plugin tree.
-	files := map[string]string{
-		".claude-plugin/plugin.json": `{"name": "caveman", "version": "1.0.0"}`,
-		"agents/cave-agent.md":       "---\nname: cave\n---\nhello",
-		"commands/grunt.md":          "# grunt",
-		"prompts/intro.md":           "# intro",
-		"skills/fire/skill.md":       "# fire",
-		"hooks/preflight.sh":         "#!/bin/sh",
-		".mcp.json":                  `{"mcpServers": {}}`,
-		"subdir/nested/file.txt":     "nested",
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-
-	// Dropped MUST be nil — claude-code drops nothing per ADAPT-04
-	// pass-through.
-	if pw.Dropped != nil {
-		t.Errorf("PluginWrite.Dropped = %v, want nil for claude-code pass-through", pw.Dropped)
-	}
-
-	// All 8 source files must appear in ExtractedFiles.
-	if len(pw.ExtractedFiles) != len(files) {
-		t.Errorf("ExtractedFiles count = %d, want %d", len(pw.ExtractedFiles), len(files))
-	}
-	expected := make([]string, 0, len(files))
-	for k := range files {
-		expected = append(expected, filepath.FromSlash(k))
-	}
-	sort.Strings(expected)
-	got := append([]string{}, pw.ExtractedFiles...)
-	sort.Strings(got)
-	for i := range expected {
-		if i >= len(got) || got[i] != expected[i] {
-			t.Errorf("ExtractedFiles[%d] = %q, want %q", i, safeIdx(got, i), expected[i])
-		}
-	}
-
-	// Every file's content must round-trip byte-for-byte.
-	for rel, want := range files {
-		fullDst := filepath.Join(dst, rel)
-		actual, err := os.ReadFile(fullDst)
-		if err != nil {
-			t.Errorf("ReadFile %s: %v", rel, err)
-			continue
-		}
-		if string(actual) != want {
-			t.Errorf("file %s: content mismatch\ngot:  %q\nwant: %q", rel, actual, want)
-		}
-		// Mode must be 0644 (regular file).
-		info, err := os.Stat(fullDst)
-		if err != nil {
-			t.Errorf("Stat %s: %v", rel, err)
-			continue
-		}
-		if info.Mode().Perm() != 0o644 {
-			t.Errorf("file %s: mode = %o, want 0644", rel, info.Mode().Perm())
-		}
-	}
-}
-
-func safeIdx(s []string, i int) string {
-	if i < 0 || i >= len(s) {
-		return "<out-of-bounds>"
-	}
-	return s[i]
-}
-
-func TestTransformPlugin_EmptySrc_NoFiles(t *testing.T) {
-	a := &Adapter{}
-	src := t.TempDir()
-	dst := filepath.Join(t.TempDir(), "out")
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-	if len(pw.ExtractedFiles) != 0 {
-		t.Errorf("empty src → ExtractedFiles should be empty, got %d entries", len(pw.ExtractedFiles))
-	}
-	if pw.Dropped != nil {
-		t.Errorf("Dropped should be nil for empty src, got %v", pw.Dropped)
-	}
-	// dst should still exist (we MkdirAll it).
-	if _, err := os.Stat(dst); err != nil {
-		t.Errorf("dst dir not created: %v", err)
-	}
-}
-
-func TestTransformPlugin_EmptyPaths_Errors(t *testing.T) {
-	a := &Adapter{}
-	if _, err := a.TransformPlugin(context.Background(), "", "/tmp/dst"); err == nil {
-		t.Error("TransformPlugin(empty src) returned nil error; want error")
-	}
-	if _, err := a.TransformPlugin(context.Background(), "/tmp/src", ""); err == nil {
-		t.Error("TransformPlugin(empty dst) returned nil error; want error")
 	}
 }
 
@@ -635,19 +518,19 @@ func TestClaudeCode_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
 	}
 
 	rules := (&Adapter{}).ProjectionRules()
-	fws, _, err := route.Project(rules, src, "")
+	pr, err := route.Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("route.Project: %v", err)
 	}
 
 	var agentFW *adapter.FileWrite
-	for i := range fws {
-		if filepath.ToSlash(fws[i].Path) == ".claude/agents/cave.md" {
-			agentFW = &fws[i]
+	for i := range pr.FileWrites {
+		if filepath.ToSlash(pr.FileWrites[i].Path) == ".claude/agents/cave.md" {
+			agentFW = &pr.FileWrites[i]
 		}
 	}
 	if agentFW == nil {
-		t.Fatalf("no FileWrite for .claude/agents/cave.md; got %+v", fws)
+		t.Fatalf("no FileWrite for .claude/agents/cave.md; got %+v", pr.FileWrites)
 	}
 	// Byte-identical pass-through: FMT-03 cut means NO field rewrite at all.
 	if string(agentFW.Content) != agent {

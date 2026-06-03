@@ -308,6 +308,9 @@ type adapterDispatcherImpl struct {
 	// global marks --global scope so Render can remap adapters whose GLOBAL
 	// config path differs from the simple $HOME-join (currently opencode).
 	global bool
+	// conflict selects the cross-plugin destination-collision policy applied
+	// by the projection leg (Phase 1). Default ConflictNamespace.
+	conflict ConflictPolicy
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -325,7 +328,7 @@ type adapterDispatcherImpl struct {
 // State records the canonical hash of OUR contribution (not the merged
 // file) so --sync inverse-merge and subsequent drift checks operate on
 // our keys only. DroppedComponents stays nil for the runtime path
-// (TransformPlugin is the source of drops).
+// (route.Project is the source of drops via the projection leg).
 //
 // After the RenderRuntime loop, when projectPlugins is true (WIRE-04 /
 // D-11 scope gate, derived by the orchestrator as !opts.OnlyRuntime),
@@ -410,6 +413,84 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 // absent — best-effort per-file atomicity matching the runtime loop. There
 // is deliberately NO all-or-nothing transaction across the projected set.
 // The first error encountered aborts (same as the runtime loop).
+//
+// projectedWrite pairs a projected FileWrite with the plugin that produced it.
+// The two-pass collision resolver (Phase 1) collects every plugin's writes
+// first, then attributes / (for ConflictNamespace) leaf-prefixes the
+// cross-plugin Target collisions before any publish.
+type projectedWrite struct {
+	plugin  string
+	fw      adapter.FileWrite
+	skipped bool
+}
+
+// resolvePluginCollisions detects every cross-plugin Target collision among
+// the collected writes and applies d.conflict, mutating all in place. Only
+// file-owned MergeReplace writes are collision-eligible; MergeComposite +
+// MergeDeep are co-owned by multiple plugins via per-id blocks and are EXEMPT
+// (same principle as the pre-Phase-1 claimed[] check). A collision is >=2
+// DISTINCT owning plugins at one Target. ConflictRefuse reproduces the
+// pre-Phase-1 CR-01 fail-fast; ConflictNamespace (default) leaf-prefixes every
+// colliding write; ConflictSkip keeps the earliest-sorted plugin; Overwrite
+// keeps the latest. Plugins were sorted in Pass A so all outcomes are stable.
+func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite) error {
+	byTarget := map[string][]int{}
+	for i := range all {
+		if all[i].fw.Merge != adapter.MergeReplace {
+			continue
+		}
+		byTarget[all[i].fw.Path] = append(byTarget[all[i].fw.Path], i)
+	}
+	// Stable target order for deterministic error messages + namespacing.
+	targets := make([]string, 0, len(byTarget))
+	for t := range byTarget {
+		targets = append(targets, t)
+	}
+	sort.Strings(targets)
+	for _, t := range targets {
+		idxs := byTarget[t]
+		// idxs are ascending (collected in sorted-plugin order).
+		owners := map[string]bool{}
+		for _, i := range idxs {
+			owners[all[i].plugin] = true
+		}
+		if len(owners) < 2 {
+			continue
+		}
+		switch d.conflict {
+		case ConflictRefuse:
+			first := all[idxs[0]].plugin
+			second := first
+			for _, i := range idxs {
+				if all[i].plugin != first {
+					second = all[i].plugin
+					break
+				}
+			}
+			return fmt.Errorf(
+				"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource, or pass --conflict=namespace)",
+				d.platformID, first, second, t)
+		case ConflictNamespace:
+			// Leaf-prefix EVERY colliding write (including the first) so both
+			// plugins survive; deterministic because plugins are sorted.
+			for _, i := range idxs {
+				all[i].fw.Path = namespaceLeaf(all[i].fw.Path, all[i].plugin)
+			}
+		case ConflictSkip:
+			// Keep the lowest index (earliest-sorted plugin); skip the rest.
+			for _, i := range idxs[1:] {
+				all[i].skipped = true
+			}
+		case ConflictOverwrite:
+			// Keep the highest index (latest-sorted plugin); skip the rest.
+			for _, i := range idxs[:len(idxs)-1] {
+				all[i].skipped = true
+			}
+		}
+	}
+	return nil
+}
+
 func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string, result *RenderResult) error {
 	rp, ok := ad.(route.RuleProvider)
 	if !ok {
@@ -427,107 +508,126 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
 	}
 
+	if result.ProjectedByKind == nil {
+		result.ProjectedByKind = map[string]int{}
+	}
+	if result.DroppedByKind == nil {
+		result.DroppedByKind = map[string][]string{}
+	}
+
 	// Dedup dropped kinds across all plugin trees (route.Project already
 	// dedups per-run; aggregating across multiple plugin subdirs needs a
-	// second-layer dedup) and stable-sort for byte-stable stderr (D-12).
+	// second-layer dedup) plus the runtime-wins MCP shadow ids, stable-sorted
+	// for a byte-stable stderr warning (D-12).
 	seen := map[string]bool{}
 	var dropped []string
-	// claimed maps a FINAL published Target → the plugin name that first
-	// claimed it. Under D-01's flat kind-routing there is NO per-plugin
-	// destination namespace, so two distinct plugins both shipping e.g.
-	// rules/foo.md would both project to .claude/rules/foo.md. That is an
-	// unresolvable cross-plugin collision (CR-01): silently letting the
-	// second publishFile (MergeReplace → WriteAtomic) overwrite the first
-	// would lose a file AND append a second state.Plugins[] row with an
-	// identical Target, so findPluginEntry's first-match would bind
-	// re-hydrate drift to the wrong owner. We detect the collision on the
-	// post-remap path (identical to what lands in state.Plugins[]) and
-	// fail-fast — matching the existing first-error abort in this loop.
-	claimed := map[string]string{}
+
+	// Pass A — collect every plugin's projected writes WITHOUT publishing.
+	// Plugin dirs are sorted so ConflictNamespace yields stable, run-to-run
+	// identical prefixed paths for identical manifests (Phase-1 determinism;
+	// no state migration needed). os.ReadDir is already name-sorted; the
+	// explicit sort makes the ordering contract local + obvious.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	var all []projectedWrite
 	for _, ent := range entries {
 		if !ent.IsDir() {
-			// Plugin archives extract to a directory per name; a stray
-			// regular file (e.g. an un-extracted blob) carries no routable
-			// resource kinds — skip it.
+			// Plugin archives extract to a directory per name; a stray regular
+			// file (e.g. an un-extracted blob) carries no routable kinds.
 			continue
 		}
 		// Plugin-name segment validation (T-01-04). D-01 keeps the plugin
-		// name OUT of the destination path, but it is still joined into the
-		// SOURCE path below and appears in error strings — a NEW
-		// path-construction surface. Reject any name that is not a single
-		// safe basename BEFORE reading any file under it (defense-in-depth
-		// on top of the SAFE-01/02 extract-time checks). Sibling pattern:
-		// route.resolveRecursiveGlobTarget's T-01-01 destination guard.
+		// name OUT of the destination path, but it is joined into the SOURCE
+		// path below and appears in error strings — a NEW path-construction
+		// surface. Reject any non-basename name BEFORE reading under it
+		// (defense-in-depth atop the SAFE-01/02 extract-time checks).
 		if verr := validatePluginName(ent.Name()); verr != nil {
 			return fmt.Errorf("adapter %s plugin directory %q: %w", d.platformID, ent.Name(), verr)
 		}
 		pluginSrc := filepath.Join(pluginRoot, ent.Name())
 		// source == "" : Phase-1 ungated arm (no claude-plugin provenance
 		// axis yet). The gated branch exists for Phase 2.
-		projected, drops, perr := route.Project(rules, pluginSrc, "")
+		pr, perr := route.Project(rules, pluginSrc, "")
 		if perr != nil {
 			return fmt.Errorf("adapter %s project plugin %s: %w", d.platformID, ent.Name(), perr)
 		}
-		for _, fw := range projected {
+		for k, n := range pr.KeptByKind {
+			result.ProjectedByKind[k] += n
+		}
+		for _, fw := range pr.FileWrites {
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
 			}
-			// CR-01 exemption (D-07): composite targets are co-owned by multiple
-			// plugins via per-id blocks, so they SKIP both the claimed[]
-			// fail-fast AND the claimed[] write (otherwise the first composite
-			// contributor would block the second). File-owned MergeReplace keeps
-			// the cross-plugin collision check.
-			if fw.Merge != adapter.MergeComposite {
-				// Cross-plugin Target-collision detection on the FINAL published
-				// path (post-remap), checked BEFORE publishFile so no
-				// duplicate-Target row is ever appended to ProjectedFiles.
-				if owner, dup := claimed[fw.Path]; dup && owner != ent.Name() {
-					return fmt.Errorf(
-						"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource)",
-						d.platformID, owner, ent.Name(), fw.Path)
-				}
-				claimed[fw.Path] = ent.Name()
-			}
-
-			// Plugin-name threading (D-07): composite FileWrites carry
-			// Keys=[plugin-name] (NOT dotted JSON keys) — this supplies the
-			// per-id marker in publishFile's composite arm and records the
-			// composite state row's Keys for the Phase-4 single-block subtract.
-			if fw.Merge == adapter.MergeComposite {
-				fw.Keys = []string{ent.Name()}
-			}
-
-			// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
-			// a runtime WrittenFiles entry (same Target) already owns; record the
-			// drop. If nothing survives, skip publishing this FileWrite entirely.
-			published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, result.WrittenFiles)
-			if derr != nil {
-				return fmt.Errorf("adapter %s runtime-wins drop %s: %w", d.platformID, fw.Path, derr)
-			}
-			for _, dr := range fwDrops {
-				if !seen[dr] {
-					seen[dr] = true
-					dropped = append(dropped, dr)
-				}
-			}
-			if !published {
-				continue
-			}
-
-			// Look up the prior projected entry in the PLUGINS bucket (D-07)
-			// so an unchanged re-hydrate hits the publishFile no-op skip.
-			entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
-			if err != nil {
-				return err
-			}
-			result.ProjectedFiles = append(result.ProjectedFiles, entry)
+			all = append(all, projectedWrite{plugin: ent.Name(), fw: fw})
 		}
-		for _, dr := range drops {
+		for _, dr := range pr.Dropped {
+			if !seen[dr] {
+				seen[dr] = true
+				dropped = append(dropped, dr)
+			}
+			result.DroppedByKind[dr] = appendUniqueSorted(result.DroppedByKind[dr], ent.Name())
+		}
+	}
+
+	// Resolve — apply d.conflict to every cross-plugin Target collision,
+	// mutating `all` in place (namespacing paths or marking writes skipped).
+	if rerr := d.resolvePluginCollisions(all); rerr != nil {
+		return rerr
+	}
+
+	// Pass B — publish surviving writes in collect order.
+	finalClaimed := map[string]string{}
+	for i := range all {
+		if all[i].skipped {
+			continue
+		}
+		fw := all[i].fw
+		plugin := all[i].plugin
+
+		// Post-resolution safety net: no two surviving collision-eligible
+		// writes may still share a Target. A post-namespace collision would
+		// be a real bug (e.g. namespaceLeaf produced an identical prefix), so
+		// fail-fast rather than silently overwrite a state.Plugins[] row.
+		if fw.Merge == adapter.MergeReplace {
+			if owner, dup := finalClaimed[fw.Path]; dup && owner != plugin {
+				return fmt.Errorf(
+					"adapter %s: plugins %q and %q still collide on %q after --conflict=%s",
+					d.platformID, owner, plugin, fw.Path, d.conflict)
+			}
+			finalClaimed[fw.Path] = plugin
+		}
+
+		// Plugin-name threading (D-07): composite FileWrites carry
+		// Keys=[plugin-name] (NOT dotted JSON keys) — supplies the per-id
+		// marker in publishFile's composite arm + the composite state row's
+		// Keys for the Phase-4 single-block subtract.
+		if fw.Merge == adapter.MergeComposite {
+			fw.Keys = []string{plugin}
+		}
+
+		// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
+		// a runtime WrittenFiles entry (same Target) already owns; record the
+		// drop. If nothing survives, skip publishing this FileWrite entirely.
+		published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, result.WrittenFiles)
+		if derr != nil {
+			return fmt.Errorf("adapter %s runtime-wins drop %s: %w", d.platformID, fw.Path, derr)
+		}
+		for _, dr := range fwDrops {
 			if !seen[dr] {
 				seen[dr] = true
 				dropped = append(dropped, dr)
 			}
 		}
+		if !published {
+			continue
+		}
+
+		// Look up the prior projected entry in the PLUGINS bucket (D-07) so an
+		// unchanged re-hydrate hits the publishFile no-op skip.
+		entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
+		if err != nil {
+			return err
+		}
+		result.ProjectedFiles = append(result.ProjectedFiles, entry)
 	}
 
 	sort.Strings(dropped)
@@ -1637,6 +1737,18 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 	}
 }
 
+// appendUniqueSorted inserts name into xs if absent, keeping xs sorted.
+func appendUniqueSorted(xs []string, name string) []string {
+	for _, x := range xs {
+		if x == name {
+			return xs
+		}
+	}
+	xs = append(xs, name)
+	sort.Strings(xs)
+	return xs
+}
+
 // taggedEntry preserves bucket provenance for Sync — entries whose projected
 // files live under toolRoot (the tool's native config root) carry
 // ResolveAgainstToolRoot=true; entries whose bytes live under achDir (ACH's
@@ -1717,6 +1829,7 @@ func NewWiring(
 	allowSymlinks bool,
 	force bool,
 	global bool,
+	conflict ConflictPolicy,
 ) (Extractor, AdapterDispatcher) {
 	ext := &extractorImpl{
 		client:        client,
@@ -1727,6 +1840,7 @@ func NewWiring(
 		platformID: platformID,
 		force:      force,
 		global:     global,
+		conflict:   conflict,
 	}
 	return ext, disp
 }

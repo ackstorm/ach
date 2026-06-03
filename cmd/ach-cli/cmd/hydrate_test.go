@@ -742,6 +742,26 @@ func withCleanHomeEngine(t *testing.T) {
 	t.Setenv("HOME", scratch)
 }
 
+// TestHydrateSummary exercises summaryFromResult — verifies the platform id,
+// per-kind counts, and file totals all appear in the rendered string.
+func TestHydrateSummary(t *testing.T) {
+	got := summaryFromResult(hydrate.Result{
+		PlatformID:      "claude-code",
+		FilesWritten:    20,
+		FilesPreserved:  1,
+		ProjectedByKind: map[string]int{"commands": 12, "agents": 8},
+	})
+	if !strings.Contains(got, "claude-code") {
+		t.Errorf("summary missing platform; got %q", got)
+	}
+	if !strings.Contains(got, "12 commands") || !strings.Contains(got, "8 agents") {
+		t.Errorf("summary missing per-kind counts; got %q", got)
+	}
+	if !strings.Contains(got, "20 files written") {
+		t.Errorf("summary missing file count; got %q", got)
+	}
+}
+
 // TestValidateEnvHeaderValue exercises security 2.10 — CRLF / NUL /
 // control-byte rejection on the x-ach-environment header value.
 func TestValidateEnvHeaderValue(t *testing.T) {
@@ -774,5 +794,23 @@ func TestValidateEnvHeaderValue(t *testing.T) {
 				t.Fatalf("input %q: want nil, got %v", tc.input, err)
 			}
 		})
+	}
+}
+
+func TestHydrate_ConflictFlag_Default(t *testing.T) {
+	cmd := newHydrateCmd()
+	f := cmd.Flags().Lookup("conflict")
+	if f == nil {
+		t.Fatal("--conflict flag not registered")
+	}
+	if f.DefValue != "namespace" {
+		t.Errorf("--conflict default = %q; want namespace", f.DefValue)
+	}
+}
+
+func TestHydrate_Help_MentionsConflict(t *testing.T) {
+	cmd := newHydrateCmd()
+	if !strings.Contains(cmd.Flag("conflict").Usage, "namespace") {
+		t.Errorf("--conflict usage missing policy list: %q", cmd.Flag("conflict").Usage)
 	}
 }

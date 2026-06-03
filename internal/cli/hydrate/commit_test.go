@@ -1288,34 +1288,43 @@ func TestCommit_Step4Reconcile_GlobalScope_PrunesPluginsAgainstToolRoot(t *testi
 	}
 }
 
-// TestCommit_DropWarning_SingleDedupedSorted is the WIRE-03 / D-12 proof:
-// a render returning Dropped=["hooks","rules"] (already deduped+sorted by
-// the projection leg) emits exactly ONE stderr line listing them, and the
-// exit code is UNCHANGED (Run returns nil).
-func TestCommit_DropWarning_SingleDedupedSorted(t *testing.T) {
+// TestCommit_DropWarning_AttributedByPlugin verifies the WIRE-03 / D-12
+// attributed drop warning: when a RenderResult carries DroppedByKind entries
+// the warnDropped path emits a "does not support" header line followed by one
+// indented line per kind listing the plugins sorted, and the exit code is
+// unaffected (c.run returns nil).
+func TestCommit_DropWarning_AttributedByPlugin(t *testing.T) {
 	c, _, _ := newTestCommit(t)
-	c.opts.Platform = "codex"
+	c.opts.Platform = "pimono"
 	var stderr bytes.Buffer
 	c.opts.Stderr = &stderr
+	// DroppedByKind is set directly on RenderResult; Part B flow-up copies it
+	// into result.DroppedByKind via appendUniqueSorted (already sorted).
+	// Pre-sort plugin lists to match what appendUniqueSorted produces.
 	c.adapter = fakeAdapterDispatcher{
-		result: RenderResult{DroppedComponents: []string{"hooks", "rules"}},
+		result: RenderResult{
+			DroppedByKind: map[string][]string{
+				"agents": {"bar", "foo"},
+				"hooks":  {"foo"},
+			},
+		},
 	}
 
 	if _, err := c.run(context.Background()); err != nil {
 		t.Fatalf("c.run = %v; want nil (drop warning must not change exit code)", err)
 	}
 	out := stderr.String()
-	lines := 0
-	for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if strings.Contains(ln, "dropped unsupported components") {
-			lines++
-		}
+	if !strings.Contains(out, "platform pimono does not support") {
+		t.Errorf("missing header line; stderr:\n%s", out)
 	}
-	if lines != 1 {
-		t.Fatalf("drop-warning lines = %d; want exactly 1\nstderr:\n%s", lines, out)
+	if !strings.Contains(out, "agents") {
+		t.Errorf("missing 'agents' kind in warning; stderr:\n%s", out)
 	}
-	if !strings.Contains(out, "hooks, rules") {
-		t.Errorf("drop warning missing sorted list 'hooks, rules'; got:\n%s", out)
+	if !strings.Contains(out, "bar, foo") {
+		t.Errorf("missing sorted plugin list 'bar, foo'; stderr:\n%s", out)
+	}
+	if !strings.Contains(out, "hooks") {
+		t.Errorf("missing 'hooks' kind in warning; stderr:\n%s", out)
 	}
 }
 
@@ -1331,7 +1340,7 @@ func TestCommit_DropWarning_EmptyNoWarning(t *testing.T) {
 	if _, err := c.run(context.Background()); err != nil {
 		t.Fatalf("c.run = %v, want nil", err)
 	}
-	if strings.Contains(stderr.String(), "dropped unsupported components") {
+	if strings.Contains(stderr.String(), "does not support") {
 		t.Errorf("unexpected drop warning for empty drop list:\n%s", stderr.String())
 	}
 }

@@ -178,10 +178,10 @@ func phase3ParseAuditLines(stdout []byte) []phase3AuditRecord {
 // not match (pkid_<ulid> uses Crockford ULID base32 which can include
 // the pk_ substring inside its prefix, but with the JSON-string anchor
 // the match scope is "field value starts with pk_<exactly-26-lowercase-base32>").
-var phase3PkPlaintextRe = regexp.MustCompile(`"pk_[a-z2-7]{26}"`)
+var phase3PkPlaintextRe = regexp.MustCompile(`"pk-[A-Za-z0-9_-]{64}"`)
 
 // phase3EkPlaintextRe — analog for ek_<26-base32-lowercase>.
-var phase3EkPlaintextRe = regexp.MustCompile(`"ek_[a-z2-7]{26}"`)
+var phase3EkPlaintextRe = regexp.MustCompile(`"ek-[A-Za-z0-9_-]{64}"`)
 
 // phase3AssertAuditOBS02 asserts the OBS-02 invariant on a single audit
 // record: required fields present, field shapes valid, no plaintext or

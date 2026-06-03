@@ -41,17 +41,17 @@ func TestProject_NestedSubdirPreserved(t *testing.T) {
 		{FromGlob: "rules/**/*.md", ToGlob: ".claude/rules/**/*.md", Merge: adapter.MergeReplace},
 	}
 
-	fws, dropped, err := Project(rules, src, "")
+	pr, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(dropped) != 0 {
-		t.Fatalf("expected no drops, got %v", dropped)
+	if len(pr.Dropped) != 0 {
+		t.Fatalf("expected no drops, got %v", pr.Dropped)
 	}
-	if len(fws) != 1 {
-		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
+	if len(pr.FileWrites) != 1 {
+		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(pr.FileWrites), pr.FileWrites)
 	}
-	got := fws[0]
+	got := pr.FileWrites[0]
 	if got.Path != ".claude/rules/foo/bar.md" {
 		t.Errorf("Path: got %q, want %q", got.Path, ".claude/rules/foo/bar.md")
 	}
@@ -75,16 +75,16 @@ func TestProject_DropDedup(t *testing.T) {
 		{FromGlob: "rules/**/*.md", ToGlob: ".claude/rules/**/*.md", Merge: adapter.MergeReplace},
 	}
 
-	fws, dropped, err := Project(rules, src, "")
+	pr, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(fws) != 1 {
-		t.Fatalf("expected 1 routed file, got %d", len(fws))
+	if len(pr.FileWrites) != 1 {
+		t.Fatalf("expected 1 routed file, got %d", len(pr.FileWrites))
 	}
 	want := []string{"hooks"}
-	if !reflect.DeepEqual(dropped, want) {
-		t.Errorf("dropped: got %v, want %v", dropped, want)
+	if !reflect.DeepEqual(pr.Dropped, want) {
+		t.Errorf("dropped: got %v, want %v", pr.Dropped, want)
 	}
 }
 
@@ -102,32 +102,32 @@ func TestProject_Deterministic(t *testing.T) {
 		{FromGlob: "rules/**/*.md", ToGlob: ".claude/rules/**/*.md", Merge: adapter.MergeReplace},
 	}
 
-	fws1, dropped1, err := Project(rules, src, "")
+	pr1, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project run 1: %v", err)
 	}
-	fws2, dropped2, err := Project(rules, src, "")
+	pr2, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project run 2: %v", err)
 	}
 
-	if !reflect.DeepEqual(fws1, fws2) {
-		t.Errorf("FileWrites not deterministic:\n run1=%v\n run2=%v", fws1, fws2)
+	if !reflect.DeepEqual(pr1.FileWrites, pr2.FileWrites) {
+		t.Errorf("FileWrites not deterministic:\n run1=%v\n run2=%v", pr1.FileWrites, pr2.FileWrites)
 	}
-	if !reflect.DeepEqual(dropped1, dropped2) {
-		t.Errorf("dropped not deterministic:\n run1=%v\n run2=%v", dropped1, dropped2)
+	if !reflect.DeepEqual(pr1.Dropped, pr2.Dropped) {
+		t.Errorf("dropped not deterministic:\n run1=%v\n run2=%v", pr1.Dropped, pr2.Dropped)
 	}
 
 	// Assert FileWrites are sorted by Path.
-	for i := 1; i < len(fws1); i++ {
-		if fws1[i-1].Path > fws1[i].Path {
-			t.Errorf("FileWrites not sorted by Path at %d: %q > %q", i, fws1[i-1].Path, fws1[i].Path)
+	for i := 1; i < len(pr1.FileWrites); i++ {
+		if pr1.FileWrites[i-1].Path > pr1.FileWrites[i].Path {
+			t.Errorf("FileWrites not sorted by Path at %d: %q > %q", i, pr1.FileWrites[i-1].Path, pr1.FileWrites[i].Path)
 		}
 	}
 	// Assert dropped is sorted.
-	for i := 1; i < len(dropped1); i++ {
-		if dropped1[i-1] > dropped1[i] {
-			t.Errorf("dropped not sorted at %d: %q > %q", i, dropped1[i-1], dropped1[i])
+	for i := 1; i < len(pr1.Dropped); i++ {
+		if pr1.Dropped[i-1] > pr1.Dropped[i] {
+			t.Errorf("dropped not sorted at %d: %q > %q", i, pr1.Dropped[i-1], pr1.Dropped[i])
 		}
 	}
 }
@@ -142,15 +142,15 @@ func TestProject_EmptyDirTree(t *testing.T) {
 		{FromGlob: "rules/**/*.md", ToGlob: ".claude/rules/**/*.md", Merge: adapter.MergeReplace},
 	}
 
-	fws, dropped, err := Project(rules, root, "")
+	pr, err := Project(rules, root, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(fws) != 0 {
-		t.Errorf("expected no FileWrites for dir-only tree, got %v", fws)
+	if len(pr.FileWrites) != 0 {
+		t.Errorf("expected no FileWrites for dir-only tree, got %v", pr.FileWrites)
 	}
-	if len(dropped) != 0 {
-		t.Errorf("expected no drops for dir-only tree, got %v", dropped)
+	if len(pr.Dropped) != 0 {
+		t.Errorf("expected no drops for dir-only tree, got %v", pr.Dropped)
 	}
 }
 
@@ -167,28 +167,28 @@ func TestProject_ProvenanceGate(t *testing.T) {
 
 	// source == gate: rule applies.
 	srcMatch := writeTree(t, files)
-	fwsMatch, _, err := Project(gated, srcMatch, "claude-plugin")
+	prMatch, err := Project(gated, srcMatch, "claude-plugin")
 	if err != nil {
 		t.Fatalf("Project (match): %v", err)
 	}
-	if len(fwsMatch) != 1 {
-		t.Fatalf("gated rule with matching source: expected 1 FileWrite, got %d", len(fwsMatch))
+	if len(prMatch.FileWrites) != 1 {
+		t.Fatalf("gated rule with matching source: expected 1 FileWrite, got %d", len(prMatch.FileWrites))
 	}
-	if string(fwsMatch[0].Content) != "AGENT BODY" {
-		t.Errorf("gated arm content not verbatim: got %q", string(fwsMatch[0].Content))
+	if string(prMatch.FileWrites[0].Content) != "AGENT BODY" {
+		t.Errorf("gated arm content not verbatim: got %q", string(prMatch.FileWrites[0].Content))
 	}
 
 	// source != gate: rule does NOT apply, agents dropped.
 	srcMiss := writeTree(t, files)
-	fwsMiss, droppedMiss, err := Project(gated, srcMiss, "other-source")
+	prMiss, err := Project(gated, srcMiss, "other-source")
 	if err != nil {
 		t.Fatalf("Project (miss): %v", err)
 	}
-	if len(fwsMiss) != 0 {
-		t.Fatalf("gated rule with non-matching source: expected 0 FileWrites, got %d", len(fwsMiss))
+	if len(prMiss.FileWrites) != 0 {
+		t.Fatalf("gated rule with non-matching source: expected 0 FileWrites, got %d", len(prMiss.FileWrites))
 	}
-	if len(droppedMiss) != 1 || droppedMiss[0] != "agents" {
-		t.Errorf("expected agents dropped on gate miss, got %v", droppedMiss)
+	if len(prMiss.Dropped) != 1 || prMiss.Dropped[0] != "agents" {
+		t.Errorf("expected agents dropped on gate miss, got %v", prMiss.Dropped)
 	}
 
 	// Ungated rule + verbatim assertion: content identical to gated arm.
@@ -196,16 +196,16 @@ func TestProject_ProvenanceGate(t *testing.T) {
 		{FromGlob: "agents/**/*.md", ToGlob: ".claude/agents/**/*.md", Merge: adapter.MergeReplace},
 	}
 	srcUngated := writeTree(t, files)
-	fwsUngated, _, err := Project(ungated, srcUngated, "anything")
+	prUngated, err := Project(ungated, srcUngated, "anything")
 	if err != nil {
 		t.Fatalf("Project (ungated): %v", err)
 	}
-	if len(fwsUngated) != 1 {
-		t.Fatalf("ungated rule: expected 1 FileWrite, got %d", len(fwsUngated))
+	if len(prUngated.FileWrites) != 1 {
+		t.Fatalf("ungated rule: expected 1 FileWrite, got %d", len(prUngated.FileWrites))
 	}
-	if string(fwsUngated[0].Content) != string(fwsMatch[0].Content) {
+	if string(prUngated.FileWrites[0].Content) != string(prMatch.FileWrites[0].Content) {
 		t.Errorf("Phase-1 transform-vs-passthrough arms differ: gated=%q ungated=%q",
-			string(fwsMatch[0].Content), string(fwsUngated[0].Content))
+			string(prMatch.FileWrites[0].Content), string(prUngated.FileWrites[0].Content))
 	}
 }
 
@@ -221,7 +221,7 @@ func TestProject_TraversalGuard(t *testing.T) {
 		{FromGlob: "rules/**/*.md", ToGlob: "../escape/**/*.md", Merge: adapter.MergeReplace},
 	}
 
-	_, _, err := Project(rules, src, "")
+	_, err := Project(rules, src, "")
 	if err == nil {
 		t.Fatalf("expected traversal guard error for ToGlob escaping dest root, got nil")
 	}
@@ -238,14 +238,14 @@ func TestProject_TransformNilIsVerbatim(t *testing.T) {
 		{FromGlob: "mcp/**/*", ToGlob: ".claude/settings.json", Merge: adapter.MergeDeep},
 	}
 
-	fws, _, err := Project(rules, src, "")
+	pr, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(fws) != 1 {
-		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
+	if len(pr.FileWrites) != 1 {
+		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(pr.FileWrites), pr.FileWrites)
 	}
-	got := fws[0]
+	got := pr.FileWrites[0]
 	// N→1 collapse: a concrete (wildcard-free) ToGlob is the merge target
 	// verbatim — the source suffix must NOT be appended (regression guard
 	// for the settings.json/<name> bogus-subpath bug).
@@ -283,18 +283,18 @@ func TestProject_TerminalExtensionEnforced(t *testing.T) {
 		},
 	}
 
-	fws, _, err := Project(rules, src, "")
+	pr, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 	// Only the .md file should be routed/transformed.
-	if len(fws) != 1 {
-		t.Fatalf("expected 1 FileWrite (.md only), got %d: %v", len(fws), fws)
+	if len(pr.FileWrites) != 1 {
+		t.Fatalf("expected 1 FileWrite (.md only), got %d: %v", len(pr.FileWrites), pr.FileWrites)
 	}
 	if transformCalls != 1 {
 		t.Errorf("Transform called %d times; want 1 (only the .md file)", transformCalls)
 	}
-	if got := fws[0].Path; got != ".codex/agents/real.toml" {
+	if got := pr.FileWrites[0].Path; got != ".codex/agents/real.toml" {
 		t.Errorf("Path = %q, want .codex/agents/real.toml", got)
 	}
 }
@@ -316,14 +316,14 @@ func TestProject_TransformApplied(t *testing.T) {
 		},
 	}
 
-	fws, _, err := Project(rules, src, "")
+	pr, err := Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(fws) != 1 {
-		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(fws), fws)
+	if len(pr.FileWrites) != 1 {
+		t.Fatalf("expected 1 FileWrite, got %d (%v)", len(pr.FileWrites), pr.FileWrites)
 	}
-	got := fws[0]
+	got := pr.FileWrites[0]
 	if got.Path != ".claude/settings.json" {
 		t.Errorf("Path: got %q, want %q (N→1 collapse, no suffix append)", got.Path, ".claude/settings.json")
 	}
@@ -354,7 +354,7 @@ func TestProject_TransformReceivesSrcRel(t *testing.T) {
 		},
 	}
 
-	if _, _, err := Project(rules, src, ""); err != nil {
+	if _, err := Project(rules, src, ""); err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 	if seen != "mcp/nested/server.json" {
@@ -383,7 +383,7 @@ func TestProject_TransformErrorAborts(t *testing.T) {
 	rules[0].Transform = func(_ string, _ []byte) ([]byte, []string, error) {
 		return nil, nil, sentinel
 	}
-	_, _, err := Project(rules, src, "")
+	_, err := Project(rules, src, "")
 	if err == nil {
 		t.Fatalf("expected Project to abort on Transform error, got nil")
 	}
@@ -392,6 +392,53 @@ func TestProject_TransformErrorAborts(t *testing.T) {
 	}
 	if msg := err.Error(); !strings.Contains(msg, "mcp/server.json") {
 		t.Errorf("error %q does not name the offending file path", msg)
+	}
+}
+
+// TestProject_DropsOnlyKnownKinds asserts that metadata dirs (.claude-plugin,
+// .codex-plugin), doc files (README.md), and unrecognized top-levels
+// (random-dir) are silently skipped — only known component kinds (hooks)
+// appear in Dropped.
+func TestProject_DropsOnlyKnownKinds(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"hooks/pre.sh":               "#!/bin/sh\n",
+		".claude-plugin/plugin.json": "{}",
+		".codex-plugin/x.json":       "{}",
+		"README.md":                  "# docs\n",
+		"random-dir/x.txt":           "x",
+		"skills/a/SKILL.md":          "s",
+	})
+
+	rules := []Rule{
+		{FromGlob: "skills/**/*", ToGlob: ".x/skills/**/*", Merge: adapter.MergeReplace},
+	}
+	pr, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project = %v", err)
+	}
+	if got := pr.Dropped; len(got) != 1 || got[0] != "hooks" {
+		t.Fatalf("Dropped = %v; want exactly [hooks] (metadata/docs/unknown must be silent)", got)
+	}
+}
+
+// TestProject_KeptByKind: Project tallies matched files per source kind in
+// KeptByKind.
+func TestProject_KeptByKind(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"commands/a.md":     "a",
+		"commands/b.md":     "b",
+		"skills/s/SKILL.md": "s",
+	})
+	rules := []Rule{
+		{FromGlob: "commands/**/*", ToGlob: ".x/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".x/skills/**/*", Merge: adapter.MergeReplace},
+	}
+	pr, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project = %v", err)
+	}
+	if pr.KeptByKind["commands"] != 2 || pr.KeptByKind["skills"] != 1 {
+		t.Fatalf("KeptByKind = %v; want commands=2 skills=1", pr.KeptByKind)
 	}
 }
 
@@ -491,19 +538,19 @@ func TestProject_SourceHash(t *testing.T) {
 		},
 	}
 
-	fws, _, err := Project([]Rule{passthrough, convert}, src, "")
+	pr, err := Project([]Rule{passthrough, convert}, src, "")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 
 	byPath := map[string]adapter.FileWrite{}
-	for _, fw := range fws {
+	for _, fw := range pr.FileWrites {
 		byPath[fw.Path] = fw
 	}
 
 	pf, ok := byPath[".claude/rules/a.md"]
 	if !ok {
-		t.Fatalf("passthrough file missing; got %+v", fws)
+		t.Fatalf("passthrough file missing; got %+v", pr.FileWrites)
 	}
 	if pf.SourceHash == "" {
 		t.Errorf("passthrough SourceHash empty")
@@ -514,7 +561,7 @@ func TestProject_SourceHash(t *testing.T) {
 
 	cf, ok := byPath[".codex/agents/b.md"]
 	if !ok {
-		t.Fatalf("converted file missing; got %+v", fws)
+		t.Fatalf("converted file missing; got %+v", pr.FileWrites)
 	}
 	if cf.SourceHash == hash.HashBytes(cf.Content) {
 		t.Errorf("converted SourceHash must differ from emitted Hash; both %q", cf.SourceHash)

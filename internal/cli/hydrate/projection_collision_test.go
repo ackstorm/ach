@@ -32,12 +32,14 @@ func newProjectionManifest() *manifest.Manifest {
 // distinct plugins ("plug-a" and "plug-b") both shipping rules/foo.md route
 // — under D-01's flat kind-routing — to the SAME native Target
 // .claude/rules/foo.md. Because there is NO per-plugin destination namespace
-// to disambiguate, this is an unresolvable cross-plugin collision. The
-// dispatcher MUST fail-fast with an error naming BOTH plugins and the
-// contested Target, rather than silently letting the second publishFile
-// overwrite the first (last-writer-wins) and recording a duplicate-Target
-// row in state.Plugins[]. The call erroring is itself the proof that no
-// duplicate-Target row was appended to ProjectedFiles.
+// to disambiguate, this is an unresolvable cross-plugin collision. Under the
+// opt-in --conflict=refuse policy (the pre-Phase-1 default) the dispatcher
+// MUST fail-fast with an error naming BOTH plugins and the contested Target,
+// rather than silently letting the second publishFile overwrite the first
+// (last-writer-wins) and recording a duplicate-Target row in state.Plugins[].
+// The call erroring is itself the proof that no duplicate-Target row was
+// appended to ProjectedFiles. (The default policy now namespaces — see
+// TestProjection_MultiPlugin_Collision_NamespaceKeepsBoth.)
 func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
@@ -50,7 +52,7 @@ func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 		"rules/foo.md": "# from plug-b\n",
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictRefuse)
 	m := newProjectionManifest()
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
@@ -62,6 +64,39 @@ func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("collision error %q does not mention %q", msg, want)
 		}
+	}
+}
+
+// TestProjection_MultiPlugin_Collision_NamespaceKeepsBoth proves the Phase-1
+// default policy: the same two plugins colliding on rules/foo.md no longer
+// abort — each write is leaf-prefixed by its plugin name so BOTH survive at
+// distinct Targets (.claude/rules/plug-a-foo.md + plug-b-foo.md), with the
+// bare Target written by neither.
+func TestProjection_MultiPlugin_Collision_NamespaceKeepsBoth(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "# from plug-a\n"})
+	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	m := newProjectionManifest()
+
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	if err != nil {
+		t.Fatalf("namespace policy must not error on collision: %v", err)
+	}
+	if len(res.ProjectedFiles) != 2 {
+		t.Fatalf("ProjectedFiles = %d; want 2 (both namespaced)", len(res.ProjectedFiles))
+	}
+	for _, rel := range []string{".claude/rules/plug-a-foo.md", ".claude/rules/plug-b-foo.md"} {
+		if _, statErr := os.Stat(filepath.Join(toolRoot, filepath.FromSlash(rel))); statErr != nil {
+			t.Errorf("expected namespaced file %q: %v", rel, statErr)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); statErr == nil {
+		t.Errorf("bare .claude/rules/foo.md must not exist under namespace policy")
 	}
 }
 
@@ -81,7 +116,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/a.md": bodyA})
 	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/b.md": bodyB})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := newProjectionManifest()
 
 	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)

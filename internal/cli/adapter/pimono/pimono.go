@@ -194,13 +194,6 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}, nil
 }
 
-// TransformPlugin is a thin interface stub. Projection runs via the
-// ProjectionRules → route.Project leg (NOT TransformPlugin); the adapter.Adapter
-// interface requires this method, so it returns an empty PluginWrite.
-func (a *Adapter) TransformPlugin(_ context.Context, _, _ string) (adapter.PluginWrite, error) {
-	return adapter.PluginWrite{}, nil
-}
-
 // mcpDeepKeys is pimono's only non-nil route.Rule.Transform, wired onto the
 // mcp/**/* ProjectionRules row. It enumerates the top-level mcpServers map keys
 // a plugin's mcp file contributes so the deep-merge engine can record them in
