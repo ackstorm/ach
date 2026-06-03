@@ -444,13 +444,25 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		adapterRan = true
 		result.FilesWritten += len(renderResult.WrittenFiles) + len(renderResult.ProjectedFiles)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
+		if result.ProjectedByKind == nil {
+			result.ProjectedByKind = map[string]int{}
+		}
+		for k, n := range renderResult.ProjectedByKind {
+			result.ProjectedByKind[k] += n
+		}
+		if result.DroppedByKind == nil {
+			result.DroppedByKind = map[string][]string{}
+		}
+		for k, plugins := range renderResult.DroppedByKind {
+			for _, p := range plugins {
+				result.DroppedByKind[k] = appendUniqueSorted(result.DroppedByKind[k], p)
+			}
+		}
 
-		// WIRE-03 / D-12: a SINGLE end-of-hydration stderr warning lists
-		// each dropped component once (deduped + stable-sorted for
-		// byte-stable stderr). Exit code is UNCHANGED — this is a warning,
-		// not an error. Skipped entirely when nothing was dropped (no
-		// spurious warning for claude-code, which drops nothing).
-		c.warnDroppedComponents(result.DroppedComponents)
+		// WIRE-03 / D-12: end-of-hydration stderr warnings (attributed
+		// per-kind + MCP-shadow). Exit code is UNCHANGED — these are
+		// warnings, never errors. Skipped entirely when nothing was dropped.
+		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
 	}
 	c.maybeKill(10)
 
@@ -860,33 +872,50 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 	return targets
 }
 
-// warnDroppedComponents emits the WIRE-03 / D-12 single end-of-hydration
-// stderr warning naming each dropped component exactly once. The input is
-// already deduped + sorted by the projection leg, but this re-dedups and
-// stable-sorts defensively so the warning is byte-stable regardless of how
-// the caller aggregated the list. A nil/empty list emits NOTHING (no
-// spurious warning for adapters that drop nothing, e.g. claude-code). The
-// exit code is unaffected — this is a warning, never an error.
-func (c *commit) warnDroppedComponents(dropped []string) {
-	if len(dropped) == 0 {
-		return
-	}
-	seen := map[string]bool{}
-	uniq := make([]string, 0, len(dropped))
-	for _, d := range dropped {
-		if d == "" || seen[d] {
-			continue
+// warnDropped emits up to two end-of-hydration stderr warnings; exit code is
+// never affected.
+//
+//  1. byKind (attributed projection drops): for each KNOWN component kind the
+//     active platform has no rule for, a line naming the kind and the plugins
+//     that shipped it. Skipped entirely when empty.
+//  2. flat (the runtime-wins MCP-shadow drops still carried in
+//     DroppedComponents): MCP server ids a runtime-owned definition shadowed.
+//     These are NOT "unsupported" — they were intentionally superseded — so
+//     they get a distinct, correctly-worded line.
+func (c *commit) warnDropped(byKind map[string][]string, flat []string) {
+	if len(byKind) > 0 {
+		kinds := make([]string, 0, len(byKind))
+		for k := range byKind {
+			kinds = append(kinds, k)
 		}
-		seen[d] = true
-		uniq = append(uniq, d)
+		sort.Strings(kinds)
+		_, _ = fmt.Fprintf(c.opts.Stderr,
+			"warning: platform %s does not support some plugin components — they were skipped:\n",
+			c.opts.Platform)
+		for _, k := range kinds {
+			_, _ = fmt.Fprintf(c.opts.Stderr,
+				"    %s (plugins: %s)\n", k, strings.Join(byKind[k], ", "))
+		}
 	}
-	if len(uniq) == 0 {
-		return
+
+	if len(flat) > 0 {
+		isKind := func(s string) bool { _, ok := byKind[s]; return ok }
+		seen := map[string]bool{}
+		var shadow []string
+		for _, s := range flat {
+			if s == "" || isKind(s) || seen[s] {
+				continue
+			}
+			seen[s] = true
+			shadow = append(shadow, s)
+		}
+		if len(shadow) > 0 {
+			sort.Strings(shadow)
+			_, _ = fmt.Fprintf(c.opts.Stderr,
+				"warning: platform %s: projected MCP server(s) shadowed by runtime-owned definitions: %s\n",
+				c.opts.Platform, strings.Join(shadow, ", "))
+		}
 	}
-	sort.Strings(uniq)
-	_, _ = fmt.Fprintf(c.opts.Stderr,
-		"warning: dropped unsupported components for platform %s: %s\n",
-		c.opts.Platform, strings.Join(uniq, ", "))
 }
 
 // step12WriteState — atomic state.json publication via state.Save
