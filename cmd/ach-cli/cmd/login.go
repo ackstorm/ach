@@ -124,9 +124,25 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	stderr := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 
-	// Step 2 — load existing config (best effort; nil-on-absent OK).
-	// Loaded up-front so the first-run banner can gate on "no profiles
-	// yet" before any prompt is shown.
+	// Step 2 — resolve profile name (flag or interactive prompt).
+	name, err := resolveProfileName(profile, stdin, stdout)
+	if err != nil {
+		return err
+	}
+
+	// Step 3 — resolve URL (flag or interactive prompt). Accepts
+	// http:// or https://.
+	url, err := resolveBaseURL(baseURL, stdin, stdout)
+	if err != nil {
+		return err
+	}
+	if !noWarnings && strings.HasPrefix(url, "http://") {
+		_, _ = fmt.Fprintf(stderr,
+			"warning: profile %q uses plaintext http:// — credentials are sent "+
+				"unencrypted (safe only on trusted/internal networks)\n", url)
+	}
+
+	// Step 4 — load existing config (best effort; nil-on-absent OK).
 	configPath, err := config.Path()
 	if err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
@@ -149,38 +165,13 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		file.Profiles = map[string]*config.Profile{}
 	}
 
-	// Step 3 — first-run banner (decorative). Only when this is the
-	// first login on the machine (no profiles yet) AND stdout is a TTY,
-	// so it never lands in a pipe / CI / redirected output.
-	if len(file.Profiles) == 0 && isTerminal(stdout) {
-		writeBanner(stdout)
-	}
-
-	// Step 4 — resolve profile name (flag or interactive prompt).
-	name, err := resolveProfileName(profile, stdin, stdout)
-	if err != nil {
-		return err
-	}
-
-	// Step 5 — resolve URL (flag or interactive prompt). Accepts
-	// http:// or https://.
-	url, err := resolveBaseURL(baseURL, stdin, stdout)
-	if err != nil {
-		return err
-	}
-	if !noWarnings && strings.HasPrefix(url, "http://") {
-		_, _ = fmt.Fprintf(stderr,
-			"warning: profile %q uses plaintext http:// — credentials are sent "+
-				"unencrypted (safe only on trusted/internal networks)\n", url)
-	}
-
-	// Step 6 — device-code init.
+	// Step 5 — device-code init.
 	initResp, err := devicecode.Init(ctx, url)
 	if err != nil {
 		return err
 	}
 
-	// Step 7 — decide how to surface the login URL: open the browser,
+	// Step 6 — decide how to surface the login URL: open the browser,
 	// print-and-wait (remote/headless), or cancel. Interactive TTYs get
 	// a pre-open prompt; non-interactive sessions keep the legacy
 	// behavior (auto-open unless --no-browser). Both open and print
@@ -193,14 +184,14 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 			_, _ = fmt.Fprintf(stderr, "warning: open browser failed (%v); print URL below\n", openErr)
 		}
 	case actPrint:
-		// No shell-out; Step 8 always prints the URL for copy/paste.
+		// No shell-out; the next step always prints the URL for copy/paste.
 	}
 
-	// Step 8 — print verification_url (always: helps copy-paste even
+	// Step 7 — print verification_url (always: helps copy-paste even
 	// when the browser opened successfully).
 	_, _ = fmt.Fprintf(stdout, "Visit %s to complete login\n", initResp.VerificationURL)
 
-	// Step 9 — poll /token until success / terminal / timeout.
+	// Step 8 — poll /token until success / terminal / timeout.
 	pollInterval := time.Duration(initResp.PollInterval) * time.Second
 	if pollInterval <= 0 {
 		pollInterval = defaultLoginPollInterval
@@ -214,7 +205,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return err
 	}
 
-	// Step 10 — mutate + save config. Preserve any pre-existing EK
+	// Step 9 — mutate + save config. Preserve any pre-existing EK
 	// map on this profile (only `pk:` overwrite per D-04).
 	existing := file.Profiles[name]
 	dep := &config.Profile{
@@ -232,7 +223,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
 
-	// Step 11 — success line. CLI-04: pk_ printed ONLY as the masked
+	// Step 10 — success line. CLI-04: pk_ printed ONLY as the masked
 	// tail. The full plaintext lives in tokenResp.Plaintext →
 	// file.Profiles[name].PK → on-disk yaml only.
 	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", tokenResp.OwnerEmail, config.Mask(tokenResp.Plaintext))

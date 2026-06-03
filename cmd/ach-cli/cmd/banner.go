@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// First-run banner for `ach login`. Decorative only — emitted to stdout
-// before the interactive prompts when (a) this is the first login on the
-// machine (no profiles yet in config) and (b) stdout is a TTY. Never
-// printed into a pipe/CI, so it cannot pollute machine-readable output.
+// Decorative banner for bare `ach-cli` (no subcommand) — printed by
+// runRoot before the help text, gated on stdout being a TTY so it never
+// lands in a pipe/CI and cannot pollute machine-readable output. It is
+// shown ONLY on the bare invocation: `--help`, `--version`, and every
+// subcommand (login included) short-circuit before runRoot.
 //
 // The preferred banner is UTF-8 (box-drawing `─`/bullet `●` for the hub
 // motif). A pure-ASCII fallback (`-`/`o`) is used when the locale is not

@@ -35,8 +35,20 @@ content-service, migrate), use the 'ach' binary instead.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
+		return runRoot(cmd)
 	},
+}
+
+// runRoot handles bare `ach-cli` (no subcommand). It prints the decorative
+// banner — gated on stdout being a TTY so it never lands in a pipe/CI —
+// followed by the help text. The banner is shown HERE and nowhere else:
+// `--help`, `--version`, and every subcommand short-circuit before this
+// RunE, so no other invocation surfaces it.
+func runRoot(cmd *cobra.Command) error {
+	if isTerminal(cmd.OutOrStdout()) {
+		writeBanner(cmd.OutOrStdout())
+	}
+	return cmd.Help()
 }
 
 func Execute() error { return rootCmd.Execute() }

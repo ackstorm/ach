@@ -122,6 +122,31 @@ func TestPromptPreOpen_Parse(t *testing.T) {
 	}
 }
 
+// TestRoot_BareBannerGatedAndHelp asserts that bare `ach-cli` on a
+// non-TTY (buffer) shows the help WITHOUT the banner (gated off), proving
+// runRoot wiring + the no-pipe-pollution gate. The banner-on-TTY path is
+// covered by writeBanner + isTerminal unit tests.
+func TestRoot_BareBannerGatedAndHelp(t *testing.T) {
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{})
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("bare ach-cli execute: %v", err)
+	}
+	combined := out.String() + errb.String()
+	// Use a banner-only marker (the hub spokes) — NOT the tagline, which
+	// also appears in rootCmd.Long help text.
+	if strings.Contains(combined, `\  |  /`) {
+		t.Errorf("banner leaked into non-TTY output: %q", combined)
+	}
+	if !strings.Contains(combined, "login") {
+		t.Errorf("help missing subcommands listing: %q", combined)
+	}
+}
+
 // TestResolvePreOpen_Gating asserts the non-prompt arms: --no-browser →
 // print, and non-TTY → auto-open (never blocks on an unanswerable prompt).
 func TestResolvePreOpen_Gating(t *testing.T) {
