@@ -24,13 +24,16 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/devicecode"
@@ -241,11 +244,11 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 func resolveProfileName(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
 	name := strings.TrimSpace(flagVal)
 	if name == "" {
-		_, _ = fmt.Fprint(stdout, "Profile name: ")
-		s := bufio.NewScanner(stdin)
-		if s.Scan() {
-			name = strings.TrimSpace(s.Text())
+		v, err := readLine("Profile name: ", stdin, stdout)
+		if err != nil {
+			return "", err
 		}
+		name = v
 	}
 	if name == "" || !profileNamePattern.MatchString(name) {
 		return "", &exit.CodedError{
@@ -256,6 +259,60 @@ func resolveProfileName(flagVal string, stdin io.Reader, stdout io.Writer) (stri
 	return name, nil
 }
 
+// rwPair adapts a separate reader + writer into the single io.ReadWriter
+// that term.NewTerminal expects (raw-mode keystrokes in, echo out).
+type rwPair struct {
+	io.Reader
+	io.Writer
+}
+
+// readLine reads one line for an interactive prompt. On a TTY it uses a
+// raw-mode line editor (golang.org/x/term) so arrow keys / Home / End /
+// backspace edit the line in place; Ctrl-C / Ctrl-D abort with "login
+// canceled". On a non-TTY (pipe / CI / tests) — or if raw mode cannot be
+// entered — it falls back to the original plain bufio.Scanner read with
+// the prompt printed to stdout. The terminal is always restored via defer
+// before the function returns, so the raw window is scoped to this read.
+func readLine(prompt string, stdin io.Reader, stdout io.Writer) (string, error) {
+	sf, ok := stdin.(*os.File)
+	if !ok || !isTerminal(stdin) || !isTerminal(stdout) {
+		return scanLine(prompt, stdin, stdout)
+	}
+	fd := int(sf.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return scanLine(prompt, stdin, stdout)
+	}
+	defer func() { _ = term.Restore(fd, oldState) }()
+
+	t := term.NewTerminal(rwPair{Reader: stdin, Writer: stdout}, prompt)
+	if w, h, gerr := term.GetSize(fd); gerr == nil {
+		_ = t.SetSize(w, h)
+	}
+	line, rerr := t.ReadLine()
+	if rerr != nil {
+		// Ctrl-C / Ctrl-D both surface as io.EOF (see x/term terminal.go) —
+		// treat either as a user abort.
+		if errors.Is(rerr, io.EOF) {
+			return "", &exit.CodedError{Code: exit.General, Msg: "login canceled"}
+		}
+		return "", &exit.CodedError{Code: exit.General, Msg: rerr.Error(), Wrapped: rerr}
+	}
+	return strings.TrimSpace(line), nil
+}
+
+// scanLine is the cooked-mode / non-TTY fallback: print the prompt, read
+// one line with bufio.Scanner. No cursor-movement editing (the terminal's
+// own line discipline still handles backspace).
+func scanLine(prompt string, stdin io.Reader, stdout io.Writer) (string, error) {
+	_, _ = fmt.Fprint(stdout, prompt)
+	s := bufio.NewScanner(stdin)
+	if s.Scan() {
+		return strings.TrimSpace(s.Text()), s.Err()
+	}
+	return "", s.Err()
+}
+
 // resolveBaseURL returns the flag value when set; otherwise prompts.
 // Accepts http:// or https://; rejects any other scheme. http:// is
 // allowed for local/internal hubs — runLogin emits a plaintext-transport
@@ -263,11 +320,11 @@ func resolveProfileName(flagVal string, stdin io.Reader, stdout io.Writer) (stri
 func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
 	url := strings.TrimSpace(flagVal)
 	if url == "" {
-		_, _ = fmt.Fprint(stdout, "URL: ")
-		s := bufio.NewScanner(stdin)
-		if s.Scan() {
-			url = strings.TrimSpace(s.Text())
+		v, err := readLine("URL: ", stdin, stdout)
+		if err != nil {
+			return "", err
 		}
+		url = v
 	}
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
 		return "", &exit.CodedError{
@@ -312,8 +369,8 @@ func resolvePreOpen(noBrowser bool, stdin io.Reader, stdout io.Writer) openActio
 // any unrecognized token → actOpen, the safe default.
 func promptPreOpen(stdin io.Reader, stdout io.Writer) openAction {
 	_, _ = fmt.Fprintln(stdout, "How would you like to complete login?")
-	_, _ = fmt.Fprintln(stdout, "  1) Open the login page in your browser   (default)")
-	_, _ = fmt.Fprintln(stdout, "  2) Remote / no browser — print the URL and wait")
+	_, _ = fmt.Fprintln(stdout, "  1) Open the login page in your browser")
+	_, _ = fmt.Fprintln(stdout, "  2) Remote / no browser — print the URL and wait (--no-browser)")
 	_, _ = fmt.Fprintln(stdout, "  3) Cancel")
 	_, _ = fmt.Fprint(stdout, "> ")
 

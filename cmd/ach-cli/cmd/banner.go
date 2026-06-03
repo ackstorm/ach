@@ -26,24 +26,24 @@ import (
 // column right of the spokes above/below. Do not "fix" the asymmetry.
 const bannerUTF8 = "" +
 	"\n" +
-	"        \\  |  /              _\n" +
-	"         \\ | /     __ _  ___| |__\n" +
-	"        ──(●)──   / _` |/ __| '_ \\\n" +
-	"         / | \\   | (_| | (__| | | |\n" +
-	"        /  |  \\   \\__,_|\\___|_| |_|\n" +
-	"               Agent Capability Hub\n" +
+	"\\  |  /              _\n" +
+	" \\ | /     __ _  ___| |__\n" +
+	"──(●)──   / _` |/ __| '_ \\\n" +
+	" / | \\   | (_| | (__| | | |\n" +
+	"/  |  \\   \\__,_|\\___|_| |_|\n" +
+	"       Agent Capability Hub\n" +
 	"\n"
 
 // bannerASCII is the LANG=C / non-UTF-8 fallback: `──`→`--`, `●`→`o`. Same
 // column widths as bannerUTF8 so the letters stay aligned.
 const bannerASCII = "" +
 	"\n" +
-	"        \\  |  /              _\n" +
-	"         \\ | /     __ _  ___| |__\n" +
-	"        --(o)--   / _` |/ __| '_ \\\n" +
-	"         / | \\   | (_| | (__| | | |\n" +
-	"        /  |  \\   \\__,_|\\___|_| |_|\n" +
-	"               Agent Capability Hub\n" +
+	"\\  |  /              _\n" +
+	" \\ | /     __ _  ___| |__\n" +
+	"--(o)--   / _` |/ __| '_ \\\n" +
+	" / | \\   | (_| | (__| | | |\n" +
+	"/  |  \\   \\__,_|\\___|_| |_|\n" +
+	"       Agent Capability Hub\n" +
 	"\n"
 
 // writeBanner emits the locale-appropriate banner to w. It does NOT gate
