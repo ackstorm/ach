@@ -26,7 +26,7 @@ installCRDs: true
 # overlay or `--set image.pullPolicy=Always`.
 image:
   repo: ghcr.io/ackstorm/ach
-  tag: v0.2.5
+  tag: v0.2.7
   pullPolicy: IfNotPresent
   # rebuildId: a unique value per build (e.g. a timestamp) rendered as the
   # `ach.ackstorm.ai/rebuild-id` pod annotation on every ach Deployment.
