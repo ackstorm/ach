@@ -6,7 +6,9 @@ kind: Kustomization
 # real upstreams (option B); each CR pins refresh.interval=1h so steady-state
 # stays under any anonymous GitHub quota (default git transport, no REST limit).
 resources:
-  - litellmconnection.yaml
+  # LiteLLMConnection/default is no longer a stage-04 fixture — the ach chart
+  # (stage 02) renders it from the litellmConnection values block. The operator
+  # reconciles it; verify_all still gates on litellmconnection/default Ready.
   - marketplace-anthropic.yaml
   - marketplace-caveman.yaml
   # Phase 02 SC#3 alphabetical name-conflict pair — both point at the real

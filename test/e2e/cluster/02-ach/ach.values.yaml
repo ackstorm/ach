@@ -24,14 +24,10 @@ extraEnv:
         key: pepper
   - name: ACH_BASE_URL
     value: "http://localhost:8080"
-  - name: ACH_LITELLM_BASE_URL
-    value: "http://litellm.litellm-system.svc.cluster.local:4000"
-  - name: ACH_LITELLM_MASTER_KEY
-    # Consumed by platform-api only. The forwarder no longer reads this
-    # env var — its master key is sourced from LiteLLMConnection/default
-    # via MasterKeySecretRef at bootstrap (B2 refactor). Migrating
-    # platform-api to the same CR-driven flow is tracked separately.
-    value: "sk-test-master-key"
+  # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY are NOT set here anymore.
+  # They are derived from the litellmConnection block below (the chart's
+  # ach.litellmConnectionEnv helper injects them into platform-api +
+  # content-service), exercising the single-source path real deployments use.
   # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
   # injects into scripts/dex-config.yaml (in-cluster URL, not the
   # localhost one Dex ships with for the docker-run UAT path).
@@ -58,6 +54,20 @@ extraEnv:
   # (above) makes the platform-api emit the non-Secure `ach_sso` cookie
   # automatically, so the kind gateway's plain-http SSO round-trip works
   # without a flag. An https base would auto-harden to __Host-/Secure.
+
+# Single-source LiteLLM config (the path real deployments use). The chart
+# renders LiteLLMConnection/default (operator reconciles it; forwarder +
+# Environment read the projection) AND derives ACH_LITELLM_* env into
+# platform-api + content-service from this block. masterKeySecretRef points
+# at the litellm-master-key Secret seeded by 02-ach/secrets (key masterKey).
+# The hand-applied 04-objects/litellmconnection.yaml fixture is therefore
+# gone — the chart owns the CR now.
+litellmConnection:
+  enabled: true
+  endpoint: http://litellm.litellm-system.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: masterKey
 
 # NOTE: the e2e test backends are NO LONGER chart toggles. They moved out of
 # the Helm chart into test/e2e/cluster/03-test-backends/ (applied by cluster.sh

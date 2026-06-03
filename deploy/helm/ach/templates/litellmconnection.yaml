@@ -18,6 +18,17 @@ metadata:
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: litellm-connection
+  annotations:
+    # post-install/post-upgrade hook: the CRD lives in templates/crds.yaml,
+    # so a CR instance in the MAIN manifest set fails helm's upfront
+    # resource-mapping ("no matches for kind LiteLLMConnection") before the
+    # CRD is established. As a hook it is built + applied AFTER the main
+    # release (CRD present), the same ordering the e2e harness uses for its
+    # other CR fixtures. before-hook-creation makes values changes propagate
+    # on `helm upgrade` (delete+recreate; the operator re-reconciles).
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   endpoint: {{ required "litellmConnection.endpoint is required when litellmConnection.enabled" .Values.litellmConnection.endpoint | quote }}
   masterKeySecretRef:

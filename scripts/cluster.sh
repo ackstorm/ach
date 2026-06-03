@@ -505,7 +505,8 @@ reconcile_fixtures() {
   #
   # The LiteLLMConnection/default CR + litellm-master-key Secret are NO LONGER
   # seeded here: the Secret is a stage-02 kustomize secretGenerator (reconcile_ach)
-  # and the LiteLLMConnection is a stage-04 object (reconcile_objects). The
+  # and the LiteLLMConnection is rendered by the ach chart itself (stage 02,
+  # from the litellmConnection values block) — no longer a stage-04 fixture. The
   # LiteLLM `default` Team is NOT seeded anywhere — the operator's
   # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a successful
   # probe (idempotent), so production converges without cluster.sh / hand-curl.
@@ -537,7 +538,8 @@ reconcile_fixtures() {
 
 reconcile_objects() {
   # Stage 04 — all non-Environment ACH objects (CRDs from the 02 chart exist now;
-  # Environments in 05 reference these by name). Includes LiteLLMConnection/default.
+  # Environments in 05 reference these by name). LiteLLMConnection/default is no
+  # longer here — the ach chart (stage 02) renders it from values.
   echo "[cluster.sh] applying objects (stage 04)..."
   kubectl apply -k "${CLUSTER_DIR}/04-objects"
 }
