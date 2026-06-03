@@ -62,6 +62,10 @@ type Opts struct {
 	// Single flag, multiple bypasses by design (CLI spec §6.7).
 	Force bool
 
+	// Conflict selects how cross-plugin destination collisions are
+	// resolved during the projection leg. Default ConflictNamespace.
+	Conflict ConflictPolicy
+
 	// DryRun runs every read+diff step but skips step 12 (state
 	// write) and step 8 (real extract). Result still reflects what
 	// WOULD be written, so --verbose can preview.

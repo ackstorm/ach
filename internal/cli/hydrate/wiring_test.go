@@ -51,7 +51,7 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	hc := &httpclient.Client{BaseURL: ts.URL, APIKey: "pk_test"}
-	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false)
+	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
 	ref := manifest.ContentRef{
 		ID:          "demo-prompt",
@@ -85,7 +85,7 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
@@ -120,7 +120,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
@@ -164,7 +164,7 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := dispMiniManifest()
 
 	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
@@ -211,7 +211,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	achDir := t.TempDir()
 	m := dispMiniManifest()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
@@ -244,7 +244,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 
 	// --force → overwrite our key (edit gone).
-	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false)
+	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false, hydrate.ConflictNamespace)
 	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir, false); err != nil {
 		t.Fatalf("force re-render: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	achDir := t.TempDir()
 	m := dispMiniManifest()
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
@@ -728,7 +728,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir(t *testing.T) 
 		"rules/foo.md": "# rule foo\nbe excellent\n",
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
@@ -797,7 +797,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_ScopeSkip(t *testing.T) {
 		"rules/foo.md": "# rule foo\n",
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Environment:   "demo",

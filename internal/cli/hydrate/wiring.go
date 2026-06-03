@@ -308,6 +308,9 @@ type adapterDispatcherImpl struct {
 	// global marks --global scope so Render can remap adapters whose GLOBAL
 	// config path differs from the simple $HOME-join (currently opencode).
 	global bool
+	// conflict selects the cross-plugin destination-collision policy applied
+	// by the projection leg (Phase 1). Default ConflictNamespace.
+	conflict ConflictPolicy
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -1740,6 +1743,7 @@ func NewWiring(
 	allowSymlinks bool,
 	force bool,
 	global bool,
+	conflict ConflictPolicy,
 ) (Extractor, AdapterDispatcher) {
 	ext := &extractorImpl{
 		client:        client,
@@ -1750,6 +1754,7 @@ func NewWiring(
 		platformID: platformID,
 		force:      force,
 		global:     global,
+		conflict:   conflict,
 	}
 	return ext, disp
 }

@@ -796,3 +796,21 @@ func TestValidateEnvHeaderValue(t *testing.T) {
 		})
 	}
 }
+
+func TestHydrate_ConflictFlag_Default(t *testing.T) {
+	cmd := newHydrateCmd()
+	f := cmd.Flags().Lookup("conflict")
+	if f == nil {
+		t.Fatal("--conflict flag not registered")
+	}
+	if f.DefValue != "namespace" {
+		t.Errorf("--conflict default = %q; want namespace", f.DefValue)
+	}
+}
+
+func TestHydrate_Help_MentionsConflict(t *testing.T) {
+	cmd := newHydrateCmd()
+	if !strings.Contains(cmd.Flag("conflict").Usage, "namespace") {
+		t.Errorf("--conflict usage missing policy list: %q", cmd.Flag("conflict").Usage)
+	}
+}

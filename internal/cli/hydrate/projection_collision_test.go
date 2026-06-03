@@ -50,7 +50,7 @@ func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 		"rules/foo.md": "# from plug-b\n",
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := newProjectionManifest()
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
@@ -81,7 +81,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/a.md": bodyA})
 	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/b.md": bodyB})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := newProjectionManifest()
 
 	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
