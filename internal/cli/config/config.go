@@ -179,15 +179,19 @@ func Save(path string, f *File) error {
 	return nil
 }
 
-// Mask returns the display form of a pk_/ek_ plaintext — used by
-// `ach config show` (D-05). Shape: "<prefix>_****<last-4>". Returns
+// Mask returns the display form of a pk-/ek- plaintext — used by
+// `ach config show` (D-05). Shape: "<prefix>-****<last-4>". Returns
 // "<masked>" when the input is shorter than 8 chars or contains no
-// underscore (defensive: never emit ambiguous fragments).
+// hyphen (defensive: never emit ambiguous fragments).
+//
+// The base64url payload may itself contain hyphens, but the prefix
+// separator is always the FIRST hyphen (index 2), so strings.Index is
+// correct.
 func Mask(s string) string {
 	if len(s) < 8 {
 		return "<masked>"
 	}
-	idx := strings.Index(s, "_")
+	idx := strings.Index(s, "-")
 	if idx < 0 {
 		return "<masked>"
 	}

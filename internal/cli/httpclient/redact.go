@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/ackstorm/ach/internal/keys"
 )
 
 // achKeyHeader is the canonical form of the ACH credential carrier
@@ -13,21 +15,24 @@ import (
 // the name; HeaderDump matches against this exact string after lookup.
 const achKeyHeader = "X-Ach-Key"
 
-// Redact reduces a pk_/ek_ plaintext to "<prefix>_***" for safe
+// Redact reduces a pk-/ek- plaintext to "<prefix>-***" for safe
 // inclusion in `--verbose` header dumps (CLI-04 / D-15). Values that
-// don't carry the pk_/ek_ prefix collapse to the literal "redacted"
+// don't carry the pk-/ek- prefix collapse to the literal "redacted"
 // marker — defensive default that never echoes unrecognized values.
 //
 // Distinct from config.Mask: Mask renders the operator-friendly
-// `<prefix>_****<last-4>` (for `ach config show`); Redact renders the
-// stricter "<prefix>_***" (for header dumps, where last-4 is excess
+// `<prefix>-****<last-4>` (for `ach config show`); Redact renders the
+// stricter "<prefix>-***" (for header dumps, where last-4 is excess
 // fingerprint).
+//
+// Uses keys.PkBearerPrefix / keys.EkBearerPrefix so the prefix string
+// is defined exactly once — no drift hazard.
 func Redact(value string) string {
 	switch {
-	case strings.HasPrefix(value, "pk_"):
-		return "pk_***"
-	case strings.HasPrefix(value, "ek_"):
-		return "ek_***"
+	case strings.HasPrefix(value, keys.PkBearerPrefix):
+		return "pk-***"
+	case strings.HasPrefix(value, keys.EkBearerPrefix):
+		return "ek-***"
 	default:
 		return "redacted"
 	}
