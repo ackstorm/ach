@@ -402,6 +402,7 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 			keys = tkeys
 		}
 
+		kept[topLevel]++
 		fws = append(fws, adapter.FileWrite{
 			Path:       dest,
 			Content:    content,

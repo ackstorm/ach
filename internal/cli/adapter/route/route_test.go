@@ -421,6 +421,27 @@ func TestProject_DropsOnlyKnownKinds(t *testing.T) {
 	}
 }
 
+// TestProject_KeptByKind: Project tallies matched files per source kind in
+// KeptByKind.
+func TestProject_KeptByKind(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"commands/a.md":    "a",
+		"commands/b.md":    "b",
+		"skills/s/SKILL.md": "s",
+	})
+	rules := []Rule{
+		{FromGlob: "commands/**/*", ToGlob: ".x/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".x/skills/**/*", Merge: adapter.MergeReplace},
+	}
+	pr, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project = %v", err)
+	}
+	if pr.KeptByKind["commands"] != 2 || pr.KeptByKind["skills"] != 1 {
+		t.Fatalf("KeptByKind = %v; want commands=2 skills=1", pr.KeptByKind)
+	}
+}
+
 // TestResolveTarget_NestedAndGuard exercises the remap helper directly.
 func TestResolveTarget_NestedAndGuard(t *testing.T) {
 	dest, err := resolveRecursiveGlobTarget("rules/**/*.md", ".claude/rules/**/*.md", "rules/foo/bar.md")
