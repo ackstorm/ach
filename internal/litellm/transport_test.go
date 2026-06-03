@@ -197,7 +197,13 @@ func TestDangerouslyEnvFlipsRedaction(t *testing.T) {
 func TestDrainAndClose(t *testing.T) {
 	t.Setenv(EnvDangerouslyLogBodies, "")
 
-	payload := bytes.Repeat([]byte("A"), 1<<20) // 1 MB
+	// 64 KB exceeds a single read, so an undrained body still blocks
+	// keepalive reuse (the leak this test guards against). 100 iterations
+	// is ample headroom over the delta>5 threshold — a broken drain leaks
+	// ~1 goroutine per iteration. Kept deliberately small: 1000×1MB (~1 GB)
+	// blew the 10m package timeout on loaded CI runners (release attempt 1,
+	// run 26894690936) while adding no detection power.
+	payload := bytes.Repeat([]byte("A"), 1<<16) // 64 KB
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		_, _ = w.Write(payload)
@@ -211,7 +217,7 @@ func TestDrainAndClose(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	before := runtime.NumGoroutine()
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100; i++ {
 		req, _ := http.NewRequest("GET", srv.URL, nil)
 		resp, err := client.Do(req)
 		if err != nil {
