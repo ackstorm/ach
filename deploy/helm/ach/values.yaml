@@ -86,8 +86,13 @@ forwarder:
   args: ["forwarder"]
   # jwtSecretName names the Secret holding current/next Ed25519 signing
   # material per D-10 (data keys: current.kid, current.seed, next.kid?,
-  # next.seed?). Operator MUST create this Secret before forwarder boots
-  # — refuse-to-start contract per FWD-09.
+  # next.seed?). The operator MINTS + persists this Secret on boot
+  # (internal/operator/jwtkeys.EnsureSigningKeys — random seed, mint-once),
+  # via a minimal namespaced `secrets: create` Role. The forwarder
+  # refuse-to-starts until it exists (FWD-09), then boots. The Secret is
+  # operator-owned (not Helm-managed), so it survives `helm uninstall` and a
+  # reinstall reuses the same key — no JWKS rotation. To force rotation,
+  # delete the Secret and let the operator re-mint.
   jwtSecretName: ach-jwt-signing-keys
   # litellmMasterSecretName MUST equal the Secret name in
   # LiteLLMConnection/default's spec.masterKeySecretRef.name. Forwarder

@@ -511,23 +511,14 @@ reconcile_fixtures() {
   # LiteLLMConnection reconciler calls EnsureDefaultTeam(ctx) after a successful
   # probe (idempotent), so production converges without cluster.sh / hand-curl.
 
-  # JWT signing keys Secret (FWD-09). The forwarder refuses-to-start without it.
-  # Generated fresh per run — kid is a timestamp so re-running reconciliation
-  # produces a new (kid, seed) pair instead of clobbering with a stale value.
-  # NOT the same as the test/e2e/fixtures/*UNSAFE* known-plaintext seed: that
-  # one lives in `default` for SC#4 JWKS-roundtrip asserts and must never land
-  # in `ach-system`.
-  if ! kubectl -n ach-system get secret ach-jwt-signing-keys >/dev/null 2>&1; then
-    local jwttmp; jwttmp="$(mktemp -d)"
-    trap "rm -rf '${jwttmp}'" RETURN
-    openssl rand 32 > "${jwttmp}/current.seed"
-    printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
-    kubectl -n ach-system create secret generic ach-jwt-signing-keys \
-      --from-file=current.kid="${jwttmp}/current.kid" \
-      --from-file=current.seed="${jwttmp}/current.seed"
-  else
-    echo "[cluster.sh] ach-jwt-signing-keys Secret already present — leaving as-is."
-  fi
+  # JWT signing keys Secret (FWD-09) is NO LONGER seeded here: the operator
+  # mints + persists ach-jwt-signing-keys on boot
+  # (internal/operator/jwtkeys.EnsureSigningKeys — random Ed25519 seed, kid
+  # derived from the pubkey, mint-once). The forwarder refuse-to-starts until
+  # the operator creates it, then boots — so wait_ach gates on that
+  # convergence and this exercises the real mint path end-to-end. (The
+  # test/e2e/fixtures/*UNSAFE* known-plaintext seed in `default` for SC#4 is a
+  # separate fixture and must never land in `ach-system`.)
 
   # Stage 03 — test backends: nginx gateway + ach-mcp-echo + ach-mock-model
   # (post-ach; the gateway's static proxy_pass upstreams and mcp-echo's JWKS

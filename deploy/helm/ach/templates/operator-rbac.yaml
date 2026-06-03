@@ -103,4 +103,43 @@ subjects:
 - kind: ServiceAccount
   name: ach-operator
   namespace: {{ .Release.Namespace }}
+---
+# Namespaced Role: lets the operator MINT the ach-jwt-signing-keys Secret
+# (internal/operator/jwtkeys.EnsureSigningKeys — a random Ed25519 seed minted
+# once and persisted, FWD-09). Minimal grant: `create` only, namespace-scoped.
+#
+# NOTE: Kubernetes RBAC cannot restrict `create` by resourceNames (the object
+# name is unknown at admission), so a namespaced Role is the tightest scope
+# achievable — not the cluster-wide operator ClusterRole. The existence check
+# (get, to no-op when present) is already covered by the operator ClusterRole's
+# secrets get;list;watch.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-operator-jwt-signing
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-operator-jwt-signing
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-operator-jwt-signing
+subjects:
+- kind: ServiceAccount
+  name: ach-operator
+  namespace: {{ .Release.Namespace }}
 {{- end }}

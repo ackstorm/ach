@@ -31,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -47,7 +48,9 @@ import (
 	achcontroller "github.com/ackstorm/ach/internal/controller/ach"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/operator/jwtkeys"
 	"github.com/ackstorm/ach/internal/operator/refreshsignal"
 	"github.com/ackstorm/ach/internal/operator/resync"
 	"github.com/ackstorm/ach/internal/orphan"
@@ -320,6 +323,21 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
+	}
+
+	// ─── Mint the forwarder's JWT signing keys (FWD-09) if absent ───
+	// The operator owns ach-jwt-signing-keys: a fresh random Ed25519 seed is
+	// minted once and persisted. Run with a direct uncached client BEFORE
+	// mgr.Start (the cache is not up yet). Idempotent — never overwrites an
+	// existing key, so the key persists across operator restarts; and because
+	// the Secret is operator-owned (not Helm-owned) it survives helm uninstall.
+	// The forwarder refuse-to-starts until this Secret exists.
+	bootClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return fmt.Errorf("unable to build bootstrap client for jwt signing keys: %w", err)
+	}
+	if err := jwtkeys.EnsureSigningKeys(context.Background(), bootClient, watchNS, jwt.SecretName, ctrl.Log.WithName("jwtkeys")); err != nil {
+		return fmt.Errorf("unable to ensure jwt signing keys: %w", err)
 	}
 
 	// ─── Phase 2: pre-warm corev1.Secret informer (D-11) ───
