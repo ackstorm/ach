@@ -305,6 +305,7 @@ func newConfigAddCmd() *cobra.Command {
 		flagProfile string
 		flagURL     string
 		flagAPIKey  string
+		flagEnvKeys []string
 		flagDefault bool
 		flagForce   bool
 	)
@@ -324,7 +325,7 @@ ach hydrate when no --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY is set).
 Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagDefault, flagForce)
+			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce)
 		},
 	}
 	c.Flags().StringVar(&flagProfile, "profile", "", "Profile name to create (DNS-1123 label)")
@@ -332,6 +333,8 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk_ or ek_ plaintext to store")
 	c.Flags().BoolVar(&flagDefault, "default", false, "Set this profile as the default")
 	c.Flags().BoolVar(&flagForce, "force", false, "Overwrite an existing profile of the same name")
+	c.Flags().StringArrayVar(&flagEnvKeys, "env-key", nil,
+		"Seed a labelled ek_ into profiles.<name>.ek (label=ek_...); repeatable")
 	_ = c.MarkFlagRequired("profile")
 	_ = c.MarkFlagRequired("url")
 	_ = c.MarkFlagRequired("api-key")
@@ -341,7 +344,7 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 // runConfigAdd validates the three required inputs, then creates (or,
 // with --force, overwrites) the named profile and saves it 0600. The
 // first profile written becomes the default; --default forces it.
-func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, setDefault, force bool) error {
+func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force bool) error {
 	if err := configSyntheticGuard("add"); err != nil {
 		return err
 	}
@@ -367,6 +370,34 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, setDefault, forc
 			Msg:     fmt.Sprintf("--api-key is not a valid pk_/ek_ bearer: %v", err),
 			Wrapped: err,
 		}
+	}
+	// Parse --env-key label=ek_ specs. Each value MUST be an ek_ bearer
+	// (a pk_ is the profile default, not a per-environment key).
+	ekMap := map[string]string{}
+	for _, spec := range envKeys {
+		label, ek, ok := strings.Cut(spec, "=")
+		if !ok {
+			// No '=' at all: spec is a bare label (no secret) — safe to quote.
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("--env-key %q: missing '=' separator; expected label=ek_...", spec),
+			}
+		}
+		if label == "" {
+			// spec is "=<value>"; do NOT quote spec — it carries the ek_ plaintext.
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  "--env-key: label must not be empty; expected label=ek_...",
+			}
+		}
+		prefix, err := keys.ClassifyBearer(ek)
+		if err != nil || prefix != keys.PrefixEk {
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("--env-key %q value is not a valid ek_ bearer", label),
+			}
+		}
+		ekMap[label] = ek
 	}
 	if strings.HasPrefix(url, "http://") {
 		_, _ = fmt.Fprintf(stderr,
@@ -395,11 +426,21 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, setDefault, forc
 		}
 	}
 
-	// Preserve any pre-existing EK map on --force overwrite (only the
-	// default bearer + URL are replaced), mirroring login's D-04 rule.
+	// On --force overwrite, URL + PK are replaced and the existing EK
+	// label map is preserved; any --env-key passed this invocation is
+	// then merged on top, OVERRIDING a pre-existing entry of the same
+	// label (last-write-wins per label).
 	dep := &config.Profile{URL: url, PK: apiKey}
 	if existing := file.Profiles[name]; existing != nil {
 		dep.EK = existing.EK
+	}
+	if len(ekMap) > 0 {
+		if dep.EK == nil {
+			dep.EK = map[string]string{}
+		}
+		for label, ek := range ekMap {
+			dep.EK[label] = ek
+		}
 	}
 	file.Profiles[name] = dep
 	if setDefault || file.Default == "" {

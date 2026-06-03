@@ -175,3 +175,70 @@ func TestConfigAdd_SyntheticMode_Exit1(t *testing.T) {
 		t.Errorf("exit = %d; want 1 (synthetic mode)", code)
 	}
 }
+
+func TestConfigAdd_EnvKeys_PopulatesEKMap(t *testing.T) {
+	dir := configTestEnv(t)
+	_, _, code, err := executeConfig(t, "add",
+		"--profile", "svc", "--url", "https://hub.example", "--api-key", validPK,
+		"--env-key", "team-a="+validEK,
+		"--env-key", "team-b="+validEK)
+	if err != nil || code != exit.OK {
+		t.Fatalf("add: code=%d err=%v", code, err)
+	}
+	f, _ := config.Load(filepath.Join(dir, "ach", "config.yaml"))
+	dep := f.Profiles["svc"]
+	if dep.EK["team-a"] != validEK || dep.EK["team-b"] != validEK {
+		t.Errorf("EK map = %+v; want team-a + team-b", dep.EK)
+	}
+}
+
+func TestConfigAdd_EnvKeys_Invalid_Exit1(t *testing.T) {
+	cases := []struct {
+		name string
+		spec string
+	}{
+		{"no-equals", "team-a"},
+		{"empty-label", "=" + validEK},
+		{"value-not-ek", "team-a=" + validPK}, // pk_ rejected; must be ek_
+		{"value-malformed", "team-a=ek_short"},
+		{"value-pk-wrong-length", "team-a=pk_short"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			configTestEnv(t)
+			_, _, code, err := executeConfig(t, "add",
+				"--profile", "svc", "--url", "https://hub.example",
+				"--api-key", validPK, "--env-key", tc.spec)
+			if err == nil {
+				t.Fatal("want --env-key validation error")
+			}
+			if code != exit.General {
+				t.Errorf("exit = %d; want 1", code)
+			}
+		})
+	}
+}
+
+func TestConfigAdd_ForceEnvKey_OverridesMatchingLabel(t *testing.T) {
+	dir := configTestEnv(t)
+	oldEK := "ek_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+	seedConfigFile(t, dir, &config.File{
+		Profiles: map[string]*config.Profile{
+			"svc": {URL: "https://old.example", PK: validPK, EK: map[string]string{"team-a": oldEK, "team-b": validEK}},
+		},
+	})
+	_, _, code, err := executeConfig(t, "add",
+		"--profile", "svc", "--url", "https://new.example", "--api-key", validPK,
+		"--env-key", "team-a="+validEK, "--force")
+	if err != nil || code != exit.OK {
+		t.Fatalf("add --force: code=%d err=%v", code, err)
+	}
+	f, _ := config.Load(filepath.Join(dir, "ach", "config.yaml"))
+	dep := f.Profiles["svc"]
+	if dep.EK["team-a"] != validEK {
+		t.Errorf("team-a should be overridden to new ek; got %q", dep.EK["team-a"])
+	}
+	if dep.EK["team-b"] != validEK {
+		t.Errorf("team-b (untouched) should be preserved; got %q", dep.EK["team-b"])
+	}
+}
