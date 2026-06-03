@@ -32,6 +32,7 @@ import (
 	"context"
 	"fmt"
 	nethttp "net/http"
+	neturl "net/url"
 	"strings"
 
 	gogithub "github.com/google/go-github/v62/github"
@@ -55,6 +56,13 @@ type Fetcher struct {
 	// the git transport hits a local bare-repo fixture instead of
 	// github.com.
 	cloneURLForTesting string
+
+	// apiBaseURLForTesting overrides the go-github REST client BaseURL.
+	// Empty in production (defaults to api.github.com). Set by tests so
+	// the legacy REST branch hits a local httptest server instead of the
+	// real api.github.com — keeping unit tests offline + deterministic
+	// (mirrors cloneURLForTesting for the git branch).
+	apiBaseURLForTesting string
 }
 
 // New constructs a GitHub source fetcher. Returns ErrUpstreamInvalid
@@ -115,6 +123,14 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	client := gogithub.NewClient(nil)
 	if token != "" {
 		client = client.WithAuthToken(token)
+	}
+	// Test-only: redirect the REST client at a local httptest server.
+	if f.apiBaseURLForTesting != "" {
+		base, perr := neturl.Parse(f.apiBaseURLForTesting)
+		if perr != nil {
+			return nil, fmt.Errorf("github: parse test base URL %q: %w", f.apiBaseURLForTesting, sources.ErrUpstreamInvalid)
+		}
+		client.BaseURL = base
 	}
 
 	// 4. Resolve the commit SHA at HEAD of spec.Ref.

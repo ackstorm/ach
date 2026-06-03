@@ -5,6 +5,8 @@ package github
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,19 +51,28 @@ func TestNew_AcceptsAnonymousSpec(t *testing.T) {
 
 // TestFetch_AnonymousIgnoresSecret asserts that when spec.AuthSecretRef
 // is nil, Fetch does NOT trip the ErrUnauthorized branches — even with
-// req.Secret = nil. The fetch will still fail (no real network here),
-// but the failure mode must be Unreachable, not Unauthorized.
+// req.Secret = nil. The REST call still fails (the server returns 404),
+// but the failure mode must be NotFound/Unreachable, not Unauthorized.
 //
 // Pinned to Transport=rest because the git-protocol upstream returns
-// an auth-prompt for nonexistent github.com repositories regardless of
-// whether the client supplied credentials (git/HTTPS cannot distinguish
+// an auth-prompt for nonexistent repositories regardless of whether the
+// client supplied credentials (git/HTTPS cannot distinguish
 // "private+unauth" from "doesn't exist" — both surface as "please log
 // in"). The original REST semantics — "anonymous + nonexistent → 404
 // NotFound, not Unauthorized" — is what this test exercises. The git
 // transport's own classification for analogous scenarios is covered by
 // TestGitTransport_GitHub_UnreachableClassifies (git_transport_test.go).
+//
+// Offline: the go-github client is redirected at a local httptest server
+// (apiBaseURLForTesting) returning 404, so this never touches the real
+// api.github.com — no network, no flake on degraded-egress runners.
 func TestFetch_AnonymousIgnoresSecret(t *testing.T) {
 	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	}))
+	defer srv.Close()
 
 	f, err := New(&achv1alpha1.GitHubSource{
 		Repo:      "no-such-owner-x/no-such-repo-y",
@@ -71,7 +82,13 @@ func TestFetch_AnonymousIgnoresSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	f.apiBaseURLForTesting = srv.URL + "/"
+	f.setHTTPClientForTesting(srv.Client())
+
 	_, err = f.Fetch(context.Background(), sources.FetchRequest{Secret: nil})
+	if err == nil {
+		t.Fatal("expected a non-nil error for a 404 repo")
+	}
 	if errors.Is(err, sources.ErrUnauthorized) {
 		t.Fatalf("expected non-Unauthorized error for anonymous spec with nil Secret; got %v", err)
 	}
