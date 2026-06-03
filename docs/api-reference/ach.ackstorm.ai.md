@@ -273,7 +273,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `prompts` _string array_ | Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
-| `plugins` _string array_ | Plugins lists referenced Plugin (or marketplace plugin) names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 

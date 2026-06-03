@@ -67,9 +67,12 @@ type ContextBlock struct {
 	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	Prompts []string `json:"prompts,omitempty"`
 
-	// Plugins lists referenced Plugin (or marketplace plugin) names.
-	// Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace
-	// control chars or DEL).
+	// Plugins lists referenced plugin names. A bare name ("code-review")
+	// resolves to an internal Plugin CRD; a scoped name
+	// ("code-review@anthropics-official") resolves to that
+	// PluginMarketplace's plugin by exact (marketplace, name). Same strict
+	// deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars
+	// or DEL); "@" is permitted as the marketplace separator.
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
