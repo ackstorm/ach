@@ -61,6 +61,15 @@ spec:
       # PodSecurityStandards/restricted compliance (T-08-03).
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup makes the kubelet chown the ach-operator-cache PVC
+        # (mounted RWO at /var/cache/ach) to gid 65532 + setgid so the
+        # nonroot user (uid/gid 65532, per the image USER) can write the
+        # cache. Without it the PVC mounts root-owned and the operator
+        # fails "permission denied" on first write (readOnlyRootFilesystem
+        # leaves no fallback). Mirrors the Helm chart's operator pod.
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       # SC #2: two containers, one PVC.
