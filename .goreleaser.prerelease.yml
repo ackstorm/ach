@@ -13,9 +13,11 @@ builds:
     binary: ach
     env:
       - CGO_ENABLED=0
+    # Server binary (operator/platform-api/forwarder/content-service/
+    # migrate/gateway) runs ONLY in Linux containers — no darwin build.
+    # (ach-cli below keeps darwin: it's the macOS user CLI.)
     goos:
       - linux
-      - darwin
     goarch:
       - amd64
       - arm64
