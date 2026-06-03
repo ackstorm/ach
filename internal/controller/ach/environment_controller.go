@@ -214,32 +214,10 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) + len(unresolved.A2AAgents)
 
 	// Context plugin closed-set (handoff item 4 / Task B9): a listed plugin
-	// must resolve AND have content synced (last_successful_refresh non-null),
-	// not merely exist by name — prevents ExecutionResourcesResolved
-	// false-green when a plugin is referenced but its artifact was never
-	// fetched. Bare ref = Plugin CRD row; name@marketplace = marketplace_plugins row.
-	//
-	// Guard on r.DB != nil so unit tests (Phase 1 envtest / nil-DB paths)
-	// are unaffected; production reconciles always have DB wired.
-	var unresolvedContextPlugins []string
-	if r.DB != nil {
-		for _, ref := range env.Spec.Context.Plugins {
-			// A malformed ref (e.g. "name@" with an empty marketplace) is
-			// unresolvable by grammar — surface it as unresolved rather than
-			// silently degrading to a bare CRD lookup.
-			if !pluginref.Valid(ref) {
-				unresolvedContextPlugins = append(unresolvedContextPlugins, ref)
-				continue
-			}
-			pname, mkt, _ := pluginref.Parse(ref)
-			res, rerr := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
-			if rerr != nil {
-				return ctrl.Result{}, fmt.Errorf("resolve context plugin %q: %w", ref, rerr)
-			}
-			if res == nil || res.LastSuccessfulRefresh == nil {
-				unresolvedContextPlugins = append(unresolvedContextPlugins, ref)
-			}
-		}
+	// must resolve AND have content synced — see contextPluginsUnresolved.
+	unresolvedContextPlugins, err := r.contextPluginsUnresolved(ctx, &env)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	totalUnresolved += len(unresolvedContextPlugins)
 
@@ -386,6 +364,39 @@ const staleRequeueAfter = 15 * time.Second
 // marketplace projection writes do not enqueue Environments, so this poll
 // is how the Environment converges to Available once content lands.
 const pluginUnresolvedRequeueAfter = 30 * time.Second
+
+// contextPluginsUnresolved returns the spec.context.plugins refs that are
+// not yet content-present (handoff item 4 / Task B9): a listed plugin must
+// resolve AND have its content synced (last_successful_refresh non-null),
+// not merely exist by name — this prevents an ExecutionResourcesResolved
+// false-green when a plugin is referenced but its artifact was never
+// fetched. A bare ref resolves a Plugin CRD row; name@marketplace resolves
+// the marketplace_plugins row. A malformed ref (e.g. "name@") is reported
+// unresolved rather than silently degrading to a bare lookup.
+//
+// Guarded on r.DB != nil so nil-DB unit/envtest paths are unaffected;
+// production reconciles always have DB wired.
+func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
+	if r.DB == nil {
+		return nil, nil
+	}
+	var unresolved []string
+	for _, ref := range env.Spec.Context.Plugins {
+		if !pluginref.Valid(ref) {
+			unresolved = append(unresolved, ref)
+			continue
+		}
+		pname, mkt, _ := pluginref.Parse(ref)
+		res, err := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
+		if err != nil {
+			return nil, fmt.Errorf("resolve context plugin %q: %w", ref, err)
+		}
+		if res == nil || res.LastSuccessfulRefresh == nil {
+			unresolved = append(unresolved, ref)
+		}
+	}
+	return unresolved, nil
+}
 
 // writeEnvironmentProjection performs the spec v4 §5.2 dual-write to
 // the environments projection table — wrapping the nil-DB gate, the
