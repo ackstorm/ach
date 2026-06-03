@@ -1011,4 +1011,3 @@ func TestPMR_Stage3_DeleteSweep(t *testing.T) {
 	// testcontainers Postgres and wires r.DB before running.
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration")
 }
-

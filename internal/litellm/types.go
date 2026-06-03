@@ -258,7 +258,7 @@ type TeamMemberAddRequest struct {
 // KeyGenerateRequest is the POST /key/generate request body.
 //
 // The Key field is the caller-supplied bearer plaintext: Phase 3 D-13
-// generates `pk_*` / `ek_*` plaintext ACH-side via crypto/rand and passes
+// generates `pk-*` / `ek-*` plaintext ACH-side via crypto/rand and passes
 // it here so LiteLLM stores ACH's prefix in its key column (NOT a
 // LiteLLM-generated `sk-*`).
 //

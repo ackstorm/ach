@@ -243,15 +243,17 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 }
 
 // resolveContent (gate 6 per D-04). Kind-dispatched projection row
-// lookup. For plugin, calls db.ResolvePluginByName which implements the
-// §12.3 precedence CTE (CRD wins, else lexicographically lowest
-// marketplace).
+// lookup. For plugin, parses the ref via pluginref and calls
+// db.ResolvePluginByName with the (name, marketplace): a bare name
+// resolves a Plugin CRD row ONLY (no marketplace fallback); a scoped
+// name@marketplace resolves the exact (marketplace_name, name) row. No
+// tiebreak.
 //
 // Returns:
 //
 //   - (row, nil) on hit;
-//   - (nil, errContentNotFound) when the projection row is absent (and
-//     for plugin, also no marketplace match);
+//   - (nil, errContentNotFound) when the projection row is absent (for a
+//     bare name: no Plugin CRD row; for a scoped name: no marketplace row);
 //   - (nil, errInternal) on any other DB error.
 //
 // CS-09: soft-deleted rows (DeletionTimestamp != nil) are STILL

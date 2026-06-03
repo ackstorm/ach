@@ -290,7 +290,6 @@ func TestClassifyBearer_WrongLengthRejected(t *testing.T) {
 	}
 }
 
-
 func TestClassifyBearer_OutOfAlphabetRejected(t *testing.T) {
 	// 64-char suffix but one char outside [A-Za-z0-9_-].
 	base := strings.Repeat("a", 63)
