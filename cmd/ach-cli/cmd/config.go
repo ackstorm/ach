@@ -41,7 +41,7 @@ import (
 )
 
 // newConfigCmd returns a fresh `ach config` parent cobra.Command with
-// all 5 children registered. Factory shape (per 06-03 Pattern P2)
+// all 6 children registered. Factory shape (per 06-03 Pattern P2)
 // keeps tests hermetic — each subtest constructs an isolated tree.
 func newConfigCmd() *cobra.Command {
 	parent := &cobra.Command{

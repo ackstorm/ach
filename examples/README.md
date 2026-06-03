@@ -62,6 +62,34 @@ asserts this invariant automatically. See `CLAUDE.md` "Common failure modes"
 entry "Hydrate output != examples/hydrate.json" for the host-normalization
 gotcha + remediation steps.
 
+## Headless agent / CI (no browser)
+
+`ach login` needs a browser for SSO. On an agent or CI runner, seed the
+profile from a credential you already minted instead:
+
+```bash
+# 1. (on a human machine) mint a service key scoped to an environment:
+ach env-keys create --environment prod --name ci-bot      # prints ek_...
+
+# 2. (on the agent) register a profile from that ek_ — no SSO:
+ach config add --profile prod --url https://ach.example --api-key ek_...
+
+# multi-environment: seed several ek_ under labels in one profile:
+ach config add --profile svc --url https://ach.example --api-key pk_... \
+  --env-key prod=ek_AAA --env-key stg=ek_BBB
+ach hydrate --env-key prod --environment prod
+ach hydrate --env-key stg  --environment stg
+
+# or skip disk config entirely (secrets stay in env, ideal for CI):
+export ACH_BASE_URL=https://ach.example
+export ACH_API_KEY=ek_...
+ach hydrate --environment prod   # repeat per env, no --api-key
+```
+
+Note: an `ek_` is scoped to ONE Environment; a `pk_` (from `ach login`)
+spans every environment you can access but expires on a 7-day sliding
+window. For long-lived agents prefer per-environment `ek_`.
+
 ## What the demo Environment explicitly does NOT do
 
 (The `demo` Environment now lives at `test/e2e/cluster/05-environment/demo.yaml`.)
