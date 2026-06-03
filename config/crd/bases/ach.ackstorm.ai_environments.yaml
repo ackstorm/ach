@@ -89,9 +89,12 @@ spec:
                   plugins:
                     default: []
                     description: |-
-                      Plugins lists referenced Plugin (or marketplace plugin) names.
-                      Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace
-                      control chars or DEL).
+                      Plugins lists referenced plugin names. A bare name ("code-review")
+                      resolves to an internal Plugin CRD; a scoped name
+                      ("code-review@anthropics-official") resolves to that
+                      PluginMarketplace's plugin by exact (marketplace, name). Same strict
+                      deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars
+                      or DEL); "@" is permitted as the marketplace separator.
                     items:
                       maxLength: 253
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
@@ -239,6 +242,23 @@ spec:
                   most recently processed.
                 format: int64
                 type: integer
+              unresolvedContextPlugins:
+                default: []
+                description: |-
+                  UnresolvedContextPlugins lists context.plugins entries whose content
+                  has not yet been synced (last_successful_refresh IS NULL in the
+                  plugins or marketplace_plugins projection row). A non-empty list
+                  blocks ExecutionResourcesResolved from becoming True — prevents the
+                  Available=True false-green that would otherwise let hydrate issue a
+                  404 at runtime.
+
+                  Bare entries (no @) resolve against the plugins (CRD) projection
+                  table; scoped entries (name@marketplace) resolve against
+                  marketplace_plugins. Both arms require last_successful_refresh to
+                  be non-null before the plugin is considered content-present.
+                items:
+                  type: string
+                type: array
               unresolvedRuntime:
                 description: |-
                   UnresolvedRuntime lists runtime references not currently registered in

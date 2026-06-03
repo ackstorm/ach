@@ -10,7 +10,7 @@
 // callback response (the JSON {key_id, plaintext, owner_email}) is the
 // SOLE output (the one-time emission per KEY-03 + Hub §16.1 Specifics
 // block) and the cookie is cleared. Subsequent requests authenticate via
-// the pk_ bearer through the Authn middleware (Plan 03-05).
+// the pk- bearer through the Authn middleware (Plan 03-05).
 //
 // JSON-only endpoints: GET /platform/auth/login redirects 302 straight to
 // Dex; GET /platform/auth/sso/callback returns the JSON response and
@@ -23,7 +23,7 @@
 // create the default Team — that is a fail-loud signal to the deployer.
 //
 // Plaintext discipline (Hub §16.1, internal/credhash, internal/keys
-// docstrings): the bearer plaintext (pk_<26-base32-lower>) appears in
+// docstrings): the bearer plaintext (pk-<64-base64url>) appears in
 // exactly one place — the response body of the callback. It is NEVER
 // logged, NEVER recorded in audit Extra, NEVER persisted in the DB or
 // in any cache. The credential_hash (HMAC-SHA-256 with pepper) is the

@@ -124,7 +124,7 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	// pending=0: login should complete on the first poll. The
 	// devicecode package's own test exercises the multi-pending
 	// cadence; here we only assert the integration writes config.
-	ts := newLoginTestServer(t, 0, "pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ", "u@example")
+	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "u@example")
 	defer ts.Close()
 
 	stdout, _, code, err := executeLogin(t,
@@ -158,8 +158,8 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	if dep.URL != ts.URL {
 		t.Errorf("profiles.prod.url = %q; want %q", dep.URL, ts.URL)
 	}
-	if dep.PK != "pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ" {
-		t.Errorf("profiles.prod.pk = %q; want pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ", dep.PK)
+	if dep.PK != "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ" {
+		t.Errorf("profiles.prod.pk = %q; want pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", dep.PK)
 	}
 	// First login → default: should auto-set.
 	if f.Default != "prod" {
@@ -177,12 +177,12 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	if !strings.Contains(stdout, "u@example") {
 		t.Errorf("stdout missing owner email; got: %s", stdout)
 	}
-	if !strings.Contains(stdout, "pk_****WXYZ") {
-		t.Errorf("stdout missing masked pk tail pk_****WXYZ; got: %s", stdout)
+	if !strings.Contains(stdout, "pk-****WXYZ") {
+		t.Errorf("stdout missing masked pk tail pk-****WXYZ; got: %s", stdout)
 	}
 	// CLI-04: full pk plaintext (anything longer than the masked form)
 	// MUST NOT appear in stdout. Check the long body explicitly.
-	if strings.Contains(stdout, "pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ") {
+	if strings.Contains(stdout, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ") {
 		t.Errorf("CLI-04 leak: full pk_ plaintext present in stdout: %s", stdout)
 	}
 }
@@ -348,7 +348,7 @@ func TestLogin_NoBrowserPrintsURL(t *testing.T) {
 // assertion on the masked-tail format.
 func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
 	loginTestEnv(t)
-	ts := newLoginTestServer(t, 0, "pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ", "user@org.com")
+	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "user@org.com")
 	defer ts.Close()
 
 	stdout, _, code, err := executeLogin(t,
@@ -363,7 +363,7 @@ func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
 	if !strings.Contains(stdout, "user@org.com") {
 		t.Errorf("stdout missing owner email; got: %s", stdout)
 	}
-	masked := "pk_****WXYZ"
+	masked := "pk-****WXYZ"
 	if c := strings.Count(stdout, masked); c != 1 {
 		t.Errorf("masked tail %q count = %d; want exactly 1; stdout: %s", masked, c, stdout)
 	}

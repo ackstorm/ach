@@ -4,15 +4,12 @@
 // three-stage refresh — Stage-1 failure reasons (Unreachable, parse
 // failure, include-matches-zero, invalid-regex), Stage-2 partial-failure
 // status.message formatting (including D-10 truncation +N more), the
-// UnsupportedPluginSource per-entry path, the Stage-3 DELETE sweep
-// (integration), and the cross-marketplace NameConflict CR-level flip
-// (integration).
+// UnsupportedPluginSource per-entry path, intra-marketplace dedup
+// (DuplicateName), and the Stage-3 DELETE sweep (integration).
 //
-// Most tests run with DB=nil so the suite stays Docker-free. The two
-// integration tests (TestPMR_Stage3_DeleteSweep and
-// TestPMR_NameConflict_AlphabeticalPriority) require a real Postgres pool
-// and are tagged via TestPMR_ naming so the verify grep matches; they
-// gracefully skip when r.DB is nil.
+// Most tests run with DB=nil so the suite stays Docker-free. The
+// integration test (TestPMR_Stage3_DeleteSweep) requires a real Postgres
+// pool and gracefully skips when r.DB is nil.
 
 package ach
 
@@ -1013,99 +1010,4 @@ func TestPMR_Stage3_DeleteSweep(t *testing.T) {
 	// `make test` configuration). Integration suite stands up
 	// testcontainers Postgres and wires r.DB before running.
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration")
-}
-
-func TestPMR_NameConflict_AlphabeticalPriority(t *testing.T) {
-	// NameConflict at CR level requires DB-backed
-	// listOtherMarketplaceCatalogs to see the other marketplace's
-	// existing plugin row set. Pure resolveConflicts unit coverage
-	// lives in marketplace_conflict_test.go; the full reconciler
-	// integration is gated on make test-integration.
-	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration")
-}
-
-func TestPMR_PluginCRDBeatsMarketplace(t *testing.T) {
-	// A Plugin CR with metadata.name="shared" should drop the marketplace
-	// entry for "shared" from the materialization set. The marketplace's
-	// Synced=True (Plugin-CRD-wins is informational, not a NameConflict
-	// CR-flip), and status.message mentions "shared: PluginCRDPrecedence"
-	// (WR-09: distinct reason from marketplace-loser NameConflict drops).
-	ctx := context.Background()
-
-	// Pre-seed the Plugin CR that the marketplace will conflict with. Use
-	// a unique name to avoid colliding with other tests.
-	pluginCRName := "crd-vs-mkt-shared"
-	pluginCR := &achv1alpha1.Plugin{
-		ObjectMeta: metav1.ObjectMeta{Name: pluginCRName, Namespace: WatchNamespace},
-		Spec: achv1alpha1.PluginSpec{
-			Type: "github",
-			GitHub: &achv1alpha1.GitHubSource{
-				Repo:          "test/" + pluginCRName,
-				Ref:           "main",
-				AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{Name: "mkt-secret", Key: "token"},
-			},
-			Refresh: achv1alpha1.RefreshBlock{
-				Interval:     &metav1.Duration{Duration: time.Hour},
-				MaxStaleness: metav1.Duration{Duration: 24 * time.Hour},
-			},
-		},
-	}
-	ensureSecret(t, ctx, "mkt-secret", map[string][]byte{"token": []byte("t")})
-	if err := k8sClient.Create(ctx, pluginCR); err != nil && !apierrors.IsAlreadyExists(err) {
-		t.Fatalf("create Plugin CR: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = k8sClient.Delete(context.Background(), pluginCR)
-		probe := &achv1alpha1.Plugin{ObjectMeta: metav1.ObjectMeta{Name: pluginCRName, Namespace: WatchNamespace}}
-		WaitForGone(context.Background(), probe, 15*time.Second)
-	})
-
-	cr := pmrCR("crdwin-mkt", nil, nil)
-	root := newCacheRoot(t)
-
-	stage1Key := applyMarketplaceCR(t, ctx, cr)
-	waitForFinalizer(t, ctx, cr)
-
-	// The marketplace exposes a plugin name that EXACTLY MATCHES the
-	// Plugin CR's metadata.name — Plugin-CRD-wins rule should drop the
-	// marketplace's entry.
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
-		Name: "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{
-			mkGitSubdirPlugin(pluginCRName),
-		},
-	})
-	factory := newMarketplaceFakeFactory()
-	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
-	// Intentionally do NOT register a Stage-2 fetcher for pluginCRName —
-	// if Plugin-CRD-wins works, materializeMarketplacePlugin is never
-	// called for this name.
-
-	r := &PluginMarketplaceReconciler{
-		Client:    k8sClient,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: root,
-		Fetchers:  factory.factory(),
-	}
-	ok := drainReconcileUntil(ctx, r, cr, func(got *achv1alpha1.PluginMarketplace) bool {
-		c := syncedCondition(got)
-		// WR-09: Plugin-CRD-wins drops are reported with the distinct
-		// reason "PluginCRDPrecedence" so they are visually
-		// distinguishable from marketplace-loser drops (NameConflict).
-		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonSynced && strings.Contains(c.Message, pluginCRName+": "+ReasonPluginCRDPrecedence)
-	})
-	if !ok {
-		var got achv1alpha1.PluginMarketplace
-		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
-		if c := syncedCondition(&got); c != nil {
-			t.Logf("last observed message: %q", c.Message)
-		}
-		t.Fatalf("never observed Synced=True with plugin-CRD-wins PluginCRDPrecedence in message")
-	}
-	// No file at marketplace/<name>/plugin/<pluginCRName>.tar.gz
-	collisionFile := filepath.Join(root, "marketplace", cr.Name, "plugin", pluginCRName+".tar.gz")
-	if _, err := os.Stat(collisionFile); err == nil {
-		t.Errorf("Plugin-CRD-wins did not block marketplace materialization (file present at %s)", collisionFile)
-	}
 }

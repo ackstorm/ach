@@ -25,8 +25,8 @@ func TestFormatConfigList_TwoProfiles(t *testing.T) {
 	f := &config.File{
 		Default: "prod",
 		Profiles: map[string]*config.Profile{
-			"prod": {URL: "https://prod.example", PK: "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
-				EK: map[string]string{"a": "ek_aaaaaaaaaaaaaaaaaaaaaaabcd", "b": "ek_aaaaaaaaaaaaaaaaaaaaaaefgh"}},
+			"prod": {URL: "https://prod.example", PK: "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
+				EK: map[string]string{"a": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAabcd", "b": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAefgh"}},
 			"stg": {URL: "https://stg.example"},
 		},
 	}
@@ -67,28 +67,28 @@ func TestFormatConfigList_TwoProfiles(t *testing.T) {
 	}
 }
 
-// TestFormatConfigShow_Masked asserts reveal=false hides the full pk_
+// TestFormatConfigShow_Masked asserts reveal=false hides the full pk-
 // plaintext from the rendered block.
 func TestFormatConfigShow_Masked(t *testing.T) {
 	dep := &config.Profile{
 		URL: "https://hub.example",
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		EK: map[string]string{
-			"demo": "ek_aaaaaaaaaaaaaaaaaaaaa1234",
+			"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
 		},
 	}
 	got := FormatConfigShow("prod", dep, false)
-	if strings.Contains(got, "pk_aaaaaaaaaaaaaaaaaaaaaawxyz") {
-		t.Errorf("CLI-04 leak: full pk_ plaintext visible without --reveal; got: %s", got)
+	if strings.Contains(got, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
+		t.Errorf("CLI-04 leak: full pk- plaintext visible without --reveal; got: %s", got)
 	}
-	if strings.Contains(got, "ek_aaaaaaaaaaaaaaaaaaaaa1234") {
-		t.Errorf("CLI-04 leak: full ek_ plaintext visible without --reveal; got: %s", got)
+	if strings.Contains(got, "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234") {
+		t.Errorf("CLI-04 leak: full ek- plaintext visible without --reveal; got: %s", got)
 	}
-	if !strings.Contains(got, "pk_****wxyz") {
-		t.Errorf("missing masked pk tail 'pk_****wxyz'; got: %s", got)
+	if !strings.Contains(got, "pk-****wxyz") {
+		t.Errorf("missing masked pk tail 'pk-****wxyz'; got: %s", got)
 	}
-	if !strings.Contains(got, "ek_****1234") {
-		t.Errorf("missing masked ek tail 'ek_****1234'; got: %s", got)
+	if !strings.Contains(got, "ek-****1234") {
+		t.Errorf("missing masked ek tail 'ek-****1234'; got: %s", got)
 	}
 	if !strings.Contains(got, "Profile: prod") {
 		t.Errorf("missing 'Profile: prod' header; got: %s", got)
@@ -103,20 +103,20 @@ func TestFormatConfigShow_Masked(t *testing.T) {
 }
 
 // TestFormatConfigShow_Revealed asserts reveal=true emits the full
-// pk_/ek_ plaintext for the named profile only (D-05).
+// pk-/ek- plaintext for the named profile only (D-05).
 func TestFormatConfigShow_Revealed(t *testing.T) {
 	dep := &config.Profile{
 		URL: "https://hub.example",
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		EK: map[string]string{
-			"demo": "ek_aaaaaaaaaaaaaaaaaaaaa1234",
+			"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
 		},
 	}
 	got := FormatConfigShow("prod", dep, true)
-	if !strings.Contains(got, "pk_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+	if !strings.Contains(got, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
 		t.Errorf("--reveal: pk plaintext missing from rendered block; got: %s", got)
 	}
-	if !strings.Contains(got, "ek_aaaaaaaaaaaaaaaaaaaaa1234") {
+	if !strings.Contains(got, "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234") {
 		t.Errorf("--reveal: ek plaintext missing from rendered block; got: %s", got)
 	}
 }

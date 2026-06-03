@@ -7,7 +7,7 @@
 // Coverage matrix:
 //
 //   TestPipeline_EndToEnd                    — every D-03 outcome (16+ subtests).
-//   TestPipeline_PluginPrecedence            — §12.3 CTE precedence (4 subtests).
+//   TestPipeline_PluginPrecedence            — B2 bare/scoped resolution semantics (5 subtests).
 //   TestPipeline_InFlightReadSurvivesRename  — D-02 + SC#4 inode-pin proof.
 //   TestPipeline_EmitsOneAuditEventPerRequest — audit emission shape on success + denial.
 //   TestPipeline_NoStoreHeader               — drift flag #3 lockdown.
@@ -360,6 +360,28 @@ func (f *testFixtures) seedMarketplacePlugin(marketplaceName, pluginName string,
 	}
 }
 
+// seedMarketplacePluginWithLocation seeds a marketplace_plugins row whose
+// storage_location is the caller-supplied path (NOT derived from cacheRoot).
+// Used by security regression tests that need to inject an out-of-root path.
+// No file is written; the containment check (PluginStoragePathWithinRoot) must
+// fire before the path is ever opened.
+func (f *testFixtures) seedMarketplacePluginWithLocation(marketplaceName, pluginName, storageLocation string, lsr time.Time, maxStaleness int64) {
+	f.t.Helper()
+	ctx := context.Background()
+	p := db.MarketplacePlugin{
+		MarketplaceName:       marketplaceName,
+		Name:                  pluginName,
+		StorageLocation:       storageLocation,
+		UpstreamRev:           "rev1",
+		LastSuccessfulRefresh: lsr,
+		NextRefreshAt:         lsr.Add(time.Hour),
+		MaxStalenessSeconds:   maxStaleness,
+	}
+	if err := db.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
+		f.t.Fatalf("UpsertMarketplacePluginWithLocation: %v", err)
+	}
+}
+
 func (f *testFixtures) seedArtifact(name, scope string, lsr *time.Time, maxStaleness int64, body []byte) {
 	f.t.Helper()
 	ctx := context.Background()
@@ -479,25 +501,28 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	defer fx.cleanup()
 
 	// Common seed: prod environment authorizes team-a, allowlists
-	// p1/p2 (prompts), pl1/pl2 (plugins), a1/a2 (artifacts).
+	// p1/p2 (prompts), pl1/pl2/shared@mkt-b (plugins), a1/a2 (artifacts).
+	// shared@mkt-b tests the scoped-ref (name@marketplace) resolution path.
 	fx.seedEnvironment("prod",
 		[]string{"team-a"},
 		[]string{"p1", "p2"},
-		[]string{"pl1", "pl2", "pl-no-row"},
+		[]string{"pl1", "pl2", "pl-no-row", "shared@mkt-b"},
 		[]string{"a1", "a2"},
 	)
 	now := time.Now().UTC()
 	fx.seedPrompt("p1", &now, 600, nil, []byte("hello prompt"))
 	fx.seedPlugin("pl1", &now, 600, []byte{0x1f, 0x8b, 0x08, 0x00, 0xAA, 0xBB, 0xCC})
 	fx.seedArtifact("a1", "object", &now, 600, []byte("artifact-bytes"))
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
-	fx.seedEnvironmentKey("ekid_a", "ek_bbbbbbbbbbbbbbbbbbbbbbbbbb", "bob@x.com", "prod")
+	// Seed the scoped marketplace plugin: (marketplace_name="mkt-b", name="shared").
+	fx.seedMarketplacePlugin("mkt-b", "shared", now, 600, []byte{0x1f, 0x8b, 0x08, 0x00, 0x11, 0x22, 0x33})
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedEnvironmentKey("ekid_a", "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob@x.com", "prod")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 	fx.teamsFake.setTeams("alice-team-mismatch@x.com", []string{"team-z"})
 
 	t.Run("200 success pk_ plugin", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/plugin/pl1", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		resp := rec.Result()
@@ -517,9 +542,19 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("200 success scoped marketplace plugin", func(t *testing.T) {
+		rec := fx.doRequest("GET", "/content/plugin/shared@mkt-b", map[string]string{
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-environment": "prod",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("scoped plugin: got %d, want 200", rec.Code)
+		}
+	})
+
 	t.Run("200 success ek_ prompt", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key": "ek_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"x-ach-key": "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		})
 		resp := rec.Result()
 		defer func() { _ = resp.Body.Close() }()
@@ -530,7 +565,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("400 missing_environment pk_", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key": "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key": "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		})
 		requireOutcome(t, rec, 400, "missing_environment")
 	})
@@ -549,7 +584,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("401 expired_or_revoked pk_ not in DB", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key":         "pk_cccccccccccccccccccccccccc",
+			"x-ach-key":         "pk-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 401, "expired_or_revoked")
@@ -557,23 +592,23 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("403 unauthorized_team", func(t *testing.T) {
 		// Seed pk_ with mismatched team.
-		fx.seedPersonalKey("pkid_z", "pk_zzzzzzzzzzzzzzzzzzzzzzzzzz", "alice-team-mismatch@x.com")
+		fx.seedPersonalKey("pkid_z", "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "alice-team-mismatch@x.com")
 		// Refresh envcache (just expire it; loader will re-fetch).
 		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key":         "pk_zzzzzzzzzzzzzzzzzzzzzzzzzz",
+			"x-ach-key":         "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 403, "unauthorized_team")
 	})
 
 	t.Run("403 wrong_environment ek_ header mismatch", func(t *testing.T) {
-		// ek_bbbbbbbbbbbbbbbbbbbbbbbbbb is bound to prod; request asks for staging.
+		// ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is bound to prod; request asks for staging.
 		fx.seedEnvironment("staging", []string{"team-a"},
 			[]string{"p1"}, []string{}, []string{})
 		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key":         "ek_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"x-ach-key":         "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			"x-ach-environment": "staging",
 		})
 		requireOutcome(t, rec, 403, "wrong_environment")
@@ -583,7 +618,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// Seed a prompt row that the environment does NOT allow-list.
 		fx.seedPrompt("p-disallowed", &now, 600, nil, []byte("nope"))
 		rec := fx.doRequest("GET", "/content/prompt/p-disallowed", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		// Even though the CRD projection row exists, the allowlist gate
@@ -593,7 +628,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("404 environment_not_found", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "does-not-exist",
 		})
 		requireOutcome(t, rec, 404, "environment_not_found")
@@ -603,7 +638,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// pl-no-row is in env.context.plugins but has no plugins row AND
 		// no marketplace_plugins row.
 		rec := fx.doRequest("GET", "/content/plugin/pl-no-row", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 404, "content_not_found")
@@ -613,7 +648,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		stale := now.Add(-1 * time.Hour)
 		fx.seedPrompt("p2", &stale, 60, nil, []byte("stale"))
 		rec := fx.doRequest("GET", "/content/prompt/p2", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 503, "stale_cache_expired")
@@ -622,7 +657,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	t.Run("503 stale_cache_expired NULL LSR", func(t *testing.T) {
 		fx.seedPlugin("pl2", nil, 600, []byte("null-lsr"))
 		rec := fx.doRequest("GET", "/content/plugin/pl2", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 503, "stale_cache_expired")
@@ -639,7 +674,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// Need to use the alice@x.com pk_ but the team cache is hit-
 		// avoided because we use the resolver directly.
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 503, "litellm_unreachable")
@@ -647,7 +682,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("200 ignores Range header", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/plugin/pl1", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 			"Range":             "bytes=0-2",
 		})
@@ -664,7 +699,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("200 ignores If-None-Match", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/plugin/pl1", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 			"If-None-Match":     `"deadbeef"`,
 		})
@@ -692,7 +727,7 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		[]string{"shared"},
 		[]string{},
 	)
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 
 	t.Run("CRD wins", func(t *testing.T) {
@@ -702,7 +737,7 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 			_ = db.DeletePlugin(context.Background(), fx.pool, "default", "shared")
 		}()
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		resp := rec.Result()
@@ -713,51 +748,70 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		// Both the CRD seed and the marketplace seed write to the same
 		// on-disk path (CS-07 — marketplace_name is not in the path).
-		// The CRD-seed write came LAST so the file bytes are "from-mkt".
-		// But CRD WINS in CTE resolution, so the served bytes are
-		// whatever the plugins row's storage_location points to — which
-		// is the same path. Just verify a successful 200, since the
-		// CTE's source field is the load-bearing assertion (covered by
-		// internal/db/plugins_test.go directly).
+		// B2 bare-ref semantics: bare "shared" resolves ONLY via the plugins
+		// (CRD) table, so the active plugins row is returned (200). The
+		// marketplace row is irrelevant for bare refs. Verify a non-empty body.
 		if len(body) == 0 {
 			t.Errorf("got empty body")
 		}
 	})
 
-	t.Run("marketplace fallback alphabetical", func(t *testing.T) {
-		// Multiple marketplace rows; lex-lowest wins. The §12.3 CTE
-		// is unit-tested in internal/db/plugins_test.go for the source
-		// field; here we only assert a 200 (cache file resolves).
+	t.Run("bare name no marketplace fallback", func(t *testing.T) {
+		// B2 semantics: bare ref (no @marketplace) resolves ONLY against the
+		// plugins (CRD) table — no alphabetical marketplace fallback. Multiple
+		// marketplace rows for "shared" exist, but a bare /content/plugin/shared
+		// request with no active CRD row returns 404. Use a scoped ref
+		// "shared@z-marketplace" or "shared@a-marketplace" for marketplace access.
 		fx.seedMarketplacePlugin("z-marketplace", "shared", now, 600, []byte("z-mkt"))
 		fx.seedMarketplacePlugin("a-marketplace", "shared", now, 600, []byte("a-mkt"))
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
-		resp := rec.Result()
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != 200 {
-			t.Fatalf("status=%d", resp.StatusCode)
-		}
+		requireOutcome(t, rec, 404, "content_not_found")
 	})
 
-	t.Run("soft-deleted plugin falls through to marketplace", func(t *testing.T) {
-		// Re-seed plugin then soft-delete. Resolution should fall to
-		// marketplace row from previous subtest.
+	t.Run("scoped ref resolves marketplace plugin", func(t *testing.T) {
+		// With a scoped ref the exact (marketplace_name, name) PK is probed.
+		// "shared@a-marketplace" was seeded in the subtest above (same fixture pool).
+		// Update env to allowlist the scoped ref first.
+		fx.seedEnvironment("prod",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"shared", "shared@a-marketplace"},
+			[]string{},
+		)
+		fx.mr.FlushAll()
+		rec := fx.doRequest("GET", "/content/plugin/shared@a-marketplace", map[string]string{
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-environment": "prod",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("scoped marketplace ref: status=%d, want 200", rec.Code)
+		}
+		// Restore env for subsequent subtests.
+		fx.seedEnvironment("prod",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"shared"},
+			[]string{},
+		)
+		fx.mr.FlushAll()
+	})
+
+	t.Run("soft-deleted CRD bare ref returns 404", func(t *testing.T) {
+		// B2 semantics: soft-deleted CRD plugin + bare ref → 404.
+		// No marketplace fallback for bare refs.
 		fx.seedPlugin("shared", &now, 600, []byte("crd-soft-deleted"))
 		fx.softDeletePlugin("shared")
 		defer func() {
 			_ = db.DeletePlugin(context.Background(), fx.pool, "default", "shared")
 		}()
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
-		resp := rec.Result()
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != 200 {
-			t.Fatalf("status=%d (should fall through to marketplace)", resp.StatusCode)
-		}
+		requireOutcome(t, rec, 404, "content_not_found")
 	})
 
 	t.Run("no match → 404", func(t *testing.T) {
@@ -771,7 +825,7 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		)
 		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/plugin/another-plugin", map[string]string{
-			"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
 		requireOutcome(t, rec, 404, "content_not_found")
@@ -790,7 +844,7 @@ func TestPipeline_InFlightReadSurvivesRename(t *testing.T) {
 
 	fx.seedEnvironment("prod", []string{"team-a"}, []string{},
 		[]string{"big-plugin"}, []string{})
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 	originalBody := bytes.Repeat([]byte{0xAA}, 64*1024) // 64 KiB
 	fx.seedPlugin("big-plugin", &now, 600, originalBody)
@@ -821,7 +875,7 @@ func TestPipeline_InFlightReadSurvivesRename(t *testing.T) {
 	// invariant: a finished response is unaffected by subsequent fs
 	// mutations.
 	rec := fx.doRequest("GET", "/content/plugin/big-plugin", map[string]string{
-		"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"x-ach-environment": "prod",
 	})
 	resp := rec.Result()
@@ -849,7 +903,7 @@ func TestPipeline_InFlightReadSurvivesRename(t *testing.T) {
 	// renames between requests are honored (NOT pinned across
 	// requests, only within an open FD's lifetime per D-02).
 	rec2 := fx.doRequest("GET", "/content/plugin/big-plugin", map[string]string{
-		"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"x-ach-environment": "prod",
 	})
 	resp2 := rec2.Result()
@@ -917,7 +971,7 @@ func TestPipeline_InFlightReadSurvivesRename_ServePath(t *testing.T) {
 	now := time.Now().UTC()
 
 	fx.seedEnvironment("prod", []string{"team-a"}, nil, []string{"big-plugin"}, nil)
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 	originalBody := bytes.Repeat([]byte{0xAA}, 64*1024) // 64 KiB
 	fx.seedPlugin("big-plugin", &now, 600, originalBody)
@@ -926,7 +980,7 @@ func TestPipeline_InFlightReadSurvivesRename_ServePath(t *testing.T) {
 	// pipeline() resolves the same way serve() would, then run the pipeline
 	// directly to capture the gate-8 open FD.
 	req := httptest.NewRequest("GET", "/content/plugin/big-plugin", nil)
-	req.Header.Set("x-ach-key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
+	req.Header.Set("x-ach-key", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	req.Header.Set("x-ach-environment", "prod")
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("name", "big-plugin")
@@ -980,13 +1034,13 @@ func TestPipeline_EmitsOneAuditEventPerRequest(t *testing.T) {
 
 	fx.seedEnvironment("prod", []string{"team-a"}, []string{}, []string{"plgn"}, []string{})
 	fx.seedPlugin("plgn", &now, 600, []byte("ok"))
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 
 	// Success: one audit line with outcome=forwarded.
 	fx.auditBuf.Reset()
 	rec := fx.doRequest("GET", "/content/plugin/plgn", map[string]string{
-		"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"x-ach-environment": "prod",
 	})
 	if rec.Code != 200 {
@@ -1005,10 +1059,10 @@ func TestPipeline_EmitsOneAuditEventPerRequest(t *testing.T) {
 
 	// Denial: one audit line with outcome=unauthorized_team.
 	fx.auditBuf.Reset()
-	fx.seedPersonalKey("pkid_z", "pk_zzzzzzzzzzzzzzzzzzzzzzzzzz", "wrong-team@x.com")
+	fx.seedPersonalKey("pkid_z", "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "wrong-team@x.com")
 	fx.teamsFake.setTeams("wrong-team@x.com", []string{"team-z"})
 	rec = fx.doRequest("GET", "/content/plugin/plgn", map[string]string{
-		"x-ach-key":         "pk_zzzzzzzzzzzzzzzzzzzzzzzzzz",
+		"x-ach-key":         "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
 		"x-ach-environment": "prod",
 	})
 	if rec.Code != 403 {
@@ -1045,11 +1099,11 @@ func TestPipeline_NoStoreHeader(t *testing.T) {
 	now := time.Now().UTC()
 	fx.seedEnvironment("prod", []string{"team-a"}, []string{}, []string{"plgn"}, []string{})
 	fx.seedPlugin("plgn", &now, 600, []byte("ok"))
-	fx.seedPersonalKey("pkid_a", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
+	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
 
 	rec := fx.doRequest("GET", "/content/plugin/plgn", map[string]string{
-		"x-ach-key":         "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"x-ach-environment": "prod",
 	})
 	resp := rec.Result()
@@ -1064,6 +1118,70 @@ func TestPipeline_NoStoreHeader(t *testing.T) {
 	if got := resp.Header.Get("Transfer-Encoding"); strings.EqualFold(got, "chunked") {
 		t.Errorf("Transfer-Encoding=%q includes chunked (want identity transfer)", got)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// TestPipeline_PluginContainment — path-traversal + malformed-ref regressions
+// ---------------------------------------------------------------------------
+
+// TestPipeline_PluginContainment proves the two gate-8 / gate-6 security
+// defences added in the source fixes:
+//
+//  1. Path-traversal 404: a marketplace_plugins row whose storage_location
+//     escapes cacheRoot (e.g. /etc/passwd) must return 404, not 200.
+//     Proves PluginStoragePathWithinRoot fires inside pipeline gate 8.
+//
+//  2. Malformed-ref 404: a URL parameter whose ref is malformed ("bad@" —
+//     '@' present but empty marketplace) must return 404.
+//     Proves pluginref.Valid rejection inside resolveContent gate 6.
+func TestPipeline_PluginContainment(t *testing.T) {
+	t.Parallel()
+	fx := setupIntegration(t)
+	defer fx.cleanup()
+	now := time.Now().UTC()
+
+	// Personal key + team setup shared by both subtests.
+	fx.seedPersonalKey("pkid_contain", "pk-containmentcontainmentcontainmentcontainmentcontainmentcontainme", "eve@x.com")
+	fx.teamsFake.setTeams("eve@x.com", []string{"team-a"})
+
+	t.Run("path-traversal storage_location returns 404", func(t *testing.T) {
+		// Seed an environment that allowlists "pwn@evil-mkt" so gate 5 passes.
+		fx.seedEnvironment("env-containment",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"pwn@evil-mkt"},
+			[]string{},
+		)
+		// Seed the marketplace row with storage_location=/etc/passwd.
+		// Gate 8 must detect the escape and return 404 (PluginStoragePathWithinRoot → ok=false).
+		// No file is written to /etc/passwd — the containment check fires before os.Open.
+		fx.seedMarketplacePluginWithLocation("evil-mkt", "pwn", "/etc/passwd", now, 86400)
+
+		rec := fx.doRequest("GET", "/content/plugin/pwn@evil-mkt", map[string]string{
+			"x-ach-key":         "pk-containmentcontainmentcontainmentcontainmentcontainmentcontainme",
+			"x-ach-environment": "env-containment",
+		})
+		requireOutcome(t, rec, http.StatusNotFound, "content_not_found")
+	})
+
+	t.Run("malformed ref name@ returns 404", func(t *testing.T) {
+		// "bad@" has '@' present but an empty marketplace segment — pluginref.Valid rejects it.
+		// Allowlist "bad@" so gate 5 passes; gate 6 (resolveContent) must return 404 via
+		// the pluginref.Valid check before any DB lookup.
+		fx.seedEnvironment("env-badref",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"bad@"},
+			[]string{},
+		)
+		// Seed a personal key bound to this env to cover the ek_ path cleanly.
+		fx.seedEnvironmentKey("ekid_badref", "ek-badrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadx", "eve@x.com", "env-badref")
+
+		rec := fx.doRequest("GET", "/content/plugin/bad@", map[string]string{
+			"x-ach-key": "ek-badrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadx",
+		})
+		requireOutcome(t, rec, http.StatusNotFound, "content_not_found")
+	})
 }
 
 // ---------------------------------------------------------------------------

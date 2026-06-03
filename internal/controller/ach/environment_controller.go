@@ -30,6 +30,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/pluginref"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -212,6 +213,14 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) + len(unresolved.A2AAgents)
 
+	// Context plugin closed-set (handoff item 4 / Task B9): a listed plugin
+	// must resolve AND have content synced — see contextPluginsUnresolved.
+	unresolvedContextPlugins, err := r.contextPluginsUnresolved(ctx, &env)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	totalUnresolved += len(unresolvedContextPlugins)
+
 	// Hub §6.6 closed set for ExecutionResourcesResolved:
 	//   True  + reason=Resolved          — every spec.runtime.* found
 	//   False + reason=ResourceUnresolved — at least one name absent
@@ -221,12 +230,16 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if totalUnresolved > 0 {
 		condStatus = metav1.ConditionFalse
 		reason = "ResourceUnresolved"
-		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d)",
+		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, context_plugins=%d)",
 			totalUnresolved,
 			len(unresolved.Models),
 			len(unresolved.MCPServers),
 			len(unresolved.A2AAgents),
+			len(unresolvedContextPlugins),
 		)
+		if len(unresolvedContextPlugins) > 0 {
+			message += fmt.Sprintf("; plugins not content-present: %v", unresolvedContextPlugins)
+		}
 	}
 	// D-14: prefix stale marker so operators inspecting `kubectl
 	// describe environment` see that the condition reflects cached data.
@@ -238,14 +251,17 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	// Patch the unresolved field on env.Status, then emit all three §6.6
+	// Patch the unresolved fields on env.Status, then emit all three §6.6
 	// conditions in memory and issue a SINGLE Status().Update so the
-	// conditions slice + the UnresolvedRuntime field land atomically.
+	// conditions slice + the UnresolvedRuntime/UnresolvedContextPlugins
+	// fields land atomically.
 	//
 	// Three conditions are emitted in one Status().Update:
 	//
 	//   - ExecutionResourcesResolved: computed above from the
-	//     Snapshotter set-difference (Resolved / ResourceUnresolved).
+	//     Snapshotter set-difference (Resolved / ResourceUnresolved)
+	//     PLUS the plugin content-present gate (nil last_successful_refresh
+	//     forces False regardless of runtime resolution).
 	//   - AccessGroupSynced: §7 reconcileAccessGroup helper produces
 	//     the real True/False per Hub §6.6 (Synced / PartialBind /
 	//     AccessGroupCreateFailed).
@@ -257,6 +273,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	//     False iff any required sub-condition is False; Unknown if
 	//     any required sub-condition is Unknown or missing.
 	env.Status.UnresolvedRuntime = &unresolved
+	env.Status.UnresolvedContextPlugins = unresolvedContextPlugins
 	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
 		Type:               "ExecutionResourcesResolved",
 		Status:             condStatus,
@@ -326,6 +343,14 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if snap.Stale {
 		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
+	if len(unresolvedContextPlugins) > 0 {
+		// Plugin / marketplace content writes NOTIFY their own controllers,
+		// not Environment, so no event re-enqueues this Environment when a
+		// referenced plugin's content lands. Without a shorter requeue the
+		// Environment would sit ExecutionResourcesResolved=False until the
+		// 5-min steady-state tick. Converge on a content-wait cadence.
+		return ctrl.Result{RequeueAfter: pluginUnresolvedRequeueAfter}, nil
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -333,6 +358,45 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // is stale. Picked to converge within ~30s of the Snapshotter's
 // adaptive-backoff recovery (issue #30) without hammering the apiserver.
 const staleRequeueAfter = 15 * time.Second
+
+// pluginUnresolvedRequeueAfter is the requeue cadence when one or more
+// context plugins are referenced but not yet content-present. Plugin /
+// marketplace projection writes do not enqueue Environments, so this poll
+// is how the Environment converges to Available once content lands.
+const pluginUnresolvedRequeueAfter = 30 * time.Second
+
+// contextPluginsUnresolved returns the spec.context.plugins refs that are
+// not yet content-present (handoff item 4 / Task B9): a listed plugin must
+// resolve AND have its content synced (last_successful_refresh non-null),
+// not merely exist by name — this prevents an ExecutionResourcesResolved
+// false-green when a plugin is referenced but its artifact was never
+// fetched. A bare ref resolves a Plugin CRD row; name@marketplace resolves
+// the marketplace_plugins row. A malformed ref (e.g. "name@") is reported
+// unresolved rather than silently degrading to a bare lookup.
+//
+// Guarded on r.DB != nil so nil-DB unit/envtest paths are unaffected;
+// production reconciles always have DB wired.
+func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
+	if r.DB == nil {
+		return nil, nil
+	}
+	var unresolved []string
+	for _, ref := range env.Spec.Context.Plugins {
+		if !pluginref.Valid(ref) {
+			unresolved = append(unresolved, ref)
+			continue
+		}
+		pname, mkt, _ := pluginref.Parse(ref)
+		res, err := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
+		if err != nil {
+			return nil, fmt.Errorf("resolve context plugin %q: %w", ref, err)
+		}
+		if res == nil || res.LastSuccessfulRefresh == nil {
+			unresolved = append(unresolved, ref)
+		}
+	}
+	return unresolved, nil
+}
 
 // writeEnvironmentProjection performs the spec v4 §5.2 dual-write to
 // the environments projection table — wrapping the nil-DB gate, the

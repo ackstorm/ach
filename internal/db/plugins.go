@@ -1,27 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package db helpers for the plugins projection table (Phase 5 D-13,
-// spec v4 §5.2 reversal) AND the §12.3 plugin-resolution CTE
-// (ResolvePluginByName).
+// spec v4 §5.2 reversal) and ResolvePluginByName (marketplace-aware
+// plugin resolution).
 //
-// Plugin precedence (§12.3) on every Content Service request:
+// ResolvePluginByName two-arm semantics:
 //
-//  1. The plugins row (CRD-derived projection) with the matching name in
-//     the requested namespace wins, ONLY when its deletion_timestamp IS
-//     NULL — a soft-deleted CRD must not shadow live marketplace rows
-//     (T-05-02-04 — locked in by TestResolvePluginByName_SoftDeletedCRDFallsThrough).
-//  2. Otherwise the marketplace_plugins row keyed on (any_marketplace, name)
-//     whose marketplace_name sorts alphabetically lowest (Unicode
-//     code-point, default Postgres text collation) wins.
-//  3. Otherwise (nil, nil) → caller emits 404 content_not_found.
+//   - bare (marketplace == ""): ONLY the plugins (CRD) row for (ns, name)
+//     where deletion_timestamp IS NULL. No marketplace fallback — the Plugin
+//     CRD namespace is the sole resolution target for bare names.
+//   - scoped (marketplace != ""): the marketplace_plugins row with the exact
+//     (marketplace_name, name) PRIMARY KEY. No alphabetical tiebreak; the
+//     caller supplies the marketplace explicitly (parsed from the
+//     pluginref.Parse result).
 //
-// Drift-flag #5 resolution: The marketplace_plugins table uses
-// (marketplace_name, name) PK per migration 000002 (see
-// marketplace_plugins.go line 36). The column is literally `name` — NOT
-// `plugin_name` as the CONTEXT Specifics block sketches. The CTE below
-// references `marketplace_plugins.name` to match the live schema.
+// In both arms (nil, nil) means no row found → caller emits 404.
 //
-// Caching policy (D-08): NO caching for §12.3 plugin resolution or staleness
+// Caching policy (D-08): NO caching for plugin resolution or staleness
 // reads — direct Postgres query on every request. SC#3 and CS-10 say so
 // verbatim. pgx prepared statements + connection pool (db.Open) absorb the
 // hot-path cost.
@@ -194,55 +189,43 @@ func DeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) erro
 	return nil
 }
 
-// ResolvePluginByName implements the §12.3 plugin-precedence CTE:
+// ResolvePluginByName implements scoped plugin-precedence:
 //
-//  1. The plugins row (CRD-derived projection) with the matching (ns, name)
-//     wins when its deletion_timestamp IS NULL.
-//  2. Otherwise the marketplace_plugins row with the matching name whose
-//     marketplace_name sorts alphabetically lowest wins.
-//  3. Otherwise (nil, nil) — caller emits 404 content_not_found.
+//   - marketplace == ""  → bare reference: ONLY the plugins (CRD) row with
+//     matching (ns, name) and deletion_timestamp IS NULL. No marketplace
+//     fallback — Plugin CRD is the sole bare namespace.
+//   - marketplace != ""  → scoped reference: the marketplace_plugins row with
+//     the exact (marketplace_name, name) PK. No alphabetical tiebreak.
 //
-// The CTE uses a single SELECT … UNION ALL … LIMIT 1 so Postgres returns
-// at most one row, and the marketplace_match arm runs only when
-// plugin_match is empty (`WHERE NOT EXISTS (SELECT 1 FROM plugin_match)`).
-// LIMIT 1 on both arms caps the result-set size; combined with the
-// (marketplace_name, name) PRIMARY KEY index on marketplace_plugins, the
-// query is one or two index probes worst-case (T-05-02-03 acceptance).
-//
-// Drift-flag #5: the marketplace_plugins column is `name`, NOT
-// `plugin_name` — confirmed against migration 000001 line 64 and the
-// MarketplacePlugin struct (marketplace_plugins.go line 39). The CTE
-// references `marketplace_plugins.name` directly.
+// Returns (nil, nil) when no row matches → caller emits 404.
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other
-// errors wrap with non-secret (namespace, name) identifiers — pgErr.Message
-// NEVER included.
-func ResolvePluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*PluginResolution, error) {
+// errors wrap with non-secret identifiers — pgErr.Message NEVER included.
+func ResolvePluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name, marketplace string) (*PluginResolution, error) {
+	if marketplace == "" {
+		const sql = `
+			SELECT 'plugin'::text AS source,
+			       namespace, name, storage_location,
+			       last_successful_refresh, max_staleness_seconds
+			  FROM plugins
+			 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL`
+		return scanResolution(ctx, pool, sql, ns, name)
+	}
 	const sql = `
-		WITH plugin_match AS (
-		    SELECT 'plugin'::text AS source,
-		           namespace, name, storage_location,
-		           last_successful_refresh, max_staleness_seconds
-		      FROM plugins
-		     WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-		),
-		marketplace_match AS (
-		    SELECT 'marketplace'::text AS source,
-		           marketplace_name AS namespace,
-		           name, storage_location,
-		           last_successful_refresh, max_staleness_seconds
-		      FROM marketplace_plugins
-		     WHERE name = $2
-		     ORDER BY marketplace_name ASC
-		     LIMIT 1
-		)
-		SELECT * FROM plugin_match
-		UNION ALL
-		SELECT * FROM marketplace_match WHERE NOT EXISTS (SELECT 1 FROM plugin_match)
-		LIMIT 1
-	`
+		SELECT 'marketplace'::text AS source,
+		       marketplace_name AS namespace,
+		       name, storage_location,
+		       last_successful_refresh, max_staleness_seconds
+		  FROM marketplace_plugins
+		 WHERE marketplace_name = $1 AND name = $2`
+	return scanResolution(ctx, pool, sql, marketplace, name)
+}
+
+// scanResolution runs a single-row resolution query, mapping pgx.ErrNoRows
+// to (nil, nil) and preserving transient-error propagation.
+func scanResolution(ctx context.Context, pool *pgxpool.Pool, sql, arg1, arg2 string) (*PluginResolution, error) {
 	r := &PluginResolution{}
-	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
+	if err := pool.QueryRow(ctx, sql, arg1, arg2).Scan(
 		&r.Source, &r.Namespace, &r.Name, &r.StorageLocation,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
 	); err != nil {
@@ -252,7 +235,7 @@ func ResolvePluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name strin
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ResolvePluginByName(%s/%s): %w", ns, name, err)
+		return nil, fmt.Errorf("db: ResolvePluginByName(%s/%s): %w", arg1, arg2, err)
 	}
 	return r, nil
 }

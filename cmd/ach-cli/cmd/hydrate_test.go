@@ -104,7 +104,7 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -121,8 +121,8 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 	if got := atomic.LoadInt32(mock.calls); got != 1 {
 		t.Errorf("HTTP calls = %d; want 1", got)
 	}
-	if *mock.lastKey != "pk_aaaaaaaaaaaaaaaaaaaaaawxyz" {
-		t.Errorf("x-ach-key = %q; want pk_aaaaaaaaaaaaaaaaaaaaaawxyz", *mock.lastKey)
+	if *mock.lastKey != "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz" {
+		t.Errorf("x-ach-key = %q; want pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz", *mock.lastKey)
 	}
 	// Body should be {"environment":"demo"}
 	var sent map[string]string
@@ -141,7 +141,7 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -167,7 +167,7 @@ func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -191,7 +191,7 @@ func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -218,7 +218,7 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		EK:  map[string]string{"local-laptop": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
+		EK:  map[string]string{"local-laptop": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -235,7 +235,7 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 	if strings.Contains(stderr, "hydrating with pk_") {
 		t.Errorf("stderr emitted pk_ warning for an ek_ run: %q", stderr)
 	}
-	if *mock.lastKey != "ek_aaaaaaaaaaaaaaaaaaaaafghij" {
+	if *mock.lastKey != "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij" {
 		t.Errorf("x-ach-key = %q; want ek_ resolved from label", *mock.lastKey)
 	}
 	// Body should be either empty struct or omit environment entirely.
@@ -266,13 +266,13 @@ func TestHydrate_MutexCreds_Exit1_NoHTTP(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
-		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
+		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t,
-		"--api-key", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"--api-key", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		"--env-key", "demo",
 		"--environment", "demo",
 	)
@@ -299,10 +299,10 @@ func TestHydrate_MutexCreds_EnvAndFlag_Exit1(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
+	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
+		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -351,7 +351,7 @@ func TestHydrate_SyntheticMode_PK_Works(t *testing.T) {
 	whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	t.Setenv("ACH_BASE_URL", mock.server.URL)
-	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
+	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
 	stdout, _, code, err := executeHydrate(t, "--environment", "demo", "--no-warnings")
@@ -375,7 +375,7 @@ func TestHydrate_SyntheticMode_EnvKey_Exit1(t *testing.T) {
 	whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	t.Setenv("ACH_BASE_URL", mock.server.URL)
-	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
+	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
 	// --env-key alone (no --api-key) under synthetic → STILL mutex
@@ -421,8 +421,8 @@ func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID stri
 	ts := newErrorServer(t, status, errCode, errMsg, reqID)
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
-		EK:  map[string]string{"l": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
+		EK:  map[string]string{"l": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
 	swapHydrateHTTPClientForTest(t, ts.Client())
 
@@ -466,7 +466,7 @@ func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -529,7 +529,7 @@ func TestRunHydrate_RawDispatchesToLegacy(t *testing.T) {
 
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -573,7 +573,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -613,7 +613,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 	if capturedOpts.Output != root {
 		t.Errorf("Opts.Output = %q; want %q", capturedOpts.Output, root)
 	}
-	if capturedOpts.Bearer != "pk_aaaaaaaaaaaaaaaaaaaaaawxyz" {
+	if capturedOpts.Bearer != "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz" {
 		t.Errorf("Opts.Bearer = %q; want pk_…", capturedOpts.Bearer)
 	}
 }
@@ -625,7 +625,7 @@ func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -653,7 +653,7 @@ func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -678,7 +678,7 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -704,7 +704,7 @@ func TestRunHydrate_AliasPlatform(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 

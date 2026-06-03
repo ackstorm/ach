@@ -5,19 +5,21 @@
 // Integration tests for internal/db/plugins.go.
 //
 // Covers the standard CRUD round-trip per-kind (Upsert, Get, SoftDelete,
-// Delete) PLUS the §12.3 ResolvePluginByName precedence matrix:
+// Delete) PLUS the ResolvePluginByName two-arm precedence matrix:
 //
-//   - TestResolvePluginByName_CRDWins: plugins row wins when present.
-//   - TestResolvePluginByName_MarketplaceFallback: marketplace_plugins
-//     wins when no CRD row exists.
-//   - TestResolvePluginByName_AlphabeticallyLowestMarketplace: among
-//     multiple marketplace_plugins rows with the same `name`, the row
-//     whose marketplace_name sorts alphabetically lowest (Unicode
-//     code-point ASC) wins — locks in T-05-02-04.
+// Bare-name arm (marketplace == ""):
+//   - TestResolvePluginByName_CRDWins: plugins row wins for bare name.
+//   - TestResolvePluginByName_BareNameNoMarketplaceFallback: bare name that
+//     exists ONLY in marketplace_plugins resolves to nil (no fallback).
 //   - TestResolvePluginByName_NoMatch_NilNil: both tables empty → (nil, nil).
-//   - TestResolvePluginByName_SoftDeletedCRDFallsThrough: a soft-deleted
-//     CRD MUST NOT shadow live marketplace rows (regression for the §12.3
-//     WHERE deletion_timestamp IS NULL clause).
+//   - TestResolvePluginByName_SoftDeletedCRDReturnsNil: soft-deleted CRD row
+//     is excluded by deletion_timestamp IS NULL; bare resolution → nil.
+//
+// Scoped arm (marketplace != ""):
+//   - TestResolvePluginByName_ScopedExactPK: exact (marketplace_name, name)
+//     PK lookup returns the correct marketplace row.
+//   - TestResolvePluginByName_ScopedNoMatch_NilNil: scoped name not in the
+//     specified marketplace → (nil, nil).
 
 package db_test
 
@@ -161,15 +163,9 @@ func TestDeletePlugin_RemovesRow(t *testing.T) {
 
 // ----- §12.3 ResolvePluginByName precedence tests -----
 
-// seedPluginsRow inserts a plugins row via the package's UpsertPlugin helper.
-func seedPluginsRow(t *testing.T, ctx context.Context, pool interface {
-	// minimal interface matching pool.Exec — defer to UpsertPlugin in practice
-}, ns, name string) {
-	t.Helper()
-}
-
-// TestResolvePluginByName_CRDWins: plugins row + marketplace_plugins row
-// both present → CTE picks the plugins (CRD) row.
+// TestResolvePluginByName_CRDWins: bare-name lookup (marketplace="") with
+// a plugins row present → returns the CRD row, even when a marketplace row
+// with the same name exists.
 func TestResolvePluginByName_CRDWins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -197,7 +193,8 @@ func TestResolvePluginByName_CRDWins(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed marketplace: %v", err)
 	}
-	got, err := db.ResolvePluginByName(ctx, pool, "test", "foo")
+	// bare name — marketplace arm must NOT be consulted.
+	got, err := db.ResolvePluginByName(ctx, pool, "test", "foo", "")
 	if err != nil {
 		t.Fatalf("ResolvePluginByName: %v", err)
 	}
@@ -218,11 +215,10 @@ func TestResolvePluginByName_CRDWins(t *testing.T) {
 	}
 }
 
-// TestResolvePluginByName_MarketplaceFallback: only marketplace row exists
-// → CTE picks marketplace arm. Note: the namespace argument is irrelevant
-// for the marketplace fallback (we still pass it to match the CRD-arm
-// WHERE, but the marketplace match keys only on `name`).
-func TestResolvePluginByName_MarketplaceFallback(t *testing.T) {
+// TestResolvePluginByName_BareNameNoMarketplaceFallback: a name that exists
+// only in marketplace_plugins must NOT be returned for a bare-name lookup
+// (marketplace=""). Bare resolution is CRD-only; no marketplace fallback.
+func TestResolvePluginByName_BareNameNoMarketplaceFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
@@ -231,8 +227,8 @@ func TestResolvePluginByName_MarketplaceFallback(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "anthropic-mkt",
-		Name:                  "foo",
-		StorageLocation:       "/mkt/foo.tar.gz",
+		Name:                  "only-in-mkt",
+		StorageLocation:       "/mkt/only-in-mkt.tar.gz",
 		UpstreamRev:           "rev",
 		LastSuccessfulRefresh: now,
 		NextRefreshAt:         now.Add(time.Hour),
@@ -240,29 +236,97 @@ func TestResolvePluginByName_MarketplaceFallback(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed marketplace: %v", err)
 	}
-	got, err := db.ResolvePluginByName(ctx, pool, "irrelevant-ns", "foo")
+	// bare name with no CRD row — must resolve to nil, NOT fall back to marketplace.
+	got, err := db.ResolvePluginByName(ctx, pool, "ach", "only-in-mkt", "")
+	if err != nil {
+		t.Fatalf("ResolvePluginByName: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil (bare name must not fall back to marketplace)", got)
+	}
+}
+
+// TestResolvePluginByName_ScopedExactPK: scoped lookup (marketplace != "")
+// resolves the exact (marketplace_name, name) PK row.  When multiple
+// marketplace rows share the same name, only the requested marketplace is
+// returned — no alphabetical tiebreak.
+func TestResolvePluginByName_ScopedExactPK(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	// Seed two marketplace rows for the same plugin name "shared".
+	for _, m := range []string{"mkt-a", "mkt-b"} {
+		if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+			MarketplaceName:       m,
+			Name:                  "shared",
+			StorageLocation:       "/mkt/" + m + "/shared.tar.gz",
+			UpstreamRev:           "rev-" + m,
+			LastSuccessfulRefresh: now,
+			NextRefreshAt:         now.Add(time.Hour),
+			MaxStalenessSeconds:   600,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", m, err)
+		}
+	}
+	// Request the scoped name from mkt-b specifically.
+	got, err := db.ResolvePluginByName(ctx, pool, "ach", "shared", "mkt-b")
 	if err != nil {
 		t.Fatalf("ResolvePluginByName: %v", err)
 	}
 	if got == nil {
-		t.Fatal("ResolvePluginByName: got nil, want marketplace hit")
+		t.Fatal("ResolvePluginByName: got nil, want mkt-b hit")
 	}
 	if got.Source != "marketplace" {
 		t.Errorf("Source: got %q, want marketplace", got.Source)
 	}
-	if got.Namespace != "anthropic-mkt" {
-		t.Errorf("Namespace: got %q, want anthropic-mkt (marketplace_name surfaced)", got.Namespace)
+	if got.Namespace != "mkt-b" {
+		t.Errorf("Namespace: got %q, want mkt-b", got.Namespace)
 	}
-	if got.StorageLocation != "/mkt/foo.tar.gz" {
-		t.Errorf("StorageLocation: got %q", got.StorageLocation)
+	if got.Name != "shared" {
+		t.Errorf("Name: got %q, want shared", got.Name)
+	}
+	if got.StorageLocation != "/mkt/mkt-b/shared.tar.gz" {
+		t.Errorf("StorageLocation: got %q, want /mkt/mkt-b/shared.tar.gz", got.StorageLocation)
 	}
 }
 
-// TestResolvePluginByName_AlphabeticallyLowestMarketplace: 3 marketplace_plugins
-// rows for the same `name`, inserted in NON-alphabetical order so a naive
-// "first inserted wins" would FAIL. CTE MUST pick the alphabetically lowest
-// marketplace_name ("anthropic-mkt" < "internal-mkt" < "zzz-mkt").
-func TestResolvePluginByName_AlphabeticallyLowestMarketplace(t *testing.T) {
+// TestResolvePluginByName_ScopedNoMatch_NilNil: scoped lookup where the
+// name exists in a different marketplace → (nil, nil).
+func TestResolvePluginByName_ScopedNoMatch_NilNil(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+		MarketplaceName:       "mkt-a",
+		Name:                  "shared",
+		StorageLocation:       "/mkt/mkt-a/shared.tar.gz",
+		UpstreamRev:           "rev",
+		LastSuccessfulRefresh: now,
+		NextRefreshAt:         now.Add(time.Hour),
+		MaxStalenessSeconds:   600,
+	}); err != nil {
+		t.Fatalf("seed mkt-a: %v", err)
+	}
+	// Ask for mkt-b which has no row for "shared".
+	got, err := db.ResolvePluginByName(ctx, pool, "ach", "shared", "mkt-b")
+	if err != nil {
+		t.Fatalf("ResolvePluginByName: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil (mkt-b has no row for 'shared')", got)
+	}
+}
+
+// TestResolvePluginByName_ScopedDisambiguatesMarketplace: when multiple
+// marketplace rows share the same plugin name, the scoped arm returns ONLY
+// the requested marketplace — no alphabetical tiebreak, no UNION.
+func TestResolvePluginByName_ScopedDisambiguatesMarketplace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
@@ -284,32 +348,34 @@ func TestResolvePluginByName_AlphabeticallyLowestMarketplace(t *testing.T) {
 			t.Fatalf("seed %s: %v", m, err)
 		}
 	}
-	got, err := db.ResolvePluginByName(ctx, pool, "any", "foo")
+	// Ask for zzz-mkt explicitly — must get that row, NOT anthropic-mkt.
+	got, err := db.ResolvePluginByName(ctx, pool, "any", "foo", "zzz-mkt")
 	if err != nil {
 		t.Fatalf("ResolvePluginByName: %v", err)
 	}
 	if got == nil {
-		t.Fatal("got nil, want marketplace hit")
+		t.Fatal("got nil, want zzz-mkt hit")
 	}
 	if got.Source != "marketplace" {
 		t.Errorf("Source: got %q, want marketplace", got.Source)
 	}
-	if got.Namespace != "anthropic-mkt" {
-		t.Errorf("Namespace: got %q, want anthropic-mkt (alphabetically lowest)", got.Namespace)
+	if got.Namespace != "zzz-mkt" {
+		t.Errorf("Namespace: got %q, want zzz-mkt (exact scoped match)", got.Namespace)
 	}
-	if got.StorageLocation != "/mkt/anthropic-mkt/foo.tar.gz" {
-		t.Errorf("StorageLocation: got %q, want /mkt/anthropic-mkt/foo.tar.gz", got.StorageLocation)
+	if got.StorageLocation != "/mkt/zzz-mkt/foo.tar.gz" {
+		t.Errorf("StorageLocation: got %q, want /mkt/zzz-mkt/foo.tar.gz", got.StorageLocation)
 	}
 }
 
-// TestResolvePluginByName_NoMatch_NilNil: both tables empty → (nil, nil).
+// TestResolvePluginByName_NoMatch_NilNil: bare lookup with both tables
+// empty → (nil, nil).
 func TestResolvePluginByName_NoMatch_NilNil(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	got, err := db.ResolvePluginByName(ctx, pool, "default", "ghost")
+	got, err := db.ResolvePluginByName(ctx, pool, "default", "ghost", "")
 	if err != nil {
 		t.Fatalf("ResolvePluginByName: %v", err)
 	}
@@ -318,11 +384,12 @@ func TestResolvePluginByName_NoMatch_NilNil(t *testing.T) {
 	}
 }
 
-// TestResolvePluginByName_SoftDeletedCRDFallsThrough: plugins row exists
-// but is soft-deleted → CTE's `deletion_timestamp IS NULL` filter routes
-// past it and returns the marketplace match instead. Locks in
-// T-05-02-04 (soft-deleted CRD MUST NOT shadow live marketplace rows).
-func TestResolvePluginByName_SoftDeletedCRDFallsThrough(t *testing.T) {
+// TestResolvePluginByName_SoftDeletedCRDReturnsNil: bare lookup where the
+// plugins row is soft-deleted → deletion_timestamp IS NULL excludes it, and
+// bare resolution has no marketplace fallback → (nil, nil).
+// The marketplace row (if any) is reachable ONLY via a scoped lookup by the
+// caller once pluginref.Parse returns marketplace != "".
+func TestResolvePluginByName_SoftDeletedCRDReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
@@ -339,7 +406,7 @@ func TestResolvePluginByName_SoftDeletedCRDFallsThrough(t *testing.T) {
 	if err := db.SoftDeletePlugin(ctx, pool, "test", "foo"); err != nil {
 		t.Fatalf("SoftDeletePlugin: %v", err)
 	}
-	// Insert marketplace row with the same name.
+	// Insert marketplace row with the same name — should NOT be returned for bare lookup.
 	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "any-mkt",
 		Name:                  "foo",
@@ -351,17 +418,12 @@ func TestResolvePluginByName_SoftDeletedCRDFallsThrough(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed marketplace: %v", err)
 	}
-	got, err := db.ResolvePluginByName(ctx, pool, "test", "foo")
+	// Bare lookup: soft-deleted CRD excluded, no marketplace fallback → nil.
+	got, err := db.ResolvePluginByName(ctx, pool, "test", "foo", "")
 	if err != nil {
 		t.Fatalf("ResolvePluginByName: %v", err)
 	}
-	if got == nil {
-		t.Fatal("got nil, want marketplace fallback (CRD was soft-deleted)")
-	}
-	if got.Source != "marketplace" {
-		t.Errorf("Source: got %q, want marketplace (soft-deleted CRD must NOT shadow)", got.Source)
-	}
-	if got.Namespace != "any-mkt" {
-		t.Errorf("Namespace: got %q, want any-mkt", got.Namespace)
+	if got != nil {
+		t.Errorf("got %+v, want nil (soft-deleted CRD, no bare fallback)", got)
 	}
 }

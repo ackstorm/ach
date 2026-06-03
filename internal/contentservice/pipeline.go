@@ -126,19 +126,41 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 	// Gate 8 — D-02 early open. Compose the on-disk path from the
 	// resolved row's scope (artifact) and open EARLY so a subsequent
 	// rename(2) does not unhook the inode mid-response.
-	path, err := ResolvePath(d.CacheRoot, kind, name, row.Scope)
-	if err != nil {
-		// validateName / kind / scope errors are caller-side
-		// invariants — treat as 404 (router only registers known
-		// kinds; envRow.context allowlist already passed). On scope
-		// invalid this is a projection-write bug; still 404 from the
-		// client's perspective.
-		if errors.Is(err, ErrInvalidName) {
+	//
+	// Plugin special case: the resolved row's StorageLocation is used
+	// directly instead of recomputing via ResolvePath. A scoped ref such
+	// as "shared@mkt-b" carries '@' in the URL-param name, which would
+	// produce "plugin/shared@mkt-b.tar.gz" — the wrong path. The operator
+	// materialises marketplace plugins under "plugin/<name>.tar.gz" (no
+	// marketplace qualifier on disk), so the absolute StorageLocation from
+	// the projection row is always authoritative for plugins.
+	var path string
+	if kind == kindPlugin {
+		// SECURITY: StorageLocation is not derived from a validated {name}
+		// (plugins skip ResolvePath), so contain it under CacheRoot before
+		// os.Open — an untrusted/future origin='ui' row pointing outside the
+		// cache (e.g. /etc/passwd) must 404, never serve.
+		p, ok := PluginStoragePathWithinRoot(d.CacheRoot, row.StorageLocation)
+		if !ok {
 			return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
 		}
-		return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
+		path = p
+	} else {
+		var err error
+		path, err = ResolvePath(d.CacheRoot, kind, name, row.Scope)
+		if err != nil {
+			// validateName / kind / scope errors are caller-side
+			// invariants — treat as 404 (router only registers known
+			// kinds; envRow.context allowlist already passed). On scope
+			// invalid this is a projection-write bug; still 404 from the
+			// client's perspective.
+			if errors.Is(err, ErrInvalidName) {
+				return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+			}
+			return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
+		}
 	}
-	f, err := os.Open(path) // #nosec G304 — path is filepath.Join(d.CacheRoot, kind, validatedName[+.tar.gz])
+	f, err := os.Open(path) // #nosec G304 — plugin path contained under CacheRoot by PluginStoragePathWithinRoot; other kinds validated by ResolvePath
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 			// Projection row claims the file exists; the cache file is

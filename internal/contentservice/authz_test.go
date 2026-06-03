@@ -89,9 +89,9 @@ func TestResolveAuthn(t *testing.T) {
 	}{
 		{"empty header", "", &mockResolver{}, nil, "invalid_key_format"},
 		{"wrong prefix", "garbage", &mockResolver{}, nil, "invalid_key_format"},
-		{"resolver internal error", "pk_a", &mockResolver{err: errors.New("boom")}, nil, "internal_error"},
-		{"resolver nil info (revoked)", "pk_a", &mockResolver{info: nil}, nil, "expired_or_revoked"},
-		{"happy path pk_", "pk_a", &mockResolver{info: pkInfo}, pkInfo, ""},
+		{"resolver internal error", "pk-a", &mockResolver{err: errors.New("boom")}, nil, "internal_error"},
+		{"resolver nil info (revoked)", "pk-a", &mockResolver{info: nil}, nil, "expired_or_revoked"},
+		{"happy path pk_", "pk-a", &mockResolver{info: pkInfo}, pkInfo, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

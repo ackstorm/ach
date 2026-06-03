@@ -273,7 +273,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `prompts` _string array_ | Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
-| `plugins` _string array_ | Plugins lists referenced Plugin (or marketplace plugin) names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
@@ -360,6 +360,7 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the reconciler<br />most recently processed. |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions carries Environment condition types per §6.6 closed set:<br />Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced. |  |  |
 | `unresolvedRuntime` _[UnresolvedRuntime](#unresolvedruntime)_ | UnresolvedRuntime lists runtime references not currently registered in<br />LiteLLM. Surfaced for `kubectl describe environment` per §6.4. The<br />field contract belongs here from Phase 1; the reconciler in Phase 2<br />rewrites it on every reconcile. |  |  |
+| `unresolvedContextPlugins` _string array_ | UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present. | \{  \} |  |
 | `litellmAccessGroup` _string_ | LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set. |  |  |
 
 
@@ -738,8 +739,9 @@ _Appears in:_
 PluginMarketplaceStatus defines the observed state of PluginMarketplace.
 
 In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
-Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
-InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+Synced condition (§6.6) with reasons UpstreamInvalid, InvalidConfig,
+UnsupportedPluginSource (plus per-plugin soft-skip reasons in the
+message such as DuplicateName), plus the materialized plugin set
 (Plugins / PluginsCount) populated on each successful reconcile.
 
 

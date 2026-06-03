@@ -39,6 +39,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/pluginref"
 )
 
 // contentRow holds the per-request resolved row that gate 7 (staleness)
@@ -231,6 +232,9 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 		return errUnauthorizedContent()
 	}
 	for _, n := range list {
+		// Comparison is intentionally on the FULL ref (e.g. "shared@mkt-b"),
+		// which matches the Environment's stored allowlist entry verbatim —
+		// no parsing needed for the allowlist gate.
 		if n == name {
 			return nil
 		}
@@ -239,15 +243,17 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 }
 
 // resolveContent (gate 6 per D-04). Kind-dispatched projection row
-// lookup. For plugin, calls db.ResolvePluginByName which implements the
-// §12.3 precedence CTE (CRD wins, else lexicographically lowest
-// marketplace).
+// lookup. For plugin, parses the ref via pluginref and calls
+// db.ResolvePluginByName with the (name, marketplace): a bare name
+// resolves a Plugin CRD row ONLY (no marketplace fallback); a scoped
+// name@marketplace resolves the exact (marketplace_name, name) row. No
+// tiebreak.
 //
 // Returns:
 //
 //   - (row, nil) on hit;
-//   - (nil, errContentNotFound) when the projection row is absent (and
-//     for plugin, also no marketplace match);
+//   - (nil, errContentNotFound) when the projection row is absent (for a
+//     bare name: no Plugin CRD row; for a scoped name: no marketplace row);
 //   - (nil, errInternal) on any other DB error.
 //
 // CS-09: soft-deleted rows (DeletionTimestamp != nil) are STILL
@@ -271,7 +277,14 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			ContentType:           row.ContentType,
 		}, nil
 	case kindPlugin:
-		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, name)
+		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
+		// of silently treating them as a bare CRD lookup — the grammar
+		// requires a non-empty marketplace whenever '@' is present.
+		if !pluginref.Valid(name) {
+			return nil, errContentNotFound()
+		}
+		pname, marketplace, _ := pluginref.Parse(name)
+		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, pname, marketplace)
 		if err != nil {
 			return nil, errInternal()
 		}

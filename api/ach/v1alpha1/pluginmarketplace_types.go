@@ -117,8 +117,9 @@ type MarketplacePluginRef struct {
 // PluginMarketplaceStatus defines the observed state of PluginMarketplace.
 //
 // In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
-// Synced condition (§6.6) with reasons NameConflict, UpstreamInvalid,
-// InvalidConfig, UnsupportedPluginSource, plus the materialized plugin set
+// Synced condition (§6.6) with reasons UpstreamInvalid, InvalidConfig,
+// UnsupportedPluginSource (plus per-plugin soft-skip reasons in the
+// message such as DuplicateName), plus the materialized plugin set
 // (Plugins / PluginsCount) populated on each successful reconcile.
 type PluginMarketplaceStatus struct {
 	ExternalRefStatus `json:",inline"`

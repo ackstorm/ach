@@ -133,9 +133,7 @@ func TestReasonToConditionStates(t *testing.T) {
 
 		// No fetch attempted.
 		{ReasonInvalidConfig, metav1.ConditionUnknown, metav1.ConditionFalse},
-		{ReasonNameConflict, metav1.ConditionUnknown, metav1.ConditionFalse},
 		{ReasonUnsupportedPluginSource, metav1.ConditionUnknown, metav1.ConditionFalse},
-		{ReasonPluginCRDPrecedence, metav1.ConditionUnknown, metav1.ConditionFalse},
 		{ReasonInitializing, metav1.ConditionUnknown, metav1.ConditionFalse},
 
 		// Unknown reason → conservative default.

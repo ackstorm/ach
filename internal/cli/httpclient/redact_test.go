@@ -10,17 +10,17 @@ import (
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
 
-// TestRedact_PrefixForms asserts Test 9: pk_/ek_ values reduce to
-// "<prefix>_***"; anything else falls through to a literal "redacted"
+// TestRedact_PrefixForms asserts Test 9: pk-/ek- values reduce to
+// "<prefix>-***"; anything else falls through to a literal "redacted"
 // marker (no prefix detected).
 func TestRedact_PrefixForms(t *testing.T) {
 	cases := []struct {
 		in   string
 		want string
 	}{
-		{"pk_abc", "pk_***"},
-		{"pk_supersecretlong", "pk_***"},
-		{"ek_xyz", "ek_***"},
+		{"pk-abc", "pk-***"},
+		{"pk-supersecretlong", "pk-***"},
+		{"ek-xyz", "ek-***"},
 		{"garbage", "redacted"},
 		{"", "redacted"},
 		{"Bearer secret", "redacted"},
@@ -37,12 +37,12 @@ func TestRedact_PrefixForms(t *testing.T) {
 // headers verbatim. Output is sorted by canonical header name.
 func TestHeaderDump_RedactsAchKey(t *testing.T) {
 	h := http.Header{}
-	h.Set("X-Ach-Key", "pk_abc")
+	h.Set("X-Ach-Key", "pk-abc")
 	h.Set("Authorization", "Bearer y")
 	h.Set("Accept-Encoding", "gzip")
 
 	got := httpclient.HeaderDump(h)
-	if !strings.Contains(got, "X-Ach-Key: pk_***") {
+	if !strings.Contains(got, "X-Ach-Key: pk-***") {
 		t.Errorf("HeaderDump missing redacted x-ach-key:\n%s", got)
 	}
 	if !strings.Contains(got, "Authorization: Bearer y") {
@@ -51,8 +51,8 @@ func TestHeaderDump_RedactsAchKey(t *testing.T) {
 	if !strings.Contains(got, "Accept-Encoding: gzip") {
 		t.Errorf("HeaderDump dropped Accept-Encoding:\n%s", got)
 	}
-	if strings.Contains(got, "pk_abc") {
-		t.Errorf("HeaderDump leaked pk_abc plaintext:\n%s", got)
+	if strings.Contains(got, "pk-abc") {
+		t.Errorf("HeaderDump leaked pk-abc plaintext:\n%s", got)
 	}
 
 	// Determinism: sorted by canonical header name → Accept-Encoding
@@ -69,12 +69,12 @@ func TestHeaderDump_RedactsAchKey(t *testing.T) {
 // header is stored under a non-canonical case (defensive guard).
 func TestHeaderDump_CaseInsensitive(t *testing.T) {
 	h := http.Header{}
-	h.Set("x-ach-key", "ek_secret123") // http.Header.Set canonicalizes
+	h.Set("x-ach-key", "ek-secret123") // http.Header.Set canonicalizes
 	got := httpclient.HeaderDump(h)
-	if strings.Contains(got, "ek_secret123") {
+	if strings.Contains(got, "ek-secret123") {
 		t.Errorf("HeaderDump leaked plaintext under lowercase key:\n%s", got)
 	}
-	if !strings.Contains(got, "ek_***") {
+	if !strings.Contains(got, "ek-***") {
 		t.Errorf("HeaderDump missed lowercase x-ach-key:\n%s", got)
 	}
 }

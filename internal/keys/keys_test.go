@@ -13,13 +13,11 @@ import (
 // NewBearer tests (Task 2)
 // ---------------------------------------------------------------------
 
-// bearerPkRe matches pk_<26 base32-lowercase no-pad chars>.
+// bearerPkRe / bearerEkRe match the new pk-/ek- bearer shape.
 //
-// RFC 4648 base32 alphabet uplower-case is [A-Z2-7]; lowercased becomes
-// [a-z2-7]. We constrain the regex to that exact set so any drift from
-// the encoder choice (e.g. accidental Crockford or hex) trips the test.
-var bearerPkRe = regexp.MustCompile(`^pk_[a-z2-7]{26}$`)
-var bearerEkRe = regexp.MustCompile(`^ek_[a-z2-7]{26}$`)
+// base64url alphabet is [A-Za-z0-9_-]; 48 random bytes → 64 no-pad chars.
+var bearerPkRe = regexp.MustCompile(`^pk-[A-Za-z0-9_-]{64}$`)
+var bearerEkRe = regexp.MustCompile(`^ek-[A-Za-z0-9_-]{64}$`)
 
 func TestNewBearer_PkShape(t *testing.T) {
 	got, err := NewBearer(PrefixPk)
@@ -29,11 +27,11 @@ func TestNewBearer_PkShape(t *testing.T) {
 	if !bearerPkRe.MatchString(got) {
 		t.Fatalf("NewBearer(PrefixPk) = %q; want match %s", got, bearerPkRe)
 	}
-	if !strings.HasPrefix(got, "pk_") {
-		t.Fatalf("NewBearer(PrefixPk) = %q; want pk_ prefix", got)
+	if !strings.HasPrefix(got, "pk-") {
+		t.Fatalf("NewBearer(PrefixPk) = %q; want pk- prefix", got)
 	}
-	if len(got) != 3+26 {
-		t.Fatalf("NewBearer(PrefixPk) len = %d; want %d", len(got), 3+26)
+	if len(got) != 3+64 {
+		t.Fatalf("NewBearer(PrefixPk) len = %d; want %d", len(got), 3+64)
 	}
 }
 
@@ -45,11 +43,11 @@ func TestNewBearer_EkShape(t *testing.T) {
 	if !bearerEkRe.MatchString(got) {
 		t.Fatalf("NewBearer(PrefixEk) = %q; want match %s", got, bearerEkRe)
 	}
-	if !strings.HasPrefix(got, "ek_") {
-		t.Fatalf("NewBearer(PrefixEk) = %q; want ek_ prefix", got)
+	if !strings.HasPrefix(got, "ek-") {
+		t.Fatalf("NewBearer(PrefixEk) = %q; want ek- prefix", got)
 	}
-	if len(got) != 3+26 {
-		t.Fatalf("NewBearer(PrefixEk) len = %d; want %d", len(got), 3+26)
+	if len(got) != 3+64 {
+		t.Fatalf("NewBearer(PrefixEk) len = %d; want %d", len(got), 3+64)
 	}
 }
 
@@ -92,31 +90,29 @@ func TestNewBearer_InvalidPrefix(t *testing.T) {
 	}
 }
 
-func TestNewBearer_AlphabetIsBase32Lower(t *testing.T) {
-	// Tighter than the per-shape regexes: assert every char of the suffix
-	// is in [a-z2-7] (RFC 4648 base32 no-pad alphabet, lowercased).
-	allowed := regexp.MustCompile(`^[a-z2-7]+$`)
+func TestNewBearer_AlphabetIsBase64URL(t *testing.T) {
+	allowed := regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	for i := 0; i < 100; i++ {
 		v, err := NewBearer(PrefixPk)
 		if err != nil {
 			t.Fatalf("iter %d: NewBearer err: %v", i, err)
 		}
-		suffix := strings.TrimPrefix(v, "pk_")
-		if len(suffix) != 26 {
-			t.Fatalf("iter %d: suffix len = %d; want 26", i, len(suffix))
+		suffix := strings.TrimPrefix(v, "pk-")
+		if len(suffix) != 64 {
+			t.Fatalf("iter %d: suffix len = %d; want 64", i, len(suffix))
 		}
 		if !allowed.MatchString(suffix) {
-			t.Fatalf("iter %d: suffix %q has chars outside [a-z2-7]", i, suffix)
+			t.Fatalf("iter %d: suffix %q has chars outside [A-Za-z0-9_-]", i, suffix)
 		}
 	}
 }
 
 func TestNewBearer_ConstantsHaveExpectedValues(t *testing.T) {
-	if PkBearerPrefix != "pk_" {
-		t.Errorf("PkBearerPrefix = %q; want %q", PkBearerPrefix, "pk_")
+	if PkBearerPrefix != "pk-" {
+		t.Errorf("PkBearerPrefix = %q; want %q", PkBearerPrefix, "pk-")
 	}
-	if EkBearerPrefix != "ek_" {
-		t.Errorf("EkBearerPrefix = %q; want %q", EkBearerPrefix, "ek_")
+	if EkBearerPrefix != "ek-" {
+		t.Errorf("EkBearerPrefix = %q; want %q", EkBearerPrefix, "ek-")
 	}
 	if PkidKeyIDPrefix != "pkid_" {
 		t.Errorf("PkidKeyIDPrefix = %q; want %q", PkidKeyIDPrefix, "pkid_")
@@ -278,32 +274,11 @@ func TestClassifyBearer_EmptyRejected(t *testing.T) {
 
 func TestClassifyBearer_WrongLengthRejected(t *testing.T) {
 	for _, in := range []string{
-		"pk_abc",
-		"ek_abc",
-		"pk_",
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaaaa", // 27 chars after prefix
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa",   // 25 chars after prefix
-	} {
-		got, err := ClassifyBearer(in)
-		if !errors.Is(err, ErrInvalidBearer) {
-			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)
-		}
-		if got != "" {
-			t.Errorf("ClassifyBearer(%q) prefix = %q; want zero", in, got)
-		}
-	}
-}
-
-func TestClassifyBearer_UppercaseRejected(t *testing.T) {
-	// Get a valid lowercase suffix, then upper-case it / the prefix.
-	plaintext, err := NewBearer(PrefixPk)
-	if err != nil {
-		t.Fatalf("NewBearer: %v", err)
-	}
-	for _, in := range []string{
-		"PK_" + plaintext[3:],                  // upper prefix
-		strings.ToUpper(plaintext),             // all upper
-		"pk_" + strings.ToUpper(plaintext[3:]), // upper suffix only
+		"pk-abc",
+		"ek-abc",
+		"pk-",
+		"pk-" + strings.Repeat("a", 65), // 65 chars after prefix
+		"pk-" + strings.Repeat("a", 63), // 63 chars after prefix
 	} {
 		got, err := ClassifyBearer(in)
 		if !errors.Is(err, ErrInvalidBearer) {
@@ -316,14 +291,10 @@ func TestClassifyBearer_UppercaseRejected(t *testing.T) {
 }
 
 func TestClassifyBearer_OutOfAlphabetRejected(t *testing.T) {
-	// Suffix length 26 but contains chars outside [a-z2-7].
-	for _, in := range []string{
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa1", // contains '1' (not in base32 lowered)
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa0", // contains '0'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa8", // contains '8'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa9", // contains '9'
-		"pk_aaaaaaaaaaaaaaaaaaaaaaaaa!", // contains '!'
-	} {
+	// 64-char suffix but one char outside [A-Za-z0-9_-].
+	base := strings.Repeat("a", 63)
+	for _, bad := range []string{".", "!", "@", "+", "/", "=", " "} {
+		in := "pk-" + base + bad
 		got, err := ClassifyBearer(in)
 		if !errors.Is(err, ErrInvalidBearer) {
 			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)

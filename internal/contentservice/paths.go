@@ -24,6 +24,28 @@ var ErrInvalidName = errors.New("contentservice: invalid name")
 // here is defensive.
 var ErrInvalidScope = errors.New("contentservice: invalid scope")
 
+// PluginStoragePathWithinRoot validates an operator-written plugin
+// storage_location before it is opened. Plugins are served directly from
+// the projection row's StorageLocation (not recomputed via ResolvePath),
+// so the path is NOT derived from a validated {name}. storage_location is
+// operator-written today, but the schema permits future origin='ui' rows,
+// so the value is treated as untrusted: it must be absolute and contained
+// within cacheRoot. Returns the cleaned path and ok=false (caller → 404)
+// when the location is relative or escapes the cache root (e.g.
+// "/etc/passwd" or "<root>/../x"). Defense-in-depth against a row that
+// would otherwise serve a file outside the cache.
+func PluginStoragePathWithinRoot(cacheRoot, storageLocation string) (string, bool) {
+	clean := filepath.Clean(storageLocation)
+	if !filepath.IsAbs(clean) {
+		return "", false
+	}
+	root := filepath.Clean(cacheRoot)
+	if clean != root && !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+		return "", false
+	}
+	return clean, true
+}
+
 // ResolvePath returns the single on-disk filename for a (kind, name,
 // scope) tuple under cacheRoot. Scope is consumed only for
 // kind=artifact: scope="object" → bare name, scope="directory" →

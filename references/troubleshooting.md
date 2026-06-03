@@ -117,6 +117,24 @@ each fetch is now surfaced on the `SourceReachable=True` (Plugin/Prompt/
 Artifact) and `Synced=True` (PluginMarketplace) condition messages as
 `transport=<git|rest|n/a>`.
 
+### ℹ️ `NameConflict` condition reason — removed in v0.2.5+
+`PluginMarketplace` previously set `Synced=False reason=NameConflict` when two
+marketplaces exposed a plugin with the same bare name. This reason is **deleted**.
+Plugin references in `Environment.spec.context.plugins` are now marketplace-scoped:
+
+- Bare `name` → internal Plugin CRD only.
+- `name@marketplace` → that PluginMarketplace's plugin, resolved by exact
+  `(marketplace_name, name)` PK. Two marketplaces exposing the same name both
+  reach `Synced=True`; no conflict is possible.
+
+Intra-marketplace duplicates (same name listed twice in a single
+`marketplace.json`) are soft-skipped: the first entry wins, the rest surface in
+the Synced condition `message` with reason `DuplicateName`; `Synced` stays
+`True`.
+
+If you see `NameConflict` in `kubectl get pluginmarketplace` output, the cluster
+is running a pre-v0.2.5 operator image. Roll to the current image.
+
 ### ❌ Environment stuck in `AccessGroupSynced=False reason=UnresolvedReferences`
 ```bash
 kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.type=="AccessGroupSynced")]}'

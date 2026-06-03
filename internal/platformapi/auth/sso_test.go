@@ -876,8 +876,8 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	if !strings.HasPrefix(got.KeyID, "pkid_") {
 		t.Errorf("key_id: got %q, want pkid_ prefix", got.KeyID)
 	}
-	if !strings.HasPrefix(got.Plaintext, "pk_") {
-		t.Errorf("plaintext: got %q, want pk_ prefix", got.Plaintext)
+	if !strings.HasPrefix(got.Plaintext, "pk-") {
+		t.Errorf("plaintext: got %q, want pk- prefix", got.Plaintext)
 	}
 	if got.OwnerEmail != "alice@example.com" {
 		t.Errorf("owner_email: got %q, want alice@example.com", got.OwnerEmail)
@@ -1735,16 +1735,16 @@ func TestCallbackHandler_NoSessionIDPreservesJSONBranch(t *testing.T) {
 		t.Errorf("Content-Type: got %q, want application/json prefix (D-20 absence-of-session_id)", got)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), `"plaintext":"pk_`) {
+	if !strings.Contains(string(body), `"plaintext":"pk-`) {
 		t.Errorf("expected JSON body with plaintext; got %s", string(body))
 	}
 }
 
 // TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML — D-20
 // active branch: URL state carries "<random_state>|<session_id>",
-// deps.Redis is wired; on success the pk_ payload is written under
+// deps.Redis is wired; on success the pk- payload is written under
 // "ach:cli-session:<id>" and the response is the HTML close-window
-// page (NOT JSON, NOT carrying the pk_ in the browser body).
+// page (NOT JSON, NOT carrying the pk- in the browser body).
 func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 	fix := newRealOIDC(t, "ach")
 	defer fix.Close()
@@ -1801,10 +1801,10 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 	if !strings.Contains(string(body), "You may close this window") {
 		t.Errorf("html body missing close-window text; got: %s", string(body))
 	}
-	// The pk_ plaintext MUST NOT be in the browser body — only Redis
+	// The pk- plaintext MUST NOT be in the browser body — only Redis
 	// gets it (consumed via /platform/auth/cli/token).
-	if strings.Contains(string(body), "pk_") {
-		t.Errorf("FATAL: pk_ plaintext leaked into browser HTML body: %s", string(body))
+	if strings.Contains(string(body), "pk-") {
+		t.Errorf("FATAL: pk- plaintext leaked into browser HTML body: %s", string(body))
 	}
 
 	// Redis MUST carry the session payload at "ach:cli-session:sess-d20-id".
@@ -1823,8 +1823,8 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 	if !strings.HasPrefix(stored["key_id"], "pkid_") {
 		t.Errorf("stored key_id: %q does not start with pkid_", stored["key_id"])
 	}
-	if !strings.HasPrefix(stored["plaintext"], "pk_") {
-		t.Errorf("stored plaintext: %q does not start with pk_", stored["plaintext"])
+	if !strings.HasPrefix(stored["plaintext"], "pk-") {
+		t.Errorf("stored plaintext: %q does not start with pk-", stored["plaintext"])
 	}
 	if stored["owner_email"] != "browser@example.com" {
 		t.Errorf("stored owner_email: %q want browser@example.com", stored["owner_email"])

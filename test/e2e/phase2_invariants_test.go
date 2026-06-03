@@ -14,10 +14,10 @@
 // actually ships.
 //
 // SC mapping (ROADMAP §"Phase 2"):
-//   - SC#1 PluginPublish        → plugin/caveman (real public plugin repo)
-//   - SC#2 MarketplaceThreeStage→ pluginmarketplace/caveman
-//   - SC#3 AlphabeticalConflict → pluginmarketplace/{conflict-mkt-a,conflict-mkt-b}
-//   - SC#4 SizeCap              → NOT re-asserted here. The size cap is
+//   - SC#1 PluginPublish           → plugin/caveman (real public plugin repo)
+//   - SC#2 MarketplaceThreeStage   → pluginmarketplace/caveman
+//   - SC#3 SamePluginNameTwoMarkets→ pluginmarketplace/{conflict-mkt-a,conflict-mkt-b}
+//   - SC#4 SizeCap                 → NOT re-asserted here. The size cap is
 //     deterministic logic already verified where the byte size can be
 //     injected exactly: TestMaterializeExternalRef_PluginTooLarge (unit) and
 //     TestPMR_Stage2_PluginTooLarge (envtest); the operator-refuses-to-start
@@ -46,7 +46,7 @@ import (
 func TestPhase2Invariants(t *testing.T) {
 	t.Run("SC1_PluginPublish", testSC1PluginPublish)
 	t.Run("SC2_MarketplaceThreeStage", testSC2MarketplaceThreeStage)
-	t.Run("SC3_AlphabeticalConflict", testSC3AlphabeticalConflict)
+	t.Run("SC3_SamePluginNameTwoMarketplaces", testSC3SamePluginNameTwoMarketplaces)
 }
 
 // testSC1PluginPublish — Phase 02 SC#1.
@@ -108,33 +108,33 @@ func testSC2MarketplaceThreeStage(t *testing.T) {
 	}
 }
 
-// testSC3AlphabeticalConflict — Phase 02 SC#3.
+// testSC3SamePluginNameTwoMarketplaces — Phase 02 SC#3.
 //
 // conflict-mkt-a and conflict-mkt-b both expose the same plugin name
-// (`feature-dev`, filtered out of the real anthropic catalogue). The
-// alphabetically-lowest metadata.name wins: conflict-mkt-a keeps Synced=True;
-// conflict-mkt-b flips to Synced=False reason=NameConflict.
+// (`feature-dev`, filtered out of the real anthropic catalogue). Under
+// the marketplace-scoped plugin grammar (§12.3) the two entries are
+// independent scoped references: `feature-dev@conflict-mkt-a` and
+// `feature-dev@conflict-mkt-b`. There is no cross-marketplace name
+// conflict — BOTH marketplaces must reach Synced=True.
 //
-// Both marketplaces carry a 1m refresh.interval so the loser re-resolves
-// promptly even if it wins the initial apply-race — see
-// test/e2e/cluster/04-objects/marketplace-conflict-a.yaml. The generous
+// Both marketplaces carry a 1m refresh.interval for quick convergence —
+// see test/e2e/cluster/04-objects/marketplace-conflict-a.yaml. The generous
 // timeout here covers that convergence window (verify_all already gates both
-// to their terminal state, so by suite time these reads are immediate).
-func testSC3AlphabeticalConflict(t *testing.T) {
+// to Synced=True, so by suite time these reads are immediate).
+func testSC3SamePluginNameTwoMarketplaces(t *testing.T) {
 	t.Helper()
 
 	waitForCondition(t, "pluginmarketplace", "conflict-mkt-a", "Synced", "True", 180*time.Second)
-	waitForCondition(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "False", 180*time.Second)
+	waitForCondition(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "True", 180*time.Second)
 
 	if alphaReason := getConditionField(t, "pluginmarketplace", "conflict-mkt-a", "Synced", "reason"); alphaReason != "Synced" {
 		dumpOperatorLogs(t)
-		t.Fatalf("SC#3: conflict-mkt-a Synced.reason = %q; want %q (alphabetical winner)", alphaReason, "Synced")
+		t.Fatalf("SC#3: conflict-mkt-a Synced.reason = %q; want %q", alphaReason, "Synced")
 	}
 
-	betaReason := getConditionField(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "reason")
-	if !strings.Contains(betaReason, "NameConflict") {
+	if betaReason := getConditionField(t, "pluginmarketplace", "conflict-mkt-b", "Synced", "reason"); betaReason != "Synced" {
 		dumpOperatorLogs(t)
-		t.Fatalf("SC#3: conflict-mkt-b Synced.reason = %q; want substring %q", betaReason, "NameConflict")
+		t.Fatalf("SC#3: conflict-mkt-b Synced.reason = %q; want %q (same plugin name under two marketplaces must BOTH sync)", betaReason, "Synced")
 	}
 }
 

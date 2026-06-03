@@ -42,14 +42,14 @@ func writeEnvelope(w http.ResponseWriter, status int, code, msg, reqID string) {
 
 // TestClient_Do_GET2xx asserts Test 1: a successful GET decodes the
 // body into the provided out struct and verbose mode writes a redacted
-// header dump to Stderr including "x-ach-key: pk_***".
+// header dump to Stderr including "x-ach-key: pk-***".
 func TestClient_Do_GET2xx(t *testing.T) {
 	type body struct {
 		Hello string `json:"hello"`
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("x-ach-key"); got != "pk_supersecretlong" {
-			t.Errorf("server saw x-ach-key=%q, want pk_supersecretlong", got)
+		if got := r.Header.Get("x-ach-key"); got != "pk-supersecretlong" {
+			t.Errorf("server saw x-ach-key=%q, want pk-supersecretlong", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(body{Hello: "world"})
@@ -59,7 +59,7 @@ func TestClient_Do_GET2xx(t *testing.T) {
 	var stderr bytes.Buffer
 	c := &httpclient.Client{
 		BaseURL: srv.URL,
-		APIKey:  "pk_supersecretlong",
+		APIKey:  "pk-supersecretlong",
 		Verbose: true,
 		Stderr:  &stderr,
 	}
@@ -71,8 +71,8 @@ func TestClient_Do_GET2xx(t *testing.T) {
 		t.Errorf("decoded %+v, want hello=world", out)
 	}
 	dump := stderr.String()
-	if !strings.Contains(dump, "x-ach-key: pk_***") &&
-		!strings.Contains(dump, "X-Ach-Key: pk_***") {
+	if !strings.Contains(dump, "x-ach-key: pk-***") &&
+		!strings.Contains(dump, "X-Ach-Key: pk-***") {
 		t.Errorf("verbose dump missing redacted x-ach-key:\n%s", dump)
 	}
 	if strings.Contains(dump, "supersecretlong") {

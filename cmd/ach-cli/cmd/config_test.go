@@ -103,8 +103,8 @@ func TestConfig_Show_Masked(t *testing.T) {
 		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: "https://prod.example",
-				PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
-				EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaa1234"},
+				PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
+				EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234"},
 			},
 		},
 	})
@@ -115,13 +115,13 @@ func TestConfig_Show_Masked(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("exit code = %d; want 0", code)
 	}
-	if strings.Contains(stdout, "pk_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+	if strings.Contains(stdout, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
 		t.Errorf("CLI-04 leak: full pk plaintext present; stdout: %s", stdout)
 	}
-	if strings.Contains(stdout, "ek_aaaaaaaaaaaaaaaaaaaaa1234") {
+	if strings.Contains(stdout, "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234") {
 		t.Errorf("CLI-04 leak: full ek plaintext present; stdout: %s", stdout)
 	}
-	if !strings.Contains(stdout, "pk_****wxyz") {
+	if !strings.Contains(stdout, "pk-****wxyz") {
 		t.Errorf("missing masked pk tail; stdout: %s", stdout)
 	}
 }

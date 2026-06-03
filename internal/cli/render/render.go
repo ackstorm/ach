@@ -128,7 +128,7 @@ func FormatConfigList(f *config.File) string {
 
 // FormatConfigShow returns the block for `ach config show [profile]`.
 // When reveal=false (default), the PK and every EK value pass through
-// config.Mask so only the "<prefix>_****<last-4>" tail is rendered;
+// config.Mask so only the "<prefix>-****<last-4>" tail is rendered;
 // when reveal=true (D-05 opt-in unmask), the values flow through
 // verbatim. The unmask is scoped to ONE named profile per
 // invocation (the caller picks; this function trusts its input).

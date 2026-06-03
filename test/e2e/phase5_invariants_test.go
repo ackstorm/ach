@@ -27,7 +27,6 @@ package e2e
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -256,7 +255,10 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		{
 			name:       "ExpiredOrRevoked",
 			path:       "/content/plugin/plugin-valid",
-			key:        "pk_DEADBEEFDEADBEEFDEADBEEFDEADBEEF",
+			// Format-valid (pk- + 64 base64url chars) but absent from the
+			// keystore → passes the format gate, resolver returns nil → 401
+			// expired_or_revoked (NOT 400 invalid_key_format).
+			key:        "pk-DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF",
 			envHeader:  env,
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "expired_or_revoked",
@@ -429,7 +431,10 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 			_, _, _ = psqlExec(cleanCtx,
 				`DELETE FROM marketplace_plugins WHERE marketplace_name='aaa-precedence-test-mkt' AND name='plugin-valid';`)
 		})
-		// CS request resolves via §12.3 CTE — CRD branch must win.
+		// Bare name "plugin-valid" resolves the Plugin CRD ONLY — marketplace rows
+		// with the same name are unreachable without an explicit @marketplace qualifier
+		// (B2 scoping semantics). The seeded aaa-precedence-test-mkt row is therefore
+		// irrelevant; the CRD serves and the 200 status confirms the CRD path is active.
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
 		req.Header.Set("x-ach-key", pk)
 		req.Header.Set("x-ach-environment", env)
@@ -440,49 +445,42 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d want=200 (CRD branch MUST win over marketplace per §12.3)", resp.StatusCode)
+			t.Fatalf("status=%d want=200 (bare name must resolve Plugin CRD only)", resp.StatusCode)
 		}
 		// Engineer-pending byte-comparison: the storage_location of the
 		// CRD-row vs the marketplace-row differ, so a byte-comparison
 		// against a known fixture would distinguish which path served.
 		// In live testing, attach a Service-side handler that returns
 		// distinct content per path and assert; here we only verify
-		// the §12.3 CTE compiled + returned a row (200 OK).
+		// the CRD path compiled + returned a row (200 OK).
 	})
 
-	t.Run("AlphabeticallyLowestMarketplace", func(t *testing.T) {
-		// Pre-seed three marketplace_plugins rows for the same name in
-		// reverse alphabetical insert order — the §12.3 CTE MUST
-		// resolve to the alphabetically-lowest marketplace_name.
-		mkts := []string{"zzz-mkt", "internal-mkt", "anthropic-mkt"}
-		for _, m := range mkts {
-			q := fmt.Sprintf(
-				`INSERT INTO marketplace_plugins `+
-					`(marketplace_name, name, storage_location, max_staleness_seconds, origin, locked) `+
-					`VALUES ('%s', 'mktshared', `+
-					`'/var/cache/ach/plugin/mktshared.%s', 86400, 'cr', true) `+
-					`ON CONFLICT DO NOTHING;`, m, m)
-			if _, stderr, err := psqlExec(ctx, q); err != nil {
-				t.Skipf("psql seed %s (engineer-pending): %v stderr=%s", m, err, strings.TrimSpace(stderr))
-			}
-		}
-		t.Cleanup(func() {
-			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cleanCancel()
-			_, _, _ = psqlExec(cleanCtx, `DELETE FROM marketplace_plugins WHERE name='mktshared';`)
-		})
-		// Verify the CTE resolves to anthropic-mkt via direct query.
-		stdout, _, err := psqlExec(ctx, `SELECT marketplace_name FROM marketplace_plugins WHERE name='mktshared' ORDER BY marketplace_name ASC LIMIT 1;`)
+	// ScopedMarketplacePlugin200 exercises the name@marketplace scoped
+	// resolution path end-to-end: the demo Environment fixture includes
+	// `feature-dev@conflict-mkt-a` in context.plugins (no Plugin CRD backs
+	// this name), so the content-service must resolve via the marketplace
+	// branch of the §12.3 CTE. A 200 response confirms the scoped ref was
+	// parsed, resolved, and served. The `demo` environment is used here
+	// because `env-valid` does not include the scoped ref.
+	t.Run("ScopedMarketplacePlugin200", func(t *testing.T) {
+		// Acquire a pk_ bound to the demo environment (the Environment fixture
+		// that includes feature-dev@conflict-mkt-a in context.plugins).
+		demoPK := mustAcquirePk(t)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+			csURL+"/content/plugin/feature-dev@conflict-mkt-a", nil)
+		req.Header.Set("x-ach-key", demoPK)
+		req.Header.Set("x-ach-environment", "demo")
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			t.Skipf("psql verify (engineer-pending): %v", err)
+			t.Fatalf("Do: %v", err)
 		}
-		if got := strings.TrimSpace(stdout); got != "anthropic-mkt" {
-			t.Errorf("alphabetically-lowest marketplace=%q want=anthropic-mkt", got)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			dumpOperatorLogs(t)
+			t.Fatalf("scoped plugin fetch: status=%d want=200 "+
+				"(feature-dev@conflict-mkt-a must resolve via §12.3 marketplace branch)", resp.StatusCode)
 		}
-		// Engineer-pending: live CS request against /content/plugin/mktshared
-		// requires the env.context.plugins to include "mktshared" AND a
-		// resolvable upstream URL. Both are deferred; CTE behavior is
-		// adequately covered by Plan 05-02 integration tests.
 	})
 
 	t.Run("DeletionDrainStillServes", func(t *testing.T) {

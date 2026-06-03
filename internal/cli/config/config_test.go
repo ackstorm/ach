@@ -208,9 +208,9 @@ func TestMask(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"long pk", "pk_abcdefghijklmnopWXYZ", "pk_****WXYZ"},
-		{"short", "ek_xyz", "<masked>"},
-		{"no underscore", "garbageabcd", "<masked>"},
+		{"long pk", "pk-abcdefghijklmnopWXYZ", "pk-****WXYZ"},
+		{"short", "ek-xyz", "<masked>"},
+		{"no hyphen", "garbageabcd", "<masked>"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
