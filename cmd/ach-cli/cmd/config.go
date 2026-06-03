@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach config` is the local-mutate registry surface (D-05 / CLI spec
-// §5.4) — five children that read and write ~/.config/ach/config.yaml
+// §5.4) — six children that read and write ~/.config/ach/config.yaml
 // without ever contacting the server:
 //
+//   - add     Register a profile from an existing pk_/ek_ (the headless
+//             counterpart to `ach login` — no browser SSO). Stores the
+//             credential in Profile.PK; --env-key seeds the EK label map.
 //   - list    Print the profiles table (NAME, URL, PK presence, EK count).
 //   - show    Print one profile's URL + pk + ek map. --reveal opts
 //             into the full plaintext unmask for the named profile
@@ -26,6 +29,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -33,10 +37,11 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/render"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
+	"github.com/ackstorm/ach/internal/keys"
 )
 
 // newConfigCmd returns a fresh `ach config` parent cobra.Command with
-// all 5 children registered. Factory shape (per 06-03 Pattern P2)
+// all 6 children registered. Factory shape (per 06-03 Pattern P2)
 // keeps tests hermetic — each subtest constructs an isolated tree.
 func newConfigCmd() *cobra.Command {
 	parent := &cobra.Command{
@@ -45,6 +50,7 @@ func newConfigCmd() *cobra.Command {
 		Long: `Manage the local CLI configuration at ~/.config/ach/config.yaml.
 
 Children:
+  add       Register a profile from an existing pk_/ek_ (no SSO)
   list      Print the profiles table
   show      Print one profile (--reveal unmasks pk_/ek_)
   use       Set default: to <name>
@@ -61,6 +67,7 @@ env, so the on-disk registry has no role.
 	}
 
 	parent.AddCommand(
+		newConfigAddCmd(),
 		newConfigListCmd(),
 		newConfigShowCmd(),
 		newConfigUseCmd(),
@@ -108,7 +115,7 @@ func newConfigShowCmd() *cobra.Command {
 			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no profiles configured; run `ach login`",
+					Msg:  "no profiles configured; run `ach login` or `ach config add`",
 				}
 			}
 			var name string
@@ -152,7 +159,7 @@ func newConfigUseCmd() *cobra.Command {
 			if f == nil || len(f.Profiles) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "no profiles configured; run `ach login`",
+					Msg:  "no profiles configured; run `ach login` or `ach config add`",
 				}
 			}
 			name := args[0]
@@ -279,6 +286,171 @@ func newConfigRenameCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// newConfigAddCmd returns the `ach config add` leaf — the headless
+// counterpart to `ach login`. Where login mints a pk_ via the browser
+// SSO round-trip, `config add` registers a profile from a credential
+// the caller ALREADY holds: a pk_ copied from a login on another
+// machine, or an ek_ from `ach env-keys create`. This is the
+// agent/CI path — no server contact, no browser.
+//
+// The --api-key plaintext is stored in Profile.PK, the profile's
+// default-bearer slot (hydrate's no-flag credential path reads it).
+// PK here means "default bearer for this profile"; an ek_ is a valid
+// value for a service profile. Per-environment ek_ belong in the
+// Profile.EK label map (see `--env-key`, added separately).
+func newConfigAddCmd() *cobra.Command {
+	var (
+		flagProfile string
+		flagURL     string
+		flagAPIKey  string
+		flagEnvKeys []string
+		flagDefault bool
+		flagForce   bool
+	)
+	c := &cobra.Command{
+		Use:   "add --profile <name> --url <url> --api-key <pk_|ek_>",
+		Short: "Register a profile from an existing pk_/ek_ (no SSO)",
+		Long: `Register a profile from a credential you already hold — the headless
+counterpart to ach login (which needs a browser SSO round-trip).
+
+Use this on an agent/CI box: mint an ek_ with ach env-keys create (or
+copy a pk_ from a login elsewhere), then seed a working profile here.
+
+  ach config add --profile prod --url https://hub.example --api-key ek_...
+
+The credential is written to Profile.PK (the default bearer used by
+ach hydrate when no --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY is set).
+Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce)
+		},
+	}
+	c.Flags().StringVar(&flagProfile, "profile", "", "Profile name to create (DNS-1123 label)")
+	c.Flags().StringVar(&flagURL, "url", "", "Hub URL (http:// or https://)")
+	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk_ or ek_ plaintext to store")
+	c.Flags().BoolVar(&flagDefault, "default", false, "Set this profile as the default")
+	c.Flags().BoolVar(&flagForce, "force", false, "Overwrite an existing profile of the same name")
+	c.Flags().StringArrayVar(&flagEnvKeys, "env-key", nil,
+		"Seed a labelled ek_ into profiles.<name>.ek (label=ek_...); repeatable")
+	_ = c.MarkFlagRequired("profile")
+	_ = c.MarkFlagRequired("url")
+	_ = c.MarkFlagRequired("api-key")
+	return c
+}
+
+// runConfigAdd validates the three required inputs, then creates (or,
+// with --force, overwrites) the named profile and saves it 0600. The
+// first profile written becomes the default; --default forces it.
+func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force bool) error {
+	if err := configSyntheticGuard("add"); err != nil {
+		return err
+	}
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+
+	// Validate name — DNS-1123 label (reuse login's package-level pattern).
+	if !profileNamePattern.MatchString(name) {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("profile name %q is invalid; expected DNS-1123 label (lower-case [a-z0-9-])", name),
+		}
+	}
+	// Validate URL scheme — config.Save is the backstop (ErrInvalidURLScheme,
+	// exit 8), but give a friendlier exit-1 message up front.
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
+		return &exit.CodedError{Code: exit.General, Msg: "url must be http:// or https://"}
+	}
+	// Validate credential shape — pk_ or ek_, canonical 29-char length.
+	if _, err := keys.ClassifyBearer(apiKey); err != nil {
+		return &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("--api-key is not a valid pk_/ek_ bearer: %v", err),
+			Wrapped: err,
+		}
+	}
+	// Parse --env-key label=ek_ specs. Each value MUST be an ek_ bearer
+	// (a pk_ is the profile default, not a per-environment key).
+	ekMap := map[string]string{}
+	for _, spec := range envKeys {
+		label, ek, ok := strings.Cut(spec, "=")
+		if !ok {
+			// No '=' at all: spec is a bare label (no secret) — safe to quote.
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("--env-key %q: missing '=' separator; expected label=ek_...", spec),
+			}
+		}
+		if label == "" {
+			// spec is "=<value>"; do NOT quote spec — it carries the ek_ plaintext.
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  "--env-key: label must not be empty; expected label=ek_...",
+			}
+		}
+		prefix, err := keys.ClassifyBearer(ek)
+		if err != nil || prefix != keys.PrefixEk {
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("--env-key %q value is not a valid ek_ bearer", label),
+			}
+		}
+		ekMap[label] = ek
+	}
+	if strings.HasPrefix(url, "http://") {
+		_, _ = fmt.Fprintf(stderr,
+			"warning: profile %q uses plaintext http:// — credentials are sent "+
+				"unencrypted (safe only on trusted/internal networks)\n", url)
+	}
+
+	path, err := config.Path()
+	if err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	file, err := config.Load(path)
+	if err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	if file == nil {
+		file = &config.File{}
+	}
+	if file.Profiles == nil {
+		file.Profiles = map[string]*config.Profile{}
+	}
+	if _, exists := file.Profiles[name]; exists && !force {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("profile %q already exists; pass --force to overwrite or run `ach config remove %s` first", name, name),
+		}
+	}
+
+	// On --force overwrite, URL + PK are replaced and the existing EK
+	// label map is preserved; any --env-key passed this invocation is
+	// then merged on top, OVERRIDING a pre-existing entry of the same
+	// label (last-write-wins per label).
+	dep := &config.Profile{URL: url, PK: apiKey}
+	if existing := file.Profiles[name]; existing != nil {
+		dep.EK = existing.EK
+	}
+	if len(ekMap) > 0 {
+		if dep.EK == nil {
+			dep.EK = map[string]string{}
+		}
+		for label, ek := range ekMap {
+			dep.EK[label] = ek
+		}
+	}
+	file.Profiles[name] = dep
+	if setDefault || file.Default == "" {
+		file.Default = name
+	}
+	if err := config.Save(path, file); err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	_, _ = fmt.Fprintf(stdout, "added profile %s (%s)\n", name, config.Mask(apiKey))
+	return nil
 }
 
 // loadConfigForCmd loads the config file via the canonical Path +

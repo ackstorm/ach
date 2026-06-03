@@ -347,6 +347,7 @@ func TestConfig_SyntheticMode_Exit1(t *testing.T) {
 	t.Setenv("ACH_API_KEY", "pk_synthetic_test_key_aaaaaaaaaa")
 
 	subcommands := [][]string{
+		{"add", "--profile", "p", "--url", "https://x.example", "--api-key", validEK},
 		{"list"},
 		{"show", "prod"},
 		{"use", "prod"},

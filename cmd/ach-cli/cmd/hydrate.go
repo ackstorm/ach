@@ -180,8 +180,11 @@ exclusive; >1 set → exit 1):
   ACH_API_KEY=<pk_|ek_>    Env var equivalent of --api-key
   ACH_ENV_KEY=<label>      Env var equivalent of --env-key
 
-If none of the above is set, the CLI uses the active profile's
-pk: field from ~/.config/ach/config.yaml (run ach login first).
+If none of the above is set, the CLI uses the active profile's pk: field
+from ~/.config/ach/config.yaml. Seed that profile with ach login (SSO) or,
+on a headless box, ach config add --api-key <pk_|ek_>. To skip disk config
+entirely, export ACH_BASE_URL + ACH_API_KEY (synthetic mode) — every
+command then uses them with no per-command --api-key.
 
 --environment is REQUIRED when the resolved credential is a pk_ (D-12);
 OPTIONAL for ek_ (server-side mismatch yields 403 wrong_environment →
