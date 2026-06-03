@@ -45,10 +45,10 @@ const defaultTimeout = 60 * time.Second
 // least BaseURL + APIKey populated; the zero value of HTTPClient,
 // Verbose, Stderr, and ExtraHeaders is safe to leave unset.
 type Client struct {
-	// BaseURL is the deployment URL (deployments.<active>.url).
+	// BaseURL is the profile URL (profiles.<active>.url).
 	BaseURL string
 
-	// APIKey is the resolved pk_ or ek_ for the active deployment.
+	// APIKey is the resolved pk_ or ek_ for the active profile.
 	// Carried in every request as `x-ach-key: <APIKey>` (Hub §5).
 	APIKey string
 

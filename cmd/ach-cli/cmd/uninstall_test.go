@@ -70,7 +70,7 @@ func writeState(t *testing.T, workspace string, f *state.File) string {
 func TestUninstall_DryRunWritesNothing(t *testing.T) {
 	ws := t.TempDir()
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins: []state.FileEntry{
 			{Target: "CLAUDE.md", Hash: "h", SourceHash: "s", Merge: "composite", Keys: []string{"foo"}},
@@ -164,7 +164,7 @@ func TestUninstall_ScopeFlagMutualExclusion(t *testing.T) {
 func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 	ws := t.TempDir()
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins:       []state.FileEntry{{Target: "CLAUDE.md", Hash: "h", SourceHash: "s"}},
 		RuntimeFiles:  []state.FileEntry{{Target: ".mcp.json", Hash: "h2", SourceHash: "s2"}},
@@ -194,7 +194,7 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 	ws := t.TempDir()
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins:       []state.FileEntry{{Target: "CLAUDE.md", Hash: "h", SourceHash: "s"}},
 		RuntimeFiles:  []state.FileEntry{{Target: ".mcp.json", Hash: "h2", SourceHash: "s2"}},
@@ -228,7 +228,7 @@ func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 func TestUninstall_ForceFlagThreadsThrough(t *testing.T) {
 	ws := t.TempDir()
 	writeState(t, ws, &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins:       []state.FileEntry{{Target: "CLAUDE.md", Hash: "h", SourceHash: "s"}},
 	})

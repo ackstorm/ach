@@ -84,7 +84,7 @@ func TestCoOwnedRegistry(t *testing.T) {
 	// All four entries live in Plugins[] (content bucket → resolved against
 	// achDir=root). Hash:"" disables the drift gate so each branch runs.
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins: []state.FileEntry{
 			{Target: "CLAUDE.md", Merge: mergeStrComposite, Keys: []string{"demo-plugin"}},
@@ -96,7 +96,7 @@ func TestCoOwnedRegistry(t *testing.T) {
 
 	// newFile empty → every Target is in the to-delete set → every branch
 	// of the registry dispatch fires.
-	empty := &state.File{SchemaVersion: "2"}
+	empty := &state.File{SchemaVersion: "3"}
 
 	stats, err := Sync(prev, empty, root, root, SyncOptions{})
 	if err != nil {

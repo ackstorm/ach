@@ -7,8 +7,8 @@
 //
 // D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
 // spec divergence): `ach env-keys create` ALWAYS persists the
-// returned `ek_` plaintext to `deployments.<active>.ek.<server-name>`
-// in the active deployment. The spec's `--save-as` flag is removed;
+// returned `ek_` plaintext to `profiles.<active>.ek.<server-name>`
+// in the active profile. The spec's `--save-as` flag is removed;
 // `--no-save` opts out of persist (ek_ flows to stdout only — for
 // CI / vault-piping workflows). See:
 //   - .planning/REQUIREMENTS.md CLI-09 row (marked DEVIATED, D-07).
@@ -112,7 +112,7 @@ Sub-subcommands:
   revoke  Delete an ek_ by its ekid_ identifier.
 
 D-07 (spec deviation): ek_ create ALWAYS persists the returned plaintext
-to deployments.<active>.ek.<server-name> in the active deployment. The
+to profiles.<active>.ek.<server-name> in the active profile. The
 spec's --save-as flag is REMOVED; --no-save opts out (ek_ flows to stdout
 only — useful for CI scripts piping ek_ into a vault).
 
@@ -136,7 +136,7 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		flagEnvironment string
 		flagName        string
 		flagNoSave      bool
-		flagDeployment  string
+		flagProfile     string
 		flagAPIKey      string
 		flagEnvKey      string
 		flagVerbose     bool
@@ -155,14 +155,14 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnvKeysCreate(cmd, flagEnvironment, flagName, flagNoSave,
-				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (required)")
 	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek_ (required)")
 	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
 		"Do NOT persist ek_ to ~/.config/ach/config.yaml (D-07 escape hatch)")
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label (rare for create)")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
@@ -172,7 +172,7 @@ func newEnvKeysCreateCmd() *cobra.Command {
 }
 
 func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
-	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
@@ -180,14 +180,14 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 
 	// D-08 + CLI-07 synthetic gate via the centralized 06-07 helper.
 	// GateEnvKeysCreate is allowed in synthetic IFF --no-save is set;
-	// the helper also rejects half-set, --deployment, and --env-key
+	// the helper also rejects half-set, --profile, and --env-key
 	// before any HTTP call.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateEnvKeysCreate,
-		APIKeyFlag:     flagAPIKey,
-		EnvKeyFlag:     flagEnvKey,
-		DeploymentFlag: flagDeployment,
-		NoSaveFlag:     noSave,
+		Gate:        synthetic.GateEnvKeysCreate,
+		APIKeyFlag:  flagAPIKey,
+		EnvKeyFlag:  flagEnvKey,
+		ProfileFlag: flagProfile,
+		NoSaveFlag:  noSave,
 	}); err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 
 	// Resolve credential + base URL (mirrors whoami's pattern; full
 	// CLI-09 mutex enforcement deferred to W3-P1 / 06-07).
-	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 		return nil
 	}
 
-	// D-07: always-persist to deployments.<active>.ek[name].
+	// D-07: always-persist to profiles.<active>.ek[name].
 	cfgPath, err := config.Path()
 	if err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
@@ -247,17 +247,17 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 	if err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	if file == nil || len(file.Deployments) == 0 {
+	if file == nil || len(file.Profiles) == 0 {
 		// Synthetic mode handled above; this path is only reachable
-		// when the user has a base URL via flag/disk but no deployment
+		// when the user has a base URL via flag/disk but no profile
 		// entry — unusual but defended for completeness.
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  "cannot --save: no deployment configured; run `ach login` or pass --no-save",
+			Msg:  "cannot --save: no profile configured; run `ach login` or pass --no-save",
 		}
 	}
-	envDeployment := os.Getenv("ACH_DEPLOYMENT")
-	_, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	envProfile := os.Getenv("ACH_PROFILE")
+	_, dep, err := config.ResolveActive(file, flagProfile, envProfile)
 	if err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -288,7 +288,7 @@ func newEnvKeysListCmd() *cobra.Command {
 		flagOwnerEmail  string
 		flagCursor      string
 		flagLimit       int
-		flagDeployment  string
+		flagProfile     string
 		flagAPIKey      string
 		flagEnvKey      string
 		flagVerbose     bool
@@ -300,14 +300,14 @@ func newEnvKeysListCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnvKeysList(cmd, flagEnvironment, flagOwnerEmail, flagCursor, flagLimit,
-				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
 	cmd.Flags().StringVar(&flagOwnerEmail, "owner-email", "", "Filter by owner email (admin-only; server enforces)")
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
@@ -315,25 +315,25 @@ func newEnvKeysListCmd() *cobra.Command {
 }
 
 func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, limit int,
-	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
 
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
-	// --deployment, --env-key) — runs BEFORE resolveEnvKeysBearer so
+	// --profile, --env-key) — runs BEFORE resolveEnvKeysBearer so
 	// the half-set message wins over any disk-config error.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateEnvKeysList,
-		APIKeyFlag:     flagAPIKey,
-		EnvKeyFlag:     flagEnvKey,
-		DeploymentFlag: flagDeployment,
+		Gate:        synthetic.GateEnvKeysList,
+		APIKeyFlag:  flagAPIKey,
+		EnvKeyFlag:  flagEnvKey,
+		ProfileFlag: flagProfile,
 	}); err != nil {
 		return err
 	}
 
-	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
 	if err != nil {
 		return err
 	}
@@ -394,11 +394,11 @@ func buildEnvKeysListPath(environment, ownerEmail, cursor string, limit int) str
 
 func newEnvKeysRevokeCmd() *cobra.Command {
 	var (
-		flagYes        bool
-		flagDeployment string
-		flagAPIKey     string
-		flagEnvKey     string
-		flagVerbose    bool
+		flagYes     bool
+		flagProfile string
+		flagAPIKey  string
+		flagEnvKey  string
+		flagVerbose bool
 	)
 	cmd := &cobra.Command{
 		// Bare `revoke` (no inline arg hint in `Use:`) so the
@@ -413,11 +413,11 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEnvKeysRevoke(cmd, args[0], flagYes,
-				flagDeployment, flagAPIKey, flagEnvKey, flagVerbose)
+				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Override deployment selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk_ from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek_ label")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
@@ -425,19 +425,19 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 }
 
 func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
-	flagDeployment, flagAPIKey, flagEnvKey string, verbose bool) error {
+	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stderr := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
 
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
-	// --deployment, --env-key).
+	// --profile, --env-key).
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateEnvKeysRevoke,
-		APIKeyFlag:     flagAPIKey,
-		EnvKeyFlag:     flagEnvKey,
-		DeploymentFlag: flagDeployment,
+		Gate:        synthetic.GateEnvKeysRevoke,
+		APIKeyFlag:  flagAPIKey,
+		EnvKeyFlag:  flagEnvKey,
+		ProfileFlag: flagProfile,
 	}); err != nil {
 		return err
 	}
@@ -487,7 +487,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 		}
 	}
 
-	baseURL, bearer, err := resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey)
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
 	if err != nil {
 		return err
 	}
@@ -513,26 +513,26 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 // resolveActiveBearer. Precedence (W1 minimal; full mutex in W3-P1):
 //
 //  1. Synthetic mode → use ACH_BASE_URL + ACH_API_KEY env.
-//  2. --api-key flag → bearer; deployment for URL only.
-//  3. --env-key flag → resolve against deployments.<active>.ek.<label>.
+//  2. --api-key flag → bearer; profile for URL only.
+//  3. --env-key flag → resolve against profiles.<active>.ek.<label>.
 //  4. ACH_API_KEY env → same as --api-key.
 //  5. ACH_ENV_KEY env → same as --env-key.
-//  6. default → deployment.PK from disk config.
+//  6. default → profile.PK from disk config.
 //
-// Returns baseURL (deployment.url or ACH_BASE_URL) and the bearer
-// plaintext. The resolved deployment name is folded into error
+// Returns baseURL (profile.url or ACH_BASE_URL) and the bearer
+// plaintext. The resolved profile name is folded into error
 // strings only (no caller currently consumes it), keeping the
 // signature lean.
-func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string, string, error) {
+func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, string, error) {
 	envBaseURL := os.Getenv("ACH_BASE_URL")
 	envAPIKey := os.Getenv("ACH_API_KEY")
 	envEnvKey := os.Getenv("ACH_ENV_KEY")
-	envDeployment := os.Getenv("ACH_DEPLOYMENT")
+	envProfile := os.Getenv("ACH_PROFILE")
 
 	if envBaseURL != "" && envAPIKey != "" {
 		// Synthetic — no disk config consulted. The synthetic.GuardCommand
-		// call in the cobra RunE already rejected --deployment under
-		// synthetic; the synthesized "(env)" deployment lives only in
+		// call in the cobra RunE already rejected --profile under
+		// synthetic; the synthesized "(env)" profile lives only in
 		// memory for this request.
 		return envBaseURL, envAPIKey, nil
 	}
@@ -548,10 +548,10 @@ func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string
 	if file == nil {
 		return "", "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  "no deployment configured; run `ach login` (CLI-08)",
+			Msg:  "no profile configured; run `ach login` (CLI-08)",
 		}
 	}
-	name, dep, err := config.ResolveActive(file, flagDeployment, envDeployment)
+	name, dep, err := config.ResolveActive(file, flagProfile, envProfile)
 	if err != nil {
 		return "", "", &exit.CodedError{
 			Code:    exit.General,
@@ -568,7 +568,7 @@ func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string
 		if !ok {
 			return "", "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q not found in deployments.%s.ek", flagEnvKey, name),
+				Msg:  fmt.Sprintf("--env-key %q not found in profiles.%s.ek", flagEnvKey, name),
 			}
 		}
 		return dep.URL, ek, nil
@@ -579,7 +579,7 @@ func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string
 		if !ok {
 			return "", "", &exit.CodedError{
 				Code: exit.General,
-				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in deployments.%s.ek", envEnvKey, name),
+				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in profiles.%s.ek", envEnvKey, name),
 			}
 		}
 		return dep.URL, ek, nil
@@ -588,7 +588,7 @@ func resolveEnvKeysBearer(flagDeployment, flagAPIKey, flagEnvKey string) (string
 	}
 	return "", "", &exit.CodedError{
 		Code: exit.General,
-		Msg:  fmt.Sprintf("no bearer for deployment %q; run `ach login`", name),
+		Msg:  fmt.Sprintf("no bearer for profile %q; run `ach login`", name),
 	}
 }
 

@@ -5,7 +5,7 @@
 // /platform/auth/cli/token poll loop) per CLI spec §5.1 UX verbatim
 // (D-03). On success, mutates ~/.config/ach/config.yaml at mode 0600
 // per D-04 — sets `default:` when previously absent, overwrites prior
-// `pk:` on existing deployment (prior server-side key expires per Hub
+// `pk:` on existing profile (prior server-side key expires per Hub
 // §7.1 7-day sliding window).
 //
 // Synthetic mode (D-03 / CLI-07): when ACH_BASE_URL + ACH_API_KEY are
@@ -15,7 +15,7 @@
 // "synthetic enforces, login asserts".
 //
 // CLI-04 plaintext lifecycle: the pk_ plaintext flows from
-// devicecode.TokenResponse.Plaintext into config.File.Deployments[name].PK
+// devicecode.TokenResponse.Plaintext into config.File.Profiles[name].PK
 // via config.Save (yaml write to mode-0600 file). The ONLY stdout
 // emission of the pk is the masked tail `pk_****<last-4>` via
 // config.Mask, printed exactly once at success.
@@ -38,9 +38,9 @@ import (
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
-// deploymentNamePattern enforces DNS-1123-style names so the config
+// profileNamePattern enforces DNS-1123-style names so the config
 // key namespace stays well-formed (path-safe, yaml-key-safe).
-var deploymentNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+var profileNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // defaultLoginPollInterval is the fallback poll cadence when the
 // server's InitResponse.PollInterval is 0 or absent (the server's
@@ -57,7 +57,7 @@ const defaultLoginExpiresIn = 5 * time.Minute
 // table cases.
 func newLoginCmd() *cobra.Command {
 	var (
-		flagDeployment string
+		flagProfile    string
 		flagBaseURL    string
 		flagNoBrowser  bool
 		flagNoWarnings bool
@@ -75,25 +75,25 @@ Flow:
      the pk_ on the server.
   4. Persist the pk_ to ~/.config/ach/config.yaml at mode 0600.
 
-Interactive prompts (skipped when --deployment / --base-url are set):
-  Deployment name  DNS-1123 label, e.g. "prod"
+Interactive prompts (skipped when --profile / --base-url are set):
+  Profile name  DNS-1123 label, e.g. "prod"
   URL              https://hub.example.com (http:// or https://; http:// warns)
 
 Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run
 with exit 1 per CLI spec §3.3.
 
 Flags:
-  --deployment <name>   Skip the deployment-name prompt
+  --profile <name>   Skip the profile-name prompt
   --base-url <url>      Skip the URL prompt (http:// or https://)
   --no-browser          Print verification_url instead of opening browser
   --no-warnings         Suppress config-file file-mode warnings to stderr
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd, flagDeployment, flagBaseURL, flagNoBrowser, flagNoWarnings)
+			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings)
 		},
 	}
 
-	cmd.Flags().StringVar(&flagDeployment, "deployment", "", "Deployment name to write (DNS-1123 label)")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Profile name to write (DNS-1123 label)")
 	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
 	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
@@ -103,7 +103,7 @@ Flags:
 
 // runLogin is the RunE body, extracted so newLoginCmd's closure stays
 // short.
-func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarnings bool) error {
+func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings bool) error {
 	ctx := cmd.Context()
 
 	// Step 1 — synthetic-mode gate via the centralized 06-07 helper.
@@ -111,8 +111,8 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	// half-set (ACH_BASE_URL set without credential) before any
 	// device-code request fires.
 	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateLogin,
-		DeploymentFlag: deployment,
+		Gate:        synthetic.GateLogin,
+		ProfileFlag: profile,
 	}); err != nil {
 		return err
 	}
@@ -121,8 +121,8 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	stderr := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 
-	// Step 2 — resolve deployment name (flag or interactive prompt).
-	name, err := resolveDeploymentName(deployment, stdin, stdout)
+	// Step 2 — resolve profile name (flag or interactive prompt).
+	name, err := resolveProfileName(profile, stdin, stdout)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	}
 	if !noWarnings && strings.HasPrefix(url, "http://") {
 		_, _ = fmt.Fprintf(stderr,
-			"warning: deployment %q uses plaintext http:// — credentials are sent "+
+			"warning: profile %q uses plaintext http:// — credentials are sent "+
 				"unencrypted (safe only on trusted/internal networks)\n", url)
 	}
 
@@ -158,8 +158,8 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	if file == nil {
 		file = &config.File{}
 	}
-	if file.Deployments == nil {
-		file.Deployments = map[string]*config.Deployment{}
+	if file.Profiles == nil {
+		file.Profiles = map[string]*config.Profile{}
 	}
 
 	// Step 5 — device-code init.
@@ -194,16 +194,16 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 	}
 
 	// Step 9 — mutate + save config. Preserve any pre-existing EK
-	// map on this deployment (only `pk:` overwrite per D-04).
-	existing := file.Deployments[name]
-	dep := &config.Deployment{
+	// map on this profile (only `pk:` overwrite per D-04).
+	existing := file.Profiles[name]
+	dep := &config.Profile{
 		URL: url,
 		PK:  tokenResp.Plaintext,
 	}
 	if existing != nil {
 		dep.EK = existing.EK
 	}
-	file.Deployments[name] = dep
+	file.Profiles[name] = dep
 	if file.Default == "" {
 		file.Default = name
 	}
@@ -213,26 +213,26 @@ func runLogin(cmd *cobra.Command, deployment, baseURL string, noBrowser, noWarni
 
 	// Step 10 — success line. CLI-04: pk_ printed ONLY as the masked
 	// tail. The full plaintext lives in tokenResp.Plaintext →
-	// file.Deployments[name].PK → on-disk yaml only.
+	// file.Profiles[name].PK → on-disk yaml only.
 	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", tokenResp.OwnerEmail, config.Mask(tokenResp.Plaintext))
 	return nil
 }
 
-// resolveDeploymentName returns the flag value when set; otherwise
+// resolveProfileName returns the flag value when set; otherwise
 // prompts via stdin. Validates against the DNS-1123 label pattern.
-func resolveDeploymentName(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
+func resolveProfileName(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
 	name := strings.TrimSpace(flagVal)
 	if name == "" {
-		_, _ = fmt.Fprint(stdout, "Deployment name: ")
+		_, _ = fmt.Fprint(stdout, "Profile name: ")
 		s := bufio.NewScanner(stdin)
 		if s.Scan() {
 			name = strings.TrimSpace(s.Text())
 		}
 	}
-	if name == "" || !deploymentNamePattern.MatchString(name) {
+	if name == "" || !profileNamePattern.MatchString(name) {
 		return "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("deployment name %q is invalid; expected DNS-1123 label (lower-case [a-z0-9-])", name),
+			Msg:  fmt.Sprintf("profile name %q is invalid; expected DNS-1123 label (lower-case [a-z0-9-])", name),
 		}
 	}
 	return name, nil

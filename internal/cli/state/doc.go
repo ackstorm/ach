@@ -5,9 +5,9 @@
 // no v1 reader):
 //
 //	{
-//	  "schemaVersion": "2",
+//	  "schemaVersion": "3",
 //	  "environment":   "engineering-prod",
-//	  "deployment":    "ackstorm-prod",
+//	  "profile":    "ackstorm-prod",
 //	  "prompts":       [{target, hash, sourceHash, merge?, keys?}],
 //	  "plugins":       [{target, hash, sourceHash, merge?, keys?}],
 //	  "artifacts":     [{target, hash, sourceHash, merge?, keys?}],
@@ -26,7 +26,7 @@
 //     fsync(parent_dir) in the same dir per §8.7 STATE-07 contract
 //     (TOCTOU-safe; survives kernel/SIGKILL crashes between Write
 //     and Rename).
-//   - schemaVersion != "2" → ErrSchemaMismatch (CLI spec §8.2 +
+//   - schemaVersion != "3" → ErrSchemaMismatch (CLI spec §8.2 +
 //     §9.3 exit code 5). No v1 reader code ships per D-13.
 //   - Same-<ach-dir> different-Environment → ErrEnvironmentGuard
 //     (CLI spec §8.3 + §9.3 exit code 4) — see guard.go.

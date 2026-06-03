@@ -80,7 +80,7 @@ func TestProjection_ReHydrate_NativeDestAndByteNoOp(t *testing.T) {
 	}
 
 	// Compose the prior state.Plugins[] exactly as commit.go step12 records it.
-	prior := &state.File{SchemaVersion: "2", Environment: "demo"}
+	prior := &state.File{SchemaVersion: "3", Environment: "demo"}
 	prior.Plugins = append(prior.Plugins, state.FileEntry{
 		Target:     pf1.Target,
 		Hash:       pf1.Hash,

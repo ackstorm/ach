@@ -25,12 +25,12 @@ func adminTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	return dir
 }
 
 // seedAdminConfig writes a minimal config.yaml inside XDG_CONFIG_HOME
-// with one active deployment named "prod" carrying a pk_ that simulates
+// with one active profile named "prod" carrying a pk_ that simulates
 // an allowlisted admin pk_.
 func seedAdminConfig(t *testing.T, baseURL string) string {
 	t.Helper()
@@ -40,7 +40,7 @@ func seedAdminConfig(t *testing.T, baseURL string) string {
 	}
 	f := &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: baseURL,
 				PK:  "pk_admintestadminadminadminxyz",

@@ -16,11 +16,11 @@ import (
 //
 // Per D-13 (clean-break v2), this struct is the ONLY shape the parser
 // accepts. schemaVersion "1" is not readable; Load returns
-// ErrSchemaMismatch on every non-"2" value (callers map to exit 5).
+// ErrSchemaMismatch on every non-"3" value (callers map to exit 5).
 type File struct {
 	SchemaVersion string         `json:"schemaVersion"`
 	Environment   string         `json:"environment"`
-	Deployment    string         `json:"deployment"`
+	Profile       string         `json:"profile"`
 	Prompts       []FileEntry    `json:"prompts,omitempty"`
 	Plugins       []FileEntry    `json:"plugins,omitempty"`
 	Artifacts     []FileEntry    `json:"artifacts,omitempty"`
@@ -61,11 +61,11 @@ type AdapterSection struct {
 // package does not import internal/cli/exit to avoid a cycle).
 var (
 	// ErrSchemaMismatch is returned by Load when the on-disk
-	// state.json's `schemaVersion` field is not "2". Maps to exit 5
+	// state.json's `schemaVersion` field is not "3". Maps to exit 5
 	// per CLI spec §8.2. Per D-13, no v1 migration is attempted —
 	// callers must pass --force to overwrite (the state is then
 	// treated as empty and rewritten on next commit).
-	ErrSchemaMismatch = errors.New("state: schemaVersion != \"2\"")
+	ErrSchemaMismatch = errors.New("state: schemaVersion != \"3\"")
 
 	// ErrStateParse wraps encoding/json decode failures so callers
 	// can distinguish "file is corrupt JSON" from "schema is wrong
@@ -82,7 +82,7 @@ var (
 
 // Load reads + parses <ach-dir>/state.json. Returns (nil, nil) when
 // the file is absent (fresh workspace — first hydrate). Returns an
-// ErrSchemaMismatch-wrapped error when schemaVersion != "2". Returns
+// ErrSchemaMismatch-wrapped error when schemaVersion != "3". Returns
 // an ErrStateParse-wrapped error when the JSON decode fails or an
 // unknown top-level field is present (DisallowUnknownFields gate —
 // strict §8.2 schema discipline).
@@ -91,12 +91,12 @@ var (
 //
 //   - Phase 1: best-effort schemaVersion check. A non-strict
 //     json.Unmarshal extracts only the top-level `schemaVersion` field.
-//     If present and != "2", Load returns ErrSchemaMismatch immediately
+//     If present and != "3", Load returns ErrSchemaMismatch immediately
 //     — without attempting the strict decode. This is the load-bearing
 //     branch for the user-facing `--force` recovery contract documented
-//     in CLAUDE.md's "schemaVersion != \"2\"" failure-mode entry: a
+//     in CLAUDE.md's "schemaVersion != \"3\"" failure-mode entry: a
 //     v1 state.json (carrying the removed `contentHashes` field, or
-//     any other non-"2" schemaVersion) maps to exit 5, which the
+//     any other non-"3" schemaVersion) maps to exit 5, which the
 //     caller (`hydrate/commit.go:step3ReadState`) bypasses with
 //     `--force` to overwrite the stale file. If the strict decode ran
 //     first, a v1 file's unknown fields would surface as ErrStateParse
@@ -135,8 +135,8 @@ func Load(path string) (*File, error) {
 		SchemaVersion string `json:"schemaVersion"`
 	}
 	_ = json.Unmarshal(raw, &sv)
-	if sv.SchemaVersion != "" && sv.SchemaVersion != "2" {
-		return nil, fmt.Errorf("%w: got %q, want \"2\"", ErrSchemaMismatch, sv.SchemaVersion)
+	if sv.SchemaVersion != "" && sv.SchemaVersion != "3" {
+		return nil, fmt.Errorf("%w: got %q, want \"3\"", ErrSchemaMismatch, sv.SchemaVersion)
 	}
 
 	// Phase 2: strict DisallowUnknownFields decode. Reached only when
@@ -151,8 +151,8 @@ func Load(path string) (*File, error) {
 		return nil, fmt.Errorf("%w: %v", ErrStateParse, err)
 	}
 
-	if f.SchemaVersion != "2" {
-		return nil, fmt.Errorf("%w: got %q, want \"2\"", ErrSchemaMismatch, f.SchemaVersion)
+	if f.SchemaVersion != "3" {
+		return nil, fmt.Errorf("%w: got %q, want \"3\"", ErrSchemaMismatch, f.SchemaVersion)
 	}
 
 	return &f, nil

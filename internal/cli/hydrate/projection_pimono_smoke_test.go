@@ -156,7 +156,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 	})
 
 	prev := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Plugins: []state.FileEntry{
 			// Co-owned deep-merge entry: Hash:"" skips the drift gate so the
@@ -172,7 +172,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 		},
 	}
 
-	if _, serr := hydrate.Sync(prev, &state.File{SchemaVersion: "2"}, toolRoot, toolRoot, hydrate.SyncOptions{}); serr != nil {
+	if _, serr := hydrate.Sync(prev, &state.File{SchemaVersion: "3"}, toolRoot, toolRoot, hydrate.SyncOptions{}); serr != nil {
 		t.Fatalf("Sync uninstall: %v", serr)
 	}
 
@@ -203,7 +203,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-hydrate baseline Render: %v", err)
 	}
-	priorState := &state.File{SchemaVersion: "2", Environment: "demo"}
+	priorState := &state.File{SchemaVersion: "3", Environment: "demo"}
 	firstBytes := map[string][]byte{}
 	firstEntry := map[string]hydrate.FileWrite{}
 	for _, pf := range res1.ProjectedFiles {

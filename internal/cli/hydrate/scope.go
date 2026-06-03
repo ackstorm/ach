@@ -35,20 +35,20 @@ import "github.com/ackstorm/ach/internal/cli/state"
 //   - onlyRuntime=true: runtime removed, context retained → returned
 //     File carries Prompts/Plugins/Artifacts.
 //
-// The returned File always carries SchemaVersion "2" and prev's
-// Environment/Deployment so a subsequent state.Save round-trips a valid
+// The returned File always carries SchemaVersion "3" and prev's
+// Environment/Profile so a subsequent state.Save round-trips a valid
 // v2 document. The Adapter.ID is preserved whenever runtime survives
 // (so the retained adapter section stays addressable). prev is never
 // mutated — every retained slice is shallow-copied into a fresh File.
 func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state.File {
 	out := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 	}
 	if prev == nil {
 		return out
 	}
 	out.Environment = prev.Environment
-	out.Deployment = prev.Deployment
+	out.Profile = prev.Profile
 
 	// includeContext: context buckets are RETAINED (only runtime is
 	// being removed). removeRuntime: runtime buckets are REMOVED.

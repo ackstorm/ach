@@ -28,12 +28,12 @@ func envKeysTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	return dir
 }
 
 // seedEnvKeysConfig writes a minimal config.yaml inside XDG_CONFIG_HOME
-// with one active deployment named "prod" carrying a pk_. Returns the
+// with one active profile named "prod" carrying a pk_. Returns the
 // config file path. Distinct name from whoami_test.go/logout_test.go's
 // seedConfig to avoid the symbol clash.
 func seedEnvKeysConfig(t *testing.T, baseURL string) string {
@@ -44,7 +44,7 @@ func seedEnvKeysConfig(t *testing.T, baseURL string) string {
 	}
 	f := &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: baseURL,
 				PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
@@ -187,15 +187,15 @@ func TestEnvKeys_Create_AlwaysPersists_D07(t *testing.T) {
 		t.Errorf("expected ek_ plaintext printed exactly once; stdout:\n%s", stdout)
 	}
 
-	// D-07: ek_ persisted to deployments.<active>.ek["local-laptop"].
+	// D-07: ek_ persisted to profiles.<active>.ek["local-laptop"].
 	cfgPath, _ := config.Path()
 	f, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	dep := f.Deployments["prod"]
+	dep := f.Profiles["prod"]
 	if dep == nil {
-		t.Fatalf("deployments.prod missing")
+		t.Fatalf("profiles.prod missing")
 	}
 	if got := dep.EK["local-laptop"]; got != "ek_aaaaaaaaaaaaaaaaaaaaaawxyz" {
 		t.Errorf("dep.EK[local-laptop] = %q; want the ek_ plaintext", got)
@@ -239,9 +239,9 @@ func TestEnvKeys_Create_NoSave_OptsOut(t *testing.T) {
 	if f == nil {
 		t.Fatalf("config.Load: nil file")
 	}
-	dep := f.Deployments["prod"]
+	dep := f.Profiles["prod"]
 	if dep == nil {
-		t.Fatalf("deployments.prod missing")
+		t.Fatalf("profiles.prod missing")
 	}
 	if _, ok := dep.EK["local-laptop"]; ok {
 		t.Errorf("dep.EK[local-laptop] present despite --no-save; got %+v", dep.EK)

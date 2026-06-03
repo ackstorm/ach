@@ -179,8 +179,8 @@ func TestCommit_HappyPath(t *testing.T) {
 	if store.savedFile == nil {
 		t.Fatalf("store.savedFile = nil; expected a state.File at step 12")
 	}
-	if store.savedFile.SchemaVersion != "2" {
-		t.Errorf("savedFile.SchemaVersion = %q, want %q", store.savedFile.SchemaVersion, "2")
+	if store.savedFile.SchemaVersion != "3" {
+		t.Errorf("savedFile.SchemaVersion = %q, want %q", store.savedFile.SchemaVersion, "3")
 	}
 	if store.savedFile.Environment != "demo" {
 		t.Errorf("savedFile.Environment = %q, want %q", store.savedFile.Environment, "demo")
@@ -308,7 +308,7 @@ func TestCommit_DryRun_NoStateWrite(t *testing.T) {
 func TestCommit_GuardEnvironmentMismatch_ExitCode4(t *testing.T) {
 	c, store, _ := newTestCommit(t)
 	store.loadFn = func(_ string) (*state.File, error) {
-		return &state.File{SchemaVersion: "2", Environment: "prod"}, nil
+		return &state.File{SchemaVersion: "3", Environment: "prod"}, nil
 	}
 	store.guardFn = func(_ *state.File, _ string, _ bool) error {
 		return fmt.Errorf("test guard: %w", state.ErrEnvironmentGuard)
@@ -338,7 +338,7 @@ func TestCommit_GuardEnvironmentMismatch_ForceBypasses(t *testing.T) {
 
 	var sawForce bool
 	store.loadFn = func(_ string) (*state.File, error) {
-		return &state.File{SchemaVersion: "2", Environment: "prod"}, nil
+		return &state.File{SchemaVersion: "3", Environment: "prod"}, nil
 	}
 	store.guardFn = func(_ *state.File, _ string, force bool) error {
 		sawForce = force
@@ -593,7 +593,7 @@ func TestCommit_Step4_PrunesMissingFiles(t *testing.T) {
 	// State references a file that doesn't exist on disk.
 	store.loadFn = func(_ string) (*state.File, error) {
 		return &state.File{
-			SchemaVersion: "2",
+			SchemaVersion: "3",
 			Environment:   "demo",
 			Prompts: []state.FileEntry{
 				{Target: "nonexistent.md", Hash: "xxh3:aaaa", SourceHash: "xxh3:aaaa"},
@@ -831,7 +831,7 @@ func TestMigrateLegacyFlatState_RelocatesIntoEnvSubdir(t *testing.T) {
 	}
 	// Legacy flat state bound to env "demo".
 	if err := state.Save(filepath.Join(achRoot, "state.json"), &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Plugins:       []state.FileEntry{{Target: ".claude/skills/caveman/SKILL.md", Hash: "h", SourceHash: "h"}},
 	}); err != nil {
@@ -913,7 +913,7 @@ func TestRun_Step11Sync_InvokedWhenSyncOptSet(t *testing.T) {
 	c.opts.Sync = true
 	store.loadFn = func(_ string) (*state.File, error) {
 		return &state.File{
-			SchemaVersion: "2",
+			SchemaVersion: "3",
 			Environment:   "demo",
 		}, nil
 	}
@@ -1213,7 +1213,7 @@ func TestCommit_Step12_OnlyRuntime_CarriesForwardPlugins(t *testing.T) {
 		t.Fatalf("write prior: %v", err)
 	}
 	existing := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Plugins: []state.FileEntry{{
 			Target: ".claude/rules/prior.md", Hash: "xxh3:prior", SourceHash: "xxh3:prior",
@@ -1267,7 +1267,7 @@ func TestCommit_Step4Reconcile_GlobalScope_PrunesPluginsAgainstToolRoot(t *testi
 		t.Fatalf("write plugin: %v", err)
 	}
 	existing := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "demo",
 		Plugins: []state.FileEntry{{
 			Target: ".claude/agents/caveman.md", Hash: "xxh3:cm", SourceHash: "xxh3:cm",

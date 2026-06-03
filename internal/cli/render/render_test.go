@@ -10,21 +10,21 @@ import (
 )
 
 // TestFormatConfigList_Empty asserts the empty-config branch returns
-// a stable "No deployments configured" string (consumed verbatim by
-// `ach config list` when the registry has zero deployments).
+// a stable "No profiles configured" string (consumed verbatim by
+// `ach config list` when the registry has zero profiles).
 func TestFormatConfigList_Empty(t *testing.T) {
 	got := FormatConfigList(&config.File{})
-	if !strings.Contains(got, "No deployments configured") {
-		t.Errorf("FormatConfigList(empty) = %q; want substring 'No deployments configured'", got)
+	if !strings.Contains(got, "No profiles configured") {
+		t.Errorf("FormatConfigList(empty) = %q; want substring 'No profiles configured'", got)
 	}
 }
 
-// TestFormatConfigList_TwoDeployments asserts the table renders both
+// TestFormatConfigList_TwoProfiles asserts the table renders both
 // rows in alphabetical order with the default row marked.
-func TestFormatConfigList_TwoDeployments(t *testing.T) {
+func TestFormatConfigList_TwoProfiles(t *testing.T) {
 	f := &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example", PK: "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 				EK: map[string]string{"a": "ek_aaaaaaaaaaaaaaaaaaaaaaabcd", "b": "ek_aaaaaaaaaaaaaaaaaaaaaaefgh"}},
 			"stg": {URL: "https://stg.example"},
@@ -37,11 +37,23 @@ func TestFormatConfigList_TwoDeployments(t *testing.T) {
 	if !strings.Contains(got, "stg") {
 		t.Errorf("missing 'stg' row; got: %s", got)
 	}
-	// Default suffix marker on the prod row.
-	if !strings.Contains(got, "prod (default)") {
-		t.Errorf("missing 'prod (default)' marker; got: %s", got)
+	// CURRENT column header + "*" marker on the default (prod) row.
+	if !strings.Contains(got, "CURRENT") {
+		t.Errorf("missing CURRENT column header; got: %s", got)
 	}
-	// Alphabetical order: prod (default) before stg.
+	var prodMarked bool
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "prod") && strings.HasPrefix(strings.TrimSpace(line), "*") {
+			prodMarked = true
+		}
+		if strings.Contains(line, "stg") && strings.HasPrefix(strings.TrimSpace(line), "*") {
+			t.Errorf("non-default 'stg' row should not carry '*'; got line: %q", line)
+		}
+	}
+	if !prodMarked {
+		t.Errorf("default 'prod' row missing '*' marker; got: %s", got)
+	}
+	// Alphabetical order: prod before stg.
 	if idxProd, idxStg := strings.Index(got, "prod"), strings.Index(got, "stg"); idxProd > idxStg {
 		t.Errorf("row order: prod (%d) should come before stg (%d); got: %s", idxProd, idxStg, got)
 	}
@@ -58,7 +70,7 @@ func TestFormatConfigList_TwoDeployments(t *testing.T) {
 // TestFormatConfigShow_Masked asserts reveal=false hides the full pk_
 // plaintext from the rendered block.
 func TestFormatConfigShow_Masked(t *testing.T) {
-	dep := &config.Deployment{
+	dep := &config.Profile{
 		URL: "https://hub.example",
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 		EK: map[string]string{
@@ -78,8 +90,8 @@ func TestFormatConfigShow_Masked(t *testing.T) {
 	if !strings.Contains(got, "ek_****1234") {
 		t.Errorf("missing masked ek tail 'ek_****1234'; got: %s", got)
 	}
-	if !strings.Contains(got, "Deployment: prod") {
-		t.Errorf("missing 'Deployment: prod' header; got: %s", got)
+	if !strings.Contains(got, "Profile: prod") {
+		t.Errorf("missing 'Profile: prod' header; got: %s", got)
 	}
 	if !strings.Contains(got, "URL: https://hub.example") {
 		t.Errorf("missing URL line; got: %s", got)
@@ -91,9 +103,9 @@ func TestFormatConfigShow_Masked(t *testing.T) {
 }
 
 // TestFormatConfigShow_Revealed asserts reveal=true emits the full
-// pk_/ek_ plaintext for the named deployment only (D-05).
+// pk_/ek_ plaintext for the named profile only (D-05).
 func TestFormatConfigShow_Revealed(t *testing.T) {
-	dep := &config.Deployment{
+	dep := &config.Profile{
 		URL: "https://hub.example",
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 		EK: map[string]string{

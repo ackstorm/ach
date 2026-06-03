@@ -9,12 +9,12 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// SyntheticDeploymentLabel is the literal string the Phase 7 state.json
-// writer records as the deployment name when synthetic mode is active
+// SyntheticProfileLabel is the literal string the Phase 7 state.json
+// writer records as the profile name when synthetic mode is active
 // (CLI-07 last clause). Surfaced as an exported constant so every
 // caller across phases agrees on the value — drift here breaks the
 // Phase 7 state schema.
-const SyntheticDeploymentLabel = "(env)"
+const SyntheticProfileLabel = "(env)"
 
 // Gate is a closed-enum tag a subcommand passes to GuardCommand to
 // declare its disposition under synthetic mode. Typed-int prevents
@@ -25,7 +25,7 @@ type Gate int
 // is rejected outright in synthetic mode. The ALLOW set
 // (Hydrate, Whoami, EnvList, EnvDescribe, EnvKeysList, EnvKeysRevoke,
 // Admin) is permitted, but every gate (deny + allow) is still subject
-// to the --deployment / --env-key / half-set checks.
+// to the --profile / --env-key / half-set checks.
 const (
 	// GateLogin — `ach login`. Denied in synthetic (no disk registry
 	// to write the pk_ into).
@@ -66,7 +66,7 @@ const (
 	GateEnvKeysRevoke
 
 	// GateAdmin — every `ach admin` child (Phase 7/06-08). Allowed in
-	// synthetic provided the admin pk_ resolves; --deployment /
+	// synthetic provided the admin pk_ resolves; --profile /
 	// --env-key still rejected per the cross-gate rules.
 	GateAdmin
 )
@@ -89,9 +89,9 @@ type Params struct {
 	// triggers a rejection on every read-side gate.
 	EnvKeyFlag string
 
-	// DeploymentFlag is the --deployment value. Non-empty under
+	// ProfileFlag is the --profile value. Non-empty under
 	// synthetic triggers a rejection on every gate.
-	DeploymentFlag string
+	ProfileFlag string
 
 	// NoSaveFlag is the --no-save value. Only GateEnvKeysCreate reads
 	// it; other gates leave the zero value (false). When true under
@@ -185,7 +185,7 @@ func IsHalfSet(p Params) bool {
 //     synthetic to enforce).
 //  3. Gate-in-deny-set → reject (login / logout / config), OR
 //     GateEnvKeysCreate without --no-save → reject (D-08).
-//  4. Synthetic + --deployment / ACH_DEPLOYMENT → reject regardless
+//  4. Synthetic + --profile / ACH_PROFILE → reject regardless
 //     of gate.
 //  5. Synthetic + (allow-set ∩ env-key-reject-set) + --env-key /
 //     ACH_ENV_KEY → reject.
@@ -229,14 +229,14 @@ func GuardCommand(p Params) error {
 		}
 	}
 
-	// (4) Synthetic-active + --deployment / ACH_DEPLOYMENT — reject
-	// regardless of gate. The conceptual deployment under synthetic is
-	// SyntheticDeploymentLabel ("(env)") and cannot be overridden.
-	if p.DeploymentFlag != "" || Getenv("ACH_DEPLOYMENT") != "" {
+	// (4) Synthetic-active + --profile / ACH_PROFILE — reject
+	// regardless of gate. The conceptual profile under synthetic is
+	// SyntheticProfileLabel ("(env)") and cannot be overridden.
+	if p.ProfileFlag != "" || Getenv("ACH_PROFILE") != "" {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg: "--deployment / ACH_DEPLOYMENT cannot be used in synthetic mode " +
-				"(deployment is fixed to \"(env)\"; see CLI spec §3.3)",
+			Msg: "--profile / ACH_PROFILE cannot be used in synthetic mode " +
+				"(profile is fixed to \"(env)\"; see CLI spec §3.3)",
 		}
 	}
 

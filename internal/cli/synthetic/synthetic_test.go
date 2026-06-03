@@ -19,16 +19,16 @@ func clearAchEnv(t *testing.T) {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 }
 
-// TestSyntheticDeploymentLabel asserts the exact constant value Phase 7
+// TestSyntheticProfileLabel asserts the exact constant value Phase 7
 // will consume (CLI-07 last clause). Drift here breaks Phase 7's
 // state.json schema. Test 12.
-func TestSyntheticDeploymentLabel(t *testing.T) {
-	if synthetic.SyntheticDeploymentLabel != "(env)" {
-		t.Errorf("SyntheticDeploymentLabel = %q; want %q",
-			synthetic.SyntheticDeploymentLabel, "(env)")
+func TestSyntheticProfileLabel(t *testing.T) {
+	if synthetic.SyntheticProfileLabel != "(env)" {
+		t.Errorf("SyntheticProfileLabel = %q; want %q",
+			synthetic.SyntheticProfileLabel, "(env)")
 	}
 }
 
@@ -207,28 +207,28 @@ func TestGuardCommand_GateHydrate_SyntheticAllow(t *testing.T) {
 	}
 }
 
-// TestGuardCommand_DeploymentRejectedInSynthetic — Test 9.
-func TestGuardCommand_DeploymentRejectedInSynthetic(t *testing.T) {
+// TestGuardCommand_ProfileRejectedInSynthetic — Test 9.
+func TestGuardCommand_ProfileRejectedInSynthetic(t *testing.T) {
 	clearAchEnv(t)
 	t.Setenv("ACH_BASE_URL", "https://hub.test")
 	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
 
 	// Via flag.
 	err := synthetic.GuardCommand(synthetic.Params{
-		Gate:           synthetic.GateHydrate,
-		DeploymentFlag: "prod",
+		Gate:        synthetic.GateHydrate,
+		ProfileFlag: "prod",
 	})
-	cErr := assertCoded(t, err, "deployment flag in synthetic")
-	if !strings.Contains(cErr.Msg, "--deployment") || !strings.Contains(cErr.Msg, "ACH_DEPLOYMENT") {
-		t.Errorf("msg = %q; want substrings '--deployment' and 'ACH_DEPLOYMENT'", cErr.Msg)
+	cErr := assertCoded(t, err, "profile flag in synthetic")
+	if !strings.Contains(cErr.Msg, "--profile") || !strings.Contains(cErr.Msg, "ACH_PROFILE") {
+		t.Errorf("msg = %q; want substrings '--profile' and 'ACH_PROFILE'", cErr.Msg)
 	}
 
 	// Via env var.
-	t.Setenv("ACH_DEPLOYMENT", "prod")
+	t.Setenv("ACH_PROFILE", "prod")
 	err = synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateHydrate})
-	cErr = assertCoded(t, err, "ACH_DEPLOYMENT in synthetic")
-	if !strings.Contains(cErr.Msg, "--deployment") {
-		t.Errorf("msg = %q; want substring '--deployment'", cErr.Msg)
+	cErr = assertCoded(t, err, "ACH_PROFILE in synthetic")
+	if !strings.Contains(cErr.Msg, "--profile") {
+		t.Errorf("msg = %q; want substring '--profile'", cErr.Msg)
 	}
 }
 
@@ -321,9 +321,9 @@ func TestGuardCommand_BareMode_AllGatesAllowed(t *testing.T) {
 		synthetic.GateAdmin,
 	} {
 		if err := synthetic.GuardCommand(synthetic.Params{
-			Gate:           g,
-			DeploymentFlag: "prod",
-			EnvKeyFlag:     "local-laptop",
+			Gate:        g,
+			ProfileFlag: "prod",
+			EnvKeyFlag:  "local-laptop",
 		}); err != nil {
 			t.Errorf("bare mode gate %d: err = %v; want nil", g, err)
 		}
@@ -332,7 +332,7 @@ func TestGuardCommand_BareMode_AllGatesAllowed(t *testing.T) {
 
 // TestGuardCommand_ReadOnlyGatesAllowedInSyntheticWithoutEnvKey —
 // the allowed-in-synthetic set runs cleanly without --env-key /
-// ACH_ENV_KEY / --deployment.
+// ACH_ENV_KEY / --profile.
 func TestGuardCommand_ReadOnlyGatesAllowedInSyntheticWithoutEnvKey(t *testing.T) {
 	clearAchEnv(t)
 	t.Setenv("ACH_BASE_URL", "https://hub.test")

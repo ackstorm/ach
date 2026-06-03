@@ -76,7 +76,7 @@ func TestSweepTmp_PreservesNonTmpSiblings(t *testing.T) {
 
 	// Seed siblings that must survive.
 	if err := os.WriteFile(filepath.Join(achDir, "state.json"),
-		[]byte(`{"schemaVersion":"2"}`), 0o644); err != nil {
+		[]byte(`{"schemaVersion":"3"}`), 0o644); err != nil {
 		t.Fatalf("seed state.json: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(achDir, "lock"),

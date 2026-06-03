@@ -47,9 +47,9 @@ func TestLoad_SchemaV1_ReturnsErrSchemaMismatch(t *testing.T) {
 func TestLoad_SchemaV2_RoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	want := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "engineering-prod",
-		Deployment:    "ackstorm-prod",
+		Profile:       "ackstorm-prod",
 		Prompts: []state.FileEntry{
 			{Target: ".ach/prompts/foo.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},
 		},
@@ -90,7 +90,7 @@ func TestLoad_SchemaV2_RoundTrip(t *testing.T) {
 // ErrStateParse so callers can grep the error chain.
 func TestLoad_UnknownField_ReturnsErrStateParse(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	body := `{"schemaVersion":"2","contentHashes":{"foo":"bar"}}`
+	body := `{"schemaVersion":"3","contentHashes":{"foo":"bar"}}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestLoad_V1FileReturnsErrSchemaMismatch(t *testing.T) {
 // ErrSchemaMismatch.
 func TestLoad_V2FileWithUnknownFieldReturnsErrStateParse(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	body := `{"schemaVersion":"2","environment":"demo","futureField":"x"}`
+	body := `{"schemaVersion":"3","environment":"demo","futureField":"x"}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -195,9 +195,9 @@ func TestSave_NilFile_Errors(t *testing.T) {
 func TestSave_WritesValidJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	f := &state.File{
-		SchemaVersion: "2",
+		SchemaVersion: "3",
 		Environment:   "prod",
-		Deployment:    "ackstorm-prod",
+		Profile:       "ackstorm-prod",
 		Prompts: []state.FileEntry{
 			// Path includes `<`/`>`/`&` to assert SetEscapeHTML(false).
 			{Target: ".ach/prompts/<weird>&name.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},

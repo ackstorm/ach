@@ -87,7 +87,7 @@ func loginTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	// Defensive: silence the browser opener for the whole test.
 	t.Setenv("ACH_TEST_NO_BROWSER", "1")
 	originalOpener := devicecode.Opener
@@ -117,7 +117,7 @@ func executeLogin(t *testing.T, args ...string) (string, string, exit.Code, erro
 	return outBuf.String(), errBuf.String(), exit.General, err
 }
 
-// TestLogin_HappyPath_WritesConfig is Test 1: --deployment + --base-url
+// TestLogin_HappyPath_WritesConfig is Test 1: --profile + --base-url
 // + --no-browser against a healthy server writes the pk into config.yaml.
 func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	loginTestEnv(t)
@@ -128,7 +128,7 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	defer ts.Close()
 
 	stdout, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -139,7 +139,7 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 		t.Fatalf("exit code = %d; want 0", code)
 	}
 
-	// Assert config.yaml exists with the expected deployment.
+	// Assert config.yaml exists with the expected profile.
 	path, err := config.Path()
 	if err != nil {
 		t.Fatalf("config.Path: %v", err)
@@ -151,15 +151,15 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 	if f == nil {
 		t.Fatal("config file not written")
 	}
-	dep, ok := f.Deployments["prod"]
+	dep, ok := f.Profiles["prod"]
 	if !ok {
-		t.Fatalf("deployments.prod missing; got %+v", f.Deployments)
+		t.Fatalf("profiles.prod missing; got %+v", f.Profiles)
 	}
 	if dep.URL != ts.URL {
-		t.Errorf("deployments.prod.url = %q; want %q", dep.URL, ts.URL)
+		t.Errorf("profiles.prod.url = %q; want %q", dep.URL, ts.URL)
 	}
 	if dep.PK != "pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ" {
-		t.Errorf("deployments.prod.pk = %q; want pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ", dep.PK)
+		t.Errorf("profiles.prod.pk = %q; want pk_aaaaaaaaaaaaaaaaaaaaaaaaWXYZ", dep.PK)
 	}
 	// First login → default: should auto-set.
 	if f.Default != "prod" {
@@ -194,7 +194,7 @@ func TestLogin_RejectInvalidScheme(t *testing.T) {
 	loginTestEnv(t)
 
 	_, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", "ftp://insecure",
 		"--no-browser",
 	)
@@ -210,18 +210,18 @@ func TestLogin_RejectInvalidScheme(t *testing.T) {
 }
 
 // TestLogin_AutoSetsDefault is Test 3: ach login on a config with NO
-// default: sets default to the new deployment name.
+// default: sets default to the new profile name.
 func TestLogin_AutoSetsDefault(t *testing.T) {
 	dir := loginTestEnv(t)
 	// Seed an existing config with no default and an unrelated
-	// deployment, to assert login adds + sets default (NOT touching
+	// profile, to assert login adds + sets default (NOT touching
 	// the existing one).
 	path := filepath.Join(dir, "ach", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	if err := config.Save(path, &config.File{
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"other": {URL: "https://other.example"},
 		},
 	}); err != nil {
@@ -232,7 +232,7 @@ func TestLogin_AutoSetsDefault(t *testing.T) {
 	defer ts.Close()
 
 	_, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -247,20 +247,20 @@ func TestLogin_AutoSetsDefault(t *testing.T) {
 	if f.Default != "prod" {
 		t.Errorf("default = %q; want prod (auto-set when previously absent)", f.Default)
 	}
-	if _, ok := f.Deployments["other"]; !ok {
-		t.Errorf("seed deployment 'other' was clobbered: %+v", f.Deployments)
+	if _, ok := f.Profiles["other"]; !ok {
+		t.Errorf("seed profile 'other' was clobbered: %+v", f.Profiles)
 	}
 }
 
 // TestLogin_OverwritesPriorPK is Test 4: a second login on the same
-// deployment overwrites the prior pk.
+// profile overwrites the prior pk.
 func TestLogin_OverwritesPriorPK(t *testing.T) {
 	loginTestEnv(t)
 	ts1 := newLoginTestServer(t, 0, "pk_111111111111111111111111oldP", "u@x")
 	defer ts1.Close()
 
 	_, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts1.URL,
 		"--no-browser",
 	)
@@ -272,7 +272,7 @@ func TestLogin_OverwritesPriorPK(t *testing.T) {
 	ts2 := newLoginTestServer(t, 0, "pk_222222222222222222222222newP", "u@x")
 	defer ts2.Close()
 	_, _, code, err = executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts2.URL,
 		"--no-browser",
 	)
@@ -285,7 +285,7 @@ func TestLogin_OverwritesPriorPK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	dep := f.Deployments["prod"]
+	dep := f.Profiles["prod"]
 	if dep.PK != "pk_222222222222222222222222newP" {
 		t.Errorf("pk = %q; want pk_222222222222222222222222newP (overwrite)", dep.PK)
 	}
@@ -302,7 +302,7 @@ func TestLogin_SyntheticModeRejected(t *testing.T) {
 	t.Setenv("ACH_API_KEY", "pk_synthetic_test_key_aaaaaaaaaa")
 
 	_, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", "https://hub.test",
 		"--no-browser",
 	)
@@ -325,7 +325,7 @@ func TestLogin_NoBrowserPrintsURL(t *testing.T) {
 	defer ts.Close()
 
 	stdout, stderr, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -352,7 +352,7 @@ func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
 	defer ts.Close()
 
 	stdout, _, code, err := executeLogin(t,
-		"--deployment", "prod",
+		"--profile", "prod",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)

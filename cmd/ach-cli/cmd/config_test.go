@@ -20,7 +20,7 @@ func configTestEnv(t *testing.T) string {
 	t.Setenv("ACH_BASE_URL", "")
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_DEPLOYMENT", "")
+	t.Setenv("ACH_PROFILE", "")
 	return dir
 }
 
@@ -44,7 +44,7 @@ func executeConfig(t *testing.T, args ...string) (string, string, exit.Code, err
 }
 
 // TestConfig_List_Empty asserts `ach config list` exits 0 + prints
-// "No deployments configured" on a fresh empty config dir.
+// "No profiles configured" on a fresh empty config dir.
 func TestConfig_List_Empty(t *testing.T) {
 	configTestEnv(t)
 	stdout, _, code, err := executeConfig(t, "list")
@@ -54,18 +54,18 @@ func TestConfig_List_Empty(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("exit code = %d; want 0", code)
 	}
-	if !strings.Contains(stdout, "No deployments configured") {
-		t.Errorf("missing 'No deployments configured'; stdout: %s", stdout)
+	if !strings.Contains(stdout, "No profiles configured") {
+		t.Errorf("missing 'No profiles configured'; stdout: %s", stdout)
 	}
 }
 
-// TestConfig_List_TwoDeployments asserts the table renders with
-// "(default)" suffix on the active default row.
-func TestConfig_List_TwoDeployments(t *testing.T) {
+// TestConfig_List_TwoProfiles asserts the table renders with the
+// CURRENT "*" marker on the active default row.
+func TestConfig_List_TwoProfiles(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example", PK: "pk_aaaaaaaaaaaaaaaaaaaaaawxyz"},
 			"stg":  {URL: "https://stg.example"},
 		},
@@ -77,8 +77,17 @@ func TestConfig_List_TwoDeployments(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("exit code = %d; want 0", code)
 	}
-	if !strings.Contains(stdout, "prod (default)") {
-		t.Errorf("missing 'prod (default)'; stdout: %s", stdout)
+	if !strings.Contains(stdout, "CURRENT") {
+		t.Errorf("missing CURRENT column header; stdout: %s", stdout)
+	}
+	var prodMarked bool
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.Contains(line, "prod") && strings.HasPrefix(strings.TrimSpace(line), "*") {
+			prodMarked = true
+		}
+	}
+	if !prodMarked {
+		t.Errorf("default 'prod' row missing '*' marker; stdout: %s", stdout)
 	}
 	if !strings.Contains(stdout, "stg") {
 		t.Errorf("missing 'stg' row; stdout: %s", stdout)
@@ -91,7 +100,7 @@ func TestConfig_Show_Masked(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: "https://prod.example",
 				PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
@@ -122,7 +131,7 @@ func TestConfig_Show_Reveal(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example", PK: "pk_aaaaaaaaaaaaaaaaaaaaaawxyz"},
 		},
 	})
@@ -144,7 +153,7 @@ func TestConfig_Use_SetsDefault(t *testing.T) {
 	dir := configTestEnv(t)
 	path := seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 			"stg":  {URL: "https://stg.example"},
 		},
@@ -171,7 +180,7 @@ func TestConfig_Use_UnknownName(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 		},
 	})
@@ -190,7 +199,7 @@ func TestConfig_Remove_DefaultWithoutForce(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 			"stg":  {URL: "https://stg.example"},
 		},
@@ -213,7 +222,7 @@ func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 	dir := configTestEnv(t)
 	path := seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 			"stg":  {URL: "https://stg.example"},
 		},
@@ -229,8 +238,8 @@ func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, ok := f.Deployments["prod"]; ok {
-		t.Errorf("deployment 'prod' should be removed")
+	if _, ok := f.Profiles["prod"]; ok {
+		t.Errorf("profile 'prod' should be removed")
 	}
 	if f.Default != "" {
 		t.Errorf("default = %q; want '' (cleared after default removal)", f.Default)
@@ -238,12 +247,12 @@ func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 }
 
 // TestConfig_Remove_NonDefault asserts removing a non-default
-// deployment works without --force.
+// profile works without --force.
 func TestConfig_Remove_NonDefault(t *testing.T) {
 	dir := configTestEnv(t)
 	path := seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 			"stg":  {URL: "https://stg.example"},
 		},
@@ -259,7 +268,7 @@ func TestConfig_Remove_NonDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, ok := f.Deployments["stg"]; ok {
+	if _, ok := f.Profiles["stg"]; ok {
 		t.Errorf("'stg' should be removed")
 	}
 	if f.Default != "prod" {
@@ -273,7 +282,7 @@ func TestConfig_Rename_PreservesPKAndEK(t *testing.T) {
 	dir := configTestEnv(t)
 	path := seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {
 				URL: "https://prod.example",
 				PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
@@ -292,10 +301,10 @@ func TestConfig_Rename_PreservesPKAndEK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, ok := f.Deployments["prod"]; ok {
+	if _, ok := f.Profiles["prod"]; ok {
 		t.Errorf("old key 'prod' should be gone")
 	}
-	dep, ok := f.Deployments["prod-v2"]
+	dep, ok := f.Profiles["prod-v2"]
 	if !ok {
 		t.Fatal("new key 'prod-v2' missing")
 	}
@@ -316,7 +325,7 @@ func TestConfig_Rename_TargetExists(t *testing.T) {
 	dir := configTestEnv(t)
 	seedConfigFile(t, dir, &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://prod.example"},
 			"stg":  {URL: "https://stg.example"},
 		},

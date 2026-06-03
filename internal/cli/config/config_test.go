@@ -58,7 +58,7 @@ func TestSave_ModeAndDir(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 	f := &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://example.test"},
 		},
 	}
@@ -81,13 +81,13 @@ func TestSave_ModeAndDir(t *testing.T) {
 	}
 }
 
-// TestSave_RefuseInvalidScheme asserts Save refuses any Deployment whose
+// TestSave_RefuseInvalidScheme asserts Save refuses any Profile whose
 // URL is neither http:// nor https:// (here ftp://) — returns
 // ErrInvalidURLScheme and writes nothing.
 func TestSave_RefuseInvalidScheme(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	f := &config.File{
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"x": {URL: "ftp://insecure.test"},
 		},
 	}
@@ -106,7 +106,7 @@ func TestSave_RefuseInvalidScheme(t *testing.T) {
 func TestSave_AcceptsHTTPAndHTTPS(t *testing.T) {
 	for _, url := range []string{"http://localhost:8080", "https://hub.example.com"} {
 		path := filepath.Join(t.TempDir(), "config.yaml")
-		f := &config.File{Deployments: map[string]*config.Deployment{"x": {URL: url}}}
+		f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: url}}}
 		if err := config.Save(path, f); err != nil {
 			t.Errorf("Save(%q) returned %v, want nil", url, err)
 		}
@@ -124,7 +124,7 @@ func TestLoad_WarnOnPermissiveMode(t *testing.T) {
 		t.Skip("root bypasses POSIX file mode")
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("default: prod\ndeployments:\n  prod:\n    url: https://x.test\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("default: prod\nprofiles:\n  prod:\n    url: https://x.test\n"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	var warned string
@@ -168,12 +168,12 @@ func TestLoad_BadYAMLReturnsParseError(t *testing.T) {
 	}
 }
 
-// TestLoad_RefuseInvalidScheme asserts Load refuses any deployment whose
+// TestLoad_RefuseInvalidScheme asserts Load refuses any profile whose
 // URL is neither http:// nor https:// (here ftp://) — emits
-// ErrInvalidURLScheme with the deployment name in the message.
+// ErrInvalidURLScheme with the profile name in the message.
 func TestLoad_RefuseInvalidScheme(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("default: bad\ndeployments:\n  bad:\n    url: ftp://attacker.test\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("default: bad\nprofiles:\n  bad:\n    url: ftp://attacker.test\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	_, err := config.Load(path)
@@ -181,23 +181,23 @@ func TestLoad_RefuseInvalidScheme(t *testing.T) {
 		t.Fatalf("Load returned %v, want ErrInvalidURLScheme", err)
 	}
 	if !strings.Contains(err.Error(), "bad") {
-		t.Errorf("Load error %q does not name the offending deployment", err.Error())
+		t.Errorf("Load error %q does not name the offending profile", err.Error())
 	}
 }
 
-// TestLoad_AcceptsHTTP asserts Load accepts an http:// deployment URL with
+// TestLoad_AcceptsHTTP asserts Load accepts an http:// profile URL with
 // no env var required (the command layer warns about plaintext transport).
 func TestLoad_AcceptsHTTP(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("default: dev\ndeployments:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("default: dev\nprofiles:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	f, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("Load(http) returned %v, want nil", err)
 	}
-	if f.Deployments["dev"].URL != "http://localhost:8080" {
-		t.Errorf("URL not preserved; got %q", f.Deployments["dev"].URL)
+	if f.Profiles["dev"].URL != "http://localhost:8080" {
+		t.Errorf("URL not preserved; got %q", f.Profiles["dev"].URL)
 	}
 }
 
@@ -222,17 +222,17 @@ func TestMask(t *testing.T) {
 }
 
 // TestResolveActive asserts Test 8: precedence flag → env → default →
-// sole entry → ErrNoDeployment per CLI-08.
+// sole entry → ErrNoProfile per CLI-08.
 func TestResolveActive(t *testing.T) {
 	twoDeps := &config.File{
 		Default: "dev",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"dev":  {URL: "https://dev.test"},
 			"prod": {URL: "https://prod.test"},
 		},
 	}
 	soleDep := &config.File{
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"only": {URL: "https://only.test"},
 		},
 	}
@@ -273,29 +273,29 @@ func TestResolveActive(t *testing.T) {
 		t.Errorf("sole entry resolved %q, want only", name)
 	}
 
-	// Nil / empty file → ErrNoDeployment.
-	if _, _, err := config.ResolveActive(nil, "", ""); !errors.Is(err, config.ErrNoDeployment) {
-		t.Errorf("nil file returned %v, want ErrNoDeployment", err)
+	// Nil / empty file → ErrNoProfile.
+	if _, _, err := config.ResolveActive(nil, "", ""); !errors.Is(err, config.ErrNoProfile) {
+		t.Errorf("nil file returned %v, want ErrNoProfile", err)
 	}
 	empty := &config.File{}
-	if _, _, err := config.ResolveActive(empty, "", ""); !errors.Is(err, config.ErrNoDeployment) {
-		t.Errorf("empty file returned %v, want ErrNoDeployment", err)
+	if _, _, err := config.ResolveActive(empty, "", ""); !errors.Is(err, config.ErrNoProfile) {
+		t.Errorf("empty file returned %v, want ErrNoProfile", err)
 	}
 
-	// Multiple entries, no flag/env/default → ErrNoDeployment.
+	// Multiple entries, no flag/env/default → ErrNoProfile.
 	ambig := &config.File{
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"a": {URL: "https://a.test"},
 			"b": {URL: "https://b.test"},
 		},
 	}
-	if _, _, err := config.ResolveActive(ambig, "", ""); !errors.Is(err, config.ErrNoDeployment) {
-		t.Errorf("ambiguous file returned %v, want ErrNoDeployment", err)
+	if _, _, err := config.ResolveActive(ambig, "", ""); !errors.Is(err, config.ErrNoProfile) {
+		t.Errorf("ambiguous file returned %v, want ErrNoProfile", err)
 	}
 
-	// Unknown name flag → ErrNoDeployment.
-	if _, _, err := config.ResolveActive(twoDeps, "missing", ""); !errors.Is(err, config.ErrNoDeployment) {
-		t.Errorf("missing flag name returned %v, want ErrNoDeployment", err)
+	// Unknown name flag → ErrNoProfile.
+	if _, _, err := config.ResolveActive(twoDeps, "missing", ""); !errors.Is(err, config.ErrNoProfile) {
+		t.Errorf("missing flag name returned %v, want ErrNoProfile", err)
 	}
 }
 
@@ -305,7 +305,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	f := &config.File{
 		Default: "prod",
-		Deployments: map[string]*config.Deployment{
+		Profiles: map[string]*config.Profile{
 			"prod": {URL: "https://x.test"},
 		},
 	}
@@ -316,7 +316,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got == nil || got.Default != "prod" || got.Deployments["prod"].URL != "https://x.test" {
+	if got == nil || got.Default != "prod" || got.Profiles["prod"].URL != "https://x.test" {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}
 }
