@@ -131,7 +131,7 @@ func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 	stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
 	stageTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "B\n"})
 
-	d := &adapterDispatcherImpl{platformID: "fakerepl"}
+	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: ConflictRefuse}
 	var result RenderResult
 	err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result)
 	if err == nil {
@@ -141,6 +141,72 @@ func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("collision error %q missing %q", err.Error(), want)
 		}
+	}
+}
+
+// TestProjectPlugins_ReplaceCollision_NamespaceKeepsBoth proves the Phase-1
+// default: two plugins colliding on a MergeReplace target both survive, each
+// leaf-prefixed by its plugin name, with neither bare path written.
+func TestProjectPlugins_ReplaceCollision_NamespaceKeepsBoth(t *testing.T) {
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+	stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
+	stageTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "B\n"})
+
+	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: ConflictNamespace}
+	var result RenderResult
+	if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+		t.Fatalf("projectPlugins (namespace): %v", err)
+	}
+	mustExist := func(rel string) {
+		t.Helper()
+		if _, err := os.Stat(filepath.Join(toolRoot, rel)); err != nil {
+			t.Errorf("expected namespaced file %q: %v", rel, err)
+		}
+	}
+	mustExist(".claude/rules/plug-a-foo.md")
+	mustExist(".claude/rules/plug-b-foo.md")
+	if _, err := os.Stat(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); err == nil {
+		t.Errorf("bare .claude/rules/foo.md must not exist under namespace policy")
+	}
+	if len(result.ProjectedFiles) != 2 {
+		t.Errorf("ProjectedFiles = %d; want 2 (both namespaced)", len(result.ProjectedFiles))
+	}
+}
+
+// TestProjectPlugins_ReplaceCollision_SkipAndOverwrite proves the skip policy
+// keeps the earliest-sorted plugin's write and overwrite keeps the latest.
+func TestProjectPlugins_ReplaceCollision_SkipAndOverwrite(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy ConflictPolicy
+		want   string // expected on-disk body at .claude/rules/foo.md
+	}{
+		{"skip keeps first", ConflictSkip, "A\n"},
+		{"overwrite keeps last", ConflictOverwrite, "B\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			achDir := t.TempDir()
+			toolRoot := t.TempDir()
+			stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
+			stageTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "B\n"})
+
+			d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: tc.policy}
+			var result RenderResult
+			if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+				t.Fatalf("projectPlugins: %v", err)
+			}
+			got, err := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md"))
+			if err != nil {
+				t.Fatalf("read projected file: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("body = %q; want %q", got, tc.want)
+			}
+			if len(result.ProjectedFiles) != 1 {
+				t.Errorf("ProjectedFiles = %d; want 1 (one write skipped)", len(result.ProjectedFiles))
+			}
+		})
 	}
 }
 
@@ -310,10 +376,10 @@ func TestProjectPlugins_DroppedByKind_AndProjectedByKind(t *testing.T) {
 	// Stage: skills/foo.md (routed), hooks/pre.sh (known, unrouted → dropped),
 	// .claude-plugin/manifest.json + README.md (metadata/docs → silently skipped).
 	stageTree(t, achDir, pluginName, map[string]string{
-		"skills/foo.md":               "# Foo skill\n",
-		"hooks/pre.sh":                "#!/bin/sh\necho hi\n",
+		"skills/foo.md":                "# Foo skill\n",
+		"hooks/pre.sh":                 "#!/bin/sh\necho hi\n",
 		".claude-plugin/manifest.json": `{"name":"my-plugin"}`,
-		"README.md":                   "# My Plugin\n",
+		"README.md":                    "# My Plugin\n",
 	})
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}

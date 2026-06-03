@@ -24,45 +24,44 @@ const (
 	ConflictRefuse
 )
 
+// Flag spellings for each policy (the `--conflict` values).
+const (
+	conflictNamespaceStr = "namespace"
+	conflictSkipStr      = "skip"
+	conflictOverwriteStr = "overwrite"
+	conflictRefuseStr    = "refuse"
+)
+
 // String renders the flag spelling.
 func (p ConflictPolicy) String() string {
 	switch p {
-	case ConflictNamespace:
-		return "namespace"
 	case ConflictSkip:
-		return "skip"
+		return conflictSkipStr
 	case ConflictOverwrite:
-		return "overwrite"
+		return conflictOverwriteStr
 	case ConflictRefuse:
-		return "refuse"
+		return conflictRefuseStr
+	case ConflictNamespace:
+		return conflictNamespaceStr
 	default:
-		return "namespace"
+		return conflictNamespaceStr
 	}
 }
 
-// ParseConflictPolicy maps the `--conflict` flag value to a policy.
-// Empty -> ConflictNamespace (the default). Unknown -> error.
+// ParseConflictPolicy maps the `--conflict` flag value to a policy
+// (case-insensitive). Empty -> ConflictNamespace (the default). Unknown ->
+// error.
 func ParseConflictPolicy(s string) (ConflictPolicy, error) {
-	switch s {
-	case "", "namespace":
+	switch toLowerASCII(s) {
+	case "", conflictNamespaceStr:
 		return ConflictNamespace, nil
-	case "skip":
+	case conflictSkipStr:
 		return ConflictSkip, nil
-	case "overwrite":
+	case conflictOverwriteStr:
 		return ConflictOverwrite, nil
-	case "refuse":
+	case conflictRefuseStr:
 		return ConflictRefuse, nil
 	default:
-		switch toLowerASCII(s) {
-		case "namespace":
-			return ConflictNamespace, nil
-		case "skip":
-			return ConflictSkip, nil
-		case "overwrite":
-			return ConflictOverwrite, nil
-		case "refuse":
-			return ConflictRefuse, nil
-		}
 		return ConflictNamespace, fmt.Errorf("invalid --conflict %q; want namespace|skip|overwrite|refuse", s)
 	}
 }
