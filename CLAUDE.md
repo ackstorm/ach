@@ -188,21 +188,24 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 |-------|---------|------|
 | `make test-unit`        | pure-logic, ~10s warm | every iteration |
 | `make qa-lint-changed`  | golangci-lint scoped to touched pkgs | every iteration |
-| `make qa-lint`          | golangci-lint full sweep | before commit (pre-commit hook) |
+| `make qa-lint`          | golangci-lint full sweep | before commit; also runs inside the pre-push gate |
 | `make test-envtest`     | controller-runtime envtest (race), ~7m | before commit on controller changes |
 | `make test-envtest-fast`| envtest without -race, ~3m | dev inner loop |
 | `make e2e-full`         | kind + Helm + stdlib testing, ~6m | final gate before commit |
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on one sub-test |
 | `make qa-security`      | gosec + govulncheck + fuzz-short, ≤6m | in-container; before commit |
-| `make pre-commit`       | qa-lint-changed + test-unit | host-only; every `git commit` once `make hooks` installed |
 | `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
-  `qa-security` + `pre-push`; `make hooks` installs both git hooks. Inner loop:
-  `make test-unit-pkg PKG=...`, `make test-envtest-pkg PKG=... [FOCUS=TestX]`.
-- `pre-push`/`pre-commit` are **host-only** — never via `./scripts/dev.sh`.
-  Don't run them by hand; the installed hook fires the same script (exception:
-  after a `--no-verify` push).
+  `qa-security` + `pre-push`; `make hooks` installs `.git/hooks/pre-push ->
+  scripts/pre-push-check.sh` (and removes any stale pre-commit hook from a prior
+  install). Inner loop: `make test-unit-pkg PKG=...`,
+  `make test-envtest-pkg PKG=... [FOCUS=TestX]`.
+- `pre-push` is **host-only** — never via `./scripts/dev.sh`. Don't run it by
+  hand; the installed hook fires the same script (exception: after a
+  `--no-verify` push).
+- The fast pre-commit gate was retired — lint + unit now run inside the
+  pre-push gate and in CI.
 
 ## Waiting for state — use blessed make targets
 
@@ -227,16 +230,15 @@ All listed `wait-*` exist (plus `wait-litellm`/`wait-mcp-echo`/`wait-mocks` for
 test backends). Default `WAIT_TIMEOUT=300s`. If none cover a new wait need,
 **add a new `wait-*` target** — targets are the contract, not ad-hoc loops.
 
-## Publication — pre-commit and pre-push gates are non-negotiable
+## Publication — the pre-push gate is non-negotiable
 
-Remote: `git@github.com:ackstorm/ach.git`. Two hook stages so "oops, CI failed
-lint" is paid locally before the commit lands:
+Remote: `git@github.com:ackstorm/ach.git`. A single hook stage gates publication
+before a push leaves the host:
 
-- `pre-commit` (fast): `qa-lint-changed` + `test-unit`, every `git commit` once
-  `make hooks` installed. `--no-verify` only for justified WIP; the full sweep
-  still fires on push.
+- The fast pre-commit gate was retired — lint + unit now run inside the pre-push
+  gate and in CI; no separate commit-time gate remains.
 - `pre-push` (full): **18-gate** publication check. lint + unit live INSIDE the
-  18 (gates 16+17), so push is safe even if pre-commit was bypassed.
+  18 (gates 16+17), so the full lint + unit sweep always fires before a push.
 
 The 18 hard gates (failure blocks push): gitleaks + trufflehog
 (`origin/main..HEAD`; allowlist `.gitleaks.toml`) · large files >2 MB ·

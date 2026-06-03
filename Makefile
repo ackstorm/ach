@@ -313,10 +313,6 @@ _qa-fuzz-long:
 	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "qa-fuzz-long: skip — ./internal/substitution absent";  fi
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
 
-.PHONY: pre-commit
-pre-commit: ## Host-only — fast local gate (lint-changed + unit). Runs automatically on `git commit` once `make hooks` is installed.
-	./scripts/pre-commit-check.sh
-
 .PHONY: pre-push
 pre-push: ## Host-only — 17-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
 	./scripts/pre-push-check.sh
@@ -327,7 +323,7 @@ verify: ## Host-only — full pre-publication gate bundle: in-container security
 	$(MAKE) pre-push
 
 .PHONY: hooks
-hooks: ## Install git hooks (pre-commit + pre-push).
+hooks: ## Install git hooks (pre-push).
 	./scripts/install-hooks.sh
 
 ##@ Release

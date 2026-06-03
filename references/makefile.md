@@ -49,7 +49,7 @@ work happens when you debug it.
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
 | **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
-| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-commit`/`pre-push`/`verify`, `e2e-full`/`e2e-keep` (orchestrate context-A children) |
+| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full`/`e2e-keep` (orchestrate context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
 > **Why the split is explicit.** Context-A targets opt in to container
@@ -220,10 +220,9 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-commit` | Fast local gate (qa-lint-changed + test-unit). Installed git hook. |
 | `pre-push` | 17-gate publication check (scanners + lint + unit + SPDX + govulncheck + …). Installed git hook. |
 | `verify` | `qa-security` + `pre-push` — full gate bundle. |
-| `hooks` | Install the pre-commit + pre-push git hooks. |
+| `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 
 ## Debugging against the kind cluster
 
