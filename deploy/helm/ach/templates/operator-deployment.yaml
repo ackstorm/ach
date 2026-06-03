@@ -66,6 +66,15 @@ spec:
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup makes the kubelet chown the ach-operator-cache PVC
+        # (mounted RWO at /var/cache/ach) to gid 65532 + setgid, so the
+        # nonroot user (uid/gid 65532, per both Dockerfiles' USER) can
+        # write the cache. Without it the PVC mounts root-owned and the
+        # operator fails with "permission denied" on first cache write
+        # (readOnlyRootFilesystem=true means there is no fallback path).
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       volumes:
