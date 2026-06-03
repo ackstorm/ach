@@ -47,6 +47,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -534,10 +535,37 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		AdapterDispatcher: ad,
 	}
 
-	if _, err := hydrateRunFn(cmd.Context(), opts); err != nil {
+	res, err := hydrateRunFn(cmd.Context(), opts)
+	if err != nil {
 		return err
 	}
+	if !in.dryRun {
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res))
+	}
 	return nil
+}
+
+// summaryFromResult renders the post-hydrate success summary printed to
+// stdout. Per-kind counts come from Result.ProjectedByKind (sorted for a
+// byte-stable line); the totals come from the engine counters.
+func summaryFromResult(res hydrate.Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Hydrated for %s\n", res.PlatformID)
+	if len(res.ProjectedByKind) > 0 {
+		kinds := make([]string, 0, len(res.ProjectedByKind))
+		for k := range res.ProjectedByKind {
+			kinds = append(kinds, k)
+		}
+		sort.Strings(kinds)
+		parts := make([]string, 0, len(kinds))
+		for _, k := range kinds {
+			parts = append(parts, fmt.Sprintf("%d %s", res.ProjectedByKind[k], k))
+		}
+		fmt.Fprintf(&b, "  ✓ %s\n", strings.Join(parts, ", "))
+	}
+	fmt.Fprintf(&b, "  ✓ %d files written, %d preserved\n",
+		res.FilesWritten, res.FilesPreserved)
+	return b.String()
 }
 
 // resolvePlatformOrAutodetect dispatches platform resolution per
