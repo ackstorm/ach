@@ -143,7 +143,6 @@ type Adapter interface {
 	// bearer credential, if any, is on ctx via WithCredential — adapters
 	// MUST consume it via CredentialFromContext, never via env vars.
 	RenderRuntime(ctx context.Context, m *manifest.Manifest, s *state.File) ([]FileWrite, error)
-
 }
 
 // credentialKey is the unexported typed key used to stuff the bearer

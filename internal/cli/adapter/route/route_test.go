@@ -401,12 +401,12 @@ func TestProject_TransformErrorAborts(t *testing.T) {
 // appear in Dropped.
 func TestProject_DropsOnlyKnownKinds(t *testing.T) {
 	src := writeTree(t, map[string]string{
-		"hooks/pre.sh":             "#!/bin/sh\n",
+		"hooks/pre.sh":               "#!/bin/sh\n",
 		".claude-plugin/plugin.json": "{}",
-		".codex-plugin/x.json":      "{}",
-		"README.md":                 "# docs\n",
-		"random-dir/x.txt":          "x",
-		"skills/a/SKILL.md":         "s",
+		".codex-plugin/x.json":       "{}",
+		"README.md":                  "# docs\n",
+		"random-dir/x.txt":           "x",
+		"skills/a/SKILL.md":          "s",
 	})
 
 	rules := []Rule{
@@ -425,8 +425,8 @@ func TestProject_DropsOnlyKnownKinds(t *testing.T) {
 // KeptByKind.
 func TestProject_KeptByKind(t *testing.T) {
 	src := writeTree(t, map[string]string{
-		"commands/a.md":    "a",
-		"commands/b.md":    "b",
+		"commands/a.md":     "a",
+		"commands/b.md":     "b",
 		"skills/s/SKILL.md": "s",
 	})
 	rules := []Rule{
