@@ -2,198 +2,198 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://ackstorm.github.io/ach/dev/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/api-reference/ach.ackstorm.ai/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/architecture/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/development/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/jwt-forwarder/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/litellm-custom-auth/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/release-process/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/getting-started/installation/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/getting-started/quickstart/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-25-ach-bootstrap/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-25-ach-domain-port/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-bip-forwarder-read-path/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-cli-commands/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-content-service-routes/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-default-team-alias/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-e2e-promotion/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-environment-accessgroup-reconciler/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-environment-available-uat/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-environment-ready-composite/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-26-marketplace-real-schema/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-27-git-fetcher-followup-fixes/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-27-git-fetcher-protocol-swap/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-28-ach-cli-binary-split/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-05-28-issue-26-plugin-tarball-filter/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/plans/2026-06-02-ach-runtime-mirror-and-per-env-namespacing/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/cli/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/content-service/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/forwarder/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/gateway/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/operator/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/platform-api/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/shared-core/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/jwt-key-rotation/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/phase6-cli-e2e-verification/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/writing-an-mcp-backend/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-28-issue-17-access-group-v1-migration/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-28-marketplace-real-schema-followup/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-28-mcp-echo-jwt-validate/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-28-postgres-source-of-truth-PR-SUMMARY/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-28-postgres-source-of-truth/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-e2e-harness-urls-and-gates/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-gh-issues-40-39-42-36-41-fixes/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-makefile-command-organization/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-pluginmarketplace-status-plugins/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-29-synced-cluster-fixtures/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-30-adapter-mcp-surgical-merge/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/superpowers/plans/2026-05-31-e2e-unskip-buckets-2-3/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/user-guide/</loc>
-         <lastmod>2026-06-02</lastmod>
+         <lastmod>2026-06-03</lastmod>
     </url>
 </urlset>
