@@ -136,7 +136,15 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 	// the projection row is always authoritative for plugins.
 	var path string
 	if kind == kindPlugin {
-		path = row.StorageLocation
+		// SECURITY: StorageLocation is not derived from a validated {name}
+		// (plugins skip ResolvePath), so contain it under CacheRoot before
+		// os.Open — an untrusted/future origin='ui' row pointing outside the
+		// cache (e.g. /etc/passwd) must 404, never serve.
+		p, ok := PluginStoragePathWithinRoot(d.CacheRoot, row.StorageLocation)
+		if !ok {
+			return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+		}
+		path = p
 	} else {
 		var err error
 		path, err = ResolvePath(d.CacheRoot, kind, name, row.Scope)
@@ -152,7 +160,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 			return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
 		}
 	}
-	f, err := os.Open(path) // #nosec G304 — path validated by ResolvePluginByName (plugin) or ResolvePath (other kinds)
+	f, err := os.Open(path) // #nosec G304 — plugin path contained under CacheRoot by PluginStoragePathWithinRoot; other kinds validated by ResolvePath
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 			// Projection row claims the file exists; the cache file is

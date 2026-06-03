@@ -277,6 +277,12 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			ContentType:           row.ContentType,
 		}, nil
 	case kindPlugin:
+		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
+		// of silently treating them as a bare CRD lookup — the grammar
+		// requires a non-empty marketplace whenever '@' is present.
+		if !pluginref.Valid(name) {
+			return nil, errContentNotFound()
+		}
 		pname, marketplace, _ := pluginref.Parse(name)
 		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, pname, marketplace)
 		if err != nil {

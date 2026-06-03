@@ -224,6 +224,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	var unresolvedContextPlugins []string
 	if r.DB != nil {
 		for _, ref := range env.Spec.Context.Plugins {
+			// A malformed ref (e.g. "name@" with an empty marketplace) is
+			// unresolvable by grammar — surface it as unresolved rather than
+			// silently degrading to a bare CRD lookup.
+			if !pluginref.Valid(ref) {
+				unresolvedContextPlugins = append(unresolvedContextPlugins, ref)
+				continue
+			}
 			pname, mkt, _ := pluginref.Parse(ref)
 			res, rerr := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
 			if rerr != nil {
@@ -358,6 +365,14 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if snap.Stale {
 		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
+	if len(unresolvedContextPlugins) > 0 {
+		// Plugin / marketplace content writes NOTIFY their own controllers,
+		// not Environment, so no event re-enqueues this Environment when a
+		// referenced plugin's content lands. Without a shorter requeue the
+		// Environment would sit ExecutionResourcesResolved=False until the
+		// 5-min steady-state tick. Converge on a content-wait cadence.
+		return ctrl.Result{RequeueAfter: pluginUnresolvedRequeueAfter}, nil
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -365,6 +380,12 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // is stale. Picked to converge within ~30s of the Snapshotter's
 // adaptive-backoff recovery (issue #30) without hammering the apiserver.
 const staleRequeueAfter = 15 * time.Second
+
+// pluginUnresolvedRequeueAfter is the requeue cadence when one or more
+// context plugins are referenced but not yet content-present. Plugin /
+// marketplace projection writes do not enqueue Environments, so this poll
+// is how the Environment converges to Available once content lands.
+const pluginUnresolvedRequeueAfter = 30 * time.Second
 
 // writeEnvironmentProjection performs the spec v4 §5.2 dual-write to
 // the environments projection table — wrapping the nil-DB gate, the
