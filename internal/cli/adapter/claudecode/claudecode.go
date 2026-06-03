@@ -10,10 +10,9 @@
 //     pass-through path is therefore a verbatim copy of the plugin
 //     tree into .claude/plugins/<name>/ — no frontmatter rewrite, no
 //     directory remapping, no silent drops.
-//   - ADAPT-07 silent-drop accounting is structurally available (the
-//     adapter returns PluginWrite{Dropped: nil}), but claude-code has
-//     no source-tree component it cannot translate — Dropped is always
-//     nil.
+//   - ADAPT-07 silent-drop accounting: claude-code has no source-tree
+//     component it cannot translate — route.Project's drop set is
+//     always empty for this adapter.
 //   - The runtime-config target .claude/settings.json is where Claude
 //     Code reads MCP server definitions in this adapter's contract.
 //     (The official .claude/.mcp.json definition location and the
@@ -237,70 +236,6 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}, nil
 }
 
-// TransformPlugin copies the src plugin tree verbatim into dst. This
-// is the pass-through reference impl: ADAPT-04 pins the canonical
-// plugin format to Claude Code, so the claude-code adapter is a
-// straight filepath.WalkDir + io.Copy loop. ADAPT-07 Dropped is always
-// nil — claude-code drops nothing.
-//
-// File mode discipline: every regular file is chmod'd to 0644;
-// directories to 0755. This mirrors SAFE-02 (the safe-extract layer
-// in W2-01 masks modes the same way), so even if a plugin tarball was
-// extracted with a permissive umask, the claudecode pass-through
-// re-normalizes on write.
-func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.PluginWrite, error) {
-	if src == "" || dst == "" {
-		return adapter.PluginWrite{}, fmt.Errorf("claudecode: TransformPlugin requires non-empty src and dst")
-	}
-
-	extracted := make([]string, 0, 16)
-
-	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return fmt.Errorf("claudecode: rel(%q, %q): %w", src, path, err)
-		}
-		if rel == "." {
-			// Skip src root itself — dst is the destination, src content
-			// goes UNDER dst.
-			return os.MkdirAll(dst, 0o755)
-		}
-
-		dstPath := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		// Regular files only — symlinks, devices, FIFOs are rejected by
-		// the W2-01 safe-extract layer before TransformPlugin sees the
-		// tree. Defensive check: skip non-regular entries silently.
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		if err := adapter.CopyFile(path, dstPath); err != nil {
-			return err
-		}
-		extracted = append(extracted, rel)
-		return nil
-	})
-	if err != nil {
-		return adapter.PluginWrite{}, err
-	}
-
-	sort.Strings(extracted)
-
-	return adapter.PluginWrite{
-		ExtractedFiles: extracted,
-		Dropped:        nil, // claude-code drops nothing per ADAPT-04 pass-through
-	}, nil
-}
-
 // mcpDeepKeys is the claude-code adapter's only non-nil route.Rule.Transform
 // (D-03/D-09). It is wired onto the `mcp/**/*` ProjectionRules row and serves a
 // single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
@@ -380,9 +315,8 @@ func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error
 //     there is NO .mcp.json filename switch and NO mcp_servers rename). The
 //     Transform enumerates the contributed keys without altering the bytes.
 //
-// This method is pure data — no I/O. TransformPlugin is left as-is: projection
-// runs through the plan-02 Render leg (ProjectionRules -> route.Project), NOT
-// through TransformPlugin.
+// This method is pure data — no I/O. Projection runs through the Render leg
+// (ProjectionRules -> route.Project).
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "rules/**/*", ToGlob: ".claude/rules/**/*", Merge: adapter.MergeReplace},

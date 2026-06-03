@@ -37,9 +37,6 @@ func (fakeProjAdapter) Detect(string) (adapter.Match, error) {
 func (fakeProjAdapter) RenderRuntime(context.Context, *manifest.Manifest, *state.File) ([]adapter.FileWrite, error) {
 	return nil, nil
 }
-func (fakeProjAdapter) TransformPlugin(context.Context, string, string) (adapter.PluginWrite, error) {
-	return adapter.PluginWrite{}, nil
-}
 
 func (fakeProjAdapter) ProjectionRules() []route.Rule {
 	return []route.Rule{

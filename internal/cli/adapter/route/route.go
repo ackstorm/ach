@@ -102,9 +102,9 @@ type RuleProvider interface {
 	ProjectionRules() []Rule
 }
 
-// droppedSet is the shared dedup-and-append primitive (promoted from
-// codex's TransformPlugin) D-12 needs: a top-level source kind with no
-// matching Rule is recorded exactly ONCE across the whole walk.
+// droppedSet is the shared dedup-and-append primitive D-12 needs: a
+// top-level source kind with no matching Rule is recorded exactly ONCE
+// across the whole walk.
 type droppedSet struct {
 	seen map[string]bool
 	out  []string

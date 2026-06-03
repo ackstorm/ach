@@ -14,7 +14,7 @@
 // Per §7.4 closing paragraph, any plugin component this adapter cannot
 // meaningfully translate (`hooks/`, `.lsp.json`, `monitors/`, `bin/`,
 // `settings.json`) is silently dropped from output. The dropped
-// component names accumulate in PluginWrite.Dropped per ADAPT-07.
+// component names are accumulated by route.Project per ADAPT-07.
 //
 // ADAPT-06 scope rule: this adapter emits ONLY `.opencode/`-prefixed
 // paths. Prompts and artifacts are written by the hydrator core
@@ -254,132 +254,6 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}, nil
 }
 
-// droppableComponent reports whether the given top-level component
-// name under the plugin tree is one this adapter silently drops per
-// spec §7.4 closing paragraph + plan 07-W3-04 ADAPT-07 contract.
-// OpenCode has no hook system; `.lsp.json`, `monitors/`, `bin/`, and
-// `settings.json` are also v1alpha1-ignored per spec §7.4 common
-// input table footnote.
-func droppableComponent(name string) bool {
-	switch name {
-	case "hooks", ".lsp.json", "monitors", "bin", "settings.json":
-		return true
-	}
-	return false
-}
-
-// TransformPlugin walks the src plugin tree and writes the platform-
-// native plugin tree at dst per spec §7.4 opencode row:
-//
-//   - Files under known top-level components (commands/, agents/,
-//     skills/, prompts/) are preserved verbatim under their original
-//     relative paths inside dst (Claude layout preserved so `--sync`
-//     removal stays simple per the §7.4 codex/opencode requirement).
-//   - The plugin's `.mcp.json` is RECORDED as dropped under the file
-//     name (it is logically consumed by RenderRuntime — not a per-
-//     file plugin output). See §7.4 codex row: "Merge the plugin's
-//     .mcp.json (if present) into [the runtime config]". The byte-
-//     identical merge happens at orchestrator time when the staging
-//     manifest is rendered; this method emits no per-file copy of
-//     `.mcp.json`.
-//   - `hooks/`, `.lsp.json`, `monitors/`, `bin/`, `settings.json` —
-//     silently dropped per §7.4 closing paragraph + plan's ADAPT-07
-//     scope rule. Each unique dropped component name accumulates in
-//     PluginWrite.Dropped (no path-level granularity — the spec
-//     warning is "<plugin> dropped: hooks", not "<plugin> dropped:
-//     hooks/preflight.sh").
-//   - `.claude-plugin/plugin.json` REQUIRED — preserved verbatim
-//     under dst so OpenCode can discover plugin metadata.
-//
-// File mode discipline matches claudecode: every regular file is
-// chmod'd to 0644; directories to 0755. SAFE-02 mirror.
-func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.PluginWrite, error) {
-	if src == "" || dst == "" {
-		return adapter.PluginWrite{}, fmt.Errorf("opencode: TransformPlugin requires non-empty src and dst")
-	}
-
-	extracted := make([]string, 0, 16)
-	droppedSet := make(map[string]struct{}, 4)
-
-	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return fmt.Errorf("opencode: rel(%q, %q): %w", src, path, err)
-		}
-		if rel == "." {
-			return os.MkdirAll(dst, 0o755)
-		}
-
-		// Identify the top-level component (first path segment under
-		// src). For files at src root (e.g. `.mcp.json`), this is the
-		// file name itself.
-		top := adapter.TopLevelComponent(rel)
-
-		// `.mcp.json` is consumed by RenderRuntime, never emitted as
-		// a per-file plugin output. We do NOT record it as Dropped
-		// (it is not "lost" — its semantic content lands in
-		// `.opencode/opencode.json`).
-		if rel == ".mcp.json" {
-			return nil
-		}
-
-		// Silent-drop list per spec §7.4 + plan ADAPT-07.
-		if droppableComponent(top) {
-			droppedSet[top] = struct{}{}
-			if d.IsDir() {
-				// SkipDir prevents descending into the dropped tree.
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		dstPath := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		// Regular files only — symlinks, devices, FIFOs are rejected
-		// by the W2-01 safe-extract layer before TransformPlugin sees
-		// the tree. Defensive check: skip non-regular entries silently.
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-			return err
-		}
-		if err := adapter.CopyFile(path, dstPath); err != nil {
-			return err
-		}
-		extracted = append(extracted, rel)
-		return nil
-	})
-	if err != nil {
-		return adapter.PluginWrite{}, err
-	}
-
-	sort.Strings(extracted)
-
-	var dropped []string
-	if len(droppedSet) > 0 {
-		dropped = make([]string, 0, len(droppedSet))
-		for k := range droppedSet {
-			dropped = append(dropped, k)
-		}
-		sort.Strings(dropped)
-	}
-
-	return adapter.PluginWrite{
-		ExtractedFiles: extracted,
-		Dropped:        dropped,
-	}, nil
-}
-
 // ProjectionRules returns the opencode ROUTE-04 conversion projection table
 // satisfying route.RuleProvider (the D-06 seam). Per D-18/D-19 the routed
 // (plural) kinds are:
@@ -394,15 +268,16 @@ func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.P
 // rules/ and AGENTS.md have NO rule and fall into route.Project's dropped set
 // (route.go records each unrouted top-level kind exactly once — D-12/D-19); the
 // droppable runtime components (hooks/, .lsp.json, monitors/, bin/,
-// settings.json) likewise have no rule and drop the same way (matching
-// droppableComponent). There is deliberately no prompts/ row: D-18 routes only
-// commands/agents/skills/mcp for opencode (OPENPACKAGE-MAPPING §opencode).
+// settings.json) likewise have no rule and drop the same way via
+// route.Project's KnownComponentKinds gate. There is deliberately no prompts/
+// row: D-18 routes only commands/agents/skills/mcp for opencode
+// (OPENPACKAGE-MAPPING §opencode).
 //
 // The mcp/**/* row collapses N→1 onto the SAME runtime target
 // (configJSONPath) RenderRuntime emits, deep-merged under the `mcp` key (D-21);
 // the runtime encoder (renderConfigJSON) is left untouched. This method is pure
-// data — no I/O. TransformPlugin is LEFT AS-IS — projection runs via the
-// plan-02 Render leg (ProjectionRules -> route.Project).
+// data — no I/O. Projection runs via the plan-02 Render leg
+// (ProjectionRules -> route.Project).
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*", ToGlob: ".opencode/commands/**/*", Merge: adapter.MergeReplace},

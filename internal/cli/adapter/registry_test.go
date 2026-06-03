@@ -26,9 +26,6 @@ func (f *fakeAdapter) Detect(_ string) (Match, error) {
 func (f *fakeAdapter) RenderRuntime(_ context.Context, _ *manifest.Manifest, _ *state.File) ([]FileWrite, error) {
 	return nil, nil
 }
-func (f *fakeAdapter) TransformPlugin(_ context.Context, _, _ string) (PluginWrite, error) {
-	return PluginWrite{}, nil
-}
 
 func TestRegister_Duplicate_Panics(t *testing.T) {
 	resetForTesting()

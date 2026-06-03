@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -305,201 +304,6 @@ func TestRenderRuntime_NilManifest_Errors(t *testing.T) {
 	}
 }
 
-func TestTransformPlugin_DistributesToOpencode(t *testing.T) {
-	a := &Adapter{}
-
-	src := t.TempDir()
-	dst := filepath.Join(t.TempDir(), "out")
-
-	// Seed src with a realistic Claude-format plugin tree containing
-	// every component category — kept files (.claude-plugin,
-	// commands, agents, prompts, skills, subdir) AND drop-list
-	// entries (hooks/, .lsp.json, monitors/, bin/, settings.json) AND
-	// `.mcp.json` (consumed by RenderRuntime, not emitted per-file).
-	files := map[string]string{
-		".claude-plugin/plugin.json": `{"name": "caveman", "version": "1.0.0"}`,
-		"agents/cave-agent.md":       "---\nname: cave\n---\nhello",
-		"commands/grunt.md":          "# grunt",
-		"prompts/intro.md":           "# intro",
-		"skills/fire/skill.md":       "# fire",
-		"subdir/nested/file.txt":     "nested",
-		// Drop-listed components — all should appear in Dropped.
-		"hooks/preflight.sh": "#!/bin/sh",
-		".lsp.json":          `{"lsp": {}}`,
-		"monitors/m1.json":   `{}`,
-		"bin/helper.sh":      "#!/bin/sh",
-		"settings.json":      `{}`,
-		// Consumed by RenderRuntime — neither emitted nor recorded as Dropped.
-		".mcp.json": `{"mcpServers": {}}`,
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-
-	// Assert dst/<plugin>/{agents,prompts,commands,skills}/* present
-	// — i.e. Claude layout preserved verbatim under dst per spec §7.4.
-	expectedKept := []string{
-		".claude-plugin/plugin.json",
-		"agents/cave-agent.md",
-		"commands/grunt.md",
-		"prompts/intro.md",
-		"skills/fire/skill.md",
-		"subdir/nested/file.txt",
-	}
-	for _, rel := range expectedKept {
-		full := filepath.Join(dst, rel)
-		if _, err := os.Stat(full); err != nil {
-			t.Errorf("expected kept file not present in dst: %s: %v", rel, err)
-		}
-	}
-
-	// ExtractedFiles MUST exactly match the kept set (Claude-layout
-	// preservation), sorted.
-	wantExtracted := make([]string, 0, len(expectedKept))
-	for _, k := range expectedKept {
-		wantExtracted = append(wantExtracted, filepath.FromSlash(k))
-	}
-	sort.Strings(wantExtracted)
-	got := append([]string{}, pw.ExtractedFiles...)
-	sort.Strings(got)
-	if len(got) != len(wantExtracted) {
-		t.Errorf("ExtractedFiles count = %d, want %d (got=%v)", len(got), len(wantExtracted), got)
-	}
-	for i := range wantExtracted {
-		if i >= len(got) || got[i] != wantExtracted[i] {
-			t.Errorf("ExtractedFiles[%d] = %q, want %q", i, safeIdx(got, i), wantExtracted[i])
-		}
-	}
-
-	// Every kept file's content must round-trip byte-for-byte at mode 0644.
-	for _, rel := range expectedKept {
-		want := files[rel]
-		fullDst := filepath.Join(dst, rel)
-		actual, err := os.ReadFile(fullDst)
-		if err != nil {
-			t.Errorf("ReadFile %s: %v", rel, err)
-			continue
-		}
-		if string(actual) != want {
-			t.Errorf("file %s: content mismatch\ngot:  %q\nwant: %q", rel, actual, want)
-		}
-		info, err := os.Stat(fullDst)
-		if err != nil {
-			t.Errorf("Stat %s: %v", rel, err)
-			continue
-		}
-		if info.Mode().Perm() != 0o644 {
-			t.Errorf("file %s: mode = %o, want 0644", rel, info.Mode().Perm())
-		}
-	}
-
-	// Drop-listed components MUST NOT appear under dst at all.
-	for _, dropped := range []string{
-		"hooks/preflight.sh",
-		".lsp.json",
-		"monitors/m1.json",
-		"bin/helper.sh",
-		"settings.json",
-		".mcp.json",
-	} {
-		full := filepath.Join(dst, dropped)
-		if _, err := os.Stat(full); err == nil {
-			t.Errorf("drop-listed component leaked into dst: %s", dropped)
-		}
-	}
-}
-
-func TestTransformPlugin_HooksDropped(t *testing.T) {
-	a := &Adapter{}
-
-	src := t.TempDir()
-	dst := filepath.Join(t.TempDir(), "out")
-
-	// Seed only drop-list components. Dropped must include every
-	// top-level dropped name (de-duplicated, sorted).
-	files := map[string]string{
-		"hooks/preflight.sh":  "#!/bin/sh",
-		"hooks/postcommit.sh": "#!/bin/sh", // SAME `hooks` top-level — dedup
-		".lsp.json":           `{"lsp": {}}`,
-		"monitors/m1.json":    `{}`,
-		"bin/helper.sh":       "#!/bin/sh",
-		"settings.json":       `{}`,
-		// Non-dropped keeper so the test asserts the diff, not nothing.
-		"prompts/keep.md": "# keep",
-	}
-	for rel, body := range files {
-		full := filepath.Join(src, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-
-	wantDropped := []string{".lsp.json", "bin", "hooks", "monitors", "settings.json"}
-	if len(pw.Dropped) != len(wantDropped) {
-		t.Errorf("Dropped count = %d, want %d; got=%v want=%v",
-			len(pw.Dropped), len(wantDropped), pw.Dropped, wantDropped)
-	}
-	for i := range wantDropped {
-		if i >= len(pw.Dropped) || pw.Dropped[i] != wantDropped[i] {
-			t.Errorf("Dropped[%d] = %q, want %q", i, safeIdx(pw.Dropped, i), wantDropped[i])
-		}
-	}
-
-	// The non-dropped keeper must be in ExtractedFiles.
-	if len(pw.ExtractedFiles) != 1 || pw.ExtractedFiles[0] != filepath.FromSlash("prompts/keep.md") {
-		t.Errorf("ExtractedFiles = %v, want [prompts/keep.md]", pw.ExtractedFiles)
-	}
-}
-
-func TestTransformPlugin_EmptySrc_NoFilesNoDropped(t *testing.T) {
-	a := &Adapter{}
-	src := t.TempDir()
-	dst := filepath.Join(t.TempDir(), "out")
-
-	pw, err := a.TransformPlugin(context.Background(), src, dst)
-	if err != nil {
-		t.Fatalf("TransformPlugin: %v", err)
-	}
-	if len(pw.ExtractedFiles) != 0 {
-		t.Errorf("empty src → ExtractedFiles should be empty, got %d entries", len(pw.ExtractedFiles))
-	}
-	if pw.Dropped != nil {
-		t.Errorf("empty src → Dropped should be nil, got %v", pw.Dropped)
-	}
-	if _, err := os.Stat(dst); err != nil {
-		t.Errorf("dst dir not created: %v", err)
-	}
-}
-
-func TestTransformPlugin_EmptyPaths_Errors(t *testing.T) {
-	a := &Adapter{}
-	if _, err := a.TransformPlugin(context.Background(), "", "/tmp/dst"); err == nil {
-		t.Error("TransformPlugin(empty src) returned nil error; want error")
-	}
-	if _, err := a.TransformPlugin(context.Background(), "/tmp/src", ""); err == nil {
-		t.Error("TransformPlugin(empty dst) returned nil error; want error")
-	}
-}
-
 func TestRegistry_RegistersOnImport(t *testing.T) {
 	// This file imports github.com/ackstorm/ach/internal/cli/adapter
 	// and is itself in the opencode package — so init() has fired by
@@ -565,21 +369,21 @@ func TestProjectionRules_RoutesAndDrops(t *testing.T) {
 	mustWrite("AGENTS.md", "# agents prose\n")
 
 	rules := (&Adapter{}).ProjectionRules()
-	fws, dropped, err := route.Project(rules, src, "")
+	pr, err := route.Project(rules, src, "")
 	if err != nil {
 		t.Fatalf("route.Project returned error: %v", err)
 	}
 
 	// rules + AGENTS.md must be dropped (exactly once each).
 	wantDropped := map[string]int{"rules": 0, "AGENTS.md": 0}
-	for _, d := range dropped {
+	for _, d := range pr.Dropped {
 		if _, ok := wantDropped[d]; ok {
 			wantDropped[d]++
 		}
 	}
 	for kind, n := range wantDropped {
 		if n != 1 {
-			t.Errorf("dropped count for %q = %d, want 1 (dropped=%v)", kind, n, dropped)
+			t.Errorf("dropped count for %q = %d, want 1 (dropped=%v)", kind, n, pr.Dropped)
 		}
 	}
 
@@ -591,7 +395,7 @@ func TestProjectionRules_RoutesAndDrops(t *testing.T) {
 		".opencode/skills/fire/skill.md": false,
 		".opencode/opencode.json":        false,
 	}
-	for _, w := range fws {
+	for _, w := range pr.FileWrites {
 		p := filepath.ToSlash(w.Path)
 		if strings.HasPrefix(p, ".opencode/prompts/") {
 			t.Errorf("FileWrite targets a .opencode/prompts/ path %q; prompts/ has no opencode rule", w.Path)
@@ -602,7 +406,7 @@ func TestProjectionRules_RoutesAndDrops(t *testing.T) {
 	}
 	for p, seen := range wantPaths {
 		if !seen {
-			t.Errorf("expected a FileWrite for %q, got %d writes: %+v", p, len(fws), fws)
+			t.Errorf("expected a FileWrite for %q, got %d writes: %+v", p, len(pr.FileWrites), pr.FileWrites)
 		}
 	}
 }
@@ -808,13 +612,6 @@ func TestOpencodeMCPRename_Malformed(t *testing.T) {
 	if out != nil || keys != nil {
 		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
-}
-
-func safeIdx(s []string, i int) string {
-	if i < 0 || i >= len(s) {
-		return "<out-of-bounds>"
-	}
-	return s[i]
 }
 
 // ----------------------------------------------------------------------------

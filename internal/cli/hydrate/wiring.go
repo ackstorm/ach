@@ -325,7 +325,7 @@ type adapterDispatcherImpl struct {
 // State records the canonical hash of OUR contribution (not the merged
 // file) so --sync inverse-merge and subsequent drift checks operate on
 // our keys only. DroppedComponents stays nil for the runtime path
-// (TransformPlugin is the source of drops).
+// (route.Project is the source of drops via the projection leg).
 //
 // After the RenderRuntime loop, when projectPlugins is true (WIRE-04 /
 // D-11 scope gate, derived by the orchestrator as !opts.OnlyRuntime),

@@ -31,10 +31,10 @@
 //     transformations:
 //
 //     1. ADAPT-07 silent-drop: src/commands/ and src/hooks/ are NOT
-//     copied; their names accumulate into PluginWrite.Dropped. The
-//     orchestrator (plan 07-W3-05) emits a single stderr warning at
-//     end of hydration listing every dropped component across every
-//     plugin; exit code is unchanged.
+//     copied; route.Project accumulates them in its drop set, and
+//     the orchestrator emits a single stderr warning at end of
+//     hydration listing every dropped component across every plugin;
+//     exit code is unchanged.
 //
 //     2. Frontmatter rewrite for src/agents/<name>.md: the YAML
 //     frontmatter block at file head is parsed line-by-line; the
@@ -46,10 +46,9 @@
 //   - .mcp.json discipline: the plugin's optional .mcp.json is consumed
 //     by the orchestrator at runtime-config rendering time (merged into
 //     .codex/config.toml's [mcp_servers] tables — handled by the
-//     orchestrator + a future Hub-to-runtime bridge, NOT by this
-//     adapter's TransformPlugin). It is therefore NOT copied to dst and
-//     NOT accumulated in Dropped (it IS consumed, just at a different
-//     layer).
+//     orchestrator + a future Hub-to-runtime bridge). It is therefore
+//     NOT copied to dst and NOT accumulated in Dropped (it IS consumed,
+//     just at a different layer).
 //
 //   - ADAPT-06 scope rule: this adapter emits ONLY .codex/-prefixed
 //     paths. Prompts and artifacts are written by the hydrator core
@@ -285,161 +284,6 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 			Merge:   adapter.MergeDeep,
 			Keys:    keys,
 		},
-	}, nil
-}
-
-// dropName classifies the top-level source component the orchestrator
-// silently drops per ADAPT-07. The Codex adapter cannot meaningfully
-// translate `commands/` (no commands concept in Codex) or `hooks/`
-// (no hook system) into the .codex/ layout, so both are recorded in
-// PluginWrite.Dropped and the orchestrator emits a single end-of-hydration
-// stderr warning listing every dropped name.
-//
-// The check is on the FIRST path element under src — a nested file like
-// src/commands/foo/bar.md is still classified under "commands".
-type droppedSet struct {
-	seen map[string]bool
-	out  []string
-}
-
-func newDroppedSet() *droppedSet {
-	return &droppedSet{seen: map[string]bool{}, out: nil}
-}
-
-func (d *droppedSet) add(name string) {
-	if d.seen[name] {
-		return
-	}
-	d.seen[name] = true
-	d.out = append(d.out, name)
-}
-
-// silentDropTopLevel is the set of src top-level component names that
-// Codex silently drops in the LEGACY TransformPlugin walk per CLI spec
-// §7.4 last paragraph + plan behavior. The orchestrator's per-plugin
-// .mcp.json consumption is separate (handled at runtime-config rendering,
-// not TransformPlugin), so ".mcp.json" is intentionally NOT in this set.
-//
-// Per D-14 "commands" is REMOVED from this set: codex now ROUTES
-// commands/**/*.md → .codex/prompts/**/*.md through ProjectionRules /
-// route.Project (the projection Render leg), so the legacy walk must no
-// longer silent-drop them. The walk's "hooks" drop stays (codex has no
-// plugin hook system). The projection drop set {rules, AGENTS.md, hooks}
-// arises naturally in route.Project: those kinds have no matching Rule.
-var silentDropTopLevel = map[string]bool{
-	"hooks": true,
-}
-
-// TransformPlugin walks the src plugin tree and writes a transformed
-// codex-layout tree under dst.
-//
-// Behavior summary:
-//
-//   - Regular files outside the silent-drop top-level components are
-//     copied into dst preserving src's relative path layout (mirroring
-//     the Claude layout under dst, per CLI spec §7.4 codex "preserving
-//     the Claude layout").
-//
-//   - Files under src/agents/*.md additionally have their YAML
-//     frontmatter rewritten: the Claude `tools:` key is renamed to
-//     `allowed_tools:`. Other frontmatter keys + body bytes pass
-//     through verbatim.
-//
-//   - Top-level components in silentDropTopLevel (commands/, hooks/)
-//     are skipped wholesale and their names accumulated into
-//     PluginWrite.Dropped per ADAPT-07.
-//
-//   - The plugin's optional .mcp.json is consumed by the orchestrator
-//     at runtime-config rendering, not by this method. It is therefore
-//     NOT copied and NOT recorded in Dropped (it IS consumed, just at
-//     a different layer).
-//
-// File mode discipline matches claudecode: every regular file is
-// chmod'd to 0644; directories to 0755. SAFE-02 in W2-01 enforces the
-// same mode mask on extraction; this re-normalizes on write as
-// defense-in-depth.
-func (a *Adapter) TransformPlugin(_ context.Context, src, dst string) (adapter.PluginWrite, error) {
-	if src == "" || dst == "" {
-		return adapter.PluginWrite{}, fmt.Errorf("codex: TransformPlugin requires non-empty src and dst")
-	}
-
-	extracted := make([]string, 0, 16)
-	dropped := newDroppedSet()
-
-	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return fmt.Errorf("codex: rel(%q, %q): %w", src, path, err)
-		}
-		if rel == "." {
-			// Skip src root itself — dst is the destination, src content
-			// goes UNDER dst.
-			return os.MkdirAll(dst, 0o755)
-		}
-
-		// Determine the top-level component under src — used to drive
-		// the silent-drop discipline AND the per-component routing
-		// (agents → frontmatter rewrite; everything else → verbatim).
-		topLevel := adapter.TopLevelComponent(rel)
-
-		// Silent-drop: skip this entry entirely AND skip recursion into
-		// the dir.
-		if silentDropTopLevel[topLevel] {
-			dropped.add(topLevel)
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// .mcp.json at src root: consumed at runtime-config rendering
-		// (not here). Do NOT copy; do NOT record as Dropped (it IS
-		// consumed, just at a different layer).
-		if rel == ".mcp.json" {
-			return nil
-		}
-
-		dstPath := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		// Regular files only — symlinks, devices, FIFOs are rejected by
-		// the W2-01 safe-extract layer before TransformPlugin sees the
-		// tree. Defensive skip for non-regular entries.
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		// agents/*.md → frontmatter rewrite path.
-		// Everything else → verbatim copy.
-		if topLevel == "agents" && strings.HasSuffix(strings.ToLower(rel), ".md") {
-			if err := writeAgentWithFrontmatterRewrite(path, dstPath); err != nil {
-				return err
-			}
-		} else {
-			if err := adapter.CopyFile(path, dstPath); err != nil {
-				return err
-			}
-		}
-		extracted = append(extracted, rel)
-		return nil
-	})
-	if err != nil {
-		return adapter.PluginWrite{}, err
-	}
-
-	sort.Strings(extracted)
-	sort.Strings(dropped.out)
-
-	return adapter.PluginWrite{
-		ExtractedFiles: extracted,
-		Dropped:        dropped.out,
 	}, nil
 }
 
@@ -684,9 +528,7 @@ func rewriteFrontmatterLine(line []byte) []byte {
 //
 // The drop set {rules, AGENTS.md, hooks} arises naturally in route.Project:
 // those kinds have no matching Rule, so each is recorded once via
-// dropped.add. TransformPlugin (the legacy walk) is LEFT AS-IS — projection
-// runs via the plan-02 Render leg (ProjectionRules -> route.Project), not
-// TransformPlugin. This method is pure data — no I/O.
+// dropped.add. This method is pure data — no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*.md", ToGlob: ".codex/prompts/**/*.md", Merge: adapter.MergeReplace},

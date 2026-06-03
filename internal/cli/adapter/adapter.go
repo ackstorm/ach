@@ -108,33 +108,8 @@ type FileWrite struct {
 	Keys []string
 }
 
-// PluginWrite is the result of Adapter.TransformPlugin: the list of
-// files the adapter materialized under the staging dir + the names of
-// source-tree components silently dropped per ADAPT-07.
-//
-// Dropped is declared HERE in 07-W3-01 (this plan) so the three sibling
-// adapter plans (07-W3-02 codex, 07-W3-03 gemini-cli, 07-W3-04 opencode)
-// can populate it without racing modifications to adapter.go. The
-// claudecode pass-through reference impl always returns Dropped == nil.
-type PluginWrite struct {
-	// ExtractedFiles is the list of file paths the adapter wrote under
-	// the destination staging dir. Each path is staging-dir-relative;
-	// the orchestrator hashes (xxh3) each entry and records it in
-	// state.Plugins per the §8.2 schema.
-	ExtractedFiles []string
-
-	// Dropped is the list of source-tree component names the adapter
-	// silently dropped because the target platform has no destination
-	// for them (ADAPT-07 + CONTEXT.md D-08). For example, codex drops
-	// "hooks" and "commands"; gemini-cli drops "hooks". The
-	// orchestrator emits a single end-of-hydration stderr warning
-	// listing every dropped name across all plugins; exit code is
-	// unchanged. claudecode always returns nil here.
-	Dropped []string
-}
-
 // Adapter is the closed-set platform-adapter contract per CONTEXT.md
-// D-07 + ADAPT-01. Every adapter MUST implement all seven methods.
+// D-07 + ADAPT-01. Every adapter MUST implement all four methods.
 // Pass-through adapters (claudecode) return source bytes verbatim from
 // ResolveOutputContent; merge adapters (codex/gemini/opencode)
 // recompute the merged target bytes for the SAFE-04 cascade Tier 2 from
@@ -169,10 +144,6 @@ type Adapter interface {
 	// MUST consume it via CredentialFromContext, never via env vars.
 	RenderRuntime(ctx context.Context, m *manifest.Manifest, s *state.File) ([]FileWrite, error)
 
-	// TransformPlugin reads the Claude-format plugin tree at src and
-	// writes the platform-native plugin tree at dst. Returns the list
-	// of extracted files + the silent-drop accounting per ADAPT-07.
-	TransformPlugin(ctx context.Context, src, dst string) (PluginWrite, error)
 }
 
 // credentialKey is the unexported typed key used to stuff the bearer

@@ -165,8 +165,8 @@ type AdapterDispatcher interface {
 	// prior state.File + the resolved <ach-dir>. The dispatcher
 	// chooses the platform (caller layer pre-sets opts.Platform or
 	// the dispatcher autodetects), invokes that adapter's
-	// RenderRuntime + TransformPlugin, and returns FileWrites +
-	// DroppedComponents.
+	// RenderRuntime and (when projectPlugins) route.Project, and
+	// returns FileWrites + DroppedComponents.
 	// toolRoot is the base the adapter's workspace-relative FileWrite
 	// paths join against: the workspace root in project scope, $HOME in
 	// --global scope. It is DISTINCT from achDir (ACH's private state +

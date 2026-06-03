@@ -226,11 +226,11 @@ func TestProjectionRules_Conformance(t *testing.T) {
 
 			// Drop-set assertion via the real route.Project engine.
 			src := writeTree(t, fullTree)
-			_, dropped, err := route.Project(rules, src, "")
+			pr, err := route.Project(rules, src, "")
 			if err != nil {
 				t.Fatalf("%s: route.Project: %v", want.id, err)
 			}
-			gotDropped := append([]string(nil), dropped...)
+			gotDropped := append([]string(nil), pr.Dropped...)
 			sort.Strings(gotDropped)
 			if !reflect.DeepEqual(gotDropped, want.wantDropped) {
 				t.Errorf("%s: drop set = %v, want %v (per %s)", want.id, gotDropped, want.wantDropped, want.mappingSection)
