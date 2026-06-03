@@ -103,6 +103,68 @@ func TestResolvePath_InvalidKind(t *testing.T) {
 	}
 }
 
+func TestPluginStoragePathWithinRoot(t *testing.T) {
+	const root = "/var/cache/ach"
+	cases := []struct {
+		desc     string
+		location string
+		wantPath string
+		wantOK   bool
+	}{
+		{
+			desc:     "valid path inside root",
+			location: "/var/cache/ach/plugin/foo.tar.gz",
+			wantPath: "/var/cache/ach/plugin/foo.tar.gz",
+			wantOK:   true,
+		},
+		{
+			desc:     "absolute path outside root (/etc/passwd)",
+			location: "/etc/passwd",
+			wantPath: "",
+			wantOK:   false,
+		},
+		{
+			desc:     "path that escapes root after Clean",
+			location: "/var/cache/ach/../../etc/passwd",
+			wantPath: "",
+			wantOK:   false,
+		},
+		{
+			desc:     "relative path (not absolute)",
+			location: "relative/path",
+			wantPath: "",
+			wantOK:   false,
+		},
+		{
+			desc:     "root itself is accepted",
+			location: "/var/cache/ach",
+			wantPath: "/var/cache/ach",
+			wantOK:   true,
+		},
+		{
+			// Prefix-trap: /var/cache/ach-evil/x shares the prefix
+			// "/var/cache/ach" but is NOT under /var/cache/ach/.
+			// A naive strings.HasPrefix check (without the trailing
+			// separator) would incorrectly accept this path.
+			desc:     "prefix-trap: sibling dir with same prefix must be rejected",
+			location: "/var/cache/ach-evil/x",
+			wantPath: "",
+			wantOK:   false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotPath, gotOK := PluginStoragePathWithinRoot(root, tc.location)
+			if gotOK != tc.wantOK {
+				t.Errorf("ok=%v, want %v", gotOK, tc.wantOK)
+			}
+			if gotPath != tc.wantPath {
+				t.Errorf("path=%q, want %q", gotPath, tc.wantPath)
+			}
+		})
+	}
+}
+
 func TestResolvePath_InvalidName(t *testing.T) {
 	bad := []string{
 		"",

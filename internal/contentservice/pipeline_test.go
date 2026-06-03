@@ -360,6 +360,28 @@ func (f *testFixtures) seedMarketplacePlugin(marketplaceName, pluginName string,
 	}
 }
 
+// seedMarketplacePluginWithLocation seeds a marketplace_plugins row whose
+// storage_location is the caller-supplied path (NOT derived from cacheRoot).
+// Used by security regression tests that need to inject an out-of-root path.
+// No file is written; the containment check (PluginStoragePathWithinRoot) must
+// fire before the path is ever opened.
+func (f *testFixtures) seedMarketplacePluginWithLocation(marketplaceName, pluginName, storageLocation string, lsr time.Time, maxStaleness int64) {
+	f.t.Helper()
+	ctx := context.Background()
+	p := db.MarketplacePlugin{
+		MarketplaceName:       marketplaceName,
+		Name:                  pluginName,
+		StorageLocation:       storageLocation,
+		UpstreamRev:           "rev1",
+		LastSuccessfulRefresh: lsr,
+		NextRefreshAt:         lsr.Add(time.Hour),
+		MaxStalenessSeconds:   maxStaleness,
+	}
+	if err := db.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
+		f.t.Fatalf("UpsertMarketplacePluginWithLocation: %v", err)
+	}
+}
+
 func (f *testFixtures) seedArtifact(name, scope string, lsr *time.Time, maxStaleness int64, body []byte) {
 	f.t.Helper()
 	ctx := context.Background()
@@ -1096,6 +1118,70 @@ func TestPipeline_NoStoreHeader(t *testing.T) {
 	if got := resp.Header.Get("Transfer-Encoding"); strings.EqualFold(got, "chunked") {
 		t.Errorf("Transfer-Encoding=%q includes chunked (want identity transfer)", got)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// TestPipeline_PluginContainment — path-traversal + malformed-ref regressions
+// ---------------------------------------------------------------------------
+
+// TestPipeline_PluginContainment proves the two gate-8 / gate-6 security
+// defences added in the source fixes:
+//
+//  1. Path-traversal 404: a marketplace_plugins row whose storage_location
+//     escapes cacheRoot (e.g. /etc/passwd) must return 404, not 200.
+//     Proves PluginStoragePathWithinRoot fires inside pipeline gate 8.
+//
+//  2. Malformed-ref 404: a URL parameter whose ref is malformed ("bad@" —
+//     '@' present but empty marketplace) must return 404.
+//     Proves pluginref.Valid rejection inside resolveContent gate 6.
+func TestPipeline_PluginContainment(t *testing.T) {
+	t.Parallel()
+	fx := setupIntegration(t)
+	defer fx.cleanup()
+	now := time.Now().UTC()
+
+	// Personal key + team setup shared by both subtests.
+	fx.seedPersonalKey("pkid_contain", "pk-containmentcontainmentcontainmentcontainmentcontainmentcontainme", "eve@x.com")
+	fx.teamsFake.setTeams("eve@x.com", []string{"team-a"})
+
+	t.Run("path-traversal storage_location returns 404", func(t *testing.T) {
+		// Seed an environment that allowlists "pwn@evil-mkt" so gate 5 passes.
+		fx.seedEnvironment("env-containment",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"pwn@evil-mkt"},
+			[]string{},
+		)
+		// Seed the marketplace row with storage_location=/etc/passwd.
+		// Gate 8 must detect the escape and return 404 (PluginStoragePathWithinRoot → ok=false).
+		// No file is written to /etc/passwd — the containment check fires before os.Open.
+		fx.seedMarketplacePluginWithLocation("evil-mkt", "pwn", "/etc/passwd", now, 86400)
+
+		rec := fx.doRequest("GET", "/content/plugin/pwn@evil-mkt", map[string]string{
+			"x-ach-key":         "pk-containmentcontainmentcontainmentcontainmentcontainmentcontainme",
+			"x-ach-environment": "env-containment",
+		})
+		requireOutcome(t, rec, http.StatusNotFound, "content_not_found")
+	})
+
+	t.Run("malformed ref name@ returns 404", func(t *testing.T) {
+		// "bad@" has '@' present but an empty marketplace segment — pluginref.Valid rejects it.
+		// Allowlist "bad@" so gate 5 passes; gate 6 (resolveContent) must return 404 via
+		// the pluginref.Valid check before any DB lookup.
+		fx.seedEnvironment("env-badref",
+			[]string{"team-a"},
+			[]string{},
+			[]string{"bad@"},
+			[]string{},
+		)
+		// Seed a personal key bound to this env to cover the ek_ path cleanly.
+		fx.seedEnvironmentKey("ekid_badref", "ek-badrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadx", "eve@x.com", "env-badref")
+
+		rec := fx.doRequest("GET", "/content/plugin/bad@", map[string]string{
+			"x-ach-key": "ek-badrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadrefbadx",
+		})
+		requireOutcome(t, rec, http.StatusNotFound, "content_not_found")
+	})
 }
 
 // ---------------------------------------------------------------------------
