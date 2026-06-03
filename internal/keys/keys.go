@@ -4,7 +4,7 @@ package keys
 
 import (
 	"crypto/rand"
-	"encoding/base32"
+	"encoding/base64"
 	"errors"
 	"strings"
 
@@ -16,7 +16,7 @@ import (
 // string literals so any future namespace shift surfaces as a compile
 // break, not silent drift.
 //
-// pk_ / ek_  : plaintext bearer prefixes (returned exactly once on
+// pk- / ek-  : plaintext bearer prefixes (returned exactly once on
 //
 //	POST /platform/auth/sso/callback and POST /platform/env-keys).
 //
@@ -26,16 +26,16 @@ import (
 //	with load-bearing CHECK constraints in
 //	db/migrations/000001_init.up.sql.
 const (
-	PkBearerPrefix  = "pk_"
-	EkBearerPrefix  = "ek_"
+	PkBearerPrefix  = "pk-"
+	EkBearerPrefix  = "ek-"
 	PkidKeyIDPrefix = "pkid_"
 	EkidKeyIDPrefix = "ekid_"
 )
 
-// bearerSuffixLen is the length of the base32-no-pad suffix following
-// the pk_/ek_ prefix. 16 random bytes encode to 26 base32 chars
-// (ceil(16 * 8 / 5) = 26) when padding is disabled.
-const bearerSuffixLen = 26
+// bearerSuffixLen is the length of the base64url-no-pad suffix following
+// the pk-/ek- prefix. 48 random bytes encode to 64 base64url chars
+// (ceil(48/3*4)=64), padding disabled.
+const bearerSuffixLen = 64
 
 // BearerPrefix is a newtype around the string prefix used to discriminate
 // the two bearer kinds at the type level. The exported PrefixPk / PrefixEk
@@ -51,18 +51,16 @@ const (
 
 // ErrInvalidPrefix is returned by NewBearer when the caller supplies a
 // prefix that is not PrefixPk or PrefixEk.
-var ErrInvalidPrefix = errors.New("keys: invalid bearer prefix; expected pk_ or ek_")
+var ErrInvalidPrefix = errors.New("keys: invalid bearer prefix; expected pk- or ek-")
 
-// bearerEncoding is the RFC 4648 base32 alphabet with padding disabled.
-// 16 input bytes encode to 26 output chars; the result is then lowercased
-// for grep-ergonomics with the rest of the codebase (matches
-// strings.ToLower(ulid.Make().String()) idiom used by NewKeyID below).
-var bearerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+// bearerEncoding is RFC 4648 §5 base64url with padding disabled.
+// base64url is case-significant — callers must not lowercase the output.
+var bearerEncoding = base64.RawURLEncoding
 
 // NewBearer returns a plaintext bearer credential of the form
-// "<prefix><26-char base32-lowercase no-pad suffix>" — for example
-// "pk_abc123..." or "ek_def456...". The suffix is derived from 16
-// cryptographically random bytes drawn via crypto/rand (~130 bits of
+// "<prefix><64-char base64url-no-pad suffix>" — for example
+// "pk-Kx9TmQ2bv_Hn4P..." or "ek-def456...". The suffix is derived from
+// 48 cryptographically random bytes drawn via crypto/rand (384 bits of
 // entropy, far above the birthday bound for any realistic key space).
 //
 // Caller responsibility (Hub §16.1, package doc.go):
@@ -83,15 +81,12 @@ func NewBearer(prefix BearerPrefix) (string, error) {
 	if prefix != PrefixPk && prefix != PrefixEk {
 		return "", ErrInvalidPrefix
 	}
-	var b [16]byte
+	var b [48]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	// EncodeToString yields 26 uppercase base32 chars. Lowercase for grep
-	// ergonomics — same convention as NewKeyID's strings.ToLower wrap on
-	// the ULID suffix.
-	suffix := strings.ToLower(bearerEncoding.EncodeToString(b[:]))
-	return string(prefix) + suffix, nil
+	// base64url is case-significant — emit verbatim, no ToLower.
+	return string(prefix) + bearerEncoding.EncodeToString(b[:]), nil
 }
 
 // KeyIDPrefix is a newtype around the string prefix for opaque key_id
@@ -109,8 +104,8 @@ const (
 )
 
 // ErrInvalidBearer is returned by ClassifyBearer when the input does not
-// match the strict pk_<26-base32-lower> / ek_<26-base32-lower> grammar.
-var ErrInvalidBearer = errors.New("keys: invalid bearer plaintext; expected pk_<26-base32-lower> or ek_<26-base32-lower>")
+// match the strict pk-<64-base64url> / ek-<64-base64url> grammar.
+var ErrInvalidBearer = errors.New("keys: invalid bearer plaintext; expected pk-<64-base64url> or ek-<64-base64url>")
 
 // NewKeyID returns an opaque key_id of the form
 // "<prefix><26-char ULID base32-lowercase>" — for example
