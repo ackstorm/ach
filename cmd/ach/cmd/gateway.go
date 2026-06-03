@@ -61,7 +61,17 @@ func runGateway(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("build gateway handler: %w", err)
 	}
 
-	logger.Info("gateway starting", "addr", bindAddr, "namespace", namespace, "routes", len(routes))
+	// Access logging: Apache/nginx combined format to stdout, ON by default.
+	// ACH_GATEWAY_ACCESS_LOG=combined|common|off (empty => combined).
+	accessFmt, known := gateway.ParseAccessLogFormat(os.Getenv("ACH_GATEWAY_ACCESS_LOG"))
+	if !known {
+		logger.Warn("unknown ACH_GATEWAY_ACCESS_LOG value, defaulting to combined",
+			"value", os.Getenv("ACH_GATEWAY_ACCESS_LOG"))
+	}
+	handler = gateway.AccessLog(os.Stdout, accessFmt, nil)(handler)
+
+	logger.Info("gateway starting", "addr", bindAddr, "namespace", namespace,
+		"routes", len(routes), "access_log", string(accessFmt))
 
 	srv := &http.Server{
 		Addr:              bindAddr,
