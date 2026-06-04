@@ -41,6 +41,8 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,9 +50,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
+	"github.com/ackstorm/ach/internal/cli/render"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
@@ -189,6 +194,8 @@ Subcommands:
   refresh <kind> <name>            Force-refresh an external content
                                     resource. kind ∈ {plugin, prompt,
                                     artifact, marketplace}.
+  list <kind|all>                  Read-only inventory of ACH objects
+                                    (version + sync status). -o table|json|yaml.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -198,8 +205,260 @@ Subcommands:
 		newAdminKeysCmd(),
 		newAdminUsersCmd(),
 		newAdminRefreshCmd(),
+		newAdminListCmd(),
 	)
 	return parent
+}
+
+// ---------------------------------------------------------------------
+// list (read-only object inventory)
+// ---------------------------------------------------------------------
+
+// adminListKinds is the closed set of inventory kinds, also the fan-out set
+// for `ach admin list all`. Order here is the order `all` renders sections.
+var adminListKinds = []string{
+	"environments", "plugins", "prompts", "artifacts",
+	"marketplaces", "bips", "litellm-connections", "external-refs",
+}
+
+func isAdminListKind(k string) bool {
+	for _, x := range adminListKinds {
+		if x == k {
+			return true
+		}
+	}
+	return false
+}
+
+// adminEnvItem decodes the subset of GET /platform/environments
+// (store.EnvironmentView) the inventory needs. environments has no
+// /platform/admin route — an allowlisted pk- sees every row via that handler's
+// admin bypass, so the CLI reuses it and maps the result into AdminObjectView.
+type adminEnvItem struct {
+	Namespace       string `json:"namespace"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	ResourceVersion string `json:"resourceVersion"`
+	Origin          string `json:"origin"`
+	Locked          bool   `json:"locked"`
+}
+
+// envStatusAvailable is the derived Environment status string meaning the
+// Available composite condition is True (see store.deriveStatus).
+const envStatusAvailable = "Available"
+
+// envStatusToSync collapses the derived Environment Available status into the
+// inventory SYNC vocabulary: "Available" stays, a non-empty reason → Degraded
+// (reason surfaced), empty/unknown → Pending.
+func envStatusToSync(status string) (sync, reason string) {
+	switch status {
+	case "":
+		return "Pending", ""
+	case envStatusAvailable:
+		return envStatusAvailable, ""
+	default:
+		return "Degraded", status
+	}
+}
+
+func (e adminEnvItem) toView() render.AdminObjectView {
+	sync, reason := envStatusToSync(e.Status)
+	return render.AdminObjectView{
+		Kind:       "environment",
+		Namespace:  e.Namespace,
+		Name:       e.Name,
+		Version:    e.ResourceVersion,
+		Sync:       sync,
+		SyncReason: reason,
+		Origin:     e.Origin,
+		Locked:     e.Locked,
+	}
+}
+
+func newAdminListCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	var output string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List ACH objects (read-only inventory). Usage: ach admin list <kind|all>",
+		Long: `Read-only inventory of ACH-defined objects sourced from the Postgres
+projections (version + projection-derived sync status). Admin-only (pk-).
+
+kind ∈ {environments, plugins, prompts, artifacts, marketplaces, bips,
+litellm-connections, external-refs} or 'all' to fan out across every kind.
+
+SYNC column:
+  Available / Degraded(<reason>) / Pending   environments (Available condition)
+  fresh / STALE(<age> over) / never          content kinds (refresh staleness)
+  projected                                  bips / litellm-connections
+
+Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
+not content presence (only plugins are truly content-gated).`,
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminList(cmd, args[0], output, f)
+		},
+	}
+	// withYes=false — read-only, no confirmation prompt.
+	registerAdminCredFlags(cmd, f, false)
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table|json|yaml")
+	return cmd
+}
+
+func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) error {
+	stderr := cmd.ErrOrStderr()
+	stdout := cmd.OutOrStdout()
+	ctx := cmd.Context()
+
+	// CLI-07 synthetic gate (admin allowed in synthetic).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:        synthetic.GateAdmin,
+		APIKeyFlag:  f.APIKey,
+		EnvKeyFlag:  f.EnvKey,
+		ProfileFlag: f.Profile,
+	}); err != nil {
+		return err
+	}
+
+	kind = strings.TrimSpace(kind)
+	if kind != "all" && !isAdminListKind(kind) {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: fmt.Sprintf("invalid kind %q; expected one of %s, or 'all'",
+				kind, strings.Join(adminListKinds, ", ")),
+		}
+	}
+	switch output {
+	case "table", "json", "yaml":
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --output %q; expected table, json, or yaml", output),
+		}
+	}
+
+	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	if err != nil {
+		return err
+	}
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: adminHTTPClient,
+		Verbose:    f.Verbose,
+		Stderr:     stderr,
+	}
+
+	grouped := map[string][]render.AdminObjectView{}
+	if kind == "all" {
+		results := make([][]render.AdminObjectView, len(adminListKinds))
+		g, gctx := errgroup.WithContext(ctx)
+		for i, k := range adminListKinds {
+			g.Go(func() error {
+				rows, e := fetchAdminKind(gctx, hc, k)
+				if e != nil {
+					return e
+				}
+				results[i] = rows
+				return nil
+			})
+		}
+		if waitErr := g.Wait(); waitErr != nil {
+			return waitErr
+		}
+		for i, k := range adminListKinds {
+			grouped[k] = results[i]
+		}
+	} else {
+		rows, e := fetchAdminKind(ctx, hc, kind)
+		if e != nil {
+			return e
+		}
+		grouped[kind] = rows
+	}
+
+	return renderAdminList(stdout, grouped, output)
+}
+
+// fetchAdminKind pages through one kind's endpoint (cursor loop mirroring
+// runEnvKeysList) and returns the accumulated AdminObjectViews. environments
+// is special-cased onto GET /platform/environments + the EnvironmentView map.
+func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]render.AdminObjectView, error) {
+	out := []render.AdminObjectView{}
+	cursor := ""
+	for {
+		path := buildAdminListPath(kind, cursor)
+		if kind == "environments" {
+			var resp struct {
+				Items      []adminEnvItem `json:"items"`
+				NextCursor string         `json:"next_cursor"`
+			}
+			if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+				return nil, err
+			}
+			for _, it := range resp.Items {
+				out = append(out, it.toView())
+			}
+			if resp.NextCursor == "" {
+				break
+			}
+			cursor = resp.NextCursor
+			continue
+		}
+		var resp struct {
+			Items      []render.AdminObjectView `json:"items"`
+			NextCursor string                   `json:"next_cursor"`
+		}
+		if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+			return nil, err
+		}
+		out = append(out, resp.Items...)
+		if resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
+	}
+	return out, nil
+}
+
+// buildAdminListPath returns the endpoint + optional cursor query for a kind.
+func buildAdminListPath(kind, cursor string) string {
+	base := "/platform/admin/" + kind
+	if kind == "environments" {
+		base = "/platform/environments"
+	}
+	if cursor == "" {
+		return base
+	}
+	q := url.Values{}
+	q.Set("cursor", cursor)
+	return base + "?" + q.Encode()
+}
+
+// renderAdminList writes the grouped inventory in the requested format. table
+// goes through the render formatter (Pattern S5 — no inline tabwriter here);
+// json/yaml marshal the map directly so machine consumers get the full DTO.
+func renderAdminList(stdout io.Writer, grouped map[string][]render.AdminObjectView, output string) error {
+	switch output {
+	case "json":
+		b, err := json.MarshalIndent(grouped, "", "  ")
+		if err != nil {
+			return &exit.CodedError{Code: exit.General, Msg: "marshal json: " + err.Error()}
+		}
+		_, _ = stdout.Write(b)
+		_, _ = io.WriteString(stdout, "\n")
+	case "yaml":
+		b, err := yaml.Marshal(grouped)
+		if err != nil {
+			return &exit.CodedError{Code: exit.General, Msg: "marshal yaml: " + err.Error()}
+		}
+		_, _ = stdout.Write(b)
+	default: // table
+		_, _ = io.WriteString(stdout, render.FormatAdminInventory(grouped))
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------
