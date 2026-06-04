@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,9 +19,11 @@ import (
 
 // fakeLister implements Lister for httptest handler coverage without Postgres.
 type fakeLister struct {
-	plugins []db.PluginRow
-	bips    []db.BIPRow
-	err     error
+	plugins            []db.PluginRow
+	marketplaces       []db.MarketplaceRow
+	marketplacePlugins []db.MarketplacePlugin
+	bips               []db.BIPRow
+	err                error
 }
 
 func (f fakeLister) Plugins(context.Context) ([]db.PluginRow, error) { return f.plugins, f.err }
@@ -28,8 +31,11 @@ func (f fakeLister) Prompts(context.Context) ([]db.PromptRow, error) { return ni
 func (f fakeLister) Artifacts(context.Context) ([]db.ArtifactRow, error) {
 	return nil, f.err
 }
-func (f fakeLister) Marketplaces(context.Context) ([]db.MarketplacePlugin, error) {
-	return nil, f.err
+func (f fakeLister) Marketplaces(context.Context) ([]db.MarketplaceRow, error) {
+	return f.marketplaces, f.err
+}
+func (f fakeLister) MarketplacePlugins(context.Context) ([]db.MarketplacePlugin, error) {
+	return f.marketplacePlugins, f.err
 }
 func (f fakeLister) BIPs(context.Context) ([]db.BIPRow, error) { return f.bips, f.err }
 func (f fakeLister) LitellmConnections(context.Context) ([]db.LiteLLMConnectionRow, error) {
@@ -169,5 +175,24 @@ func TestBIPsHandler_Projected(t *testing.T) {
 	got := env.Items[0]
 	if got.Sync != syncProjected || got.Version != "2" || got.Extra["target"] != "MCPServer/echo" {
 		t.Errorf("bip view wrong: %+v", got)
+	}
+}
+
+func TestPluginsHandler_MergesStandaloneAndMarketplacePlugins(t *testing.T) {
+	deps := Deps{Lister: fakeLister{
+		plugins: []db.PluginRow{{Namespace: "ach", Name: "frontend-design", ResourceVersion: "5", MaxStalenessSeconds: 600}},
+		marketplacePlugins: []db.MarketplacePlugin{
+			{MarketplaceName: "ackstorm", Name: "branding", UpstreamRev: "b899e89", MaxStalenessSeconds: 600},
+		},
+	}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/platform/admin/plugins", nil)
+	PluginsHandler(deps).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "frontend-design") || !strings.Contains(body, "branding@ackstorm") {
+		t.Errorf("merged plugins body missing expected names: %s", body)
 	}
 }

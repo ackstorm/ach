@@ -33,7 +33,8 @@ type Lister interface {
 	Plugins(ctx context.Context) ([]db.PluginRow, error)
 	Prompts(ctx context.Context) ([]db.PromptRow, error)
 	Artifacts(ctx context.Context) ([]db.ArtifactRow, error)
-	Marketplaces(ctx context.Context) ([]db.MarketplacePlugin, error)
+	Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
+	MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error)
 	BIPs(ctx context.Context) ([]db.BIPRow, error)
 	LitellmConnections(ctx context.Context) ([]db.LiteLLMConnectionRow, error)
 	ExternalRefs(ctx context.Context) ([]db.ExternalRef, error)
@@ -65,7 +66,10 @@ func (l dbLister) Prompts(ctx context.Context) ([]db.PromptRow, error) {
 func (l dbLister) Artifacts(ctx context.Context) ([]db.ArtifactRow, error) {
 	return db.ListArtifacts(ctx, l.pool, l.ns)
 }
-func (l dbLister) Marketplaces(ctx context.Context) ([]db.MarketplacePlugin, error) {
+func (l dbLister) Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error) {
+	return db.ListMarketplaces(ctx, l.pool, l.ns)
+}
+func (l dbLister) MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error) {
 	return db.ListAllMarketplacePlugins(ctx, l.pool)
 }
 func (l dbLister) BIPs(ctx context.Context) ([]db.BIPRow, error) {
@@ -78,17 +82,26 @@ func (l dbLister) ExternalRefs(ctx context.Context) ([]db.ExternalRef, error) {
 	return db.ListExternalRefs(ctx, l.pool)
 }
 
-// PluginsHandler serves GET /platform/admin/plugins.
+// PluginsHandler serves GET /platform/admin/plugins. It MERGES standalone
+// Plugin CRs (source=plugin) with the plugins discovered inside marketplaces
+// (source=marketplace, name scoped as <plugin>@<marketplace>).
 func PluginsHandler(deps Deps) http.HandlerFunc {
 	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
-		rows, err := deps.Lister.Plugins(ctx)
+		plugins, err := deps.Lister.Plugins(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mktPlugins, err := deps.Lister.MarketplacePlugins(ctx)
 		if err != nil {
 			return nil, err
 		}
 		now := time.Now()
-		out := make([]AdminObjectView, 0, len(rows))
-		for _, r := range rows {
+		out := make([]AdminObjectView, 0, len(plugins)+len(mktPlugins))
+		for _, r := range plugins {
 			out = append(out, pluginRowToView(r, now))
+		}
+		for _, r := range mktPlugins {
+			out = append(out, marketplacePluginAsPluginView(r, now))
 		}
 		return out, nil
 	})
@@ -126,17 +139,18 @@ func ArtifactsHandler(deps Deps) http.HandlerFunc {
 	})
 }
 
-// MarketplacesHandler serves GET /platform/admin/marketplaces.
+// MarketplacesHandler serves GET /platform/admin/marketplaces — the marketplace
+// OBJECTS (and their Synced status), NOT their contained plugins (those are in
+// PluginsHandler's merge).
 func MarketplacesHandler(deps Deps) http.HandlerFunc {
 	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
 		rows, err := deps.Lister.Marketplaces(ctx)
 		if err != nil {
 			return nil, err
 		}
-		now := time.Now()
 		out := make([]AdminObjectView, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, marketplacePluginToView(r, now))
+			out = append(out, marketplaceRowToView(r))
 		}
 		return out, nil
 	})

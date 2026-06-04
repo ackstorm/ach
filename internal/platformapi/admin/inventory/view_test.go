@@ -172,30 +172,67 @@ func TestOtherKindViews(t *testing.T) {
 		t.Errorf("litellm view wrong: %+v", lc)
 	}
 
-	mp := marketplacePluginToView(db.MarketplacePlugin{
-		MarketplaceName: "anthropic", Name: "foo", UpstreamRev: "abc123",
-		LastSuccessfulRefresh: now.Add(-1 * time.Minute), MaxStalenessSeconds: 3600,
-	}, now)
-	if mp.Sync != syncFresh {
-		t.Errorf("marketplace fresh sync: got %q, want fresh", mp.Sync)
-	}
-	if mp.Version != "abc123" || mp.Namespace != "anthropic" {
-		t.Errorf("marketplace fields wrong: %+v", mp)
-	}
-
-	// Never-refreshed marketplace (epoch) → never.
-	mpNever := marketplacePluginToView(db.MarketplacePlugin{
-		MarketplaceName: "x", Name: "y", LastSuccessfulRefresh: time.Unix(0, 0), MaxStalenessSeconds: 60,
-	}, now)
-	if mpNever.Sync != syncNever {
-		t.Errorf("marketplace never sync: got %q, want never", mpNever.Sync)
-	}
-
 	er := externalRefToView(db.ExternalRef{
 		Kind: "plugin", Name: "caveman", UpstreamRev: "deadbeef",
 		LastSuccessfulRefresh: now.Add(-30 * time.Second), MaxStalenessSeconds: 600,
 	}, now)
 	if er.Sync != syncFresh || er.Extra["refKind"] != "plugin" || er.Version != "deadbeef" {
 		t.Errorf("external-ref view wrong: %+v", er)
+	}
+}
+
+func TestMarketplaceRowToView(t *testing.T) {
+	synced := marketplaceRowToView(db.MarketplaceRow{
+		Namespace: "ach", Name: "ackstorm", SyncedStatus: "True",
+		PluginsCount: 12, ResourceVersion: "100",
+	})
+	if synced.Kind != "marketplace" {
+		t.Errorf("Kind = %q, want marketplace", synced.Kind)
+	}
+	if synced.Sync != "Synced" || synced.SyncReason != "" {
+		t.Errorf("Sync = %q(%q), want Synced", synced.Sync, synced.SyncReason)
+	}
+	if synced.Extra["pluginsCount"] != "12" {
+		t.Errorf("Extra[pluginsCount] = %q, want 12", synced.Extra["pluginsCount"])
+	}
+
+	degraded := marketplaceRowToView(db.MarketplaceRow{
+		Namespace: "ach", Name: "broken", SyncedStatus: "False", SyncedReason: "UpstreamInvalid",
+	})
+	if degraded.Sync != "Degraded" || degraded.SyncReason != "UpstreamInvalid" {
+		t.Errorf("Sync = %q(%q), want Degraded(UpstreamInvalid)", degraded.Sync, degraded.SyncReason)
+	}
+
+	pending := marketplaceRowToView(db.MarketplaceRow{Namespace: "ach", Name: "new"})
+	if pending.Sync != "Pending" {
+		t.Errorf("empty status Sync = %q, want Pending", pending.Sync)
+	}
+}
+
+func TestMarketplacePluginAsPluginView_NameAndSource(t *testing.T) {
+	v := marketplacePluginAsPluginView(db.MarketplacePlugin{
+		MarketplaceName: "ackstorm", Name: "branding", UpstreamRev: "b899e89",
+		MaxStalenessSeconds: 600,
+	}, time.Now())
+	if v.Kind != "plugin" {
+		t.Errorf("Kind = %q, want plugin", v.Kind)
+	}
+	if v.Name != "branding@ackstorm" {
+		t.Errorf("Name = %q, want branding@ackstorm", v.Name)
+	}
+	if v.Extra["source"] != "marketplace" {
+		t.Errorf("Extra[source] = %q, want marketplace", v.Extra["source"])
+	}
+	if v.Version != "b899e89" {
+		t.Errorf("Version = %q, want b899e89", v.Version)
+	}
+}
+
+func TestPluginRowToView_SourcePlugin(t *testing.T) {
+	v := pluginRowToView(db.PluginRow{
+		Namespace: "ach", Name: "frontend-design", ResourceVersion: "5", MaxStalenessSeconds: 600,
+	}, time.Now())
+	if v.Extra["source"] != "plugin" {
+		t.Errorf("Extra[source] = %q, want plugin", v.Extra["source"])
 	}
 }
