@@ -607,3 +607,27 @@ func TestAdminKeysRevoke_Verbose_RedactsAchKey(t *testing.T) {
 		t.Errorf("CLI-04/T-06-08-02 leak: unredacted pk- in stderr; got:\n%s", stderr)
 	}
 }
+
+func TestAdminListKinds_ExcludesOperatorInternalKinds(t *testing.T) {
+	got := map[string]bool{}
+	for _, k := range adminListKinds {
+		got[k] = true
+	}
+	for _, banned := range []string{"litellm-connections", "external-refs"} {
+		if got[banned] {
+			t.Errorf("adminListKinds must not contain operator-internal kind %q", banned)
+		}
+		if isAdminListKind(banned) {
+			t.Errorf("isAdminListKind(%q) = true; want false (kind removed)", banned)
+		}
+	}
+	want := []string{"environments", "plugins", "prompts", "artifacts", "marketplaces", "bips"}
+	if len(adminListKinds) != len(want) {
+		t.Fatalf("adminListKinds = %v, want %v", adminListKinds, want)
+	}
+	for i, k := range want {
+		if adminListKinds[i] != k {
+			t.Errorf("adminListKinds[%d] = %q, want %q", i, adminListKinds[i], k)
+		}
+	}
+}
