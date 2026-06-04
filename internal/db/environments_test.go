@@ -104,6 +104,66 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 	}
 }
 
+// TestUpsertEnvironment_ClearsStaleDeletionTimestamp proves a LIVE reconcile
+// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04:
+// a resurrected Environment stayed hidden from env list because the upsert
+// preserved the old deletion_timestamp).
+func TestUpsertEnvironment_ClearsStaleDeletionTimestamp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	row := db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "resurrect-me",
+		AuthorizedTeams: []string{"default"},
+		ResourceVersion: "1",
+		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
+		ContextPrompts: []string{}, ContextPlugins: []string{},
+		ContextArtifacts: []string{}, RuntimeModels: []string{},
+		RuntimeMCPServers: []string{}, RuntimeA2AAgents: []string{},
+	}
+	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+		t.Fatalf("seed upsert: %v", err)
+	}
+	// Soft-delete sets deletion_timestamp.
+	if err := db.SoftDeleteEnvironment(ctx, pool, "ach", "resurrect-me"); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	// Live reconcile of the recreated CR (same name) upserts again.
+	row.ResourceVersion = "2"
+	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+		t.Fatalf("live upsert: %v", err)
+	}
+
+	got, err := db.GetEnvironmentByName(ctx, pool, "ach", "resurrect-me")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("get: row missing after live upsert")
+	}
+	if got.DeletionTimestamp != nil {
+		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %v", *got.DeletionTimestamp)
+	}
+	// The resurrected env must reappear in the IS-NULL-filtered list read.
+	list, err := db.ListEnvironments(ctx, pool, "ach")
+	if err != nil {
+		t.Fatalf("ListEnvironments: %v", err)
+	}
+	var found bool
+	for _, e := range list {
+		if e.Name == "resurrect-me" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("resurrected env missing from ListEnvironments (deletion_timestamp IS NULL filter)")
+	}
+}
+
 // TestGetEnvironmentByName_AbsenceReturnsNilNil: a Get on a (ns, name) that
 // was never inserted returns (nil, nil) — never an error.
 func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {

@@ -134,6 +134,14 @@ func (c *Client) ListTeamsByAlias(ctx context.Context, alias string) ([]litellm.
 	return client.ListTeamsByAlias(ctx, alias)
 }
 
+func (c *Client) ListAllTeams(ctx context.Context) ([]litellm.TeamListEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.ListAllTeams(ctx)
+}
+
 func (c *Client) EnsureDefaultTeam(ctx context.Context) error {
 	client, err := c.current()
 	if err != nil {

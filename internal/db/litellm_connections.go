@@ -61,14 +61,23 @@ const upsertLiteLLMConnectionSQL = `
 	    master_key_secret_key       = EXCLUDED.master_key_secret_key,
 	    resource_version            = EXCLUDED.resource_version,
 	    updated_at                  = now(),
+	    deletion_timestamp          = NULL,
 	    locked                      = TRUE
 	WHERE litellm_connections.origin = 'cr'
 	RETURNING namespace
 `
 
 // UpsertLiteLLMConnection inserts-or-updates the row keyed by (Namespace,
-// Name). Returns ErrOriginConflict if a UI-owned row already holds the same
-// PK; transient pgconn 08/57 propagated raw for controller-runtime backoff.
+// Name). The ON CONFLICT DO UPDATE replaces every non-PK column. A live
+// reconcile (this path only runs for a CR with no metadata.deletionTimestamp)
+// clears deletion_timestamp to NULL — a recreated CR reusing a soft-deleted
+// name MUST drop the stale drain marker, else ListLitellmConnections (WHERE
+// deletion_timestamp IS NULL) hides the resurrected connection forever
+// (incident 2026-06-04). The drain marker is owned solely by
+// SoftDeleteLiteLLMConnection, which runs on the deletion branch and never
+// overlaps this upsert. Returns ErrOriginConflict if a UI-owned row already
+// holds the same PK; transient pgconn 08/57 propagated raw for
+// controller-runtime backoff.
 func UpsertLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, row LiteLLMConnectionRow) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {

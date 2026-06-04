@@ -135,6 +135,14 @@ func (c *NoopClient) ListTeamsByAlias(_ context.Context, alias string) ([]TeamLi
 	return nil, nil
 }
 
+// ListAllTeams returns an empty slice — the noop client has no team
+// state. Production callers must run against a RESTClient against a real
+// LiteLLM with the teams pre-provisioned.
+func (c *NoopClient) ListAllTeams(_ context.Context) ([]TeamListEntry, error) {
+	c.Log.Info("stub: would list all LiteLLM teams")
+	return nil, nil
+}
+
 // EnsureDefaultTeam is a no-op for the stub client. Production
 // operator-bootstrap uses RESTClient against a real LiteLLM; envtest
 // pinning to the stub gets a free pass — the SSO path branches on

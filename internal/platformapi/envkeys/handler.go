@@ -401,6 +401,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	// MaxBudget=nil per KEY-10.
 	keyReq := &litellm.KeyGenerateRequest{
 		UserID:       userID,
+		KeyAlias:     keyID, // ekid_… — debug attribution only (not used for lookup)
 		MaxBudget:    nil,
 		AccessGroups: []string{env.Name},
 		Tags:         []string{env.Name},

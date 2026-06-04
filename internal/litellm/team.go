@@ -81,3 +81,28 @@ func (c *RESTClient) ListTeamsByAlias(ctx context.Context, alias string) ([]Team
 	}
 	return out, nil
 }
+
+// ListAllTeams issues GET /v2/team/list?page_size=500 and returns every
+// team. No client-side filter (cf. ListTeamsByAlias). Empty slice is not
+// an error. Single-page only by design — a multi-page result WARNs rather
+// than silently truncating (silent truncation would drop alias resolutions
+// and re-introduce the team false-negative this fix closes; cross-AI review
+// MED finding 2026-06-04). Pagination itself stays YAGNI at current scale.
+func (c *RESTClient) ListAllTeams(ctx context.Context) ([]TeamListEntry, error) {
+	raw, err := c.makeRequest(ctx, "GET", "/v2/team/list?page_size=500", nil)
+	if err != nil {
+		return nil, err
+	}
+	var list TeamListResponse
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("litellm: decode GET /v2/team/list: %w", err)
+	}
+	if list.TotalPages > 1 {
+		// logr has no native WARN level; the package logs via c.log.Info
+		// (transport.go uses the same facility). Prefix WARN in the message
+		// and name the limitation explicitly — do NOT silently truncate.
+		c.log.Info("WARN: litellm team list exceeds one page (page_size=500); alias resolution may be incomplete — pagination not implemented",
+			"total_pages", list.TotalPages, "total", list.Total)
+	}
+	return list.Teams, nil
+}

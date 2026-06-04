@@ -77,8 +77,14 @@ type PluginResolution struct {
 }
 
 // UpsertPlugin inserts-or-updates a plugins row keyed by (namespace, name).
-// ON CONFLICT DO UPDATE replaces every non-PK column EXCEPT
-// deletion_timestamp (preserved per CS-09); updated_at is force-set to now().
+// ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile (this
+// path only runs for a CR with no metadata.deletionTimestamp) clears
+// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
+// MUST drop the stale drain marker, else ResolvePluginByName (the per-request
+// content resolver, WHERE deletion_timestamp IS NULL) and ListPlugins hide
+// the resurrected plugin forever (incident 2026-06-04). The drain marker is
+// owned solely by SoftDeletePlugin, which runs on the deletion branch and
+// never overlaps this upsert; updated_at is force-set to now().
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other errors
 // wrap with non-secret (namespace, name) identifiers — pgErr.Message NEVER
@@ -97,6 +103,7 @@ const upsertPluginSQL = `
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
 	    updated_at              = now(),
+	    deletion_timestamp      = NULL,
 	    locked                  = TRUE
 	WHERE plugins.origin = 'cr'
 	RETURNING namespace

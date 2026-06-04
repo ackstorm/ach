@@ -528,6 +528,11 @@ func (f *wiringFakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]lit
 	return nil, nil
 }
 
+// ListAllTeams is a no-op shim — Client interface compliance.
+func (f *wiringFakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
 // §7 stubs — interface satisfaction only (issue #17: /v1 surface).
 func (f *wiringFakeLiteLLM) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	return &litellm.AccessGroupResponse{AccessGroupID: "wiring-" + req.AccessGroupName, AccessGroupName: req.AccessGroupName}, nil

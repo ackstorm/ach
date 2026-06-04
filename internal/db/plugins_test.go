@@ -161,6 +161,62 @@ func TestDeletePlugin_RemovesRow(t *testing.T) {
 	}
 }
 
+// TestUpsertPlugin_ClearsStaleDeletionTimestamp proves a LIVE reconcile
+// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04).
+// For plugins the per-request content resolver (ResolvePluginByName, WHERE
+// deletion_timestamp IS NULL) is the real blast radius: a resurrected plugin
+// must be served again, not fall through to a 404 / marketplace fallback.
+func TestUpsertPlugin_ClearsStaleDeletionTimestamp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	row := db.PluginRow{
+		Namespace: "test", Name: "resurrect-me",
+		StorageLocation: "/crd/resurrect-me.tar.gz", MaxStalenessSeconds: 600, ResourceVersion: "1",
+	}
+	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
+		t.Fatalf("seed upsert: %v", err)
+	}
+	if err := db.SoftDeletePlugin(ctx, pool, "test", "resurrect-me"); err != nil {
+		t.Fatalf("SoftDeletePlugin: %v", err)
+	}
+	// Soft-deleted: the per-request resolver must NOT see it.
+	pre, err := db.ResolvePluginByName(ctx, pool, "test", "resurrect-me", "")
+	if err != nil {
+		t.Fatalf("resolve after soft-delete: %v", err)
+	}
+	if pre != nil {
+		t.Fatalf("resolver returned %+v after soft-delete, want nil", pre)
+	}
+	// Live reconcile of the recreated CR upserts again.
+	row.ResourceVersion = "2"
+	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
+		t.Fatalf("live upsert: %v", err)
+	}
+
+	got, err := db.GetPluginByName(ctx, pool, "test", "resurrect-me")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil || got.DeletionTimestamp != nil {
+		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %+v", got)
+	}
+	// The per-request content resolver must serve the resurrected plugin again.
+	res, err := db.ResolvePluginByName(ctx, pool, "test", "resurrect-me", "")
+	if err != nil {
+		t.Fatalf("resolve after live upsert: %v", err)
+	}
+	if res == nil {
+		t.Fatal("resolver returned nil after live upsert; resurrected plugin still hidden")
+	}
+	if res.Source != "plugin" || res.StorageLocation != "/crd/resurrect-me.tar.gz" {
+		t.Errorf("resolver: got source=%q storage=%q, want plugin / /crd/resurrect-me.tar.gz",
+			res.Source, res.StorageLocation)
+	}
+}
+
 // ----- §12.3 ResolvePluginByName precedence tests -----
 
 // TestResolvePluginByName_CRDWins: bare-name lookup (marketplace="") with
