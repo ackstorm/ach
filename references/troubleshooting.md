@@ -135,6 +135,21 @@ the Synced condition `message` with reason `DuplicateName`; `Synced` stays
 If you see `NameConflict` in `kubectl get pluginmarketplace` output, the cluster
 is running a pre-v0.2.5 operator image. Roll to the current image.
 
+### ❌ `plugin <name>: UpstreamInvalid` in a marketplace stage-2 summary
+The fetched plugin subtree has **neither** `.claude-plugin/plugin.json` **nor**
+any recognized convention component — i.e. the marketplace entry's `source`
+points at the wrong path/dir. Note manifest-less plugins ARE accepted as of
+`verifyPluginContents` (`internal/controller/ach/marketplace_manifest.go`):
+`.claude-plugin/plugin.json` is optional per the Claude Code schema, so a
+plugin with only `commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/
+`themes/`/`monitors/` (or root `SKILL.md`/`.mcp.json`/`.lsp.json`) passes.
+`UpstreamInvalid` therefore means none of those were found at the tar root.
+
+✅ Verify the entry `source` resolves to the **plugin root** (where the
+convention dirs live), not a parent dir or a docs-only directory. The
+marketplace stays `Synced=True`; the good plugins keep serving while the bad
+entry is reported in `status.message`.
+
 ### ❌ Environment stuck in `AccessGroupSynced=False reason=UnresolvedReferences`
 ```bash
 kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.type=="AccessGroupSynced")]}'
