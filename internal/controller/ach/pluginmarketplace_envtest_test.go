@@ -313,7 +313,7 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 }
 
 // mustPluginTarGz returns a minimal tar.gz body containing
-// `.claude-plugin/plugin.json` at the tar root, so verifyPluginManifest
+// `.claude-plugin/plugin.json` at the tar root, so verifyPluginContents
 // (F4) is satisfied. The subtree parameter is retained for call-site
 // readability (it documents what subtree the fake fetcher is mimicking)
 // but is intentionally unused — production tars from git.tarSubtree
@@ -745,7 +745,7 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
 	gitReg := withFakeGitFetcher(t)
 	// F4: fake bodies must be valid tarballs with .claude-plugin/plugin.json
-	// at the entry's subtree path so verifyPluginManifest passes.
+	// at the entry's subtree path so verifyPluginContents passes.
 	// mkGitSubdirPlugin sets Path="plugins/<name>", so the manifest lives at
 	// plugins/<name>/.claude-plugin/plugin.json inside the tarball.
 	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
