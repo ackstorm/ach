@@ -209,6 +209,8 @@ func contentTypeFor(kind string, row *contentRow) string {
 		return contentTypeOctet
 	case kindPlugin:
 		return contentTypeGzip
+	case kindSkill:
+		return contentTypeGzip
 	case kindArtifact:
 		if row.Scope == "directory" {
 			return contentTypeGzip

@@ -60,9 +60,9 @@ const sfLeaderTimeout = 10 * time.Second
 //
 //   - AuthorizedTeams: source for the pk_ Team intersection check
 //     (CS-03 / D-04 step 4).
-//   - ContextPrompts, ContextPlugins, ContextArtifacts: source for the
-//     content allowlist check (CS-04 / D-04 step 5 — cheaper-first
-//     ordering).
+//   - ContextPrompts, ContextPlugins, ContextArtifacts, ContextSkills:
+//     source for the content allowlist check (CS-04 / D-04 step 5 —
+//     cheaper-first ordering).
 //
 // Only the fields the pipeline reads are cached — the projection PK
 // (namespace/name), deletion timestamp, and resource_version are NOT
@@ -79,6 +79,7 @@ type EnvRow struct {
 	ContextPrompts   []string `json:"context_prompts"`
 	ContextPlugins   []string `json:"context_plugins"`
 	ContextArtifacts []string `json:"context_artifacts"`
+	ContextSkills    []string `json:"context_skills"`
 }
 
 // Loader is the function signature for the cache miss path. The

@@ -13,6 +13,7 @@
 //	GET /content/prompt/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
+//	GET /content/skill/{name}
 //
 // /metrics is NOT registered here — Plan 05-06 wires the
 // promhttp.Handler at the cmd-level server setup so the metrics surface
@@ -100,6 +101,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/content/prompt/{name}", d.serve(kindPrompt))
 	r.Get("/content/plugin/{name}", d.serve(kindPlugin))
 	r.Get("/content/artifact/{name}", d.serve(kindArtifact))
+	r.Get("/content/skill/{name}", d.serve(kindSkill))
 }
 
 // serve returns the http.HandlerFunc for one kind. It orchestrates the

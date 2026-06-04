@@ -226,6 +226,8 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 		list = envRow.ContextPlugins
 	case kindArtifact:
 		list = envRow.ContextArtifacts
+	case kindSkill:
+		list = envRow.ContextSkills
 	default:
 		// Unknown kind — router only registers known kinds, so this is
 		// defensive. Map to the cheapest closed-set outcome.
@@ -310,6 +312,22 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
 			MaxStalenessSeconds:   row.MaxStalenessSeconds,
 			Scope:                 row.Scope,
+		}, nil
+	case kindSkill:
+		// Skills resolve via ResolvePath (deterministic skill/<name>.tar.gz),
+		// so the contentRow carries only the staleness inputs — StorageLocation
+		// is unused for the skill arm in pipeline.go (kind != kindPlugin branch).
+		row, err := db.GetSkillByName(ctx, d.Pool, d.Namespace, name)
+		if err != nil {
+			return nil, errInternal()
+		}
+		if row == nil {
+			return nil, errContentNotFound()
+		}
+		return &contentRow{
+			StorageLocation:       row.StorageLocation,
+			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
+			MaxStalenessSeconds:   row.MaxStalenessSeconds,
 		}, nil
 	}
 	// Defensive — chi router only registers known kinds.
