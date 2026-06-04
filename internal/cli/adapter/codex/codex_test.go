@@ -162,9 +162,10 @@ func buildManifest() *manifest.Manifest {
 // to decode the emitted bytes via BurntSushi/toml and assert keys.
 type decodedTOML struct {
 	MCPServers map[string]struct {
-		URL       string            `toml:"url"`
-		Headers   map[string]string `toml:"headers"`
-		Transport string            `toml:"transport"`
+		URL         string            `toml:"url"`
+		HTTPHeaders map[string]string `toml:"http_headers"`
+		Headers     map[string]string `toml:"headers"` // legacy/generic — must be ABSENT
+		Transport   string            `toml:"transport"`
 	} `toml:"mcp_servers"`
 	A2AAgents map[string]struct {
 		URL       string            `toml:"url"`
@@ -227,8 +228,18 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	if got.MCPServers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("mcp_servers.demo-mcp-jwt.url = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].URL)
 	}
-	if got.MCPServers["demo-mcp-jwt"].Transport != "http" {
-		t.Errorf("mcp_servers.demo-mcp-jwt.transport = %q, want \"http\"", got.MCPServers["demo-mcp-jwt"].Transport)
+	// Codex infers HTTP from the presence of `url`; there is NO `transport`
+	// key and static headers live under `http_headers` (a generic `headers`
+	// table is ignored). Schema:
+	// https://developers.openai.com/codex/config-reference.
+	if got.MCPServers["demo-mcp-jwt"].Transport != "" {
+		t.Errorf("mcp_servers.demo-mcp-jwt.transport must be absent (codex has no transport key); got %q", got.MCPServers["demo-mcp-jwt"].Transport)
+	}
+	if len(got.MCPServers["demo-mcp-jwt"].Headers) != 0 {
+		t.Errorf("mcp_servers.demo-mcp-jwt.headers (generic) must be absent; got %v", got.MCPServers["demo-mcp-jwt"].Headers)
+	}
+	if _, ok := got.MCPServers["demo-mcp-jwt"].HTTPHeaders["x-ach-key"]; !ok {
+		t.Errorf("mcp_servers.demo-mcp-jwt.http_headers must carry x-ach-key; got %v", got.MCPServers["demo-mcp-jwt"].HTTPHeaders)
 	}
 	if len(got.A2AAgents) != 1 {
 		t.Errorf("a2a_agents table count = %d, want 1", len(got.A2AAgents))
@@ -260,8 +271,8 @@ func TestRenderRuntime_CredentialPropagation(t *testing.T) {
 		t.Fatalf("toml.Decode: %v\nbytes:\n%s", err, string(writes[0].Content))
 	}
 	for id, srv := range got.MCPServers {
-		if srv.Headers["x-ach-key"] != "pk_demo" {
-			t.Errorf("mcp_servers.%s.headers[x-ach-key] = %q, want %q", id, srv.Headers["x-ach-key"], "pk_demo")
+		if srv.HTTPHeaders["x-ach-key"] != "pk_demo" {
+			t.Errorf("mcp_servers.%s.http_headers[x-ach-key] = %q, want %q", id, srv.HTTPHeaders["x-ach-key"], "pk_demo")
 		}
 	}
 	for id, ag := range got.A2AAgents {
