@@ -233,3 +233,86 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want %s prefix", got.KeyAlias, keys.EkidKeyIDPrefix)
 	}
 }
+
+// --- first-time provision test (user_id=email + no auto key) -------------
+
+// firstTimeLiteLLM drives the env-key create path through provisionUser's
+// first-time (UserNew) branch. UserInfoByEmail is stateful: the first call
+// (LookupCallerTeams, §8.2 step 5) returns an authorized user so the
+// team-intersection passes; the second call (provisionUser, step 6)
+// false-negatives (nil) — the LiteLLM v1.83 #36 broken email lookup — which
+// forces the UserNew branch. UserNew records the request so the test can
+// assert user_id=email + auto_create_key=false.
+type firstTimeLiteLLM struct {
+	*litellm.NoopClient
+	userInfoCalls  int
+	lastUserNewReq *litellm.UserNewRequest
+}
+
+func (c *firstTimeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	c.userInfoCalls++
+	if c.userInfoCalls == 1 {
+		// Auth lookup: caller is a member of the default team.
+		return &litellm.UserInfo{UserID: "llu-" + email, UserEmail: email, Teams: []string{"team-uuid-default"}}, nil
+	}
+	// provisionUser targeted lookup false-negatives → first-time branch.
+	return nil, nil
+}
+
+func (c *firstTimeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}}, nil
+}
+
+func (c *firstTimeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+	c.lastUserNewReq = req
+	return &litellm.UserInfo{UserID: req.UserID, UserEmail: req.UserEmail}, nil
+}
+
+// TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey asserts the
+// env-key create path provisions a brand-new LiteLLM user with a
+// deterministic user_id=email and auto_create_key=false (regression guard
+// for the 2026-06-04 prod finding: no untracked default key leaked).
+func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
+	flm := &firstTimeLiteLLM{NoopClient: &litellm.NoopClient{}}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	deps := Deps{
+		LiteLLM:   flm,
+		DB:        &fakeEkDB{},
+		Store:     store,
+		Pepper:    []byte("test-pepper"),
+		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace: "ach",
+	}
+
+	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
+	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("CreateHandler status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	r := flm.lastUserNewReq
+	if r == nil {
+		t.Fatal("UserNew was not called")
+	}
+	if r.UserID != "user@example.com" {
+		t.Errorf("UserNew user_id: got %q, want %q (deterministic email id)", r.UserID, "user@example.com")
+	}
+	if r.AutoCreateKey == nil || *r.AutoCreateKey != false {
+		t.Errorf("UserNew auto_create_key: got %v, want explicit false", r.AutoCreateKey)
+	}
+}

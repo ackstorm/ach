@@ -345,8 +345,10 @@ func (cr *createReq) provisionUser() (userID string, handled bool) {
 	if userInfo == nil {
 		// First-time user — create + enroll in default team.
 		newInfo, err := cr.deps.LiteLLM.UserNew(cr.ctx, &litellm.UserNewRequest{
-			UserEmail: cr.keyCtx.OwnerEmail,
-			Teams:     []string{defaultTeam},
+			UserEmail:     cr.keyCtx.OwnerEmail,
+			UserID:        cr.keyCtx.OwnerEmail, // deterministic user_id = email (not a random UUID)
+			Teams:         []string{defaultTeam},
+			AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; ek_ is minted via /key/generate
 		})
 		if err != nil {
 			cr.emitLitellmError(err, "envkeys.create: UserNew failed")
