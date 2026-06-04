@@ -8,7 +8,7 @@
 // PAT/Group/Project-token method over git-http; works on gitlab.com AND
 // self-hosted. Bearer is NOT used for GitLab — self-hosted instances
 // configured without Bearer support 401 it and challenge for Basic
-// (verified vs git.ackstorm.com). The scheme is selected centrally in
+// (verified against a self-hosted GitLab instance). The scheme is selected centrally in
 // internal/sources/gitprovider.schemeForProvider.
 //
 // Clone URL: https://<host>/<project>.git — defaults to gitlab.com

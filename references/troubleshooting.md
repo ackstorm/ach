@@ -120,7 +120,7 @@ Artifact) and `Synced=True` (PluginMarketplace) condition messages as
 **Self-hosted GitLab + git transport (as of 2026-06-04)**: ACH authenticates
 GitLab git-smart-http with HTTP Basic `oauth2:<token>` (GitLab's documented
 PAT/Group/Project-token method), NOT `Authorization: Bearer`. Self-hosted
-instances configured without Bearer support (e.g. `git.ackstorm.com`) reject
+instances configured without Bearer support (e.g. `git.example.com`) reject
 Bearer with `401 / sources: unauthorized` even when the token, scope, and
 project path are all valid. Basic is selected automatically for `gitlab`
 source types and for marketplace clones whose host matches the marketplace's

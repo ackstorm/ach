@@ -34,7 +34,7 @@ const (
 	// AuthBasicOAuth2 sends Authorization: Basic base64("oauth2:"+token).
 	// GitLab's documented PAT/Group/Project-token method over git-http and
 	// the ONLY scheme self-hosted GitLab instances configured without
-	// Bearer support honor (verified vs git.ackstorm.com: Bearer -> 401,
+	// Bearer support honor (verified against a self-hosted GitLab instance: Bearer -> 401,
 	// Basic oauth2:<token> -> 200).
 	AuthBasicOAuth2
 )

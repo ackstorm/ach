@@ -63,12 +63,12 @@ func TestResolvedTransport(t *testing.T) {
 
 func TestNormalizeGitLabHost(t *testing.T) {
 	cases := map[string]string{
-		"git.ackstorm.com":          "git.ackstorm.com",
-		"https://git.ackstorm.com":  "git.ackstorm.com",
-		"http://git.ackstorm.com":   "git.ackstorm.com",
-		"HTTPS://Git.Ackstorm.com/": "Git.Ackstorm.com",
-		"":                          "",
-		"gitlab.com/":               "gitlab.com",
+		"git.example.com":          "git.example.com",
+		"https://git.example.com":  "git.example.com",
+		"http://git.example.com":   "git.example.com",
+		"HTTPS://Git.Example.com/": "Git.Example.com",
+		"":                         "",
+		"gitlab.com/":              "gitlab.com",
 	}
 	for in, want := range cases {
 		if got := sources.NormalizeGitLabHost(in); got != want {

@@ -339,7 +339,7 @@ func TestDispatchMarketplacePlugin_GitHub_ShalessPreResolves(t *testing.T) {
 // source fetcher: a bare host, an https:// host, and a trailing-slash host
 // all yield the SAME https clone URL, and empty defaults to gitlab.com.
 func TestMarketplaceOwnRepo_GitLabHostNormalize(t *testing.T) {
-	for _, host := range []string{"git.ackstorm.com", "https://git.ackstorm.com", "https://git.ackstorm.com/"} {
+	for _, host := range []string{"git.example.com", "https://git.example.com", "https://git.example.com/"} {
 		mp := &achv1alpha1.PluginMarketplace{
 			Spec: achv1alpha1.PluginMarketplaceSpec{
 				Type:   "gitlab",
@@ -350,8 +350,8 @@ func TestMarketplaceOwnRepo_GitLabHostNormalize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("host %q: %v", host, err)
 		}
-		if url != "https://git.ackstorm.com/g/p.git" {
-			t.Errorf("host %q: got %q want https://git.ackstorm.com/g/p.git", host, url)
+		if url != "https://git.example.com/g/p.git" {
+			t.Errorf("host %q: got %q want https://git.example.com/g/p.git", host, url)
 		}
 		if ref != "main" {
 			t.Errorf("host %q: ref = %q want main", host, ref)
@@ -390,10 +390,10 @@ func TestSchemeForCloneURL(t *testing.T) {
 		cloneURL string
 		want     sourcesgit.AuthScheme
 	}{
-		{"self-hosted gitlab host match", gl("https://git.ackstorm.com"), "https://git.ackstorm.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"bare host match", gl("git.ackstorm.com"), "https://git.ackstorm.com/g/p.git", sourcesgit.AuthBasicOAuth2},
+		{"self-hosted gitlab host match", gl("https://git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
+		{"bare host match", gl("git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
 		{"default gitlab.com match", gl(""), "https://gitlab.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"github Kind entry inside gitlab mp", gl("https://git.ackstorm.com"), "https://github.com/o/r.git", sourcesgit.AuthBearer},
+		{"github Kind entry inside gitlab mp", gl("https://git.example.com"), "https://github.com/o/r.git", sourcesgit.AuthBearer},
 		{"non-gitlab marketplace", nonGitlab, "https://github.com/o/r.git", sourcesgit.AuthBearer},
 	}
 	for _, tc := range cases {
