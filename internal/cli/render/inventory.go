@@ -34,6 +34,40 @@ type AdminObjectView struct {
 // table footnote.
 const syncFalseGreen = "fresh*"
 
+// sectionHeader returns the tab-separated column header for a kind. plugins
+// gains a SOURCE column (standalone vs marketplace); marketplaces shows the
+// object's STATUS + contained-plugin count; all other kinds use the base
+// NAME/NAMESPACE/VERSION/SYNC/AGE/ORIGIN layout.
+func sectionHeader(kind string) string {
+	switch kind {
+	case "plugins":
+		return "NAME\tSOURCE\tVERSION\tSYNC\tAGE\tORIGIN"
+	case "marketplaces":
+		return "NAME\tNAMESPACE\tVERSION\tSTATUS\tPLUGINS\tAGE"
+	default:
+		return "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN"
+	}
+}
+
+// sectionRow renders one row's cells for a kind, matching sectionHeader's
+// column order. Extra lookups on a nil map return "" (safe in Go).
+func sectionRow(kind string, r AdminObjectView, now time.Time) string {
+	switch kind {
+	case "plugins":
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Extra["source"]), dash(r.Version),
+			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
+	case "marketplaces":
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version),
+			syncCell(r), dash(r.Extra["pluginsCount"]), ageOf(r.UpdatedAt, now))
+	default:
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version),
+			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
+	}
+}
+
 // FormatAdminInventory renders the kind→rows map as kind-sectioned, tab-aligned
 // tables. Groups print in stable (alphabetical) kind order; rows within a group
 // sort by (namespace, name) for reproducible output regardless of server
@@ -71,14 +105,12 @@ func FormatAdminInventory(grouped map[string][]AdminObjectView) string {
 			return sorted[a].Name < sorted[b].Name
 		})
 		tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN")
+		_, _ = fmt.Fprintln(tw, sectionHeader(kind))
 		for _, r := range sorted {
 			if r.Sync == syncFalseGreen {
 				falseGreen = true
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				dash(r.Name), dash(r.Namespace), dash(r.Version),
-				syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
+			_, _ = fmt.Fprintln(tw, sectionRow(kind, r, now))
 		}
 		_ = tw.Flush()
 	}

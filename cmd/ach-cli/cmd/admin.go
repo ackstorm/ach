@@ -216,9 +216,16 @@ Subcommands:
 
 // adminListKinds is the closed set of inventory kinds, also the fan-out set
 // for `ach admin list all`. Order here is the order `all` renders sections.
+//
+// litellm-connections and external-refs are deliberately excluded: both are
+// operator-internal bookkeeping (the LiteLLM connection config singleton and
+// the per-CR upstream-refresh cache ledger), not user-declared objects, so
+// they only added noise to the inventory. Their server-side admin endpoints
+// (/platform/admin/{litellm-connections,external-refs}) still exist; they are
+// simply no longer surfaced through the CLI.
 var adminListKinds = []string{
 	"environments", "plugins", "prompts", "artifacts",
-	"marketplaces", "bips", "litellm-connections", "external-refs",
+	"marketplaces", "bips",
 }
 
 func isAdminListKind(k string) bool {
@@ -284,13 +291,18 @@ func newAdminListCmd() *cobra.Command {
 		Long: `Read-only inventory of ACH-defined objects sourced from the Postgres
 projections (version + projection-derived sync status). Admin-only (pk-).
 
-kind ∈ {environments, plugins, prompts, artifacts, marketplaces, bips,
-litellm-connections, external-refs} or 'all' to fan out across every kind.
+kind ∈ {environments, plugins, prompts, artifacts, marketplaces, bips}
+or 'all' to fan out across every kind.
+
+PLUGINS merges standalone Plugin CRs (SOURCE=plugin) with plugins discovered
+inside marketplaces (SOURCE=marketplace, shown as <name>@<marketplace>).
+MARKETPLACES shows the marketplace objects themselves (Synced status +
+plugin count), not their contained plugins.
 
 SYNC column:
-  Available / Degraded(<reason>) / Pending   environments (Available condition)
+  Synced / Degraded(<reason>) / Pending      marketplaces, environments
   fresh / STALE(<age> over) / never          content kinds (refresh staleness)
-  projected                                  bips / litellm-connections
+  projected                                  bips
 
 Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
 not content presence (only plugins are truly content-gated).`,

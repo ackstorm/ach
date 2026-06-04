@@ -125,6 +125,7 @@ func pluginRowToView(r db.PluginRow, now time.Time) AdminObjectView {
 		Sync:       sync,
 		SyncReason: reason,
 		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+		Extra:      map[string]string{"source": "plugin"},
 	}
 }
 
@@ -159,17 +160,51 @@ func artifactRowToView(r db.ArtifactRow, now time.Time) AdminObjectView {
 	}
 }
 
-func marketplacePluginToView(r db.MarketplacePlugin, now time.Time) AdminObjectView {
+// marketplacePluginAsPluginView maps a marketplace_plugins row into the PLUGINS
+// section: the name is scoped as "<plugin>@<marketplace>" and the source is
+// "marketplace" so the CLI can distinguish it from a standalone Plugin CR.
+// Version is the upstream rev (no resource_version on marketplace plugins).
+func marketplacePluginAsPluginView(r db.MarketplacePlugin, now time.Time) AdminObjectView {
 	sync, reason := contentSync(optTime(r.LastSuccessfulRefresh), r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "marketplace-plugin",
-		Namespace:  r.MarketplaceName, // marketplace name occupies the scope column
-		Name:       r.Name,
-		Version:    r.UpstreamRev, // no resource_version; upstream rev (SHA/ETag) is the meaningful version
+		Kind:       "plugin",
+		Name:       r.Name + "@" + r.MarketplaceName,
+		Version:    r.UpstreamRev,
 		Sync:       sync,
 		SyncReason: reason,
 		UpdatedAt:  rfc3339OrEmpty(r.LastSuccessfulRefresh),
-		Extra:      map[string]string{"marketplace": r.MarketplaceName},
+		Extra:      map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
+	}
+}
+
+// marketplaceRowToView maps a marketplaces (object) row into the MARKETPLACES
+// section. The Synced condition status/reason collapses into the SYNC
+// vocabulary: True→Synced, False→Degraded(reason), anything else→Pending —
+// the same vocabulary the environments inventory uses.
+func marketplaceRowToView(r db.MarketplaceRow) AdminObjectView {
+	sync, reason := marketplaceSync(r.SyncedStatus, r.SyncedReason)
+	return AdminObjectView{
+		Kind:       "marketplace",
+		Namespace:  r.Namespace,
+		Name:       r.Name,
+		Version:    r.ResourceVersion,
+		Sync:       sync,
+		SyncReason: reason,
+		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+		Extra:      map[string]string{"pluginsCount": strconv.Itoa(r.PluginsCount)},
+	}
+}
+
+// marketplaceSync collapses the projected Synced condition into the inventory
+// SYNC vocabulary.
+func marketplaceSync(status, reason string) (sync, syncReason string) {
+	switch status {
+	case "True":
+		return "Synced", ""
+	case "False":
+		return "Degraded", reason
+	default:
+		return "Pending", ""
 	}
 }
 

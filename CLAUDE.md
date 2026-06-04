@@ -64,9 +64,9 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
 **Source of truth (Phase D, #34)**: the operator is the only writer to Postgres
-(8 projection tables incl. `environments`, `plugins`, `backend_identity_policies`,
-`external_refs`, `marketplace_plugins`); platform-api, forwarder, and
-content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
+(9 projection tables incl. `environments`, `plugins`, `backend_identity_policies`,
+`external_refs`, `marketplace_plugins`, `marketplaces`); platform-api, forwarder,
+and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
 non-operator service. The forwarder's only remaining k8s read is the
 `ach-jwt-signing-keys` Secret informer; the platform-api's only remaining k8s

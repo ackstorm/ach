@@ -44,6 +44,13 @@ import (
 // is "<marketplace_name>/<plugin_name>".
 const marketplacePluginsChannel = "ach_marketplace_plugins_changed"
 
+// marketplacesChannel carries the NOTIFY for the marketplaces projection
+// (the marketplace OBJECT + its Synced status), emitted from the same tx as
+// the UpsertMarketplace write. No service LISTENs on it today — the admin
+// inventory reads Postgres on demand — so it is parity-only with the other
+// projection channels.
+const marketplacesChannel = "ach_marketplaces_changed"
+
 // marketplaceJSONMaxBytes is the hard cap on the marketplace.json upstream
 // body itself (T-02-06-03 mitigation: bounded body read keeps adversarial
 // upstreams from blowing memory). 5 MiB is generous — Hub §12.1 expects a
@@ -145,6 +152,9 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 					if err := achdb.DeleteMarketplacePlugin(ctx, r.DB, cr.Name, row.Name); err != nil {
 						return ctrl.Result{}, fmt.Errorf("db delete marketplace_plugin %s/%s: %w", cr.Name, row.Name, err)
 					}
+				}
+				if err := achdb.DeleteMarketplace(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("db delete marketplace %s/%s: %w", cr.Namespace, cr.Name, err)
 				}
 			}
 			controllerutil.RemoveFinalizer(&cr, pluginMarketplaceFinalizer)
@@ -624,6 +634,36 @@ type pluginFailure struct {
 	reason string
 }
 
+// buildMarketplaceRow assembles the marketplaces projection row from the CR's
+// terminal status. syncedStatus is the metav1.Condition.Status string
+// ("True"/"False"); syncedReason is the condition Reason on a non-Synced
+// outcome (empty on Synced). Pure — unit-tested without a DB.
+func buildMarketplaceRow(cr *achv1alpha1.PluginMarketplace, syncedStatus, syncedReason string) achdb.MarketplaceRow {
+	return achdb.MarketplaceRow{
+		Namespace:       cr.Namespace,
+		Name:            cr.Name,
+		SyncedStatus:    syncedStatus,
+		SyncedReason:    syncedReason,
+		PluginsCount:    cr.Status.PluginsCount,
+		ResourceVersion: cr.ResourceVersion,
+	}
+}
+
+// projectMarketplace mirrors the CR's terminal Synced status into the
+// marketplaces projection table + NOTIFY ach_marketplaces_changed, in one tx.
+// No-op when r.DB is nil (unit tests / DB-less runs). A projection error is
+// returned so the caller requeues; the k8s status subresource remains the
+// source of truth and the next reconcile re-projects.
+func (r *PluginMarketplaceReconciler) projectMarketplace(ctx context.Context, cr *achv1alpha1.PluginMarketplace, syncedStatus, syncedReason string) error {
+	if r.DB == nil {
+		return nil
+	}
+	row := buildMarketplaceRow(cr, syncedStatus, syncedReason)
+	return achdb.WithTxNotify(ctx, r.DB, marketplacesChannel, cr.Name, func(tx pgx.Tx) error {
+		return achdb.UpsertMarketplaceTx(ctx, tx, row)
+	})
+}
+
 // markSyncedTrue writes Synced=True with the supplied message and updates
 // the CR's status subresource. The reason is always ReasonSynced.
 // Returns (ctrl.Result{RequeueAfter: requeue}, err) so callers can return
@@ -665,6 +705,9 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
+	}
+	if perr := r.projectMarketplace(ctx, cr, "True", ""); perr != nil {
+		return ctrl.Result{RequeueAfter: requeue}, perr
 	}
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
@@ -709,6 +752,9 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 		// Status update failure is logged by the controller-runtime
 		// recorder via the Reconcile return; surface it directly.
 		return ctrl.Result{}, err
+	}
+	if perr := r.projectMarketplace(ctx, cr, "False", reason); perr != nil {
+		return ctrl.Result{}, perr
 	}
 	switch reason {
 	case ReasonInvalidConfig,
