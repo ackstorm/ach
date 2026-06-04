@@ -3118,7 +3118,7 @@ or the prefix listing (directory scope).</p>
 <tbody>
 <tr>
 <td><code>host</code> <em>string</em></td>
-<td>Host of the GitLab instance. Defaults to gitlab.com when empty.</td>
+<td>Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Prompt /<br />PluginMarketplace). Defaults to gitlab.com when empty.</td>
 <td></td>
 <td></td>
 </tr>
