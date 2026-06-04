@@ -23,6 +23,8 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [PluginMarketplaceList](#pluginmarketplacelist)
 - [Prompt](#prompt)
 - [PromptList](#promptlist)
+- [Skill](#skill)
+- [SkillList](#skilllist)
 
 
 
@@ -246,6 +248,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -275,6 +278,7 @@ _Appears in:_
 | `prompts` _string array_ | Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace. Content-gated like<br />Plugins. Same strict deny-pattern as Plugins (no "/" "\" ? # %<br />whitespace, control chars or DEL); "@" is reserved for the future<br />name@marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
 #### Environment
@@ -361,6 +365,7 @@ _Appears in:_
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions carries Environment condition types per §6.6 closed set:<br />Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced. |  |  |
 | `unresolvedRuntime` _[UnresolvedRuntime](#unresolvedruntime)_ | UnresolvedRuntime lists runtime references not currently registered in<br />LiteLLM. Surfaced for `kubectl describe environment` per §6.4. The<br />field contract belongs here from Phase 1; the reconciler in Phase 2<br />rewrites it on every reconcile. |  |  |
 | `unresolvedContextPlugins` _string array_ | UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present. | \{  \} |  |
+| `unresolvedContextSkills` _string array_ | UnresolvedContextSkills lists context.skills entries whose content has<br />not yet been synced (last_successful_refresh IS NULL in the skills<br />projection row). A non-empty list blocks ExecutionResourcesResolved<br />from becoming True — same content-gating as UnresolvedContextPlugins. | \{  \} |  |
 | `litellmAccessGroup` _string_ | LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set. |  |  |
 
 
@@ -378,6 +383,7 @@ _Appears in:_
 - [PluginMarketplaceStatus](#pluginmarketplacestatus)
 - [PluginStatus](#pluginstatus)
 - [PromptStatus](#promptstatus)
+- [SkillStatus](#skillstatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -403,6 +409,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -424,6 +431,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -447,6 +455,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -478,6 +487,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -922,6 +932,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -968,6 +979,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -993,6 +1005,102 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the Kubernetes Secret name. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `key` _string_ | Key is the data key inside the Secret. |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
+#### Skill
+
+
+
+Skill is the Schema for the skills API.
+
+
+
+_Appears in:_
+- [SkillList](#skilllist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `Skill` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[SkillSpec](#skillspec)_ |  |  |  |
+| `status` _[SkillStatus](#skillstatus)_ |  |  |  |
+
+
+#### SkillList
+
+
+
+SkillList contains a list of Skill.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `SkillList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[Skill](#skill) array_ |  |  |  |
+
+
+#### SkillSpec
+
+
+
+SkillSpec defines the desired state of Skill.
+
+A Skill references an upstream location whose subtree contains an agent
+skill directory (a root directory with a SKILL.md manifest plus optional
+scripts/, references/, and assets/ subdirectories; see
+https://agentskills.io/specification). ACH fetches the subtree and serves
+it as a .tar.gz archive. Unlike Plugin, no component filter is applied —
+the fetched skill tree is served verbatim.
+
+CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED; spec.refresh.interval,
+when set, MUST NOT exceed spec.refresh.maxStaleness.
+
+
+
+_Appears in:_
+- [Skill](#skill)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | Type names the upstream source kind. Drives which one of the<br />type-specific subobjects below is required. |  | Enum: [github gitlab bitbucket s3 gcs http] <br />Required: \{\} <br /> |
+| `refresh` _[RefreshBlock](#refreshblock)_ | Refresh declares poll cadence and staleness bound (CRD-04). |  | Required: \{\} <br /> |
+| `github` _[GitHubSource](#githubsource)_ | GitHub source. Required when spec.type == "github". |  |  |
+| `gitlab` _[GitLabSource](#gitlabsource)_ | GitLab source. Required when spec.type == "gitlab". |  |  |
+| `bitbucket` _[BitbucketSource](#bitbucketsource)_ | Bitbucket source. Required when spec.type == "bitbucket". |  |  |
+| `s3` _[S3Source](#s3source)_ | S3 source. Required when spec.type == "s3". |  |  |
+| `gcs` _[GCSSource](#gcssource)_ | GCS source. Required when spec.type == "gcs". |  |  |
+| `http` _[HTTPSource](#httpsource)_ | HTTP source. Required when spec.type == "http". |  |  |
+
+
+#### SkillStatus
+
+
+
+SkillStatus defines the observed state of Skill.
+
+
+
+_Appears in:_
+- [Skill](#skill)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6. |  |  |
+| `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
+| `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
 
 
 #### SourceAuthSecretRef
