@@ -13,6 +13,7 @@ package ach
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 
@@ -119,6 +120,20 @@ func (f *accessGroupFakeImpl) GetAccessGroupByName(_ context.Context, name strin
 }
 
 func (f *accessGroupFakeImpl) UpdateAccessGroup(_ context.Context, id string, req litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	// Round-trip the request through the JSON marshaler so the fake
+	// observes the SAME wire semantics LiteLLM sees, instead of the raw
+	// Go struct. This is the gap that let the omitempty bug ship: a
+	// struct-level fake is blind to `omitempty`, so an empty managed list
+	// looked non-nil here even though it was dropped on the wire. After
+	// the round-trip the `!= nil` guards below mean absent=keep / `[]`=clear
+	// exactly like the upstream PUT (absent → omitempty/null → nil → keep;
+	// `[]` → non-nil empty → clear).
+	if raw, err := json.Marshal(req); err == nil {
+		var wire litellm.AccessGroupUpdateRequest
+		if err := json.Unmarshal(raw, &wire); err == nil {
+			req = wire
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var found *litellm.AccessGroupResponse

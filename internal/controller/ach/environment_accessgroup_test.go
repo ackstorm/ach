@@ -16,6 +16,7 @@ package ach
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -290,6 +291,71 @@ func TestAccessGroupSynced_DriftCorrected(t *testing.T) {
 	}
 	if got := accessGroupFake.UpdateCallsFor("test-env-ag-drift"); got < 1 {
 		t.Errorf("update call count = %d; want >= 1 (PUT to correct drift)", got)
+	}
+}
+
+// TestAccessGroupSynced_ClearsEmptiedRuntimeDimensions is the regression
+// guard for the omitempty-drops-the-clear bug. An existing access group
+// has stale mcp + agent bindings; the Environment's spec.runtime empties
+// both. The reconciler must PUT `[]` for those dimensions so LiteLLM
+// clears them — proved by the condition message (built from the PUT
+// RESPONSE's len()) ending in "0 mcp, 0 agent".
+//
+// Pre-fix this is RED two ways: (1) mapResolve returns nil for empty
+// input so the controller sends nil, and (2) omitempty drops the nil/[]
+// on the wire — the fake's JSON round-trip then sees the field absent,
+// its `!= nil` guard SKIPS the clear, the stale "1 mcp" survives, and the
+// message reads "1 mcp, 1 agent". Post-fix the controller sends a non-nil
+// `[]` that survives marshaling → fake clears → "0 mcp, 0 agent".
+func TestAccessGroupSynced_ClearsEmptiedRuntimeDimensions(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
+	// Pre-seed a stored AG carrying stale mcp + agent bindings that the
+	// spec below no longer references; team matches spec (no team drift).
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      "ag-uuid-test-env-ag-clear",
+		AccessGroupName:    "test-env-ag-clear",
+		AccessMCPServerIDs: []string{"mcp-stale"},
+		AccessAgentIDs:     []string{"agent-stale"},
+		AssignedTeamIDs:    []string{"t-uuid-default"},
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-ag-clear",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         emptyRuntimeBlock(), // mcp + a2a emptied
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	var final achv1alpha1.Environment
+	if !Eventually(func() bool {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &final); err != nil {
+			return false
+		}
+		c := agCondition(&final)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced" &&
+			strings.Contains(c.Message, "0 mcp, 0 agent")
+	}, 15*time.Second, 250*time.Millisecond) {
+		c := agCondition(&final)
+		msg := "<nil>"
+		if c != nil {
+			msg = c.Message
+		}
+		t.Fatalf("expected True/Synced with cleared mcp/agent (message containing %q); got message=%q, conditions=%+v",
+			"0 mcp, 0 agent", msg, final.Status.Conditions)
+	}
+	if got := accessGroupFake.UpdateCallsFor("test-env-ag-clear"); got < 1 {
+		t.Errorf("update call count = %d; want >= 1 (PUT to clear emptied dimensions)", got)
 	}
 }
 
