@@ -237,3 +237,30 @@ func TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes(t *testing.T) {
 		t.Errorf("non-MCP key dropped from re-encoded fw.Content:\n%s", fw.Content)
 	}
 }
+
+// TestRuntimeKindForKey proves the hydrate-summary component tally maps every
+// adapter's contributed runtime key shape to the right kind, and ignores
+// non-runtime keys (so 0 runtime servers yields no "mcp"/"a2a" bucket and the
+// summary never prints "0 mcp"). MCP prefixes vary per adapter: mcpServers.
+// (claude/gemini/pimono), mcp_servers. (codex), mcp. (opencode); A2A is
+// a2aAgents. (most) / a2a_agents. (codex).
+func TestRuntimeKindForKey(t *testing.T) {
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{"mcpServers.my-mcp", "mcp"},   // claude/gemini/pimono
+		{"mcp_servers.my-mcp", "mcp"},  // codex (TOML snake_case)
+		{"mcp.my-mcp", "mcp"},          // opencode
+		{"a2aAgents.my-agent", "a2a"},  // claude/gemini/opencode/most
+		{"a2a_agents.my-agent", "a2a"}, // codex
+		{"ach:begin", ""},              // composite marker — not a runtime component
+		{"settings.foo", ""},           // unrelated key
+		{"", ""},                       // empty
+	}
+	for _, tc := range cases {
+		if got := runtimeKindForKey(tc.key); got != tc.want {
+			t.Errorf("runtimeKindForKey(%q) = %q; want %q", tc.key, got, tc.want)
+		}
+	}
+}

@@ -762,6 +762,23 @@ func TestHydrateSummary(t *testing.T) {
 	}
 }
 
+// TestHydrateSummaryRuntimeKinds proves runtime components (mcp/a2a/model)
+// merged into ProjectedByKind render in the first summary line, alpha-sorted
+// alongside plugin kinds, with no pluralization ("1 mcp" not "1 mcps").
+func TestHydrateSummaryRuntimeKinds(t *testing.T) {
+	got := summaryFromResult(hydrate.Result{
+		PlatformID:      "claude-code",
+		FilesWritten:    110,
+		FilesPreserved:  0,
+		ProjectedByKind: map[string]int{"skills": 35, "mcp": 1, "a2a": 2, "model": 3},
+	})
+	// Alpha order over the kind keys: a2a, mcp, model, skills.
+	wantLine := "✓ 2 a2a, 1 mcp, 3 model, 35 skills"
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("summary kind line = %q; want it to contain %q", got, wantLine)
+	}
+}
+
 // TestValidateEnvHeaderValue exercises security 2.10 — CRLF / NUL /
 // control-byte rejection on the x-ach-environment header value.
 func TestValidateEnvHeaderValue(t *testing.T) {

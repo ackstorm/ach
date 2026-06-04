@@ -365,6 +365,18 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 			return RenderResult{}, err
 		}
 		result.WrittenFiles = append(result.WrittenFiles, entry)
+		// Tally runtime components (mcp/a2a) by the settings keys that
+		// actually landed in the adapter config, so the hydrate summary
+		// can never disagree with the file the user inspects (the manifest
+		// is deliberately NOT the count source).
+		for _, k := range fw.Keys {
+			if kind := runtimeKindForKey(k); kind != "" {
+				if result.ProjectedByKind == nil {
+					result.ProjectedByKind = map[string]int{}
+				}
+				result.ProjectedByKind[kind]++
+			}
+		}
 	}
 
 	// Projection leg (D-05). Skipped under the scope gate (--only-runtime).
@@ -375,6 +387,25 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	}
 
 	return result, nil
+}
+
+// runtimeKindForKey maps a contributed settings key to the hydrate-summary
+// component kind, or "" when the key is not a runtime component. Prefixes
+// vary per adapter: MCP is "mcpServers." (claude/gemini/pimono),
+// "mcp_servers." (codex, TOML) or "mcp." (opencode); A2A is "a2aAgents."
+// (most) or "a2a_agents." (codex). The three MCP prefixes are mutually
+// exclusive (4th byte differs), so no key is double-counted.
+func runtimeKindForKey(k string) string {
+	switch {
+	case strings.HasPrefix(k, "mcpServers."),
+		strings.HasPrefix(k, "mcp_servers."),
+		strings.HasPrefix(k, "mcp."):
+		return "mcp"
+	case strings.HasPrefix(k, "a2aAgents."),
+		strings.HasPrefix(k, "a2a_agents."):
+		return "a2a"
+	}
+	return ""
 }
 
 // projectPlugins runs the route.Project projection leg for every extracted

@@ -486,6 +486,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		}
 		runtimeFiles = rf
 		result.FilesWritten += len(rf)
+		tallyModelKind(&result, m)
 	}
 
 	// Step 11: STATE-05 / D-16 inverse-merge sync. maybeKill(11)
@@ -994,6 +995,23 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 // runtimeMirrorBuckets is the closed set of runtime mirror files, in a
 // deterministic order so the written set + state rows are byte-stable.
 var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
+
+// tallyModelKind records the manifest's runtime models in the hydrate-summary
+// tally. Models have no adapter destination (all share the /v1 endpoint), so
+// they never reach settings.json — they live only in the runtime mirror
+// (model.json), which writeRuntimeMirror writes iff there are models. Counting
+// from the manifest block the mirror just serialized keeps the summary's
+// `N model` in lockstep with model.json. No-op when no models are present, so
+// the summary never prints `0 model`.
+func tallyModelKind(result *Result, m *manifest.Manifest) {
+	if m == nil || m.Runtime == nil || len(m.Runtime.Models) == 0 {
+		return
+	}
+	if result.ProjectedByKind == nil {
+		result.ProjectedByKind = map[string]int{}
+	}
+	result.ProjectedByKind["model"] += len(m.Runtime.Models)
+}
 
 // writeRuntimeMirror serializes the manifest runtime block into
 // credential-free <achDir>/runtime/{mcp,a2a,model}.json snapshots and returns
