@@ -690,6 +690,12 @@ func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, alias string) ([]litel
 	return f.listTeamsBehaviour(alias)
 }
 
+// ListAllTeams is a no-op shim — interface compliance only; the SSO
+// handler does not call it.
+func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
 func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
 // Unused-method shims to satisfy the wider litellm.Client interface.

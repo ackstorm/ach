@@ -239,6 +239,18 @@ func (f *accessGroupFakeImpl) ListTeamsByAlias(_ context.Context, alias string) 
 	return nil, nil
 }
 
+// ListAllTeams returns every team across all aliases — interface
+// compliance; no controller test exercises it.
+func (f *accessGroupFakeImpl) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []litellm.TeamListEntry
+	for _, entries := range f.teamsByAlias {
+		out = append(out, entries...)
+	}
+	return out, nil
+}
+
 func (f *accessGroupFakeImpl) CreateCallsFor(name string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

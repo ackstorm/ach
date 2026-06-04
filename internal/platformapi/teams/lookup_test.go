@@ -17,13 +17,24 @@ import (
 // other 9 interface methods exist solely to satisfy the compile-time
 // canary `var _ litellm.Client = (*fakeLiteLLM)(nil)` below.
 type fakeLiteLLM struct {
-	userInfo func(email string) (*litellm.UserInfo, error)
-	calls    atomic.Int64
+	userInfo     func(email string) (*litellm.UserInfo, error)
+	listAllTeams func() ([]litellm.TeamListEntry, error)
+	calls        atomic.Int64
 }
 
 func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
 	f.calls.Add(1)
 	return f.userInfo(email)
+}
+
+// ListAllTeams returns the configured team list (or an empty slice when the
+// behaviour func is unset) — interface compliance plus alias-resolution
+// fixture for LookupCallerTeams.
+func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	if f.listAllTeams != nil {
+		return f.listAllTeams()
+	}
+	return nil, nil
 }
 
 // Stubs for the rest of the litellm.Client interface — return zero
@@ -57,20 +68,65 @@ func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateReque
 // discipline established in 03-01-SUMMARY.md Rule-3 ripple).
 var _ litellm.Client = (*fakeLiteLLM)(nil)
 
-// TestLookupCallerTeamsHappy — mock returns *UserInfo with two teams;
-// the helper returns those teams verbatim.
+// TestLookupCallerTeamsHappy — mock returns *UserInfo with two teams (IDs);
+// ListAllTeams maps each to its alias and the helper returns BOTH the IDs
+// and the resolved aliases (order-independent set).
 func TestLookupCallerTeamsHappy(t *testing.T) {
 	ll := &fakeLiteLLM{
 		userInfo: func(string) (*litellm.UserInfo, error) {
 			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c", Teams: []string{"team-a", "team-b"}}, nil
+		},
+		listAllTeams: func() ([]litellm.TeamListEntry, error) {
+			return []litellm.TeamListEntry{
+				{TeamID: "team-a", TeamAlias: "alias-a"},
+				{TeamID: "team-b", TeamAlias: "alias-b"},
+			}, nil
 		},
 	}
 	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
 	if err != nil {
 		t.Fatalf("LookupCallerTeams: %v", err)
 	}
-	if len(got) != 2 || got[0] != "team-a" || got[1] != "team-b" {
-		t.Fatalf("unexpected teams: %#v", got)
+	want := map[string]bool{"team-a": true, "alias-a": true, "team-b": true, "alias-b": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v, want keys %#v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected team token %q in %#v", g, got)
+		}
+	}
+}
+
+// TestLookupCallerTeamsResolvesAliases — user's teams are LiteLLM IDs; the
+// helper resolves each to its alias via ListAllTeams and returns BOTH forms
+// so HasIntersect matches authorized_teams whether they hold ids or aliases.
+func TestLookupCallerTeamsResolvesAliases(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c",
+				Teams: []string{"team-platform", "6a31a295"}}, nil
+		},
+		listAllTeams: func() ([]litellm.TeamListEntry, error) {
+			return []litellm.TeamListEntry{
+				{TeamID: "team-platform", TeamAlias: "platform"},
+				{TeamID: "6a31a295", TeamAlias: "default"},
+				{TeamID: "zzz", TeamAlias: "run"},
+			}, nil
+		},
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	want := map[string]bool{"team-platform": true, "platform": true, "6a31a295": true, "default": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v, want keys %#v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected team token %q in %#v", g, got)
+		}
 	}
 }
 

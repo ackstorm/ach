@@ -11,9 +11,17 @@ import (
 )
 
 // LookupCallerTeams returns the LiteLLM-side team memberships for the
-// caller identified by their owner email. Phase 3 calls LiteLLM on every
-// request; Phase 4 will replace this with a Redis-cached variant
-// (60s TTL, same cache the keystore.Resolver uses).
+// caller identified by their owner email, expressed as BOTH the raw
+// LiteLLM team IDs and their resolved aliases. UserInfoByEmail yields the
+// team IDs (`team-platform`, `6a31a295-…`); `authorized_teams` (the env
+// projection) stores aliases (`default`, `run`, …), so returning only the
+// IDs makes HasIntersect false-negative every non-admin member of an
+// authorized team (incident 2026-06-04). This helper round-trips
+// ListAllTeams to build an id→alias map and returns both forms so the
+// intersection matches whichever identifier the env authorized by. The
+// ListAllTeams round-trip is also the natural seam for the Phase-4 Redis
+// cache (60s TTL, same cache the keystore.Resolver uses) — Phase 3 calls
+// LiteLLM on every request.
 //
 // Semantics:
 //
@@ -22,12 +30,13 @@ import (
 //     yet → return (empty slice, nil). Downstream team-intersection
 //     treats this as zero intersection → 403 unauthorized_team for
 //     protected paths.
-//   - LiteLLM returns transport / 5xx error: return (nil, err). The
-//     handler emits 503 litellm_unreachable.
-//   - LiteLLM returns 200 with `teams` array: return ([...team names],
-//     nil). A nil or empty `teams` field is normalized to a zero-length
-//     slice so downstream `HasIntersect` consumers always see a real
-//     slice.
+//   - LiteLLM returns transport / 5xx error from UserInfoByEmail or
+//     ListAllTeams: return (nil, err). The handler emits 503
+//     litellm_unreachable.
+//   - LiteLLM returns 200 with `teams` array: return a de-duplicated set
+//     of {id, alias} per caller team (empty aliases skipped), nil. A nil
+//     or empty `teams` field is normalized to a zero-length slice so
+//     downstream `HasIntersect` consumers always see a real slice.
 //
 // The dual-branch 404 detection (errors.Is + string-match) reflects
 // Plan 03-01's UserInfoByEmail design decision: that helper does NOT
@@ -44,7 +53,40 @@ func LookupCallerTeams(ctx context.Context, ll litellm.Client, email string) ([]
 	if info == nil || len(info.Teams) == 0 {
 		return []string{}, nil
 	}
-	return info.Teams, nil
+
+	// info.Teams are LiteLLM team IDs; authorized_teams stores aliases.
+	// Resolve each ID to its alias and return BOTH so HasIntersect matches
+	// regardless of which identifier the env authorized by (incident
+	// 2026-06-04: a member of team alias "default" was denied because the
+	// raw team-id string never equalled the alias string).
+	teams, err := ll.ListAllTeams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	aliasByID := make(map[string]string, len(teams))
+	for _, t := range teams {
+		if t.TeamAlias != "" {
+			aliasByID[t.TeamID] = t.TeamAlias
+		}
+	}
+
+	out := make([]string, 0, len(info.Teams)*2)
+	seen := make(map[string]struct{}, len(info.Teams)*2)
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	for _, id := range info.Teams {
+		add(id)            // raw id (matches authorized_teams that hold ids)
+		add(aliasByID[id]) // resolved alias (matches the common alias case)
+	}
+	return out, nil
 }
 
 // isNotFound reports whether err represents a LiteLLM 404 — either the

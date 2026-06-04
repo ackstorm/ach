@@ -114,6 +114,11 @@ type Client interface {
 	// the well-known alias "default" before the TeamMemberAdd call.
 	ListTeamsByAlias(ctx context.Context, alias string) ([]TeamListEntry, error)
 
+	// ListAllTeams issues GET /v2/team/list (no alias filter) and returns
+	// every team's id+alias. Used by platformapi/teams to resolve caller
+	// team IDs → aliases for the authorized_teams intersection.
+	ListAllTeams(ctx context.Context) ([]TeamListEntry, error)
+
 	// KeyGenerate issues POST /key/generate.
 	//
 	// ACH does NOT control or persist the LiteLLM virtual-key plaintext

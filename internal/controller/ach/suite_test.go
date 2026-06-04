@@ -126,6 +126,10 @@ func (c *countingNoopClient) ListTeamsByAlias(ctx context.Context, alias string)
 	return c.accessGroup.ListTeamsByAlias(ctx, alias)
 }
 
+func (c *countingNoopClient) ListAllTeams(ctx context.Context) ([]litellm.TeamListEntry, error) {
+	return c.accessGroup.ListAllTeams(ctx)
+}
+
 // Compile-time interface assertion — if litellm.Client grows a method, the
 // build breaks here until countingNoopClient catches up.
 var _ litellm.Client = (*countingNoopClient)(nil)
