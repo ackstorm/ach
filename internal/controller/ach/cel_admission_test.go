@@ -105,18 +105,24 @@ func TestCELAdmission(t *testing.T) {
 			kind:         "Environment",
 			resourceName: "valid-runtime-provider-prefixed",
 		},
+		// Environment.spec.runtime is OPTIONAL (commit 30c76e0): a manifest
+		// omitting spec.runtime is accepted — the API server defaults it to
+		// {} and the list sub-fields backfill to []. Guards the relaxation
+		// of the former CRD-02 "runtime required" admission rule.
+		{
+			name:         "valid_env_no_runtime",
+			fixturePath:  "../../../test/fixtures/valid/environment_missing_runtime.yaml",
+			shouldFail:   false,
+			apiVersion:   "ach.ackstorm.ai/v1alpha1",
+			kind:         "Environment",
+			resourceName: "valid-omitted-runtime",
+		},
 
-		// ─── Seven invalid fixtures (Plan 01-11 Task 1) ───
+		// ─── Invalid fixtures (Plan 01-11 Task 1 + S2 review additions) ───
 		// errMustContain is matched case-insensitively against the API
 		// server's error string. The substrings are fragments of the CEL
 		// `message:` text declared in api/ach/v1alpha1/*_types.go (Plan
 		// 01-02 Task 2) — coordinate edits with that file.
-		{
-			name:           "invalid_env_no_runtime",
-			fixturePath:    "../../../test/fixtures/invalid/environment_missing_runtime.yaml",
-			shouldFail:     true,
-			errMustContain: "runtime",
-		},
 		{
 			name:           "invalid_env_empty_teams",
 			fixturePath:    "../../../test/fixtures/invalid/environment_empty_authorized_teams.yaml",
