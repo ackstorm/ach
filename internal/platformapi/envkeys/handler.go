@@ -351,8 +351,16 @@ func (cr *createReq) provisionUser() (userID string, handled bool) {
 			AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; ek_ is minted via /key/generate
 		})
 		if err != nil {
-			cr.emitLitellmError(err, "envkeys.create: UserNew failed")
-			return "", true
+			if !litellm.IsDuplicateUserErr(err) {
+				cr.emitLitellmError(err, "envkeys.create: UserNew failed")
+				return "", true
+			}
+			// Probe false-negative (LiteLLM #36): the user already exists with
+			// user_id=email (the value we requested). Recover by using email as
+			// the id and continuing.
+			cr.deps.Logger.Info("envkeys.create: UserNew duplicate — recovering with user_id=email",
+				"email", cr.keyCtx.OwnerEmail)
+			newInfo = &litellm.UserInfo{UserID: cr.keyCtx.OwnerEmail, UserEmail: cr.keyCtx.OwnerEmail}
 		}
 		userInfo = newInfo
 		if err := cr.deps.LiteLLM.TeamMemberAdd(cr.ctx, defaultTeam, userInfo.UserID, "user"); err != nil {

@@ -580,7 +580,15 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 				AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; pk_ is minted via /key/generate
 			})
 			if createErr != nil {
-				return "", &provisionErr{kind: provisionKindLitellm, err: createErr}
+				if !litellm.IsDuplicateUserErr(createErr) {
+					return "", &provisionErr{kind: provisionKindLitellm, err: createErr}
+				}
+				// Probe false-negative (LiteLLM #36): the user already exists
+				// with user_id=email (the value we requested). Recover by using
+				// email as the id and continuing to TeamMemberAdd.
+				deps.Logger.Info("sso.callback: UserNew duplicate — recovering with user_id=email",
+					"email", email)
+				created = &litellm.UserInfo{UserID: email, UserEmail: email}
 			}
 			// TeamMemberAdd: D-04 step 5 mandates this. LiteLLM v1.83
 			// already enrolls the user in `teams:[…]` during UserNew, so

@@ -245,8 +245,10 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 // assert user_id=email + auto_create_key=false.
 type firstTimeLiteLLM struct {
 	*litellm.NoopClient
-	userInfoCalls  int
-	lastUserNewReq *litellm.UserNewRequest
+	userInfoCalls      int
+	lastUserNewReq     *litellm.UserNewRequest
+	userNewErr         error // if set, UserNew returns it (after recording the req)
+	lastKeyGenerateReq *litellm.KeyGenerateRequest
 }
 
 func (c *firstTimeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
@@ -265,7 +267,15 @@ func (c *firstTimeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEn
 
 func (c *firstTimeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
 	c.lastUserNewReq = req
+	if c.userNewErr != nil {
+		return nil, c.userNewErr
+	}
 	return &litellm.UserInfo{UserID: req.UserID, UserEmail: req.UserEmail}, nil
+}
+
+func (c *firstTimeLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	c.lastKeyGenerateReq = req
+	return c.NoopClient.KeyGenerate(ctx, req)
 }
 
 // TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey asserts the
@@ -314,5 +324,60 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 	}
 	if r.AutoCreateKey == nil || *r.AutoCreateKey != false {
 		t.Errorf("UserNew auto_create_key: got %v, want explicit false", r.AutoCreateKey)
+	}
+}
+
+// TestCreateHandler_FirstTimeUser_DuplicateUserRecovers: with deterministic
+// user_id=email, the provisionUser probe false-negatives (LiteLLM #36) → UserNew
+// collides (409) for an already-existing user. Recovery: treat email as the id
+// and continue. The create must SUCCEED (200 + ek_ minted with UserID=email),
+// not 500.
+func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
+	flm := &firstTimeLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		userNewErr: &litellm.APIError{ // captured prod signature (Task 4)
+			Method:     "POST",
+			Path:       "/user/new",
+			StatusCode: 409,
+			Code:       "409",
+			Body:       []byte(`{"error":{"message":"User with id user@example.com already exists","code":"409"}}`),
+		},
+	}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	deps := Deps{
+		LiteLLM:   flm,
+		DB:        &fakeEkDB{},
+		Store:     store,
+		Pepper:    []byte("test-pepper"),
+		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace: "ach",
+	}
+
+	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
+	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("CreateHandler status = %d, want 200 (duplicate must recover); body=%s", rec.Code, rec.Body.String())
+	}
+	if flm.lastKeyGenerateReq == nil {
+		t.Fatal("KeyGenerate was never called")
+	}
+	if flm.lastKeyGenerateReq.UserID != "user@example.com" {
+		t.Errorf("KeyGenerate user_id: got %q, want %q", flm.lastKeyGenerateReq.UserID, "user@example.com")
 	}
 }

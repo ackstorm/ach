@@ -1024,6 +1024,47 @@ func TestCallbackHandler_FirstTimeSSO_UserIDEmailAndNoAutoKey(t *testing.T) {
 	}
 }
 
+// TestCallbackHandler_FirstTimeSSO_DuplicateUserRecovers: with a deterministic
+// user_id=email, a false-negative existence probe (LiteLLM v1.83 #36) makes the
+// 404 branch call UserNew for a user that already exists → 409 collision.
+// Recovery: since we requested user_id=email, treat the email as the id and
+// continue. The callback must SUCCEED (200 + pk_ minted), not 500.
+func TestCallbackHandler_FirstTimeSSO_DuplicateUserRecovers(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alice@example.com"
+
+	flm := newFakeLiteLLM()
+	flm.userInfoBehaviour = func(string) (*litellm.UserInfo, error) { return nil, litellm.ErrNotFound }
+	flm.userNewBehaviour = func(*litellm.UserNewRequest) (*litellm.UserInfo, error) {
+		// Signature captured against prod LiteLLM v1.83 on 2026-06-04 (Task 4).
+		return nil, &litellm.APIError{
+			Method:     "POST",
+			Path:       "/user/new",
+			StatusCode: 409,
+			Code:       "409",
+			Body:       []byte(`{"error":{"message":"User with id alice@example.com already exists","code":"409"}}`),
+		}
+	}
+	tc := &callbackTestCase{
+		stateCookie: "state-abc",
+		urlState:    "state-abc",
+		urlCode:     "code-xyz",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    newDBInsertRecord(),
+		pepper:      []byte("test-pepper-32-bytes-long-aa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 200 (duplicate must recover); body=%s", w.Result().StatusCode, string(body))
+	}
+	if flm.rec.lastKeyGenerateUser != "alice@example.com" {
+		t.Errorf("KeyGenerate user_id: got %q, want %q", flm.rec.lastKeyGenerateUser, "alice@example.com")
+	}
+}
+
 // TestCallbackHandler_ExistingUserSSO (behavior 2): UserInfoByEmail → 200
 // → UserNew is NOT called → TeamMemberAdd IS called (idempotent per BLK-05
 // sub-point 3 + D-25) → KeyGenerate succeeds → DB INSERT succeeds.
