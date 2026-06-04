@@ -98,7 +98,7 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	}
 
 	// Pre-render to obtain the canonical bytes claudecode would emit.
-	firstRes, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
+	firstRes, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
 	if err != nil {
 		t.Fatalf("initial Render: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestAdapterDispatcherImpl_CollisionCascade_Identical(t *testing.T) {
 	// (so the existing .mcp.json is "unowned"). The cascade should
 	// detect Identical (bytes match what Render would emit) and
 	// auto-claim — no error.
-	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
+	res, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
 	if err != nil {
 		t.Fatalf("re-Render with unowned-but-identical bytes: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if _, err := disp.Render(context.Background(), m, nil, achDir, achDir, false); err != nil {
+	if _, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	m := dispMiniManifest()
 
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
-	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 
 	// No --force → drift refuse (exit 2).
-	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false); err == nil {
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false, true); err == nil {
 		t.Fatal("re-render after user edit of our key: want drift error, got nil")
 	} else {
 		var ce *exit.CodedError
@@ -245,7 +245,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 
 	// --force → overwrite our key (edit gone).
 	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false, hydrate.ConflictNamespace)
-	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir, false); err != nil {
+	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir, false, true); err != nil {
 		t.Fatalf("force re-render: %v", err)
 	}
 	after, err := os.ReadFile(settingsPath)
@@ -274,7 +274,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	m := dispMiniManifest()
 
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
-	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false)
+	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	// Second Render with matching prior state → no-op skip path. Without the
 	// F-10 chmod guard, the mode would stay at 0o644 (skip bypasses
 	// WriteAtomic which is where 0o600 normally gets asserted).
-	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false); err != nil {
+	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false, true); err != nil {
 		t.Fatalf("second Render: %v", err)
 	}
 
@@ -737,7 +737,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir(t *testing.T) 
 		Context:       &manifest.ContextBlock{},
 	}
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("Render with projection: %v", err)
 	}
@@ -776,7 +776,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_PublishesToNativeDir(t *testing.T) 
 		Keys:       pf.Keys,
 	})
 	before, _ := os.ReadFile(nativeAbs)
-	if _, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true); err != nil {
+	if _, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true, true); err != nil {
 		t.Fatalf("second Render (no-op): %v", err)
 	}
 	after, _ := os.ReadFile(nativeAbs)
@@ -805,7 +805,7 @@ func TestAdapterDispatcherImpl_ProjectionLeg_ScopeSkip(t *testing.T) {
 		Context:       &manifest.ContextBlock{},
 	}
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, false)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, false, true)
 	if err != nil {
 		t.Fatalf("Render (scope skip): %v", err)
 	}

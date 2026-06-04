@@ -55,7 +55,7 @@ func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictRefuse)
 	m := newProjectionManifest()
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err == nil {
 		t.Fatalf("Render with two plugins colliding on rules/foo.md returned nil error; want a cross-plugin collision error. ProjectedFiles=%+v", res.ProjectedFiles)
 	}
@@ -83,7 +83,7 @@ func TestProjection_MultiPlugin_Collision_NamespaceKeepsBoth(t *testing.T) {
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := newProjectionManifest()
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("namespace policy must not error on collision: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := newProjectionManifest()
 
-	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("first Render (distinct paths): %v", err)
 	}
@@ -183,7 +183,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	}
 
 	// --- 2nd Render: unchanged source + prior state => per-file byte no-op ---
-	res2, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true)
+	res2, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("second Render (no-op): %v", err)
 	}

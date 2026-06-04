@@ -394,7 +394,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 					Wrapped: err,
 				}
 			}
-			result.FilesWritten += len(extractResult.WrittenFiles)
+			addExtractCounts(&result, dt.Kind, extractResult)
 		}
 	}
 	c.maybeKill(7)
@@ -405,6 +405,14 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// cascade + atomic publish all live inside adapterDispatcherImpl;
 	// the orchestrator just calls Render once after the extraction
 	// loop completes.
+	//
+	// includeRuntime gates the DIRECT runtime block (m.Runtime mcp/a2a/
+	// models): a default hydrate projects only plugin-contributed mcps; the
+	// Environment's directly-attached runtime endpoints reach the adapter
+	// config AND the runtime mirror ONLY under --include-runtime /
+	// --only-runtime. Hoisted here so both the Render call and the runtime
+	// mirror (step 10b) share one definition.
+	includeRuntime := c.opts.IncludeRuntime || c.opts.OnlyRuntime
 	var renderResult RenderResult
 	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
@@ -425,7 +433,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// ephemeral pluginStageRoot above, so the projection source is
 		// <achDir>/tmp/plugin (this run's diffTargets only). RenderRuntime
 		// uses toolRoot, not this base, so the tmp base affects projection only.
-		rr, err := c.adapter.Render(renderCtx, m, existingState, c.pluginStageRoot(), c.toolRoot, projectPlugins)
+		rr, err := c.adapter.Render(renderCtx, m, existingState, c.pluginStageRoot(), c.toolRoot, projectPlugins, includeRuntime)
 		if err != nil {
 			// Preserve any *exit.CodedError produced by the dispatcher
 			// (e.g. CollisionRefuse from extract.WrapCollisionRefuseError)
@@ -442,7 +450,11 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		}
 		renderResult = rr
 		adapterRan = true
-		result.FilesWritten += len(renderResult.WrittenFiles) + len(renderResult.ProjectedFiles)
+		// Split runtime + projected files by their per-file no-op verdict so
+		// the summary distinguishes real writes from preserved (byte-identical)
+		// files (D-05). publishFile sets Preserved on the no-op skip path; the
+		// entry still flows to state composition either way.
+		addPublishedCounts(&result, renderResult)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
 		if result.ProjectedByKind == nil {
 			result.ProjectedByKind = map[string]int{}
@@ -466,27 +478,10 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 	c.maybeKill(10)
 
-	// Step 10b: runtime mirror. Serialize the manifest runtime block
-	// (mcp / a2a / models) into credential-free <achDir>/runtime/*.json
-	// snapshots so .ach/ is a complete record of what the Environment
-	// exposed — not just the context buckets. mcp/a2a are ALSO projected
-	// into each adapter's config by RenderRuntime (with the credential);
-	// the mirror is the canonical, secret-free cache + the state row that
-	// lets --sync/uninstall and drift see runtime entries (incl. models,
-	// which have no adapter destination). Gated on !DryRun.
-	var runtimeFiles []state.FileEntry
-	if !c.opts.DryRun {
-		rf, err := c.writeRuntimeMirror(m)
-		if err != nil {
-			return result, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("runtime mirror: %v", err),
-				Wrapped: err,
-			}
-		}
-		runtimeFiles = rf
-		result.FilesWritten += len(rf)
-		tallyModelKind(&result, m)
+	// Step 10b: runtime mirror (gated on !DryRun && includeRuntime).
+	runtimeFiles, err := c.step10bRuntimeMirror(m, includeRuntime, &result)
+	if err != nil {
+		return result, err
 	}
 
 	// Step 11: STATE-05 / D-16 inverse-merge sync. maybeKill(11)
@@ -1003,6 +998,41 @@ var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
 // from the manifest block the mirror just serialized keeps the summary's
 // `N model` in lockstep with model.json. No-op when no models are present, so
 // the summary never prints `0 model`.
+// addExtractCounts folds one extract outcome into the written/preserved
+// tallies. Plugins extract to the ephemeral pluginStageRoot (swept, never a
+// final write) and are re-counted as renderResult.ProjectedFiles when
+// published — counting them here would double-count (observed 110 reported
+// vs 54 on disk), so only prompts/artifacts (final dest extractBase==achDir)
+// count. A re-hydrate no-op reports zero WrittenFiles + a Preserved count
+// (the on-disk tree was left untouched) → "N preserved", not "N written".
+func addExtractCounts(result *Result, kind string, er ExtractResult) {
+	if kind == kindPlugin {
+		return
+	}
+	result.FilesWritten += len(er.WrittenFiles)
+	result.FilesPreserved += er.Preserved
+}
+
+// addPublishedCounts splits a RenderResult's published files (runtime
+// WrittenFiles + plugin ProjectedFiles) into the written vs preserved
+// tallies by each entry's D-05 no-op verdict (FileWrite.Preserved).
+func addPublishedCounts(result *Result, rr RenderResult) {
+	for _, fw := range rr.WrittenFiles {
+		if fw.Preserved {
+			result.FilesPreserved++
+		} else {
+			result.FilesWritten++
+		}
+	}
+	for _, fw := range rr.ProjectedFiles {
+		if fw.Preserved {
+			result.FilesPreserved++
+		} else {
+			result.FilesWritten++
+		}
+	}
+}
+
 func tallyModelKind(result *Result, m *manifest.Manifest) {
 	if m == nil || m.Runtime == nil || len(m.Runtime.Models) == 0 {
 		return
@@ -1011,6 +1041,30 @@ func tallyModelKind(result *Result, m *manifest.Manifest) {
 		result.ProjectedByKind = map[string]int{}
 	}
 	result.ProjectedByKind["model"] += len(m.Runtime.Models)
+}
+
+// step10bRuntimeMirror writes the credential-free runtime mirror and folds
+// its file count + model tally into result. Gated on !DryRun && includeRuntime:
+// the runtime block (mcp / a2a / models) is the --include-runtime scope slice,
+// so a default hydrate reads no runtime objects and writes no mirror —
+// consistent with the gated RenderRuntime projection. The mirror is the
+// canonical secret-free cache + the state rows that let --sync/uninstall and
+// drift see runtime entries (incl. models, which have no adapter destination).
+func (c *commit) step10bRuntimeMirror(m *manifest.Manifest, includeRuntime bool, result *Result) ([]state.FileEntry, error) {
+	if c.opts.DryRun || !includeRuntime {
+		return nil, nil
+	}
+	rf, err := c.writeRuntimeMirror(m)
+	if err != nil {
+		return nil, &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("runtime mirror: %v", err),
+			Wrapped: err,
+		}
+	}
+	result.FilesWritten += len(rf)
+	tallyModelKind(result, m)
+	return rf, nil
 }
 
 // writeRuntimeMirror serializes the manifest runtime block into

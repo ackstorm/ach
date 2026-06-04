@@ -85,7 +85,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 
 	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 
-	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 	// the recorded FileEntry are byte-identical across the two runs.
 	freshRoot := t.TempDir()
 
-	res1, err := disp.Render(context.Background(), m, nil, achDir, freshRoot, true)
+	res1, err := disp.Render(context.Background(), m, nil, achDir, freshRoot, true, true)
 	if err != nil {
 		t.Fatalf("re-hydrate baseline Render: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 		firstEntry[pf.Target] = pf
 	}
 
-	res2, err := disp.Render(context.Background(), m, priorState, achDir, freshRoot, true)
+	res2, err := disp.Render(context.Background(), m, priorState, achDir, freshRoot, true, true)
 	if err != nil {
 		t.Fatalf("re-hydrate no-op Render: %v", err)
 	}
@@ -241,6 +241,54 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 // writeJSON marshals v to JSON and writes it to path (local helper — the
 // package-hydrate writeJSON in registry_test.go is not visible from
 // package hydrate_test).
+// TestProjection_Pimono_RuntimeGate is the Part 4 (Bug C) regression guard:
+// the DIRECT runtime block (m.Runtime mcp/a2a/models via RenderRuntime) is
+// gated on includeRuntime, while plugin-contributed mcps (context) always
+// project. A default hydrate (includeRuntime=false) must write the plugin
+// MCP server into .pi/mcp.json but NOT the Environment's direct runtime
+// server. Pre-fix RenderRuntime ran unconditionally, so the runtime server
+// leaked into a default hydrate.
+func TestProjection_Pimono_RuntimeGate(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	const (
+		pluginID  = "plugin-mcp"
+		runtimeID = "runtime-mcp"
+	)
+	stagePluginTree(t, achDir, "caveman", map[string]string{
+		"mcp/servers.json": `{"mcpServers":{"` + pluginID +
+			`":{"type":"http","url":"http://localhost:9/plugin"}}}`,
+	})
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime: &manifest.RuntimeBlock{
+			MCPServers: []manifest.ContentRef{
+				{ID: runtimeID, Endpoint: "http://localhost:8080/mcp/" + runtimeID},
+			},
+		},
+		Context: &manifest.ContextBlock{},
+	}
+
+	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+
+	// Default scope: projectPlugins=true, includeRuntime=FALSE.
+	if _, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, false); err != nil {
+		t.Fatalf("Render (default scope): %v", err)
+	}
+
+	mcpAbs := filepath.Join(toolRoot, ".pi", "mcp.json")
+	servers := mcpServers(t, mcpAbs)
+	if _, ok := servers[pluginID]; !ok {
+		t.Errorf("plugin MCP server %q must project by default (context); got %v", pluginID, mcpServerKeys(servers))
+	}
+	if _, ok := servers[runtimeID]; ok {
+		t.Errorf("direct runtime MCP server %q must NOT project without --include-runtime; got %v", runtimeID, mcpServerKeys(servers))
+	}
+}
+
 func writeJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	b, err := json.Marshal(v)

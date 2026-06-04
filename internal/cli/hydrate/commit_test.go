@@ -109,7 +109,7 @@ type fakeAdapterDispatcher struct {
 	gotProjectPlugins *bool
 }
 
-func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string, projectPlugins bool) (RenderResult, error) {
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string, projectPlugins, _ bool) (RenderResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
@@ -671,6 +671,126 @@ func TestRun_InvokesExtractorPerDiffTarget(t *testing.T) {
 	if result.PlatformID != "claude-code" {
 		t.Errorf("result.PlatformID = %q, want %q", result.PlatformID, "claude-code")
 	}
+}
+
+// TestRun_PluginExtractNotDoubleCounted is the regression guard for the
+// "N files written ≈ 2×" bug. Plugin content extracts to the EPHEMERAL
+// pluginStageRoot (swept, never a final write) and is re-counted as
+// renderResult.ProjectedFiles when published to the real dest. Counting
+// the plugin extract too double-counts the on-disk file total (observed
+// 110 reported vs 54 on disk).
+//
+// Setup: 1 prompt + 1 plugin diffTarget. The fake extractor returns 2
+// WrittenFiles per call; the fake adapter returns 1 runtime WrittenFile +
+// 2 ProjectedFiles (the published plugin). On-disk reality = prompt(2) +
+// runtime(1) + projected-plugin(2) = 5; the plugin's ephemeral extract(2)
+// must NOT be counted. Pre-fix this returned 7.
+func TestRun_PluginExtractNotDoubleCounted(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime:       &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{
+				Prompts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+				},
+				Plugins: []manifest.ContentRef{
+					{ID: "plug1", DownloadURL: "http://local/content/plugin/plug1"},
+				},
+			},
+		}, nil
+	}
+	var extCalls, adCalls int
+	// Every extract returns 2 files. The prompt's 2 are real (final dest);
+	// the plugin's 2 are ephemeral staging and must be excluded.
+	c.extractor = fakeExtractor{
+		calls: &extCalls,
+		result: ExtractResult{
+			WrittenFiles: []FileWrite{{Target: "a", Hash: "xxh3:0a"}, {Target: "b", Hash: "xxh3:0b"}},
+		},
+	}
+	// Render: 1 runtime write + 2 projected plugin files (the real publish).
+	c.adapter = fakeAdapterDispatcher{
+		calls: &adCalls,
+		result: RenderResult{
+			WrittenFiles:   []FileWrite{{Target: "rt", Hash: "xxh3:rt"}},
+			ProjectedFiles: []FileWrite{{Target: "pp1", Hash: "xxh3:p1"}, {Target: "pp2", Hash: "xxh3:p2"}},
+		},
+	}
+
+	result, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if extCalls != 2 {
+		t.Errorf("extractor calls = %d, want 2 (prompt + plugin)", extCalls)
+	}
+	// prompt extract(2) + render WrittenFiles(1) + ProjectedFiles(2) = 5.
+	// The plugin extract(2) is ephemeral → excluded. Pre-fix this was 7.
+	if result.FilesWritten != 5 {
+		t.Errorf("result.FilesWritten = %d, want 5 (plugin ephemeral extract must NOT be double-counted; pre-fix=7)", result.FilesWritten)
+	}
+}
+
+// TestRun_FilesWrittenVsPreserved is the Bug B2 regression guard: the summary
+// must distinguish real writes from preserved (byte-identical) files. A fresh
+// hydrate counts everything written; an identical re-hydrate (publish engine
+// no-op skips + extract no-op) counts everything preserved, zero written.
+//
+// Extract reports preserved via ExtractResult.Preserved (its WrittenFiles is
+// empty on a no-op); render reports it per-file via FileWrite.Preserved.
+func TestFilesWrittenVsPreserved(t *testing.T) {
+	manifestFn := func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime:       &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{
+				Prompts: []manifest.ContentRef{{ID: "p1", DownloadURL: "http://local/content/prompt/p1"}},
+			},
+		}, nil
+	}
+
+	t.Run("fresh_all_written", func(t *testing.T) {
+		c, _, _ := newTestCommit(t)
+		c.fetcher = manifestFn
+		c.extractor = fakeExtractor{result: ExtractResult{
+			WrittenFiles: []FileWrite{{Target: "a"}, {Target: "b"}}, // 2 written, 0 preserved
+		}}
+		c.adapter = fakeAdapterDispatcher{result: RenderResult{
+			WrittenFiles:   []FileWrite{{Target: "rt"}},                   // written
+			ProjectedFiles: []FileWrite{{Target: "pp1"}, {Target: "pp2"}}, // written
+		}}
+		result, err := c.run(context.Background())
+		if err != nil {
+			t.Fatalf("c.run = %v", err)
+		}
+		if result.FilesWritten != 5 || result.FilesPreserved != 0 {
+			t.Errorf("fresh: FilesWritten=%d FilesPreserved=%d; want 5 / 0", result.FilesWritten, result.FilesPreserved)
+		}
+	})
+
+	t.Run("noop_all_preserved", func(t *testing.T) {
+		c, _, _ := newTestCommit(t)
+		c.fetcher = manifestFn
+		// Extract no-op: empty WrittenFiles, 2 preserved on disk.
+		c.extractor = fakeExtractor{result: ExtractResult{Preserved: 2}}
+		// Render no-op: every entry flagged Preserved.
+		c.adapter = fakeAdapterDispatcher{result: RenderResult{
+			WrittenFiles:   []FileWrite{{Target: "rt", Preserved: true}},
+			ProjectedFiles: []FileWrite{{Target: "pp1", Preserved: true}, {Target: "pp2", Preserved: true}},
+		}}
+		result, err := c.run(context.Background())
+		if err != nil {
+			t.Fatalf("c.run = %v", err)
+		}
+		if result.FilesWritten != 0 || result.FilesPreserved != 5 {
+			t.Errorf("no-op: FilesWritten=%d FilesPreserved=%d; want 0 / 5", result.FilesWritten, result.FilesPreserved)
+		}
+	})
 }
 
 // TestRun_ExtractSkipsRuntimeKinds asserts the extraction loop runs ONLY for
