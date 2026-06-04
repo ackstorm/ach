@@ -82,27 +82,51 @@ func (c *RESTClient) ListTeamsByAlias(ctx context.Context, alias string) ([]Team
 	return out, nil
 }
 
-// ListAllTeams issues GET /v2/team/list?page_size=500 and returns every
-// team. No client-side filter (cf. ListTeamsByAlias). Empty slice is not
-// an error. Single-page only by design — a multi-page result WARNs rather
-// than silently truncating (silent truncation would drop alias resolutions
-// and re-introduce the team false-negative this fix closes; cross-AI review
-// MED finding 2026-06-04). Pagination itself stays YAGNI at current scale.
+// litellmTeamListPageSize is the page size ListAllTeams requests. LiteLLM's
+// /v2/team/list rejects oversized page_size values with 422 (the deployed
+// build 422s page_size=500 — #113 regression, 2026-06-05: a 422 → makeRequest
+// 4xx → APIError → teams.LookupCallerTeams (nil,err) → hydrate 503
+// litellm_unreachable, breaking every hydrate/env-keys request). 100 is the
+// value ListTeamsByAlias already uses successfully, so it is the safe ceiling.
+const litellmTeamListPageSize = 100
+
+// listAllTeamsPageCap bounds the pagination loop so a malformed total_pages or
+// a non-advancing endpoint cannot spin forever. 100 pages × 100/page = 10k
+// teams — far beyond any real ACH-owned (single-tenant) LiteLLM.
+const listAllTeamsPageCap = 100
+
+// ListAllTeams pages GET /v2/team/list?page=<n>&page_size=100 and returns every
+// team. No client-side filter (cf. ListTeamsByAlias). Empty slice is not an
+// error. Pages until total_pages is exhausted so alias resolution is complete:
+// a single page_size=500 request is rejected 422 by the deployed LiteLLM
+// (#113), and silent truncation would drop alias resolutions and re-introduce
+// the team false-negative this path closes (cross-AI review MED finding
+// 2026-06-04 — now resolved by real pagination rather than a WARN). A
+// pathological total_pages is bounded by listAllTeamsPageCap (logged WARN).
 func (c *RESTClient) ListAllTeams(ctx context.Context) ([]TeamListEntry, error) {
-	raw, err := c.makeRequest(ctx, "GET", "/v2/team/list?page_size=500", nil)
-	if err != nil {
-		return nil, err
+	var all []TeamListEntry
+	for page := 1; ; page++ {
+		path := fmt.Sprintf("/v2/team/list?page=%d&page_size=%d", page, litellmTeamListPageSize)
+		raw, err := c.makeRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		var list TeamListResponse
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, fmt.Errorf("litellm: decode GET /v2/team/list: %w", err)
+		}
+		all = append(all, list.Teams...)
+		// Stop once the last page is consumed. The empty-page guard covers an
+		// unreliable total_pages (stop rather than loop to the cap on dupes).
+		if list.TotalPages <= page || len(list.Teams) == 0 {
+			break
+		}
+		if page >= listAllTeamsPageCap {
+			// logr has no native WARN level; the package logs via c.log.Info.
+			c.log.Info("WARN: litellm team list exceeds page cap; alias resolution may be incomplete — pagination stopped early",
+				"total_pages", list.TotalPages, "page_cap", listAllTeamsPageCap, "total", list.Total)
+			break
+		}
 	}
-	var list TeamListResponse
-	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, fmt.Errorf("litellm: decode GET /v2/team/list: %w", err)
-	}
-	if list.TotalPages > 1 {
-		// logr has no native WARN level; the package logs via c.log.Info
-		// (transport.go uses the same facility). Prefix WARN in the message
-		// and name the limitation explicitly — do NOT silently truncate.
-		c.log.Info("WARN: litellm team list exceeds one page (page_size=500); alias resolution may be incomplete — pagination not implemented",
-			"total_pages", list.TotalPages, "total", list.Total)
-	}
-	return list.Teams, nil
+	return all, nil
 }
