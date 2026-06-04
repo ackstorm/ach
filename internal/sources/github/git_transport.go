@@ -43,7 +43,7 @@ func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*s
 
 	cloneURL := f.cloneURLForTesting
 	if cloneURL == "" {
-		cloneURL = fmt.Sprintf("https://github.com/%s/%s.git", parts[0], parts[1])
+		cloneURL = sources.GitHubCloneURL(f.spec.Repo)
 	}
 
 	return gitprovider.FetchViaProvider(ctx, "github", cloneURL, f.spec.Ref, token, req.PriorRev)

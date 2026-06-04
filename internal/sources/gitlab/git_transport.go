@@ -38,14 +38,13 @@ func normalizeGitLabHost(host string) string {
 }
 
 // constructCloneURL builds the https clone URL from spec.Host (default
-// gitlab.com) and spec.Project. Extracted as a method so the unit tests
-// can pin the default-host behavior without spinning a network call.
+// gitlab.com) and spec.Project. Delegates to the canonical
+// sources.GitLabCloneURL so the source fetcher and the marketplace
+// dispatch path yield the SAME URL for the same GitLabSource. Extracted
+// as a method so the unit tests can pin the default-host behavior without
+// spinning a network call.
 func (f *Fetcher) constructCloneURL() string {
-	host := normalizeGitLabHost(f.spec.Host)
-	if host == "" {
-		host = "gitlab.com"
-	}
-	return fmt.Sprintf("https://%s/%s.git", host, f.spec.Project)
+	return sources.GitLabCloneURL(f.spec.Host, f.spec.Project)
 }
 
 // restBaseURL builds the REST scheme+host from spec.Host with the same
