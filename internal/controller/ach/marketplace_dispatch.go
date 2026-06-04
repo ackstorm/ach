@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	neturl "net/url"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -133,43 +132,56 @@ func buildGitSpecForEntry(
 	token := extractTokenFromSecret(auth)
 	switch entry.Source.Kind {
 	case kindGitSubdir:
+		canonURL, host, cerr := sources.CanonicalCloneURL(entry.Source.URL)
+		if cerr != nil {
+			return sourcesgit.Spec{}, cerr
+		}
 		return sourcesgit.Spec{
-			URL:        entry.Source.URL,
+			URL:        canonURL,
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    entry.Source.Path,
 			Token:      token,
 			CacheRoot:  cacheRoot,
-			AuthScheme: schemeForCloneURL(mp, entry.Source.URL),
+			AuthScheme: schemeForHost(mp, host),
 		}, nil
 	case kindURL:
 		// url+path collapse: when path is non-empty the entry behaves
 		// like git-subdir (upstream-drift ack — see marketplace_parse.go
 		// header). Empty path → whole-worktree tar.
+		canonURL, host, cerr := sources.CanonicalCloneURL(entry.Source.URL)
+		if cerr != nil {
+			return sourcesgit.Spec{}, cerr
+		}
 		return sourcesgit.Spec{
-			URL:        entry.Source.URL,
+			URL:        canonURL,
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    entry.Source.Path,
 			Token:      token,
 			CacheRoot:  cacheRoot,
-			AuthScheme: schemeForCloneURL(mp, entry.Source.URL),
+			AuthScheme: schemeForHost(mp, host),
 		}, nil
 	case kindGitHub:
+		ghURL := sources.GitHubCloneURL(entry.Source.Repo)
 		return sourcesgit.Spec{
-			URL:        "https://github.com/" + entry.Source.Repo + ".git",
+			URL:        ghURL,
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    "", // github Kind has no path → whole-worktree
 			Token:      token,
 			CacheRoot:  cacheRoot,
-			AuthScheme: schemeForCloneURL(mp, "https://github.com/"+entry.Source.Repo+".git"),
+			AuthScheme: schemeForHost(mp, "github.com"), // GitHubCloneURL is always github.com
 		}, nil
 	case kindLocalPath:
 		// Resolve the marketplace's own repo URL + Ref.
 		url, ref, err := marketplaceOwnRepo(mp)
 		if err != nil {
 			return sourcesgit.Spec{}, err
+		}
+		_, host, cerr := sources.CanonicalCloneURL(url)
+		if cerr != nil {
+			return sourcesgit.Spec{}, cerr
 		}
 		return sourcesgit.Spec{
 			URL:        url,
@@ -178,7 +190,7 @@ func buildGitSpecForEntry(
 			Subtree:    entry.Source.Path,
 			Token:      token,
 			CacheRoot:  cacheRoot,
-			AuthScheme: schemeForCloneURL(mp, url),
+			AuthScheme: schemeForHost(mp, host),
 		}, nil
 	case "":
 		return sourcesgit.Spec{}, errUnsupportedPluginSource
@@ -188,15 +200,16 @@ func buildGitSpecForEntry(
 	}
 }
 
-// schemeForCloneURL picks the git HTTP auth scheme for a marketplace
-// plugin entry's clone URL. A GitLab-typed marketplace authenticates
-// clones to its OWN GitLab host with HTTP Basic "oauth2:<token>" (the only
-// scheme self-hosted GitLab honors; Bearer 401s). Entries pointing at a
-// different host (e.g. a github Kind inside a gitlab marketplace) and every
-// non-gitlab marketplace keep Bearer. Host comparison uses the same
-// sources.NormalizeGitLabHost as marketplaceOwnRepo, so a bare or scheme-
+// schemeForHost picks the git HTTP auth scheme for a marketplace plugin
+// entry given the entry's clone-URL host. A GitLab-typed marketplace
+// authenticates clones to its OWN GitLab host with HTTP Basic
+// "oauth2:<token>" (the only scheme self-hosted GitLab honors; Bearer
+// 401s). A host that doesn't match (e.g. a github Kind inside a gitlab
+// marketplace) and every non-gitlab marketplace keep Bearer. host is the
+// lowercased host from sources.CanonicalCloneURL; comparison uses the same
+// sources.NormalizeGitLabHost as marketplaceOwnRepo so a bare or scheme-
 // prefixed spec.gitlab.host both match.
-func schemeForCloneURL(mp *achv1alpha1.PluginMarketplace, cloneURL string) sourcesgit.AuthScheme {
+func schemeForHost(mp *achv1alpha1.PluginMarketplace, host string) sourcesgit.AuthScheme {
 	if mp.Spec.Type != "gitlab" || mp.Spec.GitLab == nil {
 		return sourcesgit.AuthBearer
 	}
@@ -204,11 +217,7 @@ func schemeForCloneURL(mp *achv1alpha1.PluginMarketplace, cloneURL string) sourc
 	if want == "" {
 		want = "gitlab.com"
 	}
-	u, err := neturl.Parse(cloneURL)
-	if err != nil || u.Host == "" {
-		return sourcesgit.AuthBearer
-	}
-	if strings.EqualFold(u.Host, want) {
+	if strings.EqualFold(host, want) {
 		return sourcesgit.AuthBasicOAuth2
 	}
 	return sourcesgit.AuthBearer
@@ -225,22 +234,17 @@ func marketplaceOwnRepo(mp *achv1alpha1.PluginMarketplace) (string, string, erro
 		if mp.Spec.GitHub == nil {
 			return "", "", fmt.Errorf("github marketplace missing spec.github: %w", sources.ErrUpstreamInvalid)
 		}
-		return "https://github.com/" + mp.Spec.GitHub.Repo + ".git", defaultRef(mp.Spec.GitHub.Ref), nil
+		return sources.GitHubCloneURL(mp.Spec.GitHub.Repo), defaultRef(mp.Spec.GitHub.Ref), nil
 	case "gitlab":
 		if mp.Spec.GitLab == nil {
 			return "", "", fmt.Errorf("gitlab marketplace missing spec.gitlab: %w", sources.ErrUpstreamInvalid)
 		}
-		host := sources.NormalizeGitLabHost(mp.Spec.GitLab.Host)
-		if host == "" {
-			host = "gitlab.com"
-		}
-		return "https://" + host + "/" + mp.Spec.GitLab.Project + ".git",
-			defaultRef(mp.Spec.GitLab.Ref), nil
+		return sources.GitLabCloneURL(mp.Spec.GitLab.Host, mp.Spec.GitLab.Project), defaultRef(mp.Spec.GitLab.Ref), nil
 	case "bitbucket":
 		if mp.Spec.Bitbucket == nil {
 			return "", "", fmt.Errorf("bitbucket marketplace missing spec.bitbucket: %w", sources.ErrUpstreamInvalid)
 		}
-		return "https://bitbucket.org/" + mp.Spec.Bitbucket.Workspace + "/" + mp.Spec.Bitbucket.Repo + ".git",
+		return sources.BitbucketCloneURL(mp.Spec.Bitbucket.Workspace, mp.Spec.Bitbucket.Repo),
 			defaultRef(mp.Spec.Bitbucket.Ref), nil
 	default:
 		return "", "", fmt.Errorf("local-path entries unsupported for marketplace type %q: %w",

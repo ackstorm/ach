@@ -372,7 +372,7 @@ func TestMarketplaceOwnRepo_GitLabHostNormalize(t *testing.T) {
 	}
 }
 
-func TestSchemeForCloneURL(t *testing.T) {
+func TestSchemeForHost(t *testing.T) {
 	gl := func(host string) *achv1alpha1.PluginMarketplace {
 		return &achv1alpha1.PluginMarketplace{
 			Spec: achv1alpha1.PluginMarketplaceSpec{
@@ -385,22 +385,50 @@ func TestSchemeForCloneURL(t *testing.T) {
 		Spec: achv1alpha1.PluginMarketplaceSpec{Type: "github"},
 	}
 	cases := []struct {
-		name     string
-		mp       *achv1alpha1.PluginMarketplace
-		cloneURL string
-		want     sourcesgit.AuthScheme
+		name string
+		mp   *achv1alpha1.PluginMarketplace
+		host string
+		want sourcesgit.AuthScheme
 	}{
-		{"self-hosted gitlab host match", gl("https://git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"bare host match", gl("git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"default gitlab.com match", gl(""), "https://gitlab.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"github Kind entry inside gitlab mp", gl("https://git.example.com"), "https://github.com/o/r.git", sourcesgit.AuthBearer},
-		{"non-gitlab marketplace", nonGitlab, "https://github.com/o/r.git", sourcesgit.AuthBearer},
+		{"self-hosted gitlab host match", gl("https://git.example.com"), "git.example.com", sourcesgit.AuthBasicOAuth2},
+		{"bare host match", gl("git.example.com"), "git.example.com", sourcesgit.AuthBasicOAuth2},
+		{"default gitlab.com match", gl(""), "gitlab.com", sourcesgit.AuthBasicOAuth2},
+		{"github host inside gitlab mp", gl("https://git.example.com"), "github.com", sourcesgit.AuthBearer},
+		{"non-gitlab marketplace", nonGitlab, "github.com", sourcesgit.AuthBearer},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := schemeForCloneURL(tc.mp, tc.cloneURL); got != tc.want {
-				t.Errorf("schemeForCloneURL = %v; want %v", got, tc.want)
+			if got := schemeForHost(tc.mp, tc.host); got != tc.want {
+				t.Errorf("schemeForHost = %v; want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBuildGitSpecForEntry_GitSubdirCanonicalizes(t *testing.T) {
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "gitlab",
+			GitLab: &achv1alpha1.GitLabSource{Host: "https://git.example.com"},
+		},
+	}
+	entry := ClaudeCodeMarketplacePlugin{
+		Name: "p",
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: kindGitSubdir,
+			URL:  "git.example.com/g/p.git", // scheme-less on purpose
+			Ref:  "main",
+			Path: "sub",
+		},
+	}
+	spec, err := buildGitSpecForEntry(mp, entry, nil, "/cache")
+	if err != nil {
+		t.Fatalf("buildGitSpecForEntry: %v", err)
+	}
+	if spec.URL != "https://git.example.com/g/p.git" {
+		t.Errorf("URL = %q; want canonical https", spec.URL)
+	}
+	if spec.AuthScheme != sourcesgit.AuthBasicOAuth2 {
+		t.Errorf("AuthScheme = %v; want AuthBasicOAuth2", spec.AuthScheme)
 	}
 }
