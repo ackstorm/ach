@@ -313,7 +313,7 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 }
 
 // mustPluginTarGz returns a minimal tar.gz body containing
-// `.claude-plugin/plugin.json` at the tar root, so verifyPluginManifest
+// `.claude-plugin/plugin.json` at the tar root, so verifyPluginContents
 // (F4) is satisfied. The subtree parameter is retained for call-site
 // readability (it documents what subtree the fake fetcher is mimicking)
 // but is intentionally unused — production tars from git.tarSubtree
@@ -325,6 +325,22 @@ func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 func mustPluginTarGz(t *testing.T, _ string) string {
 	t.Helper()
 	tgz := buildTarGz(t, map[string]string{".claude-plugin/plugin.json": `{"name":"test"}`})
+	return string(tgz)
+}
+
+// mustConventionOnlyPluginTarGz returns a tar.gz body with NO
+// .claude-plugin/plugin.json — only convention component dirs. Mirrors a
+// real manifest-less plugin (e.g. anthropics/claude-code plugin-dev) that
+// verifyPluginContents must accept. The subtree arg is retained for
+// call-site readability but unused (git.tarSubtree strips the prefix, so
+// components appear at the tar root).
+func mustConventionOnlyPluginTarGz(t *testing.T, _ string) string {
+	t.Helper()
+	tgz := buildTarGz(t, map[string]string{
+		"README.md":           "docs",
+		"agents/foo.md":       "# foo",
+		"skills/bar/SKILL.md": "# bar",
+	})
 	return string(tgz)
 }
 
@@ -745,7 +761,7 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
 	gitReg := withFakeGitFetcher(t)
 	// F4: fake bodies must be valid tarballs with .claude-plugin/plugin.json
-	// at the entry's subtree path so verifyPluginManifest passes.
+	// at the entry's subtree path so verifyPluginContents passes.
 	// mkGitSubdirPlugin sets Path="plugins/<name>", so the manifest lives at
 	// plugins/<name>/.claude-plugin/plugin.json inside the tarball.
 	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
@@ -784,6 +800,61 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	wantBeta := filepath.Join(root, "marketplace", cr.Name, "plugin", "beta.tar.gz")
 	if _, err := os.Stat(wantBeta); err == nil {
 		t.Errorf("beta cache file should NOT exist after failure; found at %s", wantBeta)
+	}
+}
+
+// TestPluginMarketplace_ManifestLessPluginMaterializes proves the relaxed
+// Stage-2 gate end-to-end: a plugin with NO .claude-plugin/plugin.json —
+// only convention component dirs (the real anthropics/claude-code
+// plugin-dev shape) — fetches, passes verifyPluginContents, lands via
+// rename(2), and the marketplace reports Synced=True plugins=1 with no
+// per-plugin failure. REGRESSION GUARD for the manifest-optional fix:
+// before it, this same fixture failed UpstreamInvalid.
+func TestPluginMarketplace_ManifestLessPluginMaterializes(t *testing.T) {
+	ctx := context.Background()
+	cr := pmrCR("s2-manifestless", nil, nil)
+	root := newCacheRoot(t)
+
+	stage1Key := applyMarketplaceCR(t, ctx, cr)
+	waitForFinalizer(t, ctx, cr)
+
+	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+		Name:    "m",
+		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("skillonly")},
+	})
+	factory := newMarketplaceFakeFactory()
+	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
+	gitReg := withFakeGitFetcher(t)
+	gitReg.register(shaForName("skillonly"), &fakeGitFetcher{
+		body: mustConventionOnlyPluginTarGz(t, "plugins/skillonly"),
+		rev:  shaForName("skillonly"),
+	})
+
+	r := &PluginMarketplaceReconciler{
+		Client:    k8sClient,
+		Namespace: WatchNamespace,
+		Log:       logr.Discard(),
+		CacheRoot: root,
+		Fetchers:  factory.factory(),
+	}
+	ok := drainReconcileUntil(ctx, r, cr, func(got *achv1alpha1.PluginMarketplace) bool {
+		c := syncedCondition(got)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonSynced &&
+			strings.Contains(c.Message, "plugins=1") && !strings.Contains(c.Message, "failed")
+	})
+	if !ok {
+		var got achv1alpha1.PluginMarketplace
+		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
+		if c := syncedCondition(&got); c != nil {
+			t.Logf("last observed condition: status=%s reason=%s message=%q", c.Status, c.Reason, c.Message)
+		}
+		t.Fatalf("manifest-less plugin did not materialize cleanly")
+	}
+
+	// The manifest-less plugin landed via rename(2).
+	wantPath := filepath.Join(root, "marketplace", cr.Name, "plugin", "skillonly.tar.gz")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Errorf("skillonly cache file missing at %s: %v", wantPath, err)
 	}
 }
 

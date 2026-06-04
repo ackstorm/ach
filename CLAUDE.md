@@ -386,4 +386,10 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   (narrative: code.claude.com/docs/en/plugin-marketplaces). The parser
   (`internal/controller/ach/marketplace_parse.go`) follows the real schema with
   one drift ack: `url`-Kind entries carry an optional `path` (→ `git-subdir`).
+  Plugin manifests (`.claude-plugin/plugin.json`) are **optional** per the
+  schema; the Stage-2 gate (`verifyPluginContents`, `marketplace_manifest.go`)
+  accepts a plugin that has the manifest OR ≥1 convention component
+  (`commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/`themes/`/
+  `monitors/`, or root `SKILL.md`/`.mcp.json`/`.lsp.json`). Only a tar with
+  none of these fails `UpstreamInvalid`.
 
