@@ -86,7 +86,7 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle + admin object inventory (read) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | Edge reverse proxy — single-origin front for all HTTP surfaces (no auth, no /metrics, no /dex) |

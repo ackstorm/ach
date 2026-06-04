@@ -90,6 +90,54 @@ Note: an `ek_` is scoped to ONE Environment; a `pk_` (from `ach login`)
 spans every environment you can access but expires on a 7-day sliding
 window. For long-lived agents prefer per-environment `ek_`.
 
+## Admin: read-only object inventory
+
+`ach admin list` gives an allowlisted admin a kubectl-free inventory of every
+ACH-defined object, sourced from the Postgres projections (the SoT read path) —
+version + sync status, no live cluster cross-check. Requires a `pk-` whose owner
+email is in the Platform API allowlist; a non-allowlisted caller gets
+`403 not_admin` (exit 3).
+
+```bash
+ach admin list plugins                 # one kind
+ach admin list all                     # fan out across every kind (concurrent)
+ach admin list all -o json             # machine-readable (also: -o yaml)
+```
+
+Kinds: `environments`, `plugins`, `prompts`, `artifacts`, `marketplaces`,
+`bips`, `litellm-connections`, `external-refs`, or `all`.
+
+Example (`ach admin list all`, trimmed):
+
+```text
+ENVIRONMENTS (2)
+NAME             NAMESPACE  VERSION  SYNC                                AGE  ORIGIN
+demo             ach        1182     Available                           3m   cr
+demo-unresolved  ach        1184     Degraded(UnresolvedContextPlugins)  3m   cr
+
+PLUGINS (1)
+NAME     NAMESPACE  VERSION  SYNC   AGE  ORIGIN
+caveman  ach        842      fresh  2m   -
+
+PROMPTS (1)
+NAME      NAMESPACE  VERSION  SYNC    AGE  ORIGIN
+greeting  ach        844      fresh*  2m   -
+
+* prompts/artifacts: name-resolved only; content presence is not gated
+```
+
+### SYNC column semantics
+
+| Value | Kinds | Meaning |
+|-------|-------|---------|
+| `Available` / `Degraded(<reason>)` / `Pending` | environments | the `Available` composite condition (rolls up `ExecutionResourcesResolved` + `AccessGroupSynced`) |
+| `fresh` / `STALE(<age> over)` / `never` | plugins, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
+| `fresh*` | prompts, artifacts | **false-green** — their refresh tracks *name resolution*, not content presence. Only `plugins` is truly content-gated, so the asterisk warns the inventory cannot promise the content is present + current. |
+| `projected` | bips, litellm-connections | row is projected from its CR (presence only) |
+
+The inventory reads the stored projection only — to force a re-sync use
+`ach admin refresh <kind> <name>`.
+
 ## What the demo Environment explicitly does NOT do
 
 (The `demo` Environment now lives at `test/e2e/cluster/05-environment/demo.yaml`.)
