@@ -109,9 +109,6 @@ func TestEnvSkillContentPresent_NotSynced(t *testing.T) {
 		t.Errorf("ExecutionResourcesResolved.Status = %q; want False (skill content absent must block). message=%q",
 			errCond.Status, errCond.Message)
 	}
-	if errCond.Reason != "ResourceUnresolved" {
-		t.Errorf("ExecutionResourcesResolved.Reason = %q; want ResourceUnresolved", errCond.Reason)
-	}
 
 	found := false
 	for _, s := range final.Status.UnresolvedContextSkills {

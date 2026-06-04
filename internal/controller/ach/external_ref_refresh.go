@@ -297,17 +297,11 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// the SAME staged bytes to the size-cap copy below. verifySkillContents
 	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
 	if deps.Kind == "skill" {
-		const skillRawIngressCap = 512 << 20
-		raw, err := io.ReadAll(io.LimitReader(result.Body, skillRawIngressCap+1))
-		if err != nil {
-			return MaterializeResult{Err: fmt.Errorf("skill: read body: %w", err)}
-		}
-		if int64(len(raw)) > skillRawIngressCap {
-			return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: skillRawIngressCap}}
-		}
-		if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
-			// err already wraps sources.ErrUpstreamInvalid.
-			return MaterializeResult{Err: err}
+		raw, serr := stageSkillBody(result.Body)
+		if serr != nil {
+			// *OversizeError → ReasonPluginTooLarge; ErrUpstreamInvalid-wrapping
+			// validation failures → ReasonUpstreamInvalid (classifyFetchError).
+			return MaterializeResult{Err: serr}
 		}
 		result.Body = io.NopCloser(bytes.NewReader(raw)) // re-feed staged bytes (no filter)
 	}

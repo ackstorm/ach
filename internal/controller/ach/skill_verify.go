@@ -4,6 +4,7 @@ package ach
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -18,6 +19,31 @@ import (
 )
 
 const skillMaxManifestBytes = 1 << 20 // 1 MiB
+
+// skillRawIngressCap bounds the raw skill tarball read before validation — an
+// operator-memory guard mirroring gitDefaultMaxCloneBytes (512 MiB), separate
+// from the user-facing SkillMaxSizeMiB cap applied to the size-cap copy.
+const skillRawIngressCap = 512 << 20
+
+// stageSkillBody reads the fetched skill tar.gz into memory (bounded by
+// skillRawIngressCap), validates the SKILL.md gate, and returns the staged
+// bytes for materializeExternalRef's size-cap copy (no pluginpack.Filter is
+// applied — the skill tree is served verbatim). Returns *OversizeError on
+// ingress overflow (→ ReasonPluginTooLarge) and an ErrUpstreamInvalid-wrapping
+// error on a malformed skill tree (→ ReasonUpstreamInvalid).
+func stageSkillBody(body io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(body, skillRawIngressCap+1))
+	if err != nil {
+		return nil, fmt.Errorf("skill: read body: %w", err)
+	}
+	if int64(len(raw)) > skillRawIngressCap {
+		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: skillRawIngressCap}
+	}
+	if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
+		return nil, err // already wraps sources.ErrUpstreamInvalid
+	}
+	return raw, nil
+}
 
 // skillNameRe enforces the agentskills.io name rule: lowercase alnum + single
 // hyphens, no leading/trailing/consecutive hyphen, 1-64 chars (length checked
@@ -49,7 +75,7 @@ func verifySkillContents(r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("skill: gzip open: %w", errors.Join(err, sources.ErrUpstreamInvalid))
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
