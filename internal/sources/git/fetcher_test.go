@@ -4,6 +4,7 @@ package git
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
@@ -171,6 +172,7 @@ func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 	args := buildGitInvocation(
 		"clone",
 		"ghp_secrettoken",
+		AuthBearer,
 		"https://github.com/octo/repo.git",
 		"/tmp/x",
 	)
@@ -194,7 +196,7 @@ func TestFetcher_AuthHeader_NotURL(t *testing.T) {
 // empty (anonymous fetch) buildGitInvocation does NOT prepend the
 // http.extraHeader arg.
 func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
-	args := buildGitInvocation("clone", "", "https://example.com/x.git", "/tmp/x")
+	args := buildGitInvocation("clone", "", AuthBearer, "https://example.com/x.git", "/tmp/x")
 	for _, a := range args {
 		if strings.HasPrefix(a, "http.extraHeader=") {
 			t.Fatalf("unexpected extraHeader on empty token: %v", args)
@@ -223,7 +225,7 @@ func TestLsRemote_ParsesSHA(t *testing.T) {
 	bare := setupBareFixture(t)
 	want := fixtureHeadSHA(t, bare)
 
-	got, err := LsRemote(context.Background(), bare, "main", "")
+	got, err := LsRemote(context.Background(), bare, "main", "", AuthBearer)
 	if err != nil {
 		t.Fatalf("LsRemote: %v", err)
 	}
@@ -240,7 +242,7 @@ func TestLsRemote_BogusRefIsNotFound(t *testing.T) {
 	}
 	bare := setupBareFixture(t)
 
-	_, err := LsRemote(context.Background(), bare, "no-such-ref", "")
+	_, err := LsRemote(context.Background(), bare, "no-such-ref", "", AuthBearer)
 	if err == nil {
 		t.Fatal("expected error for unknown ref")
 	}
@@ -308,7 +310,7 @@ func TestLsRemote_BranchNameShadowedBySiblingDisambiguates(t *testing.T) {
 		t.Fatalf("clone: %v: %s", err, out)
 	}
 
-	got, err := LsRemote(context.Background(), bare, "main", "")
+	got, err := LsRemote(context.Background(), bare, "main", "", AuthBearer)
 	if err != nil {
 		t.Fatalf("LsRemote: %v", err)
 	}
@@ -360,7 +362,7 @@ func TestLsRemote_TagFallback(t *testing.T) {
 		t.Fatalf("clone: %v: %s", err, out)
 	}
 
-	got, err := LsRemote(context.Background(), bare, "v1.0.0", "")
+	got, err := LsRemote(context.Background(), bare, "v1.0.0", "", AuthBearer)
 	if err != nil {
 		t.Fatalf("LsRemote(tag): %v", err)
 	}
@@ -413,11 +415,49 @@ func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
 	}
 }
 
+// TestBuildGitInvocation_BasicOAuth2 asserts the GitLab Basic-auth scheme
+// emits Authorization: Basic base64("oauth2:"+token) — the form self-hosted
+// GitLab honors where Bearer 401s — and never leaks the raw token.
+func TestBuildGitInvocation_BasicOAuth2(t *testing.T) {
+	args := buildGitInvocation(
+		"ls-remote", "glpat-xyz", AuthBasicOAuth2,
+		"--refs", "https://git.example.com/g/p.git",
+	)
+	want := "http.extraHeader=Authorization: Basic " +
+		base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-xyz"))
+	found := false
+	for _, a := range args {
+		if a == want {
+			found = true
+		}
+		if strings.Contains(a, "glpat-xyz") && a != want {
+			t.Fatalf("raw token leaked outside the Basic header: %q", a)
+		}
+	}
+	if !found {
+		t.Fatalf("expected %q in args; got %v", want, args)
+	}
+}
+
+// TestRedactArgs_RedactsBasicHeader asserts the base64 Basic credential is
+// scrubbed from logged args (only the scheme word survives).
+func TestRedactArgs_RedactsBasicHeader(t *testing.T) {
+	blob := base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-supersecret"))
+	in := []string{"-c", "http.extraHeader=Authorization: Basic " + blob, "ls-remote"}
+	out := redactArgs(in)
+	if out[1] != "http.extraHeader=Authorization: Basic ***" {
+		t.Fatalf("basic header not redacted: %q", out[1])
+	}
+	if strings.Contains(strings.Join(out, " "), blob) {
+		t.Fatalf("base64 credential leaked: %v", out)
+	}
+}
+
 // TestFetcher_PinsProtocolAllow asserts every git invocation carries
 // the explicit protocol allow-list so an accidental file:// or ssh://
 // URL cannot be honored. Defense in depth per PR #9 review finding #7.
 func TestFetcher_PinsProtocolAllow(t *testing.T) {
-	args := buildGitInvocation("clone", "tok", "https://example.com/x.git", "/tmp/x")
+	args := buildGitInvocation("clone", "tok", AuthBearer, "https://example.com/x.git", "/tmp/x")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "protocol.allow=never") {
 		t.Errorf("expected protocol.allow=never; got %q", joined)
@@ -507,7 +547,7 @@ func TestLsRemote_RespectsInnerTimeout(t *testing.T) {
 	url := "http://" + ln.Addr().String() + "/x.git"
 
 	start := time.Now()
-	_, err = LsRemote(context.Background(), url, "main", "")
+	_, err = LsRemote(context.Background(), url, "main", "", AuthBearer)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected error from stalled upstream")

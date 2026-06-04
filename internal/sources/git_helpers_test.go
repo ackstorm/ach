@@ -60,3 +60,19 @@ func TestResolvedTransport(t *testing.T) {
 		t.Errorf("empty → %q, want git", got)
 	}
 }
+
+func TestNormalizeGitLabHost(t *testing.T) {
+	cases := map[string]string{
+		"git.example.com":          "git.example.com",
+		"https://git.example.com":  "git.example.com",
+		"http://git.example.com":   "git.example.com",
+		"HTTPS://Git.Example.com/": "Git.Example.com",
+		"":                         "",
+		"gitlab.com/":              "gitlab.com",
+	}
+	for in, want := range cases {
+		if got := sources.NormalizeGitLabHost(in); got != want {
+			t.Errorf("NormalizeGitLabHost(%q) = %q; want %q", in, got, want)
+		}
+	}
+}

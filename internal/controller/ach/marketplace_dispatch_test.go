@@ -83,7 +83,7 @@ func TestDispatchMarketplacePlugin_LocalPathResolvesMarketplaceRepo(t *testing.T
 	}
 	origResolve := newResolveHeadSHAFn
 	defer func() { newResolveHeadSHAFn = origResolve }()
-	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string) (string, error) {
+	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string, _ sourcesgit.AuthScheme) (string, error) {
 		return "abcdef0123456789abcdef0123456789abcdef01", nil
 	}
 	mp := &achv1alpha1.PluginMarketplace{
@@ -151,7 +151,7 @@ func TestDispatchMarketplacePlugin_GitSubdir_RefOnly_PreResolvesSHA(t *testing.T
 		captured = spec
 		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
 	}
-	newResolveHeadSHAFn = func(_ context.Context, url, ref, _ string) (string, error) {
+	newResolveHeadSHAFn = func(_ context.Context, url, ref, _ string, _ sourcesgit.AuthScheme) (string, error) {
 		resolveCalled = true
 		if url != "https://github.com/o/r.git" {
 			t.Errorf("LsRemote url = %q", url)
@@ -200,7 +200,7 @@ func TestDispatchMarketplacePlugin_SHA_TakesPrecedenceOverRef(t *testing.T) {
 	newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
 	}
-	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string) (string, error) {
+	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string, _ sourcesgit.AuthScheme) (string, error) {
 		t.Fatal("LsRemote called even though entry has explicit sha")
 		return "", nil
 	}
@@ -302,7 +302,7 @@ func TestDispatchMarketplacePlugin_GitHub_ShalessPreResolves(t *testing.T) {
 		captured = spec
 		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
 	}
-	newResolveHeadSHAFn = func(_ context.Context, url, ref, _ string) (string, error) {
+	newResolveHeadSHAFn = func(_ context.Context, url, ref, _ string, _ sourcesgit.AuthScheme) (string, error) {
 		resolveCalled = true
 		if url != "https://github.com/owner/name.git" {
 			t.Errorf("LsRemote url = %q", url)
@@ -332,5 +332,75 @@ func TestDispatchMarketplacePlugin_GitHub_ShalessPreResolves(t *testing.T) {
 	}
 	if captured.Subtree != "" {
 		t.Errorf("Subtree = %q; want empty (github Kind has no path)", captured.Subtree)
+	}
+}
+
+// TestMarketplaceOwnRepo_GitLabHostNormalize pins host parity with the
+// source fetcher: a bare host, an https:// host, and a trailing-slash host
+// all yield the SAME https clone URL, and empty defaults to gitlab.com.
+func TestMarketplaceOwnRepo_GitLabHostNormalize(t *testing.T) {
+	for _, host := range []string{"git.example.com", "https://git.example.com", "https://git.example.com/"} {
+		mp := &achv1alpha1.PluginMarketplace{
+			Spec: achv1alpha1.PluginMarketplaceSpec{
+				Type:   "gitlab",
+				GitLab: &achv1alpha1.GitLabSource{Host: host, Project: "g/p", Ref: "main"},
+			},
+		}
+		url, ref, err := marketplaceOwnRepo(mp)
+		if err != nil {
+			t.Fatalf("host %q: %v", host, err)
+		}
+		if url != "https://git.example.com/g/p.git" {
+			t.Errorf("host %q: got %q want https://git.example.com/g/p.git", host, url)
+		}
+		if ref != "main" {
+			t.Errorf("host %q: ref = %q want main", host, ref)
+		}
+	}
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "gitlab",
+			GitLab: &achv1alpha1.GitLabSource{Host: "", Project: "g/p", Ref: "main"},
+		},
+	}
+	url, _, err := marketplaceOwnRepo(mp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if url != "https://gitlab.com/g/p.git" {
+		t.Errorf("empty host: got %q want https://gitlab.com/g/p.git", url)
+	}
+}
+
+func TestSchemeForCloneURL(t *testing.T) {
+	gl := func(host string) *achv1alpha1.PluginMarketplace {
+		return &achv1alpha1.PluginMarketplace{
+			Spec: achv1alpha1.PluginMarketplaceSpec{
+				Type:   "gitlab",
+				GitLab: &achv1alpha1.GitLabSource{Host: host},
+			},
+		}
+	}
+	nonGitlab := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{Type: "github"},
+	}
+	cases := []struct {
+		name     string
+		mp       *achv1alpha1.PluginMarketplace
+		cloneURL string
+		want     sourcesgit.AuthScheme
+	}{
+		{"self-hosted gitlab host match", gl("https://git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
+		{"bare host match", gl("git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
+		{"default gitlab.com match", gl(""), "https://gitlab.com/g/p.git", sourcesgit.AuthBasicOAuth2},
+		{"github Kind entry inside gitlab mp", gl("https://git.example.com"), "https://github.com/o/r.git", sourcesgit.AuthBearer},
+		{"non-gitlab marketplace", nonGitlab, "https://github.com/o/r.git", sourcesgit.AuthBearer},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := schemeForCloneURL(tc.mp, tc.cloneURL); got != tc.want {
+				t.Errorf("schemeForCloneURL = %v; want %v", got, tc.want)
+			}
+		})
 	}
 }

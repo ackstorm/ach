@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	neturl "net/url"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -64,8 +66,8 @@ var newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 // alphabetically first match.
 //
 // Overridable in tests so we don't shell out in unit tests.
-var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string) (string, error) {
-	sha, err := sourcesgit.LsRemote(ctx, url, ref, token)
+var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string, scheme sourcesgit.AuthScheme) (string, error) {
+	sha, err := sourcesgit.LsRemote(ctx, url, ref, token, scheme)
 	if err != nil {
 		return "", fmt.Errorf("ls-remote %s %s: %w", url, ref, err)
 	}
@@ -106,7 +108,7 @@ func dispatchMarketplacePlugin(
 	// already had this branch — Phase 2 generalizes it to all Kinds the
 	// dispatcher returned a Spec for.
 	if spec.SHA == "" {
-		sha, rerr := newResolveHeadSHAFn(ctx, spec.URL, spec.Ref, spec.Token)
+		sha, rerr := newResolveHeadSHAFn(ctx, spec.URL, spec.Ref, spec.Token, spec.AuthScheme)
 		if rerr != nil {
 			return nil, "", rerr
 		}
@@ -132,33 +134,36 @@ func buildGitSpecForEntry(
 	switch entry.Source.Kind {
 	case kindGitSubdir:
 		return sourcesgit.Spec{
-			URL:       entry.Source.URL,
-			Ref:       defaultRef(entry.Source.Ref),
-			SHA:       entry.Source.SHA,
-			Subtree:   entry.Source.Path,
-			Token:     token,
-			CacheRoot: cacheRoot,
+			URL:        entry.Source.URL,
+			Ref:        defaultRef(entry.Source.Ref),
+			SHA:        entry.Source.SHA,
+			Subtree:    entry.Source.Path,
+			Token:      token,
+			CacheRoot:  cacheRoot,
+			AuthScheme: schemeForCloneURL(mp, entry.Source.URL),
 		}, nil
 	case kindURL:
 		// url+path collapse: when path is non-empty the entry behaves
 		// like git-subdir (upstream-drift ack — see marketplace_parse.go
 		// header). Empty path → whole-worktree tar.
 		return sourcesgit.Spec{
-			URL:       entry.Source.URL,
-			Ref:       defaultRef(entry.Source.Ref),
-			SHA:       entry.Source.SHA,
-			Subtree:   entry.Source.Path,
-			Token:     token,
-			CacheRoot: cacheRoot,
+			URL:        entry.Source.URL,
+			Ref:        defaultRef(entry.Source.Ref),
+			SHA:        entry.Source.SHA,
+			Subtree:    entry.Source.Path,
+			Token:      token,
+			CacheRoot:  cacheRoot,
+			AuthScheme: schemeForCloneURL(mp, entry.Source.URL),
 		}, nil
 	case kindGitHub:
 		return sourcesgit.Spec{
-			URL:       "https://github.com/" + entry.Source.Repo + ".git",
-			Ref:       defaultRef(entry.Source.Ref),
-			SHA:       entry.Source.SHA,
-			Subtree:   "", // github Kind has no path → whole-worktree
-			Token:     token,
-			CacheRoot: cacheRoot,
+			URL:        "https://github.com/" + entry.Source.Repo + ".git",
+			Ref:        defaultRef(entry.Source.Ref),
+			SHA:        entry.Source.SHA,
+			Subtree:    "", // github Kind has no path → whole-worktree
+			Token:      token,
+			CacheRoot:  cacheRoot,
+			AuthScheme: schemeForCloneURL(mp, "https://github.com/"+entry.Source.Repo+".git"),
 		}, nil
 	case kindLocalPath:
 		// Resolve the marketplace's own repo URL + Ref.
@@ -167,12 +172,13 @@ func buildGitSpecForEntry(
 			return sourcesgit.Spec{}, err
 		}
 		return sourcesgit.Spec{
-			URL:       url,
-			Ref:       ref,
-			SHA:       "", // resolved by caller via newResolveHeadSHAFn
-			Subtree:   entry.Source.Path,
-			Token:     token,
-			CacheRoot: cacheRoot,
+			URL:        url,
+			Ref:        ref,
+			SHA:        "", // resolved by caller via newResolveHeadSHAFn
+			Subtree:    entry.Source.Path,
+			Token:      token,
+			CacheRoot:  cacheRoot,
+			AuthScheme: schemeForCloneURL(mp, url),
 		}, nil
 	case "":
 		return sourcesgit.Spec{}, errUnsupportedPluginSource
@@ -180,6 +186,32 @@ func buildGitSpecForEntry(
 		return sourcesgit.Spec{}, fmt.Errorf("plugin %q: unknown source Kind %q: %w",
 			truncateErrField(entry.Name), entry.Source.Kind, sources.ErrUpstreamInvalid)
 	}
+}
+
+// schemeForCloneURL picks the git HTTP auth scheme for a marketplace
+// plugin entry's clone URL. A GitLab-typed marketplace authenticates
+// clones to its OWN GitLab host with HTTP Basic "oauth2:<token>" (the only
+// scheme self-hosted GitLab honors; Bearer 401s). Entries pointing at a
+// different host (e.g. a github Kind inside a gitlab marketplace) and every
+// non-gitlab marketplace keep Bearer. Host comparison uses the same
+// sources.NormalizeGitLabHost as marketplaceOwnRepo, so a bare or scheme-
+// prefixed spec.gitlab.host both match.
+func schemeForCloneURL(mp *achv1alpha1.PluginMarketplace, cloneURL string) sourcesgit.AuthScheme {
+	if mp.Spec.Type != "gitlab" || mp.Spec.GitLab == nil {
+		return sourcesgit.AuthBearer
+	}
+	want := sources.NormalizeGitLabHost(mp.Spec.GitLab.Host)
+	if want == "" {
+		want = "gitlab.com"
+	}
+	u, err := neturl.Parse(cloneURL)
+	if err != nil || u.Host == "" {
+		return sourcesgit.AuthBearer
+	}
+	if strings.EqualFold(u.Host, want) {
+		return sourcesgit.AuthBasicOAuth2
+	}
+	return sourcesgit.AuthBearer
 }
 
 // marketplaceOwnRepo returns the (URL, Ref) of the marketplace's own
@@ -198,11 +230,12 @@ func marketplaceOwnRepo(mp *achv1alpha1.PluginMarketplace) (string, string, erro
 		if mp.Spec.GitLab == nil {
 			return "", "", fmt.Errorf("gitlab marketplace missing spec.gitlab: %w", sources.ErrUpstreamInvalid)
 		}
-		host := mp.Spec.GitLab.Host
+		host := sources.NormalizeGitLabHost(mp.Spec.GitLab.Host)
 		if host == "" {
-			host = "https://gitlab.com"
+			host = "gitlab.com"
 		}
-		return host + "/" + mp.Spec.GitLab.Project + ".git", defaultRef(mp.Spec.GitLab.Ref), nil
+		return "https://" + host + "/" + mp.Spec.GitLab.Project + ".git",
+			defaultRef(mp.Spec.GitLab.Ref), nil
 	case "bitbucket":
 		if mp.Spec.Bitbucket == nil {
 			return "", "", fmt.Errorf("bitbucket marketplace missing spec.bitbucket: %w", sources.ErrUpstreamInvalid)

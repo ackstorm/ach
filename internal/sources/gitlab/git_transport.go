@@ -3,10 +3,13 @@
 // This file implements the git-protocol transport for the GitLab
 // source fetcher (FIX_GIT.txt).
 //
-// Auth: same Bearer <token> shape that the legacy REST path's
-// PRIVATE-TOKEN header maps to on GitLab's git endpoints (PAT and
-// Project/Group Access Tokens supported via Bearer on git over HTTPS
-// since GitLab 15.x).
+// Auth: HTTP Basic with username "oauth2" and the token as password
+// (Authorization: Basic base64("oauth2:<token>")). GitLab's documented
+// PAT/Group/Project-token method over git-http; works on gitlab.com AND
+// self-hosted. Bearer is NOT used for GitLab — self-hosted instances
+// configured without Bearer support 401 it and challenge for Basic
+// (verified against a self-hosted GitLab instance). The scheme is selected centrally in
+// internal/sources/gitprovider.schemeForProvider.
 //
 // Clone URL: https://<host>/<project>.git — defaults to gitlab.com
 // when spec.Host is empty (matches the REST path's default).
@@ -16,7 +19,6 @@ package gitlab
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
@@ -27,21 +29,12 @@ func (f *Fetcher) resolvedTransport() string {
 	return sources.ResolvedTransport(f.spec.Transport)
 }
 
-// normalizeGitLabHost strips any case-variant http:// or https://
-// scheme prefix and trailing slashes. Idempotent. Called both at New
-// time (so the normalized form is what cr02validate.HostIdentifier
-// inspects, since CR-02 rejects '/' in flat identifiers) AND at clone-
-// URL construction (defense in depth — and because the spec.Host field
-// is preserved verbatim on the Fetcher).
+// normalizeGitLabHost delegates to the canonical sources.NormalizeGitLabHost
+// (single source of truth shared with the marketplace dispatch path). Kept
+// as a thin local alias so existing call sites + CR-02 validation timing
+// stay unchanged.
 func normalizeGitLabHost(host string) string {
-	low := strings.ToLower(host)
-	switch {
-	case strings.HasPrefix(low, "https://"):
-		host = host[len("https://"):]
-	case strings.HasPrefix(low, "http://"):
-		host = host[len("http://"):]
-	}
-	return strings.TrimRight(host, "/")
+	return sources.NormalizeGitLabHost(host)
 }
 
 // constructCloneURL builds the https clone URL from spec.Host (default

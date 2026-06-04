@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,34 @@ import (
 
 	"github.com/ackstorm/ach/internal/sources"
 )
+
+// AuthScheme selects how the upstream credential is conveyed in the git
+// HTTP Authorization header. The zero value is AuthBearer, so any caller
+// that does not set it keeps the original "Bearer <token>" behavior.
+type AuthScheme int
+
+const (
+	// AuthBearer sends "Authorization: Bearer <token>". Honored by
+	// github.com, bitbucket.org, and gitlab.com (>=15.x).
+	AuthBearer AuthScheme = iota
+	// AuthBasicOAuth2 sends Authorization: Basic base64("oauth2:"+token).
+	// GitLab's documented PAT/Group/Project-token method over git-http and
+	// the ONLY scheme self-hosted GitLab instances configured without
+	// Bearer support honor (verified against a self-hosted GitLab instance: Bearer -> 401,
+	// Basic oauth2:<token> -> 200).
+	AuthBasicOAuth2
+)
+
+// authHeaderValue formats the HTTP Authorization header value for token
+// under scheme. See AuthScheme for the per-provider rationale.
+func authHeaderValue(token string, scheme AuthScheme) string {
+	switch scheme {
+	case AuthBasicOAuth2:
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte("oauth2:"+token))
+	default:
+		return "Bearer " + token
+	}
+}
 
 // Spec configures a single git fetch. Constructed by the
 // PluginMarketplace reconciler from a ClaudeCodeMarketplaceSource entry.
@@ -43,12 +72,18 @@ type Spec struct {
 	Subtree string
 
 	// Token, when non-empty, is sent to git via
-	//   git -c http.extraHeader="Authorization: Bearer <token>" <subcommand>
-	// so the credential never lands in the URL position (which would
-	// leak via /proc/<pid>/cmdline AND persist on disk in
-	// `git config remote.origin.url`). ssh:// URLs are left unchanged;
-	// auth-via-SSH-key is out of scope for v1alpha1.
+	//   git -c http.extraHeader="Authorization: <scheme> <cred>" <subcommand>
+	// where <scheme> is governed by AuthScheme (Bearer by default; Basic
+	// oauth2:<token> for GitLab). The credential never lands in the URL
+	// position (which would leak via /proc/<pid>/cmdline AND persist on
+	// disk in `git config remote.origin.url`). ssh:// URLs are left
+	// unchanged; auth-via-SSH-key is out of scope for v1alpha1.
 	Token string
+
+	// AuthScheme selects the HTTP Authorization header form for Token. The
+	// zero value (AuthBearer) preserves the legacy "Bearer <token>"
+	// behavior; GitLab fetches set AuthBasicOAuth2. Ignored when Token == "".
+	AuthScheme AuthScheme
 
 	// CacheRoot is the operator's cache PVC root. The fetcher creates
 	// an ephemeral clone under <CacheRoot>/.tmp/git-<rand>/ and removes
@@ -158,17 +193,17 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 	// git clone --depth=1 --branch=<ref> <url> <dst>
 	// Auth (when spec.Token != "") rides on -c http.extraHeader= prepended
 	// inside runGit; never URL-injected.
-	if err := runGit(ctx, cloneDir, spec.Token, "clone", "--depth=1", "--branch="+spec.Ref, "--no-tags", "--single-branch", cloneURL, cloneDir); err != nil {
+	if err := runGit(ctx, cloneDir, spec.Token, spec.AuthScheme, "clone", "--depth=1", "--branch="+spec.Ref, "--no-tags", "--single-branch", cloneURL, cloneDir); err != nil {
 		cleanupOnErr()
 		return nil, ClassifyError(err)
 	}
 	// git fetch origin <sha> (depth=1 may not include the pin; this widens just enough).
-	if err := runGit(ctx, cloneDir, spec.Token, "fetch", "--depth=1", "origin", spec.SHA); err != nil {
+	if err := runGit(ctx, cloneDir, spec.Token, spec.AuthScheme, "fetch", "--depth=1", "origin", spec.SHA); err != nil {
 		cleanupOnErr()
 		return nil, ClassifyError(err)
 	}
 	// git checkout <sha> — purely local, no remote interaction, no auth needed.
-	if err := runGit(ctx, cloneDir, "", "checkout", "--detach", spec.SHA); err != nil {
+	if err := runGit(ctx, cloneDir, "", AuthBearer, "checkout", "--detach", spec.SHA); err != nil {
 		cleanupOnErr()
 		return nil, ClassifyError(err)
 	}
@@ -223,7 +258,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // buildGitInvocation returns the full args slice for a git subcommand.
 // token, when non-empty, is prepended as
 //
-//	-c http.extraHeader=Authorization: Bearer <token>
+//	-c http.extraHeader=Authorization: <scheme> <credential>
 //
 // so it never appears in the URL position of any arg (the URL form
 // would persist on disk via `git config remote.origin.url` AND remain
@@ -232,11 +267,14 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // unavoidable without GIT_ASKPASS plumbing — but it is colocated in
 // one auditable arg slot and is redacted by redactArgs in any logs.
 //
+// The scheme (Bearer vs Basic oauth2) is chosen by the caller via
+// AuthScheme; see authHeaderValue.
+//
 // token is positional + mandatory so callers cannot accidentally
 // forget it (which under the previous variadic-last convention would
 // silently put a real arg in the token slot — see PR #9 follow-up
 // review finding #4).
-func buildGitInvocation(subcommand, token string, args ...string) []string {
+func buildGitInvocation(subcommand, token string, scheme AuthScheme, args ...string) []string {
 	// Pin allowed wire protocols. v1alpha1 only ever issues https://
 	// clone URLs in production; the operator never accepts user-
 	// supplied URLs at this layer. Block everything else (ssh://, git://,
@@ -260,7 +298,7 @@ func buildGitInvocation(subcommand, token string, args ...string) []string {
 	}
 	prefix := append([]string(nil), configPins...)
 	prefix = append(prefix,
-		"-c", "http.extraHeader=Authorization: Bearer "+token,
+		"-c", "http.extraHeader=Authorization: "+authHeaderValue(token, scheme),
 		subcommand,
 	)
 	return append(prefix, args...)
@@ -273,8 +311,8 @@ func buildGitInvocation(subcommand, token string, args ...string) []string {
 // token, when non-empty, lands as -c http.extraHeader=Authorization:
 // Bearer <token> via buildGitInvocation. Pass "" for purely local
 // subcommands that don't touch the remote (e.g. checkout).
-func runGit(ctx context.Context, workdir, token, subcommand string, args ...string) error {
-	full := buildGitInvocation(subcommand, token, args...)
+func runGit(ctx context.Context, workdir, token string, scheme AuthScheme, subcommand string, args ...string) error {
+	full := buildGitInvocation(subcommand, token, scheme, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = workdir
 	cmd.Env = append(os.Environ(),
@@ -424,14 +462,16 @@ func (c *cloneReadCloser) Close() error {
 //     not appear in fresh code paths after the buildGitInvocation swap,
 //     but logged-arg redaction stays defensive so an accidental URL
 //     credential doesn't reach disk.
-//   - http.extraHeader=Authorization: Bearer <token> — the current
-//     auth-conveyance form. Token value scrubbed; key name preserved.
+//   - http.extraHeader=Authorization: {Bearer <token> | Basic <base64>} —
+//     the credential is scrubbed, the scheme word preserved.
 func redactArgs(args []string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
 		switch {
-		case strings.HasPrefix(a, "http.extraHeader=Authorization:"):
+		case strings.HasPrefix(a, "http.extraHeader=Authorization: Bearer "):
 			out[i] = "http.extraHeader=Authorization: Bearer ***"
+		case strings.HasPrefix(a, "http.extraHeader=Authorization: Basic "):
+			out[i] = "http.extraHeader=Authorization: Basic ***"
 		case strings.HasPrefix(a, "https://") && strings.Contains(a, "@"):
 			at := strings.LastIndex(a, "@")
 			out[i] = "https://***" + a[at:]

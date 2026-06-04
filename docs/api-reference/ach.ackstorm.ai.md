@@ -450,7 +450,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `host` _string_ | Host of the GitLab instance. Defaults to gitlab.com when empty. |  |  |
+| `host` _string_ | Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Prompt /<br />PluginMarketplace). Defaults to gitlab.com when empty. |  |  |
 | `project` _string_ | Project is the "<namespace>/<project>" GitLab identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the project repo. |  |  |
 | `ref` _string_ | Ref is a branch or tag name. |  | MinLength: 1 <br />Required: \{\} <br /> |

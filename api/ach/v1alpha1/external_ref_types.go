@@ -136,7 +136,11 @@ type GitHubSource struct {
 
 // GitLabSource describes a gitlab-hosted upstream (Hub §10.1).
 type GitLabSource struct {
-	// Host of the GitLab instance. Defaults to gitlab.com when empty.
+	// Host of the GitLab instance. Accepts a bare host ("git.example.com")
+	// or a full "https://git.example.com" form — the scheme is stripped and
+	// the clone/REST URL is always built as https://<host>. Behaves
+	// identically for every consumer (Artifact / Plugin / Prompt /
+	// PluginMarketplace). Defaults to gitlab.com when empty.
 	//
 	// +optional
 	Host string `json:"host,omitempty"`

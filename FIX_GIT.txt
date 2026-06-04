@@ -169,6 +169,12 @@ one of:
   - `git -c http.extraHeader="Authorization: bearer <token>" ...` —
     also acceptable, header is stripped from process listing.
 
+  NOTE (2026-06-04): GitLab git-http does NOT universally honor Bearer.
+  Self-hosted instances (e.g. git.example.com) reject it with 401 and
+  require HTTP Basic "oauth2:<token>". ACH now selects Basic for GitLab via
+  internal/sources/git.AuthScheme (gitprovider.schemeForProvider /
+  marketplace_dispatch.schemeForCloneURL). github/bitbucket stay on Bearer.
+
 The Plugin/Prompt/Artifact CRs already carry spec.github.authSecretRef
 → Secret with `access-key` (PAT). The outer fetcher consumes that
 Secret in the existing path; the git fetcher needs the same
