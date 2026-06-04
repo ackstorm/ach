@@ -17,11 +17,14 @@
 // Design notes:
 //
 //   - Runtime-config target: ".codex/config.toml" with [mcp_servers.<id>]
-//     and [a2a_agents.<id>] tables (CLI spec §7.4 codex). Each table
-//     carries url + headers["x-ach-key"] + transport keys. MergeDeep
+//     and [a2a_agents.<id>] tables (CLI spec §7.4 codex). An mcp_servers
+//     table carries url + http_headers["x-ach-key"] (codex infers HTTP
+//     from url presence — there is NO transport key). MergeDeep
 //     classification; contributed top-level keys recorded under
 //     "mcp_servers.<id>" / "a2a_agents.<id>" so STATE-05 inverse-merge
-//     can target the right TOML subtable.
+//     can target the right TOML subtable. (a2a_agents tables still carry
+//     the legacy url+headers+transport shape pending the separate a2a
+//     design decision.)
 //
 //   - Plugin transformation: src follows the Claude Code plugin layout
 //     (.claude-plugin/plugin.json + agents/ + commands/ + prompts/ +
@@ -180,12 +183,16 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 }
 
 // mcpServerTable is the per-server TOML shape Codex consumes at
-// [mcp_servers.<id>]. Field tags match CLI spec §7.4 codex literal
-// keys.
+// [mcp_servers.<id>]. Codex infers an HTTP server from the PRESENCE of
+// `url` (no `transport` key exists) and reads static headers from
+// `http_headers` (a generic `headers` table is ignored). The earlier
+// {url, headers, transport:"http"} shape meant the x-ach-key auth header
+// was never sent. Schema:
+// https://developers.openai.com/codex/config-reference. This mirrors the
+// already-correct plugin surgery path (codexMCPSurgery).
 type mcpServerTable struct {
-	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers"`
-	Transport string            `toml:"transport"`
+	URL         string            `toml:"url"`
+	HTTPHeaders map[string]string `toml:"http_headers,omitempty"`
 }
 
 // a2aAgentTable mirrors the MCP server shape for A2A agents under
@@ -231,9 +238,8 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 
 	for _, server := range m.Runtime.MCPServers {
 		shape.MCPServers[server.ID] = mcpServerTable{
-			URL:       server.Endpoint,
-			Headers:   adapter.HeadersWithCredential(credential),
-			Transport: "http",
+			URL:         server.Endpoint,
+			HTTPHeaders: adapter.HeadersWithCredential(credential),
 		}
 		contributedKeys = append(contributedKeys, "mcp_servers."+server.ID)
 	}
