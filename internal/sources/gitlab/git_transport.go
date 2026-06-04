@@ -3,10 +3,13 @@
 // This file implements the git-protocol transport for the GitLab
 // source fetcher (FIX_GIT.txt).
 //
-// Auth: same Bearer <token> shape that the legacy REST path's
-// PRIVATE-TOKEN header maps to on GitLab's git endpoints (PAT and
-// Project/Group Access Tokens supported via Bearer on git over HTTPS
-// since GitLab 15.x).
+// Auth: HTTP Basic with username "oauth2" and the token as password
+// (Authorization: Basic base64("oauth2:<token>")). GitLab's documented
+// PAT/Group/Project-token method over git-http; works on gitlab.com AND
+// self-hosted. Bearer is NOT used for GitLab — self-hosted instances
+// configured without Bearer support 401 it and challenge for Basic
+// (verified vs git.ackstorm.com). The scheme is selected centrally in
+// internal/sources/gitprovider.schemeForProvider.
 //
 // Clone URL: https://<host>/<project>.git — defaults to gitlab.com
 // when spec.Host is empty (matches the REST path's default).

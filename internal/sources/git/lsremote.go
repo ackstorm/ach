@@ -37,9 +37,11 @@ const lsRemoteTimeout = 30 * time.Second
 // namespace expansion.
 //
 // authToken, when non-empty, is sent via
-// `-c http.extraHeader=Authorization: Bearer <token>` so it never
-// appears in the URL (URL injection leaks via /proc/<pid>/cmdline AND
-// via local git config — both threats are closed by construction).
+// `-c http.extraHeader=Authorization: <scheme> <cred>` (scheme selected
+// by the trailing AuthScheme arg — Bearer by default, Basic oauth2:<token>
+// for GitLab) so it never appears in the URL (URL injection leaks via
+// /proc/<pid>/cmdline AND via local git config — both threats are closed
+// by construction).
 //
 // Errors are classified via [ClassifyError] so the caller observes the
 // same internal/sources sentinel set as a Fetch failure does.

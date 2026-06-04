@@ -117,6 +117,18 @@ each fetch is now surfaced on the `SourceReachable=True` (Plugin/Prompt/
 Artifact) and `Synced=True` (PluginMarketplace) condition messages as
 `transport=<git|rest|n/a>`.
 
+**Self-hosted GitLab + git transport (as of 2026-06-04)**: ACH authenticates
+GitLab git-smart-http with HTTP Basic `oauth2:<token>` (GitLab's documented
+PAT/Group/Project-token method), NOT `Authorization: Bearer`. Self-hosted
+instances configured without Bearer support (e.g. `git.ackstorm.com`) reject
+Bearer with `401 / sources: unauthorized` even when the token, scope, and
+project path are all valid. Basic is selected automatically for `gitlab`
+source types and for marketplace clones whose host matches the marketplace's
+`spec.gitlab.host` — `transport: rest` is NO LONGER required as a workaround
+for this 401. `spec.gitlab.host` accepts `git.example.com` or
+`https://git.example.com` identically (the clone URL is always https).
+(github.com / bitbucket.org still use Bearer.)
+
 ### ℹ️ `NameConflict` condition reason — removed in v0.2.5+
 `PluginMarketplace` previously set `Synced=False reason=NameConflict` when two
 marketplaces exposed a plugin with the same bare name. This reason is **deleted**.

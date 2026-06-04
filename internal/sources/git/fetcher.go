@@ -72,11 +72,12 @@ type Spec struct {
 	Subtree string
 
 	// Token, when non-empty, is sent to git via
-	//   git -c http.extraHeader="Authorization: Bearer <token>" <subcommand>
-	// so the credential never lands in the URL position (which would
-	// leak via /proc/<pid>/cmdline AND persist on disk in
-	// `git config remote.origin.url`). ssh:// URLs are left unchanged;
-	// auth-via-SSH-key is out of scope for v1alpha1.
+	//   git -c http.extraHeader="Authorization: <scheme> <cred>" <subcommand>
+	// where <scheme> is governed by AuthScheme (Bearer by default; Basic
+	// oauth2:<token> for GitLab). The credential never lands in the URL
+	// position (which would leak via /proc/<pid>/cmdline AND persist on
+	// disk in `git config remote.origin.url`). ssh:// URLs are left
+	// unchanged; auth-via-SSH-key is out of scope for v1alpha1.
 	Token string
 
 	// AuthScheme selects the HTTP Authorization header form for Token. The
@@ -257,7 +258,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // buildGitInvocation returns the full args slice for a git subcommand.
 // token, when non-empty, is prepended as
 //
-//	-c http.extraHeader=Authorization: Bearer <token>
+//	-c http.extraHeader=Authorization: <scheme> <credential>
 //
 // so it never appears in the URL position of any arg (the URL form
 // would persist on disk via `git config remote.origin.url` AND remain
@@ -265,6 +266,9 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 // also in cmdline for the duration of the subprocess, which is
 // unavoidable without GIT_ASKPASS plumbing — but it is colocated in
 // one auditable arg slot and is redacted by redactArgs in any logs.
+//
+// The scheme (Bearer vs Basic oauth2) is chosen by the caller via
+// AuthScheme; see authHeaderValue.
 //
 // token is positional + mandatory so callers cannot accidentally
 // forget it (which under the previous variadic-last convention would
@@ -458,8 +462,8 @@ func (c *cloneReadCloser) Close() error {
 //     not appear in fresh code paths after the buildGitInvocation swap,
 //     but logged-arg redaction stays defensive so an accidental URL
 //     credential doesn't reach disk.
-//   - http.extraHeader=Authorization: Bearer <token> — the current
-//     auth-conveyance form. Token value scrubbed; key name preserved.
+//   - http.extraHeader=Authorization: {Bearer <token> | Basic <base64>} —
+//     the credential is scrubbed, the scheme word preserved.
 func redactArgs(args []string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
