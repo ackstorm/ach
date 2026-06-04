@@ -126,6 +126,50 @@ func ListMarketplacePlugins(ctx context.Context, pool *pgxpool.Pool, marketplace
 	return out, nil
 }
 
+// ListAllMarketplacePlugins returns every row across all marketplaces,
+// ordered by (marketplace_name, name) ASC. marketplace_plugins has no
+// deletion_timestamp column, so all rows are live. Used by the platform-api
+// admin inventory endpoint (read-only). Returns an empty (non-nil) slice on
+// zero rows.
+func ListAllMarketplacePlugins(ctx context.Context, pool *pgxpool.Pool) ([]MarketplacePlugin, error) {
+	const sql = `
+		SELECT marketplace_name, name, storage_location,
+		       COALESCE(upstream_rev, ''),
+		       COALESCE(last_successful_refresh, 'epoch'::timestamptz),
+		       COALESCE(next_refresh_at, 'epoch'::timestamptz),
+		       max_staleness_seconds
+		  FROM marketplace_plugins
+		 ORDER BY marketplace_name ASC, name ASC
+	`
+	rows, err := pool.Query(ctx, sql)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListAllMarketplacePlugins: %w", err)
+	}
+	defer rows.Close()
+
+	out := []MarketplacePlugin{}
+	for rows.Next() {
+		var p MarketplacePlugin
+		if err := rows.Scan(
+			&p.MarketplaceName, &p.Name, &p.StorageLocation, &p.UpstreamRev,
+			&p.LastSuccessfulRefresh, &p.NextRefreshAt, &p.MaxStalenessSeconds,
+		); err != nil {
+			return nil, fmt.Errorf("db: ListAllMarketplacePlugins scan: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListAllMarketplacePlugins iterate: %w", err)
+	}
+	return out, nil
+}
+
 // DeleteMarketplacePlugin removes the row keyed by (marketplaceName, name).
 // Absence is not an error.
 func DeleteMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, marketplaceName, name string) error {

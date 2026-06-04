@@ -120,6 +120,47 @@ func GetArtifactByName(ctx context.Context, pool *pgxpool.Pool, ns, name string)
 	return r, nil
 }
 
+// ListArtifacts returns every live artifacts row in ns ordered by name ASC.
+// Mirrors ListEnvironments: rows with deletion_timestamp set are excluded.
+// Used by the platform-api admin inventory endpoint (read-only).
+func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]ArtifactRow, error) {
+	const sql = `
+		SELECT namespace, name, storage_location, scope,
+		       last_successful_refresh, max_staleness_seconds,
+		       deletion_timestamp, resource_version, updated_at
+		  FROM artifacts
+		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+	`
+	rows, err := pool.Query(ctx, sql, ns)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListArtifacts(%s): %w", ns, err)
+	}
+	defer rows.Close()
+	out := []ArtifactRow{}
+	for rows.Next() {
+		var r ArtifactRow
+		if err := rows.Scan(
+			&r.Namespace, &r.Name, &r.StorageLocation, &r.Scope,
+			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
+			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("db: ListArtifacts(%s) scan: %w", ns, err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListArtifacts(%s) iterate: %w", ns, err)
+	}
+	return out, nil
+}
+
 // SoftDeleteArtifact sets deletion_timestamp = now() without removing the
 // row (CS-09). Idempotent: rows already in drain-mode are left untouched
 // so duplicate finalizer ticks do not refresh the drain clock.

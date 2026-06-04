@@ -139,6 +139,48 @@ func GetDefaultLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns str
 	return r, nil
 }
 
+// ListLitellmConnections returns every live litellm_connections row in ns
+// ordered by name ASC. Mirrors ListEnvironments: rows with deletion_timestamp
+// set are excluded. Used by the platform-api admin inventory endpoint
+// (read-only). Steady state is a single 'default' row.
+func ListLitellmConnections(ctx context.Context, pool *pgxpool.Pool, ns string) ([]LiteLLMConnectionRow, error) {
+	const sql = `
+		SELECT namespace, name, endpoint,
+		       master_key_secret_namespace, master_key_secret_name, master_key_secret_key,
+		       deletion_timestamp, resource_version, updated_at, origin, locked
+		  FROM litellm_connections
+		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+	`
+	rows, err := pool.Query(ctx, sql, ns)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListLitellmConnections(%s): %w", ns, err)
+	}
+	defer rows.Close()
+	out := []LiteLLMConnectionRow{}
+	for rows.Next() {
+		var r LiteLLMConnectionRow
+		if err := rows.Scan(
+			&r.Namespace, &r.Name, &r.Endpoint,
+			&r.MasterKeySecretNamespace, &r.MasterKeySecretName, &r.MasterKeySecretKey,
+			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
+		); err != nil {
+			return nil, fmt.Errorf("db: ListLitellmConnections(%s) scan: %w", ns, err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListLitellmConnections(%s) iterate: %w", ns, err)
+	}
+	return out, nil
+}
+
 const softDeleteLiteLLMConnectionSQL = `
 	UPDATE litellm_connections
 	   SET deletion_timestamp = now(),
