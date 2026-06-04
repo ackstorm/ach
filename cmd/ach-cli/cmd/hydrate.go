@@ -140,12 +140,18 @@ collision cascade, adapter dispatch (5-platform closed set), atomic
 state write.
 
 Scope filters (CLI spec §6.3 / STATE-10):
-  --include-runtime   Reconcile runtime entries (models / mcpServers
-                      / a2aAgents) alongside context.
+  --include-runtime   Reconcile the Environment's DIRECT runtime entries
+                      (models / mcpServers / a2aAgents) alongside context,
+                      projecting them into the adapter config + the
+                      <ach-dir> runtime mirror.
   --only-runtime      Reconcile ONLY runtime entries (mutually
                       exclusive with --include-runtime).
                       Default: context only (prompts / plugins /
                       artifacts).
+
+  Note: plugin-contributed MCP servers are part of CONTEXT and always
+  project (default). --include-runtime governs the Environment's directly
+  attached mcp/a2a/models, NOT plugin MCPs.
 
 Behavior toggles:
   --sync              STATE-05 inverse-merge deletion of state entries
@@ -249,7 +255,7 @@ Exit codes (spec §9.3):
 
 	// Phase 7 engine flags (D-03).
 	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
-		"Reconcile runtime entries (models / mcpServers / a2aAgents) alongside context")
+		"Reconcile direct runtime entries (mcp/a2a/models); plugin MCPs always project via context")
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
 		"Reconcile ONLY runtime entries (mutually exclusive with --include-runtime)")
 	cmd.Flags().BoolVar(&flagSync, "sync", false,

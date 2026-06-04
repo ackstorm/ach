@@ -54,7 +54,7 @@ func TestProjection_ReHydrate_NativeDestAndByteNoOp(t *testing.T) {
 	}
 
 	// --- 1st hydrate (fresh, no prior state) ---
-	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true)
+	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("first Render: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestProjection_ReHydrate_NativeDestAndByteNoOp(t *testing.T) {
 	})
 
 	// --- 2nd hydrate (unchanged source + prior state) ---
-	res2, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true)
+	res2, err := disp.Render(context.Background(), m, prior, achDir, toolRoot, true, true)
 	if err != nil {
 		t.Fatalf("second Render (no-op): %v", err)
 	}

@@ -143,7 +143,12 @@ func (e *extractorImpl) ExtractContent(ctx context.Context, ref manifest.Content
 		}
 		defer func() { _ = os.RemoveAll(filepath.Dir(staged)) }()
 		if srcXxh3 == prevHash {
-			return ExtractResult{SourceHash: srcXxh3}, nil
+			// Re-hydrate no-op: the upstream source is unchanged, so the
+			// on-disk tree is left untouched (WrittenFiles stays empty so
+			// state composition is undisturbed). Report the count of
+			// preserved on-disk files so the summary reads "N preserved"
+			// instead of silently dropping them.
+			return ExtractResult{SourceHash: srcXxh3, Preserved: countRegularFiles(finalAbs)}, nil
 		}
 		f, oerr := os.Open(staged)
 		if oerr != nil {
@@ -201,6 +206,26 @@ func (e *extractorImpl) stageAndMap(ctx context.Context, body io.Reader, content
 		})
 	}
 	return out, nil
+}
+
+// countRegularFiles returns the number of regular files at or under abs
+// (the extracted content root for a single ContentRef). Used on the
+// re-hydrate no-op path to report how many on-disk files were preserved
+// without re-walking them into WrittenFiles. A missing path or walk error
+// yields 0 (the no-op assumes the prior tree is intact; a vanished tree is
+// not "preserved").
+func countRegularFiles(abs string) int {
+	n := 0
+	_ = filepath.WalkDir(abs, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // best-effort count; a walk error just under-counts
+		}
+		if d.Type().IsRegular() {
+			n++
+		}
+		return nil
+	})
+	return n
 }
 
 // priorContentSourceHash returns the upstream SourceHash recorded for the
@@ -341,7 +366,7 @@ type adapterDispatcherImpl struct {
 // WrittenFiles bucket. Dropped top-level kinds are aggregated into
 // DroppedComponents for the single end-of-hydration stderr warning
 // (WIRE-03 / D-12).
-func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins bool) (RenderResult, error) {
+func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins, includeRuntime bool) (RenderResult, error) {
 	ad, ok := adapter.Lookup(d.platformID)
 	if !ok {
 		return RenderResult{}, &exit.CodedError{
@@ -350,31 +375,38 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 	}
 
-	fws, err := ad.RenderRuntime(ctx, m, s)
-	if err != nil {
-		return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
-	}
-
 	var result RenderResult
-	for _, fw := range fws {
-		if d.global {
-			fw.Path = remapGlobalPath(d.platformID, fw.Path)
-		}
-		entry, err := d.publishRuntimeFile(fw, s, toolRoot)
+
+	// Direct runtime block (m.Runtime mcp/a2a/models) is the --include-runtime
+	// scope slice — gated so a default hydrate projects ONLY plugin-contributed
+	// mcps (via projectPlugins below), not the Environment's directly-attached
+	// runtime endpoints. RenderRuntime is the only consumer of m.Runtime here,
+	// so skipping it gates the whole direct-runtime projection.
+	if includeRuntime {
+		fws, err := ad.RenderRuntime(ctx, m, s)
 		if err != nil {
-			return RenderResult{}, err
+			return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
 		}
-		result.WrittenFiles = append(result.WrittenFiles, entry)
-		// Tally runtime components (mcp/a2a) by the settings keys that
-		// actually landed in the adapter config, so the hydrate summary
-		// can never disagree with the file the user inspects (the manifest
-		// is deliberately NOT the count source).
-		for _, k := range fw.Keys {
-			if kind := runtimeKindForKey(k); kind != "" {
-				if result.ProjectedByKind == nil {
-					result.ProjectedByKind = map[string]int{}
+		for _, fw := range fws {
+			if d.global {
+				fw.Path = remapGlobalPath(d.platformID, fw.Path)
+			}
+			entry, err := d.publishRuntimeFile(fw, s, toolRoot)
+			if err != nil {
+				return RenderResult{}, err
+			}
+			result.WrittenFiles = append(result.WrittenFiles, entry)
+			// Tally runtime components (mcp/a2a) by the settings keys that
+			// actually landed in the adapter config, so the hydrate summary
+			// can never disagree with the file the user inspects (the manifest
+			// is deliberately NOT the count source).
+			for _, k := range fw.Keys {
+				if kind := runtimeKindForKey(k); kind != "" {
+					if result.ProjectedByKind == nil {
+						result.ProjectedByKind = map[string]int{}
+					}
+					result.ProjectedByKind[kind]++
 				}
-				result.ProjectedByKind[kind]++
 			}
 		}
 	}
@@ -1040,6 +1072,7 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		SourceHash: sourceHash,
 		Merge:      mergeKindToString(fw.Merge),
 		Keys:       append([]string(nil), fw.Keys...),
+		Preserved:  skip,
 	}, nil
 }
 
