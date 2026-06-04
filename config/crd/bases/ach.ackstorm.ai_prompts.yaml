@@ -376,8 +376,12 @@ spec:
                     - name
                     type: object
                   host:
-                    description: Host of the GitLab instance. Defaults to gitlab.com
-                      when empty.
+                    description: |-
+                      Host of the GitLab instance. Accepts a bare host ("git.example.com")
+                      or a full "https://git.example.com" form — the scheme is stripped and
+                      the clone/REST URL is always built as https://<host>. Behaves
+                      identically for every consumer (Artifact / Plugin / Prompt /
+                      PluginMarketplace). Defaults to gitlab.com when empty.
                     type: string
                   path:
                     description: Path within the project repo.
