@@ -152,19 +152,30 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 // so the same manifest + credential always yields byte-identical bytes.
 // SAFE-04 Tier 2 cascade depends on this byte-equality.
 //
+// opencodeMCPEntry is the per-server JSON shape OpenCode consumes under
+// the `mcp` key for a remote (HTTP) MCP server. OpenCode uses
+// `"type":"remote"` (NOT "http"), `url`, optional `"enabled":true`, and a
+// `headers` map. The earlier {type:"http"} shape (copied from claudecode)
+// was silently ignored. Schema ref: https://opencode.ai/docs/mcp-servers/.
+type opencodeMCPEntry struct {
+	Type    string            `json:"type"` // "remote"
+	URL     string            `json:"url"`
+	Enabled bool              `json:"enabled"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
 // MCP carries the per-server JSON shape OpenCode consumes under the
-// `mcp` key. The shape mirrors the Claude Code MCP server registry
-// format (type=http, url, headers) — spec §7.4 does not pin a tighter
-// shape for OpenCode, so we keep the cross-adapter symmetry that
-// 07-W3-01 established for claudecode.
+// `mcp` key (opencodeMCPEntry: type=remote, url, enabled, headers).
 //
 // A2AAgents mirrors the MCP server shape for A2A agents. Spec §7.4 does
 // not pin a fixed A2A shape for OpenCode (A2A support is recent +
 // evolving across all platforms), so we mirror the MCP shape under a
 // parallel `a2aAgents` top-level key — same shape choice as claudecode.
+// A2A projection across non-claude tools is a separate open design
+// question (see hydrate bug-sweep plan).
 type configJSONShape struct {
-	MCP       map[string]adapter.MCPServerEntry `json:"mcp"`
-	A2AAgents map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
+	MCP       map[string]opencodeMCPEntry      `json:"mcp"`
+	A2AAgents map[string]adapter.A2AAgentEntry `json:"a2aAgents,omitempty"`
 }
 
 // renderConfigJSON builds the `.opencode/opencode.json` bytes from a
@@ -176,7 +187,7 @@ type configJSONShape struct {
 // symmetry claudecode established).
 func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := configJSONShape{
-		MCP:       map[string]adapter.MCPServerEntry{},
+		MCP:       map[string]opencodeMCPEntry{},
 		A2AAgents: map[string]adapter.A2AAgentEntry{},
 	}
 
@@ -186,9 +197,10 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
 
 	for _, server := range m.Runtime.MCPServers {
-		entry := adapter.MCPServerEntry{
-			Type:    "http",
+		entry := opencodeMCPEntry{
+			Type:    "remote",
 			URL:     server.Endpoint,
+			Enabled: true,
 			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.MCP[server.ID] = entry

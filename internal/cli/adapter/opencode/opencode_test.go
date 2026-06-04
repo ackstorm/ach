@@ -203,6 +203,7 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 		MCP map[string]struct {
 			Type    string            `json:"type"`
 			URL     string            `json:"url"`
+			Enabled bool              `json:"enabled"`
 			Headers map[string]string `json:"headers"`
 		} `json:"mcp"`
 		A2AAgents map[string]struct {
@@ -220,8 +221,13 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if got.MCP["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCP["demo-mcp-jwt"].URL)
 	}
-	if got.MCP["demo-mcp-jwt"].Type != "http" {
-		t.Errorf("MCP type = %q, want http", got.MCP["demo-mcp-jwt"].Type)
+	// OpenCode remote MCP uses type=="remote" (NOT "http") + enabled=true.
+	// Schema: https://opencode.ai/docs/mcp-servers/.
+	if got.MCP["demo-mcp-jwt"].Type != "remote" {
+		t.Errorf("MCP type = %q, want remote", got.MCP["demo-mcp-jwt"].Type)
+	}
+	if !got.MCP["demo-mcp-jwt"].Enabled {
+		t.Errorf("MCP enabled = false, want true")
 	}
 	if len(got.A2AAgents) != 1 {
 		t.Errorf("a2aAgents map size = %d, want 1", len(got.A2AAgents))
