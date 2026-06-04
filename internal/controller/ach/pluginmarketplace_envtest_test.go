@@ -496,7 +496,7 @@ func withFakeGitFetcher(t *testing.T) *gitFetcherRegistry {
 		return reg.lookup(spec)
 	}
 	origResolve := newResolveHeadSHAFn
-	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string) (string, error) {
+	newResolveHeadSHAFn = func(_ context.Context, _, _, _ string, _ sourcesgit.AuthScheme) (string, error) {
 		return "ffffffffffffffffffffffffffffffffffffffff", nil
 	}
 	t.Cleanup(func() {
