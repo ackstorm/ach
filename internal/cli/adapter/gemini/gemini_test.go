@@ -186,6 +186,7 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	var got struct {
 		MCPServers map[string]struct {
 			Type    string            `json:"type"`
+			HTTPURL string            `json:"httpUrl"`
 			URL     string            `json:"url"`
 			Headers map[string]string `json:"headers"`
 		} `json:"mcpServers"`
@@ -201,11 +202,17 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	if len(got.MCPServers) != 2 {
 		t.Errorf("mcpServers map size = %d, want 2", len(got.MCPServers))
 	}
-	if got.MCPServers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
-		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].URL)
+	// gemini-cli streamable-HTTP MCP uses "httpUrl" (a plain "url" means
+	// SSE) and carries NO "type" field. Schema:
+	// https://github.com/google-gemini/gemini-cli (settings.json / MCP).
+	if got.MCPServers["demo-mcp-jwt"].HTTPURL != "http://localhost:8080/mcp/demo-mcp-jwt" {
+		t.Errorf("MCP httpUrl = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].HTTPURL)
 	}
-	if got.MCPServers["demo-mcp-jwt"].Type != "http" {
-		t.Errorf("MCP type = %q, want http", got.MCPServers["demo-mcp-jwt"].Type)
+	if got.MCPServers["demo-mcp-jwt"].URL != "" {
+		t.Errorf("MCP url must be absent (httpUrl is the HTTP field for gemini); got %q", got.MCPServers["demo-mcp-jwt"].URL)
+	}
+	if got.MCPServers["demo-mcp-jwt"].Type != "" {
+		t.Errorf("MCP type must be absent for gemini; got %q", got.MCPServers["demo-mcp-jwt"].Type)
 	}
 	if len(got.A2AAgents) != 1 {
 		t.Errorf("a2aAgents map size = %d, want 1", len(got.A2AAgents))

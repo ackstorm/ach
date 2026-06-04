@@ -142,18 +142,29 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 // so the output is deterministic — important for FMT-05 deterministic
 // re-hydrate / drift no-op detection.
 //
+// geminiMCPEntry is the per-server JSON shape Gemini CLI consumes for a
+// streamable-HTTP MCP server under the "mcpServers" key. Unlike Claude
+// Code, gemini-cli uses "httpUrl" (a plain "url" means SSE, not HTTP) and
+// has NO "type" field. The earlier {type:"http", url} shape (copied from
+// claudecode) produced non-loadable config. Schema ref:
+// https://github.com/google-gemini/gemini-cli (settings.json / MCP).
+type geminiMCPEntry struct {
+	HTTPURL string            `json:"httpUrl"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
 // MCPServers carries the per-server JSON shape Gemini CLI consumes under
-// the "mcpServers" key per CLI spec §7.4 gemini-cli paragraph. The shape
-// mirrors Claude Code's MCP server registry format — same
-// {type, url, headers} surface.
+// the "mcpServers" key per CLI spec §7.4 gemini-cli paragraph
+// (geminiMCPEntry: httpUrl + headers, no type).
 //
 // A2AAgents mirrors the MCP server shape under "a2aAgents". Spec §7.4
 // gemini-cli does not pin a fixed A2A shape (parity with the claudecode
 // reference); we mirror the MCP shape so the JSON round-trip is
-// symmetric on both sides.
+// symmetric on both sides. A2A projection across non-claude tools is a
+// separate open design question (see hydrate bug-sweep plan).
 type settingsShape struct {
-	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
-	A2AAgents  map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
+	MCPServers map[string]geminiMCPEntry        `json:"mcpServers"`
+	A2AAgents  map[string]adapter.A2AAgentEntry `json:"a2aAgents,omitempty"`
 }
 
 // renderSettingsJSON builds the .gemini/settings.json bytes from a
@@ -163,16 +174,15 @@ type settingsShape struct {
 // plaintext discipline CLI-04 / D-04 establishes for the trust path).
 func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := settingsShape{
-		MCPServers: map[string]adapter.MCPServerEntry{},
+		MCPServers: map[string]geminiMCPEntry{},
 		A2AAgents:  map[string]adapter.A2AAgentEntry{},
 	}
 
 	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
 
 	for _, server := range m.Runtime.MCPServers {
-		entry := adapter.MCPServerEntry{
-			Type:    "http",
-			URL:     server.Endpoint,
+		entry := geminiMCPEntry{
+			HTTPURL: server.Endpoint,
 			Headers: adapter.HeadersWithCredential(credential),
 		}
 		shape.MCPServers[server.ID] = entry
