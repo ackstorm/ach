@@ -138,6 +138,56 @@ func TestUpdateAccessGroup_PutsByID(t *testing.T) {
 	}
 }
 
+// TestAccessGroupUpdateRequest_EmptyManagedListsMarshalToBrackets is the
+// regression guard for the omitempty-drops-the-clear bug: the four
+// reconciler-managed lists MUST always serialize (empty → `[]`, which
+// clears the dimension on LiteLLM's partial-update PUT), while
+// AssignedKeyIDs MUST stay absent (still omitempty — the reconciler does
+// not manage keys, so absent=keep). It fails the instant anyone re-adds
+// `omitempty` to a managed list.
+func TestAccessGroupUpdateRequest_EmptyManagedListsMarshalToBrackets(t *testing.T) {
+	b, err := json.Marshal(AccessGroupUpdateRequest{
+		AccessModelNames:   []string{},
+		AccessMCPServerIDs: []string{},
+		AccessAgentIDs:     []string{},
+		AssignedTeamIDs:    []string{},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		`"access_model_names":[]`,
+		`"access_mcp_server_ids":[]`,
+		`"access_agent_ids":[]`,
+		`"assigned_team_ids":[]`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("marshaled body must contain %s (empty managed list must clear, not be dropped); got %s", want, got)
+		}
+	}
+	// AssignedKeyIDs is still omitempty → absent when empty (absent=keep).
+	if strings.Contains(got, "assigned_key_ids") {
+		t.Errorf("assigned_key_ids must be ABSENT when empty (still omitempty); got %s", got)
+	}
+}
+
+// TestAccessGroupUpdateRequest_NilManagedListMarshalsToNull documents WHY
+// the controller normalizes nil → []string{} (env_controller.go
+// nonNilStrings): without omitempty a nil managed slice marshals to JSON
+// `null`, which is NOT a proven LiteLLM clear — only `[]` is. So the
+// controller must never let a nil reach the wire for a managed dimension.
+func TestAccessGroupUpdateRequest_NilManagedListMarshalsToNull(t *testing.T) {
+	b, err := json.Marshal(AccessGroupUpdateRequest{}) // all managed lists nil
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	if !strings.Contains(got, `"access_mcp_server_ids":null`) {
+		t.Errorf("nil managed list serializes to null (not omitted) — this is why nonNilStrings is required; got %s", got)
+	}
+}
+
 // TestDeleteAccessGroupByID_DeletesByID asserts DELETE /v1/access_group/{id}.
 // 204 → nil. 404 → nil (idempotent §7.7 contract).
 func TestDeleteAccessGroupByID_DeletesByID(t *testing.T) {

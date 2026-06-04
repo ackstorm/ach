@@ -602,6 +602,12 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 
 	mcpIDs, mcpUnresolved := mapResolve(env.Spec.Runtime.MCPServers, mcpMap)
 	agentIDs, agentUnresolved := mapResolve(env.Spec.Runtime.A2AAgents, agentMap)
+	// mapResolve returns nil for empty input; normalize to a non-nil []
+	// so the PUT body serializes the dimension as `[]` (clear) rather
+	// than `null` — AccessGroupUpdateRequest no longer uses omitempty on
+	// the managed lists and only `[]` is a proven LiteLLM clear.
+	mcpIDs = nonNilStrings(mcpIDs)
+	agentIDs = nonNilStrings(agentIDs)
 
 	// Teams use the existing per-alias filtered endpoint. N small (1-3
 	// authorized teams per env) so per-alias round-trips are fine.
@@ -718,6 +724,18 @@ func accessGroupSyncedCondition(env *achv1alpha1.Environment, ag *litellm.Access
 		ObservedGeneration: env.Generation,
 		LastTransitionTime: metav1.Now(),
 	}
+}
+
+// nonNilStrings normalizes a nil slice to an empty (non-nil) slice so it
+// marshals to JSON `[]` (clear) rather than `null`. Required because
+// AccessGroupUpdateRequest no longer uses omitempty on the managed lists
+// and only `[]` (not `null`) is a proven LiteLLM clear (PUT partial-update:
+// absent=keep, `[]`=clear).
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // mapResolve splits `names` into (resolvedIDs, unresolvedNames) by

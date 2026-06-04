@@ -200,21 +200,34 @@ type AccessGroupCreateRequest struct {
 }
 
 // AccessGroupUpdateRequest is the PUT /v1/access_group/{id} request body
-// (ackstorm OpenAPI schema: AccessGroupUpdateRequest). Every field is
-// optional; nil values are omitted, instructing the upstream to keep
-// the corresponding stored value. To CLEAR a list the caller must send
-// an explicit empty []string — use the json tag's non-omitempty form by
-// passing a non-nil zero-length slice through the marshaler. The
-// reconciler's desired-state sync always sends the full computed set
-// for every dimension, so the clear-via-empty semantics rarely matter
-// in practice.
+// (ackstorm OpenAPI schema: AccessGroupUpdateRequest).
+//
+// LiteLLM PUT contract (prod-verified against the running ackstorm
+// LiteLLM): the update is partial — a field ABSENT from the body keeps
+// the stored value, a field sent as an explicit `[]` CLEARS that
+// dimension.
+//
+// The four managed lists (AccessModelNames, AccessMCPServerIDs,
+// AccessAgentIDs, AssignedTeamIDs) deliberately have NO `omitempty`: the
+// reconciler is the sole writer and always sends the full computed set
+// for all four dimensions, so every reconcile is authoritative. They are
+// therefore ALWAYS serialized — an empty list marshals to `[]`, which
+// clears that dimension upstream. `omitempty` would drop ANY zero-length
+// slice (nil OR []string{}), silently turning a "clear" into a "keep" and
+// wedging convergence; callers MUST pass a non-nil `[]string{}` (not nil)
+// for the empty case, since only `[]` — not `null` — is a proven clear.
+//
+// AccessGroupName/Description are pointers the reconciler never sends
+// (genuine keep-on-absent), and AssignedKeyIDs keeps `omitempty` because
+// the reconciler does NOT manage key assignment — absent must mean keep,
+// never clear.
 type AccessGroupUpdateRequest struct {
 	AccessGroupName    *string  `json:"access_group_name,omitempty"`
 	Description        *string  `json:"description,omitempty"`
-	AccessModelNames   []string `json:"access_model_names,omitempty"`
-	AccessMCPServerIDs []string `json:"access_mcp_server_ids,omitempty"`
-	AccessAgentIDs     []string `json:"access_agent_ids,omitempty"`
-	AssignedTeamIDs    []string `json:"assigned_team_ids,omitempty"`
+	AccessModelNames   []string `json:"access_model_names"`
+	AccessMCPServerIDs []string `json:"access_mcp_server_ids"`
+	AccessAgentIDs     []string `json:"access_agent_ids"`
+	AssignedTeamIDs    []string `json:"assigned_team_ids"`
 	AssignedKeyIDs     []string `json:"assigned_key_ids,omitempty"`
 }
 
