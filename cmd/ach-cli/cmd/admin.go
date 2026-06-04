@@ -224,7 +224,7 @@ Subcommands:
 // (/platform/admin/{litellm-connections,external-refs}) still exist; they are
 // simply no longer surfaced through the CLI.
 var adminListKinds = []string{
-	"environments", "plugins", "prompts", "artifacts",
+	"environments", "plugins", "prompts", "artifacts", "skills",
 	"marketplaces", "bips",
 }
 
@@ -291,7 +291,7 @@ func newAdminListCmd() *cobra.Command {
 		Long: `Read-only inventory of ACH-defined objects sourced from the Postgres
 projections (version + projection-derived sync status). Admin-only (pk-).
 
-kind ∈ {environments, plugins, prompts, artifacts, marketplaces, bips}
+kind ∈ {environments, plugins, prompts, artifacts, skills, marketplaces, bips}
 or 'all' to fan out across every kind.
 
 PLUGINS merges standalone Plugin CRs (SOURCE=plugin) with plugins discovered
@@ -305,7 +305,7 @@ SYNC column:
   projected                                  bips
 
 Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
-not content presence (only plugins are truly content-gated).`,
+not content presence. plugins and skills are truly content-gated (bare 'fresh').`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,

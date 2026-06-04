@@ -33,6 +33,7 @@ type Lister interface {
 	Plugins(ctx context.Context) ([]db.PluginRow, error)
 	Prompts(ctx context.Context) ([]db.PromptRow, error)
 	Artifacts(ctx context.Context) ([]db.ArtifactRow, error)
+	Skills(ctx context.Context) ([]db.SkillRow, error)
 	Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
 	MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error)
 	BIPs(ctx context.Context) ([]db.BIPRow, error)
@@ -65,6 +66,9 @@ func (l dbLister) Prompts(ctx context.Context) ([]db.PromptRow, error) {
 }
 func (l dbLister) Artifacts(ctx context.Context) ([]db.ArtifactRow, error) {
 	return db.ListArtifacts(ctx, l.pool, l.ns)
+}
+func (l dbLister) Skills(ctx context.Context) ([]db.SkillRow, error) {
+	return db.ListSkills(ctx, l.pool, l.ns)
 }
 func (l dbLister) Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error) {
 	return db.ListMarketplaces(ctx, l.pool, l.ns)
@@ -118,6 +122,22 @@ func PromptsHandler(deps Deps) http.HandlerFunc {
 		out := make([]AdminObjectView, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, promptRowToView(r, now))
+		}
+		return out, nil
+	})
+}
+
+// SkillsHandler serves GET /platform/admin/skills.
+func SkillsHandler(deps Deps) http.HandlerFunc {
+	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
+		rows, err := deps.Lister.Skills(ctx)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		out := make([]AdminObjectView, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, skillRowToView(r, now))
 		}
 		return out, nil
 	})

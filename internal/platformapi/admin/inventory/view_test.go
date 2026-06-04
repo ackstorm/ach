@@ -135,6 +135,23 @@ func TestPluginViewBareFresh(t *testing.T) {
 	}
 }
 
+// TestSkillRowToView_BareFresh: skills are content-gated like plugins, so a
+// synced row renders a bare "fresh" (NO false-green asterisk) and Kind=skill.
+func TestSkillRowToView_BareFresh(t *testing.T) {
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	v := skillRowToView(db.SkillRow{
+		Namespace: "ach", Name: "pdf-processing", ResourceVersion: "7",
+		LastSuccessfulRefresh: ptrTime(now.Add(-1 * time.Minute)), MaxStalenessSeconds: 600,
+		UpdatedAt: now,
+	}, now)
+	if v.Sync != syncFresh {
+		t.Errorf("skill sync: got %q, want fresh (no asterisk)", v.Sync)
+	}
+	if v.Kind != "skill" || v.Namespace != "ach" || v.Name != "pdf-processing" {
+		t.Errorf("skill identity fields wrong: %+v", v)
+	}
+}
+
 // TestBIPView: version = observed_generation, sync = projected, target extra.
 func TestBIPView(t *testing.T) {
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)

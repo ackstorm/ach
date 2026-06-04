@@ -621,7 +621,7 @@ func TestAdminListKinds_ExcludesOperatorInternalKinds(t *testing.T) {
 			t.Errorf("isAdminListKind(%q) = true; want false (kind removed)", banned)
 		}
 	}
-	want := []string{"environments", "plugins", "prompts", "artifacts", "marketplaces", "bips"}
+	want := []string{"environments", "plugins", "prompts", "artifacts", "skills", "marketplaces", "bips"}
 	if len(adminListKinds) != len(want) {
 		t.Fatalf("adminListKinds = %v, want %v", adminListKinds, want)
 	}
