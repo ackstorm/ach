@@ -56,6 +56,15 @@ Per-release flow (after the `chore(release): v0.1.0` push):
      - `vX.Y.Z`                  → `.goreleaser.yml`            (stable)
      - `vX.Y.Z-{alpha,beta,rc}*` → `.goreleaser.prerelease.yml`
    - `make gen-code gen-manifests` regenerates CRDs (sanity).
+   - Persists the **native** runner Go caches (`~/.cache/go-build` +
+     `~/go/pkg/mod`) via `actions/cache` with a `restore-keys` prefix
+     fallback — setup-go's built-in cache is disabled (`cache: false`)
+     because its single-`go.sum`-key scheme cold-misses on any dep
+     change. The per-GOOS/GOARCH cross-compile rebuilds the full
+     k8s.io + controller-runtime tree; the prefix fallback keeps that
+     heavy tree warm across releases even when `go.sum` shifts. This is
+     distinct from devtools' per-worktree `.gocache/` (which `make`
+     targets use) — only the native cache feeds goreleaser.
    - cosign + cyclonedx-gomod installed on PATH (HRD-09).
    - goreleaser runs with `GORELEASER_CURRENT_TAG=v<X.Y.Z>` (no git
      tag at HEAD yet). The GitHub release-create API call auto-creates
