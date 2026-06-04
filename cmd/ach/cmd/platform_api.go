@@ -183,6 +183,14 @@ func (p *platformAPIProcessDeps) close() {
 func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *slog.Logger) (*platformAPIProcessDeps, error) {
 	out := &platformAPIProcessDeps{}
 
+	// Fulfill controller-runtime's global logr root from platform-api's slog
+	// handler. The shared litellm client logs via ctrl.Log (NewRESTClient
+	// below); without a fulfilled root, the first litellm request dumps a
+	// one-time "log.SetLogger(...) was never called" stack and drops the log
+	// line. operator.go / forwarder.go set this via zap — platform-api bridges
+	// slog so litellm logs land in the same JSON stream.
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
+
 	// ─── Phase 5 D-09 / D-10 / OBS-05: process-local Prometheus
 	//     Registry + shared litellm_unreachable_total counter (caller
 	//     dimension pre-declared with all four §18.5 values). Platform
