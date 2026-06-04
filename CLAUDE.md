@@ -133,13 +133,17 @@ independent collections.)
 
 ## CI gating
 
-| Event | lint | unit | envtest | security | e2e |
-|-------|------|------|---------|----------|-----|
-| pull_request → main | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Event | lint | unit | envtest | security |
+|-------|------|------|---------|----------|
+| pull_request → main | ✓ | ✓ | ✓ | ✓ |
 
 `ci.yml` is **PR-only** — `pull_request → main` is the single trigger, no
 `push:` trigger. Release commits (`chore(release): v*`) → `release.yml`; nightly
-→ `nightly.yml`. E2E runs unless the PR is a draft (`if: !draft`). Docs-only PRs
+→ `nightly.yml`. **E2E is NOT a CI gate** — it was removed from `ci.yml`; run
+`make e2e-full` locally before merging any change touching
+`internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
+`deploy/helm/ach/`, or `test/e2e/` (the burden is now entirely local — see "E2E
+debug loop"). Docs-only PRs
 (paths-ignore `**/*.md`, `docs/**`, `references/**`, `FIX*.txt`, `LICENSE`,
 `NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml`. **⚠ PR-only is a real gate
 only if branch protection on `main` is enabled** (needs a paid plan / public
@@ -356,9 +360,10 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 `make e2e-full` is the full-suite final gate (~10 min). It **keeps the cluster
 up** after the run — pass OR fail — so a red run can be diagnosed live; reclaim
-with `make cluster-down`. (`e2e-keep` is now just an alias of `e2e-full`.) CI
-does NOT use this target — it runs `cluster-up`/`e2e-run`/`cluster-down` as
-separate steps with an `if: always()` teardown, so CI never leaks a cluster.
+with `make cluster-down`. (`e2e-keep` is now just an alias of `e2e-full`.) **CI
+does NOT run e2e at all** — the `e2e` job was removed from `ci.yml`, so e2e is a
+**local-only** gate now. Run `make e2e-full` on the host before merging any
+change to the controller/services/CRDs/Helm/e2e surfaces.
 Iterate with the kept-cluster loop (full diagnosis recipe in
 `test/e2e/README.md`):
 
