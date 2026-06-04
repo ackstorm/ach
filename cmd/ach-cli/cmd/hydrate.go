@@ -345,10 +345,12 @@ type hydrateInputs struct {
 //  3. assertScopeFlags — mutual exclusion of --include-runtime /
 //     --only-runtime and --wait / --lock-timeout.
 //  4. Resolve credential (synthetic OR config-disk path).
-//  5. D-12 pk-/--environment gate + pk- warning emit.
+//  5. D-12 pk-/--environment gate.
 //  6. plaintext-transport warning if http://.
 //  7. Dispatch: flagRaw → runHydrateRaw (Phase 6 verbatim);
 //     otherwise → runHydrateEngine (full 14-step commit sequence).
+//  8. Emit the pk- warning after successful output so it does not bury the
+//     hydrate summary.
 func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	in.envAPIKey = os.Getenv("ACH_API_KEY")
 	in.envEnvKey = os.Getenv("ACH_ENV_KEY")
@@ -417,9 +419,6 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	}
 
 	stderr := cmd.ErrOrStderr()
-	if prefix == keys.PrefixPk && !in.noWarnings {
-		_, _ = fmt.Fprint(stderr, pkWarning)
-	}
 	// Plaintext-transport warning: http:// profile URLs are accepted
 	// (config.validateProfiles no longer rejects them), but credentials
 	// ride unencrypted. Emit a one-line stderr warning unless suppressed.
@@ -431,10 +430,20 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 
 	// D-04 dispatch. --raw short-circuits BEFORE any engine call so
 	// the W3-P3 golden-diff anchor survives byte-for-byte.
+	var runErr error
 	if in.raw {
-		return runHydrateRaw(cmd, baseURL, bearer, effectiveEnv, in.verbose)
+		runErr = runHydrateRaw(cmd, baseURL, bearer, effectiveEnv, in.verbose)
+	} else {
+		runErr = runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
 	}
-	return runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
+	if runErr != nil {
+		return runErr
+	}
+
+	if prefix == keys.PrefixPk && !in.noWarnings {
+		_, _ = fmt.Fprint(stderr, pkWarning)
+	}
+	return nil
 }
 
 // assertScopeFlags enforces the spec §6.3 scope-flag mutual exclusions:
@@ -562,26 +571,118 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 }
 
 // summaryFromResult renders the post-hydrate success summary printed to
-// stdout. Per-kind counts come from Result.ProjectedByKind (sorted for a
-// byte-stable line); the totals come from the engine counters.
+// stdout. The summary groups Environment resources by hydrate domain (runtime
+// vs context) and keeps marketplace/plugin provenance out of the default view.
 func summaryFromResult(res hydrate.Result) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Hydrated for %s\n", res.PlatformID)
-	if len(res.ProjectedByKind) > 0 {
-		kinds := make([]string, 0, len(res.ProjectedByKind))
-		for k := range res.ProjectedByKind {
-			kinds = append(kinds, k)
-		}
-		sort.Strings(kinds)
-		parts := make([]string, 0, len(kinds))
-		for _, k := range kinds {
-			parts = append(parts, fmt.Sprintf("%d %s", res.ProjectedByKind[k], k))
-		}
-		fmt.Fprintf(&b, "  ✓ %s\n", strings.Join(parts, ", "))
+	if res.Environment != "" {
+		fmt.Fprintf(&b, "Hydrated %s for %s\n\n", res.Environment, res.PlatformID)
+	} else {
+		fmt.Fprintf(&b, "Hydrated for %s\n\n", res.PlatformID)
 	}
-	fmt.Fprintf(&b, "  ✓ %d files written, %d preserved\n",
-		res.FilesWritten, res.FilesPreserved)
+
+	if hasRuntimeSummary(res.RuntimeSummary) {
+		fmt.Fprintln(&b, "  Runtime")
+		fmt.Fprintf(&b, "    ✓ Models: %d\n", res.RuntimeSummary.Models)
+		fmt.Fprintf(&b, "    ✓ MCP servers: %d\n", res.RuntimeSummary.MCPServers)
+		fmt.Fprintf(&b, "    ✓ A2A agents: %d\n\n", res.RuntimeSummary.A2AAgents)
+	}
+
+	if hasContextSummary(res.ContextSummary) || len(res.ProjectedByKind) > 0 {
+		fmt.Fprintln(&b, "  Context")
+		if res.ContextSummary.Plugins > 0 || len(res.ProjectedByKind) > 0 {
+			pluginLine := fmt.Sprintf("    ✓ Plugins: %d total", res.ContextSummary.Plugins)
+			if len(res.ProjectedByKind) > 0 {
+				pluginLine += " (" + formatKindCounts(res.ProjectedByKind) + ")"
+			}
+			fmt.Fprintln(&b, pluginLine)
+		}
+		if res.ContextSummary.Prompts > 0 || res.ContextSummary.PromptFiles > 0 {
+			files := res.ContextSummary.Prompts
+			if files == 0 {
+				files = res.ContextSummary.PromptFiles
+			}
+			fmt.Fprintf(&b, "    ✓ Prompts: %s\n", countNoun(files, "file", "files"))
+		}
+		if res.ContextSummary.Artifacts > 0 || res.ContextSummary.ArtifactFiles > 0 {
+			artifactLine := fmt.Sprintf("    ✓ Artifacts: %s",
+				countNoun(res.ContextSummary.Artifacts, "artifact", "artifacts"))
+			if res.ContextSummary.ArtifactFiles > 0 {
+				artifactLine += ", " + countNoun(res.ContextSummary.ArtifactFiles, "file", "files")
+			}
+			fmt.Fprintln(&b, artifactLine)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	fmt.Fprintln(&b, "  Files")
+	fmt.Fprintf(&b, "    ✓ %s written, %s preserved\n",
+		countNoun(res.FilesWritten, "file", "files"),
+		countNoun(res.FilesPreserved, "file", "files"))
 	return b.String()
+}
+
+func hasRuntimeSummary(s hydrate.RuntimeSummary) bool {
+	return s.Models > 0 || s.MCPServers > 0 || s.A2AAgents > 0
+}
+
+func hasContextSummary(s hydrate.ContextSummary) bool {
+	return s.Plugins > 0 || s.Prompts > 0 || s.Artifacts > 0 ||
+		s.PromptFiles > 0 || s.ArtifactFiles > 0
+}
+
+func formatKindCounts(counts map[string]int) string {
+	kinds := make([]string, 0, len(counts))
+	for k := range counts {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+
+	parts := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		if counts[k] <= 0 {
+			continue
+		}
+		parts = append(parts, countNoun(counts[k], kindSingular(k), kindPlural(k)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func kindSingular(kind string) string {
+	switch kind {
+	case "agents":
+		return "agent"
+	case "commands":
+		return "command"
+	case "skills":
+		return "skill"
+	case "rules":
+		return "rule"
+	case "mcp":
+		return "MCP config"
+	case "prompts":
+		return "prompt"
+	case "hooks":
+		return "hook"
+	default:
+		return strings.TrimSuffix(kind, "s")
+	}
+}
+
+func kindPlural(kind string) string {
+	switch kind {
+	case "mcp":
+		return "MCP configs"
+	default:
+		return kind
+	}
+}
+
+func countNoun(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
 
 // resolvePlatformOrAutodetect dispatches platform resolution per

@@ -17,6 +17,10 @@ import (
 // All counts are zero-initialized; an early-exit Run (e.g. lock
 // contended) returns a zero-value Result alongside its CodedError.
 type Result struct {
+	// Environment is the hydrated environment name. It feeds only the
+	// human-facing success summary.
+	Environment string
+
 	// FilesWritten is the total count of files committed to disk
 	// across every category (prompts, plugins, artifacts, runtime,
 	// adapter). Counted in step 8 (extract) and step 10 (adapter).
@@ -49,6 +53,19 @@ type Result struct {
 	// Feeds the hydrate success summary.
 	ProjectedByKind map[string]int
 
+	// RuntimeSummary tallies runtime resources included in this hydrate scope.
+	RuntimeSummary RuntimeSummary
+
+	// ContextSummary tallies context resources included in this hydrate scope.
+	ContextSummary ContextSummary
+
+	// SourceSummaries carries source-attributed hydrate counts for the success
+	// summary. Plugins report routed component kinds (agents, commands, skills,
+	// etc.); direct context resources report files materialized from their
+	// archive. It is intentionally additive to ProjectedByKind so older tests
+	// and test seams that only populate the aggregate map keep working.
+	SourceSummaries []SourceSummary
+
 	// DroppedByKind maps a dropped KNOWN component kind to the sorted unique
 	// plugin names that shipped it but whose content the active platform has
 	// no destination for. Drives the attributed end-of-run warning.
@@ -59,6 +76,33 @@ type Result struct {
 	// D-06). Surfaced in --verbose stderr; recorded into
 	// state.File.Adapter.ID at step 12.
 	PlatformID string
+}
+
+// RuntimeSummary is the runtime half of the hydrate success summary.
+type RuntimeSummary struct {
+	Models     int
+	MCPServers int
+	A2AAgents  int
+}
+
+// ContextSummary is the context half of the hydrate success summary.
+type ContextSummary struct {
+	Plugins       int
+	Prompts       int
+	Artifacts     int
+	PromptFiles   int
+	ArtifactFiles int
+}
+
+// SourceSummary is one source-attributed line in the hydrate success summary.
+// Kind is a manifest/source kind ("plugin", "artifact", "prompt"); Name is the
+// manifest resource name or plugin directory name. Counts is used for plugin
+// component-kind tallies, while Files is used for direct extracted resources.
+type SourceSummary struct {
+	Kind   string
+	Name   string
+	Counts map[string]int
+	Files  int
 }
 
 // ExtractResult is the typed return value of Extractor.ExtractContent.
@@ -136,6 +180,10 @@ type RenderResult struct {
 	// (e.g. {"commands":12,"agents":8}) aggregated across every plugin tree.
 	// Feeds the hydrate success summary.
 	ProjectedByKind map[string]int
+
+	// SourceSummaries carries plugin-attributed projected counts. The
+	// orchestrator copies these into Result.SourceSummaries.
+	SourceSummaries []SourceSummary
 
 	// DroppedByKind maps a dropped KNOWN component kind to the sorted unique
 	// plugin names that shipped it but whose content the active platform has

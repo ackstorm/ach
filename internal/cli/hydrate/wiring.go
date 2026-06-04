@@ -616,6 +616,13 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		for k, n := range pr.KeptByKind {
 			result.ProjectedByKind[k] += n
 		}
+		if len(pr.KeptByKind) > 0 {
+			result.SourceSummaries = append(result.SourceSummaries, SourceSummary{
+				Kind:   kindPlugin,
+				Name:   ent.Name(),
+				Counts: cloneCounts(pr.KeptByKind),
+			})
+		}
 		for _, fw := range pr.FileWrites {
 			if d.global {
 				fw.Path = remapGlobalPath(d.platformID, fw.Path)
@@ -696,6 +703,14 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	sort.Strings(dropped)
 	result.DroppedComponents = append(result.DroppedComponents, dropped...)
 	return nil
+}
+
+func cloneCounts(in map[string]int) map[string]int {
+	out := make(map[string]int, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // MCP server-key prefixes per adapter config format (D-17). The projected

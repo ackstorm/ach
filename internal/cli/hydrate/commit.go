@@ -296,6 +296,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// early-exit paths (T-07-W5-01-02 — caller-supplied value reflected
 	// in --verbose stderr only; residual log-spoofing accepted).
 	result.PlatformID = c.opts.Platform
+	result.Environment = c.opts.Environment
 
 	// Step 1: lock.
 	lease, err := c.step1Lock(ctx)
@@ -339,6 +340,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	result.RuntimeSummary = c.runtimeSummary(m)
+	result.ContextSummary = c.contextSummary(m)
 	c.maybeKill(5)
 
 	// Step 6: scope-aware diff.
@@ -462,6 +465,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		for k, n := range renderResult.ProjectedByKind {
 			result.ProjectedByKind[k] += n
 		}
+		result.SourceSummaries = append(result.SourceSummaries, renderResult.SourceSummaries...)
 		if result.DroppedByKind == nil {
 			result.DroppedByKind = map[string][]string{}
 		}
@@ -527,6 +531,37 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 
 	// Step 14: return is implicit.
 	return result, nil
+}
+
+func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
+	includeRuntime := c.opts.OnlyRuntime || c.opts.IncludeRuntime
+	if !includeRuntime || m == nil || m.Runtime == nil {
+		return RuntimeSummary{}
+	}
+	return RuntimeSummary{
+		Models:     len(m.Runtime.Models),
+		MCPServers: len(m.Runtime.MCPServers),
+		A2AAgents:  len(m.Runtime.A2AAgents),
+	}
+}
+
+func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {
+	includeContext := !c.opts.OnlyRuntime
+	if !includeContext || m == nil || m.Context == nil {
+		return ContextSummary{}
+	}
+	return ContextSummary{
+		Plugins:   len(m.Context.Plugins),
+		Prompts:   len(m.Context.Prompts),
+		Artifacts: len(m.Context.Artifacts),
+	}
+}
+
+func contentRefDisplayName(ref manifest.ContentRef) string {
+	if ref.Name != "" {
+		return ref.Name
+	}
+	return ref.ID
 }
 
 // syncFn is the package-level test seam wrapping Sync. Production
@@ -991,13 +1026,6 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 // deterministic order so the written set + state rows are byte-stable.
 var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
 
-// tallyModelKind records the manifest's runtime models in the hydrate-summary
-// tally. Models have no adapter destination (all share the /v1 endpoint), so
-// they never reach settings.json — they live only in the runtime mirror
-// (model.json), which writeRuntimeMirror writes iff there are models. Counting
-// from the manifest block the mirror just serialized keeps the summary's
-// `N model` in lockstep with model.json. No-op when no models are present, so
-// the summary never prints `0 model`.
 // addExtractCounts folds one extract outcome into the written/preserved
 // tallies. Plugins extract to the ephemeral pluginStageRoot (swept, never a
 // final write) and are re-counted as renderResult.ProjectedFiles when
@@ -1011,6 +1039,13 @@ func addExtractCounts(result *Result, kind string, er ExtractResult) {
 	}
 	result.FilesWritten += len(er.WrittenFiles)
 	result.FilesPreserved += er.Preserved
+	fileCount := len(er.WrittenFiles) + er.Preserved
+	switch kind {
+	case kindPrompt:
+		result.ContextSummary.PromptFiles += fileCount
+	case kindArtifact:
+		result.ContextSummary.ArtifactFiles += fileCount
+	}
 }
 
 // addPublishedCounts splits a RenderResult's published files (runtime
@@ -1033,18 +1068,8 @@ func addPublishedCounts(result *Result, rr RenderResult) {
 	}
 }
 
-func tallyModelKind(result *Result, m *manifest.Manifest) {
-	if m == nil || m.Runtime == nil || len(m.Runtime.Models) == 0 {
-		return
-	}
-	if result.ProjectedByKind == nil {
-		result.ProjectedByKind = map[string]int{}
-	}
-	result.ProjectedByKind["model"] += len(m.Runtime.Models)
-}
-
 // step10bRuntimeMirror writes the credential-free runtime mirror and folds
-// its file count + model tally into result. Gated on !DryRun && includeRuntime:
+// its file count into result. Gated on !DryRun && includeRuntime:
 // the runtime block (mcp / a2a / models) is the --include-runtime scope slice,
 // so a default hydrate reads no runtime objects and writes no mirror —
 // consistent with the gated RenderRuntime projection. The mirror is the
@@ -1063,7 +1088,6 @@ func (c *commit) step10bRuntimeMirror(m *manifest.Manifest, includeRuntime bool,
 		}
 	}
 	result.FilesWritten += len(rf)
-	tallyModelKind(result, m)
 	return rf, nil
 }
 

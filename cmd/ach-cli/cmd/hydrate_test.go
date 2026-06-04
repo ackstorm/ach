@@ -134,7 +134,7 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 	}
 }
 
-// Test 2: pk_ + default flags emits §6.6 stderr warning BEFORE the HTTP call.
+// Test 2: pk_ + default flags emits the §6.6 stderr warning after success.
 func TestHydrate_PK_EmitsWarning(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
@@ -742,40 +742,71 @@ func withCleanHomeEngine(t *testing.T) {
 	t.Setenv("HOME", scratch)
 }
 
-// TestHydrateSummary exercises summaryFromResult — verifies the platform id,
-// per-kind counts, and file totals all appear in the rendered string.
+// TestHydrateSummary exercises summaryFromResult — verifies runtime/context
+// grouping, projected plugin component totals, and file totals.
 func TestHydrateSummary(t *testing.T) {
 	got := summaryFromResult(hydrate.Result{
-		PlatformID:      "claude-code",
-		FilesWritten:    20,
-		FilesPreserved:  1,
-		ProjectedByKind: map[string]int{"commands": 12, "agents": 8},
+		Environment:    "demo",
+		PlatformID:     "claude-code",
+		FilesWritten:   20,
+		FilesPreserved: 1,
+		RuntimeSummary: hydrate.RuntimeSummary{
+			Models:     3,
+			MCPServers: 2,
+			A2AAgents:  1,
+		},
+		ContextSummary: hydrate.ContextSummary{
+			Plugins:       4,
+			Prompts:       2,
+			Artifacts:     1,
+			ArtifactFiles: 4,
+		},
+		ProjectedByKind: map[string]int{"commands": 12, "agents": 8, "skills": 4},
 	})
-	if !strings.Contains(got, "claude-code") {
-		t.Errorf("summary missing platform; got %q", got)
+	if !strings.Contains(got, "Hydrated demo for claude-code") {
+		t.Errorf("summary missing header; got %q", got)
 	}
-	if !strings.Contains(got, "12 commands") || !strings.Contains(got, "8 agents") {
-		t.Errorf("summary missing per-kind counts; got %q", got)
-	}
-	if !strings.Contains(got, "20 files written") {
-		t.Errorf("summary missing file count; got %q", got)
+	for _, want := range []string{
+		"  Runtime",
+		"    ✓ Models: 3",
+		"    ✓ MCP servers: 2",
+		"    ✓ A2A agents: 1",
+		"  Context",
+		"    ✓ Plugins: 4 total (8 agents, 12 commands, 4 skills)",
+		"    ✓ Prompts: 2 files",
+		"    ✓ Artifacts: 1 artifact, 4 files",
+		"  Files",
+		"    ✓ 20 files written, 1 file preserved",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q; got %q", want, got)
+		}
 	}
 }
 
-// TestHydrateSummaryRuntimeKinds proves runtime components (mcp/a2a/model)
-// merged into ProjectedByKind render in the first summary line, alpha-sorted
-// alongside plugin kinds, with no pluralization ("1 mcp" not "1 mcps").
+// TestHydrateSummaryRuntimeKinds proves runtime components render in the
+// grouped Runtime block instead of the plugin component aggregate.
 func TestHydrateSummaryRuntimeKinds(t *testing.T) {
 	got := summaryFromResult(hydrate.Result{
-		PlatformID:      "claude-code",
-		FilesWritten:    110,
-		FilesPreserved:  0,
-		ProjectedByKind: map[string]int{"skills": 35, "mcp": 1, "a2a": 2, "model": 3},
+		PlatformID:     "claude-code",
+		FilesWritten:   110,
+		FilesPreserved: 0,
+		RuntimeSummary: hydrate.RuntimeSummary{
+			Models:     3,
+			MCPServers: 1,
+			A2AAgents:  2,
+		},
+		ProjectedByKind: map[string]int{"skills": 35},
 	})
-	// Alpha order over the kind keys: a2a, mcp, model, skills.
-	wantLine := "✓ 2 a2a, 1 mcp, 3 model, 35 skills"
-	if !strings.Contains(got, wantLine) {
-		t.Errorf("summary kind line = %q; want it to contain %q", got, wantLine)
+	for _, want := range []string{
+		"    ✓ Models: 3",
+		"    ✓ MCP servers: 1",
+		"    ✓ A2A agents: 2",
+		"    ✓ Plugins: 0 total (35 skills)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q; got %q", want, got)
+		}
 	}
 }
 
