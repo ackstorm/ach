@@ -147,6 +147,29 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Manage the cache explicitly below — setup-go's built-in cache keys
+          # on a single go.sum hash with no prefix fallback, so any go.sum
+          # change is a full cold miss. We want restore-keys partial reuse.
+          cache: false
+
+      # Persist the NATIVE runner Go build + module caches that goreleaser
+      # uses for the linux/amd64 + linux/arm64 cross-compiles. Each GOOS/GOARCH
+      # combo recompiles the full k8s.io + controller-runtime dep tree; without
+      # a warm GOCACHE every release rebuilds it cold (~9m of binary builds).
+      # NOTE: this is the runner's native cache (~/.cache/go-build), distinct
+      # from devtools' per-worktree .gocache/ used by `make` targets — only the
+      # native one feeds goreleaser. restore-keys gives partial reuse even when
+      # go.sum shifts: unchanged deps still hit by content hash, so the heavy
+      # k8s tree stays warm across releases.
+      - name: Cache Go build + module caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-goreleaser-go${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-goreleaser-go${{ env.GO_VERSION }}-
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
