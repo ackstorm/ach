@@ -65,3 +65,36 @@ func TestDash(t *testing.T) {
 		t.Errorf("dash wrong: %q %q", dash(""), dash("x"))
 	}
 }
+
+func TestFormatAdminInventory_PluginsSourceColumn(t *testing.T) {
+	out := FormatAdminInventory(map[string][]AdminObjectView{
+		"plugins": {
+			{Kind: "plugin", Name: "frontend-design", Version: "5", Sync: "fresh", Extra: map[string]string{"source": "plugin"}},
+			{Kind: "plugin", Name: "branding@ackstorm", Version: "b899e89", Sync: "fresh", Extra: map[string]string{"source": "marketplace"}},
+		},
+	})
+	if !strings.Contains(out, "NAME") || !strings.Contains(out, "SOURCE") {
+		t.Errorf("plugins header missing SOURCE column:\n%s", out)
+	}
+	if !strings.Contains(out, "branding@ackstorm") || !strings.Contains(out, "marketplace") {
+		t.Errorf("marketplace-sourced plugin row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "frontend-design") || !strings.Contains(out, "plugin") {
+		t.Errorf("standalone plugin row missing:\n%s", out)
+	}
+}
+
+func TestFormatAdminInventory_MarketplacesStatusAndCount(t *testing.T) {
+	out := FormatAdminInventory(map[string][]AdminObjectView{
+		"marketplaces": {
+			{Kind: "marketplace", Namespace: "ach", Name: "ackstorm", Version: "100",
+				Sync: "Synced", Extra: map[string]string{"pluginsCount": "12"}},
+		},
+	})
+	if !strings.Contains(out, "STATUS") || !strings.Contains(out, "PLUGINS") {
+		t.Errorf("marketplaces header missing STATUS/PLUGINS columns:\n%s", out)
+	}
+	if !strings.Contains(out, "Synced") || !strings.Contains(out, "12") {
+		t.Errorf("marketplace status/count missing:\n%s", out)
+	}
+}
