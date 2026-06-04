@@ -121,13 +121,27 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}, nil
 }
 
+// pimonoMCPEntry is the per-server JSON shape Pi consumes under the
+// `mcpServers` key for an HTTP MCP server. Pi's schema is `url` (presence
+// ⇒ StreamableHTTP w/ SSE fallback) + `headers`, with NO `type` field (Pi
+// defines none for HTTP servers; stdio uses command/args/env/cwd). The
+// earlier shared {type:"http", url, headers} shape emitted a stray `type`
+// key Pi's schema does not define. Schema ref:
+// https://github.com/nicobailon/pi-mcp-adapter. ACH's x-ach-key is a
+// custom STATIC header → plain `headers` (not Pi's auth/bearerToken/oauth,
+// which are for Bearer/OAuth flows ACH does not use here).
+type pimonoMCPEntry struct {
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
 // mcpShape is the .pi/mcp.json document Pi reads. Encoded with sorted keys
 // (encoding/json's lexicographic map-key sort) so the output is deterministic
 // — important for FMT-05 deterministic re-hydrate / drift no-op detection.
 //
 // Only top-level mcpServers is emitted — pimono has NO a2aAgents surface.
 type mcpShape struct {
-	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
+	MCPServers map[string]pimonoMCPEntry `json:"mcpServers"`
 }
 
 // renderMcpJSON builds the .pi/mcp.json bytes from a manifest + credential.
@@ -140,14 +154,13 @@ type mcpShape struct {
 // merge target is re-hydrate idempotent.
 func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := mcpShape{
-		MCPServers: map[string]adapter.MCPServerEntry{},
+		MCPServers: map[string]pimonoMCPEntry{},
 	}
 
 	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
 
 	for _, server := range m.Runtime.MCPServers {
-		shape.MCPServers[server.ID] = adapter.MCPServerEntry{
-			Type:    "http",
+		shape.MCPServers[server.ID] = pimonoMCPEntry{
 			URL:     server.Endpoint,
 			Headers: adapter.HeadersWithCredential(credential),
 		}
