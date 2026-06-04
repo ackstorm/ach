@@ -43,7 +43,7 @@ const lsRemoteTimeout = 30 * time.Second
 //
 // Errors are classified via [ClassifyError] so the caller observes the
 // same internal/sources sentinel set as a Fetch failure does.
-func LsRemote(ctx context.Context, url, ref, authToken string) (string, error) {
+func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, lsRemoteTimeout)
 	defer cancel()
 
@@ -58,7 +58,7 @@ func LsRemote(ctx context.Context, url, ref, authToken string) (string, error) {
 		patterns = []string{"refs/heads/" + ref, "refs/tags/" + ref}
 	}
 
-	full := buildGitInvocation("ls-remote", authToken, "--refs", url)
+	full := buildGitInvocation("ls-remote", authToken, scheme, "--refs", url)
 	full = append(full, patterns...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	// git ls-remote forks git-remote-http(s) which inherits the
