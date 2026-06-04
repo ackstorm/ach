@@ -636,6 +636,7 @@ type callRecord struct {
 	lastKeyGenerateKey    string
 	lastKeyGenerateUser   string
 	lastKeyGenerateBudget *float64
+	lastKeyGenerateReq    *litellm.KeyGenerateRequest
 	listTeamsCalls        int
 	lastListTeamsAlias    string
 }
@@ -733,6 +734,7 @@ func (f *fakeLiteLLM) KeyGenerate(_ context.Context, req *litellm.KeyGenerateReq
 	f.rec.lastKeyGenerateKey = req.Key
 	f.rec.lastKeyGenerateUser = req.UserID
 	f.rec.lastKeyGenerateBudget = req.MaxBudget
+	f.rec.lastKeyGenerateReq = req
 	return f.keyGenerateBehaviour(req)
 }
 func (f *fakeLiteLLM) RevokeKey(_ context.Context, keyID string) error {
@@ -910,6 +912,20 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	if flm.rec.lastKeyGenerateKey != "" {
 		t.Errorf("KeyGenerate.Key: got %q, want empty (FIX01 §A.6: ACH never supplies LiteLLM virtual-key plaintext)",
 			flm.rec.lastKeyGenerateKey)
+	}
+
+	// KeyAlias attribution (debug-only, never used for lookup/routing): the
+	// minted pkid_ MUST be stamped as key_alias and equal metadata.ach_key_id.
+	gotReq := flm.rec.lastKeyGenerateReq
+	if gotReq == nil {
+		t.Fatalf("KeyGenerate request was not captured")
+	}
+	if gotReq.KeyAlias == "" || gotReq.KeyAlias != gotReq.Metadata["ach_key_id"] {
+		t.Fatalf("KeyGenerate KeyAlias = %q, want it to equal metadata ach_key_id %q",
+			gotReq.KeyAlias, gotReq.Metadata["ach_key_id"])
+	}
+	if !strings.HasPrefix(gotReq.KeyAlias, "pkid_") {
+		t.Fatalf("KeyGenerate KeyAlias = %q, want pkid_ prefix", gotReq.KeyAlias)
 	}
 
 	// DB INSERT row.

@@ -418,6 +418,7 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 	// MaxBudget remains nil.
 	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 		UserID:    userID,
+		KeyAlias:  keyID, // pkid_… — debug attribution only (not used for lookup)
 		MaxBudget: nil,
 		Metadata: map[string]string{
 			"ach_key_id":      keyID,

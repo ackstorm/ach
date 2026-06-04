@@ -3,12 +3,21 @@
 package envkeys
 
 import (
+	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 // TestIsEnterpriseTagsRejection covers the detector that drives the
@@ -106,5 +115,121 @@ func TestClassifyLitellmErr(t *testing.T) {
 					st, oc, tc.wantStatus, tc.wantOutcome)
 			}
 		})
+	}
+}
+
+// --- happy-path ek_ mint test (KeyAlias attribution) ---------------------
+
+// captureLiteLLM is a fake litellm.Client for the ek_ create happy path. It
+// embeds *litellm.NoopClient (which satisfies the full Client interface) and
+// overrides only the three methods CreateHandler exercises: UserInfoByEmail
+// (so the caller is a member of an authorized team), ListAllTeams (so the
+// id→alias resolution in LookupCallerTeams has data), and KeyGenerate (which
+// captures the incoming request so the test can assert on KeyAlias).
+type captureLiteLLM struct {
+	*litellm.NoopClient
+	lastKeyGenerateReq *litellm.KeyGenerateRequest
+}
+
+func (c *captureLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	return &litellm.UserInfo{
+		UserID:    "llu-" + email,
+		UserEmail: email,
+		Teams:     []string{"team-uuid-default"},
+	}, nil
+}
+
+func (c *captureLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}}, nil
+}
+
+func (c *captureLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	c.lastKeyGenerateReq = req
+	return c.NoopClient.KeyGenerate(ctx, req)
+}
+
+// fakeEnvStore returns a single ready environment whose authorizedTeams the
+// captureLiteLLM caller is a member of.
+type fakeEnvStore struct {
+	env *db.EnvironmentRow
+}
+
+func (s *fakeEnvStore) GetEnvironment(_ context.Context, _ string) (*db.EnvironmentRow, error) {
+	return s.env, nil
+}
+
+func (s *fakeEnvStore) AccessGroupSyncedFromRow(_ *db.EnvironmentRow) bool { return true }
+
+// fakeEkDB records the inserted ek_ row and returns no error on insert.
+type fakeEkDB struct {
+	inserted *db.EkInsertRow
+}
+
+func (d *fakeEkDB) InsertEnvironmentKey(_ context.Context, row db.EkInsertRow) error {
+	d.inserted = &row
+	return nil
+}
+func (d *fakeEkDB) GetEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
+	return nil, nil
+}
+func (d *fakeEkDB) RevokeEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
+	return nil, nil
+}
+func (d *fakeEkDB) ListEnvironmentKeysByOwner(context.Context, string, int, string) ([]db.EkKeyInfo, string, error) {
+	return nil, "", nil
+}
+func (d *fakeEkDB) ListEnvironmentKeysByOwnerWithFilter(context.Context, *string, int, string) ([]db.EkKeyInfo, string, error) {
+	return nil, "", nil
+}
+
+// TestCreateHandler_KeyAliasIsAchKeyID drives the §8.2 ek_ create happy path
+// end-to-end and asserts the LiteLLM KeyGenerate request carried KeyAlias set
+// to the minted ekid_ — i.e. KeyAlias != "" AND KeyAlias == ach_key_id
+// metadata (debug attribution only, never used for lookup/routing).
+func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
+	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	deps := Deps{
+		LiteLLM:   flm,
+		DB:        &fakeEkDB{},
+		Store:     store,
+		Pepper:    []byte("test-pepper"),
+		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace: "ach",
+	}
+
+	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
+	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	// Authenticate as a pk_ caller (only pk_ may create ek_).
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("CreateHandler status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	got := flm.lastKeyGenerateReq
+	if got == nil {
+		t.Fatalf("KeyGenerate was never called")
+	}
+	// KeyAlias must equal the minted ekid_ carried in metadata.ach_key_id.
+	if got.KeyAlias == "" || got.KeyAlias != got.Metadata["ach_key_id"] {
+		t.Fatalf("KeyGenerate KeyAlias = %q, want it to equal metadata ach_key_id %q",
+			got.KeyAlias, got.Metadata["ach_key_id"])
+	}
+	if !strings.HasPrefix(got.KeyAlias, keys.EkidKeyIDPrefix) {
+		t.Fatalf("KeyGenerate KeyAlias = %q, want %s prefix", got.KeyAlias, keys.EkidKeyIDPrefix)
 	}
 }
