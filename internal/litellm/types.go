@@ -163,6 +163,12 @@ type UserNewRequest struct {
 	UserEmail string   `json:"user_email"`
 	UserID    string   `json:"user_id,omitempty"`
 	Teams     []string `json:"teams,omitempty"`
+	// AutoCreateKey controls LiteLLM's /user/new default-key minting.
+	// nil → field omitted (LiteLLM default auto_create_key=true). ACH
+	// callers pass BoolPtr(false) so the user is created WITHOUT an
+	// untracked default key — the only key is the pk_/ek_ minted via
+	// /key/generate. *bool keeps the tri-state (omit vs explicit false).
+	AutoCreateKey *bool `json:"auto_create_key,omitempty"`
 }
 
 // UserInfo is the /user/new response and the /user/info GET response.
