@@ -72,10 +72,14 @@ type EnvironmentRow struct {
 }
 
 // UpsertEnvironment inserts-or-updates a row keyed by (namespace, name).
-// The ON CONFLICT DO UPDATE replaces every non-PK column except
-// deletion_timestamp, which is preserved (only SoftDeleteEnvironment writes
-// it) — per CS-09 / D-14 a steady-state reconcile must not unset the drain
-// marker. updated_at is force-set to now() in the UPDATE branch.
+// The ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile
+// (this path only runs for a CR with no metadata.deletionTimestamp) clears
+// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
+// MUST drop the stale drain marker, else env list (WHERE deletion_timestamp
+// IS NULL) hides the resurrected env forever (incident 2026-06-04). The
+// drain marker is owned solely by SoftDeleteEnvironment, which runs on the
+// deletion branch and never overlaps this upsert. updated_at is force-set
+// to now() in the UPDATE branch.
 //
 // Returns raw error on pgconn class 08/57 (transient) so controller-runtime
 // applies exponential backoff. Other errors wrap with non-secret
@@ -110,6 +114,7 @@ const upsertEnvironmentSQL = `
 	    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
 	    resource_version                       = EXCLUDED.resource_version,
 	    updated_at                             = now(),
+	    deletion_timestamp                     = NULL,
 	    locked                                 = TRUE
 	WHERE environments.origin = 'cr'
 	RETURNING namespace
