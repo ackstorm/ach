@@ -2,7 +2,11 @@
 
 package admin
 
-import "github.com/go-chi/chi/v5"
+import (
+	"github.com/go-chi/chi/v5"
+
+	"github.com/ackstorm/ach/internal/platformapi/admin/inventory"
+)
 
 // Mount returns a chi.Router subtree configurator that:
 //
@@ -34,5 +38,18 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Post("/keys/revoke", RevokeKeyHandler(deps))
 		r.Post("/users/{email}/revoke-keys", RevokeUserKeysHandler(deps))
 		r.Post("/refresh", ForceRefreshHandler(deps))
+
+		// Read-only object inventory (GET) — projection reads from Postgres,
+		// gated by the same AdminOnly middleware. environments has no route
+		// here: the CLI uses the existing GET /platform/environments (admin
+		// sees all rows via that handler's admin bypass).
+		inv := inventory.Deps{Lister: inventory.NewLister(deps.Pool, deps.Namespace)}
+		r.Get("/plugins", inventory.PluginsHandler(inv))
+		r.Get("/prompts", inventory.PromptsHandler(inv))
+		r.Get("/artifacts", inventory.ArtifactsHandler(inv))
+		r.Get("/marketplaces", inventory.MarketplacesHandler(inv))
+		r.Get("/bips", inventory.BIPsHandler(inv))
+		r.Get("/litellm-connections", inventory.LitellmConnectionsHandler(inv))
+		r.Get("/external-refs", inventory.ExternalRefsHandler(inv))
 	}
 }
