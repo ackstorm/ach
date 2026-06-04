@@ -59,6 +59,7 @@ func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state
 		out.Prompts = copyEntries(prev.Prompts)
 		out.Plugins = copyEntries(prev.Plugins)
 		out.Artifacts = copyEntries(prev.Artifacts)
+		out.Skills = copyEntries(prev.Skills)
 	}
 	if !removeRuntime {
 		out.RuntimeFiles = copyEntries(prev.RuntimeFiles)

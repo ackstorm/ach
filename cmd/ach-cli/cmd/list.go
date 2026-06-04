@@ -202,6 +202,7 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 	appendBucket("prompt", f.Prompts)
 	appendBucket("plugin", f.Plugins)
 	appendBucket("artifact", f.Artifacts)
+	appendBucket("skill", f.Skills)
 	appendBucket("runtime", f.RuntimeFiles)
 	appendBucket("adapter", f.Adapter.Files)
 	return out

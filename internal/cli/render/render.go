@@ -57,6 +57,7 @@ type BlockView struct {
 	Prompts    []ContextItem `json:"prompts,omitempty"`
 	Plugins    []ContextItem `json:"plugins,omitempty"`
 	Artifacts  []ContextItem `json:"artifacts,omitempty"`
+	Skills     []ContextItem `json:"skills,omitempty"`
 }
 
 // RuntimeItem is one entry under runtime.{models,mcpServers,a2aAgents}.
@@ -239,6 +240,9 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	}
 	for _, ar := range h.Context.Artifacts {
 		_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\t%s\n", ar.Name, ar.ID, ar.DownloadURL)
+	}
+	for _, sk := range h.Context.Skills {
+		_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\t%s\n", sk.Name, sk.ID, sk.DownloadURL)
 	}
 	_ = tw.Flush()
 
