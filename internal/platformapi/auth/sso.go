@@ -574,8 +574,10 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 		// 404 → first-time SSO path.
 		if isLiteLLMNotFound(err) {
 			created, createErr := deps.LiteLLM.UserNew(ctx, &litellm.UserNewRequest{
-				UserEmail: email,
-				Teams:     []string{"default"},
+				UserEmail:     email,
+				UserID:        email, // deterministic LiteLLM user_id = email (not a random UUID)
+				Teams:         []string{"default"},
+				AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; pk_ is minted via /key/generate
 			})
 			if createErr != nil {
 				return "", &provisionErr{kind: provisionKindLitellm, err: createErr}

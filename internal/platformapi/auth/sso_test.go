@@ -630,6 +630,7 @@ type callRecord struct {
 	revokeKeyCalls        int
 	revokeKeyTokensSeen   []string
 	lastUserNewEmail      string
+	lastUserNewReq        *litellm.UserNewRequest
 	lastTeamMemberAddTeam string
 	lastTeamMemberAddUser string
 	lastTeamMemberAddRole string
@@ -720,6 +721,7 @@ func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm
 func (f *fakeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
 	f.rec.userNewCalls++
 	f.rec.lastUserNewEmail = req.UserEmail
+	f.rec.lastUserNewReq = req
 	return f.userNewBehaviour(req)
 }
 func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, teamID, userID, role string) error {
@@ -982,6 +984,43 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	count := strings.Count(fullResp, got.Plaintext)
 	if count != 1 {
 		t.Errorf("plaintext occurrence in response (headers+body): got %d, want 1; fullResp=%s", count, fullResp)
+	}
+}
+
+// TestCallbackHandler_FirstTimeSSO_UserIDEmailAndNoAutoKey: first-time SSO
+// must provision the LiteLLM user with a deterministic user_id=email and
+// auto_create_key=false so no untracked default key is leaked (regression
+// guard for the 2026-06-04 prod finding).
+func TestCallbackHandler_FirstTimeSSO_UserIDEmailAndNoAutoKey(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alice@example.com"
+
+	flm := newFakeLiteLLM() // defaults to first-time SSO (UserInfoByEmail→ErrNotFound)
+	tc := &callbackTestCase{
+		stateCookie: "state-abc",
+		urlState:    "state-abc",
+		urlCode:     "code-xyz",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    newDBInsertRecord(),
+		pepper:      []byte("test-pepper-32-bytes-long-aa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 200; body=%s", w.Result().StatusCode, string(body))
+	}
+
+	req := flm.rec.lastUserNewReq
+	if req == nil {
+		t.Fatal("UserNew was not called")
+	}
+	if req.UserID != "alice@example.com" {
+		t.Errorf("UserNew user_id: got %q, want %q (deterministic email id)", req.UserID, "alice@example.com")
+	}
+	if req.AutoCreateKey == nil || *req.AutoCreateKey != false {
+		t.Errorf("UserNew auto_create_key: got %v, want explicit false", req.AutoCreateKey)
 	}
 }
 
