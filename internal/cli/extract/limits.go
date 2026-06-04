@@ -24,6 +24,7 @@ const (
 	KindPlugin   ResourceKind = "plugin"
 	KindArtifact ResourceKind = "artifact"
 	KindPrompt   ResourceKind = "prompt"
+	KindSkill    ResourceKind = "skill"
 )
 
 // Bomb-defense env-var names + default MiB caps + default entry count.
@@ -31,10 +32,12 @@ const (
 const (
 	envPluginMaxMiB   = "ACH_MAX_EXTRACTED_PLUGIN_MIB"
 	envArtifactMaxMiB = "ACH_MAX_EXTRACTED_ARTIFACT_MIB"
+	envSkillMaxMiB    = "ACH_MAX_EXTRACTED_SKILL_MIB"
 	envMaxEntries     = "ACH_MAX_ARCHIVE_ENTRIES"
 
 	defaultPluginMaxMiB   = 200
 	defaultArtifactMaxMiB = 500
+	defaultSkillMaxMiB    = 50
 	defaultMaxEntries     = 65536
 
 	mibToBytes = 1024 * 1024
@@ -53,6 +56,10 @@ type Limits struct {
 	// byte cap, sourced from ACH_MAX_EXTRACTED_ARTIFACT_MIB × 1 MiB.
 	MaxExtractedArtifactBytes int64
 
+	// MaxExtractedSkillBytes is the per-skill-archive uncompressed byte cap,
+	// sourced from ACH_MAX_EXTRACTED_SKILL_MIB × 1 MiB.
+	MaxExtractedSkillBytes int64
+
 	// MaxEntries is the per-archive entry-count cap, sourced from
 	// ACH_MAX_ARCHIVE_ENTRIES. The entry-count check fires BEFORE
 	// reading the offending entry's body so a billion-file archive
@@ -69,6 +76,8 @@ func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 		return l.MaxExtractedPluginBytes
 	case KindArtifact:
 		return l.MaxExtractedArtifactBytes
+	case KindSkill:
+		return l.MaxExtractedSkillBytes
 	case KindPrompt:
 		return 0
 	}
@@ -85,6 +94,7 @@ func DefaultLimits() Limits {
 	return Limits{
 		MaxExtractedPluginBytes:   int64(defaultPluginMaxMiB) * mibToBytes,
 		MaxExtractedArtifactBytes: int64(defaultArtifactMaxMiB) * mibToBytes,
+		MaxExtractedSkillBytes:    int64(defaultSkillMaxMiB) * mibToBytes,
 		MaxEntries:                defaultMaxEntries,
 	}
 }
@@ -111,6 +121,10 @@ func LoadLimits() (Limits, error) {
 	if err != nil {
 		return Limits{}, err
 	}
+	skillMiB, err := loadPositiveInt(envSkillMaxMiB, defaultSkillMaxMiB)
+	if err != nil {
+		return Limits{}, err
+	}
 	entries, err := loadPositiveInt(envMaxEntries, defaultMaxEntries)
 	if err != nil {
 		return Limits{}, err
@@ -118,6 +132,7 @@ func LoadLimits() (Limits, error) {
 	return Limits{
 		MaxExtractedPluginBytes:   int64(pluginMiB) * mibToBytes,
 		MaxExtractedArtifactBytes: int64(artifactMiB) * mibToBytes,
+		MaxExtractedSkillBytes:    int64(skillMiB) * mibToBytes,
 		MaxEntries:                entries,
 	}, nil
 }
