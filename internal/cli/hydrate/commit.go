@@ -557,13 +557,6 @@ func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {
 	}
 }
 
-func contentRefDisplayName(ref manifest.ContentRef) string {
-	if ref.Name != "" {
-		return ref.Name
-	}
-	return ref.ID
-}
-
 // syncFn is the package-level test seam wrapping Sync. Production
 // callers leave it at its default (= Sync); unit tests in this package
 // swap it for a recorder to verify the step-11 wiring fires (or does
