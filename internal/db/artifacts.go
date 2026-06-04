@@ -50,9 +50,14 @@ type ArtifactRow struct {
 }
 
 // UpsertArtifact inserts-or-updates a row keyed by (namespace, name). The
-// ON CONFLICT DO UPDATE replaces every non-PK column EXCEPT
-// deletion_timestamp (preserved per CS-09); updated_at is force-set to
-// now() in the UPDATE branch.
+// ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile (this
+// path only runs for a CR with no metadata.deletionTimestamp) clears
+// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
+// MUST drop the stale drain marker, else ListArtifacts (WHERE
+// deletion_timestamp IS NULL) hides the resurrected artifact from the admin
+// inventory forever (incident 2026-06-04). The drain marker is owned solely
+// by SoftDeleteArtifact, which runs on the deletion branch and never overlaps
+// this upsert; updated_at is force-set to now() in the UPDATE branch.
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other
 // errors wrap with non-secret (namespace, name) identifiers — pgErr.Message
@@ -71,6 +76,7 @@ const upsertArtifactSQL = `
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
 	    updated_at              = now(),
+	    deletion_timestamp      = NULL,
 	    locked                  = TRUE
 	WHERE artifacts.origin = 'cr'
 	RETURNING namespace

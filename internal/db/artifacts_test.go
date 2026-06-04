@@ -181,3 +181,65 @@ func TestDeleteArtifact_RemovesRow(t *testing.T) {
 		t.Errorf("idempotent Delete: %v", err)
 	}
 }
+
+// TestUpsertArtifact_ClearsStaleDeletionTimestamp proves a LIVE reconcile
+// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04).
+// Unlike plugins, the artifact per-request content read (GetArtifactByName)
+// deliberately surfaces drain-mode rows per CS-09; the IS-NULL-filtered read
+// is ListArtifacts (the admin inventory), so a resurrected artifact must
+// reappear there after the live upsert.
+func TestUpsertArtifact_ClearsStaleDeletionTimestamp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	row := db.ArtifactRow{
+		Namespace: "ns", Name: "resurrect-me", StorageLocation: "/x",
+		Scope: "object", MaxStalenessSeconds: 60, ResourceVersion: "1",
+	}
+	if err := db.UpsertArtifact(ctx, pool, row); err != nil {
+		t.Fatalf("seed upsert: %v", err)
+	}
+	if err := db.SoftDeleteArtifact(ctx, pool, "ns", "resurrect-me"); err != nil {
+		t.Fatalf("SoftDeleteArtifact: %v", err)
+	}
+	// Soft-deleted: the IS-NULL-filtered inventory read must NOT list it.
+	pre, err := db.ListArtifacts(ctx, pool, "ns")
+	if err != nil {
+		t.Fatalf("ListArtifacts after soft-delete: %v", err)
+	}
+	for _, a := range pre {
+		if a.Name == "resurrect-me" {
+			t.Fatal("ListArtifacts returned soft-deleted artifact (IS NULL filter broken)")
+		}
+	}
+	// Live reconcile of the recreated CR upserts again.
+	row.ResourceVersion = "2"
+	if err := db.UpsertArtifact(ctx, pool, row); err != nil {
+		t.Fatalf("live upsert: %v", err)
+	}
+
+	got, err := db.GetArtifactByName(ctx, pool, "ns", "resurrect-me")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil || got.DeletionTimestamp != nil {
+		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %+v", got)
+	}
+	// The IS-NULL-filtered inventory read must list the resurrected artifact.
+	post, err := db.ListArtifacts(ctx, pool, "ns")
+	if err != nil {
+		t.Fatalf("ListArtifacts after live upsert: %v", err)
+	}
+	var found bool
+	for _, a := range post {
+		if a.Name == "resurrect-me" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("resurrected artifact missing from ListArtifacts after live upsert")
+	}
+}
