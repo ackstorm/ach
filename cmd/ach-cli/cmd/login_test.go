@@ -442,3 +442,132 @@ func TestResolveBaseURL_EnvPrefill(t *testing.T) {
 		}
 	})
 }
+
+// executeLoginStdin is executeLogin with an injected stdin so the
+// interactive profile-name prompt can be driven from tests. readLine
+// falls back to scanLine for a non-*os.File reader (strings.Reader is
+// not a TTY), so the prompt read is deterministic line-buffered input.
+func executeLoginStdin(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	cmd := newLoginCmd()
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetIn(strings.NewReader(stdin))
+	cmd.SetArgs(args)
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		return outBuf.String(), errBuf.String(), exit.OK, nil
+	}
+	var cErr *exit.CodedError
+	if errors.As(err, &cErr) {
+		return outBuf.String(), errBuf.String(), cErr.Code, err
+	}
+	return outBuf.String(), errBuf.String(), exit.General, err
+}
+
+// TestLogin_InteractivePrompt_EmptyDefaultsToDefault: on a first login
+// (no "default" profile on disk) the profile prompt suggests "default";
+// pressing Enter (empty input) accepts it. --base-url skips the URL
+// prompt and --no-browser skips the pre-open menu, so stdin is consumed
+// by the profile prompt alone.
+func TestLogin_InteractivePrompt_EmptyDefaultsToDefault(t *testing.T) {
+	dir := loginTestEnv(t)
+	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "u@example")
+	defer ts.Close()
+
+	stdout, _, code, err := executeLoginStdin(t, "\n", "--base-url", ts.URL, "--no-browser")
+	if err != nil || code != exit.OK {
+		t.Fatalf("login err = %v, code = %d", err, code)
+	}
+	if !strings.Contains(stdout, "Profile name [default]: ") {
+		t.Errorf("expected bracketed default prompt; stdout = %q", stdout)
+	}
+
+	path := filepath.Join(dir, "ach", "config.yaml")
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if f == nil || f.Profiles["default"] == nil {
+		t.Fatalf("expected profile \"default\" written; got %+v", f)
+	}
+	if f.Default != "default" {
+		t.Errorf("default = %q; want \"default\"", f.Default)
+	}
+}
+
+// TestLogin_InteractivePrompt_NoSuggestionWhenDefaultExists: when a
+// profile literally named "default" already exists, the prompt is the
+// bare "Profile name: " with NO bracket, and a bare Enter is rejected as
+// an invalid (empty) name — no accidental re-login that clobbers the
+// existing "default" profile's pk-.
+func TestLogin_InteractivePrompt_NoSuggestionWhenDefaultExists(t *testing.T) {
+	dir := loginTestEnv(t)
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := config.Save(path, &config.File{
+		Default: "default",
+		Profiles: map[string]*config.Profile{
+			"default": {URL: "https://existing.example", PK: "pk-keepkeepkeepkeepkeepkeepkeepKEEP"},
+		},
+	}); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	ts := newLoginTestServer(t, 0, "pk-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWXYZ", "u@example")
+	defer ts.Close()
+
+	stdout, _, code, err := executeLoginStdin(t, "\n", "--base-url", ts.URL, "--no-browser")
+	if err == nil {
+		t.Fatal("expected empty profile name to be rejected when no suggestion is offered")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want 1", code)
+	}
+	if strings.Contains(stdout, "[default]") {
+		t.Errorf("prompt must NOT suggest a default when one exists; stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "Profile name: ") {
+		t.Errorf("expected bare profile prompt; stdout = %q", stdout)
+	}
+	// The pre-existing "default" profile is untouched.
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if f.Profiles["default"].PK != "pk-keepkeepkeepkeepkeepkeepkeepKEEP" {
+		t.Errorf("existing default pk was clobbered: %q", f.Profiles["default"].PK)
+	}
+}
+
+// TestLogin_InteractivePrompt_TypedNameOverridesSuggestion: a typed name
+// wins over the "default" suggestion, and first-login still auto-sets
+// Default to the typed name (not "default").
+func TestLogin_InteractivePrompt_TypedNameOverridesSuggestion(t *testing.T) {
+	dir := loginTestEnv(t)
+	ts := newLoginTestServer(t, 0, "pk-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCWXYZ", "u@example")
+	defer ts.Close()
+
+	_, _, code, err := executeLoginStdin(t, "prod\n", "--base-url", ts.URL, "--no-browser")
+	if err != nil || code != exit.OK {
+		t.Fatalf("login err = %v, code = %d", err, code)
+	}
+
+	path := filepath.Join(dir, "ach", "config.yaml")
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if f.Profiles["prod"] == nil {
+		t.Fatalf("expected profile \"prod\"; got %+v", f.Profiles)
+	}
+	if f.Profiles["default"] != nil {
+		t.Errorf("typed name should not create a \"default\" profile; got %+v", f.Profiles)
+	}
+	if f.Default != "prod" {
+		t.Errorf("default = %q; want \"prod\"", f.Default)
+	}
+}

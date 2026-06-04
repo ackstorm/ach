@@ -79,7 +79,7 @@ Flow:
   4. Persist the pk- to ~/.config/ach/config.yaml at mode 0600.
 
 Interactive prompts (skipped when --profile / --base-url are set):
-  Profile name  DNS-1123 label, e.g. "prod"
+  Profile name  DNS-1123 label, e.g. "prod" (suggests "default" on first login)
   URL              https://hub.example.com (http:// or https://; http:// warns)
 
 The URL prompt is also pre-filled from ACH_PLATFORM_URL when set
@@ -129,25 +129,10 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	stderr := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 
-	// Step 2 — resolve profile name (flag or interactive prompt).
-	name, err := resolveProfileName(profile, stdin, stdout)
-	if err != nil {
-		return err
-	}
-
-	// Step 3 — resolve URL (flag or interactive prompt). Accepts
-	// http:// or https://.
-	url, err := resolveBaseURL(baseURL, stdin, stdout)
-	if err != nil {
-		return err
-	}
-	if !noWarnings && strings.HasPrefix(url, "http://") {
-		_, _ = fmt.Fprintf(stderr,
-			"warning: profile %q uses plaintext http:// — credentials are sent "+
-				"unencrypted (safe only on trusted/internal networks)\n", url)
-	}
-
-	// Step 4 — load existing config (best effort; nil-on-absent OK).
+	// Step 2 — load existing config first (best effort; nil-on-absent
+	// OK). Loaded before the profile prompt so the prompt can suggest
+	// the "default" profile name on a true first login (no profile
+	// literally named "default" yet).
 	configPath, err := config.Path()
 	if err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
@@ -168,6 +153,30 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	}
 	if file.Profiles == nil {
 		file.Profiles = map[string]*config.Profile{}
+	}
+
+	// Step 3 — resolve profile name (flag or interactive prompt). On a
+	// first login (no profile literally named "default" yet) the prompt
+	// suggests "default" so a bare Enter accepts it.
+	suggested := ""
+	if file.Profiles["default"] == nil {
+		suggested = "default"
+	}
+	name, err := resolveProfileName(profile, suggested, stdin, stdout)
+	if err != nil {
+		return err
+	}
+
+	// Step 4 — resolve URL (flag or interactive prompt). Accepts
+	// http:// or https://.
+	url, err := resolveBaseURL(baseURL, stdin, stdout)
+	if err != nil {
+		return err
+	}
+	if !noWarnings && strings.HasPrefix(url, "http://") {
+		_, _ = fmt.Fprintf(stderr,
+			"warning: profile %q uses plaintext http:// — credentials are sent "+
+				"unencrypted (safe only on trusted/internal networks)\n", url)
 	}
 
 	// Step 5 — device-code init.
@@ -235,16 +244,26 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	return nil
 }
 
-// resolveProfileName returns the flag value when set; otherwise
-// prompts via stdin. Validates against the DNS-1123 label pattern.
-func resolveProfileName(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
+// resolveProfileName returns the flag value when set; otherwise prompts
+// via stdin. When suggested is non-empty (a first login with no profile
+// named "default" yet) the prompt renders "Profile name [suggested]: "
+// and a bare Enter (empty input) accepts the suggestion. Validates the
+// final name against the DNS-1123 label pattern.
+func resolveProfileName(flagVal, suggested string, stdin io.Reader, stdout io.Writer) (string, error) {
 	name := strings.TrimSpace(flagVal)
 	if name == "" {
-		v, err := readLine("Profile name: ", stdin, stdout)
+		prompt := "Profile name: "
+		if suggested != "" {
+			prompt = fmt.Sprintf("Profile name [%s]: ", suggested)
+		}
+		v, err := readLine(prompt, stdin, stdout)
 		if err != nil {
 			return "", err
 		}
-		name = v
+		name = strings.TrimSpace(v)
+		if name == "" {
+			name = suggested
+		}
 	}
 	if name == "" || !profileNamePattern.MatchString(name) {
 		return "", &exit.CodedError{
