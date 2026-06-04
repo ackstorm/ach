@@ -253,8 +253,14 @@ func TestPimono_RenderRuntime_McpJSONShape(t *testing.T) {
 	if got.MCPServers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].URL)
 	}
-	if got.MCPServers["demo-mcp-jwt"].Type != "http" {
-		t.Errorf("MCP type = %q, want http", got.MCPServers["demo-mcp-jwt"].Type)
+	// Pi's HTTP MCP schema is url + headers with NO `type` field (stdio uses
+	// command/args; HTTP is inferred from url). Schema:
+	// https://github.com/nicobailon/pi-mcp-adapter.
+	if got.MCPServers["demo-mcp-jwt"].Type != "" {
+		t.Errorf("MCP type must be absent for pi (Pi defines no type key); got %q", got.MCPServers["demo-mcp-jwt"].Type)
+	}
+	if _, ok := got.MCPServers["demo-mcp-jwt"].Headers["x-ach-key"]; !ok {
+		t.Errorf("MCP headers must carry x-ach-key; got %v", got.MCPServers["demo-mcp-jwt"].Headers)
 	}
 	// pimono has NO a2aAgents surface — the key must be absent entirely.
 	if got.A2AAgents != nil {
