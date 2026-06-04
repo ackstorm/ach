@@ -50,6 +50,12 @@ make build-all
 ./bin/ach-cli hydrate --environment demo > hydrate.json    # POST /platform/hydrate
 ```
 
+> **Tip — pre-fill the login URL:** `ach login` prompts for the Hub URL
+> interactively. Export `ACH_PLATFORM_URL=https://ach.example` to pre-fill it
+> (precedence: `--base-url` flag → `ACH_PLATFORM_URL` env → prompt).
+> `ACH_PLATFORM_URL` is a login-only convenience — distinct from `ACH_BASE_URL`
+> (the synthetic-mode trigger); it does NOT enable synthetic mode.
+
 The `hydrate.json` output should match `examples/hydrate.json` byte-for-byte
 against the standard kind+Helm fixture cluster (the base URL is baked into the
 golden — when the live cluster exposes the platform-api on a different

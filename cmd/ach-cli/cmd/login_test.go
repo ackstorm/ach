@@ -368,3 +368,77 @@ func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
 		t.Errorf("masked tail %q count = %d; want exactly 1; stdout: %s", masked, c, stdout)
 	}
 }
+
+// failReader fails the test if resolveBaseURL reads stdin — used to
+// assert the flag / ACH_PLATFORM_URL pre-fill paths skip the interactive
+// prompt entirely.
+type failReader struct{ t *testing.T }
+
+func (r failReader) Read([]byte) (int, error) {
+	r.t.Error("resolveBaseURL read stdin but flag/ACH_PLATFORM_URL should have satisfied it")
+	return 0, errors.New("stdin must not be read")
+}
+
+// TestResolveBaseURL_EnvPrefill covers the ACH_PLATFORM_URL pre-fill
+// precedence: --base-url flag → ACH_PLATFORM_URL env → interactive
+// prompt. ACH_PLATFORM_URL is a login-only convenience and is distinct
+// from ACH_BASE_URL (the synthetic-mode trigger) — it never enables
+// synthetic mode.
+func TestResolveBaseURL_EnvPrefill(t *testing.T) {
+	t.Run("flag wins over env", func(t *testing.T) {
+		t.Setenv("ACH_PLATFORM_URL", "https://env.example")
+		got, err := resolveBaseURL("https://flag.example", failReader{t}, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if got != "https://flag.example" {
+			t.Errorf("url = %q; want flag value (flag beats env)", got)
+		}
+	})
+
+	t.Run("env pre-fills when flag empty, no prompt read", func(t *testing.T) {
+		t.Setenv("ACH_PLATFORM_URL", "https://env.example")
+		var out bytes.Buffer
+		got, err := resolveBaseURL("", failReader{t}, &out)
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if got != "https://env.example" {
+			t.Errorf("url = %q; want env value", got)
+		}
+		if !strings.Contains(out.String(), "from ACH_PLATFORM_URL") {
+			t.Errorf("stdout missing ACH_PLATFORM_URL echo; got %q", out.String())
+		}
+	})
+
+	t.Run("falls through to prompt when flag and env empty", func(t *testing.T) {
+		t.Setenv("ACH_PLATFORM_URL", "")
+		in := strings.NewReader("https://prompt.example\n")
+		got, err := resolveBaseURL("", in, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if got != "https://prompt.example" {
+			t.Errorf("url = %q; want prompt value", got)
+		}
+	})
+
+	t.Run("env non-http value rejected", func(t *testing.T) {
+		t.Setenv("ACH_PLATFORM_URL", "ftp://env.example")
+		_, err := resolveBaseURL("", failReader{t}, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "http:// or https://") {
+			t.Fatalf("err = %v; want scheme rejection", err)
+		}
+	})
+
+	t.Run("env http value accepted (plaintext warns at runLogin)", func(t *testing.T) {
+		t.Setenv("ACH_PLATFORM_URL", "http://env.example")
+		got, err := resolveBaseURL("", failReader{t}, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if got != "http://env.example" {
+			t.Errorf("url = %q; want http env value preserved", got)
+		}
+	})
+}

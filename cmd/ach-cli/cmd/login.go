@@ -82,6 +82,11 @@ Interactive prompts (skipped when --profile / --base-url are set):
   Profile name  DNS-1123 label, e.g. "prod"
   URL              https://hub.example.com (http:// or https://; http:// warns)
 
+The URL prompt is also pre-filled from ACH_PLATFORM_URL when set
+(precedence: --base-url flag → ACH_PLATFORM_URL env → prompt).
+ACH_PLATFORM_URL is a login-only convenience, distinct from ACH_BASE_URL
+(the synthetic-mode trigger) — it never enables synthetic mode.
+
 Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run
 with exit 1 per CLI spec §3.3.
 
@@ -304,12 +309,24 @@ func scanLine(prompt string, stdin io.Reader, stdout io.Writer) (string, error) 
 	return "", s.Err()
 }
 
-// resolveBaseURL returns the flag value when set; otherwise prompts.
-// Accepts http:// or https://; rejects any other scheme. http:// is
-// allowed for local/internal hubs — runLogin emits a plaintext-transport
-// warning when the resolved URL is http://.
+// resolveBaseURL returns the flag value when set; otherwise pre-fills
+// from ACH_PLATFORM_URL; otherwise prompts. Precedence: --base-url flag →
+// ACH_PLATFORM_URL env → interactive prompt. ACH_PLATFORM_URL is a
+// login-only convenience and is NOT the synthetic-mode trigger
+// (ACH_BASE_URL); it never enables synthetic mode. Accepts http:// or
+// https://; rejects any other scheme. http:// is allowed for
+// local/internal hubs — runLogin emits a plaintext-transport warning
+// when the resolved URL is http://.
 func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
 	url := strings.TrimSpace(flagVal)
+	if url == "" {
+		// Env pre-fill: ACH_PLATFORM_URL is a login-only convenience,
+		// distinct from ACH_BASE_URL (the synthetic-mode trigger).
+		if env := strings.TrimSpace(os.Getenv("ACH_PLATFORM_URL")); env != "" {
+			url = env
+			_, _ = fmt.Fprintf(stdout, "URL: %s (from ACH_PLATFORM_URL)\n", url)
+		}
+	}
 	if url == "" {
 		v, err := readLine("URL: ", stdin, stdout)
 		if err != nil {
