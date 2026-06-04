@@ -339,8 +339,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `runtime` _[RuntimeBlock](#runtimeblock)_ | Runtime is the execution-resource bundle projected into the LiteLLM<br />access group (§6.2). Always present per CRD-02. |  | Required: \{\} <br /> |
-| `context` _[ContextBlock](#contextblock)_ | Context is the content-resource bundle served by Content Service<br />(§10, §15.6). Always present per CRD-02. |  | Required: \{\} <br /> |
+| `runtime` _[RuntimeBlock](#runtimeblock)_ | Runtime is the execution-resource bundle projected into the LiteLLM<br />access group (§6.2). Optional in the manifest; defaults to an empty<br />block whose list fields backfill to [] so CRD-02 ("always present in<br />the hydrate response") holds even when the author omits it. | \{  \} |  |
+| `context` _[ContextBlock](#contextblock)_ | Context is the content-resource bundle served by Content Service<br />(§10, §15.6). Optional in the manifest; defaults to an empty block<br />whose list fields backfill to [] so CRD-02 ("always present in the<br />hydrate response") holds even when the author omits it. | \{  \} |  |
 | `authorizedTeams` _string array_ | AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment<br />is unusable when no entry resolves to an existing LiteLLM Team;<br />admission requires at least one entry per Hub §6 (informational —<br />reconcile-time existence is verified per §6.4). |  | MinItems: 1 <br />Required: \{\} <br /> |
 
 

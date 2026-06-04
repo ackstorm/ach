@@ -92,16 +92,22 @@ type ContextBlock struct {
 // EnvironmentSpec defines the desired state of Environment (CRD-02, Hub §6).
 type EnvironmentSpec struct {
 	// Runtime is the execution-resource bundle projected into the LiteLLM
-	// access group (§6.2). Always present per CRD-02.
+	// access group (§6.2). Optional in the manifest; defaults to an empty
+	// block whose list fields backfill to [] so CRD-02 ("always present in
+	// the hydrate response") holds even when the author omits it.
 	//
-	// +kubebuilder:validation:Required
-	Runtime RuntimeBlock `json:"runtime"`
+	// +optional
+	// +kubebuilder:default={}
+	Runtime RuntimeBlock `json:"runtime,omitempty"`
 
 	// Context is the content-resource bundle served by Content Service
-	// (§10, §15.6). Always present per CRD-02.
+	// (§10, §15.6). Optional in the manifest; defaults to an empty block
+	// whose list fields backfill to [] so CRD-02 ("always present in the
+	// hydrate response") holds even when the author omits it.
 	//
-	// +kubebuilder:validation:Required
-	Context ContextBlock `json:"context"`
+	// +optional
+	// +kubebuilder:default={}
+	Context ContextBlock `json:"context,omitempty"`
 
 	// AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment
 	// is unusable when no entry resolves to an existing LiteLLM Team;

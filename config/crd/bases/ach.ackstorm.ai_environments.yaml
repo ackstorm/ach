@@ -71,9 +71,12 @@ spec:
                 minItems: 1
                 type: array
               context:
+                default: {}
                 description: |-
                   Context is the content-resource bundle served by Content Service
-                  (§10, §15.6). Always present per CRD-02.
+                  (§10, §15.6). Optional in the manifest; defaults to an empty block
+                  whose list fields backfill to [] so CRD-02 ("always present in the
+                  hydrate response") holds even when the author omits it.
                 properties:
                   artifacts:
                     default: []
@@ -114,9 +117,12 @@ spec:
                     type: array
                 type: object
               runtime:
+                default: {}
                 description: |-
                   Runtime is the execution-resource bundle projected into the LiteLLM
-                  access group (§6.2). Always present per CRD-02.
+                  access group (§6.2). Optional in the manifest; defaults to an empty
+                  block whose list fields backfill to [] so CRD-02 ("always present in
+                  the hydrate response") holds even when the author omits it.
                 properties:
                   a2aAgents:
                     default: []
@@ -165,8 +171,6 @@ spec:
                 type: object
             required:
             - authorizedTeams
-            - context
-            - runtime
             type: object
           status:
             description: EnvironmentStatus defines the observed state of Environment
