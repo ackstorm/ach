@@ -141,7 +141,7 @@ func buildGitSpecForEntry(
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    entry.Source.Path,
-			Token:      token,
+			Token:      tokenForHost(mp, host, token),
 			CacheRoot:  cacheRoot,
 			AuthScheme: schemeForHost(mp, host),
 		}, nil
@@ -158,7 +158,7 @@ func buildGitSpecForEntry(
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    entry.Source.Path,
-			Token:      token,
+			Token:      tokenForHost(mp, host, token),
 			CacheRoot:  cacheRoot,
 			AuthScheme: schemeForHost(mp, host),
 		}, nil
@@ -169,7 +169,7 @@ func buildGitSpecForEntry(
 			Ref:        defaultRef(entry.Source.Ref),
 			SHA:        entry.Source.SHA,
 			Subtree:    "", // github Kind has no path → whole-worktree
-			Token:      token,
+			Token:      tokenForHost(mp, "github.com", token),
 			CacheRoot:  cacheRoot,
 			AuthScheme: schemeForHost(mp, "github.com"), // GitHubCloneURL is always github.com
 		}, nil
@@ -188,7 +188,7 @@ func buildGitSpecForEntry(
 			Ref:        ref,
 			SHA:        "", // resolved by caller via newResolveHeadSHAFn
 			Subtree:    entry.Source.Path,
-			Token:      token,
+			Token:      tokenForHost(mp, host, token),
 			CacheRoot:  cacheRoot,
 			AuthScheme: schemeForHost(mp, host),
 		}, nil
@@ -221,6 +221,40 @@ func schemeForHost(mp *achv1alpha1.PluginMarketplace, host string) sourcesgit.Au
 		return sourcesgit.AuthBasicOAuth2
 	}
 	return sourcesgit.AuthBearer
+}
+
+// ownHostOf returns the marketplace's canonical upstream host (the host of
+// marketplaceOwnRepo's clone URL), or "" when the marketplace type has no
+// git own-host (s3 / gcs / http) or its repo identity is malformed.
+func ownHostOf(mp *achv1alpha1.PluginMarketplace) string {
+	ownURL, _, err := marketplaceOwnRepo(mp)
+	if err != nil {
+		return ""
+	}
+	_, host, err := sources.CanonicalCloneURL(ownURL)
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
+// tokenForHost returns the marketplace auth token ONLY when the entry's
+// canonical clone-URL host matches the marketplace's OWN upstream host. A
+// marketplace auth Secret is scoped to its own provider host; attaching it
+// to a foreign host (e.g. a github.com plugin entry inside a gitlab
+// marketplace) leaks a wrong-provider credential AND 401s where an anonymous
+// clone of a public repo would succeed (the GitLab oauth2 PAT sent as a
+// github Bearer is rejected). Foreign-host entries therefore clone
+// anonymously until per-entry auth lands (see extractTokenFromSecret TODO).
+// host is the lowercased host from sources.CanonicalCloneURL; the comparison
+// is the same own-host check schemeForHost makes for the GitLab scheme, but
+// applied to EVERY marketplace type (a github/bitbucket/http marketplace
+// likewise must not lend its token to a foreign-host entry).
+func tokenForHost(mp *achv1alpha1.PluginMarketplace, host, token string) string {
+	if own := ownHostOf(mp); own != "" && strings.EqualFold(host, own) {
+		return token
+	}
+	return ""
 }
 
 // marketplaceOwnRepo returns the (URL, Ref) of the marketplace's own
