@@ -55,9 +55,9 @@ func TestVerifySkillContents(t *testing.T) {
 		t.Errorf("valid nested skill rejected: %v", err)
 	}
 	for _, bad := range [][]byte{
-		skillTarGz(t, map[string]string{"README.md": "hi"}),                                       // no SKILL.md
-		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: x\n---\nb"}),                       // no description
-		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: Bad_Name\ndescription: d\n---"}),   // invalid name
+		skillTarGz(t, map[string]string{"README.md": "hi"}),                                      // no SKILL.md
+		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: x\n---\nb"}),                     // no description
+		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: Bad_Name\ndescription: d\n---"}), // invalid name
 	} {
 		err := verifySkillContents(bytes.NewReader(bad))
 		if err == nil || !errors.Is(err, sources.ErrUpstreamInvalid) {

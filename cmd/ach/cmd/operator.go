@@ -193,6 +193,13 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 	operatorSetupLog.Info("plugin size limit configured", "ACH_PLUGIN_MAX_SIZE_MIB", pluginMaxSizeMiB)
 
+	// ─── ACH_SKILL_MAX_SIZE_MIB (agent-skill content kind) ───
+	skillMaxSizeMiB, err := config.MustEnvIntPositive("ACH_SKILL_MAX_SIZE_MIB", 50)
+	if err != nil {
+		return fmt.Errorf("ACH_SKILL_MAX_SIZE_MIB must be a positive integer: %w", err)
+	}
+	operatorSetupLog.Info("skill size limit configured", "ACH_SKILL_MAX_SIZE_MIB", skillMaxSizeMiB)
+
 	// ─── Phase 2: ACH_ORPHAN_CLEANUP_INTERVAL (OP-15 / D-15) ───
 	orphanInterval, err := config.MustEnvDurationAtLeast("ACH_ORPHAN_CLEANUP_INTERVAL", time.Hour, 5*time.Minute)
 	if err != nil {
@@ -400,6 +407,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	pluginCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	promptCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	artifactCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	skillCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	mpCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	bipCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	llmCh := make(chan event.GenericEvent, resyncSourceChanCap)
@@ -489,6 +497,19 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Prompt: %w", err)
 	}
+	if err = (&achcontroller.SkillReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Namespace:       watchNS,
+		Log:             ctrl.Log.WithName("controller").WithName("Skill"),
+		CacheRoot:       cacheRoot,
+		DB:              dbPool,
+		SkillMaxSizeMiB: skillMaxSizeMiB,
+		Fetchers:        nil,
+		ResyncSource:    skillCh,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Skill: %w", err)
+	}
 	if err = (&achcontroller.BackendIdentityPolicyReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
@@ -511,6 +532,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 			Plugin:            pluginCh,
 			Prompt:            promptCh,
 			Artifact:          artifactCh,
+			Skill:             skillCh,
 			Marketplace:       mpCh,
 			BIP:               bipCh,
 			LiteLLMConnection: llmCh,
@@ -526,8 +548,8 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// /admin/refresh handler (db.SetForceRefresh) and pushes a
 	// GenericEvent for the named CR into the matching per-Kind
 	// source.Channel. Replaces the pre-issue-34 annotation-patching
-	// path on the platform-api side. Only the four "external-ref"
-	// Kinds — plugin, prompt, artifact, pluginmarketplace — receive
+	// path on the platform-api side. Only the five "external-ref"
+	// Kinds — plugin, prompt, artifact, skill, pluginmarketplace — receive
 	// signals; the listener silently drops payloads for any other kind.
 	refreshListener := &refreshsignal.Listener{
 		Pool:      dbPool,
@@ -538,6 +560,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 			"plugin":            pluginCh,
 			"prompt":            promptCh,
 			"artifact":          artifactCh,
+			"skill":             skillCh,
 			"pluginmarketplace": mpCh,
 		},
 	}

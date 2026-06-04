@@ -30,6 +30,7 @@ type Channels struct {
 	Plugin            chan<- event.GenericEvent
 	Prompt            chan<- event.GenericEvent
 	Artifact          chan<- event.GenericEvent
+	Skill             chan<- event.GenericEvent
 	Marketplace       chan<- event.GenericEvent
 	BIP               chan<- event.GenericEvent
 	LiteLLMConnection chan<- event.GenericEvent
@@ -97,6 +98,8 @@ func (r *Resync) sweepAll(ctx context.Context) {
 		func(l *achv1alpha1.PromptList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.Artifact, &achv1alpha1.ArtifactList{}, "artifacts",
 		func(l *achv1alpha1.ArtifactList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Skill, &achv1alpha1.SkillList{}, "skills",
+		func(l *achv1alpha1.SkillList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.Marketplace, &achv1alpha1.PluginMarketplaceList{}, "pluginmarketplaces",
 		func(l *achv1alpha1.PluginMarketplaceList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.BIP, &achv1alpha1.BackendIdentityPolicyList{}, "backendidentitypolicies",
@@ -165,10 +168,11 @@ type runnable interface {
 // Describe returns a human-readable summary of which channels are wired.
 // Currently unused at runtime but handy in tests.
 func (r *Resync) Describe() string {
-	return fmt.Sprintf("resync interval=%s namespace=%s env=%t plugin=%t prompt=%t artifact=%t mp=%t bip=%t llmconn=%t",
+	return fmt.Sprintf("resync interval=%s namespace=%s env=%t plugin=%t prompt=%t artifact=%t skill=%t mp=%t bip=%t llmconn=%t",
 		r.intervalOrDefault(), r.Namespace,
 		r.Channels.Environment != nil, r.Channels.Plugin != nil,
 		r.Channels.Prompt != nil, r.Channels.Artifact != nil,
+		r.Channels.Skill != nil,
 		r.Channels.Marketplace != nil, r.Channels.BIP != nil,
 		r.Channels.LiteLLMConnection != nil,
 	)
