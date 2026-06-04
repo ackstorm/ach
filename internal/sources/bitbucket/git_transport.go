@@ -17,7 +17,6 @@ package bitbucket
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
@@ -31,8 +30,9 @@ func (f *Fetcher) resolvedTransport() string {
 // constructCloneURL builds the https clone URL. Workspace + Repo are
 // already validated by New (CR-02 / validateFlatIdentifier rejects
 // URL-structural metacharacters), so direct interpolation is safe.
+// Delegates to the canonical sources.BitbucketCloneURL.
 func (f *Fetcher) constructCloneURL() string {
-	return fmt.Sprintf("https://bitbucket.org/%s/%s.git", f.spec.Workspace, f.spec.Repo)
+	return sources.BitbucketCloneURL(f.spec.Workspace, f.spec.Repo)
 }
 
 func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {

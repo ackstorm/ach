@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
 )
@@ -372,7 +374,7 @@ func TestMarketplaceOwnRepo_GitLabHostNormalize(t *testing.T) {
 	}
 }
 
-func TestSchemeForCloneURL(t *testing.T) {
+func TestSchemeForHost(t *testing.T) {
 	gl := func(host string) *achv1alpha1.PluginMarketplace {
 		return &achv1alpha1.PluginMarketplace{
 			Spec: achv1alpha1.PluginMarketplaceSpec{
@@ -385,21 +387,110 @@ func TestSchemeForCloneURL(t *testing.T) {
 		Spec: achv1alpha1.PluginMarketplaceSpec{Type: "github"},
 	}
 	cases := []struct {
-		name     string
-		mp       *achv1alpha1.PluginMarketplace
-		cloneURL string
-		want     sourcesgit.AuthScheme
+		name string
+		mp   *achv1alpha1.PluginMarketplace
+		host string
+		want sourcesgit.AuthScheme
 	}{
-		{"self-hosted gitlab host match", gl("https://git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"bare host match", gl("git.example.com"), "https://git.example.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"default gitlab.com match", gl(""), "https://gitlab.com/g/p.git", sourcesgit.AuthBasicOAuth2},
-		{"github Kind entry inside gitlab mp", gl("https://git.example.com"), "https://github.com/o/r.git", sourcesgit.AuthBearer},
-		{"non-gitlab marketplace", nonGitlab, "https://github.com/o/r.git", sourcesgit.AuthBearer},
+		{"self-hosted gitlab host match", gl("https://git.example.com"), "git.example.com", sourcesgit.AuthBasicOAuth2},
+		{"bare host match", gl("git.example.com"), "git.example.com", sourcesgit.AuthBasicOAuth2},
+		{"default gitlab.com match", gl(""), "gitlab.com", sourcesgit.AuthBasicOAuth2},
+		{"github host inside gitlab mp", gl("https://git.example.com"), "github.com", sourcesgit.AuthBearer},
+		{"non-gitlab marketplace", nonGitlab, "github.com", sourcesgit.AuthBearer},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := schemeForCloneURL(tc.mp, tc.cloneURL); got != tc.want {
-				t.Errorf("schemeForCloneURL = %v; want %v", got, tc.want)
+			if got := schemeForHost(tc.mp, tc.host); got != tc.want {
+				t.Errorf("schemeForHost = %v; want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildGitSpecForEntry_GitSubdirCanonicalizes(t *testing.T) {
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "gitlab",
+			GitLab: &achv1alpha1.GitLabSource{Host: "https://git.example.com"},
+		},
+	}
+	entry := ClaudeCodeMarketplacePlugin{
+		Name: "p",
+		Source: ClaudeCodeMarketplaceSource{
+			Kind: kindGitSubdir,
+			URL:  "git.example.com/g/p.git", // scheme-less on purpose
+			Ref:  "main",
+			Path: "sub",
+		},
+	}
+	spec, err := buildGitSpecForEntry(mp, entry, nil, "/cache")
+	if err != nil {
+		t.Fatalf("buildGitSpecForEntry: %v", err)
+	}
+	if spec.URL != "https://git.example.com/g/p.git" {
+		t.Errorf("URL = %q; want canonical https", spec.URL)
+	}
+	if spec.AuthScheme != sourcesgit.AuthBasicOAuth2 {
+		t.Errorf("AuthScheme = %v; want AuthBasicOAuth2", spec.AuthScheme)
+	}
+}
+
+// TestBuildGitSpecForEntry_TokenScopedToOwnHost pins that the marketplace
+// auth token is attached ONLY to entries whose clone-URL host matches the
+// marketplace's own upstream host. A foreign-host entry (e.g. a public
+// github.com plugin inside a gitlab marketplace) must clone anonymously —
+// attaching the gitlab PAT as a github Bearer 401s where anonymous succeeds,
+// and leaks a wrong-provider credential to a foreign host.
+func TestBuildGitSpecForEntry_TokenScopedToOwnHost(t *testing.T) {
+	auth := &corev1.Secret{Data: map[string][]byte{"token": []byte("glpat-secret")}}
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "gitlab",
+			GitLab: &achv1alpha1.GitLabSource{Host: "git.example.com", Project: "g/p"},
+		},
+	}
+	cases := []struct {
+		name       string
+		entry      ClaudeCodeMarketplaceSource
+		wantToken  string
+		wantScheme sourcesgit.AuthScheme
+	}{
+		{
+			name:       "same-host git-subdir keeps token + Basic",
+			entry:      ClaudeCodeMarketplaceSource{Kind: kindGitSubdir, URL: "https://git.example.com/g/p.git"},
+			wantToken:  "glpat-secret",
+			wantScheme: sourcesgit.AuthBasicOAuth2,
+		},
+		{
+			name:       "same-host url keeps token + Basic",
+			entry:      ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://git.example.com/g/other.git"},
+			wantToken:  "glpat-secret",
+			wantScheme: sourcesgit.AuthBasicOAuth2,
+		},
+		{
+			name:       "foreign github Kind drops token, Bearer",
+			entry:      ClaudeCodeMarketplaceSource{Kind: kindGitHub, Repo: "fluxcd/agent-skills"},
+			wantToken:  "",
+			wantScheme: sourcesgit.AuthBearer,
+		},
+		{
+			name:       "foreign url entry drops token, Bearer",
+			entry:      ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://github.com/antonbabenko/terraform-skill.git"},
+			wantToken:  "",
+			wantScheme: sourcesgit.AuthBearer,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := buildGitSpecForEntry(mp, ClaudeCodeMarketplacePlugin{Name: "p", Source: tc.entry}, auth, "/cache")
+			if err != nil {
+				t.Fatalf("buildGitSpecForEntry: %v", err)
+			}
+			if spec.Token != tc.wantToken {
+				t.Errorf("Token = %q; want %q", spec.Token, tc.wantToken)
+			}
+			if spec.AuthScheme != tc.wantScheme {
+				t.Errorf("AuthScheme = %v; want %v", spec.AuthScheme, tc.wantScheme)
 			}
 		})
 	}
