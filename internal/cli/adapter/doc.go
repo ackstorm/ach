@@ -63,7 +63,11 @@
 // credential is then embedded into the runtime-config file's
 // per-MCP-server headers (typically as "x-ach-key": "<cred>"); the
 // on-disk plaintext discipline matches the existing CLI-04 model
-// (Phase 6 D-04).
+// (Phase 6 D-04). HeadersWithCredential also emits an informational
+// "x-ach-environment": "<env>" header (omitted when env is empty) so a
+// user reading the rendered config can see which Environment a server
+// belongs to; it is not part of the trust path and the forwarder strips
+// every "x-ach-*" header by prefix (D-06) before forwarding upstream.
 //
 // Silent-drop accounting (ADAPT-07 / CONTEXT.md D-08):
 //

@@ -201,7 +201,7 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 			Type:    "remote",
 			URL:     server.Endpoint,
 			Enabled: true,
-			Headers: adapter.HeadersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		shape.MCP[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcp."+server.ID)
@@ -211,7 +211,7 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 		entry := adapter.A2AAgentEntry{
 			Type:    "http",
 			URL:     agent.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		shape.A2AAgents[agent.ID] = entry
 		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)

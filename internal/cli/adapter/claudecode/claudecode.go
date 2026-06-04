@@ -172,7 +172,7 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 		entry := adapter.MCPServerEntry{
 			Type:    "http",
 			URL:     server.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		shape.MCPServers[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
@@ -182,7 +182,7 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 		entry := adapter.A2AAgentEntry{
 			Type:    "http",
 			URL:     agent.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential),
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		shape.A2AAgents[agent.ID] = entry
 		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)

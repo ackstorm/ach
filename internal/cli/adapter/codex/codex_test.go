@@ -274,10 +274,16 @@ func TestRenderRuntime_CredentialPropagation(t *testing.T) {
 		if srv.HTTPHeaders["x-ach-key"] != "pk_demo" {
 			t.Errorf("mcp_servers.%s.http_headers[x-ach-key] = %q, want %q", id, srv.HTTPHeaders["x-ach-key"], "pk_demo")
 		}
+		if srv.HTTPHeaders["x-ach-environment"] != "demo" {
+			t.Errorf("mcp_servers.%s.http_headers[x-ach-environment] = %q, want %q", id, srv.HTTPHeaders["x-ach-environment"], "demo")
+		}
 	}
 	for id, ag := range got.A2AAgents {
 		if ag.Headers["x-ach-key"] != "pk_demo" {
 			t.Errorf("a2a_agents.%s.headers[x-ach-key] = %q, want %q", id, ag.Headers["x-ach-key"], "pk_demo")
+		}
+		if ag.Headers["x-ach-environment"] != "demo" {
+			t.Errorf("a2a_agents.%s.headers[x-ach-environment] = %q, want %q", id, ag.Headers["x-ach-environment"], "demo")
 		}
 	}
 }

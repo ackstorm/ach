@@ -239,7 +239,7 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 	for _, server := range m.Runtime.MCPServers {
 		shape.MCPServers[server.ID] = mcpServerTable{
 			URL:         server.Endpoint,
-			HTTPHeaders: adapter.HeadersWithCredential(credential),
+			HTTPHeaders: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		contributedKeys = append(contributedKeys, "mcp_servers."+server.ID)
 	}
@@ -247,7 +247,7 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 	for _, agent := range m.Runtime.A2AAgents {
 		shape.A2AAgents[agent.ID] = a2aAgentTable{
 			URL:       agent.Endpoint,
-			Headers:   adapter.HeadersWithCredential(credential),
+			Headers:   adapter.HeadersWithCredential(credential, m.Environment),
 			Transport: "http",
 		}
 		contributedKeys = append(contributedKeys, "a2a_agents."+agent.ID)

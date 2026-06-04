@@ -183,10 +183,24 @@ func CredentialFromContext(ctx context.Context) string {
 }
 
 // HeadersWithCredential returns the per-server headers map embedding the
-// bearer under "x-ach-key"; an empty credential still emits the header
-// (empty value) so the rendered JSON/TOML shape stays stable.
-func HeadersWithCredential(cred string) map[string]string {
-	return map[string]string{
+// bearer under "x-ach-key" plus, when non-empty, the environment name
+// under "x-ach-environment". An empty credential still emits the
+// "x-ach-key" header (empty value) so the rendered JSON/TOML shape stays
+// stable.
+//
+// "x-ach-environment" is purely informational — it lets a user reading
+// the rendered config see which ACH Environment a server belongs to. It
+// is NOT part of the trust path (ek_ is fixed; the pk_ path does not read
+// it), and the forwarder strips every "x-ach-*" header by prefix (D-06)
+// before forwarding upstream, so it never reaches the MCP/A2A backend. It
+// is omitted when env is empty so offline / dry-run / unit-test renders
+// stay minimal.
+func HeadersWithCredential(cred, env string) map[string]string {
+	h := map[string]string{
 		"x-ach-key": cred,
 	}
+	if env != "" {
+		h["x-ach-environment"] = env
+	}
+	return h
 }

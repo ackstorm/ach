@@ -210,6 +210,11 @@ func TestRenderRuntime_CredentialPropagation(t *testing.T) {
 	if !bytes.Contains(writes[0].Content, []byte(`"x-ach-key": "pk_demo"`)) {
 		t.Errorf("rendered content missing x-ach-key credential header; got:\n%s", string(writes[0].Content))
 	}
+	// The informational x-ach-environment header carries the manifest
+	// Environment ("demo") into both MCP and A2A entries.
+	if !bytes.Contains(writes[0].Content, []byte(`"x-ach-environment": "demo"`)) {
+		t.Errorf("rendered content missing x-ach-environment header; got:\n%s", string(writes[0].Content))
+	}
 }
 
 func TestRenderRuntime_EmptyRuntime_EmitsEmptyMcpJson(t *testing.T) {
