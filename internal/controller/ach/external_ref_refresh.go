@@ -53,6 +53,8 @@ func externalRefChannel(kind string) string {
 		return promptsChannel
 	case "artifact":
 		return artifactsChannel
+	case "skill":
+		return skillsChannel
 	default:
 		return ""
 	}
@@ -288,6 +290,28 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		result.Body = io.NopCloser(bytes.NewReader(filtered))
 	}
 
+	// ─── Step 5.6: Skill SKILL.md validation gate. ───
+	// A skill is a directory tar.gz like a plugin, but no pluginpack.Filter
+	// is applied — the fetched tree is served verbatim. We only validate
+	// that a well-formed SKILL.md is present (name + description) and re-feed
+	// the SAME staged bytes to the size-cap copy below. verifySkillContents
+	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
+	if deps.Kind == "skill" {
+		const skillRawIngressCap = 512 << 20
+		raw, err := io.ReadAll(io.LimitReader(result.Body, skillRawIngressCap+1))
+		if err != nil {
+			return MaterializeResult{Err: fmt.Errorf("skill: read body: %w", err)}
+		}
+		if int64(len(raw)) > skillRawIngressCap {
+			return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: skillRawIngressCap}}
+		}
+		if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
+			// err already wraps sources.ErrUpstreamInvalid.
+			return MaterializeResult{Err: err}
+		}
+		result.Body = io.NopCloser(bytes.NewReader(raw)) // re-feed staged bytes (no filter)
+	}
+
 	tmpFile, err := os.CreateTemp(filepath.Join(deps.CacheRoot, ".tmp"), "stg-")
 	if err != nil {
 		return MaterializeResult{Err: fmt.Errorf("create staging file: %w", err)}
@@ -454,6 +478,8 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 		case "directory":
 			return filepath.Join(cacheRoot, "artifact", name+".tar.gz")
 		}
+	case "skill":
+		return filepath.Join(cacheRoot, "skill", name+".tar.gz")
 	}
 	return ""
 }
