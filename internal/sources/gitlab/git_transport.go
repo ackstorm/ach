@@ -16,7 +16,6 @@ package gitlab
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
@@ -27,21 +26,12 @@ func (f *Fetcher) resolvedTransport() string {
 	return sources.ResolvedTransport(f.spec.Transport)
 }
 
-// normalizeGitLabHost strips any case-variant http:// or https://
-// scheme prefix and trailing slashes. Idempotent. Called both at New
-// time (so the normalized form is what cr02validate.HostIdentifier
-// inspects, since CR-02 rejects '/' in flat identifiers) AND at clone-
-// URL construction (defense in depth — and because the spec.Host field
-// is preserved verbatim on the Fetcher).
+// normalizeGitLabHost delegates to the canonical sources.NormalizeGitLabHost
+// (single source of truth shared with the marketplace dispatch path). Kept
+// as a thin local alias so existing call sites + CR-02 validation timing
+// stay unchanged.
 func normalizeGitLabHost(host string) string {
-	low := strings.ToLower(host)
-	switch {
-	case strings.HasPrefix(low, "https://"):
-		host = host[len("https://"):]
-	case strings.HasPrefix(low, "http://"):
-		host = host[len("http://"):]
-	}
-	return strings.TrimRight(host, "/")
+	return sources.NormalizeGitLabHost(host)
 }
 
 // constructCloneURL builds the https clone URL from spec.Host (default
