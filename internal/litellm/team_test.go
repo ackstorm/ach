@@ -80,6 +80,79 @@ func TestListTeamsByAliasPath(t *testing.T) {
 	}
 }
 
+// TestListAllTeamsUsesPageSize100 — ListAllTeams MUST request page_size=100,
+// never page_size=500. The deployed LiteLLM 422s page_size=500, which
+// makeRequest maps to a 4xx error → teams.LookupCallerTeams (nil,err) →
+// hydrate 503 litellm_unreachable (#113 regression, 2026-06-05). 100 is the
+// value ListTeamsByAlias already uses successfully.
+func TestListAllTeamsUsesPageSize100(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"teams":[
+			{"team_id":"t1","team_alias":"alpha"},
+			{"team_id":"t2","team_alias":"beta"}
+		],"total":2,"page":1,"page_size":100,"total_pages":1}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.ListAllTeams(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllTeams: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 teams, got %d (%+v)", len(got), got)
+	}
+	if len(captured) != 1 {
+		t.Fatalf("single page → want 1 request, got %d", len(captured))
+	}
+	if !strings.Contains(captured[0].Path, "page_size=100") {
+		t.Errorf("path: want page_size=100, got %q", captured[0].Path)
+	}
+	if strings.Contains(captured[0].Path, "page_size=500") {
+		t.Errorf("path: must NOT use page_size=500 (422s on deployed LiteLLM), got %q", captured[0].Path)
+	}
+}
+
+// TestListAllTeamsPaginates — when total_pages>1 ListAllTeams MUST page through
+// (page=1,2,…) and accumulate every team, not truncate at page 1. Silent
+// truncation would drop alias resolutions and re-introduce the team
+// false-negative the alias map closes.
+func TestListAllTeamsPaginates(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.WriteHeader(200)
+		switch i {
+		case 0:
+			_, _ = w.Write([]byte(`{"teams":[
+				{"team_id":"t1","team_alias":"a"},
+				{"team_id":"t2","team_alias":"b"}
+			],"total":3,"page":1,"page_size":100,"total_pages":2}`))
+		default:
+			_, _ = w.Write([]byte(`{"teams":[
+				{"team_id":"t3","team_alias":"c"}
+			],"total":3,"page":2,"page_size":100,"total_pages":2}`))
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.ListAllTeams(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllTeams: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 teams across 2 pages, got %d (%+v)", len(got), got)
+	}
+	if len(captured) != 2 {
+		t.Fatalf("want 2 paged requests, got %d", len(captured))
+	}
+	if !strings.Contains(captured[0].Path, "page=1") || !strings.Contains(captured[1].Path, "page=2") {
+		t.Errorf("want page=1 then page=2, got %q then %q", captured[0].Path, captured[1].Path)
+	}
+}
+
 // TestTeamHelpers401Propagation — REL-06 propagation through team helpers.
 func TestTeamHelpers401Propagation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
