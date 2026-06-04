@@ -421,13 +421,19 @@ func TestProject_DropsOnlyKnownKinds(t *testing.T) {
 	}
 }
 
-// TestProject_KeptByKind: Project tallies matched files per source kind in
-// KeptByKind.
+// TestProject_KeptByKind: KeptByKind tallies distinct COMPONENTS per kind,
+// not files. A multi-file skill (SKILL.md + helpers + nested refs) counts
+// ONCE; two skill dirs count as two. Regression guard for the "35 skills
+// for 12 dirs" inflation — the pre-fix per-file tally would report skills=4
+// here (4 files under skills/) instead of 2 components.
 func TestProject_KeptByKind(t *testing.T) {
 	src := writeTree(t, map[string]string{
-		"commands/a.md":     "a",
-		"commands/b.md":     "b",
-		"skills/s/SKILL.md": "s",
+		"commands/a.md":         "a",
+		"commands/b.md":         "b",
+		"skills/s/SKILL.md":     "s", // skill "s" is multi-file …
+		"skills/s/helper.py":    "h", // … these extra files must NOT …
+		"skills/s/ref/notes.md": "n", // … inflate the skills count.
+		"skills/t/SKILL.md":     "t", // a second, distinct skill component
 	})
 	rules := []Rule{
 		{FromGlob: "commands/**/*", ToGlob: ".x/commands/**/*", Merge: adapter.MergeReplace},
@@ -437,8 +443,8 @@ func TestProject_KeptByKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Project = %v", err)
 	}
-	if pr.KeptByKind["commands"] != 2 || pr.KeptByKind["skills"] != 1 {
-		t.Fatalf("KeptByKind = %v; want commands=2 skills=1", pr.KeptByKind)
+	if pr.KeptByKind["commands"] != 2 || pr.KeptByKind["skills"] != 2 {
+		t.Fatalf("KeptByKind = %v; want commands=2 skills=2 (distinct components, not files)", pr.KeptByKind)
 	}
 }
 

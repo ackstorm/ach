@@ -289,6 +289,13 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 	var fws []adapter.FileWrite
 	dropped := newDroppedSet()
 	kept := map[string]int{}
+	// keptSeen dedups the per-kind count to distinct COMPONENTS, not files.
+	// A skill is a directory (skills/<name>/SKILL.md + helpers) — counting
+	// every regular file inflated "N skills" (e.g. 35 for 12 dirs). We key
+	// on the second path segment (the component name under each kind dir);
+	// agents/commands are single files (agents/<name>.md) so their second
+	// segment is the filename — still one increment per component.
+	keptSeen := map[string]map[string]struct{}{}
 
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -402,7 +409,21 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 			keys = tkeys
 		}
 
-		kept[topLevel]++
+		// Count distinct components per kind, not files. The component name
+		// is the second path segment (skills/<name>/…, agents/<name>.md); a
+		// matched component file always has one (its rule anchors under the
+		// kind dir), but fall back to topLevel defensively.
+		component := topLevel
+		if len(parts) >= 2 {
+			component = parts[1]
+		}
+		if keptSeen[topLevel] == nil {
+			keptSeen[topLevel] = map[string]struct{}{}
+		}
+		if _, dup := keptSeen[topLevel][component]; !dup {
+			keptSeen[topLevel][component] = struct{}{}
+			kept[topLevel]++
+		}
 		fws = append(fws, adapter.FileWrite{
 			Path:       dest,
 			Content:    content,
