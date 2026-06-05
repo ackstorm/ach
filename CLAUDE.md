@@ -64,9 +64,9 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
 **Source of truth (Phase D, #34)**: the operator is the only writer to Postgres
-(10 projection tables incl. `environments`, `plugins`, `skills`,
+(12 projection tables incl. `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
-`marketplaces`); platform-api, forwarder,
+`marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
 non-operator service. The forwarder's only remaining k8s read is the
@@ -82,7 +82,8 @@ one `ach-gateway` Service; the public Ingress targets it directly. In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
-`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill` (`api/` is authoritative).
+`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`
+(`api/` is authoritative).
 
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
@@ -406,4 +407,12 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   (`commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/`themes/`/
   `monitors/`, or root `SKILL.md`/`.mcp.json`/`.lsp.json`). Only a tar with
   none of these fails `UpstreamInvalid`.
+- **SkillMarketplace discovery is convention-based, NOT index-based**: unlike
+  `PluginMarketplace` (which parses `.claude-plugin/marketplace.json`), a
+  `SkillMarketplace` fetches the repo subtree as one tar.gz and tree-walks it
+  (`skillmarketplace_discover.go` `discoverSkillsInTree`) for every top-level
+  `<dir>/SKILL.md` whose frontmatter `name` == `<dir>` (agentskills.io ships no
+  index). Each discovered skill is sliced into its own
+  `skill-marketplace/<mkt>/<name>.tar.gz` and folded into the admin SKILLS
+  inventory as `<skill>@<marketplace>` (mirrors the plugin merge).
 

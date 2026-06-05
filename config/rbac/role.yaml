@@ -22,6 +22,7 @@ rules:
   - pluginmarketplaces
   - plugins
   - prompts
+  - skillmarketplaces
   - skills
   verbs:
   - create
@@ -41,6 +42,7 @@ rules:
   - pluginmarketplaces/finalizers
   - plugins/finalizers
   - prompts/finalizers
+  - skillmarketplaces/finalizers
   - skills/finalizers
   verbs:
   - update
@@ -54,6 +56,7 @@ rules:
   - pluginmarketplaces/status
   - plugins/status
   - prompts/status
+  - skillmarketplaces/status
   - skills/status
   verbs:
   - get
