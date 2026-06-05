@@ -20,6 +20,7 @@ import (
 // fakeLister implements Lister for httptest handler coverage without Postgres.
 type fakeLister struct {
 	plugins            []db.PluginRow
+	skills             []db.SkillRow
 	marketplaces       []db.MarketplaceRow
 	marketplacePlugins []db.MarketplacePlugin
 	bips               []db.BIPRow
@@ -31,6 +32,7 @@ func (f fakeLister) Prompts(context.Context) ([]db.PromptRow, error) { return ni
 func (f fakeLister) Artifacts(context.Context) ([]db.ArtifactRow, error) {
 	return nil, f.err
 }
+func (f fakeLister) Skills(context.Context) ([]db.SkillRow, error) { return f.skills, f.err }
 func (f fakeLister) Marketplaces(context.Context) ([]db.MarketplaceRow, error) {
 	return f.marketplaces, f.err
 }
@@ -159,6 +161,24 @@ func TestListError_500(t *testing.T) {
 	rec, _ := doReq(t, PluginsHandler(deps), "/platform/admin/plugins")
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("got %d, want 500", rec.Code)
+	}
+}
+
+// TestSkillsHandler_BareFresh: skills list as content-gated (bare fresh),
+// Kind=skill.
+func TestSkillsHandler_BareFresh(t *testing.T) {
+	now := time.Now()
+	deps := Deps{Lister: fakeLister{skills: []db.SkillRow{
+		{Namespace: "ach", Name: "pdf-processing", ResourceVersion: "1",
+			LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, UpdatedAt: now},
+	}}}
+	rec, env := doReq(t, SkillsHandler(deps), "/platform/admin/skills")
+	if rec.Code != http.StatusOK || len(env.Items) != 1 {
+		t.Fatalf("code=%d items=%+v", rec.Code, env.Items)
+	}
+	got := env.Items[0]
+	if got.Kind != "skill" || got.Name != "pdf-processing" || got.Sync != syncFresh {
+		t.Errorf("skill view wrong: %+v", got)
 	}
 }
 

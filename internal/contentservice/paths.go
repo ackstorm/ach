@@ -70,6 +70,8 @@ func ResolvePath(cacheRoot, kind, name, scope string) (string, error) {
 		return filepath.Join(cacheRoot, kindPrompt, name), nil
 	case kindPlugin:
 		return filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix), nil
+	case kindSkill:
+		return filepath.Join(cacheRoot, kindSkill, name+gzipSuffix), nil
 	case kindArtifact:
 		switch scope {
 		case "object":

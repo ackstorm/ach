@@ -47,6 +47,7 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/plugins", inventory.PluginsHandler(inv))
 		r.Get("/prompts", inventory.PromptsHandler(inv))
 		r.Get("/artifacts", inventory.ArtifactsHandler(inv))
+		r.Get("/skills", inventory.SkillsHandler(inv))
 		r.Get("/marketplaces", inventory.MarketplacesHandler(inv))
 		r.Get("/bips", inventory.BIPsHandler(inv))
 		r.Get("/litellm-connections", inventory.LitellmConnectionsHandler(inv))

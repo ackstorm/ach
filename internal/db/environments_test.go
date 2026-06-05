@@ -40,6 +40,7 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 		ContextPrompts:    []string{"welcome"},
 		ContextPlugins:    []string{"caveman"},
 		ContextArtifacts:  []string{"openclaw"},
+		ContextSkills:     []string{"pdf-processing"},
 		RuntimeModels:     []string{"gpt-4o"},
 		RuntimeMCPServers: []string{"context7"},
 		RuntimeA2AAgents:  []string{"agent-1"},
@@ -121,7 +122,7 @@ func TestUpsertEnvironment_ClearsStaleDeletionTimestamp(t *testing.T) {
 		ResourceVersion: "1",
 		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
 		ContextPrompts: []string{}, ContextPlugins: []string{},
-		ContextArtifacts: []string{}, RuntimeModels: []string{},
+		ContextArtifacts: []string{}, ContextSkills: []string{}, RuntimeModels: []string{},
 		RuntimeMCPServers: []string{}, RuntimeA2AAgents: []string{},
 	}
 	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
@@ -195,6 +196,7 @@ func TestSoftDeleteEnvironment_PreservesRow(t *testing.T) {
 		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
 		AuthorizedTeams: []string{}, ContextPrompts: []string{},
 		ContextPlugins: []string{}, ContextArtifacts: []string{},
+		ContextSkills: []string{},
 		RuntimeModels: []string{}, RuntimeMCPServers: []string{},
 		RuntimeA2AAgents: []string{},
 	}); err != nil {
@@ -232,6 +234,7 @@ func TestDeleteEnvironment_RemovesRow(t *testing.T) {
 		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
 		AuthorizedTeams: []string{}, ContextPrompts: []string{},
 		ContextPlugins: []string{}, ContextArtifacts: []string{},
+		ContextSkills: []string{},
 		RuntimeModels: []string{}, RuntimeMCPServers: []string{},
 		RuntimeA2AAgents: []string{},
 	}); err != nil {

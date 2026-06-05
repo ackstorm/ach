@@ -116,7 +116,10 @@ func TestAdminList_All_JSON(t *testing.T) {
 		}),
 	}
 	// Empty envelopes for the remaining admin kinds so every fan-out GET resolves.
-	for _, k := range []string{"prompts", "artifacts", "marketplaces", "bips", "litellm-connections", "external-refs"} {
+	for _, k := range []string{
+		"prompts", "artifacts", "skills", "marketplaces",
+		"bips", "litellm-connections", "external-refs",
+	} {
 		bodies["/platform/admin/"+k] = envelope()
 	}
 	srv := newInventoryTestServer(t, bodies)

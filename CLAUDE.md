@@ -64,8 +64,9 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
 **Source of truth (Phase D, #34)**: the operator is the only writer to Postgres
-(9 projection tables incl. `environments`, `plugins`, `backend_identity_policies`,
-`external_refs`, `marketplace_plugins`, `marketplaces`); platform-api, forwarder,
+(10 projection tables incl. `environments`, `plugins`, `skills`,
+`backend_identity_policies`, `external_refs`, `marketplace_plugins`,
+`marketplaces`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
 non-operator service. The forwarder's only remaining k8s read is the
@@ -81,7 +82,7 @@ one `ach-gateway` Service; the public Ingress targets it directly. In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
-`EnvKey`, `BackendIdentityPolicy`, `ContentRef` (`api/` is authoritative).
+`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill` (`api/` is authoritative).
 
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
@@ -337,9 +338,17 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   topology via `deploy/helm/ach/values.yaml` `*.enabled` flags. Each Deployment
   carries `args: ["<mode>"]`.
 - **Environment two-axis status**: `ExecutionResourcesResolved`
-  (Plugin/Prompt/Artifact closed-set) + `AccessGroupSynced` (LiteLLM: names →
+  (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
+  content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`). Composite `Available=True`
   rolls both up — that's what `ach-cli hydrate` / the demo gate on.
+- **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
+  mirrors **Plugin** end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
+  `skill/<name>.tar.gz` → `skills` projection → content-service
+  `/content/skill/{name}` gzip). On hydrate it rides the plugin-mirrored stage
+  root: extract to `<tmp>/skill/<name>`, nest under a synthetic `skills/<name>/`,
+  then the EXISTING claudecode `skills/**/* → .claude/skills/**/*` rule projects
+  it via `route.Project` (`projectSkills`). `SkillMarketplace` is a follow-up.
 - **BIP + Environment forwarder read-path (Postgres-as-SoT, #34)**: operator
   projects BIPs/Environments → tables, emitting `NOTIFY ach_*_changed` from the
   same tx via `with_tx_notify`. The forwarder's `internal/forwarder/bipcache` +

@@ -129,6 +129,22 @@ func pluginRowToView(r db.PluginRow, now time.Time) AdminObjectView {
 	}
 }
 
+func skillRowToView(r db.SkillRow, now time.Time) AdminObjectView {
+	// Skills are content-gated (like plugins): a bare "fresh" only after the
+	// directory tar.gz is fetched (last_successful_refresh non-null), so NO
+	// markFalseGreen upgrade.
+	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
+	return AdminObjectView{
+		Kind:       "skill",
+		Namespace:  r.Namespace,
+		Name:       r.Name,
+		Version:    r.ResourceVersion,
+		Sync:       sync,
+		SyncReason: reason,
+		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+	}
+}
+
 func promptRowToView(r db.PromptRow, now time.Time) AdminObjectView {
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	v := AdminObjectView{

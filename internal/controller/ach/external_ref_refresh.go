@@ -53,6 +53,8 @@ func externalRefChannel(kind string) string {
 		return promptsChannel
 	case "artifact":
 		return artifactsChannel
+	case "skill":
+		return skillsChannel
 	default:
 		return ""
 	}
@@ -288,6 +290,22 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		result.Body = io.NopCloser(bytes.NewReader(filtered))
 	}
 
+	// ─── Step 5.6: Skill SKILL.md validation gate. ───
+	// A skill is a directory tar.gz like a plugin, but no pluginpack.Filter
+	// is applied — the fetched tree is served verbatim. We only validate
+	// that a well-formed SKILL.md is present (name + description) and re-feed
+	// the SAME staged bytes to the size-cap copy below. verifySkillContents
+	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
+	if deps.Kind == "skill" {
+		raw, serr := stageSkillBody(result.Body)
+		if serr != nil {
+			// *OversizeError → ReasonPluginTooLarge; ErrUpstreamInvalid-wrapping
+			// validation failures → ReasonUpstreamInvalid (classifyFetchError).
+			return MaterializeResult{Err: serr}
+		}
+		result.Body = io.NopCloser(bytes.NewReader(raw)) // re-feed staged bytes (no filter)
+	}
+
 	tmpFile, err := os.CreateTemp(filepath.Join(deps.CacheRoot, ".tmp"), "stg-")
 	if err != nil {
 		return MaterializeResult{Err: fmt.Errorf("create staging file: %w", err)}
@@ -454,6 +472,8 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 		case "directory":
 			return filepath.Join(cacheRoot, "artifact", name+".tar.gz")
 		}
+	case "skill":
+		return filepath.Join(cacheRoot, "skill", name+".tar.gz")
 	}
 	return ""
 }

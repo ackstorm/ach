@@ -170,6 +170,14 @@ type RenderResult struct {
 	// publish) as the runtime files (D-05).
 	ProjectedFiles []FileWrite
 
+	// ProjectedSkillFiles flows into step 12 (state.File.Skills) — the
+	// standalone-Skill projection bucket (route.Project output of skill
+	// directories nested under skills/<name>/ → .claude/skills/<name>/).
+	// Kept distinct from ProjectedFiles (plugins) so step12WriteState routes
+	// skill files to the Skills[] bucket, not Plugins[]. Each entry already
+	// flowed through the SAME publishFile path as plugin projected files.
+	ProjectedSkillFiles []FileWrite
+
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types
 	// the active adapter cannot meaningfully translate (e.g.

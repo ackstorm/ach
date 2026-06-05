@@ -24,6 +24,7 @@ type File struct {
 	Prompts       []FileEntry    `json:"prompts,omitempty"`
 	Plugins       []FileEntry    `json:"plugins,omitempty"`
 	Artifacts     []FileEntry    `json:"artifacts,omitempty"`
+	Skills        []FileEntry    `json:"skills,omitempty"`
 	RuntimeFiles  []FileEntry    `json:"runtimeFiles,omitempty"`
 	Adapter       AdapterSection `json:"adapter,omitempty"`
 }

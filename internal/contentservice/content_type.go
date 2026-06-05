@@ -9,6 +9,7 @@ const (
 	kindPrompt   = "prompt"
 	kindPlugin   = "plugin"
 	kindArtifact = "artifact"
+	kindSkill    = "skill"
 
 	// contentTypeGzip / contentTypeOctet are the response Content-Type
 	// values produced by the per-kind policy (contentTypeFor in

@@ -81,12 +81,13 @@ type RuntimeBlock struct {
 	A2AAgents  []RuntimeItem `json:"a2aAgents"`
 }
 
-// ContextBlock is the {prompts, plugins, artifacts} envelope; every slice
-// is ALWAYS present and serialized as `[]` when empty per API-04.
+// ContextBlock is the {prompts, plugins, artifacts, skills} envelope; every
+// slice is ALWAYS present and serialized as `[]` when empty per API-04.
 type ContextBlock struct {
 	Prompts   []ContextItem `json:"prompts"`
 	Plugins   []ContextItem `json:"plugins"`
 	Artifacts []ContextItem `json:"artifacts"`
+	Skills    []ContextItem `json:"skills"`
 }
 
 // HydrateResponse is the §15.2 manifest shape Phase 6 + 7 CLI binds to.
@@ -118,6 +119,7 @@ func emptyContext() ContextBlock {
 		Prompts:   []ContextItem{},
 		Plugins:   []ContextItem{},
 		Artifacts: []ContextItem{},
+		Skills:    []ContextItem{},
 	}
 }
 
@@ -356,6 +358,13 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 			Name:        name,
 			ID:          name,
 			DownloadURL: baseURL + contentPrefix + "artifact/" + url.PathEscape(name),
+		})
+	}
+	for _, name := range row.ContextSkills {
+		out.Skills = append(out.Skills, ContextItem{
+			Name:        name,
+			ID:          name,
+			DownloadURL: baseURL + contentPrefix + "skill/" + url.PathEscape(name),
 		})
 	}
 	return out

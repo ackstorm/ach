@@ -20,3 +20,7 @@ func (p *Prompt) GetExternalRefStatus() *ExternalRefStatus {
 func (a *Artifact) GetExternalRefStatus() *ExternalRefStatus {
 	return &a.Status.ExternalRefStatus
 }
+
+func (s *Skill) GetExternalRefStatus() *ExternalRefStatus {
+	return &s.Status.ExternalRefStatus
+}

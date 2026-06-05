@@ -87,6 +87,17 @@ type ContextBlock struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	Artifacts []string `json:"artifacts,omitempty"`
+
+	// Skills lists referenced Skill names. A bare name ("pdf-processing")
+	// resolves to a Skill CR in the operator namespace. Content-gated like
+	// Plugins. Same strict deny-pattern as Plugins (no "/" "\" ? # %
+	// whitespace, control chars or DEL); "@" is reserved for the future
+	// name@marketplace separator.
+	// +optional
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	Skills []string `json:"skills,omitempty"`
 }
 
 // EnvironmentSpec defines the desired state of Environment (CRD-02, Hub §6).
@@ -158,6 +169,15 @@ type EnvironmentStatus struct {
 	// +optional
 	// +kubebuilder:default={}
 	UnresolvedContextPlugins []string `json:"unresolvedContextPlugins,omitempty"`
+
+	// UnresolvedContextSkills lists context.skills entries whose content has
+	// not yet been synced (last_successful_refresh IS NULL in the skills
+	// projection row). A non-empty list blocks ExecutionResourcesResolved
+	// from becoming True — same content-gating as UnresolvedContextPlugins.
+	//
+	// +optional
+	// +kubebuilder:default={}
+	UnresolvedContextSkills []string `json:"unresolvedContextSkills,omitempty"`
 
 	// LitellmAccessGroup is the synced LiteLLM access group name (§6.4).
 	// Echoed for operator visibility; equals metadata.name when set.

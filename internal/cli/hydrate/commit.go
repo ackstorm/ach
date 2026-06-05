@@ -370,15 +370,18 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 			if !dt.isExtractableContent() {
 				continue
 			}
-			// Plugins are projection CACHE (projectPlugins disk-walks the
-			// extracted tree); extract them to the per-run ephemeral
-			// pluginStageRoot so the projection source holds ONLY this run's
-			// diffTargets and a removed plugin can never linger and be
-			// re-projected. Prompts/artifacts are hydrator-core deliverables
-			// (CLI §6.4) and keep their <achDir>/<kind> destination.
+			// Plugins AND skills are projection CACHE (projectPlugins /
+			// projectSkills disk-walk the extracted tree); extract them to the
+			// per-run ephemeral stage root so the projection source holds ONLY
+			// this run's diffTargets and a removed plugin/skill can never linger
+			// and be re-projected. Prompts/artifacts are hydrator-core
+			// deliverables (CLI §6.4) and keep their <achDir>/<kind> destination.
 			extractBase := c.achDir
-			if dt.Kind == kindPlugin {
+			switch dt.Kind {
+			case kindPlugin:
 				extractBase = c.pluginStageRoot()
+			case kindSkill:
+				extractBase = c.skillStageRoot()
 			}
 			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, extractBase, existingState)
 			if err != nil {
@@ -663,6 +666,17 @@ func (c *commit) pluginStageRoot() string {
 	return filepath.Join(c.achDir, "tmp")
 }
 
+// skillStageRoot is the per-run ephemeral base under which skill content is
+// extracted (<root>/skill/<name>) AND from which projectSkills reads. Skills
+// share the plugin tmp base — ExtractContent appends the /skill/ subdir from
+// the resource kind, so this is the SAME directory as pluginStageRoot, named
+// separately for call-site clarity. Living under <achDir>/tmp means SweepTmp
+// reclaims the extracted skills (and the synthetic skills/ projection tree)
+// every run.
+func (c *commit) skillStageRoot() string {
+	return c.pluginStageRoot()
+}
+
 // dropLegacyPluginCache removes the pre-ephemeral persistent plugin
 // projection-cache at <achDir>/plugin. Best-effort + idempotent: a missing dir
 // is a no-op and any error is swallowed (a residual cache dir never blocks a
@@ -753,6 +767,9 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 	// idempotence and re-opens the survive-uninstall defect CR-01).
 	loaded.Plugins, pruned = c.pruneMissing(loaded.Plugins, c.toolRoot, pruned)
 	loaded.Artifacts, pruned = c.pruneMissing(loaded.Artifacts, wsRoot, pruned)
+	// Projected skill resources land under toolRoot (.claude/skills/…), like
+	// plugins — stat against toolRoot for the same --global correctness reason.
+	loaded.Skills, pruned = c.pruneMissing(loaded.Skills, c.toolRoot, pruned)
 	// RuntimeFiles live UNDER achDir (.ach/runtime/*.json) in BOTH scopes —
 	// their Target is achDir-relative, so they stat against achDir (not wsRoot,
 	// which points at $HOME/.ach under --global and would mis-prune).
@@ -838,6 +855,7 @@ const (
 	kindPrompt   = "prompt"
 	kindPlugin   = "plugin"
 	kindArtifact = "artifact"
+	kindSkill    = "skill"
 )
 
 // isExtractableContent reports whether dt is a context kind whose Ref points at
@@ -847,7 +865,7 @@ const (
 // ExtractContent yields "content name: empty".
 func (dt diffTarget) isExtractableContent() bool {
 	switch dt.Kind {
-	case kindPrompt, kindPlugin, kindArtifact:
+	case kindPrompt, kindPlugin, kindArtifact, kindSkill:
 		return true
 	default:
 		return false
@@ -880,6 +898,9 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 		}
 		for _, a := range m.Context.Artifacts {
 			targets = append(targets, diffTarget{Kind: kindArtifact, Ref: a})
+		}
+		for _, s := range m.Context.Skills {
+			targets = append(targets, diffTarget{Kind: kindSkill, Ref: s})
 		}
 	}
 	if includeRuntime && m.Runtime != nil {
@@ -971,6 +992,7 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 		next.Prompts = existing.Prompts
 		next.Plugins = existing.Plugins
 		next.Artifacts = existing.Artifacts
+		next.Skills = existing.Skills
 		next.RuntimeFiles = existing.RuntimeFiles
 		next.Adapter = existing.Adapter
 	}
@@ -996,6 +1018,7 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 	// adapter-section field rule — spec §8.2).
 	if adapterRan && !c.opts.OnlyRuntime {
 		next.Plugins = pluginsSectionFromRender(render)
+		next.Skills = skillsSectionFromRender(render)
 	}
 
 	// RuntimeFiles is composed from the fresh runtime mirror written at
@@ -1027,7 +1050,10 @@ var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
 // count. A re-hydrate no-op reports zero WrittenFiles + a Preserved count
 // (the on-disk tree was left untouched) → "N preserved", not "N written".
 func addExtractCounts(result *Result, kind string, er ExtractResult) {
-	if kind == kindPlugin {
+	if kind == kindPlugin || kind == kindSkill {
+		// Skills, like plugins, extract to the ephemeral stage root and are
+		// re-counted as render ProjectedSkillFiles when published — counting
+		// the extract WrittenFiles here would double-count.
 		return
 	}
 	result.FilesWritten += len(er.WrittenFiles)
@@ -1053,6 +1079,13 @@ func addPublishedCounts(result *Result, rr RenderResult) {
 		}
 	}
 	for _, fw := range rr.ProjectedFiles {
+		if fw.Preserved {
+			result.FilesPreserved++
+		} else {
+			result.FilesWritten++
+		}
+	}
+	for _, fw := range rr.ProjectedSkillFiles {
 		if fw.Preserved {
 			result.FilesPreserved++
 		} else {
@@ -1172,6 +1205,28 @@ func pluginsSectionFromRender(render RenderResult) []state.FileEntry {
 	}
 	out := make([]state.FileEntry, 0, len(render.ProjectedFiles))
 	for _, fw := range render.ProjectedFiles {
+		out = append(out, state.FileEntry{
+			Target:     fw.Target,
+			Hash:       fw.Hash,
+			SourceHash: fw.SourceHash,
+			Merge:      fw.Merge,
+			Keys:       fw.Keys,
+		})
+	}
+	return out
+}
+
+// skillsSectionFromRender projects RenderResult.ProjectedSkillFiles into the
+// state.File.Skills bucket recorded at step 12 — the standalone-Skill analogue
+// of pluginsSectionFromRender. One projected FileWrite maps 1:1 to a
+// state.FileEntry (Keys copied verbatim, always nil for the passthrough
+// skills/** MergeReplace rule).
+func skillsSectionFromRender(render RenderResult) []state.FileEntry {
+	if len(render.ProjectedSkillFiles) == 0 {
+		return nil
+	}
+	out := make([]state.FileEntry, 0, len(render.ProjectedSkillFiles))
+	for _, fw := range render.ProjectedSkillFiles {
 		out = append(out, state.FileEntry{
 			Target:     fw.Target,
 			Hash:       fw.Hash,

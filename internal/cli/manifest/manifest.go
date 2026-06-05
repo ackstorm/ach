@@ -46,6 +46,7 @@ type ContextBlock struct {
 	Prompts   []ContentRef `json:"prompts"`
 	Plugins   []ContentRef `json:"plugins"`
 	Artifacts []ContentRef `json:"artifacts"`
+	Skills    []ContentRef `json:"skills"`
 }
 
 // Manifest is the decoded POST /platform/hydrate response.

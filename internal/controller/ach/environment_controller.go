@@ -213,13 +213,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) + len(unresolved.A2AAgents)
 
-	// Context plugin closed-set (handoff item 4 / Task B9): a listed plugin
-	// must resolve AND have content synced — see contextPluginsUnresolved.
-	unresolvedContextPlugins, err := r.contextPluginsUnresolved(ctx, &env)
+	// Context content closed-set (handoff item 4 / Task B9): a listed plugin or
+	// skill must resolve AND have content synced — see contextContentUnresolved.
+	unresolvedContextPlugins, unresolvedContextSkills, err := r.contextContentUnresolved(ctx, &env)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	totalUnresolved += len(unresolvedContextPlugins)
+	totalUnresolved += len(unresolvedContextPlugins) + len(unresolvedContextSkills)
 
 	// Hub §6.6 closed set for ExecutionResourcesResolved:
 	//   True  + reason=Resolved          — every spec.runtime.* found
@@ -230,16 +230,15 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if totalUnresolved > 0 {
 		condStatus = metav1.ConditionFalse
 		reason = "ResourceUnresolved"
-		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, context_plugins=%d)",
+		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, context_plugins=%d, context_skills=%d)",
 			totalUnresolved,
 			len(unresolved.Models),
 			len(unresolved.MCPServers),
 			len(unresolved.A2AAgents),
 			len(unresolvedContextPlugins),
+			len(unresolvedContextSkills),
 		)
-		if len(unresolvedContextPlugins) > 0 {
-			message += fmt.Sprintf("; plugins not content-present: %v", unresolvedContextPlugins)
-		}
+		message = appendContentUnresolvedMsg(message, unresolvedContextPlugins, unresolvedContextSkills)
 	}
 	// D-14: prefix stale marker so operators inspecting `kubectl
 	// describe environment` see that the condition reflects cached data.
@@ -274,6 +273,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	//     any required sub-condition is Unknown or missing.
 	env.Status.UnresolvedRuntime = &unresolved
 	env.Status.UnresolvedContextPlugins = unresolvedContextPlugins
+	env.Status.UnresolvedContextSkills = unresolvedContextSkills
 	apimeta.SetStatusCondition(&env.Status.Conditions, metav1.Condition{
 		Type:               "ExecutionResourcesResolved",
 		Status:             condStatus,
@@ -343,12 +343,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if snap.Stale {
 		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
-	if len(unresolvedContextPlugins) > 0 {
-		// Plugin / marketplace content writes NOTIFY their own controllers,
-		// not Environment, so no event re-enqueues this Environment when a
-		// referenced plugin's content lands. Without a shorter requeue the
-		// Environment would sit ExecutionResourcesResolved=False until the
-		// 5-min steady-state tick. Converge on a content-wait cadence.
+	if len(unresolvedContextPlugins) > 0 || len(unresolvedContextSkills) > 0 {
+		// Plugin / skill / marketplace content writes NOTIFY their own
+		// controllers, not Environment, so no event re-enqueues this
+		// Environment when a referenced plugin's / skill's content lands.
+		// Without a shorter requeue the Environment would sit
+		// ExecutionResourcesResolved=False until the 5-min steady-state tick.
+		// Converge on a content-wait cadence.
 		return ctrl.Result{RequeueAfter: pluginUnresolvedRequeueAfter}, nil
 	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -396,6 +397,57 @@ func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, en
 		}
 	}
 	return unresolved, nil
+}
+
+// contextSkillsUnresolved returns the spec.context.skills refs that are not
+// yet content-present: a listed skill must resolve to a Skill projection row
+// AND have its content synced (last_successful_refresh non-null), not merely
+// exist by name — same content-gating as contextPluginsUnresolved. Guarded on
+// r.DB != nil so nil-DB unit/envtest paths are unaffected.
+func (r *EnvironmentReconciler) contextSkillsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
+	if r.DB == nil {
+		return nil, nil
+	}
+	var unresolved []string
+	for _, sname := range env.Spec.Context.Skills {
+		// TODO(skillmarketplace): parse name@marketplace and pass the
+		// marketplace arg once ResolveSkillByName gains it (Plan 2).
+		res, err := achdb.ResolveSkillByName(ctx, r.DB, r.Namespace, sname)
+		if err != nil {
+			return nil, fmt.Errorf("resolve context skill %q: %w", sname, err)
+		}
+		if res == nil || res.LastSuccessfulRefresh == nil {
+			unresolved = append(unresolved, sname)
+		}
+	}
+	return unresolved, nil
+}
+
+// contextContentUnresolved bundles the plugin + skill content-present checks so
+// Reconcile carries a single error branch (keeps its cyclomatic budget). Both
+// arms return the refs that resolve by name but are not yet content-synced.
+func (r *EnvironmentReconciler) contextContentUnresolved(ctx context.Context, env *achv1alpha1.Environment) (plugins, skills []string, err error) {
+	plugins, err = r.contextPluginsUnresolved(ctx, env)
+	if err != nil {
+		return nil, nil, err
+	}
+	skills, err = r.contextSkillsUnresolved(ctx, env)
+	if err != nil {
+		return nil, nil, err
+	}
+	return plugins, skills, nil
+}
+
+// appendContentUnresolvedMsg appends the per-kind "not content-present" suffix
+// to the ExecutionResourcesResolved message for each non-empty bucket.
+func appendContentUnresolvedMsg(message string, unresolvedPlugins, unresolvedSkills []string) string {
+	if len(unresolvedPlugins) > 0 {
+		message += fmt.Sprintf("; plugins not content-present: %v", unresolvedPlugins)
+	}
+	if len(unresolvedSkills) > 0 {
+		message += fmt.Sprintf("; skills not content-present: %v", unresolvedSkills)
+	}
+	return message
 }
 
 // writeEnvironmentProjection performs the spec v4 §5.2 dual-write to
@@ -483,6 +535,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ContextPrompts:                      env.Spec.Context.Prompts,
 		ContextPlugins:                      env.Spec.Context.Plugins,
 		ContextArtifacts:                    env.Spec.Context.Artifacts,
+		ContextSkills:                       env.Spec.Context.Skills,
 		RuntimeModels:                       env.Spec.Runtime.Models,
 		RuntimeMCPServers:                   env.Spec.Runtime.MCPServers,
 		RuntimeA2AAgents:                    env.Spec.Runtime.A2AAgents,

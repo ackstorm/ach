@@ -212,6 +212,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 			ContextPrompts:   row.ContextPrompts,
 			ContextPlugins:   row.ContextPlugins,
 			ContextArtifacts: row.ContextArtifacts,
+			ContextSkills:    row.ContextSkills,
 		}, nil
 	}
 	envCache, err := envcache.NewCachedEnvCache(loader, redisClient)

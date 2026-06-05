@@ -244,6 +244,8 @@ func priorContentSourceHash(prev *state.File, kind extract.ResourceKind, finalRe
 		bucket = prev.Artifacts
 	case extract.KindPrompt:
 		bucket = prev.Prompts
+	case extract.KindSkill:
+		bucket = prev.Skills
 	default:
 		return ""
 	}
@@ -314,7 +316,7 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 		if p == "content" && i+2 < len(parts) {
 			kind := extract.ResourceKind(parts[i+1])
 			switch kind {
-			case extract.KindPlugin, extract.KindArtifact, extract.KindPrompt:
+			case extract.KindPlugin, extract.KindArtifact, extract.KindPrompt, extract.KindSkill:
 				return kind, parts[i+2]
 			}
 		}
@@ -414,6 +416,11 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	// Projection leg (D-05). Skipped under the scope gate (--only-runtime).
 	if projectPlugins {
 		if err := d.projectPlugins(ad, s, achDir, toolRoot, &result); err != nil {
+			return RenderResult{}, err
+		}
+		// Standalone Skills project on the same gate (context projection, like
+		// plugins). They land in result.ProjectedSkillFiles (→ state.Skills).
+		if err := d.projectSkills(ad, s, achDir, toolRoot, &result); err != nil {
 			return RenderResult{}, err
 		}
 	}
@@ -711,6 +718,93 @@ func cloneCounts(in map[string]int) map[string]int {
 		out[k] = v
 	}
 	return out
+}
+
+// projectSkills runs the route.Project projection leg for every extracted
+// standalone Skill directory under <achDir>/skill, nesting each unpacked
+// <name>/ under a synthetic skills/<name>/ tree so the adapter's
+// `skills/**/* → .claude/skills/**/*` projection rule fires (route.Project
+// classifies on the FIRST path element, so the skill MUST be presented under
+// a top-level skills/ dir). Each projected FileWrite is published through the
+// SAME publishFile engine as plugins and recorded in
+// result.ProjectedSkillFiles (→ state.Skills, kept distinct from the Plugins
+// bucket). No cross-skill collision resolution is needed: skills project to
+// per-name .claude/skills/<name>/ paths that never collide.
+//
+// The adapter is type-asserted to route.RuleProvider (the D-06 seam); an
+// adapter without it projects nothing (no-op, forward compatible). The
+// synthetic source root lives under the swept tmp base so SweepTmp reclaims it.
+func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File, achDir, toolRoot string, result *RenderResult) error {
+	rp, ok := ad.(route.RuleProvider)
+	if !ok {
+		return nil
+	}
+	rules := rp.ProjectionRules()
+
+	skillRoot := filepath.Join(achDir, "skill")
+	entries, err := os.ReadDir(skillRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // no skills extracted this hydrate — nothing to project
+		}
+		return fmt.Errorf("adapter %s read skill root %s: %w", d.platformID, skillRoot, err)
+	}
+
+	// Stage each unpacked skill <name>/ under a synthetic skills/<name>/ tree
+	// so route.Project's first-path-element classifier matches the
+	// `skills/**` rule. Names are sorted for run-to-run determinism.
+	projRoot := filepath.Join(achDir, "skill-projected")
+	skillsDir := filepath.Join(projRoot, "skills")
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	nested := false
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			// A skill archive extracts to a directory per name; a stray regular
+			// file carries no routable skill tree.
+			continue
+		}
+		// Skill-name segment validation (T-01-04 / defense-in-depth atop the
+		// extract-time SAFE checks) — the name is joined into the synthetic
+		// SOURCE path below and appears in error strings.
+		if verr := validatePluginName(ent.Name()); verr != nil {
+			return fmt.Errorf("adapter %s skill directory %q: %w", d.platformID, ent.Name(), verr)
+		}
+		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+			return fmt.Errorf("adapter %s stage skills dir %s: %w", d.platformID, skillsDir, err)
+		}
+		if err := os.Rename(filepath.Join(skillRoot, ent.Name()), filepath.Join(skillsDir, ent.Name())); err != nil {
+			return fmt.Errorf("adapter %s nest skill %s under skills/: %w", d.platformID, ent.Name(), err)
+		}
+		nested = true
+	}
+	if !nested {
+		return nil
+	}
+
+	// source == "" : Phase-1 ungated arm (no claude-plugin provenance axis).
+	pr, perr := route.Project(rules, projRoot, "")
+	if perr != nil {
+		return fmt.Errorf("adapter %s project skills: %w", d.platformID, perr)
+	}
+	if result.ProjectedByKind == nil {
+		result.ProjectedByKind = map[string]int{}
+	}
+	for k, n := range pr.KeptByKind {
+		result.ProjectedByKind[k] += n
+	}
+	for _, fw := range pr.FileWrites {
+		if d.global {
+			fw.Path = remapGlobalPath(d.platformID, fw.Path)
+		}
+		// Look up the prior projected entry in the SKILLS bucket so an
+		// unchanged re-hydrate hits the publishFile no-op skip.
+		entry, err := d.publishFile(fw, findSkillEntry(s, fw.Path), toolRoot)
+		if err != nil {
+			return err
+		}
+		result.ProjectedSkillFiles = append(result.ProjectedSkillFiles, entry)
+	}
+	return nil
 }
 
 // MCP server-key prefixes per adapter config format (D-17). The projected
@@ -1423,6 +1517,20 @@ func findPluginEntry(s *state.File, target string) *state.FileEntry {
 	return nil
 }
 
+// findSkillEntry is findPluginEntry for the Skills bucket — supplies the prior
+// projected skill entry to publishFile so an unchanged re-hydrate no-op-skips.
+func findSkillEntry(s *state.File, target string) *state.FileEntry {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Skills {
+		if s.Skills[i].Target == target {
+			return &s.Skills[i]
+		}
+	}
+	return nil
+}
+
 // mergeKindToString translates adapter.MergeKind into the state.json
 // canonical string (state.FileEntry.Merge is a string per the §8.2
 // schema). Unknown values fall through as empty string so the field
@@ -1859,7 +1967,7 @@ func walkEntriesTagged(f *state.File) []taggedEntry {
 	if f == nil {
 		return nil
 	}
-	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) +
+	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) + len(f.Skills) +
 		len(f.RuntimeFiles) + len(f.Adapter.Files)
 	out := make([]taggedEntry, 0, total)
 	for _, e := range f.Prompts {
@@ -1872,6 +1980,11 @@ func walkEntriesTagged(f *state.File) []taggedEntry {
 	}
 	for _, e := range f.Artifacts {
 		out = append(out, taggedEntry{Entry: e})
+	}
+	for _, e := range f.Skills {
+		// Projected skill resources land under toolRoot (.claude/skills/…),
+		// like plugins — resolve their deletion path against toolRoot.
+		out = append(out, taggedEntry{Entry: e, ResolveAgainstToolRoot: true})
 	}
 	for _, e := range f.RuntimeFiles {
 		out = append(out, taggedEntry{Entry: e})
