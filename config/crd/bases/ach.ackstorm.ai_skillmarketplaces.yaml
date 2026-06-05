@@ -135,7 +135,9 @@ spec:
                     - name
                     type: object
                   path:
-                    description: Path within the repo.
+                    description: |-
+                      Path within the repo, honored at fetch time (F1; see GitHubSource.Path
+                      for the directory-vs-file + marketplace semantics).
                     type: string
                   ref:
                     description: Ref is a branch or tag name.
@@ -316,8 +318,13 @@ spec:
                     type: object
                   path:
                     description: |-
-                      Path within the repo. Per-kind defaults apply (e.g. Plugin defaults
-                      to repo root; PluginMarketplace defaults to .claude-plugin/marketplace.json).
+                      Path within the repo, honored at fetch time (F1): a directory narrows the
+                      fetched content to that subtree; a single file (Prompt, Artifact
+                      scope=object) returns that file's raw bytes. Empty → whole repo.
+                      PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this
+                      as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path
+                      only as the post-fetch skills-root walk hint; PluginMarketplace discovers
+                      .claude-plugin/marketplace.json conventionally).
                     type: string
                   ref:
                     description: |-
@@ -415,7 +422,9 @@ spec:
                       PluginMarketplace). Defaults to gitlab.com when empty.
                     type: string
                   path:
-                    description: Path within the project repo.
+                    description: |-
+                      Path within the project repo, honored at fetch time (F1; see
+                      GitHubSource.Path for the directory-vs-file + marketplace semantics).
                     type: string
                   project:
                     description: Project is the "<namespace>/<project>" GitLab identifier.

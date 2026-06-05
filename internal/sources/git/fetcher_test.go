@@ -3,6 +3,9 @@
 package git
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -11,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -110,6 +114,197 @@ func TestFetcher_Fetch_SubtreeTraversalRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected err on traversal subtree")
 	}
+}
+
+// TestFetcher_Fetch_SubtreeNarrowsAndReRoots asserts spec.Subtree narrows the
+// produced tarball to the subtree's CONTENTS (the subtree prefix is stripped
+// entirely) — the on-disk narrowing the per-provider git transports now wire
+// spec.<git>.path into (F1).
+func TestFetcher_Fetch_SubtreeNarrowsAndReRoots(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH; skipping")
+	}
+	bare := setupSubtreeBareFixture(t)
+	f := New(Spec{
+		URL:       bare,
+		Ref:       "main",
+		SHA:       fixtureHeadSHA(t, bare),
+		Subtree:   "skills/pdf",
+		CacheRoot: t.TempDir(),
+	})
+	res, err := f.Fetch(context.Background(), Request{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	got := tarRegularEntryNames(t, body)
+	want := []string{"SKILL.md", "run.sh"}
+	if !sameStrings(got, want) {
+		t.Errorf("narrowed entries = %v; want %v (subtree prefix not stripped?)", got, want)
+	}
+}
+
+// TestFetcher_Fetch_SubtreeFileReturnsRaw asserts a Subtree pointing at a single
+// regular file (Prompt / Artifact scope=object name one file via spec.path)
+// returns that file's RAW bytes — no tar wrapper (F1).
+func TestFetcher_Fetch_SubtreeFileReturnsRaw(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH; skipping")
+	}
+	bare := setupSubtreeBareFixture(t)
+	f := New(Spec{
+		URL:       bare,
+		Ref:       "main",
+		SHA:       fixtureHeadSHA(t, bare),
+		Subtree:   "skills/pdf/SKILL.md",
+		CacheRoot: t.TempDir(),
+	})
+	res, err := f.Fetch(context.Background(), Request{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got, want := string(body), "---\nname: pdf\n---\n"; got != want {
+		t.Errorf("raw file body = %q; want %q (single file should be raw, not tar)", got, want)
+	}
+}
+
+// TestFetcher_Fetch_SubtreeSymlinkRejected asserts a Subtree that resolves to a
+// symlink is rejected (never followed out of the clone) → UpstreamInvalid (F1).
+func TestFetcher_Fetch_SubtreeSymlinkRejected(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH; skipping")
+	}
+	bare := setupSymlinkBareFixture(t)
+	f := New(Spec{
+		URL:       bare,
+		Ref:       "main",
+		SHA:       fixtureHeadSHA(t, bare),
+		Subtree:   "evil",
+		CacheRoot: t.TempDir(),
+	})
+	_, err := f.Fetch(context.Background(), Request{})
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("err = %v; want ErrUpstreamInvalid (symlink subtree)", err)
+	}
+}
+
+// setupSymlinkBareFixture builds a repo whose `evil` entry is a symlink to an
+// absolute path outside the repo, and returns a --bare clone path.
+func setupSymlinkBareFixture(t *testing.T) string {
+	t.Helper()
+	work := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main", ".")
+	if err := os.Symlink("/etc/passwd", filepath.Join(work, "evil")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+	bare := filepath.Join(t.TempDir(), "fixture.git")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	run("clone", "--bare", ".", bare)
+	return bare
+}
+
+// setupSubtreeBareFixture builds a repo with a skills/ monorepo layout and
+// returns a --bare clone path.
+func setupSubtreeBareFixture(t *testing.T) string {
+	t.Helper()
+	work := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main", ".")
+	files := map[string]string{
+		"README.md":            "# repo\n",
+		"skills/pdf/SKILL.md":  "---\nname: pdf\n---\n",
+		"skills/pdf/run.sh":    "echo hi\n",
+		"skills/docx/SKILL.md": "---\nname: docx\n---\n",
+	}
+	for name, content := range files {
+		full := filepath.Join(work, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+	bare := filepath.Join(t.TempDir(), "fixture.git")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	run("clone", "--bare", ".", bare)
+	return bare
+}
+
+// tarRegularEntryNames returns sorted regular-file names from a gzip-tar.
+func tarRegularEntryNames(t *testing.T, tarball []byte) []string {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(tarball))
+	if err != nil {
+		t.Fatalf("gzip open: %v", err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	var out []string
+	for {
+		hdr, e := tr.Next()
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			t.Fatalf("tar read: %v", e)
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			out = append(out, hdr.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestFetcher_Fetch_TokenRedacted(t *testing.T) {

@@ -22,9 +22,11 @@
 package bitbucket
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"net/url"
 	"time"
@@ -139,7 +141,8 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	//    Workspace/Repo are url.PathEscape'd (CR-02 / T-02-02-02);
 	//    sha is the SHA returned by the prior commit-resolution step
 	//    and is therefore trusted, but escape is defensive.
-	//    Path subset extraction (spec.Path) is deferred to v1beta1.
+	//    spec.Path narrowing (when set) is applied to the StatusOK body via
+	//    sources.NarrowArchiveSubtree (F1).
 	archiveURL := fmt.Sprintf("%s/%s/%s/get/%s.tar.gz",
 		defaultBitbucketWeb,
 		url.PathEscape(f.spec.Workspace),
@@ -160,6 +163,17 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	}
 	switch {
 	case resp.StatusCode == nethttp.StatusOK:
+		// spec.Path narrowing — see github/fetcher.go (F1). The git transport
+		// narrows on-disk; the REST archive is the whole repo wrapped under
+		// "<repo>-<sha>/", so narrow it here to the same shape when set.
+		if f.spec.Path != "" {
+			defer sources.DrainAndClose(resp.Body)
+			narrowed, nerr := sources.NarrowArchiveSubtree(resp.Body, f.spec.Path, sources.DefaultArchiveIngressCap)
+			if nerr != nil {
+				return nil, fmt.Errorf("bitbucket: narrow path %q: %w", f.spec.Path, nerr)
+			}
+			return &sources.FetchResult{Body: io.NopCloser(bytes.NewReader(narrowed)), UpstreamRev: sha}, nil
+		}
 		return &sources.FetchResult{
 			Body:        resp.Body,
 			UpstreamRev: sha,

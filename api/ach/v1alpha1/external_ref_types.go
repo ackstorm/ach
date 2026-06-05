@@ -95,8 +95,13 @@ type GitHubSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Repo string `json:"repo"`
 
-	// Path within the repo. Per-kind defaults apply (e.g. Plugin defaults
-	// to repo root; PluginMarketplace defaults to .claude-plugin/marketplace.json).
+	// Path within the repo, honored at fetch time (F1): a directory narrows the
+	// fetched content to that subtree; a single file (Prompt, Artifact
+	// scope=object) returns that file's raw bytes. Empty → whole repo.
+	// PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this
+	// as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path
+	// only as the post-fetch skills-root walk hint; PluginMarketplace discovers
+	// .claude-plugin/marketplace.json conventionally).
 	//
 	// +optional
 	Path string `json:"path,omitempty"`
@@ -151,7 +156,8 @@ type GitLabSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Project string `json:"project"`
 
-	// Path within the project repo.
+	// Path within the project repo, honored at fetch time (F1; see
+	// GitHubSource.Path for the directory-vs-file + marketplace semantics).
 	//
 	// +optional
 	Path string `json:"path,omitempty"`
@@ -202,7 +208,8 @@ type BitbucketSource struct {
 	// +kubebuilder:validation:MinLength=1
 	Repo string `json:"repo"`
 
-	// Path within the repo.
+	// Path within the repo, honored at fetch time (F1; see GitHubSource.Path
+	// for the directory-vs-file + marketplace semantics).
 	//
 	// +optional
 	Path string `json:"path,omitempty"`

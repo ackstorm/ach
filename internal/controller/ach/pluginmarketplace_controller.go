@@ -210,8 +210,11 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// ─── Stage 1: fetch + parse + filter. ───
 
-	// 1a: Build the marketplace-file SourceSpec + resolve auth Secret.
-	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
+	// 1a: Build the marketplace-file SourceSpec + resolve auth Secret. The git
+	// spec.path is cleared: a PluginMarketplace discovers .claude-plugin/
+	// marketplace.json conventionally by walking the whole repo tarball, so path
+	// is IGNORED (the per-provider fetchers otherwise narrow to it — F1).
+	sourceSpec := withoutGitPath(buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP))
 	authRef := extractAuthSecretRef(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
 
 	var marketplaceSecret *corev1.Secret

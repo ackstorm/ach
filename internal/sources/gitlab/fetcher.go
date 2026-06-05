@@ -24,8 +24,10 @@
 package gitlab
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"net/url"
 	"strings"
@@ -146,8 +148,8 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	//    buffers a full body" — the same discipline applies operator-
 	//    side because the operator is the load-bearing single-replica
 	//    process). PRIVATE-TOKEN goes in the header (never the URL —
-	//    T-02-02-02). Path subset extraction (spec.Path) is deferred to
-	//    v1beta1.
+	//    T-02-02-02). spec.Path narrowing (when set) is applied to the
+	//    StatusOK body via sources.NarrowArchiveSubtree (F1).
 	archiveURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/archive.tar.gz?sha=%s",
 		strings.TrimRight(host, "/"),
 		url.PathEscape(f.spec.Project),
@@ -167,6 +169,17 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 	}
 	switch {
 	case resp2.StatusCode == nethttp.StatusOK:
+		// spec.Path narrowing — see github/fetcher.go (F1). The git transport
+		// narrows on-disk; the REST archive is the whole repo wrapped under
+		// "<repo>-<sha>/", so narrow it here to the same shape when set.
+		if f.spec.Path != "" {
+			defer sources.DrainAndClose(resp2.Body)
+			narrowed, nerr := sources.NarrowArchiveSubtree(resp2.Body, f.spec.Path, sources.DefaultArchiveIngressCap)
+			if nerr != nil {
+				return nil, fmt.Errorf("gitlab: narrow path %q: %w", f.spec.Path, nerr)
+			}
+			return &sources.FetchResult{Body: io.NopCloser(bytes.NewReader(narrowed)), UpstreamRev: sha}, nil
+		}
 		return &sources.FetchResult{
 			Body:        resp2.Body,
 			UpstreamRev: sha,

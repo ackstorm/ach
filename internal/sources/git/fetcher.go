@@ -66,9 +66,10 @@ type Spec struct {
 	// guarantee reproducibility regardless of how far Ref has moved.
 	SHA string
 
-	// Subtree, when non-empty, narrows the produced tarball to a single
-	// subdirectory of the worktree (the `path/` of a git-subdir entry).
-	// Cleaned + slash-prefixed before use. Empty → whole worktree.
+	// Subtree, when non-empty, narrows the produced output to a single path
+	// within the worktree (spec.<git>.path): a DIRECTORY → a tarball re-rooted
+	// at its contents; a single regular FILE → that file's raw bytes (no tar).
+	// Cleaned before use; traversal + symlinks rejected. Empty → whole worktree.
 	Subtree string
 
 	// Token, when non-empty, is sent to git via
@@ -357,25 +358,40 @@ func ClassifyError(err error) error {
 }
 
 // tarSubtree gzip-tars the contents of root (or root/subtree if non-empty),
-// stripping the root prefix from entry names so the resulting archive
-// looks like the worktree was at /.
+// stripping the root prefix from entry names so the resulting archive looks
+// like the worktree was at /. When subtree points at a single regular FILE
+// (not a directory) it returns that file's RAW bytes instead — Prompt and
+// Artifact scope=object name a single file via spec.path (F1). A symlinked
+// subtree is rejected (never followed out of the clone).
 func tarSubtree(root, subtree string) ([]byte, error) {
 	start := root
 	relStrip := root
 	if subtree != "" {
 		// Defense in depth: tarSubtree is called with a parser-validated
 		// local-path / git-subdir path, but reject traversal here too.
+		// Shape errors (escape / missing) wrap ErrUpstreamInvalid so the
+		// reconciler classifies them as a terminal config error, not a
+		// transient Unreachable (F1).
 		clean := filepath.Clean(subtree)
 		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
-			return nil, fmt.Errorf("subtree %q escapes root", subtree)
+			return nil, fmt.Errorf("subtree %q escapes root: %w", subtree, sources.ErrUpstreamInvalid)
 		}
 		start = filepath.Join(root, clean)
-		info, err := os.Stat(start)
+		// Lstat (NOT Stat): a symlinked subtree must be rejected, never followed
+		// out of the clone (a crafted repo could symlink to /etc/passwd).
+		info, err := os.Lstat(start)
 		if err != nil {
-			return nil, fmt.Errorf("subtree %q: %w", subtree, err)
+			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sources.ErrUpstreamInvalid)
 		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("subtree %q: not a directory", subtree)
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			return nil, fmt.Errorf("subtree %q: symlink not allowed: %w", subtree, sources.ErrUpstreamInvalid)
+		case info.Mode().IsRegular():
+			// A spec.path pointing at a single FILE (Prompt / Artifact
+			// scope=object) returns that file's RAW bytes — no tar wrapper (F1).
+			return os.ReadFile(start) //nolint:gosec // bounded: clone size-capped by MaxCloneBytes
+		case !info.IsDir():
+			return nil, fmt.Errorf("subtree %q: not a regular file or directory: %w", subtree, sources.ErrUpstreamInvalid)
 		}
 		relStrip = start
 	}
