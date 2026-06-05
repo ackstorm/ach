@@ -810,6 +810,24 @@ func TestHydrateSummaryRuntimeKinds(t *testing.T) {
 	}
 }
 
+// TestHydrateSummary_StandaloneSkills proves standalone Skill content renders on
+// its own Skills line — NOT folded into the Plugins aggregate (P3 regression:
+// a standalone-Skill hydrate previously printed "Plugins: 0 total (N skills)").
+func TestHydrateSummary_StandaloneSkills(t *testing.T) {
+	got := summaryFromResult(hydrate.Result{
+		PlatformID:     "claude-code",
+		FilesWritten:   3,
+		FilesPreserved: 0,
+		ContextSummary: hydrate.ContextSummary{Skills: 1, SkillFiles: 3},
+	})
+	if !strings.Contains(got, "    ✓ Skills: 1 total, 3 files") {
+		t.Errorf("summary missing Skills line; got %q", got)
+	}
+	if strings.Contains(got, "Plugins:") {
+		t.Errorf("standalone-skill hydrate must not render a Plugins line; got %q", got)
+	}
+}
+
 // TestValidateEnvHeaderValue exercises security 2.10 — CRLF / NUL /
 // control-byte rejection on the x-ach-environment header value.
 func TestValidateEnvHeaderValue(t *testing.T) {

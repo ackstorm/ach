@@ -804,12 +804,10 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	if perr != nil {
 		return fmt.Errorf("adapter %s project skills: %w", d.platformID, perr)
 	}
-	if result.ProjectedByKind == nil {
-		result.ProjectedByKind = map[string]int{}
-	}
-	for k, n := range pr.KeptByKind {
-		result.ProjectedByKind[k] += n
-	}
+	// Standalone skills are tallied via ProjectedSkillFiles → the summary's
+	// Skills line, NOT folded into ProjectedByKind (which feeds the Plugins
+	// line — plugin-contributed component kinds only). Folding them here made a
+	// standalone-Skill hydrate misreport as "Plugins: 0 total (N skills)".
 	for _, fw := range pr.FileWrites {
 		if d.global {
 			fw.Path = remapGlobalPath(d.platformID, fw.Path)
