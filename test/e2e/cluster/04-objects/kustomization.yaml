@@ -11,6 +11,13 @@ resources:
   # reconciles it; verify_all still gates on litellmconnection/default Ready.
   - marketplace-anthropic.yaml
   - marketplace-caveman.yaml
+  # SkillMarketplace (anthropics/skills, path=skills) — convention discovery,
+  # no marketplace.json. Demo references pdf@anthropic-skills.
+  - skill-marketplace-anthropic.yaml
+  # Standalone Skills pulled from the same monorepo via spec.github.path
+  # (skills/pdf, skills/docx) — the no-marketplace skill resolution arm.
+  - skill-pdf.yaml
+  - skill-docx.yaml
   # Phase 02 SC#3 same-plugin-name pair — both point at the real
   # anthropic catalogue filtered to `feature-dev`; under the scoped grammar
   # both settle Synced=True (feature-dev@conflict-mkt-a and

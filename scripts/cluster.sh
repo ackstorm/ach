@@ -588,6 +588,13 @@ verify_all() {
   # Their 1m refresh.interval keeps convergence well inside the timeout.
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-a
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-b
+  # SkillMarketplace (convention discovery, no marketplace.json) + the two
+  # standalone Skills pulled from the same monorepo via spec.github.path. The
+  # demo Environment (below) references pdf, docx, and pdf@anthropic-skills, so
+  # these must be content-present before demo reaches Available=True.
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skillmarketplace/anthropic-skills
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" skill/pdf
+  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" skill/docx
   for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
     wait_bip_reconciled "${b}" "${to}"
   done
