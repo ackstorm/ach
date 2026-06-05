@@ -208,3 +208,90 @@ func TestEnvSkillContentPresent_Synced(t *testing.T) {
 		t.Errorf("UnresolvedContextSkills = %v; want [] (skill is content-present)", final.Status.UnresolvedContextSkills)
 	}
 }
+
+// TestEnvSkillContentPresent_MarketplaceSynced: an Environment referencing a
+// scoped "name@marketplace" skill backed by a synced skill_marketplace_skills
+// row resolves through the marketplace arm → ExecutionResourcesResolved=True.
+func TestEnvSkillContentPresent_MarketplaceSynced(t *testing.T) {
+	pool, cleanup := setupPluginContentPresentDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	const ns = WatchNamespace
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
+
+	now := time.Now().UTC()
+	if err := achdb.UpsertSkillMarketplaceSkill(ctx, pool, achdb.SkillMarketplaceSkill{
+		MarketplaceName:       "ackstorm",
+		Name:                  "branding",
+		StorageLocation:       "/cache/skill-marketplace/ackstorm/branding.tar.gz",
+		LastSuccessfulRefresh: now, // content IS present
+		NextRefreshAt:         now.Add(time.Hour),
+		MaxStalenessSeconds:   86400,
+	}); err != nil {
+		t.Fatalf("seed skill_marketplace_skills row: %v", err)
+	}
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-skill-mkt-synced",
+			Namespace: ns,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         achv1alpha1.RuntimeBlock{},
+			Context: achv1alpha1.ContextBlock{
+				Skills: []string{"branding@ackstorm"},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment CR: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		for _, f := range got.Finalizers {
+			if f == environmentFinalizer {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 250*time.Millisecond) {
+		t.Fatal("finalizer never added within 10s")
+	}
+
+	r := buildPluginTestReconciler(t, ns, pool)
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cr)}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	var final achv1alpha1.Environment
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &final); err != nil {
+		t.Fatalf("re-Get Environment: %v", err)
+	}
+
+	var errCond *metav1.Condition
+	for i := range final.Status.Conditions {
+		if final.Status.Conditions[i].Type == "ExecutionResourcesResolved" {
+			errCond = &final.Status.Conditions[i]
+			break
+		}
+	}
+	if errCond == nil {
+		t.Fatalf("ExecutionResourcesResolved condition not found; conditions=%+v", final.Status.Conditions)
+	}
+	if errCond.Status != metav1.ConditionTrue {
+		t.Errorf("ExecutionResourcesResolved.Status = %q; want True (synced marketplace skill should not block). message=%q",
+			errCond.Status, errCond.Message)
+	}
+	if len(final.Status.UnresolvedContextSkills) != 0 {
+		t.Errorf("UnresolvedContextSkills = %v; want [] (marketplace skill is content-present)", final.Status.UnresolvedContextSkills)
+	}
+}
