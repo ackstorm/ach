@@ -46,12 +46,11 @@ func detectArchiveRoot(names []string) string {
 	root := ""
 	for _, n := range names {
 		clean := path.Clean(strings.TrimPrefix(n, "./"))
-		first := clean
-		if i := strings.IndexByte(clean, '/'); i >= 0 {
-			first = clean[:i]
-		} else {
+		i := strings.IndexByte(clean, '/')
+		if i < 0 {
 			return "" // a file sits at top level → no single wrapper root
 		}
+		first := clean[:i]
 		if root == "" {
 			root = first
 		} else if root != first {
