@@ -35,12 +35,24 @@ import (
 )
 
 const (
-	sc5UserID       = "u-e2e-sc5"
-	sc5KeyID        = "pkid_e2e_sc5"
-	sc5LiteLLMNS    = "litellm-system"
-	sc5LiteLLMSvc   = "svc/litellm"
-	sc5LiteLLMDBSvc = "svc/litellm-postgresql"
-	sc5ACHPgSvc     = "svc/ach-postgres"
+	sc5UserID = "u-e2e-sc5"
+	sc5KeyID  = "pkid_e2e_sc5"
+	// sc5OrphanAchKeyID is the ach_key_id stamped on the generated LiteLLM
+	// key's metadata so the ownership gate recognizes it as ACH-minted. It
+	// is deliberately NOT the seeded active row (sc5KeyID), so the loop sees
+	// it as a true orphan (ACH-owned but no active row tracks it). The
+	// seeded active sc5KeyID also keeps the active set NON-empty so the B1
+	// empty-active-set fail-safe does not trip.
+	//
+	// NOTE: the trailing `gitleaks:allow` is load-bearing — gitleaks'
+	// generic-api-key rule flags this synthetic pkid_ fixture as a false
+	// positive; the inline directive exempts this one line without
+	// broadening the repo-wide .gitleaks.toml allowlist.
+	sc5OrphanAchKeyID = "pkid_e2e_sc5_orphan" // gitleaks:allow
+	sc5LiteLLMNS      = "litellm-system"
+	sc5LiteLLMSvc     = "svc/litellm"
+	sc5LiteLLMDBSvc   = "svc/litellm-postgresql"
+	sc5ACHPgSvc       = "svc/ach-postgres"
 	// sc5MasterKey matches test/e2e/cluster/01-base/litellm.values.yaml and
 	// config/e2e/litellm_connection.yaml (Secret litellm-master-key).
 	sc5MasterKey = "sk-test-master-key"
@@ -108,8 +120,11 @@ func testSC5IntervalFloor(t *testing.T) {
 //  2. Port-forward in-cluster LiteLLM + ACH Postgres + LiteLLM Postgres.
 //  3. INSERT personal_keys row carrying litellm_user_id=sc5UserID so
 //     the user becomes ACH-managed.
-//  4. POST /key/generate against in-cluster LiteLLM under sc5UserID
-//     (the returned token is an orphan: no ACH row references it).
+//  4. POST /key/generate against in-cluster LiteLLM under sc5UserID,
+//     stamping the sc5OrphanAchKeyID const into metadata.ach_key_id — an
+//     ACH-minted key whose key_id has no active ACH row, i.e. a true
+//     orphan under the ownership gate (the seeded sc5KeyID row keeps the
+//     active set non-empty).
 //  5. UPDATE LiteLLM_VerificationToken SET created_at = now - 11m to
 //     push the token past the 10-minute OrphanAgeFloor.
 //  6. Build orphan.NewRunnable wired against the same in-cluster
@@ -152,7 +167,7 @@ func testSC5OrphanReapLive(t *testing.T) {
 	seedPersonalKey(t, ctx, achDBURL, sc5KeyID, sc5UserID)
 	t.Cleanup(func() { cleanupPersonalKey(achDBURL, sc5KeyID) })
 
-	token := createLiteLLMKey(t, ctx, litellmURL, sc5MasterKey, sc5UserID)
+	token := createLiteLLMKey(t, ctx, litellmURL, sc5MasterKey, sc5UserID, sc5OrphanAchKeyID)
 	t.Cleanup(func() { _ = deleteLiteLLMKey(litellmURL, sc5MasterKey, token) })
 
 	// Backdate by user_id, not by token: LiteLLM's /key/generate returns
@@ -176,7 +191,7 @@ func testSC5OrphanReapLive(t *testing.T) {
 	auditBuf := &bytes.Buffer{}
 	auditLog := audit.NewLogger(auditBuf)
 	client := litellm.NewRESTClient(litellmURL, sc5MasterKey, logr.Discard())
-	r := orphan.NewRunnable(client, pool, auditLog, 5*time.Minute, logr.Discard())
+	r := orphan.NewRunnable(client, pool, auditLog, 5*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
 	r.TickOnce(ctx)
 
 	for _, line := range strings.Split(strings.TrimSpace(auditBuf.String()), "\n") {
@@ -274,10 +289,14 @@ func cleanupPersonalKey(dbURL, keyID string) {
 	_, _ = pool.Exec(ctx, `DELETE FROM personal_keys WHERE key_id=$1`, keyID)
 }
 
-func createLiteLLMKey(t *testing.T, ctx context.Context, baseURL, masterKey, userID string) string {
+func createLiteLLMKey(t *testing.T, ctx context.Context, baseURL, masterKey, userID, achKeyID string) string {
 	t.Helper()
+	// Stamp ach_key_id so the ownership gate (Phase 1 fix) recognizes this
+	// key as ACH-minted; without it the gate treats the key as foreign and
+	// never revokes it. Mirrors the real mint metadata (sso.go / handler.go).
 	body := strings.NewReader(fmt.Sprintf(
-		`{"user_id":%q,"duration":"24h","metadata":{"created_by":"e2e-sc5"}}`, userID))
+		`{"user_id":%q,"duration":"24h","metadata":{"ach_key_id":%q,"ach_key_type":"pk","ach_owner_email":"sc5@example.com","created_by":"e2e-sc5"}}`,
+		userID, achKeyID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/key/generate", body)
 	if err != nil {
 		t.Fatalf("build /key/generate request: %v", err)

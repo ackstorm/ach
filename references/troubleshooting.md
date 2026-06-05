@@ -320,6 +320,35 @@ filter miss returns `pgx.ErrNoRows` which the helper maps to `ErrOriginConflict`
 which the reconciler maps to `Synced=False reason=ConflictWithUIRow` and a 1-min
 requeue.
 
+### ❌ orphan-cleanup revoked a LiteLLM key it should not have (or revoked nothing)
+The operator's orphan-cleanup loop (`internal/orphan`, OP-15 / Hub §18.4)
+revokes **only** ACH-minted keys that ACH no longer tracks as active. A key is
+ACH-minted iff its LiteLLM `/key/list` metadata carries `ach_key_id` (set at
+mint in `sso.go` / `envkeys/handler.go`); that id joins against the active
+`key_id` set (`db.ListActiveACHKeyIDs`). Foreign keys (manual dashboard, `tf-*`,
+token-factory — no `ach_key_id`) are **never** touched.
+✅ Diagnose with the audit/metrics, then tune via env (operator-only, set through
+Helm `extraEnv`):
+```bash
+make logs-operator | grep -E "orphan-cleanup: (revoked|WOULD revoke|WARNING)|skipped_"
+# /metrics: ach_orphan_cleanup_candidates_total / _revoked_total /
+#           _skipped_total{reason=dry_run|empty_active_set|circuit_breaker|...}
+```
+- **Emergency stop (no rebuild):** `ACH_ORPHAN_CLEANUP_INTERVAL=8760h` — the
+  loop has no initial tick, so a year-long interval never fires for that pod.
+- **Reversible neutralize (B3):** `ACH_ORPHAN_CLEANUP_DRY_RUN=true` — logs
+  `WOULD revoke` + `skipped{dry_run}`, never calls RevokeKey.
+- **Circuit-breaker (B2):** `ACH_ORPHAN_CLEANUP_MAX_REVOKE` (default 10) — a tick
+  with more true-orphan candidates than the cap aborts revocation entirely and
+  emits `outcome=skipped_circuit_breaker`.
+- **Empty-active-set fail-safe (B1):** if the active key set is empty while
+  ACH-owned candidates exist (the mis-wire shape), the tick skips with
+  `outcome=skipped_empty_active_set` rather than revoking the fleet.
+WHY IT MATTERED: the original loop joined the opaque LiteLLM `token` against the
+`key_id` set — two non-intersecting namespaces — so every key older than the
+10-min floor under a managed user was mis-classified orphan and revoked. The
+ownership gate + B1/B2 guards make a future mis-wire observable and bounded.
+
 ### ❌ Code change rebuilt but the old container keeps serving after `cluster-up`
 ```bash
 # edit Go code → make cluster-up → behavior unchanged; pod AGE is hours old

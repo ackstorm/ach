@@ -68,6 +68,21 @@ operator:
     - operator
     - --metrics-bind-address=:8080
     - --metrics-secure=false
+  # ─── orphan-cleanup loop (OP-15 / Hub §18.4) ───
+  # The loop revokes ONLY ACH-minted LiteLLM keys (metadata.ach_key_id
+  # present) that ACH no longer tracks as active; foreign keys (manual /
+  # tf-* / token-factory) are never touched. Tune via the top-level
+  # `extraEnv` (these are operator-only; other modes ignore them):
+  #   ACH_ORPHAN_CLEANUP_INTERVAL   (default 1h; floor 5m) — tick cadence.
+  #       Emergency stop: set very high (e.g. 8760h) to neuter the loop for
+  #       the pod's lifetime without a rebuild (first tick fires at
+  #       t+interval, so a year-long interval never fires).
+  #   ACH_ORPHAN_CLEANUP_DRY_RUN    (default false) — B3 reversible neutralize:
+  #       logs "WOULD revoke" + skipped{dry_run} metric, never calls RevokeKey.
+  #   ACH_ORPHAN_CLEANUP_MAX_REVOKE (default 10) — B2 circuit-breaker: a tick
+  #       with more true-orphan candidates than this aborts revocation entirely.
+  # Observability: /metrics exposes ach_orphan_cleanup_{candidates,revoked}_total
+  # and ach_orphan_cleanup_skipped_total{reason}.
 
 # platformApi: HTTP API surface for agent registry, config serving.
 platformApi:

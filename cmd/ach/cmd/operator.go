@@ -207,6 +207,17 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 	operatorSetupLog.Info("orphan-cleanup interval configured", "interval", orphanInterval)
 
+	// ─── orphan-cleanup defense-in-depth guardrails (B1/B2/B3) ───
+	// DryRun = reversible image-level neutralize; MaxRevoke = per-tick
+	// circuit-breaker cap (a double-digit batch is itself the alarm).
+	orphanDryRun := config.EnvBool("ACH_ORPHAN_CLEANUP_DRY_RUN", false)
+	orphanMaxRevoke, err := config.MustEnvIntPositive("ACH_ORPHAN_CLEANUP_MAX_REVOKE", orphan.DefaultMaxRevoke)
+	if err != nil {
+		return fmt.Errorf("ACH_ORPHAN_CLEANUP_MAX_REVOKE must be a positive integer (B2 circuit-breaker): %w", err)
+	}
+	operatorSetupLog.Info("orphan-cleanup guardrails configured",
+		"dry_run", orphanDryRun, "max_revoke", orphanMaxRevoke)
+
 	// ─── Postgres connection pool ───
 	dbCtx, dbCancel := context.WithCancel(context.Background())
 	defer dbCancel()
@@ -430,7 +441,10 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 
 	orphanRunnable := orphan.NewRunnable(realLiteLLM, dbPool, auditLog, orphanInterval,
-		ctrl.Log.WithName("orphan-cleanup"))
+		orphanDryRun, orphanMaxRevoke, ctrl.Log.WithName("orphan-cleanup"))
+	// Register the orphan-cleanup collectors on controller-runtime's
+	// global metrics Registry so the operator /metrics surfaces them.
+	orphanRunnable.Metrics = orphan.NewMetrics(crmetrics.Registry)
 	if err := mgr.Add(orphanRunnable); err != nil {
 		return fmt.Errorf("unable to add orphan-cleanup Runnable: %w", err)
 	}

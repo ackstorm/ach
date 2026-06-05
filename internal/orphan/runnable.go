@@ -29,10 +29,28 @@ const OrphanAgeFloor = 10 * time.Minute
 // "revoked") in a single one-shot rename per greenfield/no-compat-shims
 // discipline; no prior constant remains in the enum.
 const (
-	OutcomeRevoked            = "revoked"
-	OutcomeLiteLLMUnreachable = "litellm_unreachable"
-	OutcomeRevokeFailed       = "revoke_failed"
+	OutcomeRevoked               = "revoked"
+	OutcomeLiteLLMUnreachable    = "litellm_unreachable"
+	OutcomeRevokeFailed          = "revoke_failed"
+	OutcomeSkippedEmptyActiveSet = "skipped_empty_active_set"
+	OutcomeSkippedCircuitBreaker = "skipped_circuit_breaker"
 )
+
+// DefaultMaxRevoke is the B2 circuit-breaker cap applied when
+// Runnable.MaxRevoke is unset (≤0). A correct steady state revokes 0–few
+// keys per tick; a double-digit batch is itself the alarm, so the tick
+// aborts revocation rather than executing a suspiciously large purge.
+const DefaultMaxRevoke = 10
+
+// orphanCandidate is one true orphan identified in pass 1 of TickOnce —
+// ACH-minted (achID present), older than the floor, not in the active
+// set. token is the opaque LiteLLM revoke handle; achID is the
+// pkid_*/ekid_* identity used only for logging/traceability.
+type orphanCandidate struct {
+	userID string
+	token  string
+	achID  string
+}
 
 // listUsersFn / listKeyIDsFn are the function-typed test seams that
 // stand in for db.ListACHManagedLitellmUsers / db.ListActiveACHKeyIDs.
@@ -71,6 +89,19 @@ type Runnable struct {
 	Interval time.Duration
 	Log      logr.Logger
 
+	// DryRun (ACH_ORPHAN_CLEANUP_DRY_RUN), when true, makes every tick
+	// log "WOULD revoke" + count the candidate under skipped{dry_run}
+	// but NEVER call RevokeKey. A reversible, image-level neutralize
+	// cleaner than the year-long-interval emergency knob.
+	DryRun bool
+	// MaxRevoke (ACH_ORPHAN_CLEANUP_MAX_REVOKE) is the B2 circuit-breaker
+	// cap; ≤0 means DefaultMaxRevoke. A single tick with more candidates
+	// than this aborts revocation entirely (the batch is the alarm).
+	MaxRevoke int
+	// Metrics holds the Prometheus collectors; nil disables
+	// instrumentation (the m* helpers are nil-guarded).
+	Metrics *Metrics
+
 	// Test seams — production code never touches these after
 	// NewRunnable wires the defaults.
 	ListUsers  listUsersFn
@@ -84,12 +115,14 @@ type Runnable struct {
 // is harmless to the loop itself — the OrphanAgeFloor=10m check inside
 // TickOnce defers revocation regardless — but produces wasted ticks.
 func NewRunnable(client litellm.Client, dbPool *pgxpool.Pool, audit *slog.Logger,
-	interval time.Duration, log logr.Logger) *Runnable {
+	interval time.Duration, dryRun bool, maxRevoke int, log logr.Logger) *Runnable {
 	return &Runnable{
 		Client:     client,
 		DB:         dbPool,
 		Audit:      audit,
 		Interval:   interval,
+		DryRun:     dryRun,
+		MaxRevoke:  maxRevoke,
 		Log:        log,
 		ListUsers:  db.ListACHManagedLitellmUsers,
 		ListKeyIDs: db.ListActiveACHKeyIDs,
@@ -166,9 +199,14 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		achKeySet[k] = struct{}{}
 	}
 
-	// Step 3: per-user ListUserKeys → identify orphans → revoke.
+	// Step 3 (pass 1): per-user ListUserKeys → collect true-orphan
+	// candidates. Revocation is DEFERRED to pass 2 so the B1 empty-set
+	// fail-safe and B2 circuit-breaker can inspect the FULL candidate set
+	// across all users before anything is revoked — a fail-open whole-
+	// fleet revoke is exactly the incident this defends against.
 	now := time.Now()
 	cutoff := now.Add(-OrphanAgeFloor)
+	candidates := make([]orphanCandidate, 0)
 	for _, uid := range userIDs {
 		keys, err := r.Client.ListUserKeys(ctx, uid)
 		if err != nil {
@@ -183,6 +221,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			// belongs in the operational log (line below); the audit
 			// channel carries only the closed-enum outcome + identifiers
 			// per Hub §16.1 / §18.2.
+			r.mSkipped(SkipReasonLiteLLMUnreachable, 1)
 			r.Audit.Info("operator.orphan-cleanup",
 				"target.kind", "tick",
 				"outcome", OutcomeLiteLLMUnreachable,
@@ -214,27 +253,81 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 				continue
 			}
 			// ACH minted it and no longer tracks it → true orphan.
-			// Revoke by the opaque Token + emit audit reflecting the outcome.
-			if err := r.Client.RevokeKey(ctx, k.Token); err != nil {
-				// CR-03: err.Error() is NOT included on the audit event;
-				// see the litellm_unreachable branch above for rationale.
-				// Diagnostic detail goes to the operational log.
-				r.Audit.Info("operator.orphan-cleanup",
-					"target.kind", "litellm_key",
-					"target.name", k.Token,
-					"outcome", OutcomeRevokeFailed,
-					"user_id", uid)
-				r.Log.Info("orphan-cleanup: revoke failed; continuing tick",
-					"token", k.Token, "err", err)
-				continue // do NOT abort the tick — sibling users may still have revokable orphans
-			}
+			candidates = append(candidates, orphanCandidate{userID: uid, token: k.Token, achID: achID})
+		}
+	}
+	r.mCandidates(len(candidates))
+	if len(candidates) == 0 {
+		return // steady state — nothing to revoke
+	}
+
+	// B1 fail-safe: an empty active set with ≥1 ACH-owned candidate is the
+	// mis-wire signature (the active-key lookup returned nothing while ACH
+	// keys still exist upstream — the shape of the original incident). Skip
+	// ALL revocation this tick. The cost is at most one skipped interval;
+	// this is legitimately reachable only when ACH genuinely has zero
+	// active keys (rare), in which case the next tick with any active key
+	// proceeds normally.
+	if len(achKeySet) == 0 {
+		r.mSkipped(SkipReasonEmptyActiveSet, len(candidates))
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "tick",
+			"outcome", OutcomeSkippedEmptyActiveSet,
+			"candidate_count", len(candidates))
+		r.Log.Info("orphan-cleanup: WARNING empty active key set with ACH-owned candidates present; skipping revocation (possible mis-wire)",
+			"candidate_count", len(candidates))
+		return
+	}
+
+	// B2 circuit-breaker: a correct steady state revokes 0–few keys per
+	// tick; a batch over the cap is itself the alarm. Abort revocation
+	// this tick and surface it loudly rather than execute a large purge.
+	maxRevoke := r.MaxRevoke
+	if maxRevoke <= 0 {
+		maxRevoke = DefaultMaxRevoke
+	}
+	if len(candidates) > maxRevoke {
+		r.mSkipped(SkipReasonCircuitBreaker, len(candidates))
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "tick",
+			"outcome", OutcomeSkippedCircuitBreaker,
+			"candidate_count", len(candidates))
+		r.Log.Info("orphan-cleanup: WARNING revoke candidates exceed circuit-breaker cap; skipping revocation",
+			"candidate_count", len(candidates), "max_revoke", maxRevoke)
+		return
+	}
+
+	// Step 4 (pass 2): revoke each candidate by its opaque Token, or log a
+	// WOULD-revoke line in dry-run mode (B3). A per-key RevokeKey failure
+	// is logged + audited and the tick CONTINUES — sibling candidates may
+	// still be revokable (it does not indicate the upstream is unreachable).
+	for _, c := range candidates {
+		if r.DryRun {
+			r.mSkipped(SkipReasonDryRun, 1)
+			r.Log.Info("orphan-cleanup: WOULD revoke (dry-run)",
+				"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
+			continue
+		}
+		if err := r.Client.RevokeKey(ctx, c.token); err != nil {
+			// CR-03: err.Error() is NOT included on the audit event; see
+			// the litellm_unreachable branch above for rationale.
+			r.mSkipped(SkipReasonRevokeFailed, 1)
 			r.Audit.Info("operator.orphan-cleanup",
 				"target.kind", "litellm_key",
-				"target.name", k.Token,
-				"outcome", OutcomeRevoked,
-				"user_id", uid)
-			r.Log.Info("orphan-cleanup: revoked",
-				"token", k.Token, "ach_key_id", achID, "user_id", uid, "key_alias", k.KeyAlias)
+				"target.name", c.token,
+				"outcome", OutcomeRevokeFailed,
+				"user_id", c.userID)
+			r.Log.Info("orphan-cleanup: revoke failed; continuing tick",
+				"token", c.token, "err", err)
+			continue
 		}
+		r.mRevoked()
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "litellm_key",
+			"target.name", c.token,
+			"outcome", OutcomeRevoked,
+			"user_id", c.userID)
+		r.Log.Info("orphan-cleanup: revoked",
+			"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
 	}
 }

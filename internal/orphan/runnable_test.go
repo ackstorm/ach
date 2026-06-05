@@ -24,6 +24,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -105,11 +107,14 @@ func newTestRunnable(t *testing.T, fake *fakeLiteLLM) (*Runnable, *bytes.Buffer)
 	t.Helper()
 	buf := &bytes.Buffer{}
 	r := &Runnable{
-		Client:     fake,
-		DB:         (*pgxpool.Pool)(nil),
-		Audit:      audit.NewLogger(buf),
-		Interval:   10 * time.Minute,
-		Log:        logr.Discard(),
+		Client:   fake,
+		DB:       (*pgxpool.Pool)(nil),
+		Audit:    audit.NewLogger(buf),
+		Interval: 10 * time.Minute,
+		Log:      logr.Discard(),
+		// Fresh registry per test: counters start at 0 and there is no
+		// global double-register panic across the suite.
+		Metrics:    NewMetrics(prometheus.NewRegistry()),
 		ListUsers:  func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
 		ListKeyIDs: func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
 	}
@@ -186,8 +191,11 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
 		return []string{"u1"}, nil
 	}
+	// Non-empty active set that does NOT contain pkid-orphan: ACH has
+	// other live keys, so the B1 empty-set fail-safe does not trip and
+	// the untracked orphan is revoked normally.
 	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
-		return []string{}, nil
+		return []string{"pkid-someone-else"}, nil
 	}
 
 	r.TickOnce(context.Background())
@@ -210,6 +218,12 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 	}
 	if _, present := lines[0]["key_alias"]; present {
 		t.Errorf("key_alias leaked into audit event (operational log only): %v", lines[0]["key_alias"])
+	}
+	if got := testutil.ToFloat64(r.Metrics.Candidates); got != 1 {
+		t.Errorf("candidates_total = %v; want 1", got)
+	}
+	if got := testutil.ToFloat64(r.Metrics.Revoked); got != 1 {
+		t.Errorf("revoked_total = %v; want 1", got)
 	}
 }
 
@@ -357,6 +371,137 @@ func TestRunnable_TickOnce_MixedUser(t *testing.T) {
 	assertNoForbiddenAttrs(t, lines[0])
 }
 
+// TestRunnable_TickOnce_DryRun (B3): with DryRun=true, an ACH-owned
+// untracked orphan is NOT revoked and emits NO audit event — only the
+// candidates + skipped{dry_run} counters move. The reversible, image-level
+// neutralize.
+func TestRunnable_TickOnce_DryRun(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-would-revoke",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+				Metadata:  map[string]any{"ach_key_id": "pkid-would"},
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.DryRun = true
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"pkid-other"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times in dry-run; want 0", got)
+	}
+	if got := buf.Len(); got != 0 {
+		t.Errorf("audit buffer non-empty in dry-run (operational log only): %q", buf.String())
+	}
+	if got := testutil.ToFloat64(r.Metrics.Candidates); got != 1 {
+		t.Errorf("candidates_total = %v; want 1", got)
+	}
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonDryRun)); got != 1 {
+		t.Errorf("skipped{dry_run} = %v; want 1", got)
+	}
+	if got := testutil.ToFloat64(r.Metrics.Revoked); got != 0 {
+		t.Errorf("revoked_total = %v; want 0 in dry-run", got)
+	}
+}
+
+// TestRunnable_TickOnce_EmptyActiveSetGuard (B1): an empty active set with
+// an ACH-owned candidate present is the mis-wire signature — revocation is
+// skipped for the whole tick via a single skipped_empty_active_set audit
+// event, and skipped{empty_active_set} records the spared candidate count.
+func TestRunnable_TickOnce_EmptyActiveSetGuard(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-ach-owned",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+				Metadata:  map[string]any{"ach_key_id": "pkid-owned"},
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	// Active set genuinely empty — the exact mis-wire shape.
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times under empty-active-set guard; want 0", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["outcome"]; got != OutcomeSkippedEmptyActiveSet {
+		t.Errorf("outcome = %v; want %q", got, OutcomeSkippedEmptyActiveSet)
+	}
+	if got := lines[0]["target.kind"]; got != "tick" {
+		t.Errorf("target.kind = %v; want tick", got)
+	}
+	assertNoForbiddenAttrs(t, lines[0])
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonEmptyActiveSet)); got != 1 {
+		t.Errorf("skipped{empty_active_set} = %v; want 1", got)
+	}
+}
+
+// TestRunnable_TickOnce_CircuitBreaker (B2): more candidates than MaxRevoke
+// aborts revocation for the tick — one skipped_circuit_breaker audit event,
+// nothing revoked, skipped{circuit_breaker} == candidate count.
+func TestRunnable_TickOnce_CircuitBreaker(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				{Token: "sk-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-1"}},
+				{Token: "sk-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-2"}},
+				{Token: "sk-3", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-3"}},
+			},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.MaxRevoke = 2
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"pkid-live"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times over circuit-breaker cap; want 0", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["outcome"]; got != OutcomeSkippedCircuitBreaker {
+		t.Errorf("outcome = %v; want %q", got, OutcomeSkippedCircuitBreaker)
+	}
+	if got := lines[0]["candidate_count"]; got != float64(3) {
+		t.Errorf("candidate_count = %v; want 3", got)
+	}
+	assertNoForbiddenAttrs(t, lines[0])
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonCircuitBreaker)); got != 3 {
+		t.Errorf("skipped{circuit_breaker} = %v; want 3", got)
+	}
+}
+
 // TestRunnable_TickOnce_LiteLLMUnreachable: ListUserKeys errors on the
 // FIRST user → the tick aborts cleanly with exactly one audit event
 // (outcome=litellm_unreachable, target.kind=tick).
@@ -411,6 +556,11 @@ func TestRunnable_TickOnce_RevokeFailureContinues(t *testing.T) {
 	r, buf := newTestRunnable(t, fake)
 	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
 		return []string{"u1"}, nil
+	}
+	// Non-empty active set (B1 fail-safe must not trip); neither pkid-rf-*
+	// is tracked, so both are true orphans whose revoke is attempted.
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"pkid-other"}, nil
 	}
 
 	r.TickOnce(context.Background())
@@ -487,6 +637,11 @@ func TestRunnable_AuditEventShape(t *testing.T) {
 	r, buf := newTestRunnable(t, fake)
 	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
 		return []string{"user-abc"}, nil
+	}
+	// Non-empty active set (B1 fail-safe must not trip) that does not
+	// contain pkid-shape, so the orphan is revoked and audited.
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"pkid-other"}, nil
 	}
 
 	r.TickOnce(context.Background())
