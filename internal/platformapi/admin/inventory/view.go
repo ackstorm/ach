@@ -38,6 +38,12 @@ const (
 	syncStale           = "STALE"
 	syncNever           = "never"
 	syncProjected       = "projected"
+
+	// Marketplace/skill-marketplace object SYNC vocabulary (collapsed from the
+	// projected Synced condition).
+	syncSynced   = "Synced"
+	syncDegraded = "Degraded"
+	syncPending  = "Pending"
 )
 
 // AdminObjectView is the uniform wire shape the server emits and the CLI
@@ -132,7 +138,8 @@ func pluginRowToView(r db.PluginRow, now time.Time) AdminObjectView {
 func skillRowToView(r db.SkillRow, now time.Time) AdminObjectView {
 	// Skills are content-gated (like plugins): a bare "fresh" only after the
 	// directory tar.gz is fetched (last_successful_refresh non-null), so NO
-	// markFalseGreen upgrade.
+	// markFalseGreen upgrade. source=skill distinguishes a standalone Skill CR
+	// from a marketplace-discovered skill in the merged SKILLS section.
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	return AdminObjectView{
 		Kind:       "skill",
@@ -142,6 +149,40 @@ func skillRowToView(r db.SkillRow, now time.Time) AdminObjectView {
 		Sync:       sync,
 		SyncReason: reason,
 		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+		Extra:      map[string]string{"source": "skill"},
+	}
+}
+
+// skillMarketplaceSkillAsSkillView maps a skill_marketplace_skills row into the
+// merged SKILLS section: name is scoped as "<skill>@<marketplace>" and the
+// source is "marketplace" so the CLI can distinguish it from a standalone Skill
+// CR. Mirrors marketplacePluginAsPluginView.
+func skillMarketplaceSkillAsSkillView(r db.SkillMarketplaceSkill, now time.Time) AdminObjectView {
+	sync, reason := contentSync(optTime(r.LastSuccessfulRefresh), r.MaxStalenessSeconds, now)
+	return AdminObjectView{
+		Kind:       "skill",
+		Name:       r.Name + "@" + r.MarketplaceName,
+		Version:    r.UpstreamRev,
+		Sync:       sync,
+		SyncReason: reason,
+		UpdatedAt:  rfc3339OrEmpty(r.LastSuccessfulRefresh),
+		Extra:      map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
+	}
+}
+
+// skillMarketplaceRowToView maps a skill_marketplaces (object) row into the
+// SKILLMARKETPLACES section. Mirrors marketplaceRowToView (reuses marketplaceSync).
+func skillMarketplaceRowToView(r db.SkillMarketplaceRow) AdminObjectView {
+	sync, reason := marketplaceSync(r.SyncedStatus, r.SyncedReason)
+	return AdminObjectView{
+		Kind:       "skill-marketplace",
+		Namespace:  r.Namespace,
+		Name:       r.Name,
+		Version:    r.ResourceVersion,
+		Sync:       sync,
+		SyncReason: reason,
+		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+		Extra:      map[string]string{"skillsCount": strconv.Itoa(r.SkillsCount)},
 	}
 }
 
@@ -216,11 +257,11 @@ func marketplaceRowToView(r db.MarketplaceRow) AdminObjectView {
 func marketplaceSync(status, reason string) (sync, syncReason string) {
 	switch status {
 	case "True":
-		return "Synced", ""
+		return syncSynced, ""
 	case "False":
-		return "Degraded", reason
+		return syncDegraded, reason
 	default:
-		return "Pending", ""
+		return syncPending, ""
 	}
 }
 

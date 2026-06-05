@@ -34,16 +34,18 @@ type AdminObjectView struct {
 // table footnote.
 const syncFalseGreen = "fresh*"
 
-// sectionHeader returns the tab-separated column header for a kind. plugins
-// gains a SOURCE column (standalone vs marketplace); marketplaces shows the
-// object's STATUS + contained-plugin count; all other kinds use the base
-// NAME/NAMESPACE/VERSION/SYNC/AGE/ORIGIN layout.
+// sectionHeader returns the tab-separated column header for a kind. plugins and
+// skills gain a SOURCE column (standalone vs marketplace); marketplaces /
+// skill-marketplaces show the object's STATUS + contained count; all other
+// kinds use the base NAME/NAMESPACE/VERSION/SYNC/AGE/ORIGIN layout.
 func sectionHeader(kind string) string {
 	switch kind {
-	case "plugins":
+	case "plugins", "skills":
 		return "NAME\tSOURCE\tVERSION\tSYNC\tAGE\tORIGIN"
 	case "marketplaces":
 		return "NAME\tNAMESPACE\tVERSION\tSTATUS\tPLUGINS\tAGE"
+	case "skill-marketplaces":
+		return "NAME\tNAMESPACE\tVERSION\tSTATUS\tSKILLS\tAGE"
 	default:
 		return "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN"
 	}
@@ -53,7 +55,7 @@ func sectionHeader(kind string) string {
 // column order. Extra lookups on a nil map return "" (safe in Go).
 func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 	switch kind {
-	case "plugins":
+	case "plugins", "skills":
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Extra["source"]), dash(r.Version),
 			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
@@ -61,6 +63,10 @@ func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version),
 			syncCell(r), dash(r.Extra["pluginsCount"]), ageOf(r.UpdatedAt, now))
+	case "skill-marketplaces":
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version),
+			syncCell(r), dash(r.Extra["skillsCount"]), ageOf(r.UpdatedAt, now))
 	default:
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version),

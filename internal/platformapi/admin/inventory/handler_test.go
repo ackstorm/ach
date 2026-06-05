@@ -19,12 +19,14 @@ import (
 
 // fakeLister implements Lister for httptest handler coverage without Postgres.
 type fakeLister struct {
-	plugins            []db.PluginRow
-	skills             []db.SkillRow
-	marketplaces       []db.MarketplaceRow
-	marketplacePlugins []db.MarketplacePlugin
-	bips               []db.BIPRow
-	err                error
+	plugins                []db.PluginRow
+	skills                 []db.SkillRow
+	marketplaces           []db.MarketplaceRow
+	marketplacePlugins     []db.MarketplacePlugin
+	skillMarketplaces      []db.SkillMarketplaceRow
+	skillMarketplaceSkills []db.SkillMarketplaceSkill
+	bips                   []db.BIPRow
+	err                    error
 }
 
 func (f fakeLister) Plugins(context.Context) ([]db.PluginRow, error) { return f.plugins, f.err }
@@ -38,6 +40,12 @@ func (f fakeLister) Marketplaces(context.Context) ([]db.MarketplaceRow, error) {
 }
 func (f fakeLister) MarketplacePlugins(context.Context) ([]db.MarketplacePlugin, error) {
 	return f.marketplacePlugins, f.err
+}
+func (f fakeLister) SkillMarketplaces(context.Context) ([]db.SkillMarketplaceRow, error) {
+	return f.skillMarketplaces, f.err
+}
+func (f fakeLister) SkillMarketplaceSkills(context.Context) ([]db.SkillMarketplaceSkill, error) {
+	return f.skillMarketplaceSkills, f.err
 }
 func (f fakeLister) BIPs(context.Context) ([]db.BIPRow, error) { return f.bips, f.err }
 func (f fakeLister) LitellmConnections(context.Context) ([]db.LiteLLMConnectionRow, error) {
@@ -214,5 +222,46 @@ func TestPluginsHandler_MergesStandaloneAndMarketplacePlugins(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, "frontend-design") || !strings.Contains(body, "branding@ackstorm") {
 		t.Errorf("merged plugins body missing expected names: %s", body)
+	}
+}
+
+func TestSkillsHandler_MergesStandaloneAndMarketplaceSkills(t *testing.T) {
+	deps := Deps{Lister: fakeLister{
+		skills: []db.SkillRow{{Namespace: "ach", Name: "pdf-processing", ResourceVersion: "5", MaxStalenessSeconds: 600}},
+		skillMarketplaceSkills: []db.SkillMarketplaceSkill{
+			{MarketplaceName: "ackstorm", Name: "branding", UpstreamRev: "b899e89", MaxStalenessSeconds: 600},
+		},
+	}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/platform/admin/skills", nil)
+	SkillsHandler(deps).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "pdf-processing") || !strings.Contains(body, "branding@ackstorm") {
+		t.Errorf("merged skills body missing expected names: %s", body)
+	}
+	if !strings.Contains(body, `"source":"skill"`) || !strings.Contains(body, `"source":"marketplace"`) {
+		t.Errorf("merged skills body missing source tags: %s", body)
+	}
+}
+
+func TestSkillMarketplacesHandler_Objects(t *testing.T) {
+	deps := Deps{Lister: fakeLister{
+		skillMarketplaces: []db.SkillMarketplaceRow{
+			{Namespace: "ach", Name: "agentskills", SyncedStatus: "True", SkillsCount: 9, ResourceVersion: "100"},
+		},
+	}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/platform/admin/skill-marketplaces", nil)
+	SkillMarketplacesHandler(deps).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "agentskills") || !strings.Contains(body, `"skillsCount":"9"`) ||
+		!strings.Contains(body, `"kind":"skill-marketplace"`) {
+		t.Errorf("skill-marketplaces body wrong: %s", body)
 	}
 }

@@ -31,6 +31,7 @@ import (
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/pluginref"
+	"github.com/ackstorm/ach/internal/skillref"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -409,15 +410,18 @@ func (r *EnvironmentReconciler) contextSkillsUnresolved(ctx context.Context, env
 		return nil, nil
 	}
 	var unresolved []string
-	for _, sname := range env.Spec.Context.Skills {
-		// TODO(skillmarketplace): parse name@marketplace and pass the
-		// marketplace arg once ResolveSkillByName gains it (Plan 2).
-		res, err := achdb.ResolveSkillByName(ctx, r.DB, r.Namespace, sname)
+	for _, sref := range env.Spec.Context.Skills {
+		if !skillref.Valid(sref) {
+			unresolved = append(unresolved, sref) // malformed ref → unresolved
+			continue
+		}
+		sname, mkt, _ := skillref.Parse(sref)
+		res, err := achdb.ResolveSkillByName(ctx, r.DB, r.Namespace, sname, mkt)
 		if err != nil {
-			return nil, fmt.Errorf("resolve context skill %q: %w", sname, err)
+			return nil, fmt.Errorf("resolve context skill %q: %w", sref, err)
 		}
 		if res == nil || res.LastSuccessfulRefresh == nil {
-			unresolved = append(unresolved, sname)
+			unresolved = append(unresolved, sref)
 		}
 	}
 	return unresolved, nil

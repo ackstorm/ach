@@ -25,6 +25,8 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [PromptList](#promptlist)
 - [Skill](#skill)
 - [SkillList](#skilllist)
+- [SkillMarketplace](#skillmarketplace)
+- [SkillMarketplaceList](#skillmarketplacelist)
 
 
 
@@ -248,6 +250,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -278,7 +281,7 @@ _Appears in:_
 | `prompts` _string array_ | Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
-| `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace. Content-gated like<br />Plugins. Same strict deny-pattern as Plugins (no "/" "\" ? # %<br />whitespace, control chars or DEL); "@" is reserved for the future<br />name@marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
 #### Environment
@@ -383,6 +386,7 @@ _Appears in:_
 - [PluginMarketplaceStatus](#pluginmarketplacestatus)
 - [PluginStatus](#pluginstatus)
 - [PromptStatus](#promptstatus)
+- [SkillMarketplaceStatus](#skillmarketplacestatus)
 - [SkillStatus](#skillstatus)
 
 | Field | Description | Default | Validation |
@@ -409,6 +413,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -431,6 +436,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -455,6 +461,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -487,6 +494,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -592,6 +600,7 @@ runs at reconcile (Synced=False, reason=InvalidConfig on failure).
 
 _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -932,6 +941,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -979,6 +989,7 @@ _Appears in:_
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
 - [PromptSpec](#promptspec)
+- [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
@@ -1047,6 +1058,137 @@ SkillList contains a list of Skill.
 | `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[Skill](#skill) array_ |  |  |  |
+
+
+#### SkillMarketplace
+
+
+
+SkillMarketplace is the Schema for the skillmarketplaces API. One upstream
+repo of agent skills (discovered by convention) → many skills.
+
+
+
+_Appears in:_
+- [SkillMarketplaceList](#skillmarketplacelist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `SkillMarketplace` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[SkillMarketplaceSpec](#skillmarketplacespec)_ |  |  |  |
+| `status` _[SkillMarketplaceStatus](#skillmarketplacestatus)_ |  |  |  |
+
+
+#### SkillMarketplaceList
+
+
+
+SkillMarketplaceList contains a list of SkillMarketplace.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `SkillMarketplaceList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[SkillMarketplace](#skillmarketplace) array_ |  |  |  |
+
+
+#### SkillMarketplaceSkillRef
+
+
+
+SkillMarketplaceSkillRef is the per-skill entry surfaced on
+SkillMarketplace status — operators reading the CR need at-a-glance
+visibility into which skill names the most recent reconcile materialized AND
+the upstream revision they pin against.
+
+
+
+_Appears in:_
+- [SkillMarketplaceStatus](#skillmarketplacestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the skill's identifier within the collection<br />(the SKILL.md frontmatter name == the top-level directory basename). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision. |  |  |
+
+
+#### SkillMarketplaceSpec
+
+
+
+SkillMarketplaceSpec defines the desired state of SkillMarketplace.
+
+A SkillMarketplace fetches ONE upstream repo subtree as a single tar.gz and
+discovers many agent skills inside it by convention (agentskills.io has NO
+marketplace.json index — unlike PluginMarketplace). Body handling depends on
+the source type:
+
+  - github / gitlab / bitbucket: the fetcher returns the repo archive
+    (a tar.gz of the repo subtree). Stage-1 walks it for every top-level
+    directory containing a valid SKILL.md (name == dir basename); the REST
+    "<repo>-<sha>/" archive-root wrapper is stripped automatically.
+  - s3 / gcs / http: spec.<type>.key/object/url MUST point at a pre-archived
+    `.tar.gz` body directly; these fetchers do NOT walk directories. Stage-1
+    validates the fetched body is gzip (malformed → Synced=False,
+    reason=UpstreamInvalid).
+
+CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED.
+
+
+
+_Appears in:_
+- [SkillMarketplace](#skillmarketplace)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | Type names the upstream source kind for the marketplace archive. |  | Enum: [github gitlab bitbucket s3 gcs http] <br />Required: \{\} <br /> |
+| `refresh` _[RefreshBlock](#refreshblock)_ | Refresh declares poll cadence and staleness bound (CRD-04). |  | Required: \{\} <br /> |
+| `filters` _[MarketplaceFilters](#marketplacefilters)_ | Filters narrows the discovered skill set via anchored RE2 patterns.<br />Optional. |  |  |
+| `github` _[GitHubSource](#githubsource)_ | GitHub source. Required when spec.type == "github". |  |  |
+| `gitlab` _[GitLabSource](#gitlabsource)_ | GitLab source. Required when spec.type == "gitlab". |  |  |
+| `bitbucket` _[BitbucketSource](#bitbucketsource)_ | Bitbucket source. Required when spec.type == "bitbucket". |  |  |
+| `s3` _[S3Source](#s3source)_ | S3 source. Required when spec.type == "s3". |  |  |
+| `gcs` _[GCSSource](#gcssource)_ | GCS source. Required when spec.type == "gcs". |  |  |
+| `http` _[HTTPSource](#httpsource)_ | HTTP source. Required when spec.type == "http". |  |  |
+
+
+#### SkillMarketplaceStatus
+
+
+
+SkillMarketplaceStatus defines the observed state of SkillMarketplace.
+
+In addition to the shared ExternalRefStatus, SkillMarketplace exposes a
+Synced condition with reasons UpstreamInvalid, InvalidConfig (plus per-skill
+soft-skip reasons in the message), plus the materialized skill set
+(Skills / SkillsCount) populated on each successful reconcile.
+
+
+
+_Appears in:_
+- [SkillMarketplace](#skillmarketplace)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6. |  |  |
+| `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
+| `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `skills` _[SkillMarketplaceSkillRef](#skillmarketplaceskillref) array_ | Skills lists the entries in the upstream collection that the most<br />recent reconcile successfully materialized into skill_marketplace_skills<br />(+ the per-marketplace cache). Ordered by Name. Entries that failed<br />Stage-2 are NOT included here — those surface in the Synced condition's<br />message field. Empty before the first successful reconcile. |  |  |
+| `skillsCount` _integer_ | SkillsCount is the size of Skills, denormalized so the kubectl print<br />column can show it without a JSONPath length() expression. Equal to<br />len(Skills). |  |  |
 
 
 #### SkillSpec

@@ -21,23 +21,46 @@ import (
 const skillMaxManifestBytes = 1 << 20 // 1 MiB
 
 // skillRawIngressCap bounds the raw skill tarball read before validation — an
-// operator-memory guard mirroring gitDefaultMaxCloneBytes (512 MiB), separate
-// from the user-facing SkillMaxSizeMiB cap applied to the size-cap copy.
+// operator-memory guard mirroring gitDefaultMaxCloneBytes (512 MiB). It is the
+// CEILING; stageSkillBody reads no more than the effective cap (min of this and
+// the user-facing SkillMaxSizeMiB) so a 511 MiB body destined to fail the 50 MiB
+// user cap never buffers the full 512 MiB first (F4).
 const skillRawIngressCap = 512 << 20
 
-// stageSkillBody reads the fetched skill tar.gz into memory (bounded by
-// skillRawIngressCap), validates the SKILL.md gate, and returns the staged
-// bytes for materializeExternalRef's size-cap copy (no pluginpack.Filter is
-// applied — the skill tree is served verbatim). Returns *OversizeError on
-// ingress overflow (→ ReasonPluginTooLarge) and an ErrUpstreamInvalid-wrapping
-// error on a malformed skill tree (→ ReasonUpstreamInvalid).
-func stageSkillBody(body io.Reader) ([]byte, error) {
-	raw, err := io.ReadAll(io.LimitReader(body, skillRawIngressCap+1))
+// stageSkillBody reads the fetched skill tar.gz into memory (bounded by the
+// effective cap = min(skillRawIngressCap, sizeCap)), optionally re-roots it at
+// subPath, validates the SKILL.md gate, and returns the staged bytes for
+// materializeExternalRef's size-cap copy (no pluginpack.Filter — the skill tree
+// is served verbatim). sizeCap is deps.SizeCapBytes (0 = no user cap → ceiling
+// applies). subPath is spec.<git>.path: when non-empty the whole-repo tarball is
+// sliced to that sub-directory and re-rooted at its last segment (the git
+// fetcher returns the WHOLE repo — path is not narrowed at fetch time), so a
+// monorepo skill at "skills/pdf/SKILL.md" is stored rooted at "pdf/SKILL.md".
+// Returns *OversizeError on overflow (→ ReasonPluginTooLarge) and an
+// ErrUpstreamInvalid-wrapping error on a malformed/absent skill tree
+// (→ ReasonUpstreamInvalid).
+func stageSkillBody(body io.Reader, sizeCap int64, subPath string) ([]byte, error) {
+	limit := int64(skillRawIngressCap)
+	if sizeCap > 0 && sizeCap < limit {
+		limit = sizeCap
+	}
+	raw, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("skill: read body: %w", err)
 	}
-	if int64(len(raw)) > skillRawIngressCap {
-		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: skillRawIngressCap}
+	if int64(len(raw)) > limit {
+		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: limit}
+	}
+	if sub := normSubPath(subPath); sub != "" {
+		names, nerr := tarRegularNames(raw)
+		if nerr != nil {
+			return nil, fmt.Errorf("skill: read archive: %w", errors.Join(nerr, sources.ErrUpstreamInvalid))
+		}
+		sliced, serr := sliceSkillSubtree(raw, detectArchiveRoot(names), sub)
+		if serr != nil {
+			return nil, fmt.Errorf("skill: path %q: %w", sub, errors.Join(serr, sources.ErrUpstreamInvalid))
+		}
+		raw = sliced
 	}
 	if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
 		return nil, err // already wraps sources.ErrUpstreamInvalid

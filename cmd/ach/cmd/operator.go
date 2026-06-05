@@ -147,8 +147,8 @@ var operatorCmd = &cobra.Command{
 	Use:   "operator",
 	Short: "Run the ACH Kubernetes operator (controller-runtime manager)",
 	Long: `Boot the controller-runtime manager that reconciles every ACH CRD
-(Environment, Plugin, PluginMarketplace, Artifact, Prompt,
-BackendIdentityPolicy, LiteLLMConnection) within the namespace named by
+(Environment, Plugin, PluginMarketplace, Skill, SkillMarketplace, Artifact,
+Prompt, BackendIdentityPolicy, LiteLLMConnection) within the namespace named by
 ACH_NAMESPACE. Health probes at :8081; metrics at the configured address.`,
 	RunE: runOperator,
 }
@@ -409,6 +409,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	artifactCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	skillCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	mpCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	smpCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	bipCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	llmCh := make(chan event.GenericEvent, resyncSourceChanCap)
 
@@ -510,6 +511,19 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Skill: %w", err)
 	}
+	if err = (&achcontroller.SkillMarketplaceReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Namespace:       watchNS,
+		Log:             ctrl.Log.WithName("controller").WithName("SkillMarketplace"),
+		CacheRoot:       cacheRoot,
+		DB:              dbPool,
+		SkillMaxSizeMiB: skillMaxSizeMiB,
+		Fetchers:        nil,
+		ResyncSource:    smpCh,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller SkillMarketplace: %w", err)
+	}
 	if err = (&achcontroller.BackendIdentityPolicyReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
@@ -534,6 +548,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 			Artifact:          artifactCh,
 			Skill:             skillCh,
 			Marketplace:       mpCh,
+			SkillMarketplace:  smpCh,
 			BIP:               bipCh,
 			LiteLLMConnection: llmCh,
 		},
@@ -548,9 +563,9 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// /admin/refresh handler (db.SetForceRefresh) and pushes a
 	// GenericEvent for the named CR into the matching per-Kind
 	// source.Channel. Replaces the pre-issue-34 annotation-patching
-	// path on the platform-api side. Only the five "external-ref"
-	// Kinds — plugin, prompt, artifact, skill, pluginmarketplace — receive
-	// signals; the listener silently drops payloads for any other kind.
+	// path on the platform-api side. Only the "external-ref" Kinds —
+	// plugin, prompt, artifact, skill, pluginmarketplace, skillmarketplace —
+	// receive signals; the listener silently drops payloads for any other kind.
 	refreshListener := &refreshsignal.Listener{
 		Pool:      dbPool,
 		Namespace: watchNS,
@@ -562,6 +577,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 			"artifact":          artifactCh,
 			"skill":             skillCh,
 			"pluginmarketplace": mpCh,
+			"skillmarketplace":  smpCh,
 		},
 	}
 	if err := mgr.Add(refreshListener); err != nil {

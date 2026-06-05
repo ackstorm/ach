@@ -36,6 +36,8 @@ type Lister interface {
 	Skills(ctx context.Context) ([]db.SkillRow, error)
 	Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
 	MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error)
+	SkillMarketplaces(ctx context.Context) ([]db.SkillMarketplaceRow, error)
+	SkillMarketplaceSkills(ctx context.Context) ([]db.SkillMarketplaceSkill, error)
 	BIPs(ctx context.Context) ([]db.BIPRow, error)
 	LitellmConnections(ctx context.Context) ([]db.LiteLLMConnectionRow, error)
 	ExternalRefs(ctx context.Context) ([]db.ExternalRef, error)
@@ -75,6 +77,12 @@ func (l dbLister) Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
 }
 func (l dbLister) MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error) {
 	return db.ListAllMarketplacePlugins(ctx, l.pool)
+}
+func (l dbLister) SkillMarketplaces(ctx context.Context) ([]db.SkillMarketplaceRow, error) {
+	return db.ListSkillMarketplaces(ctx, l.pool, l.ns)
+}
+func (l dbLister) SkillMarketplaceSkills(ctx context.Context) ([]db.SkillMarketplaceSkill, error) {
+	return db.ListAllSkillMarketplaceSkills(ctx, l.pool)
 }
 func (l dbLister) BIPs(ctx context.Context) ([]db.BIPRow, error) {
 	return db.ListAllBIPs(ctx, l.pool, l.ns)
@@ -127,17 +135,27 @@ func PromptsHandler(deps Deps) http.HandlerFunc {
 	})
 }
 
-// SkillsHandler serves GET /platform/admin/skills.
+// SkillsHandler serves GET /platform/admin/skills. It MERGES standalone Skill
+// CRs (source=skill) with the skills discovered inside marketplaces
+// (source=marketplace, name scoped as <skill>@<marketplace>) — the same merge
+// pattern PluginsHandler uses.
 func SkillsHandler(deps Deps) http.HandlerFunc {
 	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
-		rows, err := deps.Lister.Skills(ctx)
+		skills, err := deps.Lister.Skills(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mktSkills, err := deps.Lister.SkillMarketplaceSkills(ctx)
 		if err != nil {
 			return nil, err
 		}
 		now := time.Now()
-		out := make([]AdminObjectView, 0, len(rows))
-		for _, r := range rows {
+		out := make([]AdminObjectView, 0, len(skills)+len(mktSkills))
+		for _, r := range skills {
 			out = append(out, skillRowToView(r, now))
+		}
+		for _, r := range mktSkills {
+			out = append(out, skillMarketplaceSkillAsSkillView(r, now))
 		}
 		return out, nil
 	})
@@ -171,6 +189,23 @@ func MarketplacesHandler(deps Deps) http.HandlerFunc {
 		out := make([]AdminObjectView, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, marketplaceRowToView(r))
+		}
+		return out, nil
+	})
+}
+
+// SkillMarketplacesHandler serves GET /platform/admin/skill-marketplaces — the
+// skill-marketplace OBJECTS (and their Synced status), NOT their contained
+// skills (those are in SkillsHandler's merge). Mirrors MarketplacesHandler.
+func SkillMarketplacesHandler(deps Deps) http.HandlerFunc {
+	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
+		rows, err := deps.Lister.SkillMarketplaces(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]AdminObjectView, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, skillMarketplaceRowToView(r))
 		}
 		return out, nil
 	})

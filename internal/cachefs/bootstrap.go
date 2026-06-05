@@ -17,14 +17,18 @@ import (
 // Kubernetes reschedules it.
 var ErrCacheRootMissing = errors.New("cachefs: ACH_CACHE_ROOT directory does not exist or is unwritable")
 
-// SubDirs are the five OP-10 cache subdirectories created under the PVC
-// mount root. Order is fixed so EnsureLayout is deterministic for tests.
+// SubDirs are the OP-10 cache subdirectories created under the PVC mount root.
+// Order is fixed so EnsureLayout is deterministic for tests.
 //
 // The leading dot on ".tmp" is intentional — §10.3 specifies it as a hidden
-// staging directory whose contents are never served. All five entries live
-// on the same filesystem (the same PVC mount) by construction so the
-// rename(2) from .tmp/<random> to the final publish path is atomic per POSIX.
-var SubDirs = []string{"prompt", "plugin", "marketplace", "artifact", ".tmp"}
+// staging directory whose contents are never served. All entries live on the
+// same filesystem (the same PVC mount) by construction so the rename(2) from
+// .tmp/<random> to the final publish path is atomic per POSIX.
+//
+// "skill" / "skill-marketplace" back the agent-skill content kind + its
+// marketplace; without "skill" pre-created a standalone Skill's §10.3 rename(2)
+// fails ("no such file or directory" on the publish parent).
+var SubDirs = []string{"prompt", "plugin", "marketplace", "artifact", "skill", "skill-marketplace", ".tmp"}
 
 // EnsureLayout creates the OP-10 cache directory tree under root.
 //

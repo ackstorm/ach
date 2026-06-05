@@ -557,6 +557,7 @@ func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {
 		Plugins:   len(m.Context.Plugins),
 		Prompts:   len(m.Context.Prompts),
 		Artifacts: len(m.Context.Artifacts),
+		Skills:    len(m.Context.Skills),
 	}
 }
 
@@ -1092,6 +1093,9 @@ func addPublishedCounts(result *Result, rr RenderResult) {
 			result.FilesWritten++
 		}
 	}
+	// Standalone-skill projected files feed the summary's Skills line (distinct
+	// from the plugin ProjectedByKind aggregate).
+	result.ContextSummary.SkillFiles += len(rr.ProjectedSkillFiles)
 }
 
 // step10bRuntimeMirror writes the credential-free runtime mirror and folds

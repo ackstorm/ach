@@ -98,3 +98,36 @@ func TestFormatAdminInventory_MarketplacesStatusAndCount(t *testing.T) {
 		t.Errorf("marketplace status/count missing:\n%s", out)
 	}
 }
+
+func TestFormatAdminInventory_SkillsSourceColumn(t *testing.T) {
+	out := FormatAdminInventory(map[string][]AdminObjectView{
+		"skills": {
+			{Kind: "skill", Name: "pdf-processing", Version: "5", Sync: "fresh", Extra: map[string]string{"source": "skill"}},
+			{Kind: "skill", Name: "branding@ackstorm", Version: "b899e89", Sync: "fresh", Extra: map[string]string{"source": "marketplace"}},
+		},
+	})
+	if !strings.Contains(out, "SOURCE") {
+		t.Errorf("skills header missing SOURCE column:\n%s", out)
+	}
+	if !strings.Contains(out, "branding@ackstorm") || !strings.Contains(out, "marketplace") {
+		t.Errorf("marketplace-sourced skill row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "pdf-processing") {
+		t.Errorf("standalone skill row missing:\n%s", out)
+	}
+}
+
+func TestFormatAdminInventory_SkillMarketplacesStatusAndCount(t *testing.T) {
+	out := FormatAdminInventory(map[string][]AdminObjectView{
+		"skill-marketplaces": {
+			{Kind: "skill-marketplace", Namespace: "ach", Name: "agentskills", Version: "100",
+				Sync: "Synced", Extra: map[string]string{"skillsCount": "9"}},
+		},
+	})
+	if !strings.Contains(out, "STATUS") || !strings.Contains(out, "SKILLS") {
+		t.Errorf("skill-marketplaces header missing STATUS/SKILLS columns:\n%s", out)
+	}
+	if !strings.Contains(out, "Synced") || !strings.Contains(out, "9") {
+		t.Errorf("skill-marketplace status/count missing:\n%s", out)
+	}
+}

@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Standalone Skill (no marketplace) — pulls a single skill out of the
+# anthropics/skills monorepo via spec.github.path=skills/pdf. The git fetcher
+# returns the whole repo; the operator re-roots the `skills/pdf/` subtree before
+# validation + storage (skill/pdf.tar.gz), so hydrate delivers
+# .claude/skills/pdf/SKILL.md. The demo Environment references the bare name
+# `pdf`, exercising the standalone (CRD-backed) skill resolution arm.
+# Part of the SYNCED set (cluster.sh applies it; verify_all gates
+# SourceReachable=True). Public repo — no PAT.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Skill
+metadata:
+  name: pdf
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: anthropics/skills
+    ref: main
+    path: skills/pdf
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

@@ -90,8 +90,10 @@ type ContextSummary struct {
 	Plugins       int
 	Prompts       int
 	Artifacts     int
+	Skills        int // standalone Skill refs in spec.context.skills
 	PromptFiles   int
 	ArtifactFiles int
+	SkillFiles    int // files projected into .claude/skills/<name>/ this run
 }
 
 // SourceSummary is one source-attributed line in the hydrate success summary.

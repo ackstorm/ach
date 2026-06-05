@@ -150,6 +150,42 @@ func TestSkillRowToView_BareFresh(t *testing.T) {
 	if v.Kind != "skill" || v.Namespace != "ach" || v.Name != "pdf-processing" {
 		t.Errorf("skill identity fields wrong: %+v", v)
 	}
+	if v.Extra["source"] != "skill" {
+		t.Errorf("Extra[source] = %q, want skill", v.Extra["source"])
+	}
+}
+
+func TestSkillMarketplaceSkillAsSkillView_NameAndSource(t *testing.T) {
+	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+	v := skillMarketplaceSkillAsSkillView(db.SkillMarketplaceSkill{
+		MarketplaceName: "ackstorm", Name: "branding", UpstreamRev: "b899e89",
+		LastSuccessfulRefresh: now.Add(-1 * time.Minute), MaxStalenessSeconds: 600,
+	}, now)
+	if v.Kind != "skill" || v.Name != "branding@ackstorm" || v.Version != "b899e89" {
+		t.Errorf("marketplace-skill identity wrong: %+v", v)
+	}
+	if v.Sync != syncFresh {
+		t.Errorf("marketplace-skill sync = %q, want fresh", v.Sync)
+	}
+	if v.Extra["source"] != "marketplace" || v.Extra["marketplace"] != "ackstorm" {
+		t.Errorf("Extra = %v, want source=marketplace marketplace=ackstorm", v.Extra)
+	}
+}
+
+func TestSkillMarketplaceRowToView(t *testing.T) {
+	synced := skillMarketplaceRowToView(db.SkillMarketplaceRow{
+		Namespace: "ach", Name: "agentskills", SyncedStatus: "True",
+		SkillsCount: 9, ResourceVersion: "100",
+	})
+	if synced.Kind != "skill-marketplace" || synced.Sync != "Synced" || synced.Extra["skillsCount"] != "9" {
+		t.Errorf("synced skill-marketplace view wrong: %+v", synced)
+	}
+	degraded := skillMarketplaceRowToView(db.SkillMarketplaceRow{
+		Namespace: "ach", Name: "broken", SyncedStatus: "False", SyncedReason: "UpstreamInvalid",
+	})
+	if degraded.Sync != "Degraded" || degraded.SyncReason != "UpstreamInvalid" {
+		t.Errorf("degraded skill-marketplace view wrong: %+v", degraded)
+	}
 }
 
 // TestBIPView: version = observed_generation, sync = projected, target extra.

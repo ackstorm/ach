@@ -8,9 +8,9 @@
 // (000004 + 000005) minus the marketplace resolution arm and the content_type
 // / scope columns.
 //
-// ResolveSkillByName ships bare-arm only: the skills (CRD) row for (ns, name)
-// where deletion_timestamp IS NULL. The SkillMarketplace plan adds a
-// marketplace arm + a marketplace param (signature change).
+// ResolveSkillByName has two arms: the bare arm returns the skills (CRD) row
+// for (ns, name) where deletion_timestamp IS NULL; the marketplace arm returns
+// the skill_marketplace_skills row for (marketplace_name, name).
 //
 // SQL discipline mirrors plugins.go: every value binds via $N; pgconn class
 // 08/57 errors propagate raw for controller-runtime backoff; other errors
@@ -46,10 +46,11 @@ type SkillRow struct {
 }
 
 // SkillResolution is the single row returned by ResolveSkillByName when a
-// skill can be served. Source is always "skill" (no marketplace arm yet).
+// skill can be served. Source is "skill" (bare arm) or "marketplace" (scoped
+// arm); for the marketplace arm Namespace carries the parent marketplace_name.
 type SkillResolution struct {
-	Source                string     // always "skill"
-	Namespace             string     // K8s namespace of the matching Skill CRD
+	Source                string     // "skill" | "marketplace"
+	Namespace             string     // K8s namespace (skill) | marketplace_name (marketplace)
 	Name                  string     // skill name (always the request param)
 	StorageLocation       string     // absolute path on the Content Service PVC
 	LastSuccessfulRefresh *time.Time // nullable — staleness gate input
@@ -206,17 +207,36 @@ func DeleteSkill(ctx context.Context, pool *pgxpool.Pool, ns, name string) error
 	return nil
 }
 
-// ResolveSkillByName: bare arm only — the skills (CRD) row for (ns, name)
-// where deletion_timestamp IS NULL. (nil, nil) → 404. The SkillMarketplace
-// plan adds a marketplace arm + a marketplace param (signature change).
-func ResolveSkillByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*SkillResolution, error) {
+// ResolveSkillByName resolves a context.skills entry:
+//   - marketplace == "" → the skills (CRD) row for (ns, name), deletion NULL.
+//   - marketplace != "" → the skill_marketplace_skills row (marketplace_name, name).
+//
+// (nil, nil) → caller emits 404. Mirrors ResolvePluginByName's two-arm shape.
+func ResolveSkillByName(ctx context.Context, pool *pgxpool.Pool, ns, name, marketplace string) (*SkillResolution, error) {
+	if marketplace == "" {
+		const sql = `
+			SELECT 'skill'::text AS source,
+			       namespace, name, storage_location,
+			       last_successful_refresh, max_staleness_seconds
+			  FROM skills
+			 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL`
+		return scanSkillResolution(ctx, pool, sql, ns, name)
+	}
 	const sql = `
-		SELECT 'skill'::text AS source, namespace, name, storage_location,
+		SELECT 'marketplace'::text AS source,
+		       marketplace_name AS namespace,
+		       name, storage_location,
 		       last_successful_refresh, max_staleness_seconds
-		  FROM skills
-		 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL`
+		  FROM skill_marketplace_skills
+		 WHERE marketplace_name = $1 AND name = $2`
+	return scanSkillResolution(ctx, pool, sql, marketplace, name)
+}
+
+// scanSkillResolution runs a single-row SkillResolution query; pgx.ErrNoRows →
+// (nil, nil); transient pgconn 08/57 errors propagate raw.
+func scanSkillResolution(ctx context.Context, pool *pgxpool.Pool, sql, a1, a2 string) (*SkillResolution, error) {
 	r := &SkillResolution{}
-	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
+	if err := pool.QueryRow(ctx, sql, a1, a2).Scan(
 		&r.Source, &r.Namespace, &r.Name, &r.StorageLocation,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
 	); err != nil {
@@ -226,7 +246,7 @@ func ResolveSkillByName(ctx context.Context, pool *pgxpool.Pool, ns, name string
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ResolveSkillByName(%s/%s): %w", ns, name, err)
+		return nil, fmt.Errorf("db: ResolveSkillByName(%s/%s): %w", a1, a2, err)
 	}
 	return r, nil
 }

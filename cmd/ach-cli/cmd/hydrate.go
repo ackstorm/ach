@@ -612,6 +612,13 @@ func summaryFromResult(res hydrate.Result) string {
 			}
 			fmt.Fprintln(&b, artifactLine)
 		}
+		if res.ContextSummary.Skills > 0 || res.ContextSummary.SkillFiles > 0 {
+			skillLine := fmt.Sprintf("    ✓ Skills: %d total", res.ContextSummary.Skills)
+			if res.ContextSummary.SkillFiles > 0 {
+				skillLine += ", " + countNoun(res.ContextSummary.SkillFiles, "file", "files")
+			}
+			fmt.Fprintln(&b, skillLine)
+		}
 		fmt.Fprintln(&b)
 	}
 
@@ -627,8 +634,8 @@ func hasRuntimeSummary(s hydrate.RuntimeSummary) bool {
 }
 
 func hasContextSummary(s hydrate.ContextSummary) bool {
-	return s.Plugins > 0 || s.Prompts > 0 || s.Artifacts > 0 ||
-		s.PromptFiles > 0 || s.ArtifactFiles > 0
+	return s.Plugins > 0 || s.Prompts > 0 || s.Artifacts > 0 || s.Skills > 0 ||
+		s.PromptFiles > 0 || s.ArtifactFiles > 0 || s.SkillFiles > 0
 }
 
 func formatKindCounts(counts map[string]int) string {

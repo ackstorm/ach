@@ -139,6 +139,9 @@ func TestPhase7CLIEngine(t *testing.T) {
 	// tool's native config without clobbering the user's pre-existing entries.
 	t.Run("sc1_claudecode_surgical_preserve", testPhase7Sc1ClaudeCodeSurgicalPreserve)
 
+	// SC#5 (skill projection — standalone Skills + a marketplace skill).
+	t.Run("sc5_skill_projection", testPhase7Sc5SkillProjection)
+
 	// SC#2 (deterministic SIGKILL seam — §6.7 crash recovery).
 	t.Run("sc2_commit_sequence_sigkill", testPhase7Sc2SigkillRecovery)
 
@@ -234,6 +237,51 @@ func testPhase7BaselineNoOp(t *testing.T) {
 		t.Errorf("baseline second hydrate mutated state.json (want no-op):\n"+
 			"before=%s\nafter=%s",
 			hex.EncodeToString(hashBefore[:]), hex.EncodeToString(hashAfter[:]))
+	}
+}
+
+// -----------------------------------------------------------------------
+// SC#5 — skill projection (standalone Skills + a marketplace skill).
+// -----------------------------------------------------------------------
+
+// testPhase7Sc5SkillProjection asserts a default (context) hydrate projects
+// both standalone Skills AND a marketplace-discovered skill into .claude/skills/.
+// The demo Environment references bare `pdf`/`docx` (CRD-backed Skills pulled
+// from the anthropics/skills monorepo via spec.github.path) and the scoped
+// `pdf@anthropic-skills` (a skill discovered by the anthropic-skills
+// SkillMarketplace). Each must land at .claude/skills/<ref>/SKILL.md — the
+// marketplace ref keeps its '@' in the directory name, so it does NOT collide
+// with the standalone `pdf` dir.
+func testPhase7Sc5SkillProjection(t *testing.T) {
+	t.Helper()
+	phase7SuiteGuard(t)
+	pk := phase7AcquirePk(t)
+	baseURL := phase7BaseURL()
+	xdg := phase7SeedXdgConfig(t, baseURL, pk)
+	phase7DemoEnvironmentReady(t)
+	output := phase7Workspace(t)
+
+	stdout, stderr, err := phase7RunAchCli(t, xdg,
+		"hydrate", "--environment", phase7DemoEnvironment,
+		"--platform", phase7PlatformClaudeCode,
+		"--output", output,
+	)
+	code, runErr := phase7StripExitErr(err)
+	if runErr != nil {
+		t.Fatalf("skill hydrate: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+	}
+	if code != 0 {
+		t.Fatalf("skill hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+
+	for _, rel := range []string{
+		".claude/skills/pdf/SKILL.md",                  // standalone Skill CR (path=skills/pdf)
+		".claude/skills/docx/SKILL.md",                 // standalone Skill CR (path=skills/docx)
+		".claude/skills/pdf@anthropic-skills/SKILL.md", // marketplace-discovered skill
+	} {
+		if _, statErr := os.Stat(filepath.Join(output, rel)); statErr != nil {
+			t.Errorf("expected hydrated skill file %s; stat err=%v\nstdout=%s", rel, statErr, stdout)
+		}
 	}
 }
 

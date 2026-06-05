@@ -225,7 +225,7 @@ Subcommands:
 // simply no longer surfaced through the CLI.
 var adminListKinds = []string{
 	"environments", "plugins", "prompts", "artifacts", "skills",
-	"marketplaces", "bips",
+	"marketplaces", "skill-marketplaces", "bips",
 }
 
 func isAdminListKind(k string) bool {
@@ -291,16 +291,18 @@ func newAdminListCmd() *cobra.Command {
 		Long: `Read-only inventory of ACH-defined objects sourced from the Postgres
 projections (version + projection-derived sync status). Admin-only (pk-).
 
-kind ∈ {environments, plugins, prompts, artifacts, skills, marketplaces, bips}
-or 'all' to fan out across every kind.
+kind ∈ {environments, plugins, prompts, artifacts, skills, marketplaces,
+skill-marketplaces, bips} or 'all' to fan out across every kind.
 
 PLUGINS merges standalone Plugin CRs (SOURCE=plugin) with plugins discovered
 inside marketplaces (SOURCE=marketplace, shown as <name>@<marketplace>).
-MARKETPLACES shows the marketplace objects themselves (Synced status +
-plugin count), not their contained plugins.
+SKILLS likewise merges standalone Skill CRs (SOURCE=skill) with skills
+discovered inside skill-marketplaces (SOURCE=marketplace, <name>@<marketplace>).
+MARKETPLACES / SKILL-MARKETPLACES show the marketplace objects themselves
+(Synced status + contained count), not their contained plugins/skills.
 
 SYNC column:
-  Synced / Degraded(<reason>) / Pending      marketplaces, environments
+  Synced / Degraded(<reason>) / Pending      marketplaces, skill-marketplaces, environments
   fresh / STALE(<age> over) / never          content kinds (refresh staleness)
   projected                                  bips
 
