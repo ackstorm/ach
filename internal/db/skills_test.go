@@ -35,7 +35,7 @@ func TestUpsertGetListSkills(t *testing.T) {
 	if err != nil || one == nil || one.MaxStalenessSeconds != 600 {
 		t.Fatalf("GetSkillByName = %+v err=%v", one, err)
 	}
-	res, err := db.ResolveSkillByName(ctx, pool, "ach", "alpha")
+	res, err := db.ResolveSkillByName(ctx, pool, "ach", "alpha", "")
 	if err != nil || res == nil || res.LastSuccessfulRefresh == nil {
 		t.Fatalf("ResolveSkillByName = %+v err=%v", res, err)
 	}
