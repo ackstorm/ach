@@ -166,9 +166,10 @@ func TestRunnable_TickOnce_EmptyUsers(t *testing.T) {
 	}
 }
 
-// TestRunnable_TickOnce_OneOrphan asserts: one user, one key, key is
-// orphan (>10min old, not in ACH active set) → exactly one RevokeKey
-// call + one audit event with outcome=success.
+// TestRunnable_TickOnce_OneOrphan asserts the ACH-orphan path: one user,
+// one ACH-minted key (ach_key_id present) that is >10min old and whose
+// ach_key_id is NOT in the active ACH set → exactly one RevokeKey call
+// (by the opaque Token) + one audit event with outcome=revoked.
 func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
@@ -177,6 +178,7 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
 				KeyAlias:  "should-not-leak-into-audit",
+				Metadata:  map[string]any{"ach_key_id": "pkid-orphan"},
 			}},
 		},
 	}
@@ -211,9 +213,10 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 	}
 }
 
-// TestRunnable_TickOnce_SkipTooNew: a single key that is <10min old must
-// be skipped (no revoke, no audit event) per the OrphanAgeFloor race
-// defender. This is the load-bearing race-defender test (Hub §18.4).
+// TestRunnable_TickOnce_SkipTooNew: an ACH-owned (ach_key_id present),
+// untracked key that is <10min old must be skipped (no revoke, no audit
+// event) — the OrphanAgeFloor race defender wins even over an ACH-owned
+// orphan. This is the load-bearing race-defender test (Hub §18.4).
 func TestRunnable_TickOnce_SkipTooNew(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
@@ -221,6 +224,7 @@ func TestRunnable_TickOnce_SkipTooNew(t *testing.T) {
 				Token:     "sk-too-new",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-5 * time.Minute),
+				Metadata:  map[string]any{"ach_key_id": "pkid-too-new"},
 			}},
 		},
 	}
@@ -239,8 +243,10 @@ func TestRunnable_TickOnce_SkipTooNew(t *testing.T) {
 	}
 }
 
-// TestRunnable_TickOnce_SkipNonOrphan: a key whose key_id is in the active
-// ACH set must be skipped — it is not orphan, it is currently tracked.
+// TestRunnable_TickOnce_SkipNonOrphan: an ACH-owned key whose ach_key_id
+// IS in the active ACH set must be skipped — it is not orphan, ACH owns
+// it AND still tracks it. The membership join is metadata.ach_key_id ↔
+// the active key_id set (NOT the opaque Token).
 func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
@@ -248,6 +254,7 @@ func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
 				Token:     "sk-active",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
+				Metadata:  map[string]any{"ach_key_id": "pkid-active"},
 			}},
 		},
 	}
@@ -256,7 +263,7 @@ func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
 		return []string{"u1"}, nil
 	}
 	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
-		return []string{"sk-active"}, nil
+		return []string{"pkid-active"}, nil
 	}
 
 	r.TickOnce(context.Background())
@@ -267,6 +274,87 @@ func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
 	if got := buf.Len(); got != 0 {
 		t.Errorf("audit buffer non-empty for non-orphan key: %q", buf.String())
 	}
+}
+
+// TestRunnable_TickOnce_ForeignKeyLeftAlone is THE ownership-gate test:
+// a key with NO ach_key_id (foreign — manual dashboard / tf-* / token-
+// factory), older than the floor, with an empty active set, must be left
+// untouched. Before the gate, an empty active set made every such key an
+// "orphan" and revoked it (the production incident). Covers both
+// Metadata==nil and Metadata present-but-missing-ach_key_id.
+func TestRunnable_TickOnce_ForeignKeyLeftAlone(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				// Metadata entirely absent.
+				{Token: "sk-foreign-nil", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute)},
+				// Metadata present (rich, token-factory style) but no ach_key_id.
+				{Token: "sk-foreign-richmeta", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"source": "token-factory", "email": "x@ackstorm.com"}},
+			},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	// Active set empty — the exact condition that previously triggered a
+	// fleet-wide revoke. Under the gate, foreign keys are still spared.
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times on foreign keys; want 0 (ach_key_id gate): %v", got, fake.revokedKeys)
+	}
+	if got := buf.Len(); got != 0 {
+		t.Errorf("audit buffer non-empty for foreign keys: %q", buf.String())
+	}
+}
+
+// TestRunnable_TickOnce_MixedUser: a single user owns one foreign key, one
+// ACH-orphan (ach_key_id not in active set), and one ACH-tracked key
+// (ach_key_id in active set). Only the ACH-orphan's opaque Token is
+// revoked; the foreign and tracked keys are left alone.
+func TestRunnable_TickOnce_MixedUser(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				{Token: "sk-foreign", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"source": "token-factory"}},
+				{Token: "sk-ach-orphan", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "pkid-gone"}},
+				{Token: "sk-ach-tracked", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "ekid-live"}},
+			},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"ekid-live"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := fake.revokedKeys; len(got) != 1 || got[0] != "sk-ach-orphan" {
+		t.Fatalf("revokedKeys = %v; want [sk-ach-orphan] (only the ACH-orphan, by its Token)", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 {
+		t.Fatalf("audit lines = %d; want 1: %s", len(lines), buf.String())
+	}
+	if got := lines[0]["target.name"]; got != "sk-ach-orphan" {
+		t.Errorf("target.name = %v; want sk-ach-orphan", got)
+	}
+	if got := lines[0]["outcome"]; got != OutcomeRevoked {
+		t.Errorf("outcome = %v; want %q", got, OutcomeRevoked)
+	}
+	assertNoForbiddenAttrs(t, lines[0])
 }
 
 // TestRunnable_TickOnce_LiteLLMUnreachable: ListUserKeys errors on the
@@ -312,8 +400,10 @@ func TestRunnable_TickOnce_RevokeFailureContinues(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
 			"u1": {
-				{Token: "sk-rf-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute)},
-				{Token: "sk-rf-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute)},
+				{Token: "sk-rf-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "pkid-rf-1"}},
+				{Token: "sk-rf-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "pkid-rf-2"}},
 			},
 		},
 		revokeErr: errors.New("litellm: revoke 503"),
@@ -390,6 +480,7 @@ func TestRunnable_AuditEventShape(t *testing.T) {
 				UserID:    "user-abc",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
 				KeyAlias:  "alias-must-not-be-in-audit",
+				Metadata:  map[string]any{"ach_key_id": "pkid-shape"},
 			}},
 		},
 	}

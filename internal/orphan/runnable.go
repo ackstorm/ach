@@ -196,11 +196,25 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			if !k.CreatedAt.Before(cutoff) {
 				continue
 			}
-			// Skip if NOT orphan (token is in active ACH set).
-			if _, active := achKeySet[k.Token]; active {
+			// Ownership gate: ACH revokes ONLY keys it minted. An ACH key
+			// carries ach_key_id in its LiteLLM metadata (set at mint in
+			// sso.go / envkeys/handler.go); a key WITHOUT it is foreign
+			// (manual dashboard / tf-* / token-factory) and is NEVER
+			// touched — "ACH limpia sus mierdas; si no son suyas, dejarlas."
+			achID, _ := k.Metadata["ach_key_id"].(string)
+			if achID == "" {
+				continue // FOREIGN key — ACH did not mint it; leave it
+			}
+			// Skip if ACH still tracks it as active. The membership join is
+			// ach_key_id ↔ key_id (both pkid_*/ekid_*, ListActiveACHKeyIDs);
+			// the opaque Token is the revoke handle only, never the
+			// membership key — that namespace mismatch was the bug that
+			// revoked ACH's own pk_/ek_ keys.
+			if _, tracked := achKeySet[achID]; tracked {
 				continue
 			}
-			// Orphan: revoke + emit audit event reflecting the actual outcome.
+			// ACH minted it and no longer tracks it → true orphan.
+			// Revoke by the opaque Token + emit audit reflecting the outcome.
 			if err := r.Client.RevokeKey(ctx, k.Token); err != nil {
 				// CR-03: err.Error() is NOT included on the audit event;
 				// see the litellm_unreachable branch above for rationale.
@@ -220,7 +234,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 				"outcome", OutcomeRevoked,
 				"user_id", uid)
 			r.Log.Info("orphan-cleanup: revoked",
-				"token", k.Token, "user_id", uid, "key_alias", k.KeyAlias)
+				"token", k.Token, "ach_key_id", achID, "user_id", uid, "key_alias", k.KeyAlias)
 		}
 	}
 }

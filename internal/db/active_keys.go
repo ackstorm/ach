@@ -4,18 +4,18 @@
 //
 // Two helpers live here:
 //
-//   - ListActiveACHKeyIDs (Phase 2) — DISTINCT union of every active
-//     personal_keys.key_id and environment_keys.key_id. Phase 2 approximation
-//     used before ACH had a stable join-key with the LiteLLM `/key/list`
-//     response.
-//   - ListActiveACHKeyTokens (Phase 3, this plan) — DISTINCT union of every
-//     active personal_keys.litellm_token and environment_keys.litellm_token
-//     where the column is non-null. Closes the Phase 02.2 D-02 prerequisite:
-//     once Phase 3's INSERT path populates litellm_token on every new key, the
-//     orphan loop's set-difference key swaps from key_id (which never matches
-//     a LiteLLM sk-... token) to litellm_token (which does). The Phase 2
-//     ListActiveACHKeyIDs helper is preserved unchanged — Phase 4+ may retire
-//     it once every Phase 3+ row carries a litellm_token.
+//   - ListActiveACHKeyIDs — DISTINCT union of every active
+//     personal_keys.key_id and environment_keys.key_id. This is the LIVE
+//     join helper the orphan loop uses: ACH-minted LiteLLM keys carry
+//     metadata.ach_key_id in this same key_id namespace (pkid_*/ekid_*),
+//     so the loop's ownership/membership test is metadata.ach_key_id ↔
+//     this set.
+//   - ListActiveACHKeyTokens — DISTINCT union of every active
+//     personal_keys.litellm_token and environment_keys.litellm_token where
+//     the column is non-null. NOT used by the orphan loop: the metadata
+//     ach_key_id join is preferred because key_id is the PK (never NULL),
+//     which avoids the litellm_token-IS-NULL migration fail-open. Retained
+//     unchanged as a candidate second signal for a future cross-check.
 //
 // SQL discipline: parameterless SELECT (no $N binds), pgconn class
 // 08/57 propagation per the package convention established in
@@ -34,17 +34,17 @@ import (
 // personal_keys.key_id and environment_keys.key_id (both prefixed
 // 'pkid_' / 'ekid_' per Hub §16 DB-02).
 //
-// Used by the orphan-cleanup Runnable (Plan 02-08) to compute the
-// "ACH-active key_id set" — the membership test that determines
-// whether a LiteLLM-side key is orphan per Hub §18.4. Note that
-// Phase 2 ACH does NOT yet record the LiteLLM-side key_id for each
-// pk_/ek_; the orphan check approximation in Phase 2 flags every
-// LiteLLM key as orphan (because LiteLLM key_ids are 'sk-...'
-// values that never match the 'pkid_'/'ekid_' prefix). Phase 3 will
-// add a litellm_key_id column to personal_keys + environment_keys
-// and ListActiveACHKeyIDs will be replaced by a more precise helper
-// (the Runnable contract itself does not change — the swap is
-// purely at the db-helper layer).
+// Used by the orphan-cleanup Runnable to compute the "ACH-active
+// key_id set" — the membership half of the ownership-gated orphan test
+// (Hub §18.4). The join key is metadata.ach_key_id, surfaced from
+// LiteLLM GET /key/list (return_full_object=true): ACH-minted keys carry
+// ach_key_id in this same key_id namespace (set at mint in sso.go /
+// envkeys/handler.go), so a LiteLLM key is a true orphan iff it carries
+// an ach_key_id that is NOT in this set. Keys WITHOUT ach_key_id are
+// foreign and are never revoked. This makes ListActiveACHKeyIDs the live
+// join helper — key_id is the PRIMARY KEY (never NULL), which is why the
+// loop joins on it rather than litellm_token (whose NULL-during-migration
+// rows would fail open).
 //
 // Filters:
 //   - status = 'active' on both tables (Hub §18.4 — revoked / expired

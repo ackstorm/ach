@@ -43,8 +43,10 @@ func (c *RESTClient) ProbeConnection(ctx context.Context) error {
 // that endpoint looks up a SPECIFIC key by ?key=<token>, not by user.
 // Phase 02.2 Plan 1 (Gap G1 fix) swapped to /key/list, whose response
 // `token` field is the LiteLLM-internal opaque hex key id (NOT ACH's
-// `pkid_*` / `ekid_*` prefix). The orphan loop's set-difference key
-// shifts accordingly.
+// `pkid_*` / `ekid_*` prefix). The orphan loop uses `token` only as the
+// revoke handle; its ownership/membership test joins on the per-key
+// metadata.ach_key_id surfaced by return_full_object=true (which IS in
+// the pkid_*/ekid_* namespace).
 //
 // Empty result is NOT ErrNotFound — a user may legitimately have zero
 // keys (e.g. their pk_ was just revoked and there is no ek_ for them).
