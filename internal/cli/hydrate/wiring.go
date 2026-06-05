@@ -769,10 +769,28 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		if verr := validatePluginName(ent.Name()); verr != nil {
 			return fmt.Errorf("adapter %s skill directory %q: %w", d.platformID, ent.Name(), verr)
 		}
+		// Strip the single accepted wrapper directory before projection.
+		// verifySkillContents accepts SKILL.md at the tar root OR one dir deep,
+		// and REST repo-archive fetches nest everything under "<repo>-<sha>/",
+		// so a skill extracts to either <name>/SKILL.md or
+		// <name>/<wrapper>/SKILL.md. Nesting the wrapper wholesale would install
+		// the skill one level too deep (.claude/skills/<name>/<wrapper>/SKILL.md
+		// instead of the one-level .claude/skills/<name>/SKILL.md the adapters
+		// expect), so rebase onto the directory that actually holds SKILL.md.
+		src := filepath.Join(skillRoot, ent.Name())
+		contentDir, ok, cerr := skillContentDir(src)
+		if cerr != nil {
+			return fmt.Errorf("adapter %s inspect skill %s: %w", d.platformID, ent.Name(), cerr)
+		}
+		if !ok {
+			// No SKILL.md at the root or one dir deep → not a routable skill
+			// tree; skip rather than nest a directory the adapters can't use.
+			continue
+		}
 		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 			return fmt.Errorf("adapter %s stage skills dir %s: %w", d.platformID, skillsDir, err)
 		}
-		if err := os.Rename(filepath.Join(skillRoot, ent.Name()), filepath.Join(skillsDir, ent.Name())); err != nil {
+		if err := os.Rename(contentDir, filepath.Join(skillsDir, ent.Name())); err != nil {
 			return fmt.Errorf("adapter %s nest skill %s under skills/: %w", d.platformID, ent.Name(), err)
 		}
 		nested = true
@@ -805,6 +823,33 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		result.ProjectedSkillFiles = append(result.ProjectedSkillFiles, entry)
 	}
 	return nil
+}
+
+// skillContentDir locates the directory under an extracted skill's <name>/ dir
+// that holds SKILL.md at its root, stripping at most one wrapper directory.
+// verifySkillContents accepts SKILL.md at the tar root OR one directory deep
+// (REST repo-archive fetches nest everything under "<repo>-<sha>/"), so a
+// fetched skill extracts to either <name>/SKILL.md or <name>/<wrapper>/SKILL.md.
+// Returns (nameDir, true) when SKILL.md is already at the root, (<wrapper>, true)
+// when it sits exactly one level deep, and ("", false) when absent at both.
+func skillContentDir(nameDir string) (string, bool, error) {
+	if st, err := os.Stat(filepath.Join(nameDir, "SKILL.md")); err == nil && !st.IsDir() {
+		return nameDir, true, nil
+	}
+	entries, err := os.ReadDir(nameDir)
+	if err != nil {
+		return "", false, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		sub := filepath.Join(nameDir, e.Name())
+		if st, serr := os.Stat(filepath.Join(sub, "SKILL.md")); serr == nil && !st.IsDir() {
+			return sub, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // MCP server-key prefixes per adapter config format (D-17). The projected
