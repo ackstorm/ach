@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -196,14 +197,15 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 	if done {
 		return res, err
 	}
-	archiveRoot, discovered, derr := discoverSkillsInTree(raw)
+	subPath := skillMarketplaceSubPath(spec)
+	archiveRoot, discovered, derr := discoverSkillsInTree(raw, subPath)
 	if derr != nil {
 		// Malformed archive (gzip/tar) → UpstreamInvalid (terminal, no backoff).
 		return r.markSyncedFalse(ctx, cr, ReasonUpstreamInvalid, "stage-1 discover: "+derr.Error(), requeue, nil)
 	}
 
 	// ─── Stage 2: per-skill slice + verify + materialize. ───
-	successful, failures := r.materializeDiscovered(ctx, cr, discovered, raw, archiveRoot, rev)
+	successful, failures := r.materializeDiscovered(ctx, cr, discovered, raw, archiveRoot, subPath, rev)
 
 	// ─── Stage 3: DELETE sweep of vanished names. ───
 	if err := r.sweepVanishedSkills(ctx, cr, discovered); err != nil {
@@ -304,12 +306,12 @@ func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1a
 
 // materializeDiscovered runs Stage-2 over every discovered skill, returning the
 // successful refs (for status) and per-skill failures (for status.message).
-func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []discoveredSkill, raw []byte, archiveRoot, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []skillFailure) {
+func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []discoveredSkill, raw []byte, archiveRoot, subPath, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []skillFailure) {
 	var failures []skillFailure
 	successful := make([]achv1alpha1.SkillMarketplaceSkillRef, 0, len(discovered))
 	for i := range discovered {
 		d := discovered[i]
-		if err := r.materializeMarketplaceSkill(ctx, cr, d, raw, archiveRoot, rev); err != nil {
+		if err := r.materializeMarketplaceSkill(ctx, cr, d, raw, archiveRoot, subPath, rev); err != nil {
 			reason, _ := classifyFetchError(err, cr.Spec.Refresh, time.Time{})
 			failures = append(failures, skillFailure{name: d.Name, reason: reason})
 			continue
@@ -358,9 +360,15 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 	mp *achv1alpha1.SkillMarketplace,
 	d discoveredSkill,
 	raw []byte,
-	archiveRoot, upstreamRev string,
+	archiveRoot, subPath, upstreamRev string,
 ) error {
-	sub, err := sliceSkillSubtree(raw, archiveRoot, d.Dir)
+	// d.Dir is the skill dir name relative to the skills-root (subPath); the
+	// full subtree path inside the archive is subPath/<dir>.
+	subtreePath := d.Dir
+	if subPath != "" {
+		subtreePath = path.Join(subPath, d.Dir)
+	}
+	sub, err := sliceSkillSubtree(raw, archiveRoot, subtreePath)
 	if err != nil {
 		return fmt.Errorf("skill %q: slice subtree: %w", d.Name, err)
 	}
@@ -430,6 +438,22 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 		}
 	}
 	return nil
+}
+
+// skillMarketplaceSubPath returns the in-repo directory that holds the skill
+// dirs (spec.<git>.path), or "" when skills sit at the repo root. s3/gcs/http
+// sources point directly at a pre-archived tarball and carry no sub-path.
+func skillMarketplaceSubPath(spec achv1alpha1.SkillMarketplaceSpec) string {
+	switch {
+	case spec.GitHub != nil:
+		return spec.GitHub.Path
+	case spec.GitLab != nil:
+		return spec.GitLab.Path
+	case spec.Bitbucket != nil:
+		return spec.Bitbucket.Path
+	default:
+		return ""
+	}
 }
 
 // skillFailure is the per-skill failure record aggregated into status.message.

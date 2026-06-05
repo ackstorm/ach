@@ -31,7 +31,7 @@ func TestDiscoverSkillsInTree(t *testing.T) {
 			m[tc.wrap+k] = v
 		}
 		tree := skillTarGz(t, m)
-		root, got, err := discoverSkillsInTree(tree)
+		root, got, err := discoverSkillsInTree(tree, "")
 		if err != nil {
 			t.Fatalf("%s discover: %v", tc.label, err)
 		}
@@ -56,7 +56,7 @@ func TestSliceSkillSubtree(t *testing.T) {
 		"myrepo-abc/data-analysis/SKILL.md":        "---\nname: data-analysis\ndescription: y\n---\nb",
 	}
 	tree := skillTarGz(t, entries)
-	root, _, err := discoverSkillsInTree(tree)
+	root, _, err := discoverSkillsInTree(tree, "")
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -68,5 +68,43 @@ func TestSliceSkillSubtree(t *testing.T) {
 	// validate via verifySkillContents.
 	if err := verifySkillContents(bytes.NewReader(sub)); err != nil {
 		t.Errorf("sliced subtree failed verifySkillContents: %v", err)
+	}
+}
+
+// TestDiscoverSkillsInTree_SubPath exercises the anthropics/skills layout:
+// skills nested under a "skills/" dir inside a REST-wrapped archive. Discovery
+// with subPath="skills" must find them; the per-skill slice (subPath/<dir>)
+// re-roots at the skill name and validates.
+func TestDiscoverSkillsInTree_SubPath(t *testing.T) {
+	entries := map[string]string{
+		"anthropics-skills-deadbee/skills/pdf/SKILL.md":        "---\nname: pdf\ndescription: pdf things\n---\nb",
+		"anthropics-skills-deadbee/skills/pdf/scripts/run.py":  "print('x')",
+		"anthropics-skills-deadbee/skills/docx/SKILL.md":       "---\nname: docx\ndescription: docx things\n---\nb",
+		"anthropics-skills-deadbee/README.md":                  "top-level readme",
+		"anthropics-skills-deadbee/.claude-plugin/plugin.json": "{}",
+	}
+	tree := skillTarGz(t, entries)
+	root, got, err := discoverSkillsInTree(tree, "skills")
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if root != "anthropics-skills-deadbee" {
+		t.Errorf("archiveRoot = %q", root)
+	}
+	names := []string{}
+	for _, s := range got {
+		names = append(names, s.Name)
+	}
+	sort.Strings(names)
+	if len(names) != 2 || names[0] != "docx" || names[1] != "pdf" {
+		t.Fatalf("discovered = %v, want [docx pdf]", names)
+	}
+	// Slice the pdf skill (subPath/<dir>) → re-rooted at "pdf/", validates.
+	sub, err := sliceSkillSubtree(tree, root, "skills/pdf")
+	if err != nil {
+		t.Fatalf("slice: %v", err)
+	}
+	if err := verifySkillContents(bytes.NewReader(sub)); err != nil {
+		t.Errorf("sliced subPath subtree failed verifySkillContents: %v", err)
 	}
 }

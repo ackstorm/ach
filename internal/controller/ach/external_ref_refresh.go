@@ -299,7 +299,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// the SAME staged bytes to the size-cap copy below. verifySkillContents
 	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
 	if deps.Kind == "skill" {
-		raw, serr := stageSkillBody(result.Body, deps.SizeCapBytes)
+		raw, serr := stageSkillBody(result.Body, deps.SizeCapBytes, sourceGitPath(deps.SourceSpec))
 		if serr != nil {
 			// *OversizeError → ReasonPluginTooLarge; ErrUpstreamInvalid-wrapping
 			// validation failures → ReasonUpstreamInvalid (classifyFetchError).
@@ -486,6 +486,22 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 // admission enforces this via CEL XValidation per CRD-03); this helper
 // does NOT enforce the invariant — it forwards every pointer and lets
 // [registry.For] do the defensive nil check.
+// sourceGitPath returns the in-repo sub-path (spec.<git>.path) for a git-backed
+// SourceSpec, or "" for s3/gcs/http (which point directly at a tarball). Used by
+// the skill gate to re-root a monorepo skill before validation.
+func sourceGitPath(spec sources.SourceSpec) string {
+	switch {
+	case spec.GitHub != nil:
+		return spec.GitHub.Path
+	case spec.GitLab != nil:
+		return spec.GitLab.Path
+	case spec.Bitbucket != nil:
+		return spec.Bitbucket.Path
+	default:
+		return ""
+	}
+}
+
 func buildSourceSpec(specType string, github *achv1alpha1.GitHubSource, gitlab *achv1alpha1.GitLabSource, bitbucket *achv1alpha1.BitbucketSource, s3 *achv1alpha1.S3Source, gcs *achv1alpha1.GCSSource, http *achv1alpha1.HTTPSource) sources.SourceSpec {
 	return sources.SourceSpec{
 		Type:      specType,

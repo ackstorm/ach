@@ -28,14 +28,18 @@ const skillMaxManifestBytes = 1 << 20 // 1 MiB
 const skillRawIngressCap = 512 << 20
 
 // stageSkillBody reads the fetched skill tar.gz into memory (bounded by the
-// effective cap = min(skillRawIngressCap, sizeCap)), validates the SKILL.md
-// gate, and returns the staged bytes for materializeExternalRef's size-cap copy
-// (no pluginpack.Filter is applied — the skill tree is served verbatim). sizeCap
-// is deps.SizeCapBytes (0 = no user cap → ceiling applies). Returns
-// *OversizeError on overflow (→ ReasonPluginTooLarge) and an
-// ErrUpstreamInvalid-wrapping error on a malformed skill tree
+// effective cap = min(skillRawIngressCap, sizeCap)), optionally re-roots it at
+// subPath, validates the SKILL.md gate, and returns the staged bytes for
+// materializeExternalRef's size-cap copy (no pluginpack.Filter — the skill tree
+// is served verbatim). sizeCap is deps.SizeCapBytes (0 = no user cap → ceiling
+// applies). subPath is spec.<git>.path: when non-empty the whole-repo tarball is
+// sliced to that sub-directory and re-rooted at its last segment (the git
+// fetcher returns the WHOLE repo — path is not narrowed at fetch time), so a
+// monorepo skill at "skills/pdf/SKILL.md" is stored rooted at "pdf/SKILL.md".
+// Returns *OversizeError on overflow (→ ReasonPluginTooLarge) and an
+// ErrUpstreamInvalid-wrapping error on a malformed/absent skill tree
 // (→ ReasonUpstreamInvalid).
-func stageSkillBody(body io.Reader, sizeCap int64) ([]byte, error) {
+func stageSkillBody(body io.Reader, sizeCap int64, subPath string) ([]byte, error) {
 	limit := int64(skillRawIngressCap)
 	if sizeCap > 0 && sizeCap < limit {
 		limit = sizeCap
@@ -46,6 +50,17 @@ func stageSkillBody(body io.Reader, sizeCap int64) ([]byte, error) {
 	}
 	if int64(len(raw)) > limit {
 		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: limit}
+	}
+	if sub := normSubPath(subPath); sub != "" {
+		names, nerr := tarRegularNames(raw)
+		if nerr != nil {
+			return nil, fmt.Errorf("skill: read archive: %w", errors.Join(nerr, sources.ErrUpstreamInvalid))
+		}
+		sliced, serr := sliceSkillSubtree(raw, detectArchiveRoot(names), sub)
+		if serr != nil {
+			return nil, fmt.Errorf("skill: path %q: %w", sub, errors.Join(serr, sources.ErrUpstreamInvalid))
+		}
+		raw = sliced
 	}
 	if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
 		return nil, err // already wraps sources.ErrUpstreamInvalid

@@ -39,6 +39,30 @@ func normRel(name, root string) string {
 	return clean
 }
 
+// normSubPath cleans a spec.<git>.path into a slash-trimmed relative path
+// ("" when empty/root). The skill dirs are discovered directly under
+// archiveRoot + this subPath.
+func normSubPath(p string) string {
+	p = path.Clean(strings.Trim(strings.TrimSpace(p), "/"))
+	if p == "." || p == "/" {
+		return ""
+	}
+	return p
+}
+
+// relUnderSubPath strips the skills-root subPath prefix from an entry path that
+// has already had the archive-root wrapper removed. ok=false when the entry is
+// not under subPath. subPath == "" passes every entry through unchanged.
+func relUnderSubPath(rel, subPath string) (string, bool) {
+	if subPath == "" {
+		return rel, true
+	}
+	if rel == subPath || !strings.HasPrefix(rel, subPath+"/") {
+		return "", false
+	}
+	return strings.TrimPrefix(rel, subPath+"/"), true
+}
+
 // detectArchiveRoot returns the single common leading segment shared by ALL
 // entries (the REST wrapper dir), or "" when entries are already root-relative
 // (git transport, or a true multi-top-level repo).
@@ -61,16 +85,20 @@ func detectArchiveRoot(names []string) string {
 }
 
 // discoverSkillsInTree takes the staged marketplace tar.gz BYTES (the reconciler
-// already holds them, size-capped by the fetcher) and returns every TOP-LEVEL
-// (post-root-strip) directory D with a valid D/SKILL.md whose frontmatter name
-// passes validateSkillName AND equals basename(D), with a non-empty description.
-// Convention-based — agentskills.io has no index file. The returned archiveRoot
-// must be passed to sliceSkillSubtree so it strips the same wrapper.
+// already holds them, size-capped by the fetcher) and returns every directory D
+// directly under the skills-root (archiveRoot + subPath) with a valid D/SKILL.md
+// whose frontmatter name passes validateSkillName AND equals basename(D), with a
+// non-empty description. Convention-based — agentskills.io has no index file.
+// subPath is spec.<git>.path: the directory inside the repo that holds the skill
+// dirs ("skills" for an anthropics/skills-style monorepo, "" when the skills sit
+// at the repo root). The returned archiveRoot must be passed (with the same
+// subPath) to sliceSkillSubtree so it strips the same wrapper.
 //
-// Deliberate scope: a SKILL.md at the archive ROOT (depth 0) and skills nested
-// deeper than one level are IGNORED — a marketplace lists each skill as a
-// single top-level directory.
-func discoverSkillsInTree(tarball []byte) (archiveRoot string, skills []discoveredSkill, err error) {
+// Deliberate scope: only directories EXACTLY one level under the skills-root are
+// skills — a SKILL.md at the skills-root itself, or nested deeper than one
+// level, is IGNORED.
+func discoverSkillsInTree(tarball []byte, subPath string) (archiveRoot string, skills []discoveredSkill, err error) {
+	subPath = normSubPath(subPath)
 	names, err := tarRegularNames(tarball)
 	if err != nil {
 		return "", nil, err
@@ -95,9 +123,12 @@ func discoverSkillsInTree(tarball []byte) (archiveRoot string, skills []discover
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		rel := normRel(hdr.Name, root)
+		rel, ok := relUnderSubPath(normRel(hdr.Name, root), subPath)
+		if !ok {
+			continue
+		}
 		if path.Base(rel) != "SKILL.md" || strings.Count(rel, "/") != 1 {
-			continue // only top-level <dir>/SKILL.md after root-strip
+			continue // only <skills-root>/<dir>/SKILL.md
 		}
 		dir := path.Dir(rel)
 		body, e := io.ReadAll(io.LimitReader(tr, skillMaxManifestBytes))
@@ -149,11 +180,15 @@ func tarRegularNames(tarball []byte) ([]string, error) {
 	return names, nil
 }
 
-// sliceSkillSubtree re-packs entries under "<dir>/" (post-root-strip) into a
-// fresh tar.gz rooted at "<dir>/" so the result passes verifySkillContents.
-// Stage-2 stores it at skill-marketplace/<marketplace>/<name>.tar.gz. archiveRoot
-// is the value discoverSkillsInTree returned.
-func sliceSkillSubtree(tarball []byte, archiveRoot, dir string) ([]byte, error) {
+// sliceSkillSubtree re-packs entries under "<subtreePath>/" (post-archive-root
+// strip) into a fresh tar.gz RE-ROOTED at the path's last segment ("<base>/"),
+// so the result passes verifySkillContents (SKILL.md one dir deep) and hydrate's
+// single-wrapper strip lands it at .claude/skills/<name>/SKILL.md. subtreePath
+// is relative to archiveRoot — e.g. "skills/pdf" for an anthropics/skills-style
+// repo (subPath "skills" + skill dir "pdf"), or just "pdf-processing" when the
+// skill sits at the repo root. Stage-2 stores the result at
+// skill-marketplace/<marketplace>/<name>.tar.gz.
+func sliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(tarball))
 	if err != nil {
 		return nil, fmt.Errorf("skillmkt: gzip open: %w", err)
@@ -164,7 +199,8 @@ func sliceSkillSubtree(tarball []byte, archiveRoot, dir string) ([]byte, error) 
 	var buf bytes.Buffer
 	outGz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(outGz)
-	prefix := dir + "/"
+	base := path.Base(subtreePath)
+	prefix := subtreePath + "/"
 	wrote := false
 	for {
 		hdr, e := tr.Next()
@@ -175,12 +211,14 @@ func sliceSkillSubtree(tarball []byte, archiveRoot, dir string) ([]byte, error) 
 			return nil, fmt.Errorf("skillmkt: tar read: %w", e)
 		}
 		rel := normRel(hdr.Name, archiveRoot)
-		if rel != dir && !strings.HasPrefix(rel, prefix) {
+		if rel != subtreePath && !strings.HasPrefix(rel, prefix) {
 			continue
 		}
-		nh := &tar.Header{Name: rel, Mode: hdr.Mode, Size: hdr.Size, Typeflag: hdr.Typeflag, ModTime: hdr.ModTime}
+		// Re-root: replace the subtreePath prefix with its last segment.
+		rerooted := base + strings.TrimPrefix(rel, subtreePath)
+		nh := &tar.Header{Name: rerooted, Mode: hdr.Mode, Size: hdr.Size, Typeflag: hdr.Typeflag, ModTime: hdr.ModTime}
 		if err := tw.WriteHeader(nh); err != nil {
-			return nil, fmt.Errorf("skillmkt: write header %s: %w", rel, err)
+			return nil, fmt.Errorf("skillmkt: write header %s: %w", rerooted, err)
 		}
 		if hdr.Typeflag == tar.TypeReg {
 			// Explicit per-file byte cap.
@@ -201,7 +239,7 @@ func sliceSkillSubtree(tarball []byte, archiveRoot, dir string) ([]byte, error) 
 		return nil, err
 	}
 	if !wrote {
-		return nil, fmt.Errorf("skillmkt: subtree %q empty", dir)
+		return nil, fmt.Errorf("skillmkt: subtree %q empty", subtreePath)
 	}
 	return buf.Bytes(), nil
 }

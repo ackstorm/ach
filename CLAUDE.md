@@ -409,10 +409,15 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   none of these fails `UpstreamInvalid`.
 - **SkillMarketplace discovery is convention-based, NOT index-based**: unlike
   `PluginMarketplace` (which parses `.claude-plugin/marketplace.json`), a
-  `SkillMarketplace` fetches the repo subtree as one tar.gz and tree-walks it
-  (`skillmarketplace_discover.go` `discoverSkillsInTree`) for every top-level
-  `<dir>/SKILL.md` whose frontmatter `name` == `<dir>` (agentskills.io ships no
-  index). Each discovered skill is sliced into its own
-  `skill-marketplace/<mkt>/<name>.tar.gz` and folded into the admin SKILLS
+  `SkillMarketplace` fetches the repo as one tar.gz and tree-walks it
+  (`skillmarketplace_discover.go` `discoverSkillsInTree`) for every directory
+  one level under the skills-root (`spec.<git>.path`, e.g. `skills` for an
+  `anthropics/skills`-style monorepo, or repo-root when unset) whose
+  `<dir>/SKILL.md` frontmatter `name` == `<dir>` (agentskills.io ships no index).
+  `path` is honored POST-FETCH (the git fetcher returns the whole repo — F1: the
+  shared `gitprovider` does not narrow to a subtree), by `discoverSkillsInTree` /
+  `sliceSkillSubtree` for marketplaces and by `stageSkillBody` for standalone
+  `Skill` CRs (`path: skills/<name>`). Each discovered skill is sliced into its
+  own `skill-marketplace/<mkt>/<name>.tar.gz` and folded into the admin SKILLS
   inventory as `<skill>@<marketplace>` (mirrors the plugin merge).
 
