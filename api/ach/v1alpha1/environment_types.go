@@ -89,10 +89,12 @@ type ContextBlock struct {
 	Artifacts []string `json:"artifacts,omitempty"`
 
 	// Skills lists referenced Skill names. A bare name ("pdf-processing")
-	// resolves to a Skill CR in the operator namespace. Content-gated like
-	// Plugins. Same strict deny-pattern as Plugins (no "/" "\" ? # %
-	// whitespace, control chars or DEL); "@" is reserved for the future
-	// name@marketplace separator.
+	// resolves to a Skill CR in the operator namespace; a scoped
+	// "name@marketplace" ("branding@ackstorm") resolves a skill discovered
+	// inside a SkillMarketplace (the final "@" separates name from marketplace,
+	// mirroring context.plugins). Content-gated like Plugins. Same strict
+	// deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or
+	// DEL).
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253

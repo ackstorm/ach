@@ -68,20 +68,22 @@ func externalRefChannel(kind string) string {
 // rename(2) / UPSERT branches.
 type FetcherFactory func(sources.SourceSpec) (sources.Fetcher, error)
 
-// OversizeError is returned by [materializeExternalRef] when the Plugin
-// size cap is exceeded. [classifyFetchError] maps it to
-// [ReasonPluginTooLarge]. The two byte counts are the observed staging
-// length (always > Cap by definition) and the cap itself in bytes.
+// OversizeError is returned by [materializeExternalRef] when the configured
+// size cap is exceeded. [classifyFetchError] maps it to [ReasonPluginTooLarge].
+// Shared across plugin / skill / marketplace, so the message stays kind-neutral
+// (the cap derives from ACH_PLUGIN_MAX_SIZE_MIB for plugins/marketplaces and
+// ACH_SKILL_MAX_SIZE_MIB for skills). The two byte counts are the observed
+// staging length (always > Cap by definition) and the cap itself in bytes.
 type OversizeError struct {
 	Bytes int64
 	Cap   int64
 }
 
 // Error formats the human-readable status.message. Both numbers are byte
-// counts (Cap = ACH_PLUGIN_MAX_SIZE_MIB << 20); the message MUST NOT
-// echo Secret values or auth header contents (threat T-02-05-04).
+// counts; the message MUST NOT echo Secret values or auth header contents
+// (threat T-02-05-04).
 func (e *OversizeError) Error() string {
-	return fmt.Sprintf("staged %d bytes exceeds ACH_PLUGIN_MAX_SIZE_MIB cap of %d bytes", e.Bytes, e.Cap)
+	return fmt.Sprintf("staged %d bytes exceeds the configured size cap of %d bytes", e.Bytes, e.Cap)
 }
 
 // ExternalRefRefreshDeps bundles the per-reconciler dependencies the
@@ -297,7 +299,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// the SAME staged bytes to the size-cap copy below. verifySkillContents
 	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
 	if deps.Kind == "skill" {
-		raw, serr := stageSkillBody(result.Body)
+		raw, serr := stageSkillBody(result.Body, deps.SizeCapBytes)
 		if serr != nil {
 			// *OversizeError → ReasonPluginTooLarge; ErrUpstreamInvalid-wrapping
 			// validation failures → ReasonUpstreamInvalid (classifyFetchError).
