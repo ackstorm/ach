@@ -127,17 +127,21 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 	// resolved row's scope (artifact) and open EARLY so a subsequent
 	// rename(2) does not unhook the inode mid-response.
 	//
-	// Plugin special case: the resolved row's StorageLocation is used
-	// directly instead of recomputing via ResolvePath. A scoped ref such
-	// as "shared@mkt-b" carries '@' in the URL-param name, which would
-	// produce "plugin/shared@mkt-b.tar.gz" — the wrong path. The operator
-	// materialises marketplace plugins under "plugin/<name>.tar.gz" (no
-	// marketplace qualifier on disk), so the absolute StorageLocation from
-	// the projection row is always authoritative for plugins.
+	// StorageLocation special case: plugins, and marketplace-sourced skills,
+	// are served directly from the resolved row's StorageLocation instead of
+	// recomputing via ResolvePath. A scoped ref such as "shared@mkt-b" /
+	// "branding@ackstorm" carries '@' in the URL-param name, which ResolvePath
+	// would turn into "plugin/shared@mkt-b.tar.gz" / "skill/branding@ackstorm.tar.gz"
+	// — the wrong path. The operator materialises marketplace plugins under
+	// "plugin/<name>.tar.gz" and marketplace skills under
+	// "skill-marketplace/<mkt>/<name>.tar.gz", so the absolute StorageLocation
+	// from the projection row is authoritative. Bare skills (Source=="skill")
+	// keep the deterministic skill/<name>.tar.gz ResolvePath.
+	usesStorageLocation := kind == kindPlugin || (kind == kindSkill && row.Source == "marketplace")
 	var path string
-	if kind == kindPlugin {
+	if usesStorageLocation {
 		// SECURITY: StorageLocation is not derived from a validated {name}
-		// (plugins skip ResolvePath), so contain it under CacheRoot before
+		// (it skips ResolvePath), so contain it under CacheRoot before
 		// os.Open — an untrusted/future origin='ui' row pointing outside the
 		// cache (e.g. /etc/passwd) must 404, never serve.
 		p, ok := PluginStoragePathWithinRoot(d.CacheRoot, row.StorageLocation)

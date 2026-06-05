@@ -40,6 +40,7 @@ import (
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/pluginref"
+	"github.com/ackstorm/ach/internal/skillref"
 )
 
 // contentRow holds the per-request resolved row that gate 7 (staleness)
@@ -314,20 +315,27 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			Scope:                 row.Scope,
 		}, nil
 	case kindSkill:
-		// Skills resolve via ResolvePath (deterministic skill/<name>.tar.gz),
-		// so the contentRow carries only the staleness inputs — StorageLocation
-		// is unused for the skill arm in pipeline.go (kind != kindPlugin branch).
-		row, err := db.GetSkillByName(ctx, d.Pool, d.Namespace, name)
+		// Mirror the plugin arm: a bare name resolves a Skill CRD row; a scoped
+		// name@marketplace resolves the exact skill_marketplace_skills row. The
+		// contentRow carries Source so pipeline.go serves a marketplace skill
+		// from the absolute StorageLocation (skill-marketplace/<mkt>/<name>.tar.gz)
+		// while a bare skill keeps the deterministic skill/<name>.tar.gz ResolvePath.
+		if !skillref.Valid(name) {
+			return nil, errContentNotFound()
+		}
+		sname, marketplace, _ := skillref.Parse(name)
+		res, err := db.ResolveSkillByName(ctx, d.Pool, d.Namespace, sname, marketplace)
 		if err != nil {
 			return nil, errInternal()
 		}
-		if row == nil {
+		if res == nil {
 			return nil, errContentNotFound()
 		}
 		return &contentRow{
-			StorageLocation:       row.StorageLocation,
-			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
-			MaxStalenessSeconds:   row.MaxStalenessSeconds,
+			StorageLocation:       res.StorageLocation,
+			LastSuccessfulRefresh: res.LastSuccessfulRefresh,
+			MaxStalenessSeconds:   res.MaxStalenessSeconds,
+			Source:                res.Source,
 		}, nil
 	}
 	// Defensive — chi router only registers known kinds.
