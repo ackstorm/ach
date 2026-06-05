@@ -38,6 +38,12 @@ const (
 	syncStale           = "STALE"
 	syncNever           = "never"
 	syncProjected       = "projected"
+
+	// Marketplace/skill-marketplace object SYNC vocabulary (collapsed from the
+	// projected Synced condition).
+	syncSynced   = "Synced"
+	syncDegraded = "Degraded"
+	syncPending  = "Pending"
 )
 
 // AdminObjectView is the uniform wire shape the server emits and the CLI
@@ -251,11 +257,11 @@ func marketplaceRowToView(r db.MarketplaceRow) AdminObjectView {
 func marketplaceSync(status, reason string) (sync, syncReason string) {
 	switch status {
 	case "True":
-		return "Synced", ""
+		return syncSynced, ""
 	case "False":
-		return "Degraded", reason
+		return syncDegraded, reason
 	default:
-		return "Pending", ""
+		return syncPending, ""
 	}
 }
 
