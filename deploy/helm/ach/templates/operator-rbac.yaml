@@ -31,6 +31,7 @@ rules:
   - plugins
   - prompts
   - skills
+  - skillmarketplaces
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
@@ -42,6 +43,7 @@ rules:
   - plugins/finalizers
   - prompts/finalizers
   - skills/finalizers
+  - skillmarketplaces/finalizers
   verbs: ["update"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
@@ -53,6 +55,7 @@ rules:
   - plugins/status
   - prompts/status
   - skills/status
+  - skillmarketplaces/status
   verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
