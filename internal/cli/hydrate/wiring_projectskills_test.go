@@ -68,7 +68,7 @@ func TestProjectSkills_RootSKILLMD(t *testing.T) {
 	toolRoot := t.TempDir()
 
 	stageSkill(t, achDir, "pdf-processing", map[string]string{
-		"SKILL.md":       "---\nname: pdf-processing\ndescription: y\n---\nbody",
+		"SKILL.md":        "---\nname: pdf-processing\ndescription: y\n---\nbody",
 		"references/a.md": "ref",
 	})
 
