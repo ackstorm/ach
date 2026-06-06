@@ -130,11 +130,24 @@ type AgentListResponse struct {
 // The Token field carries the LiteLLM-internal opaque hex token returned
 // by /key/list (NOT ACH's `pkid_*` / `ekid_*` prefix; that distinction
 // is the Gap G1 namespace mismatch that Phase 02.2 Plan 1 resolved).
+//
+// The Metadata field IS consumed by the orphan loop: return_full_object=true
+// echoes LiteLLM's per-key metadata bag, and ACH-minted keys carry
+// ach_key_id / ach_key_type / ach_owner_email (set at mint in sso.go +
+// envkeys/handler.go). The orphan loop reads metadata.ach_key_id as the
+// ownership gate — a key WITHOUT it is foreign (manual dashboard / tf-* /
+// token-factory) and is NEVER revoked. The ach_key_id value is in the
+// key_id namespace (pkid_* / ekid_*), so it joins against
+// db.ListActiveACHKeyIDs; the opaque Token remains the revoke handle only.
 type UserKeyInfo struct {
 	Token     string    `json:"token"`
 	UserID    string    `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
 	KeyAlias  string    `json:"key_alias,omitempty"`
+	// Metadata is LiteLLM's per-key metadata bag. LiteLLM may return
+	// scalar values as strings, so this stays map[string]any and the
+	// loop coerces ach_key_id via a string type assertion.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // ListUserKeysResponse is the envelope returned by

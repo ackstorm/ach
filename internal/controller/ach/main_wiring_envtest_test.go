@@ -147,9 +147,12 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 	// dbPool by value into NewRunnable, which assigns it to Runnable.DB
 	// (the TickOnce-time nil-deref guard is in the function-typed
 	// ListUsers/ListKeyIDs seams, exercised in Test 3 below).
-	orp := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, logr.Discard())
+	orp := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
 	if orp == nil {
 		t.Fatal("orphan.NewRunnable returned nil")
+	}
+	if orp.MaxRevoke != orphan.DefaultMaxRevoke {
+		t.Errorf("orphan.Runnable.MaxRevoke = %d; want %d", orp.MaxRevoke, orphan.DefaultMaxRevoke)
 	}
 	if orp.Client != fake {
 		t.Error("orphan.Runnable.Client not wired")
@@ -289,7 +292,7 @@ func TestMainWiring_OrphanRunnable_EmptyUserSet_NoAuditEvents(t *testing.T) {
 	auditBuf := &bytes.Buffer{}
 	auditLog := audit.NewLogger(auditBuf)
 
-	r := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, logr.Discard())
+	r := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
 	// Override the production db helpers with empty-set seams so TickOnce
 	// proceeds through both list steps and finds zero work to do.
 	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {

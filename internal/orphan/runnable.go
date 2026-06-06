@@ -29,10 +29,28 @@ const OrphanAgeFloor = 10 * time.Minute
 // "revoked") in a single one-shot rename per greenfield/no-compat-shims
 // discipline; no prior constant remains in the enum.
 const (
-	OutcomeRevoked            = "revoked"
-	OutcomeLiteLLMUnreachable = "litellm_unreachable"
-	OutcomeRevokeFailed       = "revoke_failed"
+	OutcomeRevoked               = "revoked"
+	OutcomeLiteLLMUnreachable    = "litellm_unreachable"
+	OutcomeRevokeFailed          = "revoke_failed"
+	OutcomeSkippedEmptyActiveSet = "skipped_empty_active_set"
+	OutcomeSkippedCircuitBreaker = "skipped_circuit_breaker"
 )
+
+// DefaultMaxRevoke is the B2 circuit-breaker cap applied when
+// Runnable.MaxRevoke is unset (≤0). A correct steady state revokes 0–few
+// keys per tick; a double-digit batch is itself the alarm, so the tick
+// aborts revocation rather than executing a suspiciously large purge.
+const DefaultMaxRevoke = 10
+
+// orphanCandidate is one true orphan identified in pass 1 of TickOnce —
+// ACH-minted (achID present), older than the floor, not in the active
+// set. token is the opaque LiteLLM revoke handle; achID is the
+// pkid_*/ekid_* identity used only for logging/traceability.
+type orphanCandidate struct {
+	userID string
+	token  string
+	achID  string
+}
 
 // listUsersFn / listKeyIDsFn are the function-typed test seams that
 // stand in for db.ListACHManagedLitellmUsers / db.ListActiveACHKeyIDs.
@@ -71,6 +89,19 @@ type Runnable struct {
 	Interval time.Duration
 	Log      logr.Logger
 
+	// DryRun (ACH_ORPHAN_CLEANUP_DRY_RUN), when true, makes every tick
+	// log "WOULD revoke" + count the candidate under skipped{dry_run}
+	// but NEVER call RevokeKey. A reversible, image-level neutralize
+	// cleaner than the year-long-interval emergency knob.
+	DryRun bool
+	// MaxRevoke (ACH_ORPHAN_CLEANUP_MAX_REVOKE) is the B2 circuit-breaker
+	// cap; ≤0 means DefaultMaxRevoke. A single tick with more candidates
+	// than this aborts revocation entirely (the batch is the alarm).
+	MaxRevoke int
+	// Metrics holds the Prometheus collectors; nil disables
+	// instrumentation (the m* helpers are nil-guarded).
+	Metrics *Metrics
+
 	// Test seams — production code never touches these after
 	// NewRunnable wires the defaults.
 	ListUsers  listUsersFn
@@ -84,12 +115,14 @@ type Runnable struct {
 // is harmless to the loop itself — the OrphanAgeFloor=10m check inside
 // TickOnce defers revocation regardless — but produces wasted ticks.
 func NewRunnable(client litellm.Client, dbPool *pgxpool.Pool, audit *slog.Logger,
-	interval time.Duration, log logr.Logger) *Runnable {
+	interval time.Duration, dryRun bool, maxRevoke int, log logr.Logger) *Runnable {
 	return &Runnable{
 		Client:     client,
 		DB:         dbPool,
 		Audit:      audit,
 		Interval:   interval,
+		DryRun:     dryRun,
+		MaxRevoke:  maxRevoke,
 		Log:        log,
 		ListUsers:  db.ListACHManagedLitellmUsers,
 		ListKeyIDs: db.ListActiveACHKeyIDs,
@@ -166,9 +199,14 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		achKeySet[k] = struct{}{}
 	}
 
-	// Step 3: per-user ListUserKeys → identify orphans → revoke.
+	// Step 3 (pass 1): per-user ListUserKeys → collect true-orphan
+	// candidates. Revocation is DEFERRED to pass 2 so the B1 empty-set
+	// fail-safe and B2 circuit-breaker can inspect the FULL candidate set
+	// across all users before anything is revoked — a fail-open whole-
+	// fleet revoke is exactly the incident this defends against.
 	now := time.Now()
 	cutoff := now.Add(-OrphanAgeFloor)
+	candidates := make([]orphanCandidate, 0)
 	for _, uid := range userIDs {
 		keys, err := r.Client.ListUserKeys(ctx, uid)
 		if err != nil {
@@ -183,6 +221,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			// belongs in the operational log (line below); the audit
 			// channel carries only the closed-enum outcome + identifiers
 			// per Hub §16.1 / §18.2.
+			r.mSkipped(SkipReasonLiteLLMUnreachable, 1)
 			r.Audit.Info("operator.orphan-cleanup",
 				"target.kind", "tick",
 				"outcome", OutcomeLiteLLMUnreachable,
@@ -196,31 +235,130 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			if !k.CreatedAt.Before(cutoff) {
 				continue
 			}
-			// Skip if NOT orphan (token is in active ACH set).
-			if _, active := achKeySet[k.Token]; active {
+			// Ownership gate: ACH revokes ONLY keys it minted. An ACH key
+			// carries ach_key_id in its LiteLLM metadata (set at mint in
+			// sso.go / envkeys/handler.go); a key WITHOUT it is foreign
+			// (manual dashboard / tf-* / token-factory) and is NEVER
+			// touched — "ACH limpia sus mierdas; si no son suyas, dejarlas."
+			achID, _ := k.Metadata["ach_key_id"].(string)
+			if achID == "" {
+				continue // FOREIGN key — ACH did not mint it; leave it
+			}
+			// Skip if ACH still tracks it as active. The membership join is
+			// ach_key_id ↔ key_id (both pkid_*/ekid_*, ListActiveACHKeyIDs);
+			// the opaque Token is the revoke handle only, never the
+			// membership key — that namespace mismatch was the bug that
+			// revoked ACH's own pk_/ek_ keys.
+			if _, tracked := achKeySet[achID]; tracked {
 				continue
 			}
-			// Orphan: revoke + emit audit event reflecting the actual outcome.
-			if err := r.Client.RevokeKey(ctx, k.Token); err != nil {
-				// CR-03: err.Error() is NOT included on the audit event;
-				// see the litellm_unreachable branch above for rationale.
-				// Diagnostic detail goes to the operational log.
-				r.Audit.Info("operator.orphan-cleanup",
-					"target.kind", "litellm_key",
-					"target.name", k.Token,
-					"outcome", OutcomeRevokeFailed,
-					"user_id", uid)
-				r.Log.Info("orphan-cleanup: revoke failed; continuing tick",
-					"token", k.Token, "err", err)
-				continue // do NOT abort the tick — sibling users may still have revokable orphans
-			}
+			// ACH minted it and no longer tracks it → true orphan.
+			candidates = append(candidates, orphanCandidate{userID: uid, token: k.Token, achID: achID})
+		}
+	}
+	r.mCandidates(len(candidates))
+	if len(candidates) == 0 {
+		return // steady state — nothing to revoke
+	}
+
+	// B1 fail-safe: an empty active set with ≥1 ACH-owned candidate is the
+	// mis-wire signature (the active-key lookup returned nothing while ACH
+	// keys still exist upstream — the shape of the original incident). Skip
+	// ALL revocation this tick rather than risk revoking ACH's own keys on a
+	// bad active-set read.
+	//
+	// KNOWN LIMITATION (Codex review, PR #119): the orphan loop only
+	// enumerates users with ACTIVE ACH rows (db.ListACHManagedLitellmUsers
+	// filters status='active'). A genuinely-orphaned key whose owner's LAST
+	// active row was revoked — e.g. a DB-side revoke whose LiteLLM-side delete
+	// failed — drops out of future ticks and is NOT backstopped here. Closing
+	// that needs a widened enumeration (active OR recently-revoked users) with
+	// a per-tick cost bound — a design change tracked as a follow-up, not part
+	// of this fix. The empty-set branch itself is near-unreachable in
+	// practice: achKeySet and the user set read the same active rows, so an
+	// empty achKeySet implies an empty user set (early return above) except
+	// across a sub-tick read race.
+	if len(achKeySet) == 0 {
+		if r.DryRun {
+			r.previewDryRun(candidates) // still surface the batch this guard would abort
+		}
+		r.mSkipped(SkipReasonEmptyActiveSet, len(candidates))
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "tick",
+			"outcome", OutcomeSkippedEmptyActiveSet,
+			"candidate_count", len(candidates))
+		r.Log.Info("orphan-cleanup: WARNING empty active key set with ACH-owned candidates present; skipping revocation (possible mis-wire)",
+			"candidate_count", len(candidates))
+		return
+	}
+
+	// B2 circuit-breaker: a correct steady state revokes 0–few keys per
+	// tick; a batch over the cap is itself the alarm. Abort revocation
+	// this tick and surface it loudly rather than execute a large purge.
+	maxRevoke := r.MaxRevoke
+	if maxRevoke <= 0 {
+		maxRevoke = DefaultMaxRevoke
+	}
+	if len(candidates) > maxRevoke {
+		if r.DryRun {
+			r.previewDryRun(candidates) // still surface the batch this guard would abort
+		}
+		r.mSkipped(SkipReasonCircuitBreaker, len(candidates))
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "tick",
+			"outcome", OutcomeSkippedCircuitBreaker,
+			"candidate_count", len(candidates))
+		r.Log.Info("orphan-cleanup: WARNING revoke candidates exceed circuit-breaker cap; skipping revocation",
+			"candidate_count", len(candidates), "max_revoke", maxRevoke)
+		return
+	}
+
+	// Step 4 (pass 2). In dry-run (B3) surface every candidate as a
+	// WOULD-revoke preview and stop — RevokeKey is never called. This is also
+	// reached only for the un-guarded path; the B1/B2 branches above run their
+	// own previewDryRun so a dry-run operator sees the guarded batches too.
+	if r.DryRun {
+		r.previewDryRun(candidates)
+		return
+	}
+	// Real revocation: revoke each candidate by its opaque Token. A per-key
+	// RevokeKey failure is logged + audited and the tick CONTINUES — sibling
+	// candidates may still be revokable (it does not indicate the upstream is
+	// unreachable).
+	for _, c := range candidates {
+		if err := r.Client.RevokeKey(ctx, c.token); err != nil {
+			// CR-03: err.Error() is NOT included on the audit event; see
+			// the litellm_unreachable branch above for rationale.
+			r.mSkipped(SkipReasonRevokeFailed, 1)
 			r.Audit.Info("operator.orphan-cleanup",
 				"target.kind", "litellm_key",
-				"target.name", k.Token,
-				"outcome", OutcomeRevoked,
-				"user_id", uid)
-			r.Log.Info("orphan-cleanup: revoked",
-				"token", k.Token, "user_id", uid, "key_alias", k.KeyAlias)
+				"target.name", c.token,
+				"outcome", OutcomeRevokeFailed,
+				"user_id", c.userID)
+			r.Log.Info("orphan-cleanup: revoke failed; continuing tick",
+				"token", c.token, "err", err)
+			continue
 		}
+		r.mRevoked()
+		r.Audit.Info("operator.orphan-cleanup",
+			"target.kind", "litellm_key",
+			"target.name", c.token,
+			"outcome", OutcomeRevoked,
+			"user_id", c.userID)
+		r.Log.Info("orphan-cleanup: revoked",
+			"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
+	}
+}
+
+// previewDryRun (B3) logs every candidate as a WOULD-revoke line and counts it
+// under skipped{dry_run} WITHOUT calling RevokeKey. It is invoked from the
+// un-guarded pass-2 path AND from the B1/B2 guard branches, so a dry-run
+// operator can inspect exactly the batches those guards would abort — the
+// suspicious batches dry-run exists to diagnose.
+func (r *Runnable) previewDryRun(candidates []orphanCandidate) {
+	for _, c := range candidates {
+		r.mSkipped(SkipReasonDryRun, 1)
+		r.Log.Info("orphan-cleanup: WOULD revoke (dry-run)",
+			"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
 	}
 }

@@ -4,60 +4,72 @@
 //
 // The single exported type Runnable is a controller-runtime manager.Runnable
 // that ticks every Interval (default 1h, minimum 5m per OP-15 / D-15; the
-// interval is validated externally by the caller in cmd/operator/main.go via
-// Plan 02-09's MustEnvDurationAtLeast helper). NewRunnable accepts a
-// pre-validated time.Duration and trusts the caller — this package does not
-// re-validate.
+// interval is validated externally by the caller in cmd/ach/cmd/operator.go via
+// MustEnvDurationAtLeast). NewRunnable accepts a pre-validated time.Duration
+// and trusts the caller — this package does not re-validate.
 //
-// Per-tick procedure (Hub §18.4 / D-16):
+// # Ownership model (the load-bearing invariant)
 //
-//  1. List ACH-managed litellm_user_id set from Postgres
-//     (db.ListACHManagedLitellmUsers — Plan 02-03 helper).
-//  2. List active ACH key_id set (db.ListActiveACHKeyIDs — Plan 02-08 helper).
-//  3. For each managed user:
-//     a. ListUserKeys via litellm.Client. A LiteLLM-unreachable error aborts
-//     the tick cleanly with ONE audit event (D-18 outcome="litellm_unreachable").
-//     b. For each returned key:
-//     - skip if < OrphanAgeFloor (10 min) old per Hub §18.4 (race defender);
-//     - skip if key_id appears in the active ACH key_id set;
-//     - otherwise revoke via litellm.Client.RevokeKey + emit one audit
-//     event per outcome (D-18 outcome="success" or "revoke_failed").
+// The loop revokes ONLY keys ACH minted. An ACH-minted LiteLLM key carries
+// ach_key_id in its per-key metadata (stamped at mint in
+// internal/platformapi/auth/sso.go and internal/platformapi/envkeys/handler.go);
+// that value is in the key_id namespace (pkid_*/ekid_*). A key WITHOUT
+// ach_key_id is foreign (manual dashboard, Terraform tf-*, token-factory) and
+// is NEVER revoked. The opaque LiteLLM token is used only as the revoke
+// handle, never as the membership key — confusing the two was the original
+// namespace-mismatch bug that revoked every key fleet-wide.
 //
-// A revoke failure does NOT abort the tick — sibling users may still have
-// revokable orphans and are processed normally. Only ListUserKeys failures
-// (Hub-defined "LiteLLM-unreachable") abort the whole tick; the next tick
-// retries from a clean slate.
+// # Per-tick procedure (two-pass)
 //
-// Phase 2 invariant: personal_keys + environment_keys are both empty because
-// Phase 3 introduces the first SSO/ek_ write paths. The Runnable's enumeration
-// (db.ListACHManagedLitellmUsers) returns an empty user_id set on every tick;
-// no LiteLLM calls or audit events are emitted in Phase 2 steady state. This
-// is the expected behavior — exercising the empty-set path is part of the
-// unit-test coverage.
+//  1. List ACH-managed litellm_user_id set (db.ListACHManagedLitellmUsers).
+//  2. List active ACH key_id set (db.ListActiveACHKeyIDs) → achKeySet.
+//  3. Pass 1 — per managed user, ListUserKeys via litellm.Client (a
+//     LiteLLM-unreachable error aborts the tick cleanly with ONE audit event,
+//     D-18 outcome="litellm_unreachable"). For each returned key, collect it
+//     as a true-orphan candidate iff: it is ≥ OrphanAgeFloor (10 min) old
+//     (race defender), it carries a non-empty ach_key_id (ownership gate), and
+//     that ach_key_id is NOT in achKeySet (ACH no longer tracks it).
+//  4. Guards (see Defense-in-depth below) inspect the FULL candidate set.
+//  5. Pass 2 — revoke each candidate by its opaque token via
+//     litellm.Client.RevokeKey, emitting one audit event per outcome
+//     (D-18 "revoked" / "revoke_failed"). A single revoke failure does NOT
+//     abort the tick — sibling candidates may still be revokable.
 //
-// Phase 3 follow-up: Phase 3 will add a litellm_key_id column to personal_keys
-// and environment_keys so the "absent from ACH active rows" membership test
-// becomes a direct litellm_key_id comparison. Currently Phase 2's
-// approximation flags every LiteLLM key as orphan since the active-set values
-// are pkid_/ekid_ prefixed while LiteLLM key_ids are sk-... values that never
-// match. The Runnable contract does not change — only db.ListActiveACHKeyIDs
-// gets replaced by a more precise helper.
+// # Defense-in-depth (a fail-open whole-fleet revoke was the incident)
 //
-// Test seams: Runnable's ListUsers and ListKeyIDs fields are function-typed
-// fields (default-pointed at db.ListACHManagedLitellmUsers and
-// db.ListActiveACHKeyIDs). Unit tests override them with in-memory stubs to
-// exercise TickOnce without spinning up a real Postgres container; production
-// code never touches them.
+//   - B3 dry-run (Runnable.DryRun, env ACH_ORPHAN_CLEANUP_DRY_RUN): logs
+//     "WOULD revoke" per candidate + counts skipped{dry_run}, never calls
+//     RevokeKey. The guard branches below also emit the dry-run preview so an
+//     operator can inspect exactly the batches those guards would abort.
+//   - B1 empty-active-set fail-safe: an empty achKeySet with ≥1 ACH-owned
+//     candidate skips the whole tick (skipped_empty_active_set). See the
+//     KNOWN LIMITATION note on Runnable.TickOnce.
+//   - B2 circuit-breaker (Runnable.MaxRevoke, env ACH_ORPHAN_CLEANUP_MAX_REVOKE,
+//     default 10): a tick with more candidates than the cap aborts revocation
+//     (skipped_circuit_breaker) — a double-digit batch is itself the alarm.
+//   - B5 metrics: ach_orphan_cleanup_{candidates,revoked}_total and
+//     ach_orphan_cleanup_skipped_total{reason} on the operator /metrics.
 //
-// Audit event shape (D-18, Phase 2 scope is orphan revocations only):
+// # Test seams
+//
+// Runnable's ListUsers and ListKeyIDs fields are function-typed (default
+// db.ListACHManagedLitellmUsers / db.ListActiveACHKeyIDs). Unit tests override
+// them with in-memory stubs to exercise TickOnce without a real Postgres;
+// production code never touches them after NewRunnable wires the defaults.
+//
+// # Audit event shape (D-18)
 //
 //	slog.Info("operator.orphan-cleanup",
-//	    "target.kind", "litellm_key",      // or "tick" for the unreachable abort
-//	    "target.name", keyID,              // omitted for the abort event
-//	    "outcome", "success"               // or "litellm_unreachable" / "revoke_failed"
+//	    "target.kind", "litellm_key",      // or "tick" for tick-level outcomes
+//	    "target.name", token,              // omitted for tick-level events
+//	    "outcome", "revoked"               // revoked | revoke_failed |
+//	                                       // litellm_unreachable |
+//	                                       // skipped_empty_active_set |
+//	                                       // skipped_circuit_breaker
 //	    "user_id", userID,
 //	)
 //
 // The audit logger (internal/audit.NewLogger) injects audit=true at the
-// record top level — call sites do NOT pass that attribute.
+// record top level — call sites do NOT pass that attribute. No plaintext
+// alias / bearer / error text is ever attached to an audit event.
 package orphan

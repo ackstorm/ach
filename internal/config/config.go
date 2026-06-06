@@ -65,6 +65,28 @@ func EnvBool(key string, fallback bool) bool {
 	return b
 }
 
+// MustEnvBool parses the named environment variable via strconv.ParseBool.
+// Unlike EnvBool, a SET-but-unparseable value is a hard error rather than a
+// silent fallback. Returns fallback ONLY when the variable is unset/empty.
+//
+// Use this for safety-critical toggles where a typo silently resolving to the
+// unsafe default would be dangerous — e.g. ACH_ORPHAN_CLEANUP_DRY_RUN, the B3
+// neutralize for a destructive revoke loop: with EnvBool, `=tru` or `=yes`
+// silently disables dry-run and re-enables real revocation. MustEnvBool makes
+// the operator fix the manifest instead of failing open. The error names the
+// variable but NOT its value (no chance of leaking a secret via logs).
+func MustEnvBool(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, errors.New("config: " + key + " must be a boolean (true/false/1/0)")
+	}
+	return b, nil
+}
+
 // MustEnvNonEmpty returns the value of the named environment variable, or an
 // error when the variable is unset or empty. The error message contains the
 // variable name so the operator can fix the deployment manifest without
