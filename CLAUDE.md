@@ -414,10 +414,22 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   one level under the skills-root (`spec.<git>.path`, e.g. `skills` for an
   `anthropics/skills`-style monorepo, or repo-root when unset) whose
   `<dir>/SKILL.md` frontmatter `name` == `<dir>` (agentskills.io ships no index).
-  `path` is honored POST-FETCH (the git fetcher returns the whole repo — F1: the
-  shared `gitprovider` does not narrow to a subtree), by `discoverSkillsInTree` /
-  `sliceSkillSubtree` for marketplaces and by `stageSkillBody` for standalone
-  `Skill` CRs (`path: skills/<name>`). Each discovered skill is sliced into its
-  own `skill-marketplace/<mkt>/<name>.tar.gz` and folded into the admin SKILLS
-  inventory as `<skill>@<marketplace>` (mirrors the plugin merge).
+  A `SkillMarketplace` is a **discovery** kind (like `PluginMarketplace`), NOT a
+  narrow-at-fetch object: it strips `spec.<git>.path` before fetch (whole-repo
+  tar, via `withoutGitPath`) and uses `path` only as the POST-FETCH skills-root
+  tree-walk hint (`discoverSkillsInTree` + `sliceSkillSubtree` per skill). Each
+  discovered skill is sliced into its own `skill-marketplace/<mkt>/<name>.tar.gz`
+  and folded into the admin SKILLS inventory as `<skill>@<marketplace>` (mirrors
+  the plugin merge).
+- **`spec.<git>.path` narrows at FETCH time for OBJECT kinds (F1)**: the shared
+  per-provider fetchers honor `spec.path` — a **directory** narrows to that
+  subtree's contents (git on-disk via `git.tarSubtree`; legacy REST via
+  `sources.NarrowArchiveSubtree`), a single **file** returns its raw bytes
+  (Prompt, Artifact `scope=object`). Applies to the served/hydrated objects:
+  `Plugin`, `Skill`, `Artifact`, `Prompt`. The fetcher infers file-vs-dir from
+  the path shape (Artifact `scope` is orthogonal — it only drives cache-file
+  naming; a CR's `scope` should match its path target). DISCOVERY kinds
+  (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and
+  walk the whole repo. Symlinked / traversal / missing paths →
+  `UpstreamInvalid`.
 

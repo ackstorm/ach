@@ -31,7 +31,16 @@ func schemeForProvider(provider string) gitsrc.AuthScheme {
 // resolve the SHA, short-circuit on NotModified when priorRev matches,
 // then full clone+fetch. provider is the error-prefix literal; cloneURL is
 // the per-provider-built https clone URL.
-func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, priorRev string) (*sources.FetchResult, error) {
+//
+// subtree is spec.<git>.path: when non-empty the produced tarball is
+// narrowed on-disk to that sub-directory (git.tarSubtree strips the subtree
+// prefix entirely, so the archive is re-rooted at the subtree's contents).
+// Empty → whole worktree. The narrowing happens at the tar step from the
+// checked-out worktree, so no whole-repo tarball is buffered to re-slice
+// (F1). A subtree that resolves to a non-directory (e.g. an Artifact path
+// pointing at a single file) surfaces as a tar.tarSubtree error wrapped by
+// the caller's classification.
+func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, priorRev, subtree string) (*sources.FetchResult, error) {
 	scheme := schemeForProvider(provider)
 	sha, err := gitsrc.LsRemote(ctx, cloneURL, ref, token, scheme)
 	if err != nil {
@@ -46,6 +55,7 @@ func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, prior
 		SHA:        sha,
 		Token:      token,
 		AuthScheme: scheme,
+		Subtree:    subtree,
 	}).Fetch(ctx, gitsrc.Request{})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", provider, err)

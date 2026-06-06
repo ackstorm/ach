@@ -15,9 +15,12 @@
 //     the streaming response Body for the reconciler to materialize
 //     under .tmp/<random> / fsync / rename(2) per §10.3.
 //
-// Path subset extraction (the spec.Path subdirectory) is deferred to
-// v1beta1 — v1alpha1 ships the full repo tarball; Plan 02-05's Plugin
-// reconciler writes the archive verbatim as plugin/<crname>.tar.gz.
+// Path subset extraction honors spec.Path (F1): a directory path narrows to
+// that subtree's contents (re-rooted), a single-file path returns that file's
+// raw bytes. Narrowing happens on-disk for the git transport (git.tarSubtree)
+// and via sources.NarrowArchiveSubtree for the legacy REST transport. Empty
+// path → full repo tarball. (PluginMarketplace strips path before fetch — its
+// marketplace.json discovery walks the whole repo.)
 //
 // Auth: optional. When spec.AuthSecretRef is non-nil, its Name resolves
 // to a Kubernetes Secret in the CR's namespace and the PAT lives under
@@ -29,8 +32,10 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	neturl "net/url"
 	"strings"
@@ -155,8 +160,8 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 
 	// 6. Resolve the tarball download URL via go-github. The third
 	//    argument (`5`) is the redirect-follow depth go-github accepts.
-	//    Path subset extraction is deferred (v1beta1); v1alpha1 ships
-	//    the full repo tarball.
+	//    The full repo archive streams below; spec.Path narrowing (when set)
+	//    is applied to the StatusOK body via sources.NarrowArchiveSubtree (F1).
 	archiveURL, resp, err := client.Repositories.GetArchiveLink(
 		ctx, owner, repo, gogithub.Tarball,
 		&gogithub.RepositoryContentGetOptions{Ref: sha},
@@ -191,6 +196,18 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 
 	switch {
 	case tarballResp.StatusCode == nethttp.StatusOK:
+		// spec.Path narrowing: the git transport narrows on-disk, but the REST
+		// archive is the whole repo wrapped under "<repo>-<sha>/", so narrow it
+		// here to the same shape (rooted at the subtree's contents) when a path
+		// is set — keeping the fetcher's output contract transport-agnostic (F1).
+		if f.spec.Path != "" {
+			defer sources.DrainAndClose(tarballResp.Body)
+			narrowed, nerr := sources.NarrowArchiveSubtree(tarballResp.Body, f.spec.Path, sources.DefaultArchiveIngressCap)
+			if nerr != nil {
+				return nil, fmt.Errorf("github: narrow path %q: %w", f.spec.Path, nerr)
+			}
+			return &sources.FetchResult{Body: io.NopCloser(bytes.NewReader(narrowed)), UpstreamRev: sha}, nil
+		}
 		// Body ownership transfers to caller.
 		return &sources.FetchResult{
 			Body:        tarballResp.Body,

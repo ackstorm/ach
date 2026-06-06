@@ -197,6 +197,10 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 	if done {
 		return res, err
 	}
+	// A SkillMarketplace is a DISCOVERY mechanism (mirrors PluginMarketplace), not
+	// a narrow-at-fetch object: stage-1 fetches the WHOLE repo (path stripped — see
+	// stage1Fetch) and spec.<git>.path is a post-fetch tree-walk hint (the
+	// skills-root holding the skill dirs), NOT a fetch-layer subtree narrow (F1).
 	subPath := skillMarketplaceSubPath(spec)
 	archiveRoot, discovered, derr := discoverSkillsInTree(raw, subPath)
 	if derr != nil {
@@ -248,7 +252,10 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 // populated; the caller derives archiveRoot via discoverSkillsInTree.
 func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1alpha1.SkillMarketplace, requeue time.Duration) (raw []byte, rev string, res ctrl.Result, done bool, err error) {
 	spec := cr.Spec
-	sourceSpec := buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
+	// Discovery, not a narrow-at-fetch object: clear the git spec.path so the
+	// fetcher returns the WHOLE repo (the per-provider fetchers otherwise narrow
+	// to spec.path — F1). path is re-applied post-fetch as the discovery walk hint.
+	sourceSpec := withoutGitPath(buildSourceSpec(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP))
 	authRef := extractAuthSecretRef(spec.Type, spec.GitHub, spec.GitLab, spec.Bitbucket, spec.S3, spec.GCS, spec.HTTP)
 
 	var marketplaceSecret *corev1.Secret
@@ -363,7 +370,7 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 	archiveRoot, subPath, upstreamRev string,
 ) error {
 	// d.Dir is the skill dir name relative to the skills-root (subPath); the
-	// full subtree path inside the archive is subPath/<dir>.
+	// full subtree path inside the whole-repo archive is subPath/<dir>.
 	subtreePath := d.Dir
 	if subPath != "" {
 		subtreePath = path.Join(subPath, d.Dir)
@@ -442,7 +449,9 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 
 // skillMarketplaceSubPath returns the in-repo directory that holds the skill
 // dirs (spec.<git>.path), or "" when skills sit at the repo root. s3/gcs/http
-// sources point directly at a pre-archived tarball and carry no sub-path.
+// sources point directly at a pre-archived tarball and carry no sub-path. Used
+// as the discovery tree-walk hint over the whole-repo archive (a SkillMarketplace
+// is discovery, not a narrow-at-fetch object — F1).
 func skillMarketplaceSubPath(spec achv1alpha1.SkillMarketplaceSpec) string {
 	switch {
 	case spec.GitHub != nil:
