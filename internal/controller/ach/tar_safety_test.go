@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/sources"
@@ -75,6 +76,16 @@ func TestTarEntrySafe(t *testing.T) {
 		{"abs_symlink", tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"}, false},
 		{"escaping_symlink", tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../../etc/passwd"}, false},
 		{"empty_symlink", tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: ""}, false},
+		// F3 review: TrimPrefix("./")-before-Clean bypass — must be rejected.
+		{"dotslash_traversal", tar.Header{Name: ".//../evil", Typeflag: tar.TypeReg}, false},
+		// F3 review: Windows-client parity — backslash + drive-letter.
+		{"backslash_traversal", tar.Header{Name: `..\evil`, Typeflag: tar.TypeReg}, false},
+		{"windows_drive", tar.Header{Name: `C:\evil`, Typeflag: tar.TypeReg}, false},
+		{"backslash_symlink_target", tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: `..\x`}, false},
+		// F3 review: "."/"./" reg/symlink resolve to the extraction root.
+		{"dot_regular", tar.Header{Name: ".", Typeflag: tar.TypeReg}, false},
+		{"dotslash_regular", tar.Header{Name: "./", Typeflag: tar.TypeReg}, false},
+		{"dot_dir_ok", tar.Header{Name: ".", Typeflag: tar.TypeDir}, true},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -160,6 +171,36 @@ func TestVerifySkillContents_FullTarSafety(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validSkill, {name: "pdf/alias.md", typeflag: tar.TypeSymlink, linkname: "SKILL.md"}})
 		if err := verifySkillContents(bytes.NewReader(tb)); err != nil {
 			t.Errorf("verifySkillContents = %v; want nil (in-tree symlink admitted)", err)
+		}
+	})
+}
+
+// TestVerifyWalkCaps covers the F3-review full-walk DoS caps (entry count +
+// cumulative decompressed bytes). The caps are lowered for the test so it need
+// not build a 100k-entry / gigabyte fixture.
+func TestVerifyWalkCaps(t *testing.T) {
+	origEntries, origBytes := maxVerifyEntries, maxVerifyDecompressedBytes
+	t.Cleanup(func() { maxVerifyEntries, maxVerifyDecompressedBytes = origEntries, origBytes })
+
+	t.Run("entry_count_cap", func(t *testing.T) {
+		maxVerifyEntries, maxVerifyDecompressedBytes = 5, origBytes
+		entries := []tarEntry{{name: "commands/cmd.md", body: "# cmd\n"}}
+		for i := 0; i < 10; i++ {
+			entries = append(entries, tarEntry{name: "commands/extra" + string(rune('a'+i)) + ".md", body: "x"})
+		}
+		tb := buildSafetyTarGz(t, entries)
+		if err := verifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
+			t.Errorf("verifyPluginContents = %v; want ErrUpstreamInvalid (entry cap)", err)
+		}
+	})
+
+	t.Run("decompressed_bytes_cap", func(t *testing.T) {
+		maxVerifyEntries, maxVerifyDecompressedBytes = origEntries, 64
+		// A highly compressible component file whose decompressed size blows the
+		// 64-byte walk cap (compressed archive stays tiny — a bomb shape).
+		tb := buildSafetyTarGz(t, []tarEntry{{name: "commands/cmd.md", body: strings.Repeat("a", 4096)}})
+		if err := verifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
+			t.Errorf("verifyPluginContents = %v; want ErrUpstreamInvalid (decompressed cap)", err)
 		}
 	})
 }

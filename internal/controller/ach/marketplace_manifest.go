@@ -36,7 +36,6 @@
 package ach
 
 import (
-	"archive/tar"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -88,15 +87,26 @@ func verifyPluginContents(r io.Reader) error {
 		return fmt.Errorf("plugin contents check: gzip reader: %v: %w", err, sources.ErrUpstreamInvalid)
 	}
 	defer func() { _ = gz.Close() }()
-	tr := tar.NewReader(gz)
+	tr, cr := cappedTarReader(gz)
 	recognized := false
+	entries := 0
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			if cr.n > maxVerifyDecompressedBytes {
+				return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+			}
 			return fmt.Errorf("plugin contents check: tar walk: %v: %w", err, sources.ErrUpstreamInvalid)
+		}
+		entries++
+		if entries > maxVerifyEntries {
+			return fmt.Errorf("plugin contents check: more than %d entries: %w", maxVerifyEntries, sources.ErrUpstreamInvalid)
+		}
+		if cr.n > maxVerifyDecompressedBytes {
+			return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
 		}
 		// Full-tar safety gate: any entry the CLI extractor rejects under every
 		// policy fails the whole tar (F3).

@@ -102,15 +102,26 @@ func verifySkillContents(r io.Reader) error {
 		return fmt.Errorf("skill: gzip open: %w", errors.Join(err, sources.ErrUpstreamInvalid))
 	}
 	defer func() { _ = gz.Close() }()
-	tr := tar.NewReader(gz)
+	tr, cr := cappedTarReader(gz)
 	found := false
+	entries := 0
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			if cr.n > maxVerifyDecompressedBytes {
+				return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+			}
 			return fmt.Errorf("skill: tar read: %w", errors.Join(err, sources.ErrUpstreamInvalid))
+		}
+		entries++
+		if entries > maxVerifyEntries {
+			return fmt.Errorf("skill: more than %d entries: %w", maxVerifyEntries, sources.ErrUpstreamInvalid)
+		}
+		if cr.n > maxVerifyDecompressedBytes {
+			return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
 		}
 		// Full-tar safety gate: any entry the CLI extractor rejects under every
 		// policy fails the whole tar (F3).
