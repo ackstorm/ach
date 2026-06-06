@@ -264,11 +264,24 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 	// B1 fail-safe: an empty active set with ≥1 ACH-owned candidate is the
 	// mis-wire signature (the active-key lookup returned nothing while ACH
 	// keys still exist upstream — the shape of the original incident). Skip
-	// ALL revocation this tick. The cost is at most one skipped interval;
-	// this is legitimately reachable only when ACH genuinely has zero
-	// active keys (rare), in which case the next tick with any active key
-	// proceeds normally.
+	// ALL revocation this tick rather than risk revoking ACH's own keys on a
+	// bad active-set read.
+	//
+	// KNOWN LIMITATION (Codex review, PR #119): the orphan loop only
+	// enumerates users with ACTIVE ACH rows (db.ListACHManagedLitellmUsers
+	// filters status='active'). A genuinely-orphaned key whose owner's LAST
+	// active row was revoked — e.g. a DB-side revoke whose LiteLLM-side delete
+	// failed — drops out of future ticks and is NOT backstopped here. Closing
+	// that needs a widened enumeration (active OR recently-revoked users) with
+	// a per-tick cost bound — a design change tracked as a follow-up, not part
+	// of this fix. The empty-set branch itself is near-unreachable in
+	// practice: achKeySet and the user set read the same active rows, so an
+	// empty achKeySet implies an empty user set (early return above) except
+	// across a sub-tick read race.
 	if len(achKeySet) == 0 {
+		if r.DryRun {
+			r.previewDryRun(candidates) // still surface the batch this guard would abort
+		}
 		r.mSkipped(SkipReasonEmptyActiveSet, len(candidates))
 		r.Audit.Info("operator.orphan-cleanup",
 			"target.kind", "tick",
@@ -287,6 +300,9 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		maxRevoke = DefaultMaxRevoke
 	}
 	if len(candidates) > maxRevoke {
+		if r.DryRun {
+			r.previewDryRun(candidates) // still surface the batch this guard would abort
+		}
 		r.mSkipped(SkipReasonCircuitBreaker, len(candidates))
 		r.Audit.Info("operator.orphan-cleanup",
 			"target.kind", "tick",
@@ -297,17 +313,19 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		return
 	}
 
-	// Step 4 (pass 2): revoke each candidate by its opaque Token, or log a
-	// WOULD-revoke line in dry-run mode (B3). A per-key RevokeKey failure
-	// is logged + audited and the tick CONTINUES — sibling candidates may
-	// still be revokable (it does not indicate the upstream is unreachable).
+	// Step 4 (pass 2). In dry-run (B3) surface every candidate as a
+	// WOULD-revoke preview and stop — RevokeKey is never called. This is also
+	// reached only for the un-guarded path; the B1/B2 branches above run their
+	// own previewDryRun so a dry-run operator sees the guarded batches too.
+	if r.DryRun {
+		r.previewDryRun(candidates)
+		return
+	}
+	// Real revocation: revoke each candidate by its opaque Token. A per-key
+	// RevokeKey failure is logged + audited and the tick CONTINUES — sibling
+	// candidates may still be revokable (it does not indicate the upstream is
+	// unreachable).
 	for _, c := range candidates {
-		if r.DryRun {
-			r.mSkipped(SkipReasonDryRun, 1)
-			r.Log.Info("orphan-cleanup: WOULD revoke (dry-run)",
-				"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
-			continue
-		}
 		if err := r.Client.RevokeKey(ctx, c.token); err != nil {
 			// CR-03: err.Error() is NOT included on the audit event; see
 			// the litellm_unreachable branch above for rationale.
@@ -328,6 +346,19 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			"outcome", OutcomeRevoked,
 			"user_id", c.userID)
 		r.Log.Info("orphan-cleanup: revoked",
+			"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
+	}
+}
+
+// previewDryRun (B3) logs every candidate as a WOULD-revoke line and counts it
+// under skipped{dry_run} WITHOUT calling RevokeKey. It is invoked from the
+// un-guarded pass-2 path AND from the B1/B2 guard branches, so a dry-run
+// operator can inspect exactly the batches those guards would abort — the
+// suspicious batches dry-run exists to diagnose.
+func (r *Runnable) previewDryRun(candidates []orphanCandidate) {
+	for _, c := range candidates {
+		r.mSkipped(SkipReasonDryRun, 1)
+		r.Log.Info("orphan-cleanup: WOULD revoke (dry-run)",
 			"token", c.token, "ach_key_id", c.achID, "user_id", c.userID)
 	}
 }

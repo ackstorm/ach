@@ -349,6 +349,20 @@ WHY IT MATTERED: the original loop joined the opaque LiteLLM `token` against the
 10-min floor under a managed user was mis-classified orphan and revoked. The
 ownership gate + B1/B2 guards make a future mis-wire observable and bounded.
 
+NOTE (`ACH_ORPHAN_CLEANUP_DRY_RUN`): a malformed value (`tru`, `yes`, `on`)
+**fails operator startup** — it is parsed with `MustEnvBool`, not the
+silent-fallback `EnvBool`, so a typo can never quietly re-enable real
+revocation. Under dry-run the B1/B2 guards still emit per-key `WOULD revoke` +
+`skipped{dry_run}` so you can inspect exactly the batches they would abort.
+
+KNOWN LIMITATION (orphan backstop coverage): the loop only checks users with an
+**active** ACH row (`ListACHManagedLitellmUsers` filters `status='active'`). A
+LiteLLM key whose owner's last ACH row is already `revoked` — e.g. a DB-side
+revoke whose LiteLLM-side `/key/delete` failed — is NOT re-checked by later
+ticks. If you see a stale upstream key for a fully-revoked user, delete it
+manually (it 401s anyway); a widened-enumeration backstop is a tracked
+follow-up, not part of PR #119.
+
 ### ❌ Code change rebuilt but the old container keeps serving after `cluster-up`
 ```bash
 # edit Go code → make cluster-up → behavior unchanged; pod AGE is hours old

@@ -146,6 +146,58 @@ func TestEnvBoolInvalidFallback(t *testing.T) {
 	}
 }
 
+// TestMustEnvBoolUnsetFallback: an unset variable returns the fallback with
+// no error (the only non-error fallback path).
+func TestMustEnvBoolUnsetFallback(t *testing.T) {
+	for _, fb := range []bool{true, false} {
+		got, err := config.MustEnvBool(envKey, fb) // envKey is unset here
+		if err != nil {
+			t.Fatalf("MustEnvBool unset: unexpected err %v", err)
+		}
+		if got != fb {
+			t.Fatalf("MustEnvBool unset: want fallback %v, got %v", fb, got)
+		}
+	}
+}
+
+// TestMustEnvBoolValid: parseable values are returned regardless of fallback.
+func TestMustEnvBoolValid(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{{"true", true}, {"1", true}, {"t", true}, {"false", false}, {"0", false}, {"FALSE", false}}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			t.Setenv(envKey, tc.in)
+			got, err := config.MustEnvBool(envKey, !tc.want)
+			if err != nil {
+				t.Fatalf("MustEnvBool(%q): unexpected err %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("MustEnvBool(%q): want %v, got %v", tc.in, tc.want, got)
+			}
+		})
+	}
+}
+
+// TestMustEnvBoolInvalidErrors: a SET-but-unparseable value is a HARD error —
+// the whole point of MustEnvBool vs EnvBool. It must NOT silently return the
+// fallback (that fail-open is what enabled the dry-run-typo footgun).
+func TestMustEnvBoolInvalidErrors(t *testing.T) {
+	for _, bad := range []string{"yes", "tru", "on", "y", "enabled"} {
+		t.Run(bad, func(t *testing.T) {
+			t.Setenv(envKey, bad)
+			got, err := config.MustEnvBool(envKey, false)
+			if err == nil {
+				t.Fatalf("MustEnvBool(%q): want error, got nil (value=%v)", bad, got)
+			}
+			if got != false {
+				t.Fatalf("MustEnvBool(%q): error path must return false, got %v", bad, got)
+			}
+		})
+	}
+}
+
 // TestMustEnvDurationAtLeast exercises the eight-case matrix for the
 // ACH_ORPHAN_CLEANUP_INTERVAL parser introduced in Plan 02-09 Task 1:
 // default fallback / valid above-min / valid at-min boundary / below-min

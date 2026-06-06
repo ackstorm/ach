@@ -502,6 +502,86 @@ func TestRunnable_TickOnce_CircuitBreaker(t *testing.T) {
 	}
 }
 
+// TestRunnable_TickOnce_DryRun_EmptyActiveSet (#3): with DryRun on, the B1
+// empty-active-set guard must STILL surface the candidate batch it would abort
+// — WOULD revoke + skipped{dry_run} — in addition to its own
+// skipped_empty_active_set alarm. Nothing is revoked.
+func TestRunnable_TickOnce_DryRun_EmptyActiveSet(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {{
+				Token:     "sk-guarded",
+				UserID:    "u1",
+				CreatedAt: time.Now().Add(-20 * time.Minute),
+				Metadata:  map[string]any{"ach_key_id": "pkid-guarded"},
+			}},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.DryRun = true
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{}, nil // empty → B1 path
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times in dry-run; want 0", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 || lines[0]["outcome"] != OutcomeSkippedEmptyActiveSet {
+		t.Fatalf("want 1 skipped_empty_active_set audit line; got %s", buf.String())
+	}
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonDryRun)); got != 1 {
+		t.Errorf("skipped{dry_run} = %v; want 1 (B1 must still preview under dry-run)", got)
+	}
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonEmptyActiveSet)); got != 1 {
+		t.Errorf("skipped{empty_active_set} = %v; want 1", got)
+	}
+}
+
+// TestRunnable_TickOnce_DryRun_CircuitBreaker (#3): with DryRun on, the B2
+// circuit-breaker must STILL surface the over-cap batch as WOULD revoke +
+// skipped{dry_run}, alongside its skipped_circuit_breaker alarm. No revokes.
+func TestRunnable_TickOnce_DryRun_CircuitBreaker(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				{Token: "sk-a", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-a"}},
+				{Token: "sk-b", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-b"}},
+			},
+		},
+	}
+	r, buf := newTestRunnable(t, fake)
+	r.DryRun = true
+	r.MaxRevoke = 1
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u1"}, nil
+	}
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"pkid-live"}, nil // non-empty → skip B1, hit B2
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := len(fake.revokedKeys); got != 0 {
+		t.Errorf("RevokeKey called %d times in dry-run; want 0", got)
+	}
+	lines := auditLines(t, buf)
+	if len(lines) != 1 || lines[0]["outcome"] != OutcomeSkippedCircuitBreaker {
+		t.Fatalf("want 1 skipped_circuit_breaker audit line; got %s", buf.String())
+	}
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonDryRun)); got != 2 {
+		t.Errorf("skipped{dry_run} = %v; want 2 (B2 must still preview all candidates)", got)
+	}
+	if got := testutil.ToFloat64(r.Metrics.Skipped.WithLabelValues(SkipReasonCircuitBreaker)); got != 2 {
+		t.Errorf("skipped{circuit_breaker} = %v; want 2", got)
+	}
+}
+
 // TestRunnable_TickOnce_LiteLLMUnreachable: ListUserKeys errors on the
 // FIRST user → the tick aborts cleanly with exactly one audit event
 // (outcome=litellm_unreachable, target.kind=tick).

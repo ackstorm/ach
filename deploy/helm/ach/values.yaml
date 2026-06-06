@@ -79,6 +79,8 @@ operator:
   #       t+interval, so a year-long interval never fires).
   #   ACH_ORPHAN_CLEANUP_DRY_RUN    (default false) — B3 reversible neutralize:
   #       logs "WOULD revoke" + skipped{dry_run} metric, never calls RevokeKey.
+  #       A malformed value (tru/yes/on) FAILS operator startup (parsed strictly),
+  #       so a typo can never silently re-enable real revocation.
   #   ACH_ORPHAN_CLEANUP_MAX_REVOKE (default 10) — B2 circuit-breaker: a tick
   #       with more true-orphan candidates than this aborts revocation entirely.
   # Observability: /metrics exposes ach_orphan_cleanup_{candidates,revoked}_total

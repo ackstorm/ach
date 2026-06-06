@@ -210,7 +210,13 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// ─── orphan-cleanup defense-in-depth guardrails (B1/B2/B3) ───
 	// DryRun = reversible image-level neutralize; MaxRevoke = per-tick
 	// circuit-breaker cap (a double-digit batch is itself the alarm).
-	orphanDryRun := config.EnvBool("ACH_ORPHAN_CLEANUP_DRY_RUN", false)
+	// MustEnvBool (not EnvBool): a malformed value must fail startup, never
+	// silently fall back to false and re-enable real revocation — this is the
+	// emergency neutralize for a destructive loop.
+	orphanDryRun, err := config.MustEnvBool("ACH_ORPHAN_CLEANUP_DRY_RUN", false)
+	if err != nil {
+		return fmt.Errorf("ACH_ORPHAN_CLEANUP_DRY_RUN invalid (B3 dry-run safety toggle): %w", err)
+	}
 	orphanMaxRevoke, err := config.MustEnvIntPositive("ACH_ORPHAN_CLEANUP_MAX_REVOKE", orphan.DefaultMaxRevoke)
 	if err != nil {
 		return fmt.Errorf("ACH_ORPHAN_CLEANUP_MAX_REVOKE must be a positive integer (B2 circuit-breaker): %w", err)
