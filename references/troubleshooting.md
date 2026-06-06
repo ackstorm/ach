@@ -157,10 +157,20 @@ plugin with only `commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/
 `themes/`/`monitors/` (or root `SKILL.md`/`.mcp.json`/`.lsp.json`) passes.
 `UpstreamInvalid` therefore means none of those were found at the tar root.
 
+`verifyPluginContents` / `verifySkillContents` ALSO walk the WHOLE tar and
+reject (same `UpstreamInvalid` reason) any entry the CLI hydrate extractor
+refuses under every policy — path traversal (`../`, absolute, `.//../` , `\`,
+`C:\`), hardlinks, device/fifo nodes, unknown typeflags, pax-injected paths, or
+an out-of-tree symlink target — plus archives over the operator walk caps
+(`maxVerifyEntries` / `maxVerifyDecompressedBytes`, a bomb guard). So
+`UpstreamInvalid` here means EITHER "no recognized component" OR "the tar
+carries an entry/shape hydrate would reject" (F3). In-tree symlinks are allowed.
+
 ✅ Verify the entry `source` resolves to the **plugin root** (where the
-convention dirs live), not a parent dir or a docs-only directory. The
-marketplace stays `Synced=True`; the good plugins keep serving while the bad
-entry is reported in `status.message`.
+convention dirs live), not a parent dir or a docs-only directory; and that the
+upstream tree contains no unsafe entries. The marketplace stays `Synced=True`;
+the good plugins keep serving while the bad entry is reported in
+`status.message`.
 
 ### ❌ Environment stuck in `AccessGroupSynced=False reason=UnresolvedReferences`
 ```bash
