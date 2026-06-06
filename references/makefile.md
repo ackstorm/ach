@@ -48,7 +48,7 @@ work happens when you debug it.
 
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
-| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
+| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-e2e`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
 | **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full`/`e2e-keep` (orchestrate context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
@@ -146,6 +146,7 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `build-server` | A | Build `bin/ach` (operator/platform-api/forwarder/content-service/migrate). |
 | `build-cli` | A | Build `bin/ach-cli` (user CLI; **container glibc — NOT host-runnable**). |
 | `build-cli-host` | A | Build `bin/ach-cli-host` (static, `CGO_ENABLED=0`; runs on the host outside the devtools container — use for host hydrate/login testing). |
+| `build-e2e` | A | Build `bin/ach` + `bin/ach-cli` with `-tags=e2e` (required by Phase 7 SIGKILL-seam tests). |
 | `build-image` | B | Build the ach services container image (`IMG=...`). |
 | `build-image-mock` | B | Build `ach-mock:e2e` (LiteLLM-shaped mock). |
 | `build-image-mcp-echo` | B | Build `ach-mcp-echo:e2e` (JWT-verifying MCP backend, issue #35). |
@@ -176,7 +177,7 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 |--------|-----|-------------|
 | `e2e-full` | B | `cluster-up` → `e2e-run`; cluster **kept up** after the run (pass or fail). `make cluster-down` to reclaim. CI does NOT use this target (it tears down via its own `if: always()` step). |
 | `e2e-keep` | B | Alias of `e2e-full` (kept cluster — local iteration). |
-| `e2e-run` | A | Run the e2e suite against an already-up cluster. |
+| `e2e-run` | A | Build e2e-tagged binaries, then run the e2e suite against an already-up cluster; executes `./test/e2e` first, then helper packages, so verbose output from the main suite streams sooner. |
 | `e2e-focus RUN=… / FOCUS=…` | A | Focused subtest (stdlib `-run` or ginkgo focus). |
 
 ### QA (`qa-`)

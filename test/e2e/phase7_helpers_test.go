@@ -8,17 +8,14 @@
 // no Ginkgo / Gomega / testify. All command execution is bounded by
 // context timeouts; no naked polling loops.
 //
-// Engineer-pending verification debt: this suite is mechanically
-// correct but defers prerequisite acquisition (real pk_ via Phase 3
-// SSO, kept-cluster bring-up, ./bin/ach-cli binary build) to engineer
-// action. Activation:
+// The normal path is `make e2e-run`: it builds the e2e-tagged CLI
+// binary and self-mints a pk_ through the mock SSO flow when no
+// ACH_E2E_PHASE7_PK override is supplied. Focused runs can be driven
+// after the same prerequisites:
 //
-//	make cluster-keep
-//	./scripts/dev.sh make build-e2e   # ← MUST use -tags=e2e for sc2 (07-W5-04)
-//	ACH_E2E_PHASE7=1 \
-//	  ACH_E2E_PHASE7_PK=pk_<26-base32-lower> \
-//	  ACH_E2E_PHASE7_BASE_URL=http://localhost:8080 \
-//	  ./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine
+//	make cluster-up
+//	make build-e2e   # MUST use -tags=e2e for sc2 (07-W5-04)
+//	make e2e-focus FOCUS=TestPhase7CLIEngine
 //
 // IMPORTANT (07-W5-04 WR-01): the binary at ./bin/ach-cli MUST be
 // built with -tags=e2e for sc2_commit_sequence_sigkill to fire. A
@@ -32,8 +29,8 @@
 // D-18 bypass mechanism (carried forward from Phase 6): the suite stages
 // a synthetic XDG_CONFIG_HOME/ach/config.yaml with `default: demo` +
 // `deployments.demo.{url,pk}` populated from ACH_E2E_PHASE7_PK +
-// ACH_E2E_PHASE7_BASE_URL — no device-code flow round-trip. The pk_ is
-// minted out-of-band (Phase 3 SSO endpoints / scripts/uat-phase3.sh).
+// ACH_E2E_PHASE7_BASE_URL when supplied, or from the standard gateway URL
+// plus a self-minted pk_ otherwise.
 //
 // Subtest harness contract:
 //   - phase7SuiteGuard:        prerequisite gate (env + binary + cluster).
@@ -78,7 +75,7 @@ const (
 	phase7PlatformAPIDeployment = "ach-platform-api"
 	// phase7BinaryPath is the compiled `ach-cli` binary the suite exec's.
 	// The user-facing CLI ships as a separate binary post-split; built by
-	// `./scripts/dev.sh make build` (Makefile target writes to bin/ach-cli).
+	// `make e2e-run` / `make build-e2e` (writes to bin/ach-cli).
 	phase7BinaryPath = "../../bin/ach-cli"
 	// phase7DefaultBaseURL is the externally-visible platform-api base
 	// URL the standard kind+Helm fixture emits (the ach-local-gateway
@@ -101,17 +98,15 @@ const (
 
 // phase7SuiteGuard skips when prerequisites aren't met.
 //
-// Required env vars when ACH_E2E_PHASE7=1:
-//   - ACH_E2E_PHASE7_PK:       pk_<26-base32-lower> minted out-of-band
-//     (e.g. via the Phase 3 SSO endpoints / scripts/uat-phase3.sh).
-//
-// Optional env vars (defaulted to the standard kind+Helm fixture):
+// Optional env vars:
+//   - ACH_E2E_PHASE7_PK:       pk_<26-base32-lower> override. When unset,
+//     the suite self-mints via the mock SSO flow against the kept cluster.
 //   - ACH_E2E_PHASE7_BASE_URL: externally-visible platform-api URL
 //     (default: http://localhost:8080).
 //
 // Also requires:
 //   - ./bin/ach-cli binary exists + is executable (built by
-//     `./scripts/dev.sh make build`).
+//     `make e2e-run` / `make build-e2e`).
 //   - kubectl can reach the kept cluster's platform-api Deployment
 //     (`kubectl get deploy ach-platform-api -n ach-system` succeeds).
 //
@@ -126,10 +121,9 @@ func phase7SuiteGuard(t *testing.T) {
 	if os.Getenv("ACH_SKIP_PHASE7") == "1" {
 		t.Skipf(
 			"Phase 7 CLI engine e2e suite opted out via ACH_SKIP_PHASE7=1 (default: runs); needs a live " +
-				"kind+Helm cluster + ./bin/ach-cli built (engineer-pending). " +
-				"Run: make cluster-keep && ./scripts/dev.sh make build-e2e && " +
-				"ACH_E2E_PHASE7=1 ACH_E2E_PHASE7_PK=pk_<26-base32-lower> " +
-				"./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine. " +
+				"kind+Helm cluster + ./bin/ach-cli. " +
+				"Run: make e2e-run, or make cluster-up && make build-e2e && " +
+				"make e2e-focus FOCUS=TestPhase7CLIEngine. " +
 				"See CLAUDE.md \"E2E debug loop\" + test/e2e/phase7_helpers_test.go " +
 				"file header for the full activation contract. " +
 				"NOTE (07-W5-04): make build-e2e supersedes make build for this suite — " +
@@ -141,7 +135,7 @@ func phase7SuiteGuard(t *testing.T) {
 	if _, err := os.Stat(phase7BinaryPath); err != nil {
 		t.Skipf(
 			"Phase 7 suite guard: %s not found (build it via "+
-				"`./scripts/dev.sh make build-e2e`): %v",
+				"`make e2e-run` or `make build-e2e`): %v",
 			phase7BinaryPath, err,
 		)
 		return
@@ -152,7 +146,7 @@ func phase7SuiteGuard(t *testing.T) {
 	if err != nil {
 		t.Skipf(
 			"Phase 7 suite guard: kubectl get deploy %s -n %s failed "+
-				"(cluster up? Helm chart applied? — run `make cluster-keep`): "+
+				"(cluster up? Helm chart applied? — run `make cluster-up`): "+
 				"%v\n%s",
 			phase7PlatformAPIDeployment, phase7Namespace, err, out)
 		return
@@ -194,7 +188,7 @@ func phase7RequireSigkillSeam(t *testing.T) {
 			"phase7RequireSigkillSeam: %s does not contain the SIGKILL seam env-var "+
 				"literal %q — binary was built without -tags=e2e (07-W5-04 WR-01: "+
 				"the seam is build-tag-gated; sc2 cannot fire against a release-tagged "+
-				"binary). Rebuild via `./scripts/dev.sh make build-e2e` and re-run.",
+				"binary). Rebuild via `make build-e2e` and re-run.",
 			phase7BinaryPath, phase7SigkillEnvVar)
 	}
 }
@@ -402,7 +396,7 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, phase7BinaryPath, args...)
+	cmd := exec.CommandContext(ctx, phase7BinaryPath, phase7ArgsWithRuntime(args)...)
 	// Strip the synthetic-mode env vars the e2e harness exports (E2E_RUN_ENV
 	// sets ACH_BASE_URL): they would flip the CLI into synthetic mode and
 	// ignore the seeded XDG disk-config credential (half-set-erroring when no
@@ -415,6 +409,25 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+// phase7ArgsWithRuntime keeps Phase 7 focused on the runtime-aware hydrate
+// contract. Production hydrate defaults to context-only; these tests assert
+// adapter runtime-config merge/drift semantics, so every hydrate invocation
+// goes through --include-runtime unless the caller already supplied it.
+func phase7ArgsWithRuntime(args []string) []string {
+	if len(args) == 0 || args[0] != "hydrate" {
+		return args
+	}
+	for _, arg := range args[1:] {
+		if arg == "--include-runtime" {
+			return args
+		}
+	}
+	out := make([]string, 0, len(args)+1)
+	out = append(out, args[0], "--include-runtime")
+	out = append(out, args[1:]...)
+	return out
 }
 
 // syntheticModeEnvVars are the env vars that flip the CLI into "synthetic

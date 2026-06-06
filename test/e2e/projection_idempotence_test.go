@@ -37,11 +37,8 @@
 //
 // Activation (mirrors cli_hydrate_engine_test.go / projection_lifecycle_test.go):
 //
-//	make e2e-full                         # cluster-up, cluster KEPT
-//	./scripts/dev.sh make build-e2e       # ach + ach-cli with -tags=e2e
-//	ACH_E2E_PHASE7_PK=pk_<26-base32-lower> \
-//	  ACH_E2E_PHASE7_BASE_URL=http://localhost:8080 \
-//	  make e2e-focus RUN='TestProjectionIdempotence'
+//	make e2e-full                         # cluster-up + e2e binaries, cluster KEPT
+//	make e2e-focus RUN='TestProjectionIdempotence'
 //
 // Replay one adapter:  make e2e-focus RUN='TestProjectionIdempotence/codex'
 //

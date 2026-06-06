@@ -5,7 +5,7 @@
 // Phase 7 CLI engine e2e suite — Plan 07-W4-01.
 //
 // Drives `ach-cli hydrate` against the kept kind cluster (per
-// CLAUDE.md "E2E debug loop" — `make cluster-keep`) for the full
+// CLAUDE.md "E2E debug loop" — `make e2e-full` / `make cluster-up`) for the full
 // Phase 7 close criterion set per D-22:
 //
 //   - 8 sc1_* subtests (4 platforms × {pk_, ek_}) — Core Value path
@@ -37,17 +37,14 @@
 //
 // Activation:
 //
-//	make cluster-keep
-//	./scripts/dev.sh make build
-//	ACH_E2E_PHASE7=1 \
-//	  ACH_E2E_PHASE7_PK=pk_<26-base32-lower> \
-//	  ACH_E2E_PHASE7_BASE_URL=http://localhost:8080 \
-//	  ./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine
+//	make cluster-up
+//	make build-e2e
+//	make e2e-focus FOCUS=TestPhase7CLIEngine
 //
 // Per CLAUDE.md "E2E debug loop", a single failing subtest can be
 // replayed via:
 //
-//	./scripts/dev.sh make e2e-focus FOCUS=TestPhase7CLIEngine/<sub>
+//	make e2e-focus FOCUS=TestPhase7CLIEngine/<sub>
 //
 // e.g. FOCUS=TestPhase7CLIEngine/sc2_commit_sequence_sigkill — avoids
 // burning a full ~6-minute e2e cycle on a single regression.

@@ -155,7 +155,7 @@ repo); until then direct pushes to `main` are unguarded.
 
 The host has no Go toolchain on PATH. **Every `make` target auto-routes — the
 host needs only docker.** Toolchain targets (`test-*`, `qa-*`, `gen-*`,
-`build-server`/`-cli`/`-all`, `cluster-*`, `e2e-run`) wrap into the
+`build-server`/`-cli`/`-e2e`/`-all`, `cluster-*`, `e2e-run`) wrap into the
 `ach-devtools` container via the `container_target` macro; host+docker targets
 (`build-image*`, the gates) and `kubectl`-only targets (`wait-*`, `logs-*`) run
 on the host. Never prefix a `make` target with `./scripts/dev.sh` — see
@@ -197,7 +197,7 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make qa-lint`          | golangci-lint full sweep | before commit; also runs inside the pre-push gate |
 | `make test-envtest`     | controller-runtime envtest (race), ~7m | before commit on controller changes |
 | `make test-envtest-fast`| envtest without -race, ~3m | dev inner loop |
-| `make e2e-full`         | kind + Helm + stdlib testing, ~6m | final gate before commit |
+| `make e2e-full`         | kind + Helm + e2e binary build + stdlib testing, ~6m | final gate before commit |
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) OR `FOCUS='ginkgo it'` (legacy) | dev loop on one sub-test |
 | `make qa-security`      | gosec + govulncheck + fuzz-short, ≤6m | in-container; before commit |
 | `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
@@ -378,7 +378,7 @@ Iterate with the kept-cluster loop (full diagnosis recipe in
 `test/e2e/README.md`):
 
 ```bash
-make e2e-full                                 # cluster-up + e2e-run, cluster KEPT (pass or fail)
+make e2e-full                                 # cluster-up + e2e-tagged binaries + e2e-run, cluster KEPT
 make logs-operator                            # diagnose live
 make e2e-focus FOCUS="rateLimits composite"   # focused subtest
 make cluster-sync                             # after a code edit: rebuild image + roll ach pods
@@ -432,4 +432,3 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and
   walk the whole repo. Symlinked / traversal / missing paths →
   `UpstreamInvalid`.
-

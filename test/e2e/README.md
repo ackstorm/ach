@@ -3,7 +3,8 @@
 Stdlib `testing` Go files behind build tag `e2e`. No Ginkgo
 (per memory `feedback_023_tier_framework_rejected`).
 
-Activation: `make e2e-run` (assumes `make cluster-up` already invoked).
+Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
+`-tags=e2e`; assumes `make cluster-up` already invoked).
 
 ## Suite map
 

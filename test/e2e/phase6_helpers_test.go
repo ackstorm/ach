@@ -8,28 +8,22 @@
 // no Ginkgo / Gomega / testify. All command execution is bounded by
 // context timeouts; no naked polling loops.
 //
-// Engineer-pending verification debt: this suite is mechanically
-// correct but defers prerequisite acquisition (real pk_ via Phase 3
-// SSO, kept-cluster bring-up, ./bin/ach binary build) to engineer
-// action. Run via:
+// The normal path is `make e2e-run`: it builds the e2e-tagged CLI
+// binary and self-mints a pk_ through the mock SSO flow when no
+// ACH_E2E_PHASE6_PK override is supplied. Focused runs can be driven
+// after the same prerequisites:
 //
-//	make cluster-keep
-//	./scripts/dev.sh make build
-//	ACH_E2E_PHASE6=1 \
-//	  ACH_E2E_PHASE6_PK=pk_<26-base32-lower> \
-//	  ACH_E2E_PHASE6_BASE_URL=https://<live-platform-api> \
-//	  ./scripts/dev.sh make e2e-focus RUN='TestPhase6CLI'
+//	make cluster-up
+//	make build-e2e
+//	make e2e-focus RUN='TestPhase6CLI'
 //
 // D-18 bypass mechanism chosen: Option A — env-var-injected pk_.
 // The suite does NOT shell out to `ach login` (the device-code flow
 // requires a real Dex round-trip + interactive browser open). Instead,
 // the test writes a synthetic config file under a temp XDG_CONFIG_HOME
 // directory with `default: demo` + `deployments.demo.{url,pk}` populated
-// from ACH_E2E_PHASE6_PK + ACH_E2E_PHASE6_BASE_URL. The pk_ itself is
-// expected to be acquired by the operator out-of-band (canonical path
-// is scripts/uat-phase3.sh, or the gateway-based SSO the phase4 helpers
-// use; the Phase 3 SSO endpoints remain reachable for one-off pk_
-// acquisition).
+// from ACH_E2E_PHASE6_PK + ACH_E2E_PHASE6_BASE_URL when supplied, or
+// from the standard gateway URL plus a self-minted pk_ otherwise.
 //
 // The hydrate-golden-diff subtest (the headline assertion) is the
 // load-bearing assertion: bytes.Equal(stdout, phase6NormalizeHydrate(
@@ -61,7 +55,7 @@ const (
 	phase6PlatformAPIDeployment = "ach-platform-api"
 	// phase6BinaryPath is the compiled `ach-cli` binary the suite exec's.
 	// The user-facing CLI ships as a separate binary post-split; built by
-	// `./scripts/dev.sh make build` (Makefile target writes to bin/ach-cli).
+	// `make e2e-run` / `make build-e2e` (writes to bin/ach-cli).
 	phase6BinaryPath = "../../bin/ach-cli"
 	// phase6GoldenPath is the golden hydrate.json relative to the
 	// test/e2e working directory (Go `go test` cwd is the package dir).
@@ -82,19 +76,19 @@ const (
 
 // phase6SuiteGuard skips when prerequisites aren't met.
 //
-// Required env vars when ACH_E2E_PHASE6=1:
-//   - ACH_E2E_PHASE6_PK:        pk_<26-base32-lower> minted out-of-band
-//     (e.g. via the Phase 3 SSO endpoints / scripts/uat-phase3.sh).
+// Optional env vars:
 //
-// Optional env vars (defaulted to the standard kind+Helm fixture):
+//   - ACH_E2E_PHASE6_PK:        pk_<26-base32-lower> override. When unset,
+//     the suite self-mints via the mock SSO flow against the kept cluster.
+//
 //   - ACH_E2E_PHASE6_BASE_URL:  externally-visible platform-api URL
-//     (default: https://ach.local.test). Doubles as the hydrate-golden
+//     (default: http://localhost:8080). Doubles as the hydrate-golden
 //     normalization target — phase6NormalizeHydrate rewrites the golden's
-//     canonical https://ach.local.test base to this scheme+host.
+//     canonical http://localhost:8080 base to this scheme+host.
 //
 // Also requires:
-//   - ./bin/ach binary exists + is executable (built by
-//     `./scripts/dev.sh make build`).
+//   - ./bin/ach-cli binary exists + is executable (built by
+//     `make e2e-run` / `make build-e2e`).
 //   - examples/hydrate.json file is readable (working-dir sanity check).
 //   - kubectl can reach the kept cluster's platform-api Deployment
 //     (`kubectl get deploy ach-platform-api -n ach-system` succeeds).
@@ -104,10 +98,9 @@ func phase6SuiteGuard(t *testing.T) {
 	if os.Getenv("ACH_SKIP_PHASE6") == "1" {
 		t.Skipf(
 			"Phase 6 CLI e2e suite opted out via ACH_SKIP_PHASE6=1 (default: runs); needs a live " +
-				"kind+Helm cluster + ./bin/ach built (engineer-pending). " +
-				"Run: make cluster-keep && ./scripts/dev.sh make build && " +
-				"ACH_E2E_PHASE6=1 ACH_E2E_PHASE6_PK=pk_<26-base32-lower> " +
-				"./scripts/dev.sh make e2e-focus RUN='TestPhase6CLI'. " +
+				"kind+Helm cluster + ./bin/ach-cli. " +
+				"Run: make e2e-run, or make cluster-up && make build-e2e && " +
+				"make e2e-focus RUN='TestPhase6CLI'. " +
 				"See CLAUDE.md \"E2E debug loop\" + test/e2e/phase6_helpers_test.go " +
 				"file header for the full activation contract.",
 		)
@@ -117,7 +110,7 @@ func phase6SuiteGuard(t *testing.T) {
 	if _, err := os.Stat(phase6BinaryPath); err != nil {
 		t.Skipf(
 			"Phase 6 suite guard: %s not found (build it via "+
-				"`./scripts/dev.sh make build`): %v",
+				"`make e2e-run` or `make build-e2e`): %v",
 			phase6BinaryPath, err,
 		)
 		return
@@ -136,7 +129,7 @@ func phase6SuiteGuard(t *testing.T) {
 	if err != nil {
 		t.Skipf(
 			"Phase 6 suite guard: kubectl get deploy %s -n %s failed "+
-				"(cluster up? Helm chart applied? — run `make cluster-keep`): "+
+				"(cluster up? Helm chart applied? — run `make cluster-up`): "+
 				"%v\n%s",
 			phase6PlatformAPIDeployment, phase6Namespace, err, out)
 		return
@@ -146,7 +139,7 @@ func phase6SuiteGuard(t *testing.T) {
 // phase6PlatformAPIURL returns the externally-visible platform-api URL
 // the CLI subcommands should target. Sourced from
 // ACH_E2E_PHASE6_BASE_URL when set, else falls back to the standard
-// fixture URL (https://ach.local.test).
+// fixture URL (http://localhost:8080).
 func phase6PlatformAPIURL(t *testing.T) string {
 	t.Helper()
 	if v := os.Getenv("ACH_E2E_PHASE6_BASE_URL"); v != "" {
@@ -213,27 +206,17 @@ func phase6WriteTempConfig(t *testing.T, baseURL, pk string) string {
 }
 
 // phase6AcquirePk returns the pk_ the test should use to authenticate
-// CLI invocations. Sources:
-//   - ACH_E2E_PHASE6_PK env var (engineer-pending — operator mints
-//     it out-of-band via the Phase 3 SSO endpoints).
-//
-// When unset, the calling subtest skips with an engineer-pending
-// message pointing at the canonical acquisition path.
+// CLI invocations. ACH_E2E_PHASE6_PK is an explicit override; when unset,
+// the suite self-mints via the mock SSO flow against the kept cluster.
 func phase6AcquirePk(t *testing.T) string {
 	t.Helper()
 	if v := os.Getenv("ACH_E2E_PHASE6_PK"); v != "" {
 		return v
 	}
-	t.Skipf(
-		"phase6AcquirePk: ACH_E2E_PHASE6_PK unset. Acquire a real pk_ via " +
-			"the Phase 3 SSO endpoints (POST /platform/auth/login → " +
-			"/sso/callback) against the kept cluster, then re-export. " +
-			"Engineer-pending verification debt — mirror of phase3SuiteGuard.",
-	)
-	return ""
+	return ssoMintPK(t, phase6PlatformAPIURL(t))
 }
 
-// phase6RunAch exec's the ./bin/ach binary with the supplied args.
+// phase6RunAch exec's the ./bin/ach-cli binary with the supplied args.
 // XDG_CONFIG_HOME is set to xdgHome so the binary picks up the
 // synthetic config written by phase6WriteTempConfig.
 //
@@ -245,7 +228,9 @@ func phase6RunAch(t *testing.T, xdgHome string, args ...string) ([]byte, []byte,
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, phase6BinaryPath, args...)
-	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+xdgHome)
+	// E2E_RUN_ENV exports ACH_BASE_URL for in-process HTTP helpers. Strip the
+	// CLI synthetic-mode vars here so ach-cli reads the seeded disk config.
+	cmd.Env = append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

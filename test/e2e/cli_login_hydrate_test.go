@@ -4,19 +4,19 @@
 
 // Phase 6 CLI e2e suite. Drives `ach login` + `ach hydrate
 // --environment demo` against the kept kind cluster (per
-// CLAUDE.md "E2E debug loop" — `make cluster-keep`), then
+// CLAUDE.md "E2E debug loop" — `make e2e-full` / `make cluster-up`), then
 // byte-for-byte diffs vs examples/hydrate.json (D-17, D-18).
 //
-// Activation: ACH_E2E_PHASE6=1 \
-//   ACH_E2E_PHASE6_PK=pk_<26-base32-lower> \
-//   ACH_E2E_PHASE6_BASE_URL=https://<live-platform-api> \
-//   ./scripts/dev.sh make e2e-focus RUN=TestPhase6CLI
+// Activation: `make e2e-run` builds the e2e-tagged ach-cli binary and
+// runs this suite against the kept cluster. For focused iteration:
 //
-// Engineer-pending until the kept kind cluster is up, ./bin/ach is
-// built, and the engineer has minted a real pk_ via the Phase 3 SSO
-// flow (scripts/uat-phase3.sh or POST /platform/auth/login →
-// /sso/callback round-trip against the live cluster). phase6SuiteGuard
-// skips cleanly when any prerequisite is missing.
+//	make cluster-up
+//	make build-e2e
+//	make e2e-focus RUN=TestPhase6CLI
+//
+// The pk_ is self-minted through the mock SSO flow when
+// ACH_E2E_PHASE6_PK is unset. phase6SuiteGuard skips cleanly when any
+// infrastructure prerequisite is missing.
 //
 // D-18 bypass mechanism: Option A (env-var-injected pk_) — the suite
 // writes a synthetic config file under a temp XDG_CONFIG_HOME with the
@@ -62,14 +62,14 @@ func TestPhase6CLI(t *testing.T) {
 // requires a real Dex round-trip + interactive browser open). Instead,
 // the test writes a temp XDG_CONFIG_HOME/ach/config.yaml with
 // `default: demo` + `deployments.demo.{url,pk}` populated from
-// ACH_E2E_PHASE6_BASE_URL + ACH_E2E_PHASE6_PK.
+// ACH_E2E_PHASE6_BASE_URL + ACH_E2E_PHASE6_PK, or a self-minted pk_
+// when no override is supplied.
 //
-// The pk_ itself is acquired out-of-band by the engineer — typically
-// via scripts/uat-phase3.sh or a manual POST /platform/auth/login →
-// /sso/callback round-trip against the kept cluster's platform-api.
+// The pk_ itself comes from ACH_E2E_PHASE6_PK when supplied, otherwise
+// the test self-mints through the mock SSO flow against platform-api.
 //
 // On success: the temp XDG_CONFIG_HOME path is published via t.Setenv
-// so subsequent subtests' `./bin/ach <cmd>` invocations pick up the
+// so subsequent subtests' `./bin/ach-cli <cmd>` invocations pick up the
 // synthetic config. The temp dir is auto-cleaned by t.TempDir().
 //
 // On failure: nothing — every subtest below also calls

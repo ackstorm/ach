@@ -809,9 +809,9 @@ E2E_RUN_ENV = \
 	ACH_SKIP_PHASE6=$(ACH_SKIP_PHASE6) ACH_SKIP_PHASE7=$(ACH_SKIP_PHASE7)
 
 .PHONY: e2e-run e2e-focus e2e-full e2e-keep
-e2e-run: ## Run e2e suite against an already-up cluster.
+e2e-run: ## Build e2e binaries, then run e2e suite against an already-up cluster.
 	$(call container_target,_e2e-run)
-_e2e-run:
+_e2e-run: _build-e2e
 	# E2E_SKIP_SETUP=1 hands cluster lifecycle to scripts/cluster.sh; without
 	# it, test/e2e/e2e_suite_test.go's TestMain calls setupCluster() which
 	# tries `kind load docker-image ach-operator:latest` — a per-binary
@@ -819,7 +819,9 @@ _e2e-run:
 	# `ach` layout. cluster-up handles the actual image load. The synced
 	# cluster is reached entirely through the gateway — zero port-forwards.
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
-		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e/...
+		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e
+	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
+		go test -tags=e2e -v -count=1 ./test/e2e/mcp-echo ./test/e2e/mcp-echo/jwt ./test/e2e/mock ./test/e2e/utils
 
 e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
 	$(call container_target,_e2e-focus)
