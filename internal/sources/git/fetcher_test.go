@@ -197,8 +197,32 @@ func TestFetcher_Fetch_SubtreeSymlinkRejected(t *testing.T) {
 	}
 }
 
+// TestFetcher_Fetch_SubtreeIntermediateSymlinkRejected is the F1 BLOCKER
+// regression: a subtree whose INTERMEDIATE component is a symlink out of the
+// clone (evildir -> /etc, subtree "evildir/passwd") must be rejected by the
+// EvalSymlinks containment check — Lstat alone only inspects the leaf and would
+// have followed evildir and exfiltrated /etc/passwd.
+func TestFetcher_Fetch_SubtreeIntermediateSymlinkRejected(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not on PATH; skipping")
+	}
+	bare := setupSymlinkBareFixture(t)
+	f := New(Spec{
+		URL:       bare,
+		Ref:       "main",
+		SHA:       fixtureHeadSHA(t, bare),
+		Subtree:   "evildir/passwd",
+		CacheRoot: t.TempDir(),
+	})
+	_, err := f.Fetch(context.Background(), Request{})
+	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+		t.Errorf("err = %v; want ErrUpstreamInvalid (intermediate symlink escape)", err)
+	}
+}
+
 // setupSymlinkBareFixture builds a repo whose `evil` entry is a symlink to an
-// absolute path outside the repo, and returns a --bare clone path.
+// absolute path outside the repo (plus `evildir` -> /etc), and returns a
+// --bare clone path.
 func setupSymlinkBareFixture(t *testing.T) string {
 	t.Helper()
 	work := t.TempDir()
@@ -215,6 +239,11 @@ func setupSymlinkBareFixture(t *testing.T) string {
 	}
 	run("init", "-b", "main", ".")
 	if err := os.Symlink("/etc/passwd", filepath.Join(work, "evil")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	// evildir is an INTERMEDIATE dir symlink to /etc — a subtree like
+	// "evildir/passwd" would traverse it (the F1 BLOCKER) absent containment.
+	if err := os.Symlink("/etc", filepath.Join(work, "evildir")); err != nil {
 		t.Skipf("symlink unsupported: %v", err)
 	}
 	run("add", "-A")

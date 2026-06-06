@@ -183,4 +183,31 @@ func TestNarrowArchiveSubtree(t *testing.T) {
 			t.Errorf("err = %v; want ErrUpstreamInvalid (oversize)", err)
 		}
 	})
+
+	t.Run("malformed_gzip_rejected", func(t *testing.T) {
+		_, err := NarrowArchiveSubtree(bytes.NewReader([]byte("definitely not a gzip stream")), "skills/pdf", DefaultArchiveIngressCap)
+		if !errors.Is(err, ErrUpstreamInvalid) {
+			t.Errorf("err = %v; want ErrUpstreamInvalid (malformed gzip → terminal, not Unreachable)", err)
+		}
+	})
+
+	t.Run("decompressed_file_over_cap_rejected", func(t *testing.T) {
+		// A highly compressible file whose DECOMPRESSED size exceeds the cap but
+		// whose COMPRESSED archive stays under it (a bomb). The file-mode read
+		// must reject it rather than silently publish truncated bytes (F1 #7).
+		big := map[string]string{"big.txt": strings.Repeat("a", 4096)}
+		_, err := NarrowArchiveSubtree(bytes.NewReader(buildTarGz(t, big)), "big.txt", 1024)
+		if !errors.Is(err, ErrUpstreamInvalid) {
+			t.Errorf("err = %v; want ErrUpstreamInvalid (decompressed file over cap)", err)
+		}
+	})
+
+	t.Run("decompressed_dir_bomb_over_cap_rejected", func(t *testing.T) {
+		// Same bomb shape but the cap is hit while re-taring a directory subtree.
+		bomb := map[string]string{"d/big.txt": strings.Repeat("a", 4096), "d/ok.txt": "x"}
+		_, err := NarrowArchiveSubtree(bytes.NewReader(buildTarGz(t, bomb)), "d", 1024)
+		if !errors.Is(err, ErrUpstreamInvalid) {
+			t.Errorf("err = %v; want ErrUpstreamInvalid (decompressed dir bomb over cap)", err)
+		}
+	})
 }

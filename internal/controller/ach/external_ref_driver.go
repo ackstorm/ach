@@ -117,6 +117,16 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 		}
 	}
 
+	// F1 review: a spec change bumps .metadata.generation. spec.path in
+	// particular changes WHAT content is fetched without moving the upstream
+	// commit SHA — so sending the prior SHA as PriorRev would let the fetcher
+	// short-circuit NotModified and keep serving content narrowed to the OLD
+	// path. Clear PriorRev on a generation change to force a full re-fetch +
+	// re-narrow (harmless for ref/repo changes, which already resolve a new SHA).
+	if st.ObservedGeneration != cr.GetGeneration() {
+		priorRev = ""
+	}
+
 	// §10.3 within-interval gate (reads status.LastSuccessfulRefresh — the
 	// reliable source across the NotModified/304 path; see the original
 	// per-kind comment block for the full rationale).

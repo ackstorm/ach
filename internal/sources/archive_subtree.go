@@ -12,12 +12,16 @@ import (
 	"strings"
 )
 
-// DefaultArchiveIngressCap bounds the in-memory buffer used when narrowing a
-// REST repo-archive to a subtree. The git transport narrows on-disk during the
-// tar step (git.tarSubtree) and never reaches this path; only the legacy REST
-// transport buffers here. Mirrors git's gitDefaultMaxCloneBytes ceiling — the
-// user-facing per-CR size cap is enforced downstream by the reconciler.
-const DefaultArchiveIngressCap = 512 << 20
+// DefaultArchiveIngressCap bounds BOTH the compressed bytes read AND the
+// cumulative DECOMPRESSED bytes produced when narrowing a REST repo-archive to
+// a subtree (a single gzip-tar can decompress to far more than its compressed
+// size — a bomb). The git transport narrows on-disk via git.tarSubtree (bounded
+// by the clone's MaxCloneBytes) and never reaches this in-memory path; only the
+// legacy/deprecated REST transport buffers here, so the cap is set below git's
+// 512 MiB on-disk ceiling to keep peak operator memory (compressed input +
+// decompressed output) bounded. The user-facing per-CR size cap is enforced
+// downstream by the reconciler.
+const DefaultArchiveIngressCap = 256 << 20
 
 // NarrowArchiveSubtree reads a gzip-tar archive from body (bounded by capBytes),
 // strips at most one archive-root wrapper directory (the "<repo>-<sha>/" prefix
@@ -52,13 +56,13 @@ func NarrowArchiveSubtree(body io.Reader, relPath string, capBytes int64) ([]byt
 
 	names, err := archiveRegularNames(raw)
 	if err != nil {
-		return nil, fmt.Errorf("sources: %w", err)
+		return nil, fmt.Errorf("sources: %w: %w", err, ErrUpstreamInvalid)
 	}
 	root := archiveWrapperRoot(names)
 
 	gz, err := gzip.NewReader(bytes.NewReader(raw))
 	if err != nil {
-		return nil, fmt.Errorf("sources: gzip open: %w", err)
+		return nil, fmt.Errorf("sources: gzip open: %v: %w", err, ErrUpstreamInvalid)
 	}
 	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
@@ -68,13 +72,16 @@ func NarrowArchiveSubtree(body io.Reader, relPath string, capBytes int64) ([]byt
 	tw := tar.NewWriter(outGz)
 	prefix := sub + "/"
 	wrote := false
+	// decompressed bounds the cumulative UNCOMPRESSED bytes produced — a single
+	// gzip-tar can decompress to far more than capBytes (a bomb), so cap it.
+	var decompressed int64
 	for {
 		hdr, e := tr.Next()
 		if e == io.EOF {
 			break
 		}
 		if e != nil {
-			return nil, fmt.Errorf("sources: tar read: %w", e)
+			return nil, fmt.Errorf("sources: tar read: %v: %w", e, ErrUpstreamInvalid)
 		}
 		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeDir {
 			continue // skip symlinks / devices / etc — git.tarSubtree does the same
@@ -85,7 +92,10 @@ func NarrowArchiveSubtree(body io.Reader, relPath string, capBytes int64) ([]byt
 				// relPath names a single file → return its RAW bytes (no tar).
 				fileBytes, ferr := io.ReadAll(io.LimitReader(tr, capBytes+1))
 				if ferr != nil {
-					return nil, fmt.Errorf("sources: read file %q: %w", relPath, ferr)
+					return nil, fmt.Errorf("sources: read file %q: %v: %w", relPath, ferr, ErrUpstreamInvalid)
+				}
+				if int64(len(fileBytes)) > capBytes {
+					return nil, fmt.Errorf("sources: file %q exceeds %d-byte cap: %w", relPath, capBytes, ErrUpstreamInvalid)
 				}
 				return fileBytes, nil
 			}
@@ -103,11 +113,16 @@ func NarrowArchiveSubtree(body io.Reader, relPath string, capBytes int64) ([]byt
 			nh.Name = rerooted + "/"
 		}
 		if err := tw.WriteHeader(nh); err != nil {
-			return nil, fmt.Errorf("sources: write header %s: %w", rerooted, err)
+			return nil, fmt.Errorf("sources: write header %s: %v: %w", rerooted, err, ErrUpstreamInvalid)
 		}
 		if hdr.Typeflag == tar.TypeReg {
-			if _, err := io.Copy(tw, tr); err != nil { //nolint:gosec // bounded: raw already capped at capBytes
-				return nil, fmt.Errorf("sources: copy %s: %w", rel, err)
+			n, cErr := io.Copy(tw, io.LimitReader(tr, capBytes-decompressed+1))
+			if cErr != nil {
+				return nil, fmt.Errorf("sources: copy %s: %v: %w", rel, cErr, ErrUpstreamInvalid)
+			}
+			decompressed += n
+			if decompressed > capBytes {
+				return nil, fmt.Errorf("sources: archive decompresses past %d-byte cap: %w", capBytes, ErrUpstreamInvalid)
 			}
 		}
 		wrote = true

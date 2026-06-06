@@ -361,8 +361,14 @@ func ClassifyError(err error) error {
 // stripping the root prefix from entry names so the resulting archive looks
 // like the worktree was at /. When subtree points at a single regular FILE
 // (not a directory) it returns that file's RAW bytes instead — Prompt and
-// Artifact scope=object name a single file via spec.path (F1). A symlinked
-// subtree is rejected (never followed out of the clone).
+// Artifact scope=object name a single file via spec.path (F1).
+//
+// Symlink containment (F1 review): a crafted repo can plant a symlink at ANY
+// path component (e.g. `evil -> /etc` then subtree `evil/passwd`). Lstat only
+// inspects the leaf, so the resolved path is verified against the clone root
+// via EvalSymlinks: any subtree whose real path escapes the clone is rejected,
+// closing the intermediate-symlink traversal / secret-exfil hole. In-tree
+// symlinks resolve within the clone and are allowed.
 func tarSubtree(root, subtree string) ([]byte, error) {
 	start := root
 	relStrip := root
@@ -376,20 +382,30 @@ func tarSubtree(root, subtree string) ([]byte, error) {
 		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
 			return nil, fmt.Errorf("subtree %q escapes root: %w", subtree, sources.ErrUpstreamInvalid)
 		}
-		start = filepath.Join(root, clean)
-		// Lstat (NOT Stat): a symlinked subtree must be rejected, never followed
-		// out of the clone (a crafted repo could symlink to /etc/passwd).
-		info, err := os.Lstat(start)
+		// Resolve every component (following symlinks) and require the result to
+		// stay inside the clone — defeats `evil -> /etc` at an intermediate or
+		// leaf component. EvalSymlinks also errors on a missing subtree.
+		realRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			return nil, fmt.Errorf("resolve clone root: %w", err)
+		}
+		realStart, err := filepath.EvalSymlinks(filepath.Join(root, clean))
+		if err != nil {
+			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sources.ErrUpstreamInvalid)
+		}
+		if realStart != realRoot && !strings.HasPrefix(realStart, realRoot+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("subtree %q escapes clone root: %w", subtree, sources.ErrUpstreamInvalid)
+		}
+		start = realStart
+		info, err := os.Stat(realStart) // safe: realStart is contained within realRoot
 		if err != nil {
 			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sources.ErrUpstreamInvalid)
 		}
 		switch {
-		case info.Mode()&os.ModeSymlink != 0:
-			return nil, fmt.Errorf("subtree %q: symlink not allowed: %w", subtree, sources.ErrUpstreamInvalid)
 		case info.Mode().IsRegular():
 			// A spec.path pointing at a single FILE (Prompt / Artifact
 			// scope=object) returns that file's RAW bytes — no tar wrapper (F1).
-			return os.ReadFile(start) //nolint:gosec // bounded: clone size-capped by MaxCloneBytes
+			return os.ReadFile(realStart) //nolint:gosec // bounded: clone size-capped by MaxCloneBytes
 		case !info.IsDir():
 			return nil, fmt.Errorf("subtree %q: not a regular file or directory: %w", subtree, sources.ErrUpstreamInvalid)
 		}
