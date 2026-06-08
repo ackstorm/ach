@@ -696,3 +696,58 @@ func TestPluginCmd_List_RepoFlag(t *testing.T) {
 		}
 	})
 }
+
+// TestCollisionWarn covers the cross-install collision warning (Bug H): a file
+// written by one install that is already owned by a DIFFERENT installed entry at
+// the same target must warn (last-wins overwrite, no managed conflict policy in
+// local install). Different target, same ref (self-reinstall), and disjoint
+// paths must NOT warn.
+func TestCollisionWarn(t *testing.T) {
+	mk := func(ref, target string, paths ...string) store.InstalledEntry {
+		fs := make([]store.FileRec, 0, len(paths))
+		for _, p := range paths {
+			fs = append(fs, store.FileRec{RelPath: p})
+		}
+		return store.InstalledEntry{Ref: ref, Target: target, Files: fs}
+	}
+	installed := &store.InstalledFile{Installed: []store.InstalledEntry{
+		mk("plugA@r", "claude-code", ".claude/commands/shared.md", ".claude/commands/a-only.md"),
+		mk("plugC@r", "codex", ".codex/prompts/shared.md"), // different target — must NOT collide
+	}}
+	recs := []store.FileRec{
+		{RelPath: ".claude/commands/shared.md"},
+		{RelPath: ".claude/commands/b-only.md"},
+	}
+
+	t.Run("collision warns with owner", func(t *testing.T) {
+		var buf bytes.Buffer
+		collisionWarn(&buf, installed, "plugB@r", "claude-code", recs)
+		out := buf.String()
+		if !strings.Contains(out, ".claude/commands/shared.md") || !strings.Contains(out, "plugA@r") {
+			t.Errorf("expected collision warning for shared.md owned by plugA@r, got: %q", out)
+		}
+		if strings.Contains(out, "b-only.md") {
+			t.Errorf("non-colliding file b-only.md should not warn: %q", out)
+		}
+		if strings.Contains(out, ".codex") {
+			t.Errorf("different-target file must not collide: %q", out)
+		}
+	})
+
+	t.Run("same ref does not self-collide", func(t *testing.T) {
+		var buf bytes.Buffer
+		collisionWarn(&buf, installed, "plugA@r", "claude-code", recs)
+		if buf.Len() != 0 {
+			t.Errorf("same-ref reinstall must not warn (self), got: %q", buf.String())
+		}
+	})
+
+	t.Run("disjoint paths do not warn", func(t *testing.T) {
+		var buf bytes.Buffer
+		collisionWarn(&buf, installed, "plugB@r", "claude-code",
+			[]store.FileRec{{RelPath: ".claude/commands/fresh.md"}})
+		if buf.Len() != 0 {
+			t.Errorf("disjoint paths must not warn, got: %q", buf.String())
+		}
+	})
+}

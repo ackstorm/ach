@@ -16,6 +16,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -125,6 +126,34 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 	return store.RepoEntry{}, &exit.CodedError{
 		Code: exit.General,
 		Msg:  fmt.Sprintf("repo %q not registered (run: ach-cli repo add)", name),
+	}
+}
+
+// collisionWarn writes a stderr warning for each just-written file (recs) whose
+// relative path is already owned by a DIFFERENT installed entry at the same
+// target — surfacing the otherwise-silent last-wins overwrite. Local install has
+// no managed conflict policy (the governed `env hydrate` flow does, via
+// --conflict namespace|skip|overwrite|refuse); this at least tells the user a
+// previously-installed file was clobbered instead of losing it silently.
+//
+// Call AFTER Commit and BEFORE recording the new entry, so the just-installed
+// ref is not yet present in installed and cannot collide with itself.
+func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target string, recs []store.FileRec) {
+	owners := make(map[string]string)
+	for _, e := range installed.Installed {
+		if e.Ref == ref || e.Target != target {
+			continue
+		}
+		for _, f := range e.Files {
+			owners[f.RelPath] = e.Ref
+		}
+	}
+	for _, r := range recs {
+		if other, ok := owners[r.RelPath]; ok {
+			_, _ = fmt.Fprintf(w,
+				"! %s → %s: overwrote %s previously installed by %s\n",
+				ref, target, r.RelPath, other)
+		}
 	}
 }
 
@@ -310,6 +339,8 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 							ref, targetID, targetID)
 						continue
 					}
+
+					collisionWarn(cmd.ErrOrStderr(), installed, ref, targetID, recs)
 
 					entry := store.InstalledEntry{
 						Ref:         ref,
@@ -600,6 +631,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
 							ref, e.Target, e.Target)
 					}
+
+					collisionWarn(cmd.ErrOrStderr(), installed, ref, e.Target, recs)
 
 					newEntry := store.InstalledEntry{
 						Ref:         ref,
