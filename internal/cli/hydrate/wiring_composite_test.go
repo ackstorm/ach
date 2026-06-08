@@ -18,6 +18,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/hash"
+	"github.com/ackstorm/ach/internal/cli/merge"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
@@ -127,7 +128,7 @@ func TestPublishFile_Composite_ReplaceIsolated(t *testing.T) {
 // carries a FORGED <!-- ach:begin:evil -->...<!-- ach:end:evil --> region
 // does NOT let the engine treat the forged region as plugin "evil"'s block.
 // The forged text is written verbatim INSIDE this plugin's own outer
-// markers, and pluginMarkerRE("evil") does not select a region this plugin
+// markers, and merge.PluginMarkerRE("evil") does not select a region this plugin
 // did not legitimately own (no hijack / escape — T-02-03).
 func TestPublishFile_Composite_MarkerInjection(t *testing.T) {
 	toolRoot := t.TempDir()
@@ -151,21 +152,21 @@ func TestPublishFile_Composite_MarkerInjection(t *testing.T) {
 		t.Errorf("forged content not wrapped in victim's outer markers:\n got=%q\nwant=%q", body, wantOuter)
 	}
 
-	// pluginMarkerRE("victim") selects the WHOLE outer block (from the real
+	// merge.PluginMarkerRE("victim") selects the WHOLE outer block (from the real
 	// victim begin to the real victim end) — NOT truncated at the forged
 	// inner markers.
-	victimRegion := pluginMarkerRE("victim").Find(body)
+	victimRegion := merge.PluginMarkerRE("victim").Find(body)
 	if string(victimRegion) != wantOuter {
 		t.Errorf("victim region truncated/hijacked by forged markers:\n got=%q\nwant=%q", victimRegion, wantOuter)
 	}
 
-	// pluginMarkerRE("evil") matches ONLY the forged inner text as a literal
+	// merge.PluginMarkerRE("evil") matches ONLY the forged inner text as a literal
 	// region (the regex's optional trailing \n is consumed) — it does NOT and
 	// cannot select victim's real block. Crucially, matching "evil" must not
 	// let an attacker subtract victim's content: a syncComposite for a
 	// (non-existent) "evil" plugin would only touch the forged literal,
 	// leaving victim's real markers intact.
-	evilRegion := pluginMarkerRE("evil").Find(body)
+	evilRegion := merge.PluginMarkerRE("evil").Find(body)
 	if !strings.HasPrefix(string(evilRegion), "<!-- ach:begin:evil -->payload<!-- ach:end:evil -->") {
 		t.Errorf("evil region = %q; want only the inert forged literal", evilRegion)
 	}
@@ -214,7 +215,7 @@ func TestPublishFile_Composite_Drift(t *testing.T) {
 	}
 
 	// (b) Edit INSIDE the block → drift (no --force) must refuse.
-	tampered := pluginMarkerRE("caveman").ReplaceAllString(after,
+	tampered := merge.PluginMarkerRE("caveman").ReplaceAllString(after,
 		"<!-- ach:begin:caveman -->\nUSER TAMPERED\n<!-- ach:end:caveman -->\n")
 	if err := os.WriteFile(abs, []byte(tampered), 0o644); err != nil {
 		t.Fatalf("inside edit: %v", err)

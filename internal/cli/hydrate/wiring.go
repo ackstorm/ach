@@ -48,7 +48,6 @@ package hydrate
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -59,8 +58,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -68,6 +65,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/manifest"
+	"github.com/ackstorm/ach/internal/cli/merge"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
@@ -478,7 +476,7 @@ func runtimeKindForKey(k string) string {
 // The dropped id is recorded once in result.DroppedComponents.
 //
 // Error handling (D-06 Claude's-discretion): each FileWrite is published
-// atomically (tmp+rename via state.WriteAtomic / mergeForward), so a crash
+// atomically (tmp+rename via state.WriteAtomic / merge.MergeForward), so a crash
 // mid-loop leaves already-published files intact and unpublished ones
 // absent — best-effort per-file atomicity matching the runtime loop. There
 // is deliberately NO all-or-nothing transaction across the projected set.
@@ -939,13 +937,13 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 	isTOML := strings.ToLower(filepath.Ext(fw.Path)) == extTOML
 	prefix := mcpServersPrefixFor(fw.Keys)
 
-	doc, err := parseDoc(fw.Content, isTOML)
+	doc, err := merge.ParseDoc(fw.Content, isTOML)
 	if err != nil {
 		return false, nil, err
 	}
 	drops := make([]string, 0, len(collide))
 	for _, k := range collide {
-		removeDottedKey(doc, k)
+		merge.RemoveDottedKey(doc, k)
 		drops = append(drops, "mcp:"+strings.TrimPrefix(k, prefix)+" (runtime-owned)")
 	}
 	// If the server container is now empty, drop it so we don't write a bare
@@ -967,7 +965,7 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 		// a future projection rule contributing non-MCP deep-merge keys would
 		// otherwise publish stale content.
 		if len(doc) != 0 {
-			out, err := encodeDoc(doc, isTOML)
+			out, err := merge.EncodeDoc(doc, isTOML)
 			if err != nil {
 				return false, nil, err
 			}
@@ -976,7 +974,7 @@ func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []st
 		return false, drops, nil
 	}
 
-	out, err := encodeDoc(doc, isTOML)
+	out, err := merge.EncodeDoc(doc, isTOML)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1097,21 +1095,21 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		// comparable to the on-disk subtree regardless of struct-vs-map
 		// field ordering, and the user's other keys are invisible to the
 		// drift check.
-		oursMap, err := parseDoc(fw.Content, isTOML)
+		oursMap, err := merge.ParseDoc(fw.Content, isTOML)
 		if err != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
 		}
-		if freshHash, err = subtreeHash(oursMap); err != nil {
+		if freshHash, err = merge.SubtreeHash(oursMap); err != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
 		}
-		diskMap, ok, derr := readParseDoc(finalAbs, isTOML)
+		diskMap, ok, derr := merge.ReadParseDoc(finalAbs, isTOML)
 		if derr != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, derr)
 		}
 		if ok {
-			sub, found := extractByKeys(diskMap, fw.Keys)
+			sub, found := merge.ExtractByKeys(diskMap, fw.Keys)
 			if found {
-				if onDiskHash, err = subtreeHash(sub); err != nil {
+				if onDiskHash, err = merge.SubtreeHash(sub); err != nil {
 					return FileWrite{}, fmt.Errorf("adapter %s hash on-disk %s: %w", d.platformID, finalAbs, err)
 				}
 			}
@@ -1163,11 +1161,11 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		}
 		switch fw.Merge {
 		case adapter.MergeDeep:
-			if _, err := mergeForward(finalAbs, fw.Content, 0o600); err != nil {
+			if _, err := merge.MergeForward(finalAbs, fw.Content, 0o600); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s merge %s: %w", d.platformID, finalAbs, err)
 			}
 		case adapter.MergeComposite:
-			if err := writeComposite(finalAbs, compositeID, compositeBlock); err != nil {
+			if err := merge.WriteComposite(finalAbs, compositeID, compositeBlock, 0o644); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s write composite %s: %w", d.platformID, finalAbs, err)
 			}
 		default:
@@ -1185,7 +1183,7 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		}
 	} else {
 		// CR-01 / F-10 — on the no-op skip path the rewrite is bypassed, so
-		// the chmod side-effect of WriteAtomic / mergeForward is lost. If the
+		// the chmod side-effect of WriteAtomic / merge.MergeForward is lost. If the
 		// on-disk file was chmod'd to a more-permissive mode between hydrates
 		// (user error, attacker, prior bug), the content stays at the leaked
 		// mode. Re-assert the per-MergeKind mode unconditionally — cheap, and
@@ -1249,7 +1247,7 @@ func buildCompositeBlock(fw adapter.FileWrite) (id string, block []byte) {
 
 // compositeHashes computes the composite drift hashes (D-06): freshHash over
 // the block we WOULD write, onDiskHash over the on-disk per-plugin marked
-// region only (extracted via pluginMarkerRE; "" when absent). Hashing only the
+// region only (extracted via merge.PluginMarkerRE; "" when absent). Hashing only the
 // marked region means a user editing prose OUTSIDE this plugin's block is NOT
 // flagged as drift.
 func compositeHashes(finalAbs, id string, block []byte) (freshHash, onDiskHash string, err error) {
@@ -1261,271 +1259,10 @@ func compositeHashes(finalAbs, id string, block []byte) (freshHash, onDiskHash s
 		}
 		return "", "", rerr
 	}
-	if region := pluginMarkerRE(id).Find(body); region != nil {
+	if region := merge.PluginMarkerRE(id).Find(body); region != nil {
 		onDiskHash = hash.HashBytes(region)
 	}
 	return freshHash, onDiskHash, nil
-}
-
-// writeComposite performs the forward composite merge (D-06): a marker-bounded
-// insert (no prior block) or replace (existing per-plugin block) of block into
-// the host memory file (CLAUDE.md / GEMINI.md). EXACT inverse of syncComposite.
-// block is already wrapped in this plugin's outer markers; any forged inner
-// markers in untrusted plugin prose are inert text inside our boundary
-// (T-02-03 marker-injection mitigation — pluginMarkerRE matches only the OUTER
-// real markers for `id`).
-//
-// Mode 0o644 (NOT 0o600): host memory files carry NO credential (the mcpServers
-// bearer lives in the MergeDeep settings.json arm, which stays 0o600).
-// World-readable is correct for non-secret markdown prose. See 02-PATTERNS.md
-// file-mode policy table (D-06).
-func writeComposite(finalAbs, id string, block []byte) error {
-	body, rerr := os.ReadFile(finalAbs)
-	if rerr != nil && !os.IsNotExist(rerr) {
-		return rerr
-	}
-	var merged []byte
-	re := pluginMarkerRE(id)
-	if re.Match(body) {
-		merged = re.ReplaceAll(body, block)
-	} else {
-		merged = append(append([]byte(nil), body...), block...)
-	}
-	return state.WriteAtomic(finalAbs, merged, 0o644)
-}
-
-// mergeForward reads the existing file at abs (JSON or TOML by extension),
-// deep-merges the keys from `ours` (an adapter-rendered document carrying
-// ONLY ACH's contributed entries) into it, and atomic-writes the result at
-// the given mode. When abs does not exist, the result is just `ours`. The
-// user's pre-existing keys are preserved; ACH's keys upsert same-named
-// entries. Returns the merged bytes (for hashing/state if the caller wants
-// them). This is the forward counterpart to syncDeep{JSON,TOML}'s removal.
-//
-// Concurrency note (security 2.4 — accept-disposition): the read-merge-write
-// sequence is NOT atomic against external writers. The <achDir>/lock flock
-// excludes other ach-cli processes, but a concurrent editor save on the
-// runtime-config file (e.g. claude-code's auto-format on .claude/settings.json)
-// between our read and our atomic-rename will be silently clobbered. Pragmatic
-// trade-off for v1: users should avoid editing the target while hydrate is
-// running. A defense-in-depth mtime-recheck would catch the race but is
-// deferred until a real-world report. See CLAUDE.md "Common failure modes" for
-// the symptom.
-func mergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
-	switch strings.ToLower(filepath.Ext(abs)) {
-	case extJSON:
-		return mergeForwardDoc(abs, ours, mode, false)
-	case extTOML:
-		return mergeForwardDoc(abs, ours, mode, true)
-	default:
-		// No structured merge for an unknown extension — write verbatim.
-		if err := state.WriteAtomic(abs, ours, mode); err != nil {
-			return nil, fmt.Errorf("mergeForward write %s: %w", abs, err)
-		}
-		return ours, nil
-	}
-}
-
-// mergeForwardDoc deep-merges `ours` into the existing JSON or TOML
-// document at abs (isTOML selects the codec). A missing file is treated
-// as an empty object. A pre-existing file MUST be valid in the selected
-// format (we never silently discard a user's config). The format label
-// keeps the error messages identical to the prior per-format functions.
-func mergeForwardDoc(abs string, ours []byte, mode os.FileMode, isTOML bool) ([]byte, error) {
-	format := "JSON"
-	if isTOML {
-		format = "TOML"
-	}
-	oursMap, err := parseRendered(ours, isTOML)
-	if err != nil {
-		return nil, fmt.Errorf("mergeForward decode rendered %s: %w", format, err)
-	}
-	existing := map[string]any{}
-	if body, err := os.ReadFile(abs); err == nil {
-		if len(bytes.TrimSpace(body)) > 0 {
-			if derr := unmarshalDoc(body, &existing, isTOML); derr != nil {
-				return nil, fmt.Errorf("mergeForward decode existing %s %s: %w", format, abs, derr)
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
-	}
-	deepMergeInto(existing, oursMap)
-	out, err := encodeDoc(existing, isTOML)
-	if err != nil {
-		return nil, fmt.Errorf("mergeForward encode %s %s: %w", format, abs, err)
-	}
-	if err := state.WriteAtomic(abs, out, mode); err != nil {
-		return nil, fmt.Errorf("mergeForward write %s %s: %w", format, abs, err)
-	}
-	return out, nil
-}
-
-// parseRendered unmarshals the freshly-rendered `ours` bytes into a
-// generic map via the selected codec. Unlike parseDoc it does NOT treat
-// an empty body as an empty map — the rendered content always parses as
-// the adapter emitted it; preserving the prior strict-decode semantics.
-func parseRendered(ours []byte, isTOML bool) (map[string]any, error) {
-	var m map[string]any
-	if err := unmarshalDoc(ours, &m, isTOML); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-// unmarshalDoc decodes b into v via the JSON or TOML codec.
-func unmarshalDoc(b []byte, v any, isTOML bool) error {
-	if isTOML {
-		return toml.Unmarshal(b, v)
-	}
-	return json.Unmarshal(b, v)
-}
-
-// deepMergeInto recursively merges src into dst: when both sides hold a
-// nested object at the same key, recurse; otherwise src's value overwrites
-// dst's. This preserves the user's sibling keys (e.g. their other MCP
-// servers and unrelated settings) while upserting ACH's entries.
-func deepMergeInto(dst, src map[string]any) {
-	for k, sv := range src {
-		if svMap, ok := sv.(map[string]any); ok {
-			if dvMap, ok := dst[k].(map[string]any); ok {
-				deepMergeInto(dvMap, svMap)
-				continue
-			}
-		}
-		dst[k] = sv
-	}
-}
-
-// parseDoc unmarshals a JSON or TOML document into a generic map. An
-// empty/whitespace body yields an empty map (not an error).
-func parseDoc(content []byte, isTOML bool) (map[string]any, error) {
-	out := map[string]any{}
-	if len(bytes.TrimSpace(content)) == 0 {
-		return out, nil
-	}
-	if isTOML {
-		if err := toml.Unmarshal(content, &out); err != nil {
-			return nil, err
-		}
-		return out, nil
-	}
-	if err := json.Unmarshal(content, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// encodeDoc renders a generic map back to JSON or TOML bytes. It is the
-// inverse of parseDoc and the single encoder both the forward-merge and
-// the --sync inverse-merge paths share. The settings are pinned to match
-// the prior per-format encoders byte-for-byte (JSON: 2-space indent,
-// HTML-escaping disabled; TOML: BurntSushi default encoder) so drift
-// hashing and idempotence stay stable across the consolidation.
-func encodeDoc(m map[string]any, isTOML bool) ([]byte, error) {
-	var buf bytes.Buffer
-	if isTOML {
-		enc := toml.NewEncoder(&buf)
-		if err := enc.Encode(m); err != nil {
-			return nil, err
-		}
-		return buf.Bytes(), nil
-	}
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(m); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// readParseDoc reads + parses abs. Returns (nil, false, nil) when the file
-// is absent or empty (no prior on-disk document).
-func readParseDoc(abs string, isTOML bool) (map[string]any, bool, error) {
-	body, err := os.ReadFile(abs)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		return nil, false, nil
-	}
-	m, perr := parseDoc(body, isTOML)
-	if perr != nil {
-		return nil, false, perr
-	}
-	return m, true, nil
-}
-
-// subtreeHash returns the xxh3 of a deterministic (sorted-key) JSON
-// encoding of m. Encoding via json.Marshal regardless of the source
-// format makes the hash independent of struct-vs-map field ordering and
-// of JSON-vs-TOML provenance, so the freshly-rendered and on-disk subtrees
-// are directly comparable.
-func subtreeHash(m map[string]any) (string, error) {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return "", err
-	}
-	return hash.Hash(bytes.NewReader(b))
-}
-
-// extractByKeys builds a document containing ONLY the dotted `keys` lifted
-// from src (preserving nesting). found reports whether at least one key was
-// present — used to distinguish "our keys absent on disk" from "present".
-func extractByKeys(src map[string]any, keys []string) (map[string]any, bool) {
-	out := map[string]any{}
-	found := false
-	for _, k := range keys {
-		if v, ok := getDottedKey(src, k); ok {
-			setDottedKey(out, k, v)
-			found = true
-		}
-	}
-	return out, found
-}
-
-// getDottedKey reads the value at a dotted path from a nested map. Returns
-// (nil, false) when any segment is missing or a non-map intermediate is hit.
-func getDottedKey(root map[string]any, path string) (any, bool) {
-	parts := strings.Split(path, ".")
-	cur := root
-	for i, p := range parts {
-		v, ok := cur[p]
-		if !ok {
-			return nil, false
-		}
-		if i == len(parts)-1 {
-			return v, true
-		}
-		next, ok := v.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		cur = next
-	}
-	return nil, false
-}
-
-// setDottedKey sets val at a dotted path, creating intermediate maps.
-func setDottedKey(root map[string]any, path string, val any) {
-	parts := strings.Split(path, ".")
-	cur := root
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			cur[p] = val
-			return
-		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			cur[p] = next
-		}
-		cur = next
-	}
 }
 
 // findAdapterEntry locates the prior state.FileEntry for target under
@@ -1590,29 +1327,12 @@ func mergeKindToString(k adapter.MergeKind) string {
 	return ""
 }
 
-// pluginMarkerRE builds the per-plugin composite marker regex (D-07):
-// "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->" with an
-// optional trailing newline. The plugin id is regexp-escaped via
-// QuoteMeta so a forged inner marker carried in untrusted plugin prose
-// (T-02-03) cannot widen or hijack another plugin's region — the per-id
-// boundary is the OUTER real markers only. (?s) lets . span newlines so
-// a multi-line block is captured.
-//
-// Both the forward composite arm in publishFile (insert/replace) and the
-// inverse path in syncComposite (deletion) build the regex from the same
-// builder, keeping the forward and inverse merges symmetric on the exact
-// same marked region.
-func pluginMarkerRE(pluginID string) *regexp.Regexp {
-	return regexp.MustCompile("(?s)<!-- ach:begin:" + regexp.QuoteMeta(pluginID) +
-		" -->.*?<!-- ach:end:" + regexp.QuoteMeta(pluginID) + " -->\\n?")
-}
-
 // genericMarkerRE matches the OLD single-marker composite form
 // "<!-- ach:begin -->...<!-- ach:end -->" (no per-plugin id). Retained
 // SOLELY for the syncComposite backward-compat fallback: a pre-Phase-2
 // state row carries no plugin id in Keys, so its inverse-merge must
 // target the generic region. All Phase-2 composite rows carry exactly
-// one Keys entry (the plugin name) and use pluginMarkerRE instead.
+// one Keys entry (the plugin name) and use merge.PluginMarkerRE instead.
 var genericMarkerRE = regexp.MustCompile(`(?s)<!-- ach:begin -->.*?<!-- ach:end -->\n?`)
 
 // SyncOptions packages the Sync handler's behavior toggles so the
@@ -1812,7 +1532,7 @@ func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error
 	}
 	var markerRE *regexp.Regexp
 	if len(e.Keys) > 0 {
-		markerRE = pluginMarkerRE(e.Keys[0])
+		markerRE = merge.PluginMarkerRE(e.Keys[0])
 	} else {
 		markerRE = genericMarkerRE
 	}
@@ -1828,7 +1548,7 @@ func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error
 	}
 	updated := markerRE.ReplaceAll(body, nil)
 	// 0o644 — composite host memory files (CLAUDE.md/GEMINI.md) carry NO
-	// credential; the forward writeComposite path writes 0o644, so the
+	// credential; the forward merge.WriteComposite path writes 0o644, so the
 	// inverse-merge MUST match or it silently downgrades the file mode on
 	// every plugin-block removal.
 	if err := state.WriteAtomic(abs, updated, 0o644); err != nil {
@@ -1865,7 +1585,7 @@ func syncDeep(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 // rewrites. An empty resulting map → the file is deleted entirely (the
 // user's whole document was engine-contributed). The format label keeps
 // the error messages identical to the prior per-format functions; the
-// JSON/TOML encoder settings are unchanged (encodeDoc reproduces them
+// JSON/TOML encoder settings are unchanged (merge.EncodeDoc reproduces them
 // byte-for-byte).
 func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, error) {
 	format := "JSON"
@@ -1877,11 +1597,11 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 		return false, fmt.Errorf("sync read %s %s: %w", format, abs, err)
 	}
 	var root map[string]any
-	if err := unmarshalDoc(body, &root, isTOML); err != nil {
+	if err := merge.UnmarshalDoc(body, &root, isTOML); err != nil {
 		return false, fmt.Errorf("sync decode %s %s: %w", format, abs, err)
 	}
 	for _, k := range e.Keys {
-		removeDottedKey(root, k)
+		merge.RemoveDottedKey(root, k)
 	}
 	// Preview: the document was decoded and the inverse-merge resolved
 	// (both rewrite and whole-file delete count as pruned). Stop before
@@ -1895,7 +1615,7 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 		}
 		return false, nil
 	}
-	out, err := encodeDoc(root, isTOML)
+	out, err := merge.EncodeDoc(root, isTOML)
 	if err != nil {
 		return false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
 	}
@@ -1905,29 +1625,6 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 		return false, fmt.Errorf("sync write %s %s: %w", format, abs, err)
 	}
 	return false, nil
-}
-
-// removeDottedKey deletes the leaf at a dotted-path expression from
-// a nested map[string]any. Missing intermediate keys are no-ops —
-// removing a key that does not exist is idempotent. Non-map
-// intermediates are also no-ops (cannot recurse into a scalar).
-func removeDottedKey(root map[string]any, path string) {
-	parts := strings.Split(path, ".")
-	if len(parts) == 0 {
-		return
-	}
-	cur := root
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			delete(cur, p)
-			return
-		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			return
-		}
-		cur = next
-	}
 }
 
 // pruneEmptyDirs walks parent dirs deepest-first calling os.Remove.
