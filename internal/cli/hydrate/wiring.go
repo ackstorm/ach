@@ -66,6 +66,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/merge"
+	"github.com/ackstorm/ach/internal/cli/skillstage"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
@@ -752,7 +753,6 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	// so route.Project's first-path-element classifier matches the
 	// `skills/**` rule. Names are sorted for run-to-run determinism.
 	projRoot := filepath.Join(achDir, "skill-projected")
-	skillsDir := filepath.Join(projRoot, "skills")
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	nested := false
 	for _, ent := range entries {
@@ -775,21 +775,17 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		// the skill one level too deep (.claude/skills/<name>/<wrapper>/SKILL.md
 		// instead of the one-level .claude/skills/<name>/SKILL.md the adapters
 		// expect), so rebase onto the directory that actually holds SKILL.md.
-		src := filepath.Join(skillRoot, ent.Name())
-		contentDir, ok, cerr := skillContentDir(src)
-		if cerr != nil {
-			return fmt.Errorf("adapter %s inspect skill %s: %w", d.platformID, ent.Name(), cerr)
+		// The shared skillstage.Nest performs this rebase (it creates
+		// projRoot/skills/ on first success), returning nested=false when the
+		// extracted tree carries no routable SKILL.md.
+		okNested, nerr := skillstage.Nest(projRoot, ent.Name(), filepath.Join(skillRoot, ent.Name()))
+		if nerr != nil {
+			return fmt.Errorf("adapter %s nest skill %s: %w", d.platformID, ent.Name(), nerr)
 		}
-		if !ok {
+		if !okNested {
 			// No SKILL.md at the root or one dir deep → not a routable skill
 			// tree; skip rather than nest a directory the adapters can't use.
 			continue
-		}
-		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-			return fmt.Errorf("adapter %s stage skills dir %s: %w", d.platformID, skillsDir, err)
-		}
-		if err := os.Rename(contentDir, filepath.Join(skillsDir, ent.Name())); err != nil {
-			return fmt.Errorf("adapter %s nest skill %s under skills/: %w", d.platformID, ent.Name(), err)
 		}
 		nested = true
 	}
@@ -819,33 +815,6 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		result.ProjectedSkillFiles = append(result.ProjectedSkillFiles, entry)
 	}
 	return nil
-}
-
-// skillContentDir locates the directory under an extracted skill's <name>/ dir
-// that holds SKILL.md at its root, stripping at most one wrapper directory.
-// verifySkillContents accepts SKILL.md at the tar root OR one directory deep
-// (REST repo-archive fetches nest everything under "<repo>-<sha>/"), so a
-// fetched skill extracts to either <name>/SKILL.md or <name>/<wrapper>/SKILL.md.
-// Returns (nameDir, true) when SKILL.md is already at the root, (<wrapper>, true)
-// when it sits exactly one level deep, and ("", false) when absent at both.
-func skillContentDir(nameDir string) (string, bool, error) {
-	if st, err := os.Stat(filepath.Join(nameDir, "SKILL.md")); err == nil && !st.IsDir() {
-		return nameDir, true, nil
-	}
-	entries, err := os.ReadDir(nameDir)
-	if err != nil {
-		return "", false, err
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		sub := filepath.Join(nameDir, e.Name())
-		if st, serr := os.Stat(filepath.Join(sub, "SKILL.md")); serr == nil && !st.IsDir() {
-			return sub, true, nil
-		}
-	}
-	return "", false, nil
 }
 
 // MCP server-key prefixes per adapter config format (D-17). The projected
