@@ -141,7 +141,7 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 			if len(caps) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("repo add: no installable plugins or skills found in %q", flagName),
+					Msg:  fmt.Sprintf("repo add: no installable plugins or skills found in %q", args[0]),
 				}
 			}
 
@@ -159,23 +159,24 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 			}
 
 			entry := store.RepoEntry{
-				Name:        flagName,
-				Source:      args[0],
-				Kind:        kindStr(su.Kind),
-				CloneURL:    su.CloneURL,
-				GitRef:      ref,
-				AuthScheme:  su.AuthScheme,
-				HasToken:    token != "",
-				Provides:    caps,
-				DetectedSHA: sha,
-				AddedAt:     nowFn().UTC().Format(time.RFC3339),
+				Name:           flagName,
+				Source:         args[0],
+				Kind:           kindStr(su.Kind),
+				CloneURL:       su.CloneURL,
+				GitRef:         ref,
+				AuthScheme:     su.AuthScheme,
+				HasToken:       token != "",
+				Provides:       caps,
+				SkillsRootHint: flagPath,
+				DetectedSHA:    sha,
+				AddedAt:        nowFn().UTC().Format(time.RFC3339),
 			}
 			repos.Repos = append(repos.Repos, entry)
 			if err := store.SaveRepos(repos); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo add: save repos: %v", err)}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ repo %q  %s  %s  (provides: %s)\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ repo %q  %s  %s  (provides: %s)\n",
 				flagName, kindStr(su.Kind), args[0], formatProvides(caps))
 			return nil
 		},
@@ -200,11 +201,11 @@ func newRepoListCmd() *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo list: load repos: %v", err)}
 			}
 			if len(repos.Repos) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no repos registered")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no repos registered")
 				return nil
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tKIND\tSOURCE\tAUTH\tPROVIDES")
+			_, _ = fmt.Fprintln(w, "NAME\tKIND\tSOURCE\tAUTH\tPROVIDES")
 			for _, r := range repos.Repos {
 				auth := "-"
 				if r.HasToken {
@@ -214,7 +215,7 @@ func newRepoListCmd() *cobra.Command {
 					}
 					auth = scheme + " •••"
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 					r.Name,
 					r.Kind,
 					r.Source,
@@ -249,18 +250,22 @@ func newRepoRemoveCmd() *cobra.Command {
 				}
 			}
 			if idx < 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "repo %q not registered\n", name)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "repo %q not registered\n", name)
 				return nil
 			}
 
 			repos.Repos = append(repos.Repos[:idx], repos.Repos[idx+1:]...)
+			// DeleteToken before SaveRepos: if we crash between the two writes the
+			// credential is gone but the repos entry is still present, so a retry
+			// re-enters here and re-deletes (idempotent). Acceptable for a
+			// local single-user store — no atomicity guarantee is needed.
 			if err := store.DeleteToken(name); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo remove: delete token: %v", err)}
 			}
 			if err := store.SaveRepos(repos); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo remove: save repos: %v", err)}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ removed repo %q\n", name)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ removed repo %q\n", name)
 			return nil
 		},
 	}
@@ -308,9 +313,13 @@ func newRepoUpdateCmd() *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo update: load token: %v", err)}
 			}
 
-			sha, caps, err := resolveAndDetect(ctx, su, token, "")
+			sha, caps, err := resolveAndDetect(ctx, su, token, entry.SkillsRootHint)
 			if err != nil {
 				return err
+			}
+
+			if len(caps) == 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! warning: repo %q now provides no installable plugins or skills\n", name)
 			}
 
 			shortSHA := sha
@@ -319,7 +328,7 @@ func newRepoUpdateCmd() *cobra.Command {
 			}
 
 			if sha == entry.DetectedSHA {
-				fmt.Fprintf(cmd.OutOrStdout(), "repo %q up to date (%s)\n", name, shortSHA)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "repo %q up to date (%s)\n", name, shortSHA)
 				return nil
 			}
 
@@ -328,7 +337,7 @@ func newRepoUpdateCmd() *cobra.Command {
 			if err := store.SaveRepos(repos); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo update: save repos: %v", err)}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ updated repo %q → %s (provides: %s)\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ updated repo %q → %s (provides: %s)\n",
 				name, shortSHA, formatProvides(caps))
 			return nil
 		},
@@ -337,7 +346,9 @@ func newRepoUpdateCmd() *cobra.Command {
 
 // resolveAndDetect resolves the HEAD SHA via LsRemote, clones the repo,
 // and detects capabilities. flagPath is the optional skills-root hint.
-func resolveAndDetect(ctx context.Context, su source.SourceURI, token, flagPath string) (string, []store.Capability, error) {
+func resolveAndDetect(
+	ctx context.Context, su source.SourceURI, token, flagPath string,
+) (string, []store.Capability, error) {
 	// Map auth scheme.
 	var scheme gitfetch.AuthScheme
 	if su.AuthScheme == source.AuthBasicOAuth2 {

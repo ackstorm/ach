@@ -24,6 +24,7 @@ control plane. Subcommands:
   env-keys     Create / list / revoke environment keys
   hydrate      Materialize workspace artifacts
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
+  repo         Manage local package repository registrations (add/list/remove/update)
 
 For service-mode commands (operator, platform-api, forwarder,
 content-service, migrate), use the 'ach' binary instead.`,

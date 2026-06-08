@@ -22,17 +22,18 @@ type Capability struct {
 
 // RepoEntry is one entry in repos.json describing a registered repo.
 type RepoEntry struct {
-	Name        string       `json:"name"`
-	Source      string       `json:"source"`
-	Kind        string       `json:"kind"` // "github"|"git"|"local"
-	CloneURL    string       `json:"cloneURL,omitempty"`
-	GitRef      string       `json:"gitRef,omitempty"`
-	LocalPath   string       `json:"localPath,omitempty"`
-	AuthScheme  string       `json:"authScheme,omitempty"`
-	HasToken    bool         `json:"hasToken"`
-	Provides    []Capability `json:"provides"`
-	DetectedSHA string       `json:"detectedSHA,omitempty"`
-	AddedAt     string       `json:"addedAt"`
+	Name           string       `json:"name"`
+	Source         string       `json:"source"`
+	Kind           string       `json:"kind"` // "github"|"git"|"local"
+	CloneURL       string       `json:"cloneURL,omitempty"`
+	GitRef         string       `json:"gitRef,omitempty"`
+	LocalPath      string       `json:"localPath,omitempty"`
+	AuthScheme     string       `json:"authScheme,omitempty"`
+	HasToken       bool         `json:"hasToken"`
+	Provides       []Capability `json:"provides"`
+	SkillsRootHint string       `json:"skillsRootHint,omitempty"`
+	DetectedSHA    string       `json:"detectedSHA,omitempty"`
+	AddedAt        string       `json:"addedAt"`
 }
 
 // ReposFile is the top-level schema for repos.json.

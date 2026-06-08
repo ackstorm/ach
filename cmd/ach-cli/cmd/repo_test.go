@@ -48,7 +48,9 @@ func initFixtureRepo(t *testing.T) string {
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	marketplace := `{"name":"m","owner":{"name":"o"},"plugins":[{"name":"p1","source":{"source":"github","repo":"a/b"}},{"name":"p2","source":{"source":"github","repo":"c/d"}}]}`
+	marketplace := `{"name":"m","owner":{"name":"o"},"plugins":[` +
+		`{"name":"p1","source":{"source":"github","repo":"a/b"}},` +
+		`{"name":"p2","source":{"source":"github","repo":"c/d"}}]}`
 	if err := os.WriteFile(filepath.Join(pluginDir, "marketplace.json"), []byte(marketplace), 0o644); err != nil {
 		t.Fatalf("write marketplace.json: %v", err)
 	}
