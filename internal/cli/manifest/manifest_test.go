@@ -103,7 +103,9 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 				m.Context.Prompts[0].Endpoint)
 		}
 	}
-	if got, want := len(m.Context.Plugins), 1; got != want {
+	// Plugins: the demo env declares caveman + the marketplace-sourced
+	// feature-dev@conflict-mkt-a (see examples/hydrate.json).
+	if got, want := len(m.Context.Plugins), 2; got != want {
 		t.Errorf("len(Context.Plugins) = %d, want %d", got, want)
 	} else if m.Context.Plugins[0].DownloadURL == "" {
 		t.Error("Context.Plugins[0].DownloadURL is empty — must round-trip")
@@ -112,6 +114,13 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 		t.Errorf("len(Context.Artifacts) = %d, want %d", got, want)
 	} else if m.Context.Artifacts[0].DownloadURL == "" {
 		t.Error("Context.Artifacts[0].DownloadURL is empty — must round-trip")
+	}
+	// Skills: the demo env declares pdf + docx + the marketplace-sourced
+	// pdf@anthropic-skills; each must round-trip with a non-empty DownloadURL.
+	if got, want := len(m.Context.Skills), 3; got != want {
+		t.Errorf("len(Context.Skills) = %d, want %d", got, want)
+	} else if m.Context.Skills[0].DownloadURL == "" {
+		t.Error("Context.Skills[0].DownloadURL is empty — must round-trip")
 	}
 }
 
