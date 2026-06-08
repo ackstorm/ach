@@ -200,3 +200,69 @@ func TestRepo(t *testing.T) {
 		}
 	})
 }
+
+// TestRepoAdd_PathSubdirPlugin_V1Scope pins the documented v1 scope of --path:
+// it is the skills-marketplace root hint ONLY and does NOT fetch-narrow a direct
+// plugin/skill that lives in a subdirectory (the --path dual-semantics ambiguity
+// is deferred). A repo whose only plugin sits under packages/sub/ therefore
+// detects no installable lens via `repo add --path packages/sub`, and the error
+// carries the scope note. A future version that adds subdir narrowing for direct
+// kinds must update this test deliberately.
+func TestRepoAdd_PathSubdirPlugin_V1Scope(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "HOME="+dir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("-C", dir, "init", "-b", "main")
+	run("-C", dir, "config", "user.email", "t@t")
+	run("-C", dir, "config", "user.name", "t")
+
+	// The plugin lives one level down under packages/sub/ — NOT at the repo root.
+	subPlugin := filepath.Join(dir, "packages", "sub", ".claude-plugin")
+	if err := os.MkdirAll(subPlugin, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subPlugin, "plugin.json"),
+		[]byte(`{"name":"sub","version":"0.1.0","description":"x"}`), 0o644); err != nil {
+		t.Fatalf("write plugin.json: %v", err)
+	}
+	cmds := filepath.Join(dir, "packages", "sub", "commands")
+	if err := os.MkdirAll(cmds, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cmds, "s.md"), []byte("# sub"), 0o644); err != nil {
+		t.Fatalf("write s.md: %v", err)
+	}
+	// A genuine repo-root file so packages/ is not the sole top-level entry.
+	if err := os.WriteFile(filepath.Join(dir, "top.md"), []byte("top"), 0o644); err != nil {
+		t.Fatalf("write top.md: %v", err)
+	}
+	run("-C", dir, "add", "-A")
+	run("-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init")
+
+	var buf bytes.Buffer
+	cmd := newRepoCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"add", "git:file://" + dir, "--name", "sub", "--path", "packages/sub"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected repo add to fail for a direct plugin in a subdirectory (v1 --path scope), got nil")
+	}
+	if !strings.Contains(err.Error(), "no installable plugins or skills") {
+		t.Errorf("expected 'no installable' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "does not narrow a direct plugin/skill in a subdirectory") {
+		t.Errorf("expected the v1 --path scope note in the error, got: %v", err)
+	}
+}

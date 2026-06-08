@@ -140,10 +140,16 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 				return err
 			}
 			if len(caps) == 0 {
-				return &exit.CodedError{
-					Code: exit.General,
-					Msg:  fmt.Sprintf("repo add: no installable plugins or skills found in %q", args[0]),
+				msg := fmt.Sprintf("repo add: no installable plugins or skills found in %q", args[0])
+				if flagPath != "" {
+					// --path is the skills-marketplace root hint only; v1 does NOT
+					// fetch-narrow a direct plugin/skill that lives in a subdirectory
+					// (the --path dual-semantics ambiguity is deferred). Point the
+					// user at that scope so a subdir plugin repo isn't a silent dead end.
+					msg += fmt.Sprintf(" (note: --path %q only sets the skills-marketplace root; "+
+						"v1 does not narrow a direct plugin/skill in a subdirectory)", flagPath)
 				}
+				return &exit.CodedError{Code: exit.General, Msg: msg}
 			}
 
 			// Persist token separately.
@@ -186,7 +192,8 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 	_ = c.MarkFlagRequired("name")
 	c.Flags().StringVar(&flagToken, "token", "", "Auth token (falls back to GITHUB_TOKEN / GITLAB_TOKEN)")
 	c.Flags().StringVar(&flagAuth, "auth", "", "Auth scheme: bearer (default) or basic-oauth2")
-	c.Flags().StringVar(&flagPath, "path", "", "Skills root hint (subdirectory path within the repo)")
+	c.Flags().StringVar(&flagPath, "path", "",
+		"Skills-marketplace root hint (subdir holding skills/; v1 does not narrow direct plugin/skill repos)")
 	return c
 }
 
