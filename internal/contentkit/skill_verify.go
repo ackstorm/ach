@@ -68,6 +68,15 @@ type skillFrontmatter struct {
 	Description string `json:"description"`
 }
 
+// ValidateSkillName is the exported entry point for the agentskills.io name
+// constraints. A valid skill name is also a safe single path segment (no "/",
+// "..", absolute), so the local-package manager reuses it to guard the name it
+// joins into the skills/<name>/ stage path before nesting. Returns an error
+// that wraps sourceserr.ErrUpstreamInvalid on any violation.
+func ValidateSkillName(name string) error {
+	return validateSkillName(name)
+}
+
 // validateSkillName implements the agentskills.io name constraints. Shared by
 // the standalone Skill verify and (in the SkillMarketplace plan) discovery.
 // Returns an error that wraps sourceserr.ErrUpstreamInvalid on any violation.

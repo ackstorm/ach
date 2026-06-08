@@ -77,7 +77,7 @@ func TestDetect_PluginMarketplace(t *testing.T) {
 		".claude-plugin/marketplace.json": marketplaceJSON,
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestDetect_SkillMarketplace(t *testing.T) {
 		"skills/bar/SKILL.md": skillFM("bar"),
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestDetect_Plugin(t *testing.T) {
 		"commands/x.md": "# x",
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestDetect_Skill(t *testing.T) {
 		"SKILL.md": skillFM("solo"),
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestDetect_NoMatch(t *testing.T) {
 		"readme.txt": "hi",
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -167,13 +167,39 @@ func TestDetect_SkillMarketplaceWithHint(t *testing.T) {
 		"README.md": "repo readme",
 	})
 
-	caps, err := discover.Detect(tarball, "custom")
+	caps, skillsRoot, err := discover.Detect(tarball, "custom")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
 	want := store.Capability{Lens: discover.LensSkillMarketplace, Count: 1}
 	if !containsCap(caps, want) {
 		t.Errorf("expected caps to contain %+v, got %v", want, sortCaps(caps))
+	}
+	// An explicit hint flows through and is returned verbatim.
+	if skillsRoot != "custom" {
+		t.Errorf("skillsRoot = %q, want %q", skillsRoot, "custom")
+	}
+}
+
+// TestDetect_SkillMarketplaceAutodetectRoot verifies that a skills/<d>/SKILL.md
+// layout discovered with no hint reports skillsRoot == "skills" so the caller
+// can persist the autodetected root (Bug B regression guard).
+func TestDetect_SkillMarketplaceAutodetectRoot(t *testing.T) {
+	tarball := mkTarGz(map[string]string{
+		"skills/pdf/SKILL.md": skillFM("pdf"),
+		"README.md":           "repo readme",
+	})
+
+	caps, skillsRoot, err := discover.Detect(tarball, "")
+	if err != nil {
+		t.Fatalf("Detect error: %v", err)
+	}
+	want := store.Capability{Lens: discover.LensSkillMarketplace, Count: 1}
+	if !containsCap(caps, want) {
+		t.Errorf("expected caps to contain %+v, got %v", want, sortCaps(caps))
+	}
+	if skillsRoot != "skills" {
+		t.Errorf("skillsRoot = %q, want %q", skillsRoot, "skills")
 	}
 }
 
@@ -184,7 +210,7 @@ func TestDetect_MarketplaceAtRoot(t *testing.T) {
 		"marketplace.json": marketplaceJSON,
 	})
 
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}
@@ -199,7 +225,7 @@ func TestDetect_NonNilEmpty(t *testing.T) {
 	tarball := mkTarGz(map[string]string{
 		"readme.txt": "nothing useful here",
 	})
-	caps, err := discover.Detect(tarball, "")
+	caps, _, err := discover.Detect(tarball, "")
 	if err != nil {
 		t.Fatalf("Detect error: %v", err)
 	}

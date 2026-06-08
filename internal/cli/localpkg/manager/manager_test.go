@@ -345,8 +345,11 @@ func TestResolve_DirectSkill(t *testing.T) {
 	if len(res.ResolvedSHA) != 40 {
 		t.Errorf("ResolvedSHA = %q; want 40-hex", res.ResolvedSHA)
 	}
-	if _, err := os.Stat(filepath.Join(res.StageDir, "SKILL.md")); err != nil {
-		t.Errorf("expected SKILL.md in stage dir: %v", err)
+	// The manager nests the skill under skills/<name>/ so the claudecode
+	// `skills/**/* → .claude/skills/**/*` projection rule (first-path-element
+	// classifier) fires — SKILL.md is NOT left bare at the stage root.
+	if _, err := os.Stat(filepath.Join(res.StageDir, "skills", "my-skill", "SKILL.md")); err != nil {
+		t.Errorf("expected skills/my-skill/SKILL.md in stage dir: %v", err)
 	}
 }
 
@@ -357,11 +360,10 @@ func TestResolve_DirectSkill_ThenProject(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 
-	// The skill is stored at the repo root as SKILL.md. After Resolve+Extract
-	// the stage dir will have SKILL.md directly. The claudecode adapter's
-	// skills/**/* rule only matches when the content is under skills/<name>/.
-	// For a direct-skill fetch the caller is responsible for wrapping; here
-	// we verify Project works on a wrapped tree.
+	// The skill is stored at the repo root as SKILL.md. After Resolve the
+	// manager nests it under skills/hello-skill/ so the claudecode adapter's
+	// `skills/**/*` rule (which classifies on the FIRST path element) fires —
+	// Project runs over res.StageDir directly with no caller-side wrapping.
 	skillURL := makeSkillRepo(t, "hello-skill")
 	repo := store.RepoEntry{
 		Name:     "hello-skill",
@@ -379,22 +381,14 @@ func TestResolve_DirectSkill_ThenProject(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(res.StageDir) }()
 
-	// Wrap stage dir under skills/hello-skill/ for the claudecode rule.
-	wrappedDir := t.TempDir()
-	skillSubDir := filepath.Join(wrappedDir, "skills", "hello-skill")
-	if err := os.MkdirAll(skillSubDir, 0o755); err != nil {
-		t.Fatalf("mkdir skills sub-dir: %v", err)
-	}
-	// Copy SKILL.md from stage dir into the wrapped location.
-	skillMDBytes, err := os.ReadFile(filepath.Join(res.StageDir, "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read SKILL.md from stage: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillSubDir, "SKILL.md"), skillMDBytes, 0o644); err != nil {
-		t.Fatalf("write SKILL.md to wrapped: %v", err)
+	// The manager already nested the skill under skills/hello-skill/, so Project
+	// runs over the stage dir directly and the claudecode `skills/**/*` rule
+	// fires with no caller-side wrapping.
+	if _, err := os.Stat(filepath.Join(res.StageDir, "skills", "hello-skill", "SKILL.md")); err != nil {
+		t.Fatalf("expected skills/hello-skill/SKILL.md in stage dir: %v", err)
 	}
 
-	writes, err := manager.Project(wrappedDir, "claude-code")
+	writes, err := manager.Project(res.StageDir, "claude-code")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}

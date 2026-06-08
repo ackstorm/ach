@@ -23,10 +23,19 @@ const (
 )
 
 // Detect inspects a gzipped-tar repo snapshot and returns the lenses it provides
-// (possibly several). skillsRootHint is the optional --path narrow ("" → autodetect).
-// Returns a non-nil (possibly empty) slice.
-func Detect(tarball []byte, skillsRootHint string) ([]store.Capability, error) {
-	caps := []store.Capability{}
+// (possibly several) along with the resolved skills-root.
+//
+// skillsRootHint is the optional --path narrow ("" → autodetect across the
+// candidate roots ["", "skills"]). skillsRoot reports WHICH candidate root the
+// skill-marketplace tree-walk matched, so the caller can persist it as the
+// repo's SkillsRootHint — otherwise an autodetected (empty-hint) match would be
+// lost and the install-time DiscoverSkillsInTree("") would find a different or
+// empty set. When an explicit hint is passed it flows through and is returned
+// verbatim; when nothing matched skillsRoot is "".
+//
+// Returns a non-nil (possibly empty) capability slice.
+func Detect(tarball []byte, skillsRootHint string) (caps []store.Capability, skillsRoot string, err error) {
+	caps = []store.Capability{}
 
 	// Step 1: plugin-marketplace — scan for marketplace.json.
 	mktBytes, found := extractFile(tarball, func(name string) bool {
@@ -51,9 +60,10 @@ func Detect(tarball []byte, skillsRootHint string) ([]store.Capability, error) {
 		skillRoots = []string{"", "skills"}
 	}
 	for _, root := range skillRoots {
-		_, skills, err := contentkit.DiscoverSkillsInTree(tarball, root)
-		if err == nil && len(skills) >= 1 {
+		_, skills, derr := contentkit.DiscoverSkillsInTree(tarball, root)
+		if derr == nil && len(skills) >= 1 {
 			caps = append(caps, store.Capability{Lens: LensSkillMarketplace, Count: len(skills)})
+			skillsRoot = root
 			break
 		}
 	}
@@ -70,7 +80,7 @@ func Detect(tarball []byte, skillsRootHint string) ([]store.Capability, error) {
 		caps = append(caps, store.Capability{Lens: LensSkill, Count: 1})
 	}
 
-	return caps, nil
+	return caps, skillsRoot, nil
 }
 
 // extractFile walks the gzipped-tar once and returns the bytes of the first

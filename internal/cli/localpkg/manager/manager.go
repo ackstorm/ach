@@ -18,6 +18,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/localpkg/discover"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
+	"github.com/ackstorm/ach/internal/cli/skillstage"
 	"github.com/ackstorm/ach/internal/contentkit"
 	"github.com/ackstorm/ach/internal/gitfetch"
 )
@@ -111,6 +112,46 @@ func stageTar(ctx context.Context, tarBytes []byte, kind extract.ResourceKind) (
 		return "", fmt.Errorf("manager: extract: %w", err)
 	}
 	return dst, nil
+}
+
+// stageSkillNested extracts a verified skill tar into a RAW temp dir, then
+// nests its SKILL.md-bearing content under <stageDir>/skills/<name>/ so the
+// adapter's `skills/**/* → .claude/skills/**/*` projection rule (which
+// classifies on the FIRST path element) fires at install time. Without this
+// nesting a skill staged with SKILL.md at the stage root projects 0 files.
+//
+// The shared skillstage.Nest performs the same rebase the hydrate engine uses
+// (handling the at-most-one REST-archive wrapper dir). The raw extraction dir
+// is reclaimed before return (Nest renames the content subtree out of it, so
+// ErrNotExist on cleanup is benign). name MUST already be validated as a safe
+// path segment by the caller. The returned stageDir is owned by the caller.
+func stageSkillNested(ctx context.Context, tarBytes []byte, name string) (string, error) {
+	rawDir, err := stageTar(ctx, tarBytes, extract.KindSkill)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if rmErr := os.RemoveAll(rawDir); rmErr != nil && !os.IsNotExist(rmErr) {
+			// Best-effort cleanup of the raw extraction dir; a residual temp dir
+			// is harmless and the staged tree is already correct.
+			_ = rmErr
+		}
+	}()
+
+	stageDir, err := os.MkdirTemp("", "ach-skill-*")
+	if err != nil {
+		return "", fmt.Errorf("manager: mkdirtemp skill stage: %w", err)
+	}
+	nested, err := skillstage.Nest(stageDir, name, rawDir)
+	if err != nil {
+		_ = os.RemoveAll(stageDir)
+		return "", fmt.Errorf("manager: nest skill %q: %w", name, err)
+	}
+	if !nested {
+		_ = os.RemoveAll(stageDir)
+		return "", fmt.Errorf("manager: no SKILL.md found in skill %q", name)
+	}
+	return stageDir, nil
 }
 
 // extractFileFromTar returns the bytes of the first entry in the gzipped tar
@@ -220,7 +261,12 @@ func resolveDirectSkill(ctx context.Context, repo store.RepoEntry, token, name, 
 	if err := contentkit.VerifySkillContents(bytes.NewReader(tarBytes)); err != nil {
 		return ResolveResult{}, fmt.Errorf("manager: verify skill contents: %w", err)
 	}
-	stageDir, err := stageTar(ctx, tarBytes, extract.KindSkill)
+	// Guard the requested name as a safe path segment before it is joined into
+	// the skills/<name>/ stage path.
+	if err := contentkit.ValidateSkillName(name); err != nil {
+		return ResolveResult{}, fmt.Errorf("manager: invalid skill name %q: %w", name, err)
+	}
+	stageDir, err := stageSkillNested(ctx, tarBytes, name)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -335,7 +381,13 @@ func resolveSkillMarketplace(ctx context.Context, repo store.RepoEntry, token, n
 		return ResolveResult{}, fmt.Errorf("manager: verify skill contents for %q: %w", name, err)
 	}
 
-	stageDir, err := stageTar(ctx, sliced, extract.KindSkill)
+	// Guard the requested name as a safe path segment before it is joined into
+	// the skills/<name>/ stage path. (DiscoverSkillsInTree already validated
+	// foundSkill.Name; this closes the contract at the join site.)
+	if err := contentkit.ValidateSkillName(name); err != nil {
+		return ResolveResult{}, fmt.Errorf("manager: invalid skill name %q: %w", name, err)
+	}
+	stageDir, err := stageSkillNested(ctx, sliced, name)
 	if err != nil {
 		return ResolveResult{}, err
 	}

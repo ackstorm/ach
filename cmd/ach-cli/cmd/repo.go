@@ -134,7 +134,7 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 				}
 			}
 
-			sha, caps, err := resolveAndDetect(ctx, su, token, flagPath)
+			sha, caps, skillsRoot, err := resolveAndDetect(ctx, su, token, flagPath)
 			if err != nil {
 				return err
 			}
@@ -167,7 +167,7 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 				AuthScheme:     su.AuthScheme,
 				HasToken:       token != "",
 				Provides:       caps,
-				SkillsRootHint: flagPath,
+				SkillsRootHint: skillsRoot,
 				DetectedSHA:    sha,
 				AddedAt:        nowFn().UTC().Format(time.RFC3339),
 			}
@@ -313,7 +313,7 @@ func newRepoUpdateCmd() *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo update: load token: %v", err)}
 			}
 
-			sha, caps, err := resolveAndDetect(ctx, su, token, entry.SkillsRootHint)
+			sha, caps, skillsRoot, err := resolveAndDetect(ctx, su, token, entry.SkillsRootHint)
 			if err != nil {
 				return err
 			}
@@ -334,6 +334,7 @@ func newRepoUpdateCmd() *cobra.Command {
 
 			repos.Repos[entryIdx].DetectedSHA = sha
 			repos.Repos[entryIdx].Provides = caps
+			repos.Repos[entryIdx].SkillsRootHint = skillsRoot
 			if err := store.SaveRepos(repos); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo update: save repos: %v", err)}
 			}
@@ -345,10 +346,13 @@ func newRepoUpdateCmd() *cobra.Command {
 }
 
 // resolveAndDetect resolves the HEAD SHA via LsRemote, clones the repo,
-// and detects capabilities. flagPath is the optional skills-root hint.
+// and detects capabilities. flagPath is the optional skills-root hint; the
+// returned skillsRoot reports the root Detect actually matched (the explicit
+// hint, the autodetected root, or "" when no skill tree matched) so the caller
+// can persist it as the repo's SkillsRootHint.
 func resolveAndDetect(
 	ctx context.Context, su source.SourceURI, token, flagPath string,
-) (string, []store.Capability, error) {
+) (sha string, caps []store.Capability, skillsRoot string, err error) {
 	// Map auth scheme.
 	var scheme gitfetch.AuthScheme
 	if su.AuthScheme == source.AuthBasicOAuth2 {
@@ -362,9 +366,9 @@ func resolveAndDetect(
 		ref = "main"
 	}
 
-	sha, err := gitfetch.LsRemote(ctx, su.CloneURL, ref, token, scheme)
+	sha, err = gitfetch.LsRemote(ctx, su.CloneURL, ref, token, scheme)
 	if err != nil {
-		return "", nil, cloneExitErr("resolve", err)
+		return "", nil, "", cloneExitErr("resolve", err)
 	}
 
 	fetcher := gitfetch.New(gitfetch.Spec{
@@ -376,20 +380,20 @@ func resolveAndDetect(
 	})
 	res, err := fetcher.Fetch(ctx, gitfetch.Request{})
 	if err != nil {
-		return "", nil, cloneExitErr("fetch", err)
+		return "", nil, "", cloneExitErr("fetch", err)
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	tarball, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", nil, cloneExitErr("read", err)
+		return "", nil, "", cloneExitErr("read", err)
 	}
 
-	caps, err := discover.Detect(tarball, flagPath)
+	caps, skillsRoot, err = discover.Detect(tarball, flagPath)
 	if err != nil {
-		return "", nil, &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("repo detect: %v", err)}
+		return "", nil, "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("repo detect: %v", err)}
 	}
-	return sha, caps, nil
+	return sha, caps, skillsRoot, nil
 }
 
 // cloneExitErr maps a clone/fetch error to a CodedError using sourceserr.ReasonOf.
