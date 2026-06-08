@@ -51,6 +51,37 @@ func executeEnv(t *testing.T, args ...string) (string, string, exit.Code, error)
 	return executeCommand(t, newEnvCmd(), args...)
 }
 
+// TestEnv_Reparent_HydrateStatusUninstall asserts the Phase 2.3 clean
+// break: hydrate / status / uninstall resolve UNDER the `env` parent and
+// the old top-level names are gone from rootCmd.
+func TestEnv_Reparent_HydrateStatusUninstall(t *testing.T) {
+	parent := newEnvCmd()
+
+	// Each reorged child must resolve under `env`.
+	for _, name := range []string{"hydrate", "status", "uninstall"} {
+		var found bool
+		for _, sub := range parent.Commands() {
+			if sub.Name() == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("`env %s` not registered under the env parent", name)
+		}
+	}
+
+	// The old top-level names must NOT resolve on rootCmd. cobra's Find
+	// returns the root command itself (with the token as a leftover arg)
+	// when no matching subcommand exists.
+	for _, name := range []string{"hydrate", "list", "uninstall"} {
+		c, _, err := rootCmd.Find([]string{name})
+		if err == nil && c != nil && c.Name() == name {
+			t.Errorf("top-level `%s` still resolves on rootCmd; want clean break", name)
+		}
+	}
+}
+
 // TestEnv_List_SinglePage asserts a no-pagination response renders
 // both rows and exits 0.
 func TestEnv_List_SinglePage(t *testing.T) {

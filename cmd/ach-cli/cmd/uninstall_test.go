@@ -88,7 +88,7 @@ func TestUninstall_DryRunWritesNothing(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1, Preserved: 0}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--dry-run")
+	stdout, _, code, err := executeUninstall(t, "--output", ws, "prod", "--dry-run")
 	if err != nil || code != exit.OK {
 		t.Fatalf("dry-run uninstall: code=%d err=%v", code, err)
 	}
@@ -125,7 +125,7 @@ func TestUninstall_MissingStateExitsZero(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod")
+	stdout, _, code, err := executeUninstall(t, "--output", ws, "prod")
 	if err != nil {
 		t.Fatalf("missing-state uninstall returned error: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestUninstall_ScopeFlagMutualExclusion(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--include-runtime", "--only-runtime")
+	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--include-runtime", "--only-runtime")
 	if err == nil {
 		t.Fatal("expected mutual-exclusion error, got nil")
 	}
@@ -174,7 +174,7 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 2}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--include-runtime")
+	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--include-runtime")
 	if err != nil || code != exit.OK {
 		t.Fatalf("full teardown: code=%d err=%v", code, err)
 	}
@@ -205,7 +205,7 @@ func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1}, nil)
 
 	// Default scope: removes context, retains runtime.
-	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod")
+	_, _, code, err := executeUninstall(t, "--output", ws, "prod")
 	if err != nil || code != exit.OK {
 		t.Fatalf("scoped uninstall: code=%d err=%v", code, err)
 	}
@@ -236,7 +236,7 @@ func TestUninstall_ForceFlagThreadsThrough(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "--environment", "prod", "--force")
+	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--force")
 	if err != nil || code != exit.OK {
 		t.Fatalf("force uninstall: code=%d err=%v", code, err)
 	}

@@ -42,7 +42,7 @@ const canonicalHydrateJSON = `{"schemaVersion":"v1alpha1","environment":"demo",`
 //
 // Note: as of 07-W3-05 the cobra layer ALSO accepts engine flags
 // (--include-runtime / --only-runtime / --sync / --force / --dry-run
-// / --wait / --lock-timeout / --output / --allow-symlinks / --platform
+// / --wait / --lock-timeout / --output / --allow-symlinks / --target
 // / --global). The existing Phase 6 tests below were authored against
 // the surface-only --raw path; we prepend "--raw" here so the legacy
 // suite exercises the Phase 6 POST+stream byte-for-byte contract
@@ -108,7 +108,7 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	stdout, _, code, err := executeHydrate(t, "--environment", "demo", "--no-warnings")
+	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	_, stderr, code, err := executeHydrate(t, "--environment", "demo")
+	_, stderr, code, err := executeHydrate(t, "demo")
 	if err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	_, stderr, code, err := executeHydrate(t, "--environment", "demo", "--no-warnings")
+	_, stderr, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
@@ -202,8 +202,8 @@ func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
 	if code != exit.General {
 		t.Errorf("code = %d; want 1", code)
 	}
-	if !strings.Contains(err.Error(), "--environment is required") {
-		t.Errorf("err missing '--environment is required': %q", err.Error())
+	if !strings.Contains(err.Error(), "positional argument is required") {
+		t.Errorf("err missing 'positional argument is required': %q", err.Error())
 	}
 	if got := atomic.LoadInt32(mock.calls); got != 0 {
 		t.Errorf("HTTP calls = %d; want 0 (client-side gate)", got)
@@ -256,7 +256,7 @@ func TestHydrate_EK_WrongEnvironment_403_Exit1(t *testing.T) {
 	// (not_admin / unauthorized_team) → maps to General (1).
 	runExitCodeMatrixCase(t, http.StatusForbidden,
 		"wrong_environment", "ek bound elsewhere", "req_x",
-		exit.General, "--env-key", "l", "--environment", "demo", "--no-warnings")
+		exit.General, "--env-key", "l", "demo", "--no-warnings")
 }
 
 // Test 7: pk_ + ek_ both passed → exit 1 with conflict list. NO HTTP.
@@ -274,7 +274,7 @@ func TestHydrate_MutexCreds_Exit1_NoHTTP(t *testing.T) {
 	_, _, code, err := executeHydrate(t,
 		"--api-key", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		"--env-key", "demo",
-		"--environment", "demo",
+		"demo",
 	)
 	if err == nil {
 		t.Fatal("expected mutex-credential error")
@@ -306,7 +306,7 @@ func TestHydrate_MutexCreds_EnvAndFlag_Exit1(t *testing.T) {
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	_, _, code, err := executeHydrate(t, "--env-key", "demo", "--environment", "demo")
+	_, _, code, err := executeHydrate(t, "--env-key", "demo", "demo")
 	if err == nil {
 		t.Fatal("expected mutex error")
 	}
@@ -330,7 +330,7 @@ func TestHydrate_NoCredential_Exit1(t *testing.T) {
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	_, _, code, err := executeHydrate(t, "--environment", "demo")
+	_, _, code, err := executeHydrate(t, "demo")
 	if err == nil {
 		t.Fatal("expected no-credential error")
 	}
@@ -354,7 +354,7 @@ func TestHydrate_SyntheticMode_PK_Works(t *testing.T) {
 	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
-	stdout, _, code, err := executeHydrate(t, "--environment", "demo", "--no-warnings")
+	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
 		t.Fatalf("synthetic hydrate: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestHydrate_SyntheticMode_EnvKey_Exit1(t *testing.T) {
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_BASE_URL", mock.server.URL)
 
-	_, _, code, err := executeHydrate(t, "--env-key", "demo", "--environment", "demo")
+	_, _, code, err := executeHydrate(t, "--env-key", "demo", "demo")
 	if err == nil {
 		t.Fatal("expected synthetic --env-key rejection")
 	}
@@ -439,14 +439,14 @@ func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID stri
 func TestHydrate_503_Exit6(t *testing.T) {
 	runExitCodeMatrixCase(t, http.StatusServiceUnavailable,
 		"upstream_unavailable", "try again", "req_y",
-		exit.Network, "--environment", "demo", "--no-warnings")
+		exit.Network, "demo", "--no-warnings")
 }
 
 // Test 10b: 401 from server → exit 3 (AuthN).
 func TestHydrate_401_Exit3(t *testing.T) {
 	runExitCodeMatrixCase(t, http.StatusUnauthorized,
 		"invalid_key", "no", "req_z",
-		exit.AuthN, "--environment", "demo", "--no-warnings")
+		exit.AuthN, "demo", "--no-warnings")
 }
 
 // Test 10c: 400 missing_environment from server → exit 1 (General).
@@ -494,10 +494,10 @@ func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
 	cmd := newHydrateCmd()
 	wantFlags := []string{
 		"include-runtime", "only-runtime", "sync", "force", "dry-run",
-		"wait", "lock-timeout", "output", "allow-symlinks", "platform",
+		"wait", "lock-timeout", "output", "allow-symlinks", "target",
 		"global", "raw",
-		// Phase 6 surface preserved.
-		"environment", "no-warnings", "verbose", "api-key", "env-key", "profile",
+		// Phase 6 surface preserved (sans --environment, now positional).
+		"no-warnings", "verbose", "api-key", "env-key", "profile",
 	}
 	for _, name := range wantFlags {
 		if f := cmd.Flags().Lookup(name); f == nil {
@@ -534,7 +534,7 @@ func TestRunHydrate_RawDispatchesToLegacy(t *testing.T) {
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
 	stdout, _, code, err := executeHydrateEngine(t, "--raw",
-		"--environment", "demo", "--no-warnings")
+		"demo", "--no-warnings")
 	if err != nil {
 		t.Fatalf("hydrate --raw: %v", err)
 	}
@@ -594,7 +594,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 
 	// --output overrides cwd → autodetect against the seeded root.
 	_, _, code, err := executeHydrateEngine(t,
-		"--environment", "demo", "--no-warnings", "--output", root)
+		"demo", "--no-warnings", "--output", root)
 	if err != nil {
 		t.Fatalf("hydrate engine: %v", err)
 	}
@@ -631,7 +631,7 @@ func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
 
 	_, _, code, err := executeHydrateEngine(t,
 		"--include-runtime", "--only-runtime",
-		"--environment", "demo", "--no-warnings")
+		"demo", "--no-warnings")
 	if err == nil {
 		t.Fatal("expected scope-flag conflict error")
 	}
@@ -659,7 +659,7 @@ func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 
 	_, _, code, err := executeHydrateEngine(t,
 		"--wait", "--lock-timeout", "5s",
-		"--environment", "demo", "--no-warnings")
+		"demo", "--no-warnings")
 	if err == nil {
 		t.Fatal("expected lock-flag conflict error")
 	}
@@ -671,7 +671,7 @@ func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 	}
 }
 
-// TestRunHydrate_UnknownPlatform asserts --platform <bogus> surfaces
+// TestRunHydrate_UnknownPlatform asserts --target <bogus> surfaces
 // as exit 1 via hydrate.ResolvePlatform.
 func TestRunHydrate_UnknownPlatform(t *testing.T) {
 	dir := whoamiTestEnv(t)
@@ -683,8 +683,8 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
 	_, _, code, err := executeHydrateEngine(t,
-		"--platform", "clade-code",
-		"--environment", "demo", "--no-warnings")
+		"--target", "clade-code",
+		"demo", "--no-warnings")
 	if err == nil {
 		t.Fatal("expected unknown-platform error")
 	}
@@ -696,7 +696,7 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 	}
 }
 
-// TestRunHydrate_AliasPlatform asserts --platform claude (an alias
+// TestRunHydrate_AliasPlatform asserts --target claude (an alias
 // for claude-code) resolves correctly to the canonical id passed
 // down into Opts.Platform.
 func TestRunHydrate_AliasPlatform(t *testing.T) {
@@ -717,8 +717,8 @@ func TestRunHydrate_AliasPlatform(t *testing.T) {
 	t.Cleanup(func() { hydrateRunFn = prev })
 
 	_, _, code, err := executeHydrateEngine(t,
-		"--platform", "claude",
-		"--environment", "demo", "--no-warnings")
+		"--target", "claude",
+		"demo", "--no-warnings")
 	if err != nil {
 		t.Fatalf("hydrate engine: %v", err)
 	}

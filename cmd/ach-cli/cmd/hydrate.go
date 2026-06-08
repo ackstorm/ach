@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli hydrate` ships in two dispatch modes per the Phase 7 W3-05
+// `ach-cli env hydrate` ships in two dispatch modes per the Phase 7 W3-05
 // refactor (D-03 + D-04):
 //
 //   - Engine path (default) — invokes the full
@@ -9,7 +9,7 @@
 //     extract + auto-claim cascade, adapter dispatch, atomic state
 //     write. Engine flags exposed: --include-runtime / --only-runtime
 //     / --sync / --force / --dry-run / --wait / --lock-timeout / --output
-//     / --allow-symlinks / --platform / --global.
+//     / --allow-symlinks / --target / --global.
 //
 //   - --raw (hidden) — preserves the Phase 6 surface-only POST+stream
 //     contract so the W3-P3 e2e golden-diff anchor (`examples/hydrate
@@ -31,7 +31,7 @@
 //   - D-11: mutex credential sources (--api-key, --env-key,
 //     ACH_API_KEY, ACH_ENV_KEY). Explicit closed list — adding a new
 //     source requires editing assertMutexCreds.
-//   - D-12: --environment REQUIRED for pk-; OPTIONAL for ek-.
+//   - D-12: <name> positional argument REQUIRED for pk-; OPTIONAL for ek-.
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
 // Adapter registration: the 4 platform adapters
@@ -62,7 +62,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// pkWarning is the spec §6.6 stderr warning emitted when `ach-cli hydrate`
+// pkWarning is the spec §6.6 stderr warning emitted when `ach-cli env hydrate`
 // runs with a pk- credential. Trimmed from the original §6.6 verbatim text
 // (the budget-attribution prose was redundant for users) to a single
 // actionable line. The trailing newline is part of the const so Fprintf
@@ -96,18 +96,17 @@ func swapHydrateHTTPClientForTest(t interface {
 // pipeline. Mirrors the swapHydrateHTTPClientForTest pattern.
 var hydrateRunFn = hydrate.Run
 
-// newHydrateCmd returns a fresh `ach-cli hydrate` cobra.Command. Factory
+// newHydrateCmd returns a fresh `ach-cli env hydrate` cobra.Command. Factory
 // shape matches login/whoami/logout so tests can construct an isolated
 // tree per t.Run.
 func newHydrateCmd() *cobra.Command {
 	var (
 		// Phase 6 surface — preserved.
-		flagEnvironment string
-		flagNoWarnings  bool
-		flagVerbose     bool
-		flagAPIKey      string
-		flagEnvKey      string
-		flagProfile     string
+		flagNoWarnings bool
+		flagVerbose    bool
+		flagAPIKey     string
+		flagEnvKey     string
+		flagProfile    string
 
 		// Phase 7 engine flags (D-03).
 		flagIncludeRuntime bool
@@ -119,7 +118,7 @@ func newHydrateCmd() *cobra.Command {
 		flagLockTimeout    time.Duration
 		flagOutput         string
 		flagAllowSymlinks  bool
-		flagPlatform       string
+		flagTarget         string
 		flagGlobal         bool
 		flagConflict       string
 
@@ -129,7 +128,8 @@ func newHydrateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "hydrate",
+		Use:   "hydrate <name>",
+		Args:  cobra.MaximumNArgs(1),
 		Short: "Materialize workspace artifacts (engine) or stream raw manifest (--raw)",
 		Long: `Materialize workspace artifacts via the Phase 7 hydrate engine.
 
@@ -172,7 +172,7 @@ Locking:
 I/O:
   --output <dir>      Workspace root override (default: cwd).
   --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
-  --platform <id>     Override platform autodetection (claude-code /
+  --target <id>       Override platform autodetection (claude-code /
                       codex / gemini-cli / opencode / pimono +
                       case-folded aliases). When omitted, the engine scans cwd
                       (or $HOME under --global) and picks the
@@ -191,16 +191,17 @@ on a headless box, ach config add --api-key <pk-|ek->. To skip disk config
 entirely, export ACH_BASE_URL + ACH_API_KEY (synthetic mode) — every
 command then uses them with no per-command --api-key.
 
---environment is REQUIRED when the resolved credential is a pk- (D-12);
-OPTIONAL for ek- (server-side mismatch yields 403 wrong_environment →
-exit 1).
+The positional <name> is the target Environment. It is REQUIRED when the
+resolved credential is a pk- (D-12); OPTIONAL for ek- (server-side
+mismatch yields 403 wrong_environment → exit 1). When omitted, the
+ACH_ENVIRONMENT env var supplies it.
 
 A stderr warning is emitted when the resolved credential is a pk-
 (spec §6.6); suppress with --no-warnings.
 
 Exit codes (spec §9.3):
   0  success
-  1  client-side gate (mutex creds, missing --environment, autodetect
+  1  client-side gate (mutex creds, missing <name>, autodetect
      ambiguity, scope-flag conflict, etc.)
   2  drift refused (STATE-04 four-outcome truth table)
   3  401 / 403 not_admin / unauthorized_team
@@ -210,13 +211,17 @@ Exit codes (spec §9.3):
   7  collision refuse (SAFE-04 auto-claim)
   8  config file parse or write error
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			conflict, err := hydrate.ParseConflictPolicy(flagConflict)
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: err.Error()}
 			}
+			env := ""
+			if len(args) > 0 {
+				env = args[0]
+			}
 			return runHydrate(cmd, hydrateInputs{
-				environment:    flagEnvironment,
+				environment:    env,
 				noWarnings:     flagNoWarnings,
 				verbose:        flagVerbose,
 				flagAPIKey:     flagAPIKey,
@@ -231,7 +236,7 @@ Exit codes (spec §9.3):
 				lockTimeout:    flagLockTimeout,
 				output:         flagOutput,
 				allowSymlinks:  flagAllowSymlinks,
-				platform:       flagPlatform,
+				platform:       flagTarget,
 				global:         flagGlobal,
 				conflict:       conflict,
 				raw:            flagRaw,
@@ -240,8 +245,6 @@ Exit codes (spec §9.3):
 	}
 
 	// Phase 6 surface flags — preserved.
-	cmd.Flags().StringVar(&flagEnvironment, "environment", "",
-		"Target Environment name (REQUIRED for pk-, OPTIONAL for ek-)")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
 		"Suppress the §6.6 pk- stderr warning")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false,
@@ -272,7 +275,7 @@ Exit codes (spec §9.3):
 		"Workspace root override (default: cwd)")
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Relax SAFE-01 tar policy's symlink reject (unsafe escape hatch)")
-	cmd.Flags().StringVar(&flagPlatform, "platform", "",
+	cmd.Flags().StringVar(&flagTarget, "target", "",
 		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
@@ -345,7 +348,7 @@ type hydrateInputs struct {
 //  3. assertScopeFlags — mutual exclusion of --include-runtime /
 //     --only-runtime and --wait / --lock-timeout.
 //  4. Resolve credential (synthetic OR config-disk path).
-//  5. D-12 pk-/--environment gate.
+//  5. D-12 pk-/<name> positional argument gate.
 //  6. plaintext-transport warning if http://.
 //  7. Dispatch: flagRaw → runHydrateRaw (Phase 6 verbatim);
 //     otherwise → runHydrateEngine (full 14-step commit sequence).
@@ -386,7 +389,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		return err
 	}
 
-	// D-12: pk- classification + --environment gate.
+	// D-12: pk- classification + <name> positional argument gate.
 	prefix, classifyErr := keys.ClassifyBearer(bearer)
 	if classifyErr != nil {
 		return &exit.CodedError{
@@ -402,19 +405,19 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	if prefix == keys.PrefixPk && effectiveEnv == "" {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  "--environment is required when using a pk- key (CLI-06 / spec §5.7)",
+			Msg:  "<name> positional argument is required when using a pk- key (CLI-06 / spec §5.7)",
 		}
 	}
 	// The hydrate ENGINE namespaces state by environment
-	// (.ach/<environment>/ in both project and --global scope per spec §8.1),
-	// so --environment is required for any engine run regardless of credential
-	// kind (D1). --raw is exempt: it short-circuits before the engine/state
-	// path (Phase 6 verbatim POST+stream).
+	// (.ach/<name>/ in both project and --global scope per spec §8.1),
+	// so the <name> positional argument is required for any engine run
+	// regardless of credential kind (D1). --raw is exempt: it short-circuits
+	// before the engine/state path (Phase 6 verbatim POST+stream).
 	if !in.raw && effectiveEnv == "" {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg: "--environment is required: the hydrate engine namespaces state by " +
-				"environment (.ach/<environment>/); pass --environment or set ACH_ENVIRONMENT",
+			Msg: "<name> positional argument is required: the hydrate engine namespaces state by " +
+				"environment (.ach/<name>/); pass the <name> positional argument or set ACH_ENVIRONMENT",
 		}
 	}
 
@@ -471,7 +474,7 @@ func assertScopeFlags(in hydrateInputs) error {
 
 // runHydrateEngine builds the hydrate.Opts struct and dispatches to
 // hydrateRunFn (= hydrate.Run by default). Platform resolution:
-//   - --platform set → hydrate.ResolvePlatform(value) → canonical id.
+//   - --target set → hydrate.ResolvePlatform(value) → canonical id.
 //   - ACH_PLATFORM set → hydrate.ResolvePlatform(value) → canonical id.
 //   - else → hydrate.Autodetect against cwd (workspace) OR
 //     os.UserHomeDir() (global).
@@ -693,7 +696,7 @@ func countNoun(n int, singular, plural string) string {
 }
 
 // resolvePlatformOrAutodetect dispatches platform resolution per
-// D-06: explicit --platform > ACH_PLATFORM env > autodetect cwd
+// D-06: explicit --target > ACH_PLATFORM env > autodetect cwd
 // (workspace) > autodetect $HOME (global). Returns the canonical
 // platform id on success, or a typed CodedError on autodetect
 // ambiguity / unknown id.
@@ -934,8 +937,4 @@ func validateEnvHeaderValue(env string) error {
 		}
 	}
 	return nil
-}
-
-func init() {
-	rootCmd.AddCommand(newHydrateCmd())
 }

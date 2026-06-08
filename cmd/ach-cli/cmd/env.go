@@ -83,8 +83,11 @@ func newEnvCmd() *cobra.Command {
 		Long: `Inspect environments visible to the active credential.
 
 Children:
-  list      List environments (paginates next_cursor automatically)
-  describe  Show one environment's runtime + context manifest
+  list       List environments (paginates next_cursor automatically)
+  describe   Show one environment's runtime + context manifest
+  hydrate    Materialize an environment's workspace artifacts
+  status     Show installed/projected resources from state.json
+  uninstall  Remove the projected resource set for an environment
 
 env list + describe are read-only and synthetic-mode friendly.
 describe gracefully degrades on 403 unauthorized_team — printing
@@ -94,7 +97,13 @@ describe gracefully degrades on 403 unauthorized_team — printing
 			return cmd.Help()
 		},
 	}
-	parent.AddCommand(newEnvListCmd(), newEnvDescribeCmd())
+	parent.AddCommand(
+		newEnvListCmd(),
+		newEnvDescribeCmd(),
+		newHydrateCmd(),
+		newEnvStatusCmd(),
+		newUninstallCmd(),
+	)
 	return parent
 }
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli list` is the read-only installed-resource inventory surface
+// `ach-cli env status` is the read-only installed-resource inventory surface
 // (LIFE-03 / D-31). It is a STATIC read of <ach-dir>/state.json v2 — NO
 // network, NO re-derivation, NO drift column. It loads the state file for
 // the active workspace+environment scope, walks the projection buckets
@@ -44,23 +44,23 @@ func resolveListWorkspaceCwd() (string, error) {
 	return os.Getwd()
 }
 
-// newListCmd returns the `ach-cli list` leaf — a thin, static-read cobra
-// command. All formatting lives in the render package (env-list
-// convention); RunE only resolves the state path, loads, walks the
-// buckets into []render.StateEntryView, and delegates rendering.
-func newListCmd() *cobra.Command {
+// newEnvStatusCmd returns the `ach-cli env status` leaf — a thin,
+// static-read cobra command. All formatting lives in the render package
+// (env-list convention); RunE only resolves the state path, loads, walks
+// the buckets into []render.StateEntryView, and delegates rendering.
+func newEnvStatusCmd() *cobra.Command {
 	var (
 		flagJSON        bool
 		flagGlobal      bool
-		flagPlatform    string
+		flagTarget      string
 		flagEnvironment string
 	)
 	c := &cobra.Command{
-		Use:   "list",
-		Short: "List installed/projected resources from state.json",
-		Long: `List the installed/projected resources recorded in state.json.
+		Use:   "status",
+		Short: "Show installed/projected resources from state.json",
+		Long: `Show the installed/projected resources recorded in state.json.
 
-list is a STATIC read of the workspace (or global) state.json — no
+env status is a STATIC read of the workspace (or global) state.json — no
 network call, no re-derivation, no drift detection. It prints one row
 per projected resource with its KIND, on-disk TARGET path, and source
 ENVIRONMENT. Use --json for machine-readable output.
@@ -69,7 +69,7 @@ An empty or missing state.json prints "No resources installed" (or an
 empty JSON array under --json) and exits 0.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_ = flagPlatform // reserved for future platform-scope resolution (D-31 scope axis)
+			_ = flagTarget // reserved for future platform-scope resolution (D-31 scope axis)
 
 			cwd, err := resolveListWorkspaceCwd()
 			if err != nil {
@@ -144,7 +144,7 @@ empty JSON array under --json) and exits 0.`,
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	c.Flags().StringVar(&flagEnvironment, "environment", "",
 		"Environment name (REQUIRED with --global; omit in project scope to list ALL envs)")
-	c.Flags().StringVar(&flagPlatform, "platform", "", "Override platform scope resolution")
+	c.Flags().StringVar(&flagTarget, "target", "", "Override platform scope resolution")
 	return c
 }
 
@@ -206,8 +206,4 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 	appendBucket("runtime", f.RuntimeFiles)
 	appendBucket("adapter", f.Adapter.Files)
 	return out
-}
-
-func init() {
-	rootCmd.AddCommand(newListCmd())
 }

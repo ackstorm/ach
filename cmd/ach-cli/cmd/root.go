@@ -20,9 +20,8 @@ control plane. Subcommands:
   logout       Revoke local session
   whoami       Show current identity
   config       Inspect / mutate local config
-  env          List + switch environments
+  env          Inspect environments; hydrate/status/uninstall workspace
   env-keys     Create / list / revoke environment keys
-  hydrate      Materialize workspace artifacts
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
   repo         Manage local package repository registrations (add/list/remove/update)
   plugin       Install/uninstall/update/list locally installed plugins

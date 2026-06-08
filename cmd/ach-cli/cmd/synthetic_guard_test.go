@@ -46,7 +46,7 @@ func TestSyntheticGuard_ProfileFlagRejected(t *testing.T) {
 			name: "hydrate",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
 				return executeHydrate(t, "--profile", "prod",
-					"--environment", "demo", "--no-warnings")
+					"demo", "--no-warnings")
 			},
 		},
 		{
@@ -122,7 +122,7 @@ func TestSyntheticGuard_EnvKeyFlagRejected(t *testing.T) {
 			name: "hydrate",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
 				return executeHydrate(t, "--env-key", "local-laptop",
-					"--environment", "demo", "--no-warnings")
+					"demo", "--no-warnings")
 			},
 		},
 		{
@@ -209,7 +209,7 @@ func TestSyntheticGuard_HalfSetRejected(t *testing.T) {
 		{
 			name: "hydrate",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeHydrate(t, "--environment", "demo", "--no-warnings")
+				return executeHydrate(t, "demo", "--no-warnings")
 			},
 		},
 		{

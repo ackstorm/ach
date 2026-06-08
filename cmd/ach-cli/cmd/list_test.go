@@ -38,7 +38,7 @@ func writeListState(t *testing.T, body string) string {
 	return dir
 }
 
-// executeList runs newListCmd against a fixed workspace cwd (via the
+// executeList runs newEnvStatusCmd against a fixed workspace cwd (via the
 // listWorkspaceCwd seam) and returns stdout, exit code, raw error.
 func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exit.Code, error) {
 	t.Helper()
@@ -46,7 +46,7 @@ func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exi
 	listWorkspaceCwd = func() (string, error) { return workspaceCwd, nil }
 	t.Cleanup(func() { listWorkspaceCwd = prev })
 
-	cmd := newListCmd()
+	cmd := newEnvStatusCmd()
 	var outBuf, errBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
 	cmd.SetErr(&errBuf)
@@ -177,7 +177,7 @@ func TestList_OutToBuffer(t *testing.T) {
 	listWorkspaceCwd = func() (string, error) { return dir, nil }
 	t.Cleanup(func() { listWorkspaceCwd = prev })
 
-	cmd := newListCmd()
+	cmd := newEnvStatusCmd()
 	var outBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
 	// Empty slice, NOT nil: cobra falls back to os.Args[1:] when args is

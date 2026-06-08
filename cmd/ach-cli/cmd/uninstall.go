@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli uninstall` (LIFE-01, D-25/D-27/D-28/D-29) is a THIN cobra leaf
+// `ach-cli env uninstall` (LIFE-01, D-25/D-27/D-28/D-29) is a THIN cobra leaf
 // that tears down the active workspace+environment projection by reusing
 // the existing hydrate.Sync inverse-merge engine — it creates NO second
 // deletion path.
@@ -61,16 +61,15 @@ type uninstallInputs struct {
 	output         string
 }
 
-// newUninstallCmd returns a fresh `ach-cli uninstall` cobra.Command.
+// newUninstallCmd returns a fresh `ach-cli env uninstall` cobra.Command.
 // Factory shape matches the other ach-cli leaves so tests construct an
 // isolated tree per t.Run.
 func newUninstallCmd() *cobra.Command {
 	var (
-		flagEnvironment    string
 		flagForce          bool
 		flagDryRun         bool
 		flagGlobal         bool
-		flagPlatform       string
+		flagTarget         string
 		flagLockTimeout    time.Duration
 		flagIncludeRuntime bool
 		flagOnlyRuntime    bool
@@ -78,12 +77,16 @@ func newUninstallCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "uninstall",
+		Use:   "uninstall <name>",
+		Args:  cobra.ExactArgs(1),
 		Short: "Remove the projected resource set for the active workspace+environment",
-		Long: `Tear down the projected resources ach-cli hydrate installed for the
+		Long: `Tear down the projected resources ach-cli env hydrate installed for the
 active workspace+environment, reusing the same inverse-merge engine that
 hydrate --sync uses. uninstall removes the WHOLE projection in scope
 (no per-plugin selection, D-25); preview with --dry-run.
+
+The positional <name> is the target Environment — REQUIRED, it namespaces
+the <ach-dir> in project and --global scope.
 
 Scope (mirrors hydrate, D-26):
   (default)           Remove context resources only (prompts / plugins /
@@ -96,14 +99,13 @@ Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json,
 CLAUDE.md / GEMINI.md) are inverse-merged: only the engine's keys/marker
 blocks are removed; other contributors' and the user's keys survive.
 User-edited projected files are preserved unless --force (drift-wins).`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUninstall(cmd, uninstallInputs{
-				environment:    flagEnvironment,
+				environment:    args[0],
 				force:          flagForce,
 				dryRun:         flagDryRun,
 				global:         flagGlobal,
-				platform:       flagPlatform,
+				platform:       flagTarget,
 				lockTimeout:    flagLockTimeout,
 				includeRuntime: flagIncludeRuntime,
 				onlyRuntime:    flagOnlyRuntime,
@@ -113,15 +115,13 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 	}
 
 	// Reused hydrate flags (D-29) plus the D-26 scope pair.
-	cmd.Flags().StringVar(&flagEnvironment, "environment", "",
-		"Target Environment name (REQUIRED — namespaces the <ach-dir> in project and --global scope)")
 	cmd.Flags().BoolVar(&flagForce, "force", false,
 		"Bypass drift refusal — remove user-edited projected files too")
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,
 		"Print planned removals but write nothing to disk")
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
-	cmd.Flags().StringVar(&flagPlatform, "platform", "",
+	cmd.Flags().StringVar(&flagTarget, "target", "",
 		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
 		"Wait up to <d> for the workspace lock instead of failing fast")
@@ -292,8 +292,4 @@ func cleanupState(statePath string, scopedEmpty *state.File) error {
 		}
 	}
 	return nil
-}
-
-func init() {
-	rootCmd.AddCommand(newUninstallCmd())
 }
