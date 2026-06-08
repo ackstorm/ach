@@ -25,6 +25,8 @@ control plane. Subcommands:
   hydrate      Materialize workspace artifacts
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
   repo         Manage local package repository registrations (add/list/remove/update)
+  plugin       Install/uninstall/update/list locally installed plugins
+  skill        Install/uninstall/update/list locally installed skills
 
 For service-mode commands (operator, platform-api, forwarder,
 content-service, migrate), use the 'ach' binary instead.`,
