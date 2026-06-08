@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -10,11 +10,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
-// Operator-side full-walk caps (F3 review). verifyPluginContents /
-// verifySkillContents now walk every entry, so a decompression bomb or a
+// Operator-side full-walk caps (F3 review). VerifyPluginContents /
+// VerifySkillContents now walk every entry, so a decompression bomb or a
 // million-header tar could monopolize a reconcile. These bound the walk well
 // above any legitimate plugin/skill (real content is MB-scale and a handful of
 // files) yet stop adversarial archives before the CLI's own caps would.
@@ -61,11 +61,10 @@ func cappedTarReader(gz io.Reader) (*tar.Reader, *countingReader) {
 // ADMITTED: the CLI accepts them under --allow-symlinks, so rejecting them
 // operator-side would false-fail content that is legitimately hydratable. Only
 // out-of-tree symlink targets (absolute or escaping), which the CLI rejects
-// under EVERY policy, fail here. All rejections wrap sources.ErrUpstreamInvalid
-// (→ ReasonUpstreamInvalid).
+// under EVERY policy, fail here. All rejections wrap sourceserr.ErrUpstreamInvalid.
 func tarEntrySafe(hdr *tar.Header) error {
 	if err := safeRelLexical(hdr.Name); err != nil {
-		return fmt.Errorf("unsafe tar entry %q: %v: %w", hdr.Name, err, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: %v: %w", hdr.Name, err, sourceserr.ErrUpstreamInvalid)
 	}
 	// PAX path injection: archive/tar applies a `path` record to the NEXT
 	// entry's Name, but a global/edge-case record may still be visible here —
@@ -73,7 +72,7 @@ func tarEntrySafe(hdr *tar.Header) error {
 	if hdr.PAXRecords != nil {
 		if p, ok := hdr.PAXRecords["path"]; ok {
 			if err := safeRelLexical(p); err != nil {
-				return fmt.Errorf("unsafe pax path %q: %v: %w", p, err, sources.ErrUpstreamInvalid)
+				return fmt.Errorf("unsafe pax path %q: %v: %w", p, err, sourceserr.ErrUpstreamInvalid)
 			}
 		}
 	}
@@ -84,7 +83,7 @@ func tarEntrySafe(hdr *tar.Header) error {
 		// with the existing dst). Reject so it never passes operator validation
 		// (F3 review). A "." DIRECTORY marker is harmless and handled below.
 		if path.Clean(hdr.Name) == "." {
-			return fmt.Errorf("unsafe tar entry %q: resolves to extraction root: %w", hdr.Name, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("unsafe tar entry %q: resolves to extraction root: %w", hdr.Name, sourceserr.ErrUpstreamInvalid)
 		}
 		if hdr.Typeflag == tar.TypeSymlink {
 			return symlinkTargetSafe(hdr)
@@ -93,13 +92,13 @@ func tarEntrySafe(hdr *tar.Header) error {
 	case tar.TypeDir, tar.TypeXHeader, tar.TypeXGlobalHeader:
 		return nil
 	case tar.TypeLink:
-		return fmt.Errorf("unsafe tar entry %q: hardlink rejected: %w", hdr.Name, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: hardlink rejected: %w", hdr.Name, sourceserr.ErrUpstreamInvalid)
 	case tar.TypeChar, tar.TypeBlock:
-		return fmt.Errorf("unsafe tar entry %q: device file rejected: %w", hdr.Name, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: device file rejected: %w", hdr.Name, sourceserr.ErrUpstreamInvalid)
 	case tar.TypeFifo:
-		return fmt.Errorf("unsafe tar entry %q: fifo rejected: %w", hdr.Name, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: fifo rejected: %w", hdr.Name, sourceserr.ErrUpstreamInvalid)
 	default:
-		return fmt.Errorf("unsafe tar entry %q: unsupported typeflag %d: %w", hdr.Name, hdr.Typeflag, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: unsupported typeflag %d: %w", hdr.Name, hdr.Typeflag, sourceserr.ErrUpstreamInvalid)
 	}
 }
 
@@ -152,15 +151,15 @@ func hasWindowsVolume(name string) bool {
 func symlinkTargetSafe(hdr *tar.Header) error {
 	ln := hdr.Linkname
 	if ln == "" {
-		return fmt.Errorf("unsafe tar entry %q: empty symlink target: %w", hdr.Name, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: empty symlink target: %w", hdr.Name, sourceserr.ErrUpstreamInvalid)
 	}
 	if strings.HasPrefix(ln, "/") || strings.ContainsRune(ln, '\\') || hasWindowsVolume(ln) {
-		return fmt.Errorf("unsafe tar entry %q: absolute/non-portable symlink target %q: %w", hdr.Name, ln, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: absolute/non-portable symlink target %q: %w", hdr.Name, ln, sourceserr.ErrUpstreamInvalid)
 	}
 	parent := path.Dir(path.Clean(hdr.Name))
 	resolved := path.Clean(path.Join(parent, ln))
 	if resolved == ".." || strings.HasPrefix(resolved, "../") {
-		return fmt.Errorf("unsafe tar entry %q: symlink target %q escapes root: %w", hdr.Name, ln, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("unsafe tar entry %q: symlink target %q escapes root: %w", hdr.Name, ln, sourceserr.ErrUpstreamInvalid)
 	}
 	return nil
 }

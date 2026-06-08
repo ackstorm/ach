@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -13,8 +13,8 @@ import (
 	"strings"
 )
 
-// discoveredSkill is one skill folder found inside a SkillMarketplace tree.
-type discoveredSkill struct {
+// DiscoveredSkill is one skill folder found inside a SkillMarketplace tree.
+type DiscoveredSkill struct {
 	Name        string // SKILL.md frontmatter name (== top-level dir basename)
 	Dir         string // top-level directory within the fetched tree
 	Description string
@@ -84,7 +84,7 @@ func detectArchiveRoot(names []string) string {
 	return root
 }
 
-// discoverSkillsInTree takes the staged marketplace tar.gz BYTES (the reconciler
+// DiscoverSkillsInTree takes the staged marketplace tar.gz BYTES (the reconciler
 // already holds them, size-capped by the fetcher) and returns every directory D
 // directly under the skills-root (archiveRoot + subPath) with a valid D/SKILL.md
 // whose frontmatter name passes validateSkillName AND equals basename(D), with a
@@ -92,12 +92,12 @@ func detectArchiveRoot(names []string) string {
 // subPath is spec.<git>.path: the directory inside the repo that holds the skill
 // dirs ("skills" for an anthropics/skills-style monorepo, "" when the skills sit
 // at the repo root). The returned archiveRoot must be passed (with the same
-// subPath) to sliceSkillSubtree so it strips the same wrapper.
+// subPath) to SliceSkillSubtree so it strips the same wrapper.
 //
 // Deliberate scope: only directories EXACTLY one level under the skills-root are
 // skills — a SKILL.md at the skills-root itself, or nested deeper than one
 // level, is IGNORED.
-func discoverSkillsInTree(tarball []byte, subPath string) (archiveRoot string, skills []discoveredSkill, err error) {
+func DiscoverSkillsInTree(tarball []byte, subPath string) (archiveRoot string, skills []DiscoveredSkill, err error) {
 	subPath = normSubPath(subPath)
 	names, err := tarRegularNames(tarball)
 	if err != nil {
@@ -111,7 +111,7 @@ func discoverSkillsInTree(tarball []byte, subPath string) (archiveRoot string, s
 	}
 	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
-	found := map[string]discoveredSkill{}
+	found := map[string]DiscoveredSkill{}
 	for {
 		hdr, e := tr.Next()
 		if e == io.EOF {
@@ -142,12 +142,12 @@ func discoverSkillsInTree(tarball []byte, subPath string) (archiveRoot string, s
 		if validateSkillName(fm.Name) != nil || fm.Name != dir || fm.Description == "" || len(fm.Description) > 1024 {
 			continue // name must be valid AND equal the dir basename
 		}
-		found[dir] = discoveredSkill{Name: fm.Name, Dir: dir, Description: fm.Description}
+		found[dir] = DiscoveredSkill{Name: fm.Name, Dir: dir, Description: fm.Description}
 		if len(found) > skillMarketplaceMaxSkills {
 			return "", nil, fmt.Errorf("skillmkt: more than %d skills in marketplace", skillMarketplaceMaxSkills)
 		}
 	}
-	out := make([]discoveredSkill, 0, len(found))
+	out := make([]DiscoveredSkill, 0, len(found))
 	for _, s := range found {
 		out = append(out, s)
 	}
@@ -180,15 +180,15 @@ func tarRegularNames(tarball []byte) ([]string, error) {
 	return names, nil
 }
 
-// sliceSkillSubtree re-packs entries under "<subtreePath>/" (post-archive-root
+// SliceSkillSubtree re-packs entries under "<subtreePath>/" (post-archive-root
 // strip) into a fresh tar.gz RE-ROOTED at the path's last segment ("<base>/"),
-// so the result passes verifySkillContents (SKILL.md one dir deep) and hydrate's
+// so the result passes VerifySkillContents (SKILL.md one dir deep) and hydrate's
 // single-wrapper strip lands it at .claude/skills/<name>/SKILL.md. subtreePath
 // is relative to archiveRoot — e.g. "skills/pdf" for an anthropics/skills-style
 // repo (subPath "skills" + skill dir "pdf"), or just "pdf-processing" when the
 // skill sits at the repo root. Stage-2 stores the result at
 // skill-marketplace/<marketplace>/<name>.tar.gz.
-func sliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte, error) {
+func SliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(tarball))
 	if err != nil {
 		return nil, fmt.Errorf("skillmkt: gzip open: %w", err)

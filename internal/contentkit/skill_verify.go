@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -15,20 +15,20 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 const skillMaxManifestBytes = 1 << 20 // 1 MiB
 
-// skillRawIngressCap bounds the raw skill tarball read before validation — an
+// SkillRawIngressCap bounds the raw skill tarball read before validation — an
 // operator-memory guard mirroring gitDefaultMaxCloneBytes (512 MiB). It is the
-// CEILING; stageSkillBody reads no more than the effective cap (min of this and
+// CEILING; StageSkillBody reads no more than the effective cap (min of this and
 // the user-facing SkillMaxSizeMiB) so a 511 MiB body destined to fail the 50 MiB
 // user cap never buffers the full 512 MiB first (F4).
-const skillRawIngressCap = 512 << 20
+const SkillRawIngressCap = 512 << 20
 
-// stageSkillBody reads the fetched skill tar.gz into memory (bounded by the
-// effective cap = min(skillRawIngressCap, sizeCap)), validates the SKILL.md
+// StageSkillBody reads the fetched skill tar.gz into memory (bounded by the
+// effective cap = min(SkillRawIngressCap, sizeCap)), validates the SKILL.md
 // gate, and returns the staged bytes for materializeExternalRef's size-cap copy
 // (no pluginpack.Filter — the skill tree is served verbatim). sizeCap is
 // deps.SizeCapBytes (0 = no user cap → ceiling applies).
@@ -37,11 +37,11 @@ const skillRawIngressCap = 512 << 20
 // fetcher narrows the git worktree on-disk, and the REST archive via
 // sources.NarrowArchiveSubtree) — so the body this receives is already rooted
 // at the skill's contents and no post-fetch slicing happens here (F1). Returns
-// *OversizeError on overflow (→ ReasonPluginTooLarge) and an
-// ErrUpstreamInvalid-wrapping error on a malformed/absent skill tree
-// (→ ReasonUpstreamInvalid).
-func stageSkillBody(body io.Reader, sizeCap int64) ([]byte, error) {
-	limit := int64(skillRawIngressCap)
+// *OversizeError on overflow (caller maps it to a PluginTooLarge status
+// condition) and an ErrUpstreamInvalid-wrapping error on a malformed/absent
+// skill tree (caller maps it to an upstream-invalid outcome).
+func StageSkillBody(body io.Reader, sizeCap int64) ([]byte, error) {
+	limit := int64(SkillRawIngressCap)
 	if sizeCap > 0 && sizeCap < limit {
 		limit = sizeCap
 	}
@@ -52,8 +52,8 @@ func stageSkillBody(body io.Reader, sizeCap int64) ([]byte, error) {
 	if int64(len(raw)) > limit {
 		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: limit}
 	}
-	if err := verifySkillContents(bytes.NewReader(raw)); err != nil {
-		return nil, err // already wraps sources.ErrUpstreamInvalid
+	if err := VerifySkillContents(bytes.NewReader(raw)); err != nil {
+		return nil, err // already wraps sourceserr.ErrUpstreamInvalid
 	}
 	return raw, nil
 }
@@ -70,26 +70,26 @@ type skillFrontmatter struct {
 
 // validateSkillName implements the agentskills.io name constraints. Shared by
 // the standalone Skill verify and (in the SkillMarketplace plan) discovery.
-// Returns an error that wraps sources.ErrUpstreamInvalid on any violation.
+// Returns an error that wraps sourceserr.ErrUpstreamInvalid on any violation.
 func validateSkillName(name string) error {
 	if name == "" || len(name) > 64 || !skillNameRe.MatchString(name) {
-		return fmt.Errorf("skill: invalid name %q (must match %s, 1-64 chars): %w", name, skillNameRe.String(), sources.ErrUpstreamInvalid)
+		return fmt.Errorf("skill: invalid name %q (must match %s, 1-64 chars): %w", name, skillNameRe.String(), sourceserr.ErrUpstreamInvalid)
 	}
 	return nil
 }
 
-// verifySkillContents streams a fetched skill tar.gz and confirms it contains
+// VerifySkillContents streams a fetched skill tar.gz and confirms it contains
 // a valid SKILL.md at the tar root OR one directory deep (git-subdir fetches
 // may retain the parent folder), Required: name (valid per validateSkillName)
 // + non-empty description (<=1024). It ALSO runs tarEntrySafe over EVERY entry
 // (the walk runs to EOF, no early return) so a tar carrying a valid SKILL.md
 // alongside an unsafe entry the CLI extractor rejects fails here rather than
 // reaching Available=True yet breaking hydrate (F3). All failures wrap
-// sources.ErrUpstreamInvalid so classifyFetchError → ReasonUpstreamInvalid.
-func verifySkillContents(r io.Reader) error {
+// All failures wrap sourceserr.ErrUpstreamInvalid.
+func VerifySkillContents(r io.Reader) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
-		return fmt.Errorf("skill: gzip open: %w", errors.Join(err, sources.ErrUpstreamInvalid))
+		return fmt.Errorf("skill: gzip open: %w", errors.Join(err, sourceserr.ErrUpstreamInvalid))
 	}
 	defer func() { _ = gz.Close() }()
 	tr, cr := cappedTarReader(gz)
@@ -102,16 +102,16 @@ func verifySkillContents(r io.Reader) error {
 		}
 		if err != nil {
 			if cr.n > maxVerifyDecompressedBytes {
-				return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+				return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sourceserr.ErrUpstreamInvalid)
 			}
-			return fmt.Errorf("skill: tar read: %w", errors.Join(err, sources.ErrUpstreamInvalid))
+			return fmt.Errorf("skill: tar read: %w", errors.Join(err, sourceserr.ErrUpstreamInvalid))
 		}
 		entries++
 		if entries > maxVerifyEntries {
-			return fmt.Errorf("skill: more than %d entries: %w", maxVerifyEntries, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("skill: more than %d entries: %w", maxVerifyEntries, sourceserr.ErrUpstreamInvalid)
 		}
 		if cr.n > maxVerifyDecompressedBytes {
-			return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("skill: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sourceserr.ErrUpstreamInvalid)
 		}
 		// Full-tar safety gate: any entry the CLI extractor rejects under every
 		// policy fails the whole tar (F3).
@@ -127,7 +127,7 @@ func verifySkillContents(r io.Reader) error {
 		}
 		body, err := io.ReadAll(io.LimitReader(tr, skillMaxManifestBytes))
 		if err != nil {
-			return fmt.Errorf("skill: read SKILL.md: %w", errors.Join(err, sources.ErrUpstreamInvalid))
+			return fmt.Errorf("skill: read SKILL.md: %w", errors.Join(err, sourceserr.ErrUpstreamInvalid))
 		}
 		fm, err := parseSkillFrontmatter(body)
 		if err != nil {
@@ -137,12 +137,12 @@ func verifySkillContents(r io.Reader) error {
 			return err
 		}
 		if fm.Description == "" || len(fm.Description) > 1024 {
-			return fmt.Errorf("skill: SKILL.md description must be 1-1024 chars: %w", sources.ErrUpstreamInvalid)
+			return fmt.Errorf("skill: SKILL.md description must be 1-1024 chars: %w", sourceserr.ErrUpstreamInvalid)
 		}
 		found = true
 	}
 	if !found {
-		return fmt.Errorf("skill: no SKILL.md found in fetched tree: %w", sources.ErrUpstreamInvalid)
+		return fmt.Errorf("skill: no SKILL.md found in fetched tree: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	return nil
 }
@@ -151,15 +151,15 @@ func parseSkillFrontmatter(body []byte) (skillFrontmatter, error) {
 	var fm skillFrontmatter
 	s := strings.TrimLeft(string(body), "\ufeff \t\r\n")
 	if !strings.HasPrefix(s, "---") {
-		return fm, fmt.Errorf("skill: SKILL.md missing frontmatter: %w", sources.ErrUpstreamInvalid)
+		return fm, fmt.Errorf("skill: SKILL.md missing frontmatter: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	rest := s[3:]
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
-		return fm, fmt.Errorf("skill: SKILL.md frontmatter not terminated: %w", sources.ErrUpstreamInvalid)
+		return fm, fmt.Errorf("skill: SKILL.md frontmatter not terminated: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	if err := yaml.Unmarshal([]byte(rest[:end]), &fm); err != nil {
-		return fm, fmt.Errorf("skill: SKILL.md frontmatter parse: %w", errors.Join(err, sources.ErrUpstreamInvalid))
+		return fm, fmt.Errorf("skill: SKILL.md frontmatter parse: %w", errors.Join(err, sourceserr.ErrUpstreamInvalid))
 	}
 	return fm, nil
 }

@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/pluginpack"
@@ -68,23 +69,11 @@ func externalRefChannel(kind string) string {
 // rename(2) / UPSERT branches.
 type FetcherFactory func(sources.SourceSpec) (sources.Fetcher, error)
 
-// OversizeError is returned by [materializeExternalRef] when the configured
-// size cap is exceeded. [classifyFetchError] maps it to [ReasonPluginTooLarge].
-// Shared across plugin / skill / marketplace, so the message stays kind-neutral
-// (the cap derives from ACH_PLUGIN_MAX_SIZE_MIB for plugins/marketplaces and
-// ACH_SKILL_MAX_SIZE_MIB for skills). The two byte counts are the observed
-// staging length (always > Cap by definition) and the cap itself in bytes.
-type OversizeError struct {
-	Bytes int64
-	Cap   int64
-}
-
-// Error formats the human-readable status.message. Both numbers are byte
-// counts; the message MUST NOT echo Secret values or auth header contents
-// (threat T-02-05-04).
-func (e *OversizeError) Error() string {
-	return fmt.Sprintf("staged %d bytes exceeds the configured size cap of %d bytes", e.Bytes, e.Cap)
-}
+// OversizeError is an alias for [contentkit.OversizeError] — kept here
+// as a type alias so existing package-ach code (classifyFetchError,
+// pluginmarketplace_controller) compiles without rename surgery.
+// Definition lives in internal/contentkit/oversize.go.
+type OversizeError = contentkit.OversizeError
 
 // ExternalRefRefreshDeps bundles the per-reconciler dependencies the
 // shared [materializeExternalRef] needs. Plugin / Prompt / Artifact
@@ -296,10 +285,10 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// A skill is a directory tar.gz like a plugin, but no pluginpack.Filter
 	// is applied — the fetched tree is served verbatim. We only validate
 	// that a well-formed SKILL.md is present (name + description) and re-feed
-	// the SAME staged bytes to the size-cap copy below. verifySkillContents
+	// the SAME staged bytes to the size-cap copy below. contentkit.VerifySkillContents
 	// wraps sources.ErrUpstreamInvalid on every failure → ReasonUpstreamInvalid.
 	if deps.Kind == "skill" {
-		raw, serr := stageSkillBody(result.Body, deps.SizeCapBytes)
+		raw, serr := contentkit.StageSkillBody(result.Body, deps.SizeCapBytes)
 		if serr != nil {
 			// *OversizeError → ReasonPluginTooLarge; ErrUpstreamInvalid-wrapping
 			// validation failures → ReasonUpstreamInvalid (classifyFetchError).

@@ -3,7 +3,7 @@
 // Post-fetch plugin-contents check. The marketplace dispatcher returns a
 // gzipped tar of the plugin's contents (whole worktree or a subtree
 // slice). Before persisting the tar via rename(2), the materialize step
-// calls verifyPluginContents to ensure the fetched tar actually looks
+// calls VerifyPluginContents to ensure the fetched tar actually looks
 // like a Claude Code plugin.
 //
 // Per the Claude Code plugin schema
@@ -23,8 +23,8 @@
 // least one recognized component. A tar with none of these (e.g. only a
 // stray README.md) indicates the upstream entry does not point at a real
 // plugin (wrong path, repo renamed, contents moved) and surfaces as a
-// wrapped sources.ErrUpstreamInvalid, which classifyFetchErrorMarketplace
-// maps to ReasonUpstreamInvalid -> per-entry pluginFailure.
+// wrapped sourceserr.ErrUpstreamInvalid; callers map this to an
+// upstream-invalid outcome.
 //
 // Tar layout assumption: git.tarSubtree (the only producer of plugin
 // tarballs as of v1alpha1) strips the subtree prefix — files appear
@@ -33,7 +33,7 @@
 // tar root. The verifier therefore takes no subtree argument; an earlier
 // version did and was broken in production for every subtree-based fetch.
 
-package ach
+package contentkit
 
 import (
 	"compress/gzip"
@@ -42,7 +42,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // manifestRelPath is the OPTIONAL plugin manifest location inside the tar
@@ -74,17 +74,17 @@ var recognizedRootFiles = map[string]struct{}{
 	".lsp.json": {},
 }
 
-// verifyPluginContents walks the gzipped tar stream r and returns nil iff
+// VerifyPluginContents walks the gzipped tar stream r and returns nil iff
 // the tar contains the optional `.claude-plugin/plugin.json` manifest OR
 // at least one recognized plugin component (convention dir / root file) AND
 // every entry passes tarEntrySafe (so the CLI hydrate extractor can actually
 // unpack it — F3). The walk runs to EOF (no early return): a recognized signal
 // seen early does NOT excuse a later unsafe entry, which would otherwise leave
 // the plugin Synced=True yet unhydratable.
-func verifyPluginContents(r io.Reader) error {
+func VerifyPluginContents(r io.Reader) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
-		return fmt.Errorf("plugin contents check: gzip reader: %v: %w", err, sources.ErrUpstreamInvalid)
+		return fmt.Errorf("plugin contents check: gzip reader: %v: %w", err, sourceserr.ErrUpstreamInvalid)
 	}
 	defer func() { _ = gz.Close() }()
 	tr, cr := cappedTarReader(gz)
@@ -97,16 +97,16 @@ func verifyPluginContents(r io.Reader) error {
 		}
 		if err != nil {
 			if cr.n > maxVerifyDecompressedBytes {
-				return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+				return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sourceserr.ErrUpstreamInvalid)
 			}
-			return fmt.Errorf("plugin contents check: tar walk: %v: %w", err, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("plugin contents check: tar walk: %v: %w", err, sourceserr.ErrUpstreamInvalid)
 		}
 		entries++
 		if entries > maxVerifyEntries {
-			return fmt.Errorf("plugin contents check: more than %d entries: %w", maxVerifyEntries, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("plugin contents check: more than %d entries: %w", maxVerifyEntries, sourceserr.ErrUpstreamInvalid)
 		}
 		if cr.n > maxVerifyDecompressedBytes {
-			return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sources.ErrUpstreamInvalid)
+			return fmt.Errorf("plugin contents check: archive decompresses past %d-byte cap: %w", maxVerifyDecompressedBytes, sourceserr.ErrUpstreamInvalid)
 		}
 		// Full-tar safety gate: any entry the CLI extractor rejects under every
 		// policy fails the whole tar (F3).
@@ -125,7 +125,7 @@ func verifyPluginContents(r io.Reader) error {
 	}
 	if !recognized {
 		return fmt.Errorf("plugin contents check: no plugin manifest or recognized component "+
-			"(commands/agents/skills/hooks/...) found in fetched tar: %w", sources.ErrUpstreamInvalid)
+			"(commands/agents/skills/hooks/...) found in fetched tar: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	return nil
 }

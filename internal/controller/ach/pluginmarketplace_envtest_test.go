@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/registry"
@@ -229,15 +230,15 @@ func keyFor(spec sources.SourceSpec) string {
 }
 
 // marshalMarketplaceSource returns the wire-format JSON for a
-// ClaudeCodeMarketplaceSource so that the resulting bytes round-trip
+// contentkit.ClaudeCodeMarketplaceSource so that the resulting bytes round-trip
 // correctly through UnmarshalJSON.
 //
-// ClaudeCodeMarketplaceSource has no json struct tags (the fields use
+// contentkit.ClaudeCodeMarketplaceSource has no json struct tags (the fields use
 // custom discriminator logic in UnmarshalJSON) so a bare json.Marshal
 // produces capitalized field names that UnmarshalJSON doesn't parse —
 // all entries appear as Kind="" (UnsupportedPluginSource). This helper
 // emits the correct lowercase wire-format JSON instead.
-func marshalMarketplaceSource(s ClaudeCodeMarketplaceSource) json.RawMessage {
+func marshalMarketplaceSource(s contentkit.ClaudeCodeMarketplaceSource) json.RawMessage {
 	switch s.Kind {
 	case "git-subdir", "url":
 		type wireGitSubdir struct {
@@ -270,11 +271,11 @@ func marshalMarketplaceSource(s ClaudeCodeMarketplaceSource) json.RawMessage {
 	}
 }
 
-// marshalMarketplaceWire serializes a ClaudeCodeMarketplace into the
-// wire-format JSON that parseClaudeCodeMarketplace / UnmarshalJSON
+// marshalMarketplaceWire serializes a contentkit.ClaudeCodeMarketplace into the
+// wire-format JSON that contentkit.ParseClaudeCodeMarketplace / UnmarshalJSON
 // accept. Use this instead of json.Marshal(mkt) to ensure the source
 // discriminator survives the round-trip.
-func marshalMarketplaceWire(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
+func marshalMarketplaceWire(t *testing.T, mkt contentkit.ClaudeCodeMarketplace) []byte {
 	t.Helper()
 	type wirePlugin struct {
 		Name        string          `json:"name"`
@@ -300,20 +301,20 @@ func marshalMarketplaceWire(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
 	return b
 }
 
-// mustMarketplaceJSON marshals a ClaudeCodeMarketplace into a gzipped
+// mustMarketplaceJSON marshals a contentkit.ClaudeCodeMarketplace into a gzipped
 // tarball body the Stage-1 fake fetcher can return for github/gitlab/
 // bitbucket source types. The reconciler's stage-1 path calls
 // extractMarketplaceJSON for these tarball-typed sources, which walks
 // the archive looking for `.claude-plugin/marketplace.json` (matching
 // by suffix). Wrap the JSON in that path so the extract step succeeds
 // and the body reaches Stage-1 parse.
-func mustMarketplaceJSON(t *testing.T, mkt ClaudeCodeMarketplace) []byte {
+func mustMarketplaceJSON(t *testing.T, mkt contentkit.ClaudeCodeMarketplace) []byte {
 	t.Helper()
 	return mustMarketplaceTarball(t, marshalMarketplaceWire(t, mkt))
 }
 
 // mustPluginTarGz returns a minimal tar.gz body containing
-// `.claude-plugin/plugin.json` at the tar root, so verifyPluginContents
+// `.claude-plugin/plugin.json` at the tar root, so contentkit.VerifyPluginContents
 // (F4) is satisfied. The subtree parameter is retained for call-site
 // readability (it documents what subtree the fake fetcher is mimicking)
 // but is intentionally unused — production tars from git.tarSubtree
@@ -331,7 +332,7 @@ func mustPluginTarGz(t *testing.T, _ string) string {
 // mustConventionOnlyPluginTarGz returns a tar.gz body with NO
 // .claude-plugin/plugin.json — only convention component dirs. Mirrors a
 // real manifest-less plugin (e.g. anthropics/claude-code plugin-dev) that
-// verifyPluginContents must accept. The subtree arg is retained for
+// contentkit.VerifyPluginContents must accept. The subtree arg is retained for
 // call-site readability but unused (git.tarSubtree strips the prefix, so
 // components appear at the tar root).
 func mustConventionOnlyPluginTarGz(t *testing.T, _ string) string {
@@ -378,10 +379,10 @@ func mustMarketplaceTarball(t *testing.T, body []byte) []byte {
 // mkGitSubdirPlugin builds a Claude Code real-schema git-subdir entry.
 // The SHA is a stable 40-hex test value derived from name so each
 // entry dispatches to a distinct fake-git-fetcher key.
-func mkGitSubdirPlugin(name string) ClaudeCodeMarketplacePlugin {
-	return ClaudeCodeMarketplacePlugin{
+func mkGitSubdirPlugin(name string) contentkit.ClaudeCodeMarketplacePlugin {
+	return contentkit.ClaudeCodeMarketplacePlugin{
 		Name: name,
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "git-subdir",
 			URL:  "https://example.invalid/test/" + name + ".git",
 			Path: "plugins/" + name,
@@ -394,10 +395,10 @@ func mkGitSubdirPlugin(name string) ClaudeCodeMarketplacePlugin {
 // mkURLPlugin builds a Claude Code real-schema 'url' entry (whole repo).
 //
 //nolint:unused // kept for future tests that exercise the url Kind path.
-func mkURLPlugin(name string) ClaudeCodeMarketplacePlugin {
-	return ClaudeCodeMarketplacePlugin{
+func mkURLPlugin(name string) contentkit.ClaudeCodeMarketplacePlugin {
+	return contentkit.ClaudeCodeMarketplacePlugin{
 		Name: name,
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "url",
 			URL:  "https://example.invalid/test/" + name + ".git",
 			Ref:  "main",
@@ -410,10 +411,10 @@ func mkURLPlugin(name string) ClaudeCodeMarketplacePlugin {
 // pointing at a subdirectory of the marketplace's own repo.
 //
 //nolint:unused // landed alongside mkURLPlugin; consumed by §5 follow-ups.
-func mkLocalPathPlugin(name string) ClaudeCodeMarketplacePlugin {
-	return ClaudeCodeMarketplacePlugin{
+func mkLocalPathPlugin(name string) contentkit.ClaudeCodeMarketplacePlugin {
+	return contentkit.ClaudeCodeMarketplacePlugin{
 		Name: name,
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "local-path",
 			Path: "plugins/" + name,
 		},
@@ -423,10 +424,10 @@ func mkLocalPathPlugin(name string) ClaudeCodeMarketplacePlugin {
 // mkUnsupportedPlugin emits an entry whose UnmarshalJSON would resolve
 // to Kind="" (e.g. an upstream npm-shaped object). Used by tests that
 // exercise the per-entry ReasonUnsupportedPluginSource path.
-func mkUnsupportedPlugin(name string) ClaudeCodeMarketplacePlugin {
-	return ClaudeCodeMarketplacePlugin{
+func mkUnsupportedPlugin(name string) contentkit.ClaudeCodeMarketplacePlugin {
+	return contentkit.ClaudeCodeMarketplacePlugin{
 		Name:   name,
-		Source: ClaudeCodeMarketplaceSource{Kind: ""},
+		Source: contentkit.ClaudeCodeMarketplaceSource{Kind: ""},
 	}
 }
 
@@ -689,9 +690,9 @@ func TestPMR_Stage1_IncludeMatchesZero(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -720,9 +721,9 @@ func TestPMR_Stage1_InvalidRegex(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -751,9 +752,9 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name: "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{
 			mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta"), mkGitSubdirPlugin("charlie"),
 		},
 	})
@@ -761,7 +762,7 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
 	gitReg := withFakeGitFetcher(t)
 	// F4: fake bodies must be valid tarballs with .claude-plugin/plugin.json
-	// at the entry's subtree path so verifyPluginContents passes.
+	// at the entry's subtree path so contentkit.VerifyPluginContents passes.
 	// mkGitSubdirPlugin sets Path="plugins/<name>", so the manifest lives at
 	// plugins/<name>/.claude-plugin/plugin.json inside the tarball.
 	gitReg.register(shaForName("alpha"), &fakeGitFetcher{body: mustPluginTarGz(t, "plugins/alpha"), rev: shaForName("alpha")})
@@ -806,7 +807,7 @@ func TestPMR_Stage2_PartialFailure_StatusMessage(t *testing.T) {
 // TestPluginMarketplace_ManifestLessPluginMaterializes proves the relaxed
 // Stage-2 gate end-to-end: a plugin with NO .claude-plugin/plugin.json —
 // only convention component dirs (the real anthropics/claude-code
-// plugin-dev shape) — fetches, passes verifyPluginContents, lands via
+// plugin-dev shape) — fetches, passes contentkit.VerifyPluginContents, lands via
 // rename(2), and the marketplace reports Synced=True plugins=1 with no
 // per-plugin failure. REGRESSION GUARD for the manifest-optional fix:
 // before it, this same fixture failed UpstreamInvalid.
@@ -818,9 +819,9 @@ func TestPluginMarketplace_ManifestLessPluginMaterializes(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("skillonly")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("skillonly")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -881,9 +882,9 @@ func TestPMR_Stage2_StatusPluginsPopulated(t *testing.T) {
 	waitForFinalizer(t, ctx, cr)
 
 	// Two plugins, BOTH succeed → status.plugins must list both.
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkGitSubdirPlugin("beta")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -954,9 +955,9 @@ func TestPMR_Stage2_UnsupportedNpm(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkUnsupportedPlugin("evil")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("alpha"), mkUnsupportedPlugin("evil")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -989,11 +990,11 @@ func TestPMR_Stage2_Truncation(t *testing.T) {
 	waitForFinalizer(t, ctx, cr)
 
 	// 8 plugins, 7 fail (all with ErrUnreachable), 1 succeeds.
-	plugins := []ClaudeCodeMarketplacePlugin{}
+	plugins := []contentkit.ClaudeCodeMarketplacePlugin{}
 	for _, n := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "good"} {
 		plugins = append(plugins, mkGitSubdirPlugin(n))
 	}
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{Name: "m", Plugins: plugins})
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{Name: "m", Plugins: plugins})
 
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})
@@ -1038,9 +1039,9 @@ func TestPMR_Stage2_PluginTooLarge(t *testing.T) {
 	stage1Key := applyMarketplaceCR(t, ctx, cr)
 	waitForFinalizer(t, ctx, cr)
 
-	mktBody := mustMarketplaceJSON(t, ClaudeCodeMarketplace{
+	mktBody := mustMarketplaceJSON(t, contentkit.ClaudeCodeMarketplace{
 		Name:    "m",
-		Plugins: []ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("big")},
+		Plugins: []contentkit.ClaudeCodeMarketplacePlugin{mkGitSubdirPlugin("big")},
 	})
 	factory := newMarketplaceFakeFactory()
 	factory.register(stage1Key, &keyedFakeFetcher{body: mktBody})

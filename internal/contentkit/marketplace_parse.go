@@ -22,7 +22,7 @@
 // Per-entry dispatch + fetch lives in marketplace_dispatch.go.
 // Schema URLs: see CLAUDE.md "External references".
 
-package ach
+package contentkit
 
 import (
 	"encoding/json"
@@ -30,7 +30,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // ClaudeCodeMarketplace is the parsed top-level marketplace.json (Hub
@@ -165,13 +165,13 @@ const pluginNameMaxLen = 253
 // pathological 10M-entry marketplace from making Stage-1 unresponsive.
 const marketplaceMaxPluginsPerCatalog = 5000
 
-// parseClaudeCodeMarketplace unmarshals the upstream marketplace.json
+// ParseClaudeCodeMarketplace unmarshals the upstream marketplace.json
 // (Claude Code real schema — see CLAUDE.md "External references" for
 // the schemastore URLs) and performs Stage-1 validation.
 //
 // Validation surface:
 //
-// Catalog-level HARD FAIL (returns wrapped sources.ErrUpstreamInvalid):
+// Catalog-level HARD FAIL (returns wrapped sourceserr.ErrUpstreamInvalid):
 //   - JSON-level unmarshal failure.
 //   - len(plugins) == 0 — a marketplace with zero entries is not legit.
 //   - len(plugins) > marketplaceMaxPluginsPerCatalog (DoS guard).
@@ -179,7 +179,7 @@ const marketplaceMaxPluginsPerCatalog = 5000
 // Per-entry DEMOTE (sets Source.Kind="", catalog continues):
 //   - plugin.Name fails the filename-safety check
 //     (T-02-06-08: name is used as a filename segment + DB text; the
-//     adversarial-name surface is bounded by truncateErrField when the
+//     adversarial-name surface is bounded by TruncateErrField when the
 //     demote feeds formatStage2Message).
 //   - git-subdir entry missing url OR path.
 //   - url entry missing url (sha is optional; Phase 2 resolves ref→sha).
@@ -189,17 +189,17 @@ const marketplaceMaxPluginsPerCatalog = 5000
 //
 // Per-entry validation is intentionally minimal — sha / ref are both
 // optional and Phase-2 pre-resolution handles the rest at dispatch time.
-func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
+func ParseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 	var mkt ClaudeCodeMarketplace
 	if err := json.Unmarshal(body, &mkt); err != nil {
-		return nil, fmt.Errorf("marketplace.json: %v: %w", err, sources.ErrUpstreamInvalid)
+		return nil, fmt.Errorf("marketplace.json: %v: %w", err, sourceserr.ErrUpstreamInvalid)
 	}
 	if len(mkt.Plugins) == 0 {
-		return nil, fmt.Errorf("marketplace.json: zero plugins declared: %w", sources.ErrUpstreamInvalid)
+		return nil, fmt.Errorf("marketplace.json: zero plugins declared: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	if len(mkt.Plugins) > marketplaceMaxPluginsPerCatalog {
 		return nil, fmt.Errorf("marketplace.json: %d plugins exceeds cap %d: %w",
-			len(mkt.Plugins), marketplaceMaxPluginsPerCatalog, sources.ErrUpstreamInvalid)
+			len(mkt.Plugins), marketplaceMaxPluginsPerCatalog, sourceserr.ErrUpstreamInvalid)
 	}
 	for i := range mkt.Plugins {
 		p := &mkt.Plugins[i]
@@ -248,8 +248,8 @@ func parseClaudeCodeMarketplace(body []byte) (*ClaudeCodeMarketplace, error) {
 // condition messages are far smaller in practice.
 const truncateErrFieldMax = 64
 
-// truncateErrField returns at most truncateErrFieldMax bytes of s.
-func truncateErrField(s string) string {
+// TruncateErrField returns at most truncateErrFieldMax bytes of s.
+func TruncateErrField(s string) string {
 	if len(s) <= truncateErrFieldMax {
 		return s
 	}

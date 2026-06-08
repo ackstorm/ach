@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ func TestDiscoverSkillsInTree(t *testing.T) {
 			m[tc.wrap+k] = v
 		}
 		tree := skillTarGz(t, m)
-		root, got, err := discoverSkillsInTree(tree, "")
+		root, got, err := DiscoverSkillsInTree(tree, "")
 		if err != nil {
 			t.Fatalf("%s discover: %v", tc.label, err)
 		}
@@ -56,18 +56,18 @@ func TestSliceSkillSubtree(t *testing.T) {
 		"myrepo-abc/data-analysis/SKILL.md":        "---\nname: data-analysis\ndescription: y\n---\nb",
 	}
 	tree := skillTarGz(t, entries)
-	root, _, err := discoverSkillsInTree(tree, "")
+	root, _, err := DiscoverSkillsInTree(tree, "")
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
-	sub, err := sliceSkillSubtree(tree, root, "pdf-processing")
+	sub, err := SliceSkillSubtree(tree, root, "pdf-processing")
 	if err != nil {
 		t.Fatalf("slice: %v", err)
 	}
 	// Sliced archive is rooted at "pdf-processing/" (wrapper stripped) and MUST
-	// validate via verifySkillContents.
-	if err := verifySkillContents(bytes.NewReader(sub)); err != nil {
-		t.Errorf("sliced subtree failed verifySkillContents: %v", err)
+	// validate via VerifySkillContents.
+	if err := VerifySkillContents(bytes.NewReader(sub)); err != nil {
+		t.Errorf("sliced subtree failed VerifySkillContents: %v", err)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestDiscoverSkillsInTree_SubPath(t *testing.T) {
 		"anthropics-skills-deadbee/.claude-plugin/plugin.json": "{}",
 	}
 	tree := skillTarGz(t, entries)
-	root, got, err := discoverSkillsInTree(tree, "skills")
+	root, got, err := DiscoverSkillsInTree(tree, "skills")
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -100,11 +100,11 @@ func TestDiscoverSkillsInTree_SubPath(t *testing.T) {
 		t.Fatalf("discovered = %v, want [docx pdf]", names)
 	}
 	// Slice the pdf skill (subPath/<dir>) → re-rooted at "pdf/", validates.
-	sub, err := sliceSkillSubtree(tree, root, "skills/pdf")
+	sub, err := SliceSkillSubtree(tree, root, "skills/pdf")
 	if err != nil {
 		t.Fatalf("slice: %v", err)
 	}
-	if err := verifySkillContents(bytes.NewReader(sub)); err != nil {
-		t.Errorf("sliced subPath subtree failed verifySkillContents: %v", err)
+	if err := VerifySkillContents(bytes.NewReader(sub)); err != nil {
+		t.Errorf("sliced subPath subtree failed VerifySkillContents: %v", err)
 	}
 }

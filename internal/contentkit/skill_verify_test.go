@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 func skillTarGz(t *testing.T, files map[string]string) []byte {
@@ -47,11 +47,11 @@ func TestValidateSkillName(t *testing.T) {
 
 func TestVerifySkillContents(t *testing.T) {
 	good := skillTarGz(t, map[string]string{"SKILL.md": "---\nname: pdf-processing\ndescription: do pdf things\n---\nbody"})
-	if err := verifySkillContents(bytes.NewReader(good)); err != nil {
+	if err := VerifySkillContents(bytes.NewReader(good)); err != nil {
 		t.Errorf("valid skill rejected: %v", err)
 	}
 	nested := skillTarGz(t, map[string]string{"pdf-processing/SKILL.md": "---\nname: pdf-processing\ndescription: x\n---\nb"})
-	if err := verifySkillContents(bytes.NewReader(nested)); err != nil {
+	if err := VerifySkillContents(bytes.NewReader(nested)); err != nil {
 		t.Errorf("valid nested skill rejected: %v", err)
 	}
 	for _, bad := range [][]byte{
@@ -59,8 +59,8 @@ func TestVerifySkillContents(t *testing.T) {
 		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: x\n---\nb"}),                     // no description
 		skillTarGz(t, map[string]string{"SKILL.md": "---\nname: Bad_Name\ndescription: d\n---"}), // invalid name
 	} {
-		err := verifySkillContents(bytes.NewReader(bad))
-		if err == nil || !errors.Is(err, sources.ErrUpstreamInvalid) {
+		err := VerifySkillContents(bytes.NewReader(bad))
+		if err == nil || !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 			t.Errorf("bad skill: err=%v, want wraps ErrUpstreamInvalid", err)
 		}
 	}

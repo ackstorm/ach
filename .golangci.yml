@@ -101,9 +101,11 @@ issues:
       linters:
         - errcheck
       text: "Body.Close"
-    # "npm" + "active" are short enum-like literals (package type, status
-    # value); naming them as consts would not improve readability.
-    - path: "internal/(controller/ach/marketplace_parse|platformapi/admin/handler)\\.go"
+    # "url" / "local-path" / "npm" / "active" are short enum-like literals
+    # (source-kind discriminator, status value); naming them as consts would
+    # not improve readability. marketplace_parse.go moved to internal/contentkit
+    # in the Phase 1B extraction — keep the exclusion at its new path.
+    - path: "internal/(contentkit/marketplace_parse|platformapi/admin/handler)\\.go"
       linters:
         - goconst
 linters:

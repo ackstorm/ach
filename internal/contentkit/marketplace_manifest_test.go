@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // buildTarGz produces an in-memory tar.gz with the given path→content map.
-// Used to synthesize the staged tarball verifyPluginContents walks.
+// Used to synthesize the staged tarball VerifyPluginContents walks.
 func buildTarGz(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -51,7 +51,7 @@ func TestVerifyPluginContents_PresentAtRoot(t *testing.T) {
 		".claude-plugin/plugin.json": `{"name":"x"}`,
 		"README.md":                  "hi",
 	})
-	if err := verifyPluginContents(bytes.NewReader(tgz)); err != nil {
+	if err := VerifyPluginContents(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil", err)
 	}
 }
@@ -62,7 +62,7 @@ func TestVerifyPluginContents_LeadingDotSlashTolerated(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{
 		"./.claude-plugin/plugin.json": `{}`,
 	})
-	if err := verifyPluginContents(bytes.NewReader(tgz)); err != nil {
+	if err := VerifyPluginContents(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil with leading ./", err)
 	}
 }
@@ -77,21 +77,21 @@ func TestVerifyPluginContents_ConventionOnlyAccepted(t *testing.T) {
 		"commands/bar.md":     "# bar command",
 		"skills/baz/SKILL.md": "# baz skill",
 	})
-	if err := verifyPluginContents(bytes.NewReader(tgz)); err != nil {
+	if err := VerifyPluginContents(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil for convention-only plugin", err)
 	}
 }
 
 func TestVerifyPluginContents_RootSkillAccepted(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{"SKILL.md": "# single-skill plugin"})
-	if err := verifyPluginContents(bytes.NewReader(tgz)); err != nil {
+	if err := VerifyPluginContents(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil for root SKILL.md plugin", err)
 	}
 }
 
 func TestVerifyPluginContents_McpConfigOnlyAccepted(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{".mcp.json": `{"mcpServers":{}}`})
-	if err := verifyPluginContents(bytes.NewReader(tgz)); err != nil {
+	if err := VerifyPluginContents(bytes.NewReader(tgz)); err != nil {
 		t.Errorf("verify: %v; want nil for .mcp.json-only plugin", err)
 	}
 }
@@ -100,12 +100,12 @@ func TestVerifyPluginContents_NoComponentsRejected(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{
 		"README.md": "no manifest here",
 	})
-	err := verifyPluginContents(bytes.NewReader(tgz))
+	err := VerifyPluginContents(bytes.NewReader(tgz))
 	if err == nil {
 		t.Fatal("expected error on missing manifest")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
-		t.Errorf("err = %v; want wrap of sources.ErrUpstreamInvalid", err)
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+		t.Errorf("err = %v; want wrap of sourceserr.ErrUpstreamInvalid", err)
 	}
 	if !strings.Contains(err.Error(), "recognized component") {
 		t.Errorf("err message should mention recognized component; got %q", err.Error())
@@ -122,11 +122,11 @@ func TestVerifyPluginContents_BuriedInSubdirRejected(t *testing.T) {
 	tgz := buildTarGz(t, map[string]string{
 		"plugins/x/.claude-plugin/plugin.json": `{"name":"x"}`,
 	})
-	err := verifyPluginContents(bytes.NewReader(tgz))
+	err := VerifyPluginContents(bytes.NewReader(tgz))
 	if err == nil {
 		t.Fatal("expected error: manifest must be at tar root")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want wrap of ErrUpstreamInvalid", err)
 	}
 }
@@ -134,11 +134,11 @@ func TestVerifyPluginContents_BuriedInSubdirRejected(t *testing.T) {
 func TestVerifyPluginContents_CorruptGzip(t *testing.T) {
 	// Non-gzip input must surface as wrapped ErrUpstreamInvalid (the
 	// gzip.NewReader failure branch).
-	err := verifyPluginContents(bytes.NewReader([]byte("not gzip")))
+	err := VerifyPluginContents(bytes.NewReader([]byte("not gzip")))
 	if err == nil {
 		t.Fatal("expected error on corrupt gzip")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want wrap of ErrUpstreamInvalid", err)
 	}
 }

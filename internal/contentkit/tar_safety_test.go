@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package ach
+package contentkit
 
 import (
 	"archive/tar"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // tarEntry is one header (+ optional body) used to build a test tarball.
@@ -97,7 +97,7 @@ func TestTarEntrySafe(t *testing.T) {
 			if !tc.safe {
 				if err == nil {
 					t.Errorf("tarEntrySafe(%+v) = nil; want error", tc.hdr)
-				} else if !errors.Is(err, sources.ErrUpstreamInvalid) {
+				} else if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 					t.Errorf("err = %v; want wrap ErrUpstreamInvalid", err)
 				}
 			}
@@ -107,7 +107,7 @@ func TestTarEntrySafe(t *testing.T) {
 
 func TestTarEntrySafe_PaxInjection(t *testing.T) {
 	hdr := tar.Header{Name: "ok.md", Typeflag: tar.TypeReg, PAXRecords: map[string]string{"path": "../escape"}}
-	if err := tarEntrySafe(&hdr); !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if err := tarEntrySafe(&hdr); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("pax-injected path err = %v; want ErrUpstreamInvalid", err)
 	}
 }
@@ -116,14 +116,14 @@ func TestVerifyPluginContents_FullTarSafety(t *testing.T) {
 	validComponent := tarEntry{name: "commands/cmd.md", body: "# cmd\n"}
 	t.Run("clean_plugin_accepted", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validComponent})
-		if err := verifyPluginContents(bytes.NewReader(tb)); err != nil {
-			t.Errorf("verifyPluginContents = %v; want nil", err)
+		if err := VerifyPluginContents(bytes.NewReader(tb)); err != nil {
+			t.Errorf("VerifyPluginContents = %v; want nil", err)
 		}
 	})
 	t.Run("in_tree_symlink_accepted", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validComponent, {name: "commands/alias.md", typeflag: tar.TypeSymlink, linkname: "cmd.md"}})
-		if err := verifyPluginContents(bytes.NewReader(tb)); err != nil {
-			t.Errorf("verifyPluginContents = %v; want nil (in-tree symlink admitted)", err)
+		if err := VerifyPluginContents(bytes.NewReader(tb)); err != nil {
+			t.Errorf("VerifyPluginContents = %v; want nil (in-tree symlink admitted)", err)
 		}
 	})
 	unsafe := map[string]tarEntry{
@@ -139,9 +139,9 @@ func TestVerifyPluginContents_FullTarSafety(t *testing.T) {
 			// The recognized component appears BEFORE the unsafe entry — proving
 			// the walk does not early-exit on the first signal (F3).
 			tb := buildSafetyTarGz(t, []tarEntry{validComponent, bad})
-			err := verifyPluginContents(bytes.NewReader(tb))
-			if !errors.Is(err, sources.ErrUpstreamInvalid) {
-				t.Errorf("verifyPluginContents = %v; want ErrUpstreamInvalid", err)
+			err := VerifyPluginContents(bytes.NewReader(tb))
+			if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+				t.Errorf("VerifyPluginContents = %v; want ErrUpstreamInvalid", err)
 			}
 		})
 	}
@@ -151,26 +151,26 @@ func TestVerifySkillContents_FullTarSafety(t *testing.T) {
 	validSkill := tarEntry{name: "pdf/SKILL.md", body: "---\nname: pdf\ndescription: does pdf things\n---\n"}
 	t.Run("clean_skill_accepted", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validSkill})
-		if err := verifySkillContents(bytes.NewReader(tb)); err != nil {
-			t.Errorf("verifySkillContents = %v; want nil", err)
+		if err := VerifySkillContents(bytes.NewReader(tb)); err != nil {
+			t.Errorf("VerifySkillContents = %v; want nil", err)
 		}
 	})
 	t.Run("valid_plus_traversal_rejected", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validSkill, {name: "../evil", body: "x"}})
-		if err := verifySkillContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
-			t.Errorf("verifySkillContents = %v; want ErrUpstreamInvalid", err)
+		if err := VerifySkillContents(bytes.NewReader(tb)); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+			t.Errorf("VerifySkillContents = %v; want ErrUpstreamInvalid", err)
 		}
 	})
 	t.Run("valid_plus_hardlink_rejected", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validSkill, {name: "h", typeflag: tar.TypeLink, linkname: "pdf/SKILL.md"}})
-		if err := verifySkillContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
-			t.Errorf("verifySkillContents = %v; want ErrUpstreamInvalid", err)
+		if err := VerifySkillContents(bytes.NewReader(tb)); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+			t.Errorf("VerifySkillContents = %v; want ErrUpstreamInvalid", err)
 		}
 	})
 	t.Run("valid_plus_in_tree_symlink_accepted", func(t *testing.T) {
 		tb := buildSafetyTarGz(t, []tarEntry{validSkill, {name: "pdf/alias.md", typeflag: tar.TypeSymlink, linkname: "SKILL.md"}})
-		if err := verifySkillContents(bytes.NewReader(tb)); err != nil {
-			t.Errorf("verifySkillContents = %v; want nil (in-tree symlink admitted)", err)
+		if err := VerifySkillContents(bytes.NewReader(tb)); err != nil {
+			t.Errorf("VerifySkillContents = %v; want nil (in-tree symlink admitted)", err)
 		}
 	})
 }
@@ -189,8 +189,8 @@ func TestVerifyWalkCaps(t *testing.T) {
 			entries = append(entries, tarEntry{name: "commands/extra" + string(rune('a'+i)) + ".md", body: "x"})
 		}
 		tb := buildSafetyTarGz(t, entries)
-		if err := verifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
-			t.Errorf("verifyPluginContents = %v; want ErrUpstreamInvalid (entry cap)", err)
+		if err := VerifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+			t.Errorf("VerifyPluginContents = %v; want ErrUpstreamInvalid (entry cap)", err)
 		}
 	})
 
@@ -199,8 +199,8 @@ func TestVerifyWalkCaps(t *testing.T) {
 		// A highly compressible component file whose decompressed size blows the
 		// 64-byte walk cap (compressed archive stays tiny — a bomb shape).
 		tb := buildSafetyTarGz(t, []tarEntry{{name: "commands/cmd.md", body: strings.Repeat("a", 4096)}})
-		if err := verifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sources.ErrUpstreamInvalid) {
-			t.Errorf("verifyPluginContents = %v; want ErrUpstreamInvalid (decompressed cap)", err)
+		if err := VerifyPluginContents(bytes.NewReader(tb)); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+			t.Errorf("VerifyPluginContents = %v; want ErrUpstreamInvalid (decompressed cap)", err)
 		}
 	})
 }

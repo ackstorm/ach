@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/registry"
@@ -286,7 +287,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 
-	mkt, err := parseClaudeCodeMarketplace(body)
+	mkt, err := contentkit.ParseClaudeCodeMarketplace(body)
 	if err != nil {
 		reason, _ := classifyFetchError(err, spec.Refresh, time.Time{})
 		return r.markSyncedFalse(ctx, &cr, reason, "stage-1 parse: "+err.Error(), requeue, err)
@@ -323,7 +324,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// candidate slice, normalized key (case-fold + trim) so Foo/foo variants
 	// collide HERE, not at the late path write. Empty name → UpstreamInvalid.
 	seen := make(map[string]struct{}, len(filtered))
-	deduped := make([]ClaudeCodeMarketplacePlugin, 0, len(filtered))
+	deduped := make([]contentkit.ClaudeCodeMarketplacePlugin, 0, len(filtered))
 	for _, entry := range filtered {
 		if strings.TrimSpace(entry.Name) == "" {
 			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
@@ -461,7 +462,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	ctx context.Context,
 	mp *achv1alpha1.PluginMarketplace,
-	entry ClaudeCodeMarketplacePlugin,
+	entry contentkit.ClaudeCodeMarketplacePlugin,
 	secret *corev1.Secret,
 ) (string, error) {
 	// ─── 1+2: dispatch + fetch via internal/gitfetch ───
@@ -522,7 +523,7 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	closed = true
 
 	// ─── 6.5: post-fetch plugin-contents check ───
-	// Stream the staged tar to verifyPluginContents before rename(2).
+	// Stream the staged tar to contentkit.VerifyPluginContents before rename(2).
 	// The verifier looks at the tar root because git.tarSubtree strips
 	// the subtree prefix — see marketplace_manifest.go header.
 	stagedForVerify, openErr := os.Open(stagingPath)
@@ -530,7 +531,7 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 		_ = os.Remove(stagingPath)
 		return "", fmt.Errorf("plugin %q: open staged tar: %w", entry.Name, openErr)
 	}
-	verifyErr := verifyPluginContents(stagedForVerify)
+	verifyErr := contentkit.VerifyPluginContents(stagedForVerify)
 	_ = stagedForVerify.Close()
 	if verifyErr != nil {
 		_ = os.Remove(stagingPath)
@@ -601,9 +602,9 @@ func classifyFetchErrorMarketplace(err error, refresh achv1alpha1.RefreshBlock, 
 // Bounded to ~500 chars typical (5 entries × ~80 chars + suffix) — well
 // under Kubernetes' 4096-char status.message limit. Plugin names are
 // pre-validated as DNS-1123 subdomains (~63 chars max) by
-// parseClaudeCodeMarketplace; reason strings are bounded by the §12.4
+// contentkit.ParseClaudeCodeMarketplace; reason strings are bounded by the §12.4
 // enum (max ~24 chars). T-02-06-08 mitigation: no adversarial-name
-// content in the message because parseClaudeCodeMarketplace rejected
+// content in the message because contentkit.ParseClaudeCodeMarketplace rejected
 // path-traversal names.
 func formatStage2Message(failures []pluginFailure) string {
 	if len(failures) == 0 {

@@ -8,6 +8,8 @@ package ach
 import (
 	"errors"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/contentkit"
 )
 
 func TestCompileAnchored_PrependsCaret(t *testing.T) {
@@ -50,15 +52,15 @@ func TestCompileAnchored_EmptyInput(t *testing.T) {
 	}
 }
 
-func threePlugins() []ClaudeCodeMarketplacePlugin {
-	return []ClaudeCodeMarketplacePlugin{
+func threePlugins() []contentkit.ClaudeCodeMarketplacePlugin {
+	return []contentkit.ClaudeCodeMarketplacePlugin{
 		{Name: "alpha"},
 		{Name: "beta"},
 		{Name: "charlie"},
 	}
 }
 
-func names(ps []ClaudeCodeMarketplacePlugin) []string {
+func names(ps []contentkit.ClaudeCodeMarketplacePlugin) []string {
 	out := make([]string, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, p.Name)

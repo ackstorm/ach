@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+
+	"github.com/ackstorm/ach/internal/contentkit"
 )
 
 // ErrInvalidConfig is the package-level sentinel returned by
@@ -72,7 +74,7 @@ func compileAnchored(patterns []string) ([]*regexp.Regexp, error) {
 //
 // Zero-exclude-match is silent (no flag returned) — OP-07 explicitly
 // treats this case as a no-op.
-func applyFilters(plugins []ClaudeCodeMarketplacePlugin, include, exclude []*regexp.Regexp) (kept []ClaudeCodeMarketplacePlugin, includeMatchedAny bool) {
+func applyFilters(plugins []contentkit.ClaudeCodeMarketplacePlugin, include, exclude []*regexp.Regexp) (kept []contentkit.ClaudeCodeMarketplacePlugin, includeMatchedAny bool) {
 	// WR-05: short-circuit when neither filter is set — the no-filter
 	// case is the hot path (most marketplaces don't declare filters)
 	// and previously copied the full plugin slice + iterated twice.
@@ -84,12 +86,12 @@ func applyFilters(plugins []ClaudeCodeMarketplacePlugin, include, exclude []*reg
 		return plugins, true
 	}
 	// Include stage.
-	var stage1 []ClaudeCodeMarketplacePlugin
+	var stage1 []contentkit.ClaudeCodeMarketplacePlugin
 	if include == nil {
 		stage1 = append(stage1, plugins...)
 		includeMatchedAny = true // vacuous
 	} else {
-		stage1 = make([]ClaudeCodeMarketplacePlugin, 0, len(plugins))
+		stage1 = make([]contentkit.ClaudeCodeMarketplacePlugin, 0, len(plugins))
 		for _, p := range plugins {
 			if matchAny(include, p.Name) {
 				stage1 = append(stage1, p)
@@ -101,7 +103,7 @@ func applyFilters(plugins []ClaudeCodeMarketplacePlugin, include, exclude []*reg
 	if exclude == nil {
 		return stage1, includeMatchedAny
 	}
-	kept = make([]ClaudeCodeMarketplacePlugin, 0, len(stage1))
+	kept = make([]contentkit.ClaudeCodeMarketplacePlugin, 0, len(stage1))
 	for _, p := range stage1 {
 		if matchAny(exclude, p.Name) {
 			continue

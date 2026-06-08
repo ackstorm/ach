@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Unit tests for the Claude Code real-schema parser + UnmarshalJSON
-// union. Pure-Go (no envtest); runs with `go test ./internal/controller/ach/...`.
+// union. Pure-Go (no envtest); runs with `go test ./internal/contentkit/...`.
 
-package ach
+package contentkit
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // ─── Union UnmarshalJSON tests ────────────────────────────────────────
@@ -115,7 +115,7 @@ const validRealSchemaMarketplace = `{
 }`
 
 func TestParseClaudeCodeMarketplace_RealSchemaValid(t *testing.T) {
-	mkt, err := parseClaudeCodeMarketplace([]byte(validRealSchemaMarketplace))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(validRealSchemaMarketplace))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -137,22 +137,22 @@ func TestParseClaudeCodeMarketplace_RealSchemaValid(t *testing.T) {
 }
 
 func TestParseClaudeCodeMarketplace_MalformedJSON(t *testing.T) {
-	_, err := parseClaudeCodeMarketplace([]byte("{not json"))
+	_, err := ParseClaudeCodeMarketplace([]byte("{not json"))
 	if err == nil {
 		t.Fatal("expected err on malformed JSON; got nil")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
 	}
 }
 
 func TestParseClaudeCodeMarketplace_ZeroPlugins(t *testing.T) {
 	body := `{"name":"m","owner":{"name":"o","url":""},"plugins":[]}`
-	_, err := parseClaudeCodeMarketplace([]byte(body))
+	_, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err == nil {
 		t.Fatal("expected err on zero plugins; got nil")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "zero plugins") {
@@ -174,7 +174,7 @@ func TestParseClaudeCodeMarketplace_PluginNameTraversalDemoted(t *testing.T) {
         "source": "./safe"
       }]
     }`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v (path-traversal should demote, not abort catalog)", err)
 	}
@@ -201,7 +201,7 @@ func TestParseClaudeCodeMarketplace_PluginNameUppercaseAccepted(t *testing.T) {
         "source": {"source": "github", "repo": "o/r"}
       }]
     }`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestParseClaudeCodeMarketplace_PluginNameLeadingSeparatorDemoted(t *testing
         {"name": ".hidden", "source": {"source": "github", "repo": "o/r"}}
       ]
     }`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestParseClaudeCodeMarketplace_PluginNameCatalogContinuesAfterBadEntry(t *t
         {"name": "Notion", "source": {"source": "github", "repo": "o/r"}}
       ]
     }`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v (catalog must not abort)", err)
 	}
@@ -296,7 +296,7 @@ func TestParseClaudeCodeMarketplace_UrlMissingShaNotDemoted(t *testing.T) {
 	    }
 	  ]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v (whole-catalog abort is the bug)", err)
 	}
@@ -324,7 +324,7 @@ func TestParseClaudeCodeMarketplace_UrlMissingUrlFieldDemoted(t *testing.T) {
 	    "source": {"source": "url", "sha": "0123456789abcdef0123456789abcdef01234567"}
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestParseClaudeCodeMarketplace_GitSubdirMissingUrlDemoted(t *testing.T) {
 	    "source": {"source": "git-subdir", "path": "p", "sha": "0123456789abcdef0123456789abcdef01234567"}
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestParseClaudeCodeMarketplace_GitSubdirMissingPathDemoted(t *testing.T) {
 	    }
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing
 	    "source": "../etc/passwd"
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestParseClaudeCodeMarketplace_GitHubMissingRepoDemoted(t *testing.T) {
 	    "source": {"source": "github", "ref": "main"}
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestParseClaudeCodeMarketplace_UrlWithPathAccepted(t *testing.T) {
 	    }
 	  }]
 	}`
-	mkt, err := parseClaudeCodeMarketplace([]byte(body))
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

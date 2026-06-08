@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/registry"
@@ -55,10 +56,10 @@ const skillMarketplacesChannel = "ach_skill_marketplaces_changed"
 // three-stage refresh mirroring PluginMarketplace, with a convention-based
 // discovery swap (agentskills.io has no marketplace.json index):
 //
-//   - Stage 1: fetch the upstream as ONE tar.gz and discoverSkillsInTree —
+//   - Stage 1: fetch the upstream as ONE tar.gz and contentkit.DiscoverSkillsInTree —
 //     walk for every top-level dir with a valid SKILL.md (name == dir). ANY
 //     Stage-1 failure → Synced=False; ZERO skill_marketplace_skills writes.
-//   - Stage 2: per-discovered-skill sliceSkillSubtree → verifySkillContents →
+//   - Stage 2: per-discovered-skill contentkit.SliceSkillSubtree → contentkit.VerifySkillContents →
 //     rename(2) to skill-marketplace/<mkt>/<name>.tar.gz → UPSERT. Per-skill
 //     failures recorded in status.message but do NOT abort the stage.
 //   - Stage 3: DELETE sweep — drop rows + cached files for vanished names.
@@ -74,7 +75,7 @@ type SkillMarketplaceReconciler struct {
 	DB *pgxpool.Pool
 
 	// SkillMaxSizeMiB caps the WHOLE marketplace fetch (operator-memory guard).
-	// When 0 a hard ingress cap (skillRawIngressCap) applies instead.
+	// When 0 a hard ingress cap (contentkit.SkillRawIngressCap) applies instead.
 	SkillMaxSizeMiB int
 
 	// SkillMaxSizeMiBFn, when non-nil, overrides SkillMaxSizeMiB at every cap
@@ -90,14 +91,14 @@ type SkillMarketplaceReconciler struct {
 
 // ingressCapBytes returns the whole-marketplace fetch cap in bytes. Prefers the
 // test-only SkillMaxSizeMiBFn override; falls back to SkillMaxSizeMiB; a zero
-// cap falls back to the hard skillRawIngressCap operator-memory guard.
+// cap falls back to the hard contentkit.SkillRawIngressCap operator-memory guard.
 func (r *SkillMarketplaceReconciler) ingressCapBytes() int64 {
 	mib := r.SkillMaxSizeMiB
 	if r.SkillMaxSizeMiBFn != nil {
 		mib = r.SkillMaxSizeMiBFn()
 	}
 	if mib <= 0 {
-		return skillRawIngressCap
+		return contentkit.SkillRawIngressCap
 	}
 	return int64(mib) << 20
 }
@@ -202,7 +203,7 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 	// stage1Fetch) and spec.<git>.path is a post-fetch tree-walk hint (the
 	// skills-root holding the skill dirs), NOT a fetch-layer subtree narrow (F1).
 	subPath := skillMarketplaceSubPath(spec)
-	archiveRoot, discovered, derr := discoverSkillsInTree(raw, subPath)
+	archiveRoot, discovered, derr := contentkit.DiscoverSkillsInTree(raw, subPath)
 	if derr != nil {
 		// Malformed archive (gzip/tar) → UpstreamInvalid (terminal, no backoff).
 		return r.markSyncedFalse(ctx, cr, ReasonUpstreamInvalid, "stage-1 discover: "+derr.Error(), requeue, nil)
@@ -249,7 +250,7 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 // body — git/REST repo archive, or a pointed-at .tar.gz for s3/gcs/http). When
 // done is true the caller MUST return (res, err) verbatim (a terminal
 // markSynced* outcome or a hard error). On success done is false and raw/rev are
-// populated; the caller derives archiveRoot via discoverSkillsInTree.
+// populated; the caller derives archiveRoot via contentkit.DiscoverSkillsInTree.
 func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1alpha1.SkillMarketplace, requeue time.Duration) (raw []byte, rev string, res ctrl.Result, done bool, err error) {
 	spec := cr.Spec
 	// Discovery, not a narrow-at-fetch object: clear the git spec.path so the
@@ -313,7 +314,7 @@ func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1a
 
 // materializeDiscovered runs Stage-2 over every discovered skill, returning the
 // successful refs (for status) and per-skill failures (for status.message).
-func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []discoveredSkill, raw []byte, archiveRoot, subPath, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []skillFailure) {
+func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []contentkit.DiscoveredSkill, raw []byte, archiveRoot, subPath, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []skillFailure) {
 	var failures []skillFailure
 	successful := make([]achv1alpha1.SkillMarketplaceSkillRef, 0, len(discovered))
 	for i := range discovered {
@@ -330,7 +331,7 @@ func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, 
 
 // sweepVanishedSkills runs Stage-3: drop rows + cached files for names absent
 // from the current discovered set. No-op when DB is nil.
-func (r *SkillMarketplaceReconciler) sweepVanishedSkills(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []discoveredSkill) error {
+func (r *SkillMarketplaceReconciler) sweepVanishedSkills(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []contentkit.DiscoveredSkill) error {
 	if r.DB == nil {
 		return nil
 	}
@@ -365,7 +366,7 @@ func (r *SkillMarketplaceReconciler) sweepVanishedSkills(ctx context.Context, cr
 func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 	ctx context.Context,
 	mp *achv1alpha1.SkillMarketplace,
-	d discoveredSkill,
+	d contentkit.DiscoveredSkill,
 	raw []byte,
 	archiveRoot, subPath, upstreamRev string,
 ) error {
@@ -375,12 +376,12 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 	if subPath != "" {
 		subtreePath = path.Join(subPath, d.Dir)
 	}
-	sub, err := sliceSkillSubtree(raw, archiveRoot, subtreePath)
+	sub, err := contentkit.SliceSkillSubtree(raw, archiveRoot, subtreePath)
 	if err != nil {
 		return fmt.Errorf("skill %q: slice subtree: %w", d.Name, err)
 	}
 	// Re-validate the sliced subtree (defense-in-depth atop discovery).
-	if err := verifySkillContents(bytes.NewReader(sub)); err != nil {
+	if err := contentkit.VerifySkillContents(bytes.NewReader(sub)); err != nil {
 		return fmt.Errorf("skill %q: verify: %w", d.Name, err)
 	}
 

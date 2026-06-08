@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 )
 
@@ -48,9 +49,9 @@ func TestDispatchMarketplacePlugin_GitSubdir(t *testing.T) {
 		captured = spec
 		return &fakeDispatchGitFetcher{body: "tarball-bytes", rev: spec.SHA}
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "x",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "git-subdir",
 			URL:  "https://github.com/o/r.git",
 			Path: "plugins/x",
@@ -97,9 +98,9 @@ func TestDispatchMarketplacePlugin_LocalPathResolvesMarketplaceRepo(t *testing.T
 			},
 		},
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "agent-sdk-dev",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "local-path",
 			Path: "./plugins/agent-sdk-dev",
 		},
@@ -125,9 +126,9 @@ func TestDispatchMarketplacePlugin_LocalPathResolvesMarketplaceRepo(t *testing.T
 }
 
 func TestDispatchMarketplacePlugin_UnsupportedKind(t *testing.T) {
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name:   "y",
-		Source: ClaudeCodeMarketplaceSource{Kind: ""},
+		Source: contentkit.ClaudeCodeMarketplaceSource{Kind: ""},
 	}
 	_, _, err := dispatchMarketplacePlugin(context.Background(), &achv1alpha1.PluginMarketplace{}, entry, nil, "/tmp")
 	if err == nil || err != errUnsupportedPluginSource {
@@ -164,9 +165,9 @@ func TestDispatchMarketplacePlugin_GitSubdir_RefOnly_PreResolvesSHA(t *testing.T
 		return resolvedSHA, nil
 	}
 
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "x",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "git-subdir",
 			URL:  "https://github.com/o/r.git",
 			Path: "plugins/x",
@@ -206,9 +207,9 @@ func TestDispatchMarketplacePlugin_SHA_TakesPrecedenceOverRef(t *testing.T) {
 		t.Fatal("LsRemote called even though entry has explicit sha")
 		return "", nil
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "x",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "git-subdir",
 			URL:  "https://github.com/o/r.git",
 			Path: "plugins/x",
@@ -234,9 +235,9 @@ func TestDispatchMarketplacePlugin_GitHub(t *testing.T) {
 		captured = spec
 		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "x",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "github",
 			Repo: "owner/name",
 			Ref:  "v2",
@@ -267,9 +268,9 @@ func TestDispatchMarketplacePlugin_UrlWithPath_TreatedAsGitSubdir(t *testing.T) 
 		captured = spec
 		return &fakeDispatchGitFetcher{body: "tar", rev: spec.SHA}
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "zilliz",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "url",
 			URL:  "https://github.com/zilliztech/zilliz-plugin.git",
 			Path: "plugins/zilliz",
@@ -314,9 +315,9 @@ func TestDispatchMarketplacePlugin_GitHub_ShalessPreResolves(t *testing.T) {
 		}
 		return resolvedSHA, nil
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "x",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: "github",
 			Repo: "owner/name",
 			// No Ref, no SHA.
@@ -414,9 +415,9 @@ func TestBuildGitSpecForEntry_GitSubdirCanonicalizes(t *testing.T) {
 			GitLab: &achv1alpha1.GitLabSource{Host: "https://git.example.com"},
 		},
 	}
-	entry := ClaudeCodeMarketplacePlugin{
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
 		Name: "p",
-		Source: ClaudeCodeMarketplaceSource{
+		Source: contentkit.ClaudeCodeMarketplaceSource{
 			Kind: kindGitSubdir,
 			URL:  "git.example.com/g/p.git", // scheme-less on purpose
 			Ref:  "main",
@@ -451,38 +452,38 @@ func TestBuildGitSpecForEntry_TokenScopedToOwnHost(t *testing.T) {
 	}
 	cases := []struct {
 		name       string
-		entry      ClaudeCodeMarketplaceSource
+		entry      contentkit.ClaudeCodeMarketplaceSource
 		wantToken  string
 		wantScheme sourcesgit.AuthScheme
 	}{
 		{
 			name:       "same-host git-subdir keeps token + Basic",
-			entry:      ClaudeCodeMarketplaceSource{Kind: kindGitSubdir, URL: "https://git.example.com/g/p.git"},
+			entry:      contentkit.ClaudeCodeMarketplaceSource{Kind: kindGitSubdir, URL: "https://git.example.com/g/p.git"},
 			wantToken:  "glpat-secret",
 			wantScheme: sourcesgit.AuthBasicOAuth2,
 		},
 		{
 			name:       "same-host url keeps token + Basic",
-			entry:      ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://git.example.com/g/other.git"},
+			entry:      contentkit.ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://git.example.com/g/other.git"},
 			wantToken:  "glpat-secret",
 			wantScheme: sourcesgit.AuthBasicOAuth2,
 		},
 		{
 			name:       "foreign github Kind drops token, Bearer",
-			entry:      ClaudeCodeMarketplaceSource{Kind: kindGitHub, Repo: "fluxcd/agent-skills"},
+			entry:      contentkit.ClaudeCodeMarketplaceSource{Kind: kindGitHub, Repo: "fluxcd/agent-skills"},
 			wantToken:  "",
 			wantScheme: sourcesgit.AuthBearer,
 		},
 		{
 			name:       "foreign url entry drops token, Bearer",
-			entry:      ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://github.com/antonbabenko/terraform-skill.git"},
+			entry:      contentkit.ClaudeCodeMarketplaceSource{Kind: kindURL, URL: "https://github.com/antonbabenko/terraform-skill.git"},
 			wantToken:  "",
 			wantScheme: sourcesgit.AuthBearer,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			spec, err := buildGitSpecForEntry(mp, ClaudeCodeMarketplacePlugin{Name: "p", Source: tc.entry}, auth, "/cache")
+			spec, err := buildGitSpecForEntry(mp, contentkit.ClaudeCodeMarketplacePlugin{Name: "p", Source: tc.entry}, auth, "/cache")
 			if err != nil {
 				t.Fatalf("buildGitSpecForEntry: %v", err)
 			}

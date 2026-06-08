@@ -24,11 +24,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/contentkit"
 	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 	"github.com/ackstorm/ach/internal/sources"
 )
 
-// Kind constants for ClaudeCodeMarketplaceSource. The wire-format
+// Kind constants for contentkit.ClaudeCodeMarketplaceSource. The wire-format
 // discriminator values used by UnmarshalJSON + Stage-2 dispatch.
 const (
 	kindGitSubdir = "git-subdir"
@@ -94,7 +95,7 @@ var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string, sche
 func dispatchMarketplacePlugin(
 	ctx context.Context,
 	mp *achv1alpha1.PluginMarketplace,
-	entry ClaudeCodeMarketplacePlugin,
+	entry contentkit.ClaudeCodeMarketplacePlugin,
 	auth *corev1.Secret,
 	cacheRoot string,
 ) (io.ReadCloser, string, error) {
@@ -125,7 +126,7 @@ func dispatchMarketplacePlugin(
 // per-entry token from the marketplace's auth Secret when present.
 func buildGitSpecForEntry(
 	mp *achv1alpha1.PluginMarketplace,
-	entry ClaudeCodeMarketplacePlugin,
+	entry contentkit.ClaudeCodeMarketplacePlugin,
 	auth *corev1.Secret,
 	cacheRoot string,
 ) (sourcesgit.Spec, error) {
@@ -196,7 +197,7 @@ func buildGitSpecForEntry(
 		return sourcesgit.Spec{}, errUnsupportedPluginSource
 	default:
 		return sourcesgit.Spec{}, fmt.Errorf("plugin %q: unknown source Kind %q: %w",
-			truncateErrField(entry.Name), entry.Source.Kind, sources.ErrUpstreamInvalid)
+			contentkit.TruncateErrField(entry.Name), entry.Source.Kind, sources.ErrUpstreamInvalid)
 	}
 }
 
