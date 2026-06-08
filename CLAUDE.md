@@ -35,7 +35,8 @@ declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-env-keys/hydrate/admin) that drops the k8s.io/* + controller-runtime deps. Both
+env-keys/admin; hydrate/status/uninstall live under `env`) that drops the
+k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
 Release plumbing + CI scaffolding grafted from
@@ -95,12 +96,13 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
-`logout`/`whoami`/`config`/`env`/`env-keys`/`hydrate`/`admin`.
+`logout`/`whoami`/`config`/`env`/`env-keys`/`admin` (workspace verbs
+`hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
 - `ach-cli login` → platform-api → Dex SSO → `provisionUser` (LiteLLM mint) → `pk_` issuance
-- `ach-cli hydrate` → platform-api `/platform/hydrate` → content-service sidecar → workspace
+- `ach-cli env hydrate` → platform-api `/platform/hydrate` → content-service sidecar → workspace
 - Environment reconcile → resolve refs against LiteLLM → `POST /v1/access_group`; `Available=True` = `ExecutionResourcesResolved` + `AccessGroupSynced`
 - BackendIdentityPolicy → operator RBAC → forwarder cache → per-target JWT mint → upstream
 
@@ -120,7 +122,7 @@ independent collections.)
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
 | New/changed SYNCED CR fixtures         | `test/e2e/cluster/{04-objects,05-environment}/` + `references/repo-layout.md` |
-| Curated examples / `ach-cli login` + `hydrate` demo | `examples/README.md` |
+| Curated examples / `ach-cli login` + `env hydrate` demo | `examples/README.md` |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI matrix below |
 | Pre-push gate logic                    | `scripts/pre-push-check.sh`              |
@@ -307,8 +309,8 @@ Relative-path writes silently hit a sibling repo (`ach-old/`,
 unchanged. ✅ Use absolute paths; verify with `pwd && git remote -v` (expect
 `ackstorm/ach`).
 
-### ❌ Editor save vs `ach-cli hydrate` runtime-config — user edit silently lost
-`ach-cli hydrate` reads the adapter runtime-config file (`.claude/settings.json`,
+### ❌ Editor save vs `ach-cli env hydrate` runtime-config — user edit silently lost
+`ach-cli env hydrate` reads the adapter runtime-config file (`.claude/settings.json`,
 `.gemini/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`),
 deep-merges ACH's keys, and atomic-renames the result back. The `<achDir>/lock`
 flock excludes other ach-cli processes — NOT other tools. A concurrent editor
@@ -317,7 +319,7 @@ hydrate's rename overwrites the merge with the user's pre-merge edit; on the
 NEXT hydrate ACH re-merges its keys back in, so the engine self-heals — but the
 user's edit made during the hydrate window is silently lost.
 
-✅ Avoid saving the runtime-config files while `ach-cli hydrate` is running. If
+✅ Avoid saving the runtime-config files while `ach-cli env hydrate` is running. If
 you need to edit the config concurrently, run hydrate to completion first
 (`echo $?` == 0), THEN edit. There's no telemetry for the race; the user-visible
 symptom is "my edit reverted." Documented as a known v1 trade-off (security
@@ -342,7 +344,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
   content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`). Composite `Available=True`
-  rolls both up — that's what `ach-cli hydrate` / the demo gate on.
+  rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
 - **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
   mirrors **Plugin** end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
   `skill/<name>.tar.gz` → `skills` projection → content-service

@@ -29,7 +29,7 @@ for the object the operator reconciles in e2e, look there.
 | `15-mcpserver-echo.yaml`              | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
 | `prometheus-servicemonitor.yaml`      | `ServiceMonitor`                           | Example Prometheus scrape config for the ach metrics endpoints. |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
-| `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli hydrate --environment demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
+| `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo
 
@@ -47,7 +47,7 @@ make cluster-up
 # 2. Build the CLI + run the hydrate demo against the already-synced demo Env.
 make build-all
 ./bin/ach-cli login                                        # device-code SSO (browser opens)
-./bin/ach-cli hydrate --environment demo > hydrate.json    # POST /platform/hydrate
+./bin/ach-cli env hydrate demo > hydrate.json              # POST /platform/hydrate
 ```
 
 > **Tip — pre-fill the login URL:** `ach login` prompts for the Hub URL
@@ -83,13 +83,13 @@ ach config add --profile prod --url https://ach.example --api-key ek_...
 # multi-environment: seed several ek_ under labels in one profile:
 ach config add --profile svc --url https://ach.example --api-key pk_... \
   --env-key prod=ek_AAA --env-key stg=ek_BBB
-ach hydrate --env-key prod --environment prod
-ach hydrate --env-key stg  --environment stg
+ach env hydrate prod --env-key prod
+ach env hydrate stg  --env-key stg
 
 # or skip disk config entirely (secrets stay in env, ideal for CI):
 export ACH_BASE_URL=https://ach.example
 export ACH_API_KEY=ek_...
-ach hydrate --environment prod   # repeat per env, no --api-key
+ach env hydrate prod   # repeat per env, no --api-key
 ```
 
 Note: an `ek_` is scoped to ONE Environment; a `pk_` (from `ach login`)

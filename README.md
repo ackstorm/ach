@@ -15,7 +15,7 @@ the `demo` Environment the example uses):
 
 ```bash
 ach-cli login                                  # one-time device-code SSO
-ach-cli hydrate --environment demo > hydrate.json
+ach-cli env hydrate demo > hydrate.json
 ```
 
 The `hydrate.json` byte output reproduces `examples/hydrate.json`

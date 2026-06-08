@@ -215,7 +215,7 @@ Snapshotter cache), so the condition reflects fresh upstream state.
 
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
-./bin/ach-cli hydrate --environment demo > /tmp/hydrate-test.json
+./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
@@ -247,7 +247,7 @@ Two remedies, in preference order:
    response shape legitimately changed — new field, schemaVersion bump, an
    Environment fixture edit):
    ```bash
-   ./bin/ach-cli hydrate --environment demo > examples/hydrate.json
+   ./bin/ach-cli env hydrate demo > examples/hydrate.json
    git diff examples/hydrate.json   # audit — should be the intended shape change
    ```
 
@@ -260,10 +260,10 @@ mode is identical to a real schema drift (`schemaVersion` bump, new field,
 etc.), so documenting the gotcha protects future debuggers from chasing a
 phantom regression.
 
-### ❌ `ach-cli hydrate` exits 1 "--environment is required" ✅ pass --environment (engine namespaces state by env)
+### ❌ `ach-cli env hydrate` exits 1 "environment is required" ✅ pass the positional `<name>` (engine namespaces state by env)
 The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
 (`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under
-`--global`) per CLI spec §8.1. So `--environment` (or `ACH_ENVIRONMENT`) is
+`--global`) per CLI spec §8.1. So the positional `<name>` (or `ACH_ENVIRONMENT`) is
 REQUIRED for any engine run — including the `ek_` credential path, which used to
 treat it as optional. `--raw` is exempt (it short-circuits before the engine).
 
@@ -272,10 +272,10 @@ state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
 adapter-native projection (`.claude/`, `.codex/`, …) is single-path by
 construction — agents read fixed config locations — so two Environments UNION in
 the same `.claude/` (each surgically tracked + independently uninstallable via
-`ach-cli uninstall --environment <env>`).
+`ach-cli env uninstall <env>`).
 
 A pre-namespacing flat `<cwd>/.ach/state.json` is auto-migrated into
-`.ach/<env>/` on the next hydrate (a one-line stderr `notice:`). `ach-cli list`
+`.ach/<env>/` on the next hydrate (a one-line stderr `notice:`). `ach-cli env status`
 with no `--environment` (project scope) enumerates ALL `.ach/<env>/` so a
 multi-env project lists every installed set.
 
