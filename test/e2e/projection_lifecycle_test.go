@@ -89,9 +89,8 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 	// (2) Hydrate (default scope: context plugins + runtime co-owned file).
 	// Plugin projection runs (NOT --only-runtime).
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate",
-		"--environment", phase7DemoEnvironment,
-		"--platform", d.platformID,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", d.platformID,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -118,9 +117,8 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 	// (6) uninstall --include-runtime: tears down context (projected plugin
 	// resources) AND runtime (co-owned MCP file inverse-merge).
 	stdoutU, stderrU, errU := phase7RunAchCli(t, xdg,
-		"uninstall",
-		"--environment", phase7DemoEnvironment,
-		"--platform", d.platformID,
+		"env", "uninstall", phase7DemoEnvironment,
+		"--target", d.platformID,
 		"--include-runtime",
 		"--output", output,
 	)

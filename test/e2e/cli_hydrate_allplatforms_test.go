@@ -154,9 +154,8 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			xdg := phase7SeedXdgConfig(t, baseURL, pk)
 
 			stdout, stderr, err := phase7RunAchCli(t, xdg,
-				"hydrate",
-				"--environment", phase7DemoEnvironment,
-				"--platform", pe.id,
+				"env", "hydrate", phase7DemoEnvironment,
+				"--target", pe.id,
 				"--output", output,
 			)
 			code, runErr := phase7StripExitErr(err)
@@ -195,9 +194,8 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		// --environment is now required for any engine run (D1: the engine
 		// namespaces state by environment), incl. the ek_ credential path.
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
-			"hydrate",
-			"--environment", phase7DemoEnvironment,
-			"--platform", "claude-code",
+			"env", "hydrate", phase7DemoEnvironment,
+			"--target", "claude-code",
 			"--env-key", "allplatforms-ek",
 			"--output", output,
 		)
@@ -230,9 +228,8 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		output := t.TempDir()
 		xdg := phase7SeedXdgConfig(t, baseURL, pk)
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
-			"hydrate",
-			"--environment", phase7DemoEnvironment,
-			"--platform", "claude-code",
+			"env", "hydrate", phase7DemoEnvironment,
+			"--target", "claude-code",
 			"--include-runtime",
 			"--output", output,
 		)

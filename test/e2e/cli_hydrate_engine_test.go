@@ -188,8 +188,8 @@ func testPhase7BaselineNoOp(t *testing.T) {
 
 	// First hydrate — populates state.json + adapter runtime config.
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
@@ -211,8 +211,8 @@ func testPhase7BaselineNoOp(t *testing.T) {
 
 	// Second hydrate — same inputs; expect no on-disk changes.
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)
@@ -259,8 +259,8 @@ func testPhase7Sc5SkillProjection(t *testing.T) {
 	output := phase7Workspace(t)
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -360,9 +360,8 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 	output := phase7Workspace(t)
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate",
-		"--environment", phase7DemoEnvironment,
-		"--platform", platformID,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", platformID,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -393,10 +392,9 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	// --environment is required for any engine run (D1: state is namespaced by
 	// environment), including the ek_ credential path.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate",
-		"--environment", phase7DemoEnvironment,
+		"env", "hydrate", phase7DemoEnvironment,
 		"--env-key", label,
-		"--platform", platformID,
+		"--target", platformID,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -468,8 +466,8 @@ func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
 	}
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode, "--output", output,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode, "--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -570,8 +568,8 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 
 	// Step 1 — clean hydrate seeds the baseline state.
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeSeed, runErrSeed := phase7StripExitErr(errSeed)
@@ -593,8 +591,8 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 	tmpDir := phase7AchTmpDir(output, phase7DemoEnvironment)
 	stdoutKill, stderrKill, errKill := phase7RunAchCliEnv(t, xdg,
 		[]string{phase7SigkillEnvVar + "=11"},
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeKill, _ := phase7StripExitErr(errKill)
@@ -650,8 +648,8 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 
 	// Step 5 — clean re-run sweeps tmp/ (§6.7 step 2).
 	stdoutResume, stderrResume, errResume := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeResume, runErrResume := phase7StripExitErr(errResume)
@@ -706,8 +704,8 @@ func testPhase7Sc3DriftNoOp(t *testing.T) {
 
 	// First clean hydrate.
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code1, _ := phase7StripExitErr(err1)
@@ -725,8 +723,8 @@ func testPhase7Sc3DriftNoOp(t *testing.T) {
 
 	// Re-hydrate — same upstream + same disk; expect bytes unchanged.
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code2, _ := phase7StripExitErr(err2)
@@ -773,8 +771,8 @@ func testPhase7Sc3DriftUpstreamOnly(t *testing.T) {
 	// "upstream-only" in the §8.4 sense (no prior state, no on-disk
 	// version).
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, _ := phase7StripExitErr(err)
@@ -804,8 +802,8 @@ func testPhase7Sc3DriftLocalEditPreserve(t *testing.T) {
 
 	// First hydrate.
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
@@ -824,8 +822,8 @@ func testPhase7Sc3DriftLocalEditPreserve(t *testing.T) {
 	// Second hydrate — engine sees a local edit on the file; expects
 	// preserve + exit 2 (exit.Drift).
 	stdoutDrift, stderrDrift, errDrift := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeDrift, _ := phase7StripExitErr(errDrift)
@@ -860,8 +858,8 @@ func testPhase7Sc3DriftConflictPreserve(t *testing.T) {
 
 	// Seed.
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
@@ -886,8 +884,8 @@ func testPhase7Sc3DriftConflictPreserve(t *testing.T) {
 
 	// Re-hydrate. Conflict-preserve → exit 2, bytes preserved.
 	stdoutDrift, stderrDrift, errDrift := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeDrift, _ := phase7StripExitErr(errDrift)
@@ -918,8 +916,8 @@ func testPhase7Sc3DriftForceOverrides(t *testing.T) {
 
 	// Seed + induce conflict (same as sc3_drift_conflict_preserve).
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
@@ -939,8 +937,8 @@ func testPhase7Sc3DriftForceOverrides(t *testing.T) {
 
 	// --force re-hydrate. Expected: exit 0 + bytes overwritten.
 	stdoutForce, stderrForce, errForce := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 		"--force",
 	)
@@ -1108,8 +1106,8 @@ func phase7AssertMaliciousFixtureRejected(t *testing.T, fixturePath string) {
 	output := phase7Workspace(t)
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -1181,8 +1179,8 @@ func testPhase7Sc4SafeExtractBomb(t *testing.T) {
 		[]string{
 			"ACH_MAX_EXTRACTED_PLUGIN_MIB=1",
 		},
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -1264,8 +1262,8 @@ func testPhase7Sc4AutoClaimMatch(t *testing.T) {
 	// Pre-run to capture canonical adapter bytes.
 	prerun := phase7Workspace(t)
 	stdoutPre, stderrPre, errPre := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", prerun,
 	)
 	codePre, _ := phase7StripExitErr(errPre)
@@ -1289,8 +1287,8 @@ func testPhase7Sc4AutoClaimMatch(t *testing.T) {
 	}
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, _ := phase7StripExitErr(err)
@@ -1373,8 +1371,8 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 
 	// Arm 1 — no --force: merge-claim, exit 0.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -1393,8 +1391,8 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 
 	// Arm 2 — --force re-run: still exit 0, unmanaged keys STILL preserved.
 	stdoutForce, stderrForce, errForce := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 		"--force",
 	)
@@ -1459,8 +1457,8 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 
 	// --- Step 1: first hydrate seeds state.json + adapter file. ---
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
@@ -1609,8 +1607,8 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	// comparison regressed — the engine failed to find the owned entry and
 	// merge-claimed the drift as if unowned. ---
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)
@@ -1643,8 +1641,8 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	// key back to canonical; exit 0. The marker disappears and the W5-02
 	// mode-0o600 contract holds on the force-overwrite path. ---
 	stdout3, stderr3, err3 := phase7RunAchCli(t, xdg,
-		"hydrate", "--environment", phase7DemoEnvironment,
-		"--platform", phase7PlatformClaudeCode,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", phase7PlatformClaudeCode,
 		"--output", output,
 		"--force",
 	)

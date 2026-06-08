@@ -225,7 +225,7 @@ func testPhase6HydrateGoldenDiff(t *testing.T) {
 	// hidden --raw flag short-circuits BEFORE any engine call so the
 	// golden-diff anchor at examples/hydrate.json continues to hold.
 	stdout, stderr, err := phase6RunAch(t, xdg,
-		"hydrate", "--environment", phase6DemoEnvironment,
+		"env", "hydrate", phase6DemoEnvironment,
 		"--no-warnings",
 		"--raw",
 	)

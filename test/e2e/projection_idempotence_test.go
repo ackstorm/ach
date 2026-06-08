@@ -90,9 +90,8 @@ func runProjectionIdempotence(t *testing.T, d projectionDescriptor) {
 	// (2) First hydrate — populates the projected native dirs + state.json.
 	// Default scope (NOT --only-runtime) so plugin projection runs.
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
-		"hydrate",
-		"--environment", phase7DemoEnvironment,
-		"--platform", d.platformID,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", d.platformID,
 		"--output", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
@@ -129,9 +128,8 @@ func runProjectionIdempotence(t *testing.T, d projectionDescriptor) {
 	// drift refusal (exit 7). An exit 7 here would mean the engine failed to
 	// recognize its own prior output as owned.
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
-		"hydrate",
-		"--environment", phase7DemoEnvironment,
-		"--platform", d.platformID,
+		"env", "hydrate", phase7DemoEnvironment,
+		"--target", d.platformID,
 		"--output", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)

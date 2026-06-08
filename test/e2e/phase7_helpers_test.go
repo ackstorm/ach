@@ -416,17 +416,17 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 // adapter runtime-config merge/drift semantics, so every hydrate invocation
 // goes through --include-runtime unless the caller already supplied it.
 func phase7ArgsWithRuntime(args []string) []string {
-	if len(args) == 0 || args[0] != "hydrate" {
+	if len(args) < 2 || args[0] != "env" || args[1] != "hydrate" {
 		return args
 	}
-	for _, arg := range args[1:] {
+	for _, arg := range args[2:] {
 		if arg == "--include-runtime" {
 			return args
 		}
 	}
 	out := make([]string, 0, len(args)+1)
-	out = append(out, args[0], "--include-runtime")
-	out = append(out, args[1:]...)
+	out = append(out, args[0], args[1], "--include-runtime")
+	out = append(out, args[2:]...)
 	return out
 }
 
