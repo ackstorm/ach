@@ -172,7 +172,9 @@ Locking:
 I/O:
   --output <dir>      Workspace root override (default: cwd).
   --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
-  --target <id>       Override platform autodetection (claude-code /
+                      When neither --global nor --output is set, hydration
+                      defaults to the project (cwd) scope and prints a note.
+  --target <id>       Override agent-target autodetection (claude-code /
                       codex / gemini-cli / opencode / pimono +
                       case-folded aliases). When omitted, the engine scans cwd
                       (or $HOME under --global) and picks the
@@ -495,6 +497,15 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		return err
 	}
 
+	// Scope notice (UX): with neither --global nor an explicit --output,
+	// hydration defaults to the project (cwd) scope. Surface that once to
+	// stderr so the user knows where files land and how to switch. Gated by
+	// --no-warnings alongside the other advisory lines.
+	if !in.global && in.output == "" && !in.noWarnings {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: no --global/--output set; using project scope (writing under ./.ach) — pass --global for $HOME\n")
+	}
+
 	limits, err := extract.LoadLimits()
 	if err != nil {
 		return &exit.CodedError{
@@ -579,7 +590,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 func summaryFromResult(res hydrate.Result) string {
 	var b strings.Builder
 	if res.Environment != "" {
-		fmt.Fprintf(&b, "Hydrated %s for %s\n\n", res.Environment, res.PlatformID)
+		fmt.Fprintf(&b, "Hydrated %q environment for %s\n\n", res.Environment, res.PlatformID)
 	} else {
 		fmt.Fprintf(&b, "Hydrated for %s\n\n", res.PlatformID)
 	}

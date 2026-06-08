@@ -371,7 +371,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	if !ok {
 		return RenderResult{}, &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("adapter dispatcher: unknown platform %q", d.platformID),
+			Msg:  fmt.Sprintf("adapter dispatcher: unknown target %q", d.platformID),
 		}
 	}
 

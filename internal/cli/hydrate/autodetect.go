@@ -10,7 +10,7 @@
 //   - Zero matches → *exit.CodedError{Code: General} with a "pass
 //     --target" prompt naming the closed set.
 //   - One match    → returns the canonical id AND emits a single
-//     "Detected platform: <id>" line to stderr (ADAPT-02).
+//     "Detected target: <id>" line to stderr (ADAPT-02).
 //   - Multi-match  → *exit.CodedError{Code: General} listing every
 //     matched id in deterministic (sort.Strings) order, plus a prompt
 //     to pass `--target`. NO silent priority ordering — the user
@@ -25,7 +25,7 @@
 //
 // ResolvePlatform wraps adapter.Lookup with a typed CodedError on a
 // miss so the cobra layer's --target handling routes through one
-// helper instead of duplicating the "unknown platform" message.
+// helper instead of duplicating the "unknown target" message.
 
 package hydrate
 
@@ -43,7 +43,7 @@ import (
 // zero-match error message so the user sees the canonical names even
 // when no adapter registered (defensive — production callers always
 // blank-import all four, but a misconfigured test binary could surface
-// "no platform detected" without any registered ids in adapter.Iter()).
+// "no agent target detected" without any registered ids in adapter.Iter()).
 const closedSetIDs = "claude-code, codex, gemini-cli, opencode"
 
 // Autodetect scans `root` against every registered adapter's Detect and
@@ -52,7 +52,7 @@ const closedSetIDs = "claude-code, codex, gemini-cli, opencode"
 //   - Zero matches → ("", *exit.CodedError{Code: General}). The error
 //     message names the closed set so the user can re-invoke with the
 //     right `--target` value.
-//   - One match    → (id, nil). On success, emits "Detected platform:
+//   - One match    → (id, nil). On success, emits "Detected target:
 //     <id>" to stderr.
 //   - Multi-match  → ("", *exit.CodedError{Code: General}). The message
 //     lists every matched id in sort.Strings order (deterministic for
@@ -85,20 +85,20 @@ func Autodetect(root string, stderr io.Writer) (string, error) {
 		return "", &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"no platform detected at %s; pass --target <id> (one of: %s)",
+				"no agent target detected at %s; pass --target <id> (one of: %s)",
 				root, closedSetIDs,
 			),
 		}
 	case 1:
 		if stderr != nil {
-			_, _ = fmt.Fprintf(stderr, "Detected platform: %s\n", matched[0])
+			_, _ = fmt.Fprintf(stderr, "Detected target: %s\n", matched[0])
 		}
 		return matched[0], nil
 	default:
 		return "", &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"multiple platforms detected at %s: %s; pass --target <id> to disambiguate",
+				"multiple agent targets detected at %s: %s; pass --target <id> to disambiguate",
 				root, strings.Join(matched, ", "),
 			),
 		}
@@ -125,7 +125,7 @@ func ResolvePlatform(id string) (string, error) {
 	if !ok {
 		return "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("unknown platform: %s; one of: %s", id, registeredIDs()),
+			Msg:  fmt.Sprintf("unknown target: %s; one of: %s", id, registeredIDs()),
 		}
 	}
 	return a.ID(), nil

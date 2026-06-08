@@ -618,6 +618,79 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 	}
 }
 
+// TestRunHydrate_ScopeNotice asserts the project-scope advisory line is
+// emitted to stderr when neither --global nor --output is set, and is
+// suppressed by --global, --output, and --no-warnings. Drives the engine
+// path with a stubbed hydrateRunFn so the notice — printed before the run —
+// is observable regardless of downstream wiring. --target short-circuits
+// autodetect so no workspace signal needs seeding.
+func TestRunHydrate_ScopeNotice(t *testing.T) {
+	const note = "using project scope"
+
+	setup := func(t *testing.T) {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{
+			URL: mock.server.URL,
+			PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
+		})
+		swapHydrateHTTPClientForTest(t, mock.server.Client())
+		prev := hydrateRunFn
+		hydrateRunFn = func(_ context.Context, _ hydrate.Opts) (hydrate.Result, error) {
+			return hydrate.Result{}, nil
+		}
+		t.Cleanup(func() { hydrateRunFn = prev })
+	}
+
+	t.Run("default project scope emits notice", func(t *testing.T) {
+		setup(t)
+		_, stderr, code, err := executeHydrateEngine(t, "demo", "--target", "claude-code")
+		if err != nil {
+			t.Fatalf("hydrate engine: %v", err)
+		}
+		if code != exit.OK {
+			t.Errorf("code = %d; want 0", code)
+		}
+		if !strings.Contains(stderr, note) {
+			t.Errorf("stderr missing project-scope notice; got %q", stderr)
+		}
+	})
+
+	t.Run("--global suppresses notice", func(t *testing.T) {
+		setup(t)
+		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--global")
+		if err != nil {
+			t.Fatalf("hydrate engine: %v", err)
+		}
+		if strings.Contains(stderr, note) {
+			t.Errorf("stderr leaked project-scope notice under --global: %q", stderr)
+		}
+	})
+
+	t.Run("--output suppresses notice", func(t *testing.T) {
+		setup(t)
+		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--output", t.TempDir())
+		if err != nil {
+			t.Fatalf("hydrate engine: %v", err)
+		}
+		if strings.Contains(stderr, note) {
+			t.Errorf("stderr leaked project-scope notice under --output: %q", stderr)
+		}
+	})
+
+	t.Run("--no-warnings suppresses notice", func(t *testing.T) {
+		setup(t)
+		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--no-warnings")
+		if err != nil {
+			t.Fatalf("hydrate engine: %v", err)
+		}
+		if strings.Contains(stderr, note) {
+			t.Errorf("stderr leaked project-scope notice under --no-warnings: %q", stderr)
+		}
+	})
+}
+
 // TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive asserts the
 // scope-flag conflict surfaces as exit 1 BEFORE any HTTP call.
 func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
@@ -686,13 +759,13 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 		"--target", "clade-code",
 		"demo", "--no-warnings")
 	if err == nil {
-		t.Fatal("expected unknown-platform error")
+		t.Fatal("expected unknown-target error")
 	}
 	if code != exit.General {
 		t.Errorf("code = %d; want 1", code)
 	}
-	if !strings.Contains(err.Error(), "unknown platform") {
-		t.Errorf("err missing 'unknown platform': %q", err.Error())
+	if !strings.Contains(err.Error(), "unknown target") {
+		t.Errorf("err missing 'unknown target': %q", err.Error())
 	}
 }
 
@@ -763,7 +836,7 @@ func TestHydrateSummary(t *testing.T) {
 		},
 		ProjectedByKind: map[string]int{"commands": 12, "agents": 8, "skills": 4},
 	})
-	if !strings.Contains(got, "Hydrated demo for claude-code") {
+	if !strings.Contains(got, `Hydrated "demo" environment for claude-code`) {
 		t.Errorf("summary missing header; got %q", got)
 	}
 	for _, want := range []string{

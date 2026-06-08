@@ -40,7 +40,7 @@ func withCleanHome(t *testing.T) {
 // TestAutodetect_Zero_ExitsOne_Stderr seeds an empty TempDir — no
 // adapter signal anywhere — and asserts:
 //   - returned error is *exit.CodedError with Code=General (1).
-//   - stderr is empty (no "Detected platform" line emitted).
+//   - stderr is empty (no "Detected target" line emitted).
 //   - error message names the closed-set ids the user can pass via
 //     --target.
 func TestAutodetect_Zero_ExitsOne_Stderr(t *testing.T) {
@@ -63,8 +63,8 @@ func TestAutodetect_Zero_ExitsOne_Stderr(t *testing.T) {
 	if ce.Code != exit.General {
 		t.Errorf("CodedError.Code = %d; want General (1)", ce.Code)
 	}
-	if !strings.Contains(ce.Msg, "no platform detected") {
-		t.Errorf("error message missing 'no platform detected': %q", ce.Msg)
+	if !strings.Contains(ce.Msg, "no agent target detected") {
+		t.Errorf("error message missing 'no agent target detected': %q", ce.Msg)
 	}
 	if !strings.Contains(ce.Msg, "--target") {
 		t.Errorf("error message missing '--target' prompt: %q", ce.Msg)
@@ -79,7 +79,7 @@ func TestAutodetect_Zero_ExitsOne_Stderr(t *testing.T) {
 //
 // Asserts:
 //   - returned id == "claude-code" (canonical id from claudecode.canonicalID).
-//   - stderr contains "Detected platform: claude-code\n" (ADAPT-02).
+//   - stderr contains "Detected target: claude-code\n" (ADAPT-02).
 //   - returned error is nil.
 func TestAutodetect_One_EmitsDetectedLine(t *testing.T) {
 	withCleanHome(t)
@@ -98,8 +98,8 @@ func TestAutodetect_One_EmitsDetectedLine(t *testing.T) {
 	if id != "claude-code" {
 		t.Errorf("Autodetect returned id=%q; want claude-code", id)
 	}
-	if !strings.Contains(stderr.String(), "Detected platform: claude-code") {
-		t.Errorf("stderr missing 'Detected platform: claude-code': %q", stderr.String())
+	if !strings.Contains(stderr.String(), "Detected target: claude-code") {
+		t.Errorf("stderr missing 'Detected target: claude-code': %q", stderr.String())
 	}
 }
 
@@ -110,7 +110,7 @@ func TestAutodetect_One_EmitsDetectedLine(t *testing.T) {
 //   - returned error is *exit.CodedError with Code=General.
 //   - error message lists both ids (sorted: claude-code, codex).
 //   - error message prompts user to pass --target.
-//   - no "Detected platform" line on stderr.
+//   - no "Detected target" line on stderr.
 func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 	withCleanHome(t)
 	root := t.TempDir()
@@ -136,8 +136,8 @@ func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 	if ce.Code != exit.General {
 		t.Errorf("CodedError.Code = %d; want General (1)", ce.Code)
 	}
-	if !strings.Contains(ce.Msg, "multiple platforms detected") {
-		t.Errorf("error message missing 'multiple platforms detected': %q", ce.Msg)
+	if !strings.Contains(ce.Msg, "multiple agent targets detected") {
+		t.Errorf("error message missing 'multiple agent targets detected': %q", ce.Msg)
 	}
 	if !strings.Contains(ce.Msg, "claude-code") {
 		t.Errorf("error message missing 'claude-code': %q", ce.Msg)
