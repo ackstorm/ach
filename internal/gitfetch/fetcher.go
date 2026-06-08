@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package git
+package gitfetch
 
 import (
 	"archive/tar"
@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // AuthScheme selects how the upstream credential is conveyed in the git
@@ -93,7 +93,7 @@ type Spec struct {
 
 	// MaxCloneBytes caps the on-disk size of the clone. Zero defaults to
 	// gitDefaultMaxCloneBytes. Exceeded → ErrCloneTooLarge (wraps
-	// sources.ErrUpstreamInvalid so the reconciler maps to
+	// sourceserr.ErrUpstreamInvalid so the reconciler maps to
 	// ReasonUpstreamInvalid).
 	MaxCloneBytes int64
 }
@@ -148,13 +148,13 @@ func New(spec Spec) *Fetcher {
 func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 	spec := f.spec
 	if spec.URL == "" {
-		return nil, fmt.Errorf("git: spec.URL required: %w", sources.ErrUpstreamInvalid)
+		return nil, fmt.Errorf("git: spec.URL required: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	if spec.Ref == "" {
-		return nil, fmt.Errorf("git: spec.Ref required: %w", sources.ErrUpstreamInvalid)
+		return nil, fmt.Errorf("git: spec.Ref required: %w", sourceserr.ErrUpstreamInvalid)
 	}
 	if !sha40Re.MatchString(spec.SHA) {
-		return nil, fmt.Errorf("git: spec.SHA %q not 40-hex: %w", spec.SHA, sources.ErrUpstreamInvalid)
+		return nil, fmt.Errorf("git: spec.SHA %q not 40-hex: %w", spec.SHA, sourceserr.ErrUpstreamInvalid)
 	}
 	maxBytes := spec.MaxCloneBytes
 	if maxBytes <= 0 {
@@ -230,7 +230,7 @@ func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
 	if err != nil {
 		cleanupOnErr()
 		if errors.Is(err, ErrCloneTooLarge) {
-			return nil, fmt.Errorf("git: %w (cap %d): %w", ErrCloneTooLarge, maxBytes, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("git: %w (cap %d): %w", ErrCloneTooLarge, maxBytes, sourceserr.ErrUpstreamInvalid)
 		}
 		return nil, fmt.Errorf("git: walk clone dir: %w", err)
 	}
@@ -342,18 +342,18 @@ func ClassifyError(err error) error {
 	case strings.Contains(msg, "Authentication failed"),
 		strings.Contains(msg, "could not read Username"),
 		strings.Contains(msg, "remote: Invalid username or password"):
-		return fmt.Errorf("git: %w: %v", sources.ErrUnauthorized, err)
+		return fmt.Errorf("git: %w: %v", sourceserr.ErrUnauthorized, err)
 	case strings.Contains(msg, "Repository not found"),
 		strings.Contains(msg, "does not appear to be a git repository"):
-		return fmt.Errorf("git: %w: %v", sources.ErrNotFound, err)
+		return fmt.Errorf("git: %w: %v", sourceserr.ErrNotFound, err)
 	case strings.Contains(msg, "could not resolve host"),
 		strings.Contains(msg, "Connection timed out"),
 		strings.Contains(msg, "Connection refused"):
-		return fmt.Errorf("git: %w: %v", sources.ErrUnreachable, err)
+		return fmt.Errorf("git: %w: %v", sourceserr.ErrUnreachable, err)
 	case strings.Contains(msg, "context deadline exceeded"):
-		return fmt.Errorf("git: %w: %v", sources.ErrUnreachable, err)
+		return fmt.Errorf("git: %w: %v", sourceserr.ErrUnreachable, err)
 	default:
-		return fmt.Errorf("git: %w: %v", sources.ErrUpstreamInvalid, err)
+		return fmt.Errorf("git: %w: %v", sourceserr.ErrUpstreamInvalid, err)
 	}
 }
 
@@ -380,7 +380,7 @@ func tarSubtree(root, subtree string) ([]byte, error) {
 		// transient Unreachable (F1).
 		clean := filepath.Clean(subtree)
 		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
-			return nil, fmt.Errorf("subtree %q escapes root: %w", subtree, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("subtree %q escapes root: %w", subtree, sourceserr.ErrUpstreamInvalid)
 		}
 		// Resolve every component (following symlinks) and require the result to
 		// stay inside the clone — defeats `evil -> /etc` at an intermediate or
@@ -391,15 +391,15 @@ func tarSubtree(root, subtree string) ([]byte, error) {
 		}
 		realStart, err := filepath.EvalSymlinks(filepath.Join(root, clean))
 		if err != nil {
-			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sourceserr.ErrUpstreamInvalid)
 		}
 		if realStart != realRoot && !strings.HasPrefix(realStart, realRoot+string(os.PathSeparator)) {
-			return nil, fmt.Errorf("subtree %q escapes clone root: %w", subtree, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("subtree %q escapes clone root: %w", subtree, sourceserr.ErrUpstreamInvalid)
 		}
 		start = realStart
 		info, err := os.Stat(realStart) // safe: realStart is contained within realRoot
 		if err != nil {
-			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("subtree %q: %v: %w", subtree, err, sourceserr.ErrUpstreamInvalid)
 		}
 		switch {
 		case info.Mode().IsRegular():
@@ -407,7 +407,7 @@ func tarSubtree(root, subtree string) ([]byte, error) {
 			// scope=object) returns that file's RAW bytes — no tar wrapper (F1).
 			return os.ReadFile(realStart) //nolint:gosec // bounded: clone size-capped by MaxCloneBytes
 		case !info.IsDir():
-			return nil, fmt.Errorf("subtree %q: not a regular file or directory: %w", subtree, sources.ErrUpstreamInvalid)
+			return nil, fmt.Errorf("subtree %q: not a regular file or directory: %w", subtree, sourceserr.ErrUpstreamInvalid)
 		}
 		relStrip = start
 	}

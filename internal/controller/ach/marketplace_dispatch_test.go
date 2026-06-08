@@ -12,7 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
-	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
+	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 )
 
 // defaultRefMain is the default git ref assumed when a marketplace entry

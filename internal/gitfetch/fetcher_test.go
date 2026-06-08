@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package git
+package gitfetch
 
 import (
 	"archive/tar"
@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // TestFetcher_FetchClonesAndTars verifies the happy path:
@@ -67,7 +67,7 @@ func TestFetcher_Fetch_InvalidSHA(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected err on short SHA")
 	}
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
 	}
 }
@@ -91,9 +91,9 @@ func TestFetcher_Fetch_UnreachableRemote(t *testing.T) {
 	// Don't assert the exact sentinel — git's stderr on connection
 	// refused is host-dependent. Confirm it wraps one of the expected
 	// upstream errors (Unreachable / NotFound / UpstreamInvalid).
-	if !errors.Is(err, sources.ErrUnreachable) &&
-		!errors.Is(err, sources.ErrNotFound) &&
-		!errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUnreachable) &&
+		!errors.Is(err, sourceserr.ErrNotFound) &&
+		!errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err should wrap one of the expected sentinels; got %v", err)
 	}
 }
@@ -192,7 +192,7 @@ func TestFetcher_Fetch_SubtreeSymlinkRejected(t *testing.T) {
 		CacheRoot: t.TempDir(),
 	})
 	_, err := f.Fetch(context.Background(), Request{})
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want ErrUpstreamInvalid (symlink subtree)", err)
 	}
 }
@@ -215,7 +215,7 @@ func TestFetcher_Fetch_SubtreeIntermediateSymlinkRejected(t *testing.T) {
 		CacheRoot: t.TempDir(),
 	})
 	_, err := f.Fetch(context.Background(), Request{})
-	if !errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want ErrUpstreamInvalid (intermediate symlink escape)", err)
 	}
 }
@@ -459,7 +459,7 @@ func TestLsRemote_ParsesSHA(t *testing.T) {
 }
 
 // TestLsRemote_BogusRefIsNotFound asserts an unknown ref classifies via
-// sources.ErrNotFound (matches the REST path's 404 semantics).
+// sourceserr.ErrNotFound (matches the REST path's 404 semantics).
 func TestLsRemote_BogusRefIsNotFound(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not on PATH")
@@ -470,8 +470,8 @@ func TestLsRemote_BogusRefIsNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown ref")
 	}
-	if !errors.Is(err, sources.ErrNotFound) &&
-		!errors.Is(err, sources.ErrUpstreamInvalid) {
+	if !errors.Is(err, sourceserr.ErrNotFound) &&
+		!errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("expected ErrNotFound or ErrUpstreamInvalid; got %v", err)
 	}
 }
@@ -603,10 +603,10 @@ func TestClassifyError_Exported(t *testing.T) {
 		stderr string
 		want   error
 	}{
-		{"remote: Invalid username or password", sources.ErrUnauthorized},
-		{"Repository not found", sources.ErrNotFound},
-		{"could not resolve host", sources.ErrUnreachable},
-		{"some unrecognized git failure", sources.ErrUpstreamInvalid},
+		{"remote: Invalid username or password", sourceserr.ErrUnauthorized},
+		{"Repository not found", sourceserr.ErrNotFound},
+		{"could not resolve host", sourceserr.ErrUnreachable},
+		{"some unrecognized git failure", sourceserr.ErrUpstreamInvalid},
 	}
 	for _, tc := range cases {
 		tc := tc

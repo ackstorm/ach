@@ -464,7 +464,7 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	entry ClaudeCodeMarketplacePlugin,
 	secret *corev1.Secret,
 ) (string, error) {
-	// ─── 1+2: dispatch + fetch via internal/sources/git ───
+	// ─── 1+2: dispatch + fetch via internal/gitfetch ───
 	body, upstreamRev, err := dispatchMarketplacePlugin(ctx, mp, entry, secret, r.CacheRoot)
 	if err != nil {
 		return "", err

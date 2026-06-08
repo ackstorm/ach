@@ -42,7 +42,7 @@ func BitbucketCloneURL(workspace, repo string) string {
 //     url.Parse populates Host instead of treating the whole string as a path.
 //   - Non-https schemes (http://, ssh://, git://, file://) and empty hosts
 //     are rejected with ErrUpstreamInvalid. The operator only ever clones
-//     over https — the internal/sources/git protocol pins block the rest
+//     over https — the internal/gitfetch protocol pins block the rest
 //     anyway; rejecting here yields a clear config error instead of an
 //     opaque downstream git failure.
 //   - The host is lowercased; the path case is preserved (git paths are

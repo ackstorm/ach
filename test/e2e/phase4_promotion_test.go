@@ -169,7 +169,7 @@ func testSC11cMarketplaceInternalSchema(t *testing.T) {
 	t.Helper()
 
 	// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`). Stage-2
-	// dispatches the per-entry fetch via internal/sources/git, which
+	// dispatches the per-entry fetch via internal/gitfetch, which
 	// exec's the system `git` binary. The operator runtime image now
 	// ships git (Dockerfile: alpine + `apk add git`), so the former
 	// git-gap is closed; the gate now only scopes the

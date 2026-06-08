@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package git is the generic git-remote fetcher (Hub §10.1 + TODO §5).
+// Package gitfetch is the generic git-remote fetcher (Hub §10.1 + TODO §5).
 // It is the INNER-fetch counterpart to the six per-source-type
 // subpackages (github/gitlab/bitbucket/s3/gcs/http) that handle the
 // OUTER fetch of a marketplace catalog file.
@@ -23,5 +23,5 @@
 // This package is NOT registered with internal/sources/registry — the
 // OUTER fetch dispatcher in registry.For is keyed by CRD-discriminator
 // strings and stays unchanged. The PluginMarketplace reconciler calls
-// git.Fetch directly from materializeMarketplacePlugin (Stage-2).
-package git
+// gitfetch.Fetch directly from materializeMarketplacePlugin (Stage-2).
+package gitfetch

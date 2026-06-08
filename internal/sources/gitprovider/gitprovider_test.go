@@ -5,7 +5,7 @@ package gitprovider
 import (
 	"testing"
 
-	gitsrc "github.com/ackstorm/ach/internal/sources/git"
+	gitsrc "github.com/ackstorm/ach/internal/gitfetch"
 )
 
 func TestSchemeForProvider(t *testing.T) {

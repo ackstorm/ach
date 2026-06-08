@@ -78,7 +78,7 @@ func extractMarketplaceJSON(r io.Reader) ([]byte, error) {
 		}
 		// Match by suffix to be agnostic of the GitHub-style
 		// `<repo>-<shortsha>/` wrapper prefix. The git-protocol
-		// fetcher (internal/sources/git/fetcher.go: tarSubtree)
+		// fetcher (internal/gitfetch/fetcher.go: tarSubtree)
 		// strips the root prefix from entry names, so the tarball
 		// it produces lists the file as `.claude-plugin/marketplace.json`
 		// (no leading `/`). Accept that bare form alongside the

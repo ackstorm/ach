@@ -38,8 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 	"github.com/ackstorm/ach/internal/sources"
-	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
 	"github.com/ackstorm/ach/internal/sources/registry"
 )
 

@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package gitprovider holds the shared git-transport flow used by the
-// github / gitlab / bitbucket source fetchers. It lives in its own leaf
-// package (not the parent internal/sources) because it depends on
-// internal/sources/git, which itself imports internal/sources — putting
-// FetchViaProvider in the parent would create an import cycle.
+// github / gitlab / bitbucket source fetchers. It composes internal/sources
+// (for FetchResult) and internal/gitfetch (for the git clone engine).
 package gitprovider
 
 import (
 	"context"
 	"fmt"
 
+	gitsrc "github.com/ackstorm/ach/internal/gitfetch"
 	"github.com/ackstorm/ach/internal/sources"
-	gitsrc "github.com/ackstorm/ach/internal/sources/git"
 )
 
 // schemeForProvider maps a git provider literal to the HTTP auth scheme

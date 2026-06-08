@@ -8,7 +8,7 @@
 // internal/sources/gitprovider.FetchViaProvider.
 //
 // The token (when present) reaches git via http.extraHeader; never URL.
-// See internal/sources/git for the engine.
+// See internal/gitfetch for the engine.
 
 package github
 

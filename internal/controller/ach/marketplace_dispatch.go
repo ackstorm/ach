@@ -4,12 +4,12 @@
 // Claude Code marketplace real schema defines four plugin-source Kinds
 // (git-subdir / url / github / local-path), none of which dispatch
 // through internal/sources/registry.For. All four resolve to a
-// git-remote clone via internal/sources/git.
+// git-remote clone via internal/gitfetch.
 //
 // The local-path Kind is special: it points at a subdirectory of the
 // MARKETPLACE's OWN repo. We resolve it by reading the marketplace
 // CR's spec.<type>.repo/url, building a synthetic git-subdir Spec, and
-// calling the same git.Fetcher used by the other three Kinds. This is
+// calling the same gitfetch.Fetcher used by the other three Kinds. This is
 // why this function takes the parent PluginMarketplace pointer.
 
 package ach
@@ -24,8 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	sourcesgit "github.com/ackstorm/ach/internal/gitfetch"
 	"github.com/ackstorm/ach/internal/sources"
-	sourcesgit "github.com/ackstorm/ach/internal/sources/git"
 )
 
 // Kind constants for ClaudeCodeMarketplaceSource. The wire-format
@@ -44,7 +44,7 @@ const (
 var errUnsupportedPluginSource = errors.New("unsupported plugin source")
 
 // gitFetcher is the package-level seam tests inject to bypass the live
-// git binary. nil → real git.Fetcher.New is used.
+// git binary. nil → real gitfetch.Fetcher.New is used.
 type gitFetcher interface {
 	Fetch(ctx context.Context, req sourcesgit.Request) (*sourcesgit.Result, error)
 }
@@ -55,8 +55,8 @@ var newGitFetcherFn = func(spec sourcesgit.Spec) gitFetcher {
 }
 
 // newResolveHeadSHAFn resolves ref→sha for sha-less marketplace entries
-// before handing the Spec to git.Fetcher (the Fetcher's 40-hex contract
-// requires a pinned SHA). Delegates to git.LsRemote which already
+// before handing the Spec to gitfetch.Fetcher (the Fetcher's 40-hex contract
+// requires a pinned SHA). Delegates to gitfetch.LsRemote which already
 // implements namespace-scoped ref disambiguation
 // (refs/heads/<ref>+refs/tags/<ref> with branch-preferred resolution) —
 // critical because Stage-2 fetched the wrong tree on real repos where
@@ -76,7 +76,7 @@ var newResolveHeadSHAFn = func(ctx context.Context, url, ref, token string, sche
 // dispatchMarketplacePlugin runs the per-entry fetch and returns a
 // streaming io.ReadCloser + the UpstreamRev (the resolved SHA).
 //
-//   - git-subdir / url / github / local-path: build a git.Spec via
+//   - git-subdir / url / github / local-path: build a gitfetch.Spec via
 //     buildGitSpecForEntry. If Spec.SHA is empty, pre-resolve via
 //     newResolveHeadSHAFn (git ls-remote semantics) so the Fetcher's
 //     40-hex contract is satisfied. Then Fetch + return the streaming
@@ -121,7 +121,7 @@ func dispatchMarketplacePlugin(
 	return res.Body, res.UpstreamRev, nil
 }
 
-// buildGitSpecForEntry maps a parsed entry into a git.Spec. Pulls the
+// buildGitSpecForEntry maps a parsed entry into a gitfetch.Spec. Pulls the
 // per-entry token from the marketplace's auth Secret when present.
 func buildGitSpecForEntry(
 	mp *achv1alpha1.PluginMarketplace,

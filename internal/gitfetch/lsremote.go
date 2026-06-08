@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package git
+package gitfetch
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ackstorm/ach/internal/sources"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
 // lsRemoteTimeout bounds an individual ls-remote subprocess. The
@@ -83,7 +83,7 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 	trimmed := strings.TrimSpace(string(out))
 	if trimmed == "" {
 		return "", fmt.Errorf("ls-remote %s %s: empty output: %w",
-			url, ref, sources.ErrNotFound)
+			url, ref, sourceserr.ErrNotFound)
 	}
 	// Prefer the branch hit when both branch and tag with the same
 	// name exist (rare in practice but legal in git). Two-line scan
@@ -93,7 +93,7 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 		line = strings.TrimSpace(line)
 		if len(line) < 42 || line[40] != '\t' {
 			return "", fmt.Errorf("ls-remote %s %s: malformed line %q: %w",
-				url, ref, line, sources.ErrUpstreamInvalid)
+				url, ref, line, sourceserr.ErrUpstreamInvalid)
 		}
 		sha := line[:40]
 		refPath := line[41:]
@@ -116,5 +116,5 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 		return tagSHA, nil
 	}
 	return "", fmt.Errorf("ls-remote %s %s: no branch or tag match: %w",
-		url, ref, sources.ErrNotFound)
+		url, ref, sourceserr.ErrNotFound)
 }
