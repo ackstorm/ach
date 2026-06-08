@@ -238,3 +238,72 @@ func TestDeleteToken(t *testing.T) {
 		t.Errorf("DeleteToken absent: want no error, got %v", err)
 	}
 }
+
+// TestFileRecMergeMetaRoundTrip verifies that FileRec.Merge and FileRec.Keys
+// persist through a SaveInstalled/LoadInstalled round-trip.
+func TestFileRecMergeMetaRoundTrip(t *testing.T) {
+	setupXDG(t)
+
+	in := &store.InstalledFile{
+		Version: 1,
+		Installed: []store.InstalledEntry{{
+			Ref:    "demo@repo",
+			Repo:   "repo",
+			Name:   "demo",
+			Kind:   "plugin",
+			Target: "claude-code",
+			Files: []store.FileRec{
+				{RelPath: ".claude/settings.json", Hash: "xxh3:a", Merge: "deep", Keys: []string{"mcpServers.demo"}},
+				{RelPath: "CLAUDE.md", Hash: "xxh3:b", Merge: "composite", Keys: []string{"demo"}},
+				{RelPath: ".claude/agents/x.md", Hash: "xxh3:c"}, // replace (no merge meta)
+			},
+			InstalledAt: "2026-06-08T00:00:00Z",
+		}},
+	}
+	if err := store.SaveInstalled(in); err != nil {
+		t.Fatalf("SaveInstalled: %v", err)
+	}
+	out, err := store.LoadInstalled()
+	if err != nil {
+		t.Fatalf("LoadInstalled: %v", err)
+	}
+	if len(out.Installed) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(out.Installed))
+	}
+	files := out.Installed[0].Files
+	if len(files) != 3 {
+		t.Fatalf("want 3 files, got %d", len(files))
+	}
+	if files[0].Merge != "deep" || len(files[0].Keys) != 1 || files[0].Keys[0] != "mcpServers.demo" {
+		t.Errorf("deep FileRec round-trip lost meta: %+v", files[0])
+	}
+	if files[1].Merge != "composite" || len(files[1].Keys) != 1 || files[1].Keys[0] != "demo" {
+		t.Errorf("composite FileRec round-trip lost meta: %+v", files[1])
+	}
+	if files[2].Merge != "" || len(files[2].Keys) != 0 {
+		t.Errorf("replace FileRec should carry no merge meta: %+v", files[2])
+	}
+}
+
+// TestFileRecLegacyLoadsAsReplace verifies a pre-existing installed.json
+// record (no merge/keys fields) unmarshals as Merge=="" (replace), so older
+// state remains back-compatible without migration.
+func TestFileRecLegacyLoadsAsReplace(t *testing.T) {
+	xdg := setupXDG(t)
+	legacy := `{"version":1,"installed":[{"ref":"old@repo","repo":"repo","name":"old","kind":"plugin","target":"claude-code","files":[{"relPath":"a.txt","hash":"xxh3:z"}],"installedAt":"2026-01-01T00:00:00Z"}]}`
+	path := filepath.Join(xdg, "ach", "local", "installed.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	out, err := store.LoadInstalled()
+	if err != nil {
+		t.Fatalf("LoadInstalled: %v", err)
+	}
+	f := out.Installed[0].Files[0]
+	if f.Merge != "" || len(f.Keys) != 0 {
+		t.Errorf("legacy FileRec should load as replace: %+v", f)
+	}
+}

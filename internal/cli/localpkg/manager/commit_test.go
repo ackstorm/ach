@@ -145,9 +145,12 @@ func TestCommit_MergeDeep(t *testing.T) {
 
 func TestCommit_MergeComposite(t *testing.T) {
 	root := t.TempDir()
-	block := []byte("<!-- ach:begin:myplugin -->\nsome content\n<!-- ach:end:myplugin -->\n")
+	// Commit receives RAW (unwrapped) content — Commit must wrap it in the
+	// per-id composite markers itself (Bug I-a: it previously passed raw
+	// content straight to WriteComposite, so no markers were written).
+	content := []byte("some content")
 	writes := []PlannedWrite{
-		{Path: "CLAUDE.md", Content: block, Merge: adapter.MergeComposite},
+		{Path: "CLAUDE.md", Content: content, Merge: adapter.MergeComposite, Keys: []string{"myplugin"}},
 	}
 
 	recs, err := Commit(root, false, "claude-code", "myplugin", writes)
@@ -169,10 +172,72 @@ func TestCommit_MergeComposite(t *testing.T) {
 	if !strings.Contains(string(finalBytes), "<!-- ach:end:myplugin -->") {
 		t.Errorf("end marker not found in CLAUDE.md: %s", finalBytes)
 	}
+	// The raw content must be inside the markers exactly once (no double-wrap).
+	if c := strings.Count(string(finalBytes), "<!-- ach:begin:myplugin -->"); c != 1 {
+		t.Errorf("begin marker count = %d; want 1 (no double-wrap): %s", c, finalBytes)
+	}
+	if !strings.Contains(string(finalBytes), "\nsome content\n") {
+		t.Errorf("raw content not wrapped verbatim: %s", finalBytes)
+	}
 
 	wantHash := hash.HashBytes(finalBytes)
 	if recs[0].Hash != wantHash {
 		t.Errorf("FileRec.Hash = %q; want %q", recs[0].Hash, wantHash)
+	}
+	// Merge metadata must be recorded for inverse-merge on uninstall.
+	if recs[0].Merge != "composite" {
+		t.Errorf("FileRec.Merge = %q; want composite", recs[0].Merge)
+	}
+	if len(recs[0].Keys) != 1 || recs[0].Keys[0] != "myplugin" {
+		t.Errorf("FileRec.Keys = %v; want [myplugin]", recs[0].Keys)
+	}
+}
+
+// TestCommit_MergeComposite_CompositeIDFallback asserts that when the rule
+// carries no Keys, Commit falls back to the caller's compositeID for the
+// marker id and records it.
+func TestCommit_MergeComposite_CompositeIDFallback(t *testing.T) {
+	root := t.TempDir()
+	writes := []PlannedWrite{
+		{Path: "CLAUDE.md", Content: []byte("body"), Merge: adapter.MergeComposite},
+	}
+	recs, err := Commit(root, false, "claude-code", "fallback-id", writes)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	finalBytes, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	if !strings.Contains(string(finalBytes), "<!-- ach:begin:fallback-id -->") {
+		t.Errorf("fallback compositeID marker not found: %s", finalBytes)
+	}
+	if len(recs[0].Keys) != 1 || recs[0].Keys[0] != "fallback-id" {
+		t.Errorf("FileRec.Keys = %v; want [fallback-id]", recs[0].Keys)
+	}
+}
+
+// TestCommit_MergeDeep_RecordsMergeMeta asserts the deep case records the
+// contributed dotted keys for inverse-merge.
+func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
+	root := t.TempDir()
+	writes := []PlannedWrite{
+		{
+			Path:    ".claude/settings.json",
+			Content: []byte(`{"mcpServers":{"demo":{}}}`),
+			Merge:   adapter.MergeDeep,
+			Keys:    []string{"mcpServers.demo"},
+		},
+	}
+	recs, err := Commit(root, false, "claude-code", "demo", writes)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if recs[0].Merge != "deep" {
+		t.Errorf("FileRec.Merge = %q; want deep", recs[0].Merge)
+	}
+	if len(recs[0].Keys) != 1 || recs[0].Keys[0] != "mcpServers.demo" {
+		t.Errorf("FileRec.Keys = %v; want [mcpServers.demo]", recs[0].Keys)
 	}
 }
 
@@ -362,5 +427,199 @@ func TestUninstall_NonEmptyDirPreserved(t *testing.T) {
 	// userfile.txt must not be touched.
 	if _, err := os.Stat(userFile); err != nil {
 		t.Errorf("user file should still exist: %v", err)
+	}
+}
+
+// ---------- Uninstall: composite inverse-merge -------------------------------
+
+// TestUninstall_CompositeInverseMerge asserts uninstalling ONE plugin's
+// composite block strips only that block, preserving another plugin's block
+// AND interleaved user prose (Bug I-b: the old path deleted/skipped the whole
+// co-owned file).
+func TestUninstall_CompositeInverseMerge(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, "CLAUDE.md")
+	body := "# user heading\n" +
+		"<!-- ach:begin:plugA -->\nA content\n<!-- ach:end:plugA -->\n" +
+		"user middle line\n" +
+		"<!-- ach:begin:plugB -->\nB content\n<!-- ach:end:plugB -->\n"
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+
+	// Uninstall plugA only. Recorded hash is intentionally stale (the file was
+	// co-owned and has since changed) — composite must NOT hash-skip.
+	recs := []store.FileRec{
+		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"plugA"}},
+	}
+	skipped, err := Uninstall(root, recs)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("unexpected skipped: %v", skipped)
+	}
+
+	out, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read CLAUDE.md after uninstall: %v", err)
+	}
+	got := string(out)
+	if strings.Contains(got, "plugA") || strings.Contains(got, "A content") {
+		t.Errorf("plugA block not stripped: %q", got)
+	}
+	if !strings.Contains(got, "<!-- ach:begin:plugB -->") || !strings.Contains(got, "B content") {
+		t.Errorf("plugB block lost: %q", got)
+	}
+	if !strings.Contains(got, "# user heading") || !strings.Contains(got, "user middle line") {
+		t.Errorf("user prose lost: %q", got)
+	}
+}
+
+// TestUninstall_CompositeEmptiesFileDeletes asserts that stripping the LAST
+// block (leaving only whitespace) deletes the file and prunes the dir.
+func TestUninstall_CompositeEmptiesFileDeletes(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, "CLAUDE.md")
+	body := "<!-- ach:begin:only -->\ncontent\n<!-- ach:end:only -->\n"
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	recs := []store.FileRec{
+		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"only"}},
+	}
+	if _, err := Uninstall(root, recs); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if _, err := os.Stat(abs); !os.IsNotExist(err) {
+		t.Errorf("CLAUDE.md should be deleted when last block stripped")
+	}
+}
+
+// ---------- Uninstall: deep inverse-merge ------------------------------------
+
+// TestUninstall_DeepInverseMergeJSON asserts uninstalling one plugin's deep
+// keys removes only those keys, preserving a sibling server and user content.
+func TestUninstall_DeepInverseMergeJSON(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"mcpServers":{"srvA":{"command":"a"},"srvB":{"command":"b"}},"userKey":1}`
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	recs := []store.FileRec{
+		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers.srvA"}},
+	}
+	skipped, err := Uninstall(root, recs)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("unexpected skipped: %v", skipped)
+	}
+	out, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	mcp, _ := doc["mcpServers"].(map[string]any)
+	if mcp == nil {
+		t.Fatalf("mcpServers missing: %v", doc)
+	}
+	if _, ok := mcp["srvA"]; ok {
+		t.Errorf("srvA not removed: %v", mcp)
+	}
+	if _, ok := mcp["srvB"]; !ok {
+		t.Errorf("srvB lost: %v", mcp)
+	}
+	if doc["userKey"] == nil {
+		t.Errorf("userKey lost: %v", doc)
+	}
+}
+
+// TestUninstall_DeepInverseMergeTOML asserts the same inverse-merge for a
+// .codex/config.toml deep file.
+func TestUninstall_DeepInverseMergeTOML(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "[mcp_servers.srvA]\ncommand = \"a\"\n\n[mcp_servers.srvB]\ncommand = \"b\"\n"
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	recs := []store.FileRec{
+		{RelPath: ".codex/config.toml", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcp_servers.srvA"}},
+	}
+	if _, err := Uninstall(root, recs); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	out, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	got := string(out)
+	if strings.Contains(got, "srvA") {
+		t.Errorf("srvA not removed from TOML: %q", got)
+	}
+	if !strings.Contains(got, "srvB") {
+		t.Errorf("srvB lost from TOML: %q", got)
+	}
+}
+
+// TestUninstall_DeepEmptiesFileDeletes asserts removing the only key empties
+// the doc, deleting the file.
+func TestUninstall_DeepEmptiesFileDeletes(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"mcpServers":{"only":{}}}`
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Removing both the leaf and its now-empty parent empties the doc.
+	recs := []store.FileRec{
+		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers"}},
+	}
+	if _, err := Uninstall(root, recs); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if _, err := os.Stat(abs); !os.IsNotExist(err) {
+		t.Errorf("settings.json should be deleted when doc emptied")
+	}
+}
+
+// TestUninstall_DeepNonParseableSkips asserts a deep file the user broke into
+// invalid JSON is skipped, not corrupted/deleted.
+func TestUninstall_DeepNonParseableSkips(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(abs, []byte("{not valid json"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	recs := []store.FileRec{
+		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers.x"}},
+	}
+	skipped, err := Uninstall(root, recs)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if len(skipped) != 1 || skipped[0] != ".claude/settings.json" {
+		t.Errorf("skipped = %v; want [.claude/settings.json]", skipped)
+	}
+	if _, err := os.Stat(abs); err != nil {
+		t.Errorf("non-parseable file should be preserved: %v", err)
 	}
 }

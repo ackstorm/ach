@@ -43,9 +43,19 @@ type ReposFile struct {
 }
 
 // FileRec records one file that was installed as part of a package.
+//
+// Merge captures how the file was written so Uninstall can pick the matching
+// inverse operation: "deep" (JSON/TOML deep-merge → remove the contributed
+// dotted Keys), "composite" (marker-bounded block → strip the Keys[0] region),
+// or empty/"replace" (verbatim → hash-checked whole-file delete). An empty
+// Merge is the back-compatible default: pre-existing installed.json records
+// (which carried only RelPath+Hash) unmarshal as Merge=="" and are treated as
+// replace, so older state remains uninstallable without migration.
 type FileRec struct {
-	RelPath string `json:"relPath"`
-	Hash    string `json:"hash"`
+	RelPath string   `json:"relPath"`
+	Hash    string   `json:"hash"`
+	Merge   string   `json:"merge,omitempty"` // "deep"|"composite"; empty = replace (back-compat)
+	Keys    []string `json:"keys,omitempty"`  // deep: dotted keys removed on uninstall; composite: [markerID]
 }
 
 // InstalledEntry is one entry in installed.json describing a currently
