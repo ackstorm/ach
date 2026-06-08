@@ -144,6 +144,44 @@ greeting  ach        844      fresh*  2m   -
 The inventory reads the stored projection only — to force a re-sync use
 `ach admin refresh <kind> <name>`.
 
+## Local package manager (serverless — no Environment/CRD)
+
+For direct, personal use you don't need an Environment, the operator, or
+Postgres. `ach-cli repo`/`plugin`/`skill` register an external marketplace (or a
+direct plugin/skill source) and install straight into per-tool adapter dirs
+(`.claude/`, `.codex/`, `.gemini/`, `.opencode/`, `.pi/`). State lives in a local
+registry under `~/.config/ach/local/` (tokens in a separate `0600`
+`credentials.json`).
+
+```bash
+# Register a source — capabilities (plugin-marketplace / skill-marketplace /
+# direct plugin / direct skill) are auto-detected at add time.
+ach-cli repo add github:anthropics/skills --name skills          # skill-marketplace
+ach-cli repo add github:ackstorm/claude-plugins --name ackstorm  # plugin-marketplace
+ach-cli repo add git:https://git.example.com/x/y.git --name gl --token "$TOK" --auth oauth2
+ach-cli repo list                       # NAME · KIND · SOURCE · AUTH · PROVIDES
+
+# Install by <name@repo> into one or more --target adapters (repo suffix is
+# mandatory). --global writes to $HOME; default is the project (cwd).
+ach-cli plugin install feature-dev@ackstorm --target claude,opencode
+ach-cli skill  install pdf@skills --target claude --global
+ach-cli plugin list                     # installed items (from installed.json)
+ach-cli plugin update                   # re-resolve all (or <name@repo>…)
+ach-cli skill  uninstall pdf@skills     # inverse-merges co-owned files (settings.json / CLAUDE.md)
+```
+
+Notes:
+- `--target` values map to adapter ids (`claude`→claude-code, `codex`, `gemini`,
+  `opencode`). MCP/`AGENTS.md` contributions deep-/composite-merge into the
+  tool's native config and are inverse-merged on uninstall (other plugins' and
+  your own keys survive).
+- `--path` is the **skills-marketplace root hint** only (e.g. `skills` for an
+  `anthropics/skills`-style monorepo); v1 does not narrow a direct plugin/skill
+  that lives in a subdirectory.
+- This is the **local-first** path. `ach-cli env hydrate <name>` remains the
+  **governed** flow (CR-defined Environment, server-mediated, full conflict
+  policy).
+
 ## What the demo Environment explicitly does NOT do
 
 (The `demo` Environment now lives at `test/e2e/cluster/05-environment/demo.yaml`.)

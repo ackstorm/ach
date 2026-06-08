@@ -35,7 +35,8 @@ declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-env-keys/admin; hydrate/status/uninstall live under `env`) that drops the
+env-keys/admin; hydrate/status/uninstall live under `env`; plus the serverless
+local package manager `repo`/`plugin`/`skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
@@ -98,6 +99,11 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
 `logout`/`whoami`/`config`/`env`/`env-keys`/`admin` (workspace verbs
 `hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
+Plus the **serverless local package manager** — `repo` (register a GitHub/git
+marketplace or direct plugin/skill source), `plugin` and `skill`
+(`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs
+via `--target`, no Environment/CRD ceremony). `env` is the governed remote
+object; `repo`/`plugin`/`skill` are the local-first quick path.
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
