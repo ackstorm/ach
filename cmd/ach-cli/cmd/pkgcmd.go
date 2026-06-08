@@ -296,6 +296,21 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
+					// A 0-file projection means nothing matched this adapter's
+					// rules (e.g. a root-SKILL.md-only repo resolved via the
+					// plugin lens, or a plugin with nothing for this adapter).
+					// On INSTALL nothing was actually installed, so we warn and
+					// do NOT record an installed.json entry — there is nothing to
+					// track or later uninstall. (Contrast the UPDATE path, which
+					// keeps the record because the old files were already removed
+					// and the resolved SHA still needs tracking.)
+					if len(recs) == 0 {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+							"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
+							ref, targetID, targetID)
+						continue
+					}
+
 					entry := store.InstalledEntry{
 						Ref:         ref,
 						Repo:        repoName,
@@ -439,7 +454,10 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 // ---- update -----------------------------------------------------------------
 
 func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
-	var flagGlobal bool
+	var (
+		flagGlobal bool
+		flagDest   string
+	)
 	kindStr := string(kind)
 	c := &cobra.Command{
 		Use:   "update [<name@repo>...]",
@@ -451,8 +469,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			}
 
 			// Root for re-install; uninstall uses same root derived from stored files.
-			// For update we need a root — use $HOME when --global, else cwd.
-			root, err := resolveRoot(flagGlobal, "")
+			// For update we need a root — use $HOME when --global, --dest if set, else cwd.
+			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {
 				return err
 			}
@@ -571,6 +589,18 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
+					// A 0-file projection means nothing matched this adapter's
+					// rules. On UPDATE we still warn — but, unlike INSTALL, we
+					// KEEP the record below: the old files were already removed
+					// by the Uninstall above and the new resolved SHA still needs
+					// tracking, so the entry must be upserted (now with empty
+					// Files) to keep installed.json consistent with disk.
+					if len(recs) == 0 {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+							"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
+							ref, e.Target, e.Target)
+					}
+
 					newEntry := store.InstalledEntry{
 						Ref:         ref,
 						Repo:        repoName,
@@ -596,6 +626,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&flagGlobal, "global", false, "Update from $HOME root")
+	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
 	return c
 }
 

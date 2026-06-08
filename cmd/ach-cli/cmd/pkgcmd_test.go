@@ -538,6 +538,82 @@ func TestPluginCmd_Uninstall_MultiTarget(t *testing.T) {
 	})
 }
 
+// TestPkgUpdateCmd_DestFlag is the regression test for Bug D: the `update`
+// subcommand must register a `--dest` flag (so a package installed with --dest
+// can also be updated with the same root override). Mirrors install's flag.
+func TestPkgUpdateCmd_DestFlag(t *testing.T) {
+	for _, kind := range []pkgKind{kindPlugin, kindSkill} {
+		c := newPkgUpdateCmd(kind)
+		f := c.Flags().Lookup("dest")
+		if f == nil {
+			t.Fatalf("%s update: expected --dest flag to be registered", kind)
+		}
+		if f.DefValue != "" {
+			t.Errorf("%s update --dest: DefValue = %q; want empty", kind, f.DefValue)
+		}
+	}
+}
+
+// TestPluginCmd_Install_ZeroFiles is the regression test for Bug F: installing
+// a repo whose plugin projection yields 0 files (a root-SKILL.md-only repo,
+// which legitimately matches the plugin lens but projects nothing under the
+// plugin rules) must:
+//   - print a "0 files" warning to stderr,
+//   - NOT print a "✓" success line,
+//   - NOT record any entry in installed.json,
+//   - exit 0 (the install is a no-op warning, not a hard error).
+func TestPluginCmd_Install_ZeroFiles(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	// A root-SKILL.md-only repo matches the plugin lens (root SKILL.md is a
+	// valid plugin component per the Stage-2 gate) but the claudecode plugin
+	// rules project nothing from it → 0 files.
+	skillURL := makeDirectSkillRepo(t, "zskill")
+
+	seedRepo(t, store.RepoEntry{
+		Name:     "zfix",
+		Source:   "git:" + skillURL,
+		Kind:     "git",
+		CloneURL: skillURL,
+		GitRef:   "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+		AddedAt:  "2026-01-01T00:00:00Z",
+	})
+
+	destDir := t.TempDir()
+
+	var out, errBuf bytes.Buffer
+	cmd := newPluginCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"install", "zfix@zfix", "--target", "claude", "--dest", destDir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("plugin install (0-file): expected exit nil, got: %v (stderr: %s)", err, errBuf.String())
+	}
+
+	if !strings.Contains(errBuf.String(), "0 files") {
+		t.Errorf("expected '0 files' warning on stderr, got: %s", errBuf.String())
+	}
+	if strings.Contains(out.String(), "✓") {
+		t.Errorf("expected NO success line for 0-file install, got stdout: %s", out.String())
+	}
+
+	// installed.json must have NO entry for this ref.
+	installed, err := store.LoadInstalled()
+	if err != nil {
+		t.Fatalf("LoadInstalled: %v", err)
+	}
+	for _, e := range installed.Installed {
+		if e.Ref == "zfix@zfix" {
+			t.Errorf("Bug F regression: 0-file install recorded an entry: %+v", e)
+		}
+	}
+}
+
 // TestPluginCmd_List_RepoFlag is the regression test for Fix 2: `plugin list
 // --repo <name>` must not return "unknown flag: --repo" and must correctly
 // filter entries by repo.

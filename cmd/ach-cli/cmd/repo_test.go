@@ -4,14 +4,51 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
+	"github.com/ackstorm/ach/internal/sourceserr"
 )
+
+// TestCloneExitErr is the regression test for Bug E: cloneExitErr must classify
+// via the sourceserr sentinels directly and DEFAULT to exit.General — so that
+// unclassified logic errors (carrying no sentinel) get General(1), not the
+// conservative Network(6) that sourceserr.ReasonOf's default would yield.
+func TestCloneExitErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want exit.Code
+	}{
+		{"plain logic error → General", errors.New("plugin not found"), exit.General},
+		{"unreachable wrapped → Network", fmt.Errorf("fetch: %w", sourceserr.ErrUnreachable), exit.Network},
+		{"unauthorized wrapped → AuthN", fmt.Errorf("auth: %w", sourceserr.ErrUnauthorized), exit.AuthN},
+		{"unreachable direct → Network", sourceserr.ErrUnreachable, exit.Network},
+		{"unauthorized direct → AuthN", sourceserr.ErrUnauthorized, exit.AuthN},
+		// NotFound / UpstreamInvalid carry no AuthN/Network mapping here →
+		// they must fall through to General (logic-domain default).
+		{"not-found → General", fmt.Errorf("x: %w", sourceserr.ErrNotFound), exit.General},
+		{"upstream-invalid → General", fmt.Errorf("x: %w", sourceserr.ErrUpstreamInvalid), exit.General},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ce := cloneExitErr("test", tc.err)
+			if ce.Code != tc.want {
+				t.Errorf("cloneExitErr code = %d; want %d", ce.Code, tc.want)
+			}
+			if !errors.Is(ce, tc.err) {
+				t.Errorf("cloneExitErr should wrap the original error (errors.Is)")
+			}
+		})
+	}
+}
 
 // initFixtureRepo creates a local git repository with a .claude-plugin/marketplace.json
 // containing 2 plugins, commits it on branch main, and returns the directory path.

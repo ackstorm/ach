@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -396,13 +397,25 @@ func resolveAndDetect(
 	return sha, caps, skillsRoot, nil
 }
 
-// cloneExitErr maps a clone/fetch error to a CodedError using sourceserr.ReasonOf.
+// cloneExitErr maps an error to a CodedError by testing the sourceserr
+// sentinels directly via errors.Is, defaulting to exit.General.
+//
+// This wrapper is used both for genuine source-fetch failures (gitfetch wraps
+// the sourceserr sentinels) AND to wrap broad manager.Resolve errors from the
+// install/update paths. Those Resolve errors include pure LOGIC failures
+// (name mismatch, "plugin/skill not found", verify-fail, "no SKILL.md") that
+// carry no sentinel. We must NOT lean on sourceserr.ReasonOf here: its default
+// is the conservative "Unreachable" (correct for the fetch domain, where an
+// unclassified transport error is retried as transient) which would route such
+// logic errors to exit.Network(6). Defaulting to exit.General(1) keeps real
+// fetch errors correct (the sentinels still match identically to ReasonOf via
+// errors.Is) while sending unclassified logic errors to General.
 func cloneExitErr(action string, err error) *exit.CodedError {
 	var code exit.Code
-	switch sourceserr.ReasonOf(err) {
-	case "Unauthorized":
+	switch {
+	case errors.Is(err, sourceserr.ErrUnauthorized):
 		code = exit.AuthN
-	case "Unreachable":
+	case errors.Is(err, sourceserr.ErrUnreachable):
 		code = exit.Network
 	default:
 		code = exit.General
