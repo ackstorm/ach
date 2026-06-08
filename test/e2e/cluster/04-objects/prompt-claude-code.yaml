@@ -1,4 +1,4 @@
-# Prompt — pulls the leaked Claude Code system prompt from
+# Prompt — pulls a leaked Anthropic system prompt from
 # asgeirtj/system_prompts_leaks. Demonstrates a Prompt CR pointing at
 # a third-party repo (no GitHub PAT needed — public repo) and at a
 # nested file path.
@@ -6,6 +6,13 @@
 # The Content Service serves the file at
 # https://<hub>/content/prompt/claude-code-system-prompt with the
 # spec.contentType below as the response Content-Type.
+#
+# NOTE: third-party repo on a mutable `main` ref (v1alpha1 has no
+# immutable commit refs), so the path can rot when upstream reorganizes.
+# It did — the original Anthropic/claude-code.md was moved into
+# "Anthropic/Claude Code/" on 2026-06-03 — so this is repointed to a
+# stable-today sibling. The tests only need a fetchable markdown file;
+# the content is not asserted.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: Prompt
 metadata:
@@ -20,4 +27,4 @@ spec:
   github:
     repo: asgeirtj/system_prompts_leaks
     ref: main
-    path: Anthropic/claude-code.md
+    path: Anthropic/claude-opus-4.8.md

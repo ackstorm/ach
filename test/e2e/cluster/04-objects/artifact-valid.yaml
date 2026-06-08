@@ -19,4 +19,6 @@ spec:
   github:
     repo: asgeirtj/system_prompts_leaks
     ref: main
-    path: Anthropic/claude-code.md
+    # Repointed off Anthropic/claude-code.md (removed upstream 2026-06-03);
+    # mutable third-party main, content not asserted.
+    path: Anthropic/claude-opus-4.8.md
