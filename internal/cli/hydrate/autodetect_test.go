@@ -42,7 +42,7 @@ func withCleanHome(t *testing.T) {
 //   - returned error is *exit.CodedError with Code=General (1).
 //   - stderr is empty (no "Detected platform" line emitted).
 //   - error message names the closed-set ids the user can pass via
-//     --platform.
+//     --target.
 func TestAutodetect_Zero_ExitsOne_Stderr(t *testing.T) {
 	withCleanHome(t)
 	root := t.TempDir()
@@ -66,8 +66,8 @@ func TestAutodetect_Zero_ExitsOne_Stderr(t *testing.T) {
 	if !strings.Contains(ce.Msg, "no platform detected") {
 		t.Errorf("error message missing 'no platform detected': %q", ce.Msg)
 	}
-	if !strings.Contains(ce.Msg, "--platform") {
-		t.Errorf("error message missing '--platform' prompt: %q", ce.Msg)
+	if !strings.Contains(ce.Msg, "--target") {
+		t.Errorf("error message missing '--target' prompt: %q", ce.Msg)
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("stderr emitted on zero-match path: %q", stderr.String())
@@ -109,7 +109,7 @@ func TestAutodetect_One_EmitsDetectedLine(t *testing.T) {
 // Asserts:
 //   - returned error is *exit.CodedError with Code=General.
 //   - error message lists both ids (sorted: claude-code, codex).
-//   - error message prompts user to pass --platform.
+//   - error message prompts user to pass --target.
 //   - no "Detected platform" line on stderr.
 func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 	withCleanHome(t)
@@ -145,8 +145,8 @@ func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 	if !strings.Contains(ce.Msg, "codex") {
 		t.Errorf("error message missing 'codex': %q", ce.Msg)
 	}
-	if !strings.Contains(ce.Msg, "--platform") {
-		t.Errorf("error message missing '--platform' prompt: %q", ce.Msg)
+	if !strings.Contains(ce.Msg, "--target") {
+		t.Errorf("error message missing '--target' prompt: %q", ce.Msg)
 	}
 	// Deterministic order — claude-code precedes codex lexicographically.
 	idxClaude := strings.Index(ce.Msg, "claude-code")

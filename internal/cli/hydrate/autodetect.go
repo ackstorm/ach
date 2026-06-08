@@ -3,17 +3,17 @@
 // Platform autodetection — ADAPT-02 / spec §7.5 / D-06.
 //
 // When the cobra layer (07-W3-05 cmd/ach-cli/cmd/hydrate.go) sees no
-// `--platform` flag, it calls Autodetect against the workspace cwd (or
+// `--target` flag, it calls Autodetect against the workspace cwd (or
 // $HOME under `--global`) and uses the returned canonical id to wire
 // `Opts.Platform`. The three outcomes are exhaustive:
 //
 //   - Zero matches → *exit.CodedError{Code: General} with a "pass
-//     --platform" prompt naming the closed set.
+//     --target" prompt naming the closed set.
 //   - One match    → returns the canonical id AND emits a single
 //     "Detected platform: <id>" line to stderr (ADAPT-02).
 //   - Multi-match  → *exit.CodedError{Code: General} listing every
 //     matched id in deterministic (sort.Strings) order, plus a prompt
-//     to pass `--platform`. NO silent priority ordering — the user
+//     to pass `--target`. NO silent priority ordering — the user
 //     confronts the ambiguity per D-06.
 //
 // Iteration order for the decision: adapter.Iter() returns the
@@ -24,7 +24,7 @@
 // be a multi-match exit, not a silent pick.
 //
 // ResolvePlatform wraps adapter.Lookup with a typed CodedError on a
-// miss so the cobra layer's --platform handling routes through one
+// miss so the cobra layer's --target handling routes through one
 // helper instead of duplicating the "unknown platform" message.
 
 package hydrate
@@ -51,12 +51,12 @@ const closedSetIDs = "claude-code, codex, gemini-cli, opencode"
 //
 //   - Zero matches → ("", *exit.CodedError{Code: General}). The error
 //     message names the closed set so the user can re-invoke with the
-//     right `--platform` value.
+//     right `--target` value.
 //   - One match    → (id, nil). On success, emits "Detected platform:
 //     <id>" to stderr.
 //   - Multi-match  → ("", *exit.CodedError{Code: General}). The message
 //     lists every matched id in sort.Strings order (deterministic for
-//     tests) and prompts the user to pass `--platform`.
+//     tests) and prompts the user to pass `--target`.
 //
 // Detect errors from individual adapters are treated as "no match for
 // this adapter" — a single adapter's I/O fault should not block
@@ -85,7 +85,7 @@ func Autodetect(root string, stderr io.Writer) (string, error) {
 		return "", &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"no platform detected at %s; pass --platform <id> (one of: %s)",
+				"no platform detected at %s; pass --target <id> (one of: %s)",
 				root, closedSetIDs,
 			),
 		}
@@ -98,7 +98,7 @@ func Autodetect(root string, stderr io.Writer) (string, error) {
 		return "", &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"multiple platforms detected at %s: %s; pass --platform <id> to disambiguate",
+				"multiple platforms detected at %s: %s; pass --target <id> to disambiguate",
 				root, strings.Join(matched, ", "),
 			),
 		}
@@ -112,13 +112,13 @@ func Autodetect(root string, stderr io.Writer) (string, error) {
 // consistent with the autodetect path.
 //
 // The unknown-platform message names every registered canonical id (in
-// sort.Strings order) so a typo'd `--platform clade-code` surfaces the
+// sort.Strings order) so a typo'd `--target clade-code` surfaces the
 // closed set rather than just rejecting silently.
 func ResolvePlatform(id string) (string, error) {
 	if id == "" {
 		return "", &exit.CodedError{
 			Code: exit.General,
-			Msg:  "empty --platform value; pass one of: " + registeredIDs(),
+			Msg:  "empty --target value; pass one of: " + registeredIDs(),
 		}
 	}
 	a, ok := adapter.Lookup(id)

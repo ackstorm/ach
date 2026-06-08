@@ -25,7 +25,7 @@ import (
 
 // TestProjection_Pimono_Smoke is the D-37 hermetic pimono projection smoke.
 // It drives ONE staged plugin through the full dispatcher Render against the
-// registered pimono adapter (--platform pimono) and asserts, end-to-end:
+// registered pimono adapter (--target pimono) and asserts, end-to-end:
 //
 //	(1) commands/*.md projects verbatim to .pi/agent/prompts/, skills/* to
 //	    .pi/agent/skills/ (passthrough globs, native dests — SC2 routing);
