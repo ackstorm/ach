@@ -291,6 +291,19 @@ func WriteComposite(abs, id string, block []byte, mode os.FileMode) error {
 	return state.WriteAtomic(abs, merged, mode)
 }
 
+// CompositeBlock wraps content in the per-id composite markers
+// ("<!-- ach:begin:<id> -->\n<body>\n<!-- ach:end:<id> -->\n") that
+// WriteComposite and PluginMarkerRE insert/replace/match. Trailing newlines on
+// content are trimmed before wrapping so the block ends with exactly one
+// newline — deterministic for idempotent re-writes. This is the single
+// marker-wrapper shared by the hydrate composite path and the localpkg
+// installer, keeping both byte-identical with the inverse PluginMarkerRE regex.
+func CompositeBlock(id string, content []byte) []byte {
+	body := bytes.TrimRight(content, "\n")
+	return []byte("<!-- ach:begin:" + id + " -->\n" +
+		string(body) + "\n<!-- ach:end:" + id + " -->\n")
+}
+
 // PluginMarkerRE builds the per-plugin composite marker regex:
 // "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->" with an
 // optional trailing newline. The plugin id is regexp-escaped via

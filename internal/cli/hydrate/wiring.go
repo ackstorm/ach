@@ -46,7 +46,6 @@
 package hydrate
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1208,9 +1207,7 @@ func buildCompositeBlock(fw adapter.FileWrite) (id string, block []byte) {
 	if len(fw.Keys) > 0 {
 		id = fw.Keys[0]
 	}
-	body := bytes.TrimRight(fw.Content, "\n")
-	block = []byte("<!-- ach:begin:" + id + " -->\n" +
-		string(body) + "\n<!-- ach:end:" + id + " -->\n")
+	block = merge.CompositeBlock(id, fw.Content)
 	return id, block
 }
 

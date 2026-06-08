@@ -381,6 +381,32 @@ func TestWriteComposite_MultiplePluginsIsolated(t *testing.T) {
 
 // --- PluginMarkerRE --------------------------------------------------------
 
+// --- CompositeBlock --------------------------------------------------------
+
+// TestCompositeBlock_WrapsAndTrims asserts the wrapper emits the exact
+// marker-bounded shape and trims trailing newlines to a single one, so the
+// block is idempotent and matched by PluginMarkerRE for the same id.
+func TestCompositeBlock_WrapsAndTrims(t *testing.T) {
+	got := merge.CompositeBlock("my-plugin", []byte("hello world\n\n\n"))
+	want := "<!-- ach:begin:my-plugin -->\nhello world\n<!-- ach:end:my-plugin -->\n"
+	if string(got) != want {
+		t.Errorf("CompositeBlock = %q; want %q", got, want)
+	}
+	if !merge.PluginMarkerRE("my-plugin").Match(got) {
+		t.Errorf("PluginMarkerRE(my-plugin) did not match its own CompositeBlock %q", got)
+	}
+}
+
+// TestCompositeBlock_NoTrailingNewline asserts content without a trailing
+// newline still produces exactly one newline before the end marker.
+func TestCompositeBlock_NoTrailingNewline(t *testing.T) {
+	got := merge.CompositeBlock("p", []byte("body"))
+	want := "<!-- ach:begin:p -->\nbody\n<!-- ach:end:p -->\n"
+	if string(got) != want {
+		t.Errorf("CompositeBlock = %q; want %q", got, want)
+	}
+}
+
 func TestPluginMarkerRE_MatchesPerIDBlock(t *testing.T) {
 	id := "my-plugin"
 	block := "<!-- ach:begin:my-plugin -->\ncontent\n<!-- ach:end:my-plugin -->\n"
