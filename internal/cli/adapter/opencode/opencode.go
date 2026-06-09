@@ -271,7 +271,9 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // satisfying route.RuleProvider (the D-06 seam). Per D-18/D-19 the routed
 // (plural) kinds are:
 //
-//   - commands/**/*  → .opencode/commands/**/*  (MergeReplace, verbatim copy)
+//   - commands/**/*.md → .opencode/commands/**/*.md (MergeReplace, .md only:
+//     opencode commands are markdown; foreign-format commands/*.toml shipped for
+//     other tools must not leak into .opencode/commands/)
 //   - agents/**/*.md → .opencode/agents/**/*.md (MergeReplace, Transform:
 //     opencodeAgentTools — tools[]→{name:true}, output stays markdown)
 //   - skills/**/*    → .opencode/skills/**/*    (MergeReplace, verbatim copy)
@@ -293,7 +295,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // (ProjectionRules -> route.Project).
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
-		{FromGlob: "commands/**/*", ToGlob: ".opencode/commands/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*.md", ToGlob: ".opencode/commands/**/*.md", Merge: adapter.MergeReplace},
 		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
 		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},

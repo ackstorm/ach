@@ -371,10 +371,10 @@ func TestProjectionRules_Rows(t *testing.T) {
 
 	// The four file-owned kinds: MergeReplace, no Transform (FMT-03 cut, D-02).
 	fileKinds := map[string]string{
-		"rules/**/*":    ".claude/rules/**/*",
-		"commands/**/*": ".claude/commands/**/*",
-		"agents/**/*":   ".claude/agents/**/*",
-		"skills/**/*":   ".claude/skills/**/*",
+		"rules/**/*":       ".claude/rules/**/*",
+		"commands/**/*.md": ".claude/commands/**/*.md",
+		"agents/**/*":      ".claude/agents/**/*",
+		"skills/**/*":      ".claude/skills/**/*",
 	}
 	for from, wantTo := range fileKinds {
 		row, ok := byFrom[from]

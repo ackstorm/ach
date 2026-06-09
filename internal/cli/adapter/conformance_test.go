@@ -100,12 +100,12 @@ var conformanceTables = []adapterConformance{
 		mappingSection: "OPENPACKAGE-MAPPING.md §claude-code (drops = NONE at field level; FMT-03 CUT)",
 		rowCount:       6,
 		rules: map[string]wantRule{
-			"rules/**/*":    {to: ".claude/rules/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"commands/**/*": {to: ".claude/commands/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"agents/**/*":   {to: ".claude/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":   {to: ".claude/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"AGENTS.md":     {to: "CLAUDE.md", merge: adapter.MergeComposite, hasXform: false},
-			"mcp/**/*":      {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			"rules/**/*":       {to: ".claude/rules/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"commands/**/*.md": {to: ".claude/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
+			"agents/**/*":      {to: ".claude/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".claude/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"AGENTS.md":        {to: "CLAUDE.md", merge: adapter.MergeComposite, hasXform: false},
+			"mcp/**/*":         {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// claude routes rules/commands/agents/skills/AGENTS.md/mcp; only
 		// prompts/ + hooks/ have no rule → dropped.
@@ -146,10 +146,10 @@ var conformanceTables = []adapterConformance{
 		mappingSection: "OPENPACKAGE-MAPPING.md §opencode (FMT-04 tools-object, D-21 mcp rename)",
 		rowCount:       4,
 		rules: map[string]wantRule{
-			"commands/**/*":  {to: ".opencode/commands/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"agents/**/*.md": {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
-			"skills/**/*":    {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"mcp/**/*":       {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
+			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
+			"agents/**/*.md":   {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
+			"skills/**/*":      {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"mcp/**/*":         {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// opencode routes commands/agents/skills/mcp; rules/, prompts/,
 		// AGENTS.md, hooks/ have no rule → dropped.
