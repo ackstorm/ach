@@ -1046,3 +1046,41 @@ func TestResolvePlatformList(t *testing.T) {
 		})
 	}
 }
+
+// TestSummaryFromResultsCompact pins the multi-target summary shape the user
+// approved: ONE shared header (env + scope/key), one dense " · "-joined line per
+// target, and a SINGLE Tips footer (not repeated per target).
+func TestSummaryFromResultsCompact(t *testing.T) {
+	mk := func(platform string) hydrate.Result {
+		return hydrate.Result{
+			Environment:     "platform",
+			PlatformID:      platform,
+			FilesWritten:    62,
+			ContextSummary:  hydrate.ContextSummary{Plugins: 5},
+			ProjectedByKind: map[string]int{"agents": 18, "commands": 3, "skills": 16},
+		}
+	}
+	out := summaryFromResultsCompact(
+		[]hydrate.Result{mk("codex"), mk("opencode")},
+		summaryMeta{keyPrefix: keys.PrefixPk},
+	)
+
+	if n := strings.Count(out, "Tips"); n != 1 {
+		t.Errorf("Tips footer count = %d, want 1 (must not repeat per target)\n%s", n, out)
+	}
+	if n := strings.Count(out, "Hydrated"); n != 1 {
+		t.Errorf("header count = %d, want 1 shared header\n%s", n, out)
+	}
+	if !strings.Contains(out, `Hydrated "platform" (project scope, pk- key)`) {
+		t.Errorf("missing shared header line\n%s", out)
+	}
+	wantSeg := "5 plugins · 18 agents · 3 commands · 16 skills · 62 files"
+	for _, p := range []string{"codex", "opencode"} {
+		if !strings.Contains(out, p+" ") {
+			t.Errorf("missing target line for %q\n%s", p, out)
+		}
+	}
+	if n := strings.Count(out, wantSeg); n != 2 {
+		t.Errorf("compact segment %q count = %d, want 2 (one per target)\n%s", wantSeg, n, out)
+	}
+}
