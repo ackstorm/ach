@@ -520,3 +520,45 @@ func TestResolve_UnknownLens(t *testing.T) {
 		t.Fatal("expected error for unknown lens")
 	}
 }
+
+// TestResolveWithCache_RepoFetchedOnce proves the per-invocation FetchCache
+// serves a repeated resolve of the same repo from memory: after the first
+// resolve populates the cache, the underlying bare repo is deleted, yet a second
+// resolve through the SAME cache still succeeds (served from cache), while a
+// FRESH cache fails (the repo is really gone) — confirming the first resolve did
+// not leave anything to re-fetch.
+func TestResolveWithCache_RepoFetchedOnce(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	pluginURL := makePluginRepo(t)
+	repo := store.RepoEntry{Name: "my-plugin", Kind: "git", CloneURL: pluginURL, GitRef: "main"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cache := manager.NewFetchCache()
+	res1, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin", cache)
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	_ = os.RemoveAll(res1.StageDir)
+
+	// Delete the bare repo so any real fetch now fails.
+	if err := os.RemoveAll(strings.TrimPrefix(pluginURL, "file://")); err != nil {
+		t.Fatalf("rm bare repo: %v", err)
+	}
+
+	// Same cache → served from memory → succeeds.
+	res2, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin", cache)
+	if err != nil {
+		t.Fatalf("cached resolve after repo deletion should succeed, got: %v", err)
+	}
+	_ = os.RemoveAll(res2.StageDir)
+
+	// Fresh cache → must actually fetch → fails (control: deletion is real).
+	if _, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin", manager.NewFetchCache()); err == nil {
+		t.Error("uncached resolve after repo deletion unexpectedly succeeded")
+	}
+}

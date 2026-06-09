@@ -324,6 +324,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: load installed: %v", err)}
 			}
 
+			// One fetch cache for the whole invocation: a repo (esp. a
+			// marketplace) is cloned once and reused across every plugin/skill
+			// installed from it, instead of re-cloning per item.
+			fetchCache := manager.NewFetchCache()
+
 			for _, arg := range args {
 				atIdx := strings.LastIndex(arg, "@")
 				if atIdx < 0 {
@@ -354,8 +359,8 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				token, _ := store.LoadToken(repo.Name)
 
 				ref := name + "@" + repoName
-				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, cloning %s)…\n", ref, lens, repo.Name)
-				rr, err := manager.Resolve(ctx, repo, token, name, lens)
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, repo %s)…\n", ref, lens, repo.Name)
+				rr, err := manager.ResolveWithCache(ctx, repo, token, name, lens, fetchCache)
 				if err != nil {
 					return cloneExitErr("install resolve", err)
 				}
@@ -600,6 +605,9 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("update: load repos: %v", err)}
 			}
 
+			// One fetch cache for the whole invocation (see install).
+			fetchCache := manager.NewFetchCache()
+
 			// Determine which refs to update.
 			var targets []string
 			if len(args) == 0 {
@@ -651,8 +659,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 
 				token, _ := store.LoadToken(repo.Name)
 
-				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, cloning %s)…\n", ref, lens, repo.Name)
-				rr, err := manager.Resolve(ctx, repo, token, name, lens)
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, repo %s)…\n", ref, lens, repo.Name)
+				rr, err := manager.ResolveWithCache(ctx, repo, token, name, lens, fetchCache)
 				if err != nil {
 					return cloneExitErr("update resolve", err)
 				}

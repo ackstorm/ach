@@ -45,42 +45,44 @@ func schemeFor(s string) gitfetch.AuthScheme {
 	return gitfetch.AuthBearer
 }
 
-// cloneRepo fetches the whole repo (no subtree) as a gzipped tar and
-// returns the bytes. SHA is resolved via LsRemote.
-func cloneRepo(ctx context.Context, cloneURL, ref, token string, scheme gitfetch.AuthScheme) (tarBytes []byte, resolvedSHA string, err error) {
-	sha, err := gitfetch.LsRemote(ctx, cloneURL, ref, token, scheme)
-	if err != nil {
-		return nil, "", fmt.Errorf("manager: ls-remote %s %s: %w", cloneURL, ref, err)
-	}
-
-	spec := gitfetch.Spec{
-		URL:        cloneURL,
-		Ref:        ref,
-		SHA:        sha,
-		Token:      token,
-		AuthScheme: scheme,
-	}
-	f := gitfetch.New(spec)
-	res, err := f.Fetch(ctx, gitfetch.Request{})
-	if err != nil {
-		return nil, "", fmt.Errorf("manager: fetch %s: %w", cloneURL, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("manager: read clone body: %w", err)
-	}
-	return body, sha, nil
+// FetchCache memoizes git fetches within a SINGLE install/update invocation,
+// keyed by (url, ref, subtree, scheme). A plugin-marketplace repo cloned once to
+// read its marketplace.json is then reused for every plugin installed from it
+// (and a skill-marketplace repo likewise across its skills), eliminating the
+// per-plugin re-clone — and the per-plugin ls-remote — of the same repo. A nil
+// *FetchCache is a valid "no caching" value, so callers that do not batch
+// (the plain Resolve entry point, tests) need no special-casing.
+type FetchCache struct {
+	m map[string]cachedFetchResult
 }
 
-// fetchEntry fetches a specific entry using a gitfetch.Spec (for marketplace
-// entries). If spec.SHA is empty, resolves it via LsRemote first.
-func fetchEntry(ctx context.Context, spec gitfetch.Spec) (tarBytes []byte, resolvedSHA string, err error) {
+type cachedFetchResult struct {
+	tar []byte
+	sha string
+}
+
+// NewFetchCache returns an empty cache scoped to one install/update invocation.
+func NewFetchCache() *FetchCache { return &FetchCache{m: map[string]cachedFetchResult{}} }
+
+func fetchCacheKey(spec gitfetch.Spec) string {
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%v", spec.URL, spec.Ref, spec.Subtree, spec.AuthScheme)
+}
+
+// cachedFetch resolves spec to (tar, sha), serving from cache on a (url, ref,
+// subtree, scheme) hit. On a miss it resolves the SHA via LsRemote (when not
+// pinned) and fetches, then records the result. cache may be nil (no caching).
+func cachedFetch(ctx context.Context, cache *FetchCache, spec gitfetch.Spec) (tarBytes []byte, resolvedSHA string, err error) {
+	key := fetchCacheKey(spec)
+	if cache != nil {
+		if r, ok := cache.m[key]; ok {
+			return r.tar, r.sha, nil
+		}
+	}
+
 	if spec.SHA == "" {
-		sha, err := gitfetch.LsRemote(ctx, spec.URL, spec.Ref, spec.Token, spec.AuthScheme)
-		if err != nil {
-			return nil, "", fmt.Errorf("manager: ls-remote entry %s %s: %w", spec.URL, spec.Ref, err)
+		sha, lerr := gitfetch.LsRemote(ctx, spec.URL, spec.Ref, spec.Token, spec.AuthScheme)
+		if lerr != nil {
+			return nil, "", fmt.Errorf("manager: ls-remote %s %s: %w", spec.URL, spec.Ref, lerr)
 		}
 		spec.SHA = sha
 	}
@@ -88,15 +90,31 @@ func fetchEntry(ctx context.Context, spec gitfetch.Spec) (tarBytes []byte, resol
 	f := gitfetch.New(spec)
 	res, err := f.Fetch(ctx, gitfetch.Request{})
 	if err != nil {
-		return nil, "", fmt.Errorf("manager: fetch entry %s: %w", spec.URL, err)
+		return nil, "", fmt.Errorf("manager: fetch %s: %w", spec.URL, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, "", fmt.Errorf("manager: read entry body: %w", err)
+		return nil, "", fmt.Errorf("manager: read body %s: %w", spec.URL, err)
+	}
+
+	if cache != nil {
+		cache.m[key] = cachedFetchResult{tar: body, sha: spec.SHA}
 	}
 	return body, spec.SHA, nil
+}
+
+// cloneRepo fetches the whole repo (no subtree) as a gzipped tar, memoized via
+// cache (may be nil). SHA is resolved via LsRemote on a cache miss.
+func cloneRepo(ctx context.Context, cloneURL, ref, token string, scheme gitfetch.AuthScheme, cache *FetchCache) (tarBytes []byte, resolvedSHA string, err error) {
+	return cachedFetch(ctx, cache, gitfetch.Spec{URL: cloneURL, Ref: ref, Token: token, AuthScheme: scheme})
+}
+
+// fetchEntry fetches a specific marketplace entry via its gitfetch.Spec,
+// memoized via cache (may be nil).
+func fetchEntry(ctx context.Context, spec gitfetch.Spec, cache *FetchCache) (tarBytes []byte, resolvedSHA string, err error) {
+	return cachedFetch(ctx, cache, spec)
 }
 
 // stageTar extracts tarBytes into a fresh temp directory and returns the
@@ -215,18 +233,25 @@ func normSubPath(p string) string {
 // The returned ResolveResult.StageDir is owned by the CALLER; call
 // os.RemoveAll(result.StageDir) when done.
 func Resolve(ctx context.Context, repo store.RepoEntry, token, name, lens string) (ResolveResult, error) {
+	return ResolveWithCache(ctx, repo, token, name, lens, nil)
+}
+
+// ResolveWithCache is Resolve with a per-invocation FetchCache so a batch
+// install/update fetches each repo at most once (shared across all plugins or
+// skills sourced from it). A nil cache disables caching (identical to Resolve).
+func ResolveWithCache(ctx context.Context, repo store.RepoEntry, token, name, lens string, cache *FetchCache) (ResolveResult, error) {
 	scheme := schemeFor(repo.AuthScheme)
 	ref := defaultRef(repo.GitRef)
 
 	switch lens {
 	case discover.LensPlugin:
-		return resolveDirectPlugin(ctx, repo, token, name, ref, scheme)
+		return resolveDirectPlugin(ctx, repo, token, name, ref, scheme, cache)
 	case discover.LensSkill:
-		return resolveDirectSkill(ctx, repo, token, name, ref, scheme)
+		return resolveDirectSkill(ctx, repo, token, name, ref, scheme, cache)
 	case discover.LensPluginMarketplace:
-		return resolvePluginMarketplace(ctx, repo, token, name, ref, scheme)
+		return resolvePluginMarketplace(ctx, repo, token, name, ref, scheme, cache)
 	case discover.LensSkillMarketplace:
-		return resolveSkillMarketplace(ctx, repo, token, name, ref, scheme)
+		return resolveSkillMarketplace(ctx, repo, token, name, ref, scheme, cache)
 	default:
 		return ResolveResult{}, fmt.Errorf("manager: unknown lens %q (want plugin|skill|plugin-marketplace|skill-marketplace)", lens)
 	}
@@ -234,11 +259,11 @@ func Resolve(ctx context.Context, repo store.RepoEntry, token, name, lens string
 
 // resolveDirectPlugin resolves the "plugin" lens: the whole repo IS the plugin
 // and name must equal repo.Name.
-func resolveDirectPlugin(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme) (ResolveResult, error) {
+func resolveDirectPlugin(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme, cache *FetchCache) (ResolveResult, error) {
 	if name != repo.Name {
 		return ResolveResult{}, fmt.Errorf("manager: direct-plugin lens requires name == repo.Name (got %q, repo %q)", name, repo.Name)
 	}
-	tarBytes, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme)
+	tarBytes, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme, cache)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -253,8 +278,8 @@ func resolveDirectPlugin(ctx context.Context, repo store.RepoEntry, token, name,
 }
 
 // resolveDirectSkill resolves the "skill" lens: the whole repo IS the skill.
-func resolveDirectSkill(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme) (ResolveResult, error) {
-	tarBytes, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme)
+func resolveDirectSkill(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme, cache *FetchCache) (ResolveResult, error) {
+	tarBytes, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme, cache)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -275,8 +300,8 @@ func resolveDirectSkill(ctx context.Context, repo store.RepoEntry, token, name, 
 
 // resolvePluginMarketplace resolves the "plugin-marketplace" lens: parse the
 // repo's marketplace.json, locate the named plugin entry, fetch + verify it.
-func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme) (ResolveResult, error) {
-	repoTar, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme)
+func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme, cache *FetchCache) (ResolveResult, error) {
+	repoTar, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme, cache)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -309,7 +334,7 @@ func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, 
 		return ResolveResult{}, fmt.Errorf("manager: build entry spec for %q: %w", name, err)
 	}
 
-	entryTar, entrySHA, err := fetchEntry(ctx, entrySpec)
+	entryTar, entrySHA, err := fetchEntry(ctx, entrySpec, cache)
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("manager: fetch marketplace entry %q: %w", name, err)
 	}
@@ -335,8 +360,8 @@ func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, 
 
 // resolveSkillMarketplace resolves the "skill-marketplace" lens: tree-walk the
 // repo for the named skill, slice its subtree, verify it.
-func resolveSkillMarketplace(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme) (ResolveResult, error) {
-	repoTar, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme)
+func resolveSkillMarketplace(ctx context.Context, repo store.RepoEntry, token, name, ref string, scheme gitfetch.AuthScheme, cache *FetchCache) (ResolveResult, error) {
+	repoTar, sha, err := cloneRepo(ctx, repo.CloneURL, ref, token, scheme, cache)
 	if err != nil {
 		return ResolveResult{}, err
 	}
