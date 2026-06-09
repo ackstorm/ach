@@ -111,7 +111,7 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 	assertDropsWarned(t, d.platformID, stderr, d)
 
 	// (5) state.json v2 records the projected plugin targets.
-	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, d.platformID)
 	assertStateRecordsPlugins(t, statePath, d)
 
 	// (6) uninstall --include-runtime: tears down context (projected plugin
