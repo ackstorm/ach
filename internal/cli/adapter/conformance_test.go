@@ -130,15 +130,18 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "gemini-cli",
 		mappingSection: "OPENPACKAGE-MAPPING.md §gemini-cli (ACH-original; drop hooks; AGENTS.md→GEMINI.md)",
-		rowCount:       7,
+		rowCount:       8,
 		rules: map[string]wantRule{
-			"agents/**/*":   {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"prompts/**/*":  {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"commands/**/*": {to: ".gemini/commands/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":   {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"AGENTS.md":     {to: "GEMINI.md", merge: adapter.MergeComposite, hasXform: false},
-			"mcp/**/*":      {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
-			".mcp.json":     {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			"agents/**/*":  {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"prompts/**/*": {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
+			// gemini-cli custom commands are TOML: commands/*.md is converted
+			// (geminiCommandTOML), commands/*.toml passes through verbatim.
+			"commands/**/*.md":   {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: true},
+			"commands/**/*.toml": {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":        {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"AGENTS.md":          {to: "GEMINI.md", merge: adapter.MergeComposite, hasXform: false},
+			"mcp/**/*":           {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":          {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// gemini routes agents/prompts/commands/skills/AGENTS.md/mcp; only
 		// rules/ + hooks/ have no rule → dropped.

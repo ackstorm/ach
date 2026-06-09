@@ -197,9 +197,12 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 		{
 			adapterID: "gemini-cli",
 			want: []string{
-				".gemini/commands/hello.md",
+				".gemini/commands/hello.toml", // claude .md command → gemini TOML
 				".gemini/agents/agent-a.md",
 				".gemini/settings.json",
+			},
+			absent: []string{
+				".gemini/commands/hello.md", // must be converted, not copied verbatim
 			},
 		},
 		{

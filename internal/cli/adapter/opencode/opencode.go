@@ -53,6 +53,10 @@ const (
 	configJSONPath = ".opencode/opencode.json"
 
 	canonicalID = "opencode"
+
+	// opencode MCP server `type` discriminants (https://opencode.ai/docs/mcp-servers/).
+	opencodeMCPLocal  = "local"
+	opencodeMCPRemote = "remote"
 )
 
 // Adapter is the empty struct holding the opencode Adapter impl. The
@@ -199,7 +203,7 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 
 	for _, server := range m.Runtime.MCPServers {
 		entry := opencodeMCPEntry{
-			Type:    "remote",
+			Type:    opencodeMCPRemote,
 			URL:     server.Endpoint,
 			Enabled: true,
 			Headers: adapter.HeadersWithCredential(credential, m.Environment),
@@ -279,7 +283,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 //     opencodeAgentTools — tools[]→{name:true}, color/model normalize, markdown)
 //   - skills/**/*    → .opencode/skills/**/*    (MergeReplace, verbatim copy)
 //   - mcp/**/*       → .opencode/opencode.json  (MergeDeep, Transform:
-//     opencodeMCPRename — mcpServers→mcp, no header surgery, JSON output)
+//     opencodeMCPConvert — mcpServers→mcp + per-entry local|remote shape, JSON)
 //
 // rules/ and AGENTS.md have NO rule and fall into route.Project's dropped set
 // (route.go records each unrouted top-level kind exactly once — D-12/D-19); the
@@ -299,17 +303,20 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "commands/**/*.md", ToGlob: ".opencode/commands/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeCommandFrontmatter},
 		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
 		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
-		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
+		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPConvert},
 		// Root .mcp.json is Claude Code's standard plugin MCP location — deep-merge
-		// it into .opencode/opencode.json too (same rename transform).
-		{FromGlob: ".mcp.json", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
+		// it into .opencode/opencode.json too (same conversion transform).
+		{FromGlob: ".mcp.json", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPConvert},
 	}
 }
 
 // opencodeAgentTools is the agent-frontmatter Transform (FMT-04, D-20). It
 // converts ONLY the frontmatter `tools` value from a YAML sequence
 // (`[read, write]`) into a string→bool object (`{read: true, write: true}`) —
-// the shape opencode's agent config expects — and re-emits the document as
+// the shape opencode's agent config expects. Each tool NAME is normalized via
+// normalizeOpencodeToolName (lowercase + the OpenPackage rename map), because
+// opencode's tool registry is lowercase and a Claude PascalCase `Read` would
+// not resolve. It re-emits the document as
 // markdown+frontmatter via the deterministic route.EncodeFrontmatterDoc
 // (sorted keys, encoder-quoted scalars — D-24/D-05), so re-hydrate is
 // byte-identical (FMT-05).
@@ -363,7 +370,7 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 				if !ok {
 					return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools element %v (%T) is not a string", srcRel, e, e)
 				}
-				toolsObj[name] = true
+				toolsObj[normalizeOpencodeToolName(name)] = true
 			}
 			doc["tools"] = toolsObj
 		case map[string]any:
@@ -376,7 +383,7 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 				if !ok {
 					return nil, nil, fmt.Errorf("opencode: opencodeAgentTools %q: tools[%q] value %v (%T) is not a bool", srcRel, k, v, v)
 				}
-				obj[k] = b
+				obj[normalizeOpencodeToolName(k)] = b
 			}
 			doc["tools"] = obj
 		case string:
@@ -390,7 +397,7 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 				if name == "" {
 					continue
 				}
-				toolsObj[name] = true
+				toolsObj[normalizeOpencodeToolName(name)] = true
 			}
 			doc["tools"] = toolsObj
 		default:
@@ -408,55 +415,130 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 	return out, nil, nil
 }
 
-// opencodeMCPRename is the MCP Transform (D-21). It parses the plugin
+// opencodeMCPConvert is the MCP Transform (D-21). It parses the plugin
 // `mcp.json`, renames the top-level `mcpServers` key to `mcp` (opencode's MCP
-// merge key under .opencode/opencode.json), and re-emits canonical JSON via
+// merge key under .opencode/opencode.json), CONVERTS each server entry to
+// opencode's strict per-server schema, and re-emits canonical JSON via
 // route.CanonicalJSON (sorted keys — D-24) so re-hydrate is byte-identical.
 //
-// NO header surgery: unlike codex, opencode consumes the raw per-server shape
-// verbatim under `mcp` — any `${env:X}` env-reference literal in a header is the
-// value the plugin author wrote and is copied through unchanged (T-03-08 accept;
-// opencode resolves the `${env:X}` reference at its own runtime — ACH never
-// reads or materializes the secret here). There is deliberately no token/header
-// partition (the codex bearer/env/literal split does NOT apply to opencode).
+// Per-entry conversion is MANDATORY — opencode validates each entry and aborts
+// the whole config on a mismatch (real ConfigInvalidError observed against
+// opencode 1.16.0). A Claude/universal `.mcp.json` entry is one of:
+//
+//   - stdio:  {command, args, env}      → {type:"local",  command:[cmd,…args],
+//     enabled:true, environment:{…}}
+//   - remote: {url[, type, headers]}    → {type:"remote", url, enabled:true,
+//     headers:{…}}
+//
+// opencode's schema (https://opencode.ai/docs/mcp-servers/): local requires
+// type+command (command is an ARRAY), env uses the "environment" key; remote
+// requires type="remote" (NOT "http"/"streamable-http") + url, headers optional.
+// `enabled` is carried (default true). Every other source field (description,
+// timeout-spelling variants, …) is DROPPED so a closed-schema reject can't
+// happen. Headers are copied THROUGH unchanged (any `${env:X}` literal is the
+// plugin author's value; opencode resolves it at its own runtime — ACH never
+// reads the secret).
 //
 // keys returns the contributed dotted paths `["mcp.<id>", …]` (sorted) matching
 // the runtime encoder prefix (renderConfigJSON contributes `mcp.<server.ID>`),
 // so the Wave-1 prefix-aware dropRuntimeOwnedMCP dedups a projected server
 // against an identically-named runtime server on a `mcp.<id>` clash. The
 // runtime emission (renderConfigJSON / the `json:"mcp"` shape) is UNTOUCHED.
-func opencodeMCPRename(srcRel string, in []byte) (out []byte, keys []string, err error) {
+func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, err error) {
 	var top map[string]any
 	if err := json.Unmarshal(in, &top); err != nil {
-		return nil, nil, fmt.Errorf("opencode: opencodeMCPRename parse %q: %w", srcRel, err)
+		return nil, nil, fmt.Errorf("opencode: opencodeMCPConvert parse %q: %w", srcRel, err)
 	}
 	if top == nil {
 		top = map[string]any{}
 	}
 
-	// Rename mcpServers → mcp. If the input is already keyed `mcp` (e.g. a
-	// re-hydrate of converted output) the servers stay under `mcp` and the
-	// rename is a no-op, keeping the Transform idempotent (FMT-05).
-	if servers, ok := top["mcpServers"]; ok {
-		top["mcp"] = servers
-		delete(top, "mcpServers")
+	// Source servers live under `mcpServers` (Claude/universal) or already under
+	// `mcp` (a re-hydrate of converted output — keeps the Transform idempotent).
+	var raw any
+	if v, ok := top["mcpServers"]; ok {
+		raw = v
+	} else if v, ok := top["mcp"]; ok {
+		raw = v
 	}
+	servers, _ := raw.(map[string]any)
 
-	keys = make([]string, 0)
-	if mcpRaw, ok := top["mcp"]; ok {
-		if servers, ok := mcpRaw.(map[string]any); ok {
-			for id := range servers {
-				keys = append(keys, "mcp."+id)
-			}
+	converted := map[string]any{}
+	keys = make([]string, 0, len(servers))
+	for id, entry := range servers {
+		em, ok := entry.(map[string]any)
+		if !ok {
+			// Non-object server value — malformed; skip rather than emit an
+			// unvalidatable entry that would abort opencode's whole config.
+			continue
 		}
+		converted[id] = convertOpencodeMCPEntry(em)
+		keys = append(keys, "mcp."+id)
 	}
 	sort.Strings(keys)
 
-	out, err = route.CanonicalJSON(top)
+	out, err = route.CanonicalJSON(map[string]any{"mcp": converted})
 	if err != nil {
-		return nil, nil, fmt.Errorf("opencode: opencodeMCPRename encode %q: %w", srcRel, err)
+		return nil, nil, fmt.Errorf("opencode: opencodeMCPConvert encode %q: %w", srcRel, err)
 	}
 	return out, keys, nil
+}
+
+// opencodeMCPEntry converts a single Claude/universal MCP server entry to
+// opencode's local|remote schema. Idempotent: a value already in opencode shape
+// (command as an array, type already local/remote) round-trips unchanged.
+func convertOpencodeMCPEntry(e map[string]any) map[string]any {
+	typ, _ := e["type"].(string)
+	_, hasURL := e["url"]
+	isRemote := hasURL ||
+		typ == opencodeMCPRemote || typ == "http" || typ == "streamable-http" || typ == "sse"
+
+	enabled := true
+	if v, ok := e["enabled"].(bool); ok {
+		enabled = v
+	}
+
+	if isRemote {
+		out := map[string]any{"type": opencodeMCPRemote, "enabled": enabled}
+		if u, ok := e["url"].(string); ok {
+			out["url"] = u
+		}
+		if h, ok := e["headers"].(map[string]any); ok && len(h) > 0 {
+			out["headers"] = h
+		}
+		if t, ok := e["timeout"]; ok {
+			out["timeout"] = t
+		}
+		return out
+	}
+
+	// Local (stdio): command must be an ARRAY [cmd, ...args].
+	cmd := make([]any, 0, 4)
+	switch c := e["command"].(type) {
+	case string:
+		if c != "" {
+			cmd = append(cmd, c)
+			if args, ok := e["args"].([]any); ok {
+				cmd = append(cmd, args...)
+			}
+		}
+	case []any:
+		// Already an array (re-hydrate of converted output, or an author who
+		// wrote the opencode form directly).
+		cmd = append(cmd, c...)
+	}
+
+	out := map[string]any{"type": opencodeMCPLocal, "enabled": enabled, "command": cmd}
+	// env (Claude) or environment (opencode) → environment.
+	if env, ok := e["environment"].(map[string]any); ok && len(env) > 0 {
+		out["environment"] = env
+	} else if env, ok := e["env"].(map[string]any); ok && len(env) > 0 {
+		out["environment"] = env
+	}
+	if t, ok := e["timeout"]; ok {
+		out["timeout"] = t
+	}
+	return out
 }
 
 // opencodeCommandKeys is opencode's recognized custom-command frontmatter set
@@ -612,4 +694,36 @@ func normalizeOpencodeModelField(doc map[string]any) {
 // (contains a "/"), e.g. "anthropic/claude-sonnet-4-…".
 func isProviderModel(s string) bool {
 	return strings.Contains(strings.TrimSpace(s), "/")
+}
+
+// opencodeToolRename maps the lowercased Claude tool names that opencode knows
+// under a different identifier. Mirrors OpenPackage's claude→universal tool
+// normalization (platforms.jsonc claude.import: split, lowercase, THEN replace
+// these three); applied AFTER lowercasing.
+var opencodeToolRename = map[string]string{
+	"askuserquestion": "question",
+	"notebookedit":    "notebook",
+	"exitplanmode":    "exitplan",
+}
+
+// normalizeOpencodeToolName converts a Claude tool identifier to the form
+// opencode expects: lowercase (opencode's tool registry is lowercase — bash,
+// read, write, …; a PascalCase "Read" would not resolve), with the small rename
+// map applied for OpenPackage parity. A "Bash(git *)" restriction suffix is
+// stripped to its base tool. MCP tool ids ("mcp__server__tool") are returned
+// unchanged — their casing is significant and they are not Claude PascalCase
+// names. Idempotent: a second pass over an already-normalized name is a no-op.
+func normalizeOpencodeToolName(name string) string {
+	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "mcp__") {
+		return name
+	}
+	if i := strings.IndexByte(name, '('); i >= 0 {
+		name = strings.TrimSpace(name[:i])
+	}
+	name = strings.ToLower(name)
+	if mapped, ok := opencodeToolRename[name]; ok {
+		return mapped
+	}
+	return name
 }

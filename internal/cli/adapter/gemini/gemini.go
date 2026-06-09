@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
@@ -311,10 +312,65 @@ func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error
 	return in, keys, nil
 }
 
+// geminiCommandTOML converts a Claude-format command (`commands/<name>.md`:
+// YAML frontmatter + a markdown prompt body) into gemini-cli's native custom-
+// command TOML (`.gemini/commands/<name>.toml`). gemini-cli reads custom
+// commands ONLY as TOML with a required `prompt` key and an optional
+// `description` (https://geminicli.com/docs/cli/custom-commands/); a verbatim
+// `.md` copy is dead on arrival — hence this transform (the gemini analogue of
+// codex's markdown→TOML agent lift).
+//
+// Mapping:
+//   - frontmatter `description` (if present) → TOML `description`.
+//   - body → TOML `prompt`, with Claude's `$ARGUMENTS` placeholder rewritten to
+//     gemini's `{{args}}`. Claude positional placeholders ($1/$2) have no gemini
+//     equivalent and are left verbatim (documented limitation).
+//
+// The frontmatter is line-scanned for `description:` rather than YAML-parsed:
+// Claude command frontmatter is NOT reliably valid YAML (`argument-hint: [a]
+// [b]` fails a strict parser), so a full Unmarshal would lose a perfectly good
+// description. All other Claude command keys (argument-hint, allowed-tools,
+// name, …) have no gemini equivalent and are dropped. Output is deterministic
+// TOML via route.CanonicalTOML (D-24 byte-stability). keys is nil (MergeReplace,
+// file-owned). A command with no frontmatter still emits `prompt` from the whole
+// body.
+func geminiCommandTOML(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	fm, body, _ := route.SplitFrontmatter(in)
+
+	doc := map[string]any{}
+
+	// Line-scan the frontmatter for a top-level `description:` scalar. Robust to
+	// the invalid-YAML lines Claude commands carry (argument-hint: [type] …).
+	for _, line := range strings.Split(string(fm), "\n") {
+		if !strings.HasPrefix(line, "description:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		v = strings.Trim(v, `"'`)
+		if v != "" {
+			doc["description"] = v
+		}
+		break
+	}
+
+	// prompt = body, with Claude's $ARGUMENTS → gemini's {{args}}.
+	prompt := strings.ReplaceAll(string(body), "$ARGUMENTS", "{{args}}")
+	doc["prompt"] = strings.Trim(prompt, "\n")
+
+	out, err = route.CanonicalTOML(doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("gemini: geminiCommandTOML encode %q: %w", srcRel, err)
+	}
+	return out, nil, nil
+}
+
 // ProjectionRules returns the gemini-cli projection table satisfying
-// route.RuleProvider (the D-06 seam), extended per D-12. The four file-owned
-// resource kinds (agents/, prompts/, commands/, skills/) route verbatim into
-// .gemini/<kind>/ as MergeReplace.
+// route.RuleProvider (the D-06 seam), extended per D-12. The verbatim
+// file-owned resource kinds (agents/, prompts/, skills/) route into
+// .gemini/<kind>/ as MergeReplace. commands/ is NOT verbatim: gemini-cli reads
+// custom commands as TOML, so commands/**/*.md is converted to
+// .gemini/commands/**/*.toml via geminiCommandTOML (gemini-native commands/*.toml
+// pass through).
 //
 // Two non-file rows complete the D-12 contract:
 //   - AGENTS.md → GEMINI.md as MergeComposite: the plugin's top-level AGENTS.md
@@ -335,7 +391,13 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "agents/**/*", ToGlob: ".gemini/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "prompts/**/*", ToGlob: ".gemini/prompts/**/*", Merge: adapter.MergeReplace},
-		{FromGlob: "commands/**/*", ToGlob: ".gemini/commands/**/*", Merge: adapter.MergeReplace},
+		// gemini-cli custom commands are TOML, not markdown. A Claude-format
+		// commands/<n>.md is converted to .gemini/commands/<n>.toml via
+		// geminiCommandTOML; a plugin that already ships gemini-native
+		// commands/<n>.toml passes through verbatim. (Mirrors the codex .md→.toml
+		// agent remap.)
+		{FromGlob: "commands/**/*.md", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace, Transform: geminiCommandTOML},
+		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".gemini/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "AGENTS.md", ToGlob: "GEMINI.md", Merge: adapter.MergeComposite},
 		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
