@@ -105,8 +105,8 @@ var conformanceTables = []adapterConformance{
 			"agents/**/*":      {to: ".claude/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"skills/**/*":      {to: ".claude/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"AGENTS.md":        {to: "CLAUDE.md", merge: adapter.MergeComposite, hasXform: false},
-			"mcp/**/*":         {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
-			".mcp.json":        {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			"mcp/**/*":         {to: ".mcp.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// claude routes rules/commands/agents/skills/AGENTS.md/mcp; only
 		// prompts/ + hooks/ have no rule → dropped.

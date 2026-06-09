@@ -183,7 +183,8 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 			want: []string{
 				".claude/commands/hello.md",
 				".claude/agents/agent-a.md",
-				".claude/settings.json",
+				// claude reads plugin MCP from the project-root .mcp.json.
+				".mcp.json",
 			},
 		},
 		{
@@ -301,7 +302,7 @@ func TestProject_Codex_AgentTOMLTransform(t *testing.T) {
 }
 
 // TestProject_ClaudeCode_MCPMergeContent commits the claude-code projection and
-// reads back .claude/settings.json, asserting the MCP deep-merge placed the
+// reads back the project-root .mcp.json, asserting the MCP deep-merge placed the
 // plugin's server under mcpServers.demo. This proves the MCP merge content, not
 // merely the destination path.
 func TestProject_ClaudeCode_MCPMergeContent(t *testing.T) {
@@ -323,22 +324,22 @@ func TestProject_ClaudeCode_MCPMergeContent(t *testing.T) {
 		t.Fatalf("Commit(claude-code): %v", err)
 	}
 
-	settingsBytes, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	mcpBytes, err := os.ReadFile(filepath.Join(root, ".mcp.json"))
 	if err != nil {
-		t.Fatalf("read .claude/settings.json: %v", err)
+		t.Fatalf("read .mcp.json: %v", err)
 	}
 
 	var settings map[string]any
-	if err := json.Unmarshal(settingsBytes, &settings); err != nil {
-		t.Fatalf("unmarshal settings.json: %v\n%s", err, settingsBytes)
+	if err := json.Unmarshal(mcpBytes, &settings); err != nil {
+		t.Fatalf("unmarshal .mcp.json: %v\n%s", err, mcpBytes)
 	}
 	mcpRaw, ok := settings["mcpServers"]
 	if !ok {
-		t.Fatalf("settings.json missing mcpServers; got: %s", settingsBytes)
+		t.Fatalf(".mcp.json missing mcpServers; got: %s", mcpBytes)
 	}
 	mcp, ok := mcpRaw.(map[string]any)
 	if !ok || mcp["demo"] == nil {
-		t.Errorf("settings.json mcpServers.demo missing; got: %s", settingsBytes)
+		t.Errorf(".mcp.json mcpServers.demo missing; got: %s", mcpBytes)
 	}
 }
 

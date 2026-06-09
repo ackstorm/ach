@@ -232,7 +232,9 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	wantFiles := []string{
 		filepath.Join(destDir, ".claude", "commands", "x.md"),
 		filepath.Join(destDir, ".codex", "prompts", "x.md"),
-		filepath.Join(destDir, ".gemini", "commands", "x.md"),
+		// gemini-cli reads custom commands as TOML, so commands/x.md is
+		// converted to .gemini/commands/x.toml (geminiCommandTOML), not copied.
+		filepath.Join(destDir, ".gemini", "commands", "x.toml"),
 	}
 	for _, f := range wantFiles {
 		if _, err := os.Stat(f); err != nil {

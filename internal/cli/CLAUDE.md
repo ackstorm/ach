@@ -122,7 +122,7 @@ merge) — don't conflate them.
 | commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.gemini/commands` **(T→.toml)** | `.md`→`.opencode/commands` (T) | `.md`→`.pi/agent/prompts` |
 | agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | →`.gemini/agents` | `.md`→`.opencode/agents` (T) | drop |
 | skills | →`.claude/skills` | →`.agents/skills` | →`.gemini/skills` | →`.opencode/skills` | →`.pi/agent/skills` |
-| mcp + `.mcp.json` | →`.claude/settings.json` (T) | →`.codex/config.toml` (T) | →`.gemini/settings.json` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
+| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.gemini/settings.json` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
 | rules | →`.claude/rules` | drop | drop | drop | drop |
 | AGENTS.md | →`CLAUDE.md` (composite) | drop | →`GEMINI.md` (composite) | drop | drop |
 | hooks | drop | drop | drop | drop | drop |
@@ -237,7 +237,10 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 
 - **`.mcp.json` not installing** ("doesn't install mcp"): root `.mcp.json`
   (Claude Code's standard MCP location, distinct from the `mcp/` dir) needs its
-  own rule in every adapter → runtime-config deep-merge. Fixed; pinned by
+  own rule in every adapter → runtime-config deep-merge. For **claude** the
+  target IS the project-root `.mcp.json` (the file claude actually reads — NOT
+  `.claude/settings.json`); the local-installer containment filter
+  (`manager.Project`) allows exactly that one root file. Fixed; pinned by
   `TestProject_RootMcpJson_Routed`.
 - **`.toml` leaking into `.claude`/`.opencode` commands**: fixed by the
   `commands/**/*.md` glob (claude/opencode); gemini keeps `commands/**/*`.

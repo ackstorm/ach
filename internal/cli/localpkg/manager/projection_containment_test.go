@@ -34,7 +34,8 @@ import (
 // TestProject_RootMcpJson_Routed pins the fix for "doesn't install mcp": a plugin
 // that declares its MCP server in a ROOT .mcp.json (Claude Code's standard
 // location, not a mcp/ dir) must have it deep-merged into the adapter's runtime
-// config — .claude/settings.json (mcpServers) / .opencode/opencode.json (mcp).
+// config — project-root .mcp.json for claude (the file it actually reads) /
+// .opencode/opencode.json (mcp) for opencode.
 func TestProject_RootMcpJson_Routed(t *testing.T) {
 	stage := t.TempDir()
 	mcp := `{"mcpServers":{"demo-cal":{"url":"https://mcp.example/demo"}}}`
@@ -51,7 +52,7 @@ func TestProject_RootMcpJson_Routed(t *testing.T) {
 	}
 
 	cases := []struct{ id, target string }{
-		{"claude-code", ".claude/settings.json"},
+		{"claude-code", ".mcp.json"},
 		{"opencode", ".opencode/opencode.json"},
 	}
 	for _, tc := range cases {
