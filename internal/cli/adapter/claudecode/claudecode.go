@@ -13,14 +13,13 @@
 //   - ADAPT-07 silent-drop accounting: claude-code has no source-tree
 //     component it cannot translate — route.Project's drop set is
 //     always empty for this adapter.
-//   - The runtime-config target .claude/settings.json is where Claude
-//     Code reads MCP server definitions in this adapter's contract.
-//     (The official .claude/.mcp.json definition location and the
-//     settings.json approval-allowlist split — `enabledMcpjsonServers`
-//     — are not modeled here; see follow-up.md "Open question" for the
-//     escape hatch back to .mcp.json + an allowlist write.)
+//   - The MCP target is the project-root .mcp.json (mcpJSONPath) — the file
+//     Claude Code actually reads for MCP servers. Both plugin projection and
+//     the governed runtime MCP (RenderRuntime) deep-merge there;
+//     .claude/settings.json is NOT an MCP load path and is not written.
 //
-// ADAPT-06 scope rule: this adapter emits ONLY .claude/-prefixed paths.
+// ADAPT-06 scope rule: this adapter emits .claude/-prefixed paths plus the
+// project-root .mcp.json (MCP) and CLAUDE.md (AGENTS.md composite).
 // Prompts and artifacts are written by the hydrator core directly (CLI
 // spec §6.4); the adapter never touches them.
 package claudecode
@@ -43,15 +42,12 @@ import (
 // Target paths emitted by this adapter. Centralized as constants so
 // the test assertions and the production code stay in lock-step.
 const (
-	// settingsJSONPath is the claude-code runtime-config file. RenderRuntime
-	// (the governed env-hydrate path) still targets it; plugin MCP projection
-	// does NOT (see mcpJSONPath).
-	settingsJSONPath = ".claude/settings.json"
-
 	// mcpJSONPath is Claude Code's per-project MCP registry — the file claude
-	// actually READS for plugin MCP servers (project-root .mcp.json). A
-	// plugin's mcp/ convention dir and root .mcp.json deep-merge here, NOT into
-	// settings.json (settings.json mcpServers is not the load path).
+	// actually READS for MCP servers (project-root .mcp.json). It is the SINGLE
+	// claude MCP target for BOTH paths: plugin projection (mcp/ dir + root
+	// .mcp.json) AND the governed env-hydrate runtime MCP (RenderRuntime).
+	// "todos son iguales" — same destination regardless of source. settings.json
+	// is NOT a claude MCP load path and is no longer written by this adapter.
 	mcpJSONPath = ".mcp.json"
 
 	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
@@ -131,8 +127,8 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}, nil
 }
 
-// mcpJSONShape is the document Claude Code reads at settingsJSONPath
-// (.claude/settings.json). The schema mirrors what .claude/.mcp.json
+// mcpJSONShape is the document Claude Code reads at mcpJSONPath
+// (project-root .mcp.json). The schema mirrors what .claude/.mcp.json
 // would carry — adapter renders one shape, surgical merge upserts it
 // under the configured runtime path.
 // We use ordered map types via explicit struct + json.Marshal sorting
@@ -156,7 +152,7 @@ type mcpJSONShape struct {
 }
 
 // renderMcpJSON builds the JSON bytes the adapter writes to
-// settingsJSONPath (.claude/settings.json) from a manifest +
+// mcpJSONPath (project-root .mcp.json) from a manifest +
 // credential. Returned bytes are deterministic: keys are emitted in
 // sorted order because encoding/json sorts map keys lexicographically.
 // The credential is embedded into each server's headers map under
@@ -214,9 +210,11 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 	return buf.Bytes(), contributedKeys, nil
 }
 
-// RenderRuntime emits the single .claude/settings.json FileWrite per
-// CLI spec §7.4 claude-code section. Merge=MergeDeep; Keys carries the
-// contributed top-level keys for STATE-02 + ADAPT-05 inverse-merge.
+// RenderRuntime emits the single project-root .mcp.json FileWrite — the same
+// file claude reads for MCP and the same target plugin projection uses, so a
+// governed runtime MCP and a locally-installed plugin MCP deep-merge into one
+// place. Merge=MergeDeep; Keys carries the contributed top-level keys for
+// STATE-02 + ADAPT-05 inverse-merge.
 //
 // ADAPT-03 credential propagation: the bearer is sourced from
 // adapter.CredentialFromContext(ctx) — never from env vars.
@@ -233,7 +231,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 
 	return []adapter.FileWrite{
 		{
-			Path:    settingsJSONPath,
+			Path:    mcpJSONPath,
 			Content: content,
 			Merge:   adapter.MergeDeep,
 			Keys:    keys,
@@ -314,11 +312,11 @@ func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error
 // Two non-file rows complete the D-11 contract:
 //   - AGENTS.md → CLAUDE.md as MergeComposite: the plugin's top-level AGENTS.md
 //     prose is composited (marker-bounded) into the host CLAUDE.md memory file.
-//   - mcp/**/* → settingsJSONPath as MergeDeep with Transform=mcpDeepKeys: the
-//     plugin's MCP definitions deep-merge under mcpServers in the EXISTING
-//     .claude/settings.json (D-08 — this is the same RenderRuntime MCP target;
-//     there is NO .mcp.json filename switch and NO mcp_servers rename). The
-//     Transform enumerates the contributed keys without altering the bytes.
+//   - mcp/**/* → mcpJSONPath as MergeDeep with Transform=mcpDeepKeys: the
+//     plugin's MCP definitions deep-merge under mcpServers in the project-root
+//     .mcp.json (the file claude reads — same target as RenderRuntime; no
+//     mcp_servers rename). The Transform enumerates the contributed keys
+//     without altering the bytes.
 //
 // This method is pure data — no I/O. Projection runs through the Render leg
 // (ProjectionRules -> route.Project).

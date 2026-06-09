@@ -107,7 +107,7 @@ func TestAdapterDispatcherImpl_InvokesRender_ForPlatform(t *testing.T) {
 	}
 	// File should be written at <achDir>/.claude/settings.json (the
 	// surgical-merge target; toolRoot == achDir in this test).
-	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(achDir, ".mcp.json")
 	if _, err := os.Stat(settingsPath); err != nil {
 		t.Errorf(".claude/settings.json missing after Render: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
 	m := dispMiniManifest()
 
-	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(achDir, ".mcp.json")
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T)
 	}
 	prior := dispPriorState("demo", first)
 
-	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(achDir, ".mcp.json")
 	body, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("read after first: %v", err)
@@ -280,7 +280,7 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 	}
 	prior := dispPriorState("demo", first)
 
-	settingsPath := filepath.Join(achDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(achDir, ".mcp.json")
 
 	// Sanity: first render wrote 0o600.
 	if info, err := os.Stat(settingsPath); err != nil {
