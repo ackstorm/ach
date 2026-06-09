@@ -387,12 +387,13 @@ func TestProjectionRules_Rows(t *testing.T) {
 		}
 	}
 
-	// The four file-owned kinds: MergeReplace, no Transform (verbatim D-01/D-02).
+	// The verbatim file-owned kinds: MergeReplace, no Transform (D-01/D-02).
+	// commands/ is NOT here — gemini commands are TOML, so commands/**/*.md is
+	// converted (asserted separately below).
 	fileKinds := map[string]string{
-		"agents/**/*":   ".gemini/agents/**/*",
-		"prompts/**/*":  ".gemini/prompts/**/*",
-		"commands/**/*": ".gemini/commands/**/*",
-		"skills/**/*":   ".gemini/skills/**/*",
+		"agents/**/*":  ".gemini/agents/**/*",
+		"prompts/**/*": ".gemini/prompts/**/*",
+		"skills/**/*":  ".gemini/skills/**/*",
 	}
 	for from, wantTo := range fileKinds {
 		row, ok := byFrom[from]
@@ -408,6 +409,33 @@ func TestProjectionRules_Rows(t *testing.T) {
 		if row.hasXform {
 			t.Errorf("row %q has a non-nil Transform; pass-through kinds must be verbatim", from)
 		}
+	}
+
+	// commands/**/*.md -> .gemini/commands/**/*.toml WITH the geminiCommandTOML
+	// Transform (claude markdown command → gemini TOML); commands/**/*.toml
+	// passes through verbatim (a plugin's gemini-native commands).
+	cmdMD, ok := byFrom["commands/**/*.md"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing commands/**/*.md → toml conversion row")
+	}
+	if cmdMD.to != ".gemini/commands/**/*.toml" {
+		t.Errorf("commands/**/*.md ToGlob = %q, want .gemini/commands/**/*.toml", cmdMD.to)
+	}
+	if cmdMD.merge != adapter.MergeReplace {
+		t.Errorf("commands/**/*.md Merge = %v, want MergeReplace", cmdMD.merge)
+	}
+	if !cmdMD.hasXform {
+		t.Errorf("commands/**/*.md row must wire the geminiCommandTOML Transform")
+	}
+	cmdTOML, ok := byFrom["commands/**/*.toml"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing commands/**/*.toml passthrough row")
+	}
+	if cmdTOML.to != ".gemini/commands/**/*.toml" {
+		t.Errorf("commands/**/*.toml ToGlob = %q, want .gemini/commands/**/*.toml", cmdTOML.to)
+	}
+	if cmdTOML.hasXform {
+		t.Errorf("commands/**/*.toml passthrough must be verbatim (nil Transform)")
 	}
 
 	// AGENTS.md -> GEMINI.md as MergeComposite, no Transform.
@@ -621,5 +649,56 @@ func TestGemini_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
 	// hooks is the ONLY drop for gemini-cli.
 	if len(pr.Dropped) != 1 || pr.Dropped[0] != "hooks" {
 		t.Errorf("dropped = %v, want exactly [\"hooks\"]", pr.Dropped)
+	}
+}
+
+// TestGeminiCommandTOML converts a Claude-format command (frontmatter + body)
+// to gemini-cli TOML: description lifted, body → prompt, $ARGUMENTS → {{args}},
+// and the invalid-YAML argument-hint line tolerated (description still found).
+func TestGeminiCommandTOML(t *testing.T) {
+	in := []byte("---\n" +
+		"description: Review a PR\n" +
+		"argument-hint: [pr] [scope]\n" +
+		"allowed-tools: Bash, Read\n" +
+		"---\n" +
+		"Review $ARGUMENTS carefully.\n")
+	out, keys, err := geminiCommandTOML("commands/review.md", in)
+	if err != nil {
+		t.Fatalf("geminiCommandTOML: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+	s := string(out)
+	if !strings.Contains(s, `description = "Review a PR"`) {
+		t.Errorf("description not lifted to TOML:\n%s", s)
+	}
+	if !strings.Contains(s, "{{args}}") || strings.Contains(s, "$ARGUMENTS") {
+		t.Errorf("$ARGUMENTS not rewritten to {{args}}:\n%s", s)
+	}
+	if !strings.Contains(s, "prompt =") {
+		t.Errorf("no prompt key emitted:\n%s", s)
+	}
+	// Claude-only keys must not leak into gemini TOML.
+	for _, leak := range []string{"argument-hint", "allowed-tools"} {
+		if strings.Contains(s, leak) {
+			t.Errorf("claude-only key %q leaked into gemini TOML:\n%s", leak, s)
+		}
+	}
+}
+
+// TestGeminiCommandTOML_NoFrontmatter: a body-only command still yields a
+// prompt; no description is invented.
+func TestGeminiCommandTOML_NoFrontmatter(t *testing.T) {
+	out, _, err := geminiCommandTOML("commands/x.md", []byte("Just do the thing.\n"))
+	if err != nil {
+		t.Fatalf("geminiCommandTOML: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "Just do the thing.") {
+		t.Errorf("body not carried into prompt:\n%s", s)
+	}
+	if strings.Contains(s, "description") {
+		t.Errorf("description invented for a frontmatter-less command:\n%s", s)
 	}
 }

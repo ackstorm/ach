@@ -463,6 +463,8 @@ func TestOpencodeAgentTools_ToolsArrayToObject(t *testing.T) {
 // TestOpencodeAgentTools_ToolsStringToObject proves the Claude comma-separated
 // string form (tools: "Read, Write, Bash") is split + coerced to {name:true},
 // the shape upstream feature-dev agents ship (anthropics/claude-plugins-official).
+// Tool NAMES are lowercased to match opencode's lowercase tool registry
+// (OpenPackage parity — a PascalCase "Read" would not resolve in opencode).
 func TestOpencodeAgentTools_ToolsStringToObject(t *testing.T) {
 	in := []byte("---\ntools: Read, Write , Bash\nmodel: anthropic/claude\n---\nB")
 	out, _, err := opencodeAgentTools("agents/x.md", in)
@@ -470,13 +472,53 @@ func TestOpencodeAgentTools_ToolsStringToObject(t *testing.T) {
 		t.Fatalf("opencodeAgentTools: %v", err)
 	}
 	s := string(out)
-	for _, want := range []string{`"Read": true`, `"Write": true`, `"Bash": true`} {
+	for _, want := range []string{`"read": true`, `"write": true`, `"bash": true`} {
 		if !strings.Contains(s, want) {
-			t.Errorf("string tools not split/coerced (missing %s):\n%s", want, s)
+			t.Errorf("string tools not split/lowercased/coerced (missing %s):\n%s", want, s)
+		}
+	}
+	for _, unwanted := range []string{`"Read"`, `"Write"`, `"Bash"`} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("tool name not lowercased (found %s):\n%s", unwanted, s)
 		}
 	}
 	if strings.Contains(s, "Read, Write") {
 		t.Errorf("tools still emitted as a raw string:\n%s", s)
+	}
+}
+
+// TestOpencodeAgentTools_ToolNameNormalization pins the OpenPackage tool-name
+// rules: lowercase, the three renames (AskUserQuestion→question,
+// NotebookEdit→notebook, ExitPlanMode→exitplan), a "Bash(git *)" restriction
+// stripped to its base tool, and an mcp__ id left untouched.
+func TestOpencodeAgentTools_ToolNameNormalization(t *testing.T) {
+	in := []byte("---\ntools:\n" +
+		"  - AskUserQuestion\n" +
+		"  - NotebookEdit\n" +
+		"  - ExitPlanMode\n" +
+		"  - Bash(git *)\n" +
+		"  - mcp__linear__create_issue\n" +
+		"---\nbody\n")
+	out, _, err := opencodeAgentTools("agents/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeAgentTools: %v", err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`"question": true`,
+		`"notebook": true`,
+		`"exitplan": true`,
+		`"bash": true`,
+		`"mcp__linear__create_issue": true`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing normalized tool %s:\n%s", want, s)
+		}
+	}
+	for _, unwanted := range []string{"AskUserQuestion", "NotebookEdit", "ExitPlanMode", `"bash(git`} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("un-normalized tool name leaked (%s):\n%s", unwanted, s)
+		}
 	}
 }
 
@@ -570,77 +612,105 @@ func TestOpencodeAgentTools_Idempotent(t *testing.T) {
 	}
 }
 
-// --- Task 2: opencodeMCPRename (D-21) ----------------------------------------
+// --- Task 2: opencodeMCPConvert (D-21) ---------------------------------------
+//
+// opencode validates each MCP entry against a CLOSED local|remote schema and
+// aborts the whole config on a mismatch (real ConfigInvalidError, opencode
+// 1.16.0). So the transform must CONVERT each entry's shape, not just rename the
+// top key. Schema: https://opencode.ai/docs/mcp-servers/.
 
-// TestOpencodeMCPRename_RenamesKey: mcpServers→mcp with the per-server shape
-// preserved; keys == ["mcp.<id>"]; output is JSON (no markdown fence).
-func TestOpencodeMCPRename_RenamesKey(t *testing.T) {
-	in := []byte(`{"mcpServers":{"svc1":{"type":"http","url":"https://svc1"}}}`)
-	out, keys, err := opencodeMCPRename("mcp/servers.json", in)
+// TestOpencodeMCPConvert_RemoteShape: a streamable-http/url entry → opencode
+// remote {type:"remote", url, enabled:true, headers}. The type is normalized
+// (streamable-http is NOT a valid opencode type) and enabled is injected.
+func TestOpencodeMCPConvert_RemoteShape(t *testing.T) {
+	in := []byte(`{"mcpServers":{"cal":{"type":"streamable-http","url":"https://mcp/cal",` +
+		`"description":"x","headers":{"x-key":"${LITELLM_API_KEY}"}}}}`)
+	out, keys, err := opencodeMCPConvert("mcp/servers.json", in)
 	if err != nil {
-		t.Fatalf("opencodeMCPRename: %v", err)
+		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
 	var got map[string]any
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("output is not JSON: %v\n%s", err, out)
 	}
-	if _, ok := got["mcp"]; !ok {
-		t.Errorf("top key 'mcp' missing:\n%s", out)
-	}
 	if _, ok := got["mcpServers"]; ok {
-		t.Errorf("top key 'mcpServers' should be renamed away:\n%s", out)
+		t.Errorf("top key 'mcpServers' must be renamed away:\n%s", out)
 	}
-	mcp, _ := got["mcp"].(map[string]any)
-	svc1, _ := mcp["svc1"].(map[string]any)
-	if svc1["type"] != "http" || svc1["url"] != "https://svc1" {
-		t.Errorf("per-server shape not preserved under mcp.svc1: %#v", svc1)
+	cal, _ := got["mcp"].(map[string]any)["cal"].(map[string]any)
+	if cal["type"] != "remote" {
+		t.Errorf("type = %v, want \"remote\" (streamable-http is invalid for opencode):\n%s", cal["type"], out)
 	}
-	if !reflect.DeepEqual(keys, []string{"mcp.svc1"}) {
-		t.Errorf("keys = %v, want [mcp.svc1]", keys)
+	if cal["enabled"] != true {
+		t.Errorf("enabled missing/false; opencode requires it:\n%s", out)
 	}
-}
-
-// TestOpencodeMCPRename_NoHeaderSurgery: a "Bearer ${env:X}" header value is
-// left UNCHANGED under mcp.svc (no codex-style partition).
-func TestOpencodeMCPRename_NoHeaderSurgery(t *testing.T) {
-	in := []byte(`{"mcpServers":{"svc":{"type":"http","url":"https://svc","headers":{"Authorization":"Bearer ${env:X}"}}}}`)
-	out, _, err := opencodeMCPRename("mcp/x.json", in)
-	if err != nil {
-		t.Fatalf("opencodeMCPRename: %v", err)
+	if cal["url"] != "https://mcp/cal" {
+		t.Errorf("url not preserved: %v", cal["url"])
 	}
-	if !bytes.Contains(out, []byte(`Bearer ${env:X}`)) {
-		t.Errorf("Bearer ${env:X} literal not preserved verbatim:\n%s", out)
+	if _, ok := cal["description"]; ok {
+		t.Errorf("non-schema field 'description' must be dropped:\n%s", out)
 	}
-	if bytes.Contains(out, []byte("bearer_token_env_var")) || bytes.Contains(out, []byte("env_http_headers")) {
-		t.Errorf("codex-style header surgery leaked into opencode output:\n%s", out)
+	// Auth header is carried through verbatim (the ${...} literal is the plugin
+	// author's; opencode resolves it at runtime — ACH never reads the secret).
+	if !bytes.Contains(out, []byte(`${LITELLM_API_KEY}`)) {
+		t.Errorf("auth header literal not preserved:\n%s", out)
+	}
+	if !reflect.DeepEqual(keys, []string{"mcp.cal"}) {
+		t.Errorf("keys = %v, want [mcp.cal]", keys)
 	}
 }
 
-// TestOpencodeMCPRename_MultipleServersSortedKeys: keys are sorted mcp.<id>.
-func TestOpencodeMCPRename_MultipleServersSortedKeys(t *testing.T) {
-	in := []byte(`{"mcpServers":{"b":{"type":"http"},"a":{"type":"http"}}}`)
-	_, keys, err := opencodeMCPRename("mcp/x.json", in)
+// TestOpencodeMCPConvert_LocalShape: a stdio {command, args, env} entry →
+// opencode local {type:"local", command:[cmd,...args], enabled:true,
+// environment}. command MUST be an array (opencode rejects a bare string).
+func TestOpencodeMCPConvert_LocalShape(t *testing.T) {
+	in := []byte(`{"mcpServers":{"ccplugin":{"command":"ccplugin","args":["mcp"],` +
+		`"env":{"TOK":"abc"}}}}`)
+	out, _, err := opencodeMCPConvert("mcp/x.json", in)
 	if err != nil {
-		t.Fatalf("opencodeMCPRename: %v", err)
+		t.Fatalf("opencodeMCPConvert: %v", err)
+	}
+	cc, _ := mustJSON(t, out)["mcp"].(map[string]any)["ccplugin"].(map[string]any)
+	if cc["type"] != "local" {
+		t.Errorf("type = %v, want \"local\":\n%s", cc["type"], out)
+	}
+	if cc["enabled"] != true {
+		t.Errorf("enabled missing/false:\n%s", out)
+	}
+	cmd, ok := cc["command"].([]any)
+	if !ok || len(cmd) != 2 || cmd[0] != "ccplugin" || cmd[1] != "mcp" {
+		t.Errorf("command not merged to array [ccplugin mcp]: %#v\n%s", cc["command"], out)
+	}
+	env, ok := cc["environment"].(map[string]any)
+	if !ok || env["TOK"] != "abc" {
+		t.Errorf("env not renamed to 'environment': %#v\n%s", cc["environment"], out)
+	}
+	if _, ok := cc["args"]; ok {
+		t.Errorf("'args' must be folded into command, not emitted:\n%s", out)
+	}
+}
+
+// TestOpencodeMCPConvert_MultipleServersSortedKeys: keys are sorted mcp.<id>.
+func TestOpencodeMCPConvert_MultipleServersSortedKeys(t *testing.T) {
+	in := []byte(`{"mcpServers":{"b":{"url":"https://b"},"a":{"url":"https://a"}}}`)
+	_, keys, err := opencodeMCPConvert("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
 	if !reflect.DeepEqual(keys, []string{"mcp.a", "mcp.b"}) {
 		t.Errorf("keys = %v, want sorted [mcp.a mcp.b]", keys)
 	}
 }
 
-// TestOpencodeMCPRename_Idempotent (FMT-05): a second call on the FIRST call's
-// output yields byte-identical output.
-func TestOpencodeMCPRename_Idempotent(t *testing.T) {
-	in := []byte(`{"mcpServers":{"b":{"type":"http","url":"https://b"},"a":{"type":"http","url":"https://a"}}}`)
-	out1, _, err := opencodeMCPRename("mcp/x.json", in)
+// TestOpencodeMCPConvert_Idempotent (FMT-05): re-running on converted output
+// (already in opencode shape — type:remote/local, command array) is stable.
+func TestOpencodeMCPConvert_Idempotent(t *testing.T) {
+	in := []byte(`{"mcpServers":{"r":{"url":"https://r"},` +
+		`"l":{"command":"x","args":["y"],"env":{"K":"v"}}}}`)
+	out1, _, err := opencodeMCPConvert("mcp/x.json", in)
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
-	// Second call sees the renamed shape (top key already 'mcp'); it must
-	// still be byte-stable. opencodeMCPRename re-keys mcpServers→mcp, so on
-	// the already-renamed input there is no mcpServers key — assert the
-	// canonical re-encode of an mcp-keyed doc is stable across a re-run.
-	out2, _, err := opencodeMCPRename("mcp/x.json", out1)
+	out2, _, err := opencodeMCPConvert("mcp/x.json", out1)
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
@@ -649,17 +719,27 @@ func TestOpencodeMCPRename_Idempotent(t *testing.T) {
 	}
 }
 
-// TestOpencodeMCPRename_Malformed: invalid JSON returns a non-nil error so the
+// TestOpencodeMCPConvert_Malformed: invalid JSON returns a non-nil error so the
 // projection aborts that file rather than emitting a half-parsed doc.
-func TestOpencodeMCPRename_Malformed(t *testing.T) {
+func TestOpencodeMCPConvert_Malformed(t *testing.T) {
 	in := []byte(`{"mcpServers": this is not json}`)
-	out, keys, err := opencodeMCPRename("mcp/bad.json", in)
+	out, keys, err := opencodeMCPConvert("mcp/bad.json", in)
 	if err == nil {
 		t.Fatalf("expected error on malformed JSON, got nil (out=%q keys=%v)", out, keys)
 	}
 	if out != nil || keys != nil {
 		t.Errorf("on error want out==nil keys==nil, got out=%q keys=%v", out, keys)
 	}
+}
+
+// mustJSON unmarshals out into a map or fails the test.
+func mustJSON(t *testing.T, out []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	return m
 }
 
 // ----------------------------------------------------------------------------
@@ -716,34 +796,26 @@ func TestOpencodeAgentTools_Conformance(t *testing.T) {
 	}
 }
 
-// TestOpencodeMCPRename_Conformance pins OPENPACKAGE-MAPPING.md §opencode 2b:
-// top-level mcpServers→mcp rename ONLY (output stays JSON), AND the explicit
-// NO-header-surgery contract — a "Bearer ${env:X}" header survives verbatim
-// under mcp (NOT lifted to bearer_token_env_var / env_http_headers like codex).
-func TestOpencodeMCPRename_Conformance(t *testing.T) {
+// TestOpencodeMCPConvert_NoHeaderSurgery pins the opencode/codex distinction:
+// opencode keeps the Bearer ${env:X} header verbatim on the converted remote
+// entry (NOT lifted to bearer_token_env_var / env_http_headers like codex).
+func TestOpencodeMCPConvert_NoHeaderSurgery(t *testing.T) {
 	in := []byte(`{"mcpServers":{"svc":{"type":"http","url":"https://svc",` +
 		`"headers":{"Authorization":"Bearer ${env:X}"}}}}`)
-	out, keys, err := opencodeMCPRename("mcp/x.json", in)
+	out, keys, err := opencodeMCPConvert("mcp/x.json", in)
 	if err != nil {
-		t.Fatalf("opencodeMCPRename: %v", err)
+		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
 	if !reflect.DeepEqual(keys, []string{"mcp.svc"}) {
 		t.Errorf("keys = %v, want [mcp.svc]", keys)
 	}
-	// Output is JSON with the top key renamed mcpServers→mcp.
-	var got map[string]any
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	svc, _ := mustJSON(t, out)["mcp"].(map[string]any)["svc"].(map[string]any)
+	if svc["type"] != "remote" {
+		t.Errorf("type = %v, want remote:\n%s", svc["type"], out)
 	}
-	if _, ok := got["mcp"]; !ok {
-		t.Errorf("top key 'mcp' missing:\n%s", out)
-	}
-	if _, ok := got["mcpServers"]; ok {
-		t.Errorf("top key 'mcpServers' must be renamed away:\n%s", out)
-	}
-	// NO header surgery: the Bearer ${env:X} literal survives verbatim under mcp.
+	// The Bearer ${env:X} literal survives verbatim (no codex-style surgery).
 	if !bytes.Contains(out, []byte(`Bearer ${env:X}`)) {
-		t.Errorf("Bearer ${env:X} literal not preserved verbatim (opencode does NOT do header surgery):\n%s", out)
+		t.Errorf("Bearer ${env:X} literal not preserved verbatim:\n%s", out)
 	}
 	if bytes.Contains(out, []byte("bearer_token_env_var")) || bytes.Contains(out, []byte("env_http_headers")) {
 		t.Errorf("codex-style header surgery leaked into opencode output:\n%s", out)
