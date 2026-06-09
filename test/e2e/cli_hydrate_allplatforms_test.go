@@ -80,7 +80,10 @@ var allPlatformExpects = []allPlatformExpect{
 		skillsDir:   ".claude/skills",
 		agentsDir:   ".claude/agents",
 		agentExt:    ".md",
-		commandsDir: ".claude/commands",
+		// caveman commands are .toml (gemini-format); claude's rule is
+		// commands/**/*.md, so they are NOT projected here (format-filter). Broad
+		// claude command coverage lives in TestProjectionLifecycle.
+		commandsDir: "",
 	},
 	{
 		id:          "codex",
@@ -107,7 +110,9 @@ var allPlatformExpects = []allPlatformExpect{
 		skillsDir:   ".opencode/skills",
 		agentsDir:   ".opencode/agents",
 		agentExt:    ".md",
-		commandsDir: ".opencode/commands",
+		// caveman commands are .toml (gemini-format); opencode's rule is
+		// commands/**/*.md, so they are NOT projected here (format-filter).
+		commandsDir: "",
 	},
 	{
 		// pimono (Pi / pi-mono, Phase 5 D-33): thinnest adapter. skills +
