@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -809,5 +811,164 @@ func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("dst bytes = %q, want %q", got, payload)
+	}
+}
+
+// --- opencode command frontmatter transform ---------------------------------
+
+// parseFM is a test helper: split the emitted doc and yaml.Unmarshal its
+// frontmatter, failing the test if the frontmatter is not valid YAML. Returns
+// the decoded map (nil when the doc carries no frontmatter) and the body.
+func parseFM(t *testing.T, out []byte) (map[string]any, string) {
+	t.Helper()
+	fm, body, found := route.SplitFrontmatter(out)
+	if !found {
+		return nil, string(out)
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(fm, &m); err != nil {
+		t.Fatalf("emitted frontmatter is not valid YAML: %v\n%s", err, out)
+	}
+	return m, string(body)
+}
+
+// TestOpencodeCommandFrontmatter_DropsClaudeKeys is the core regression for the
+// opencode load failure: a real claude command (with the invalid-YAML
+// argument-hint value) must come out as VALID YAML carrying only opencode's
+// recognized keys, with the prompt body intact.
+func TestOpencodeCommandFrontmatter_DropsClaudeKeys(t *testing.T) {
+	in := []byte("---\n" +
+		"name: ackstorm:git:branch\n" +
+		"description: Create a new feature branch following ACKstorm naming conventions\n" +
+		"argument-hint: [type] [description]\n" +
+		"allowed-tools: Bash(git status:*), Bash(git branch:*)\n" +
+		"---\n# Create Feature Branch\n\nUse $ARGUMENTS to name it.\n")
+
+	out, keys, err := opencodeCommandFrontmatter("commands/branch.md", in)
+	if err != nil {
+		t.Fatalf("opencodeCommandFrontmatter: %v", err)
+	}
+	if keys != nil {
+		t.Errorf("keys = %v, want nil (MergeReplace, file-owned)", keys)
+	}
+
+	m, body := parseFM(t, out) // fails if output is not valid YAML — THE fix
+	if _, ok := m["description"]; !ok {
+		t.Errorf("description dropped; got %v", m)
+	}
+	for _, drop := range []string{"name", "argument-hint", "allowed-tools"} {
+		if _, ok := m[drop]; ok {
+			t.Errorf("claude-only key %q leaked into opencode command frontmatter: %v", drop, m)
+		}
+	}
+	if !strings.Contains(body, "$ARGUMENTS") {
+		t.Errorf("command body not preserved: %q", body)
+	}
+}
+
+// TestOpencodeCommandFrontmatter_NoFrontmatter_Passthrough: a body-only command
+// passes through byte-for-byte (no fence invented).
+func TestOpencodeCommandFrontmatter_NoFrontmatter_Passthrough(t *testing.T) {
+	in := []byte("# just a body\nrun $ARGUMENTS\n")
+	out, _, err := opencodeCommandFrontmatter("commands/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeCommandFrontmatter: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Errorf("frontmatter-less command not passed through:\n%s", out)
+	}
+}
+
+// TestOpencodeCommandFrontmatter_OnlyClaudeKeys_DropsFrontmatter: when nothing
+// opencode recognizes survives, the frontmatter is dropped and only the body
+// remains (a valid opencode command — the body is the template).
+func TestOpencodeCommandFrontmatter_OnlyClaudeKeys_DropsFrontmatter(t *testing.T) {
+	in := []byte("---\nname: x\nargument-hint: [a] [b]\n---\nbody $1\n")
+	out, _, err := opencodeCommandFrontmatter("commands/x.md", in)
+	if err != nil {
+		t.Fatalf("opencodeCommandFrontmatter: %v", err)
+	}
+	if strings.Contains(string(out), "---") {
+		t.Errorf("expected frontmatter dropped, got:\n%s", out)
+	}
+	if !strings.Contains(string(out), "body $1") {
+		t.Errorf("body lost:\n%s", out)
+	}
+}
+
+// TestOpencodeCommandFrontmatter_ModelForm: a provider/model is kept; a claude
+// shorthand is dropped (opencode cannot resolve it).
+func TestOpencodeCommandFrontmatter_ModelForm(t *testing.T) {
+	kept, _, err := opencodeCommandFrontmatter("commands/a.md",
+		[]byte("---\ndescription: d\nmodel: anthropic/claude-sonnet-4\n---\nB"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := parseFM(t, kept); m["model"] != "anthropic/claude-sonnet-4" {
+		t.Errorf("provider/model not kept; got %v", m["model"])
+	}
+	dropped, _, err := opencodeCommandFrontmatter("commands/b.md",
+		[]byte("---\ndescription: d\nmodel: sonnet\n---\nB"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := parseFM(t, dropped); m["model"] != nil {
+		t.Errorf("claude-shorthand model not dropped; got %v", m["model"])
+	}
+}
+
+// --- opencode agent color / model normalization -----------------------------
+
+// TestOpencodeAgentTools_ColorNormalized: claude color names map to hex, hex and
+// theme values pass through, and an unknown color is dropped (cosmetic).
+func TestOpencodeAgentTools_ColorNormalized(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantKey bool
+		wantVal string
+	}{
+		{"purple", true, "#9b59b6"},
+		{"#FF5733", true, "#FF5733"},
+		{"accent", true, "accent"},
+		{"chartreuse", false, ""}, // unknown → dropped
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			in := []byte("---\ncolor: \"" + c.in + "\"\ndescription: d\n---\nbody\n")
+			out, _, err := opencodeAgentTools("agents/x.md", in)
+			if err != nil {
+				t.Fatalf("opencodeAgentTools: %v", err)
+			}
+			m, _ := parseFM(t, out)
+			got, ok := m["color"]
+			if ok != c.wantKey {
+				t.Fatalf("color present=%v, want %v (color=%v)", ok, c.wantKey, got)
+			}
+			if c.wantKey && got != c.wantVal {
+				t.Errorf("color = %v, want %q", got, c.wantVal)
+			}
+		})
+	}
+}
+
+// TestOpencodeAgentTools_ModelShorthandDropped: a claude shorthand model is
+// dropped; a provider/model value is preserved.
+func TestOpencodeAgentTools_ModelShorthandDropped(t *testing.T) {
+	out, _, err := opencodeAgentTools("agents/x.md",
+		[]byte("---\nmodel: sonnet\ndescription: d\n---\nbody\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := parseFM(t, out); m["model"] != nil {
+		t.Errorf("shorthand model not dropped; got %v", m["model"])
+	}
+
+	out2, _, err := opencodeAgentTools("agents/y.md",
+		[]byte("---\nmodel: anthropic/claude-sonnet-4\ndescription: d\n---\nbody\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := parseFM(t, out2); m["model"] != "anthropic/claude-sonnet-4" {
+		t.Errorf("provider/model not kept; got %v", m["model"])
 	}
 }

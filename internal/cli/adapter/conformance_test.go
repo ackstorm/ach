@@ -146,7 +146,7 @@ var conformanceTables = []adapterConformance{
 		mappingSection: "OPENPACKAGE-MAPPING.md §opencode (FMT-04 tools-object, D-21 mcp rename)",
 		rowCount:       4,
 		rules: map[string]wantRule{
-			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
+			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"agents/**/*.md":   {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"skills/**/*":      {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},

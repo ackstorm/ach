@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -271,11 +272,11 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // satisfying route.RuleProvider (the D-06 seam). Per D-18/D-19 the routed
 // (plural) kinds are:
 //
-//   - commands/**/*.md → .opencode/commands/**/*.md (MergeReplace, .md only:
-//     opencode commands are markdown; foreign-format commands/*.toml shipped for
-//     other tools must not leak into .opencode/commands/)
+//   - commands/**/*.md → .opencode/commands/**/*.md (MergeReplace, Transform:
+//     opencodeCommandFrontmatter — rewrite claude command frontmatter to
+//     opencode's command schema; output stays markdown, .md only)
 //   - agents/**/*.md → .opencode/agents/**/*.md (MergeReplace, Transform:
-//     opencodeAgentTools — tools[]→{name:true}, output stays markdown)
+//     opencodeAgentTools — tools[]→{name:true}, color/model normalize, markdown)
 //   - skills/**/*    → .opencode/skills/**/*    (MergeReplace, verbatim copy)
 //   - mcp/**/*       → .opencode/opencode.json  (MergeDeep, Transform:
 //     opencodeMCPRename — mcpServers→mcp, no header surgery, JSON output)
@@ -295,7 +296,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // (ProjectionRules -> route.Project).
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
-		{FromGlob: "commands/**/*.md", ToGlob: ".opencode/commands/**/*.md", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*.md", ToGlob: ".opencode/commands/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeCommandFrontmatter},
 		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
 		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
@@ -310,13 +311,25 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 // (sorted keys, encoder-quoted scalars — D-24/D-05), so re-hydrate is
 // byte-identical (FMT-05).
 //
-// Every OTHER frontmatter key is preserved verbatim: `model` is NOT rewritten
-// (it already carries opencode's provider/model form), and the claude-extras
-// (`permissions`, `skills`, `hooks`, `disallowedTools`, …) pass through —
-// opencode tolerates unknown keys. The body after the closing fence is
-// preserved byte-for-byte. When the input carries no frontmatter, it passes
-// through unchanged (no fence is invented). When `tools` is absent the doc is
-// re-encoded but no tools field is fabricated.
+// Two opencode-SCHEMA fields are normalized (opencode validates them and aborts
+// fatally on a bad value — it is NOT permissive for these, contrary to the
+// earlier assumption here):
+//
+//   - color: opencode requires ^#[0-9a-fA-F]{6}$ or a theme name
+//     (primary|secondary|accent|success|warning|error|info). Claude's freeform
+//     names (purple, blue, …) are neither, so a known name maps to hex and an
+//     unknown value is DROPPED (color is cosmetic — losing it never breaks the
+//     agent). A hex/theme value passes through.
+//   - model: opencode wants provider/model-id (e.g. anthropic/claude-…). A
+//     claude shorthand (sonnet/opus/haiku — no "/") is DROPPED so opencode falls
+//     back to the user's default instead of failing to resolve it; a
+//     provider/model value passes through verbatim.
+//
+// Other claude-extras (`permissions`, `skills`, `hooks`, `disallowedTools`, …)
+// pass through — opencode is permissive for keys it doesn't validate. The body
+// after the closing fence is preserved byte-for-byte. When the input carries no
+// frontmatter, it passes through unchanged (no fence is invented). When `tools`
+// is absent the doc is re-encoded but no tools field is fabricated.
 //
 // keys is nil: the rule is MergeReplace (file-owned), so there are no dotted
 // deep-merge keys to contribute. Output stays markdown — NOT JSON (D-20).
@@ -382,6 +395,9 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 		}
 	}
 
+	normalizeOpencodeColorField(doc)
+	normalizeOpencodeModelField(doc)
+
 	out, err = route.EncodeFrontmatterDoc(doc, body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opencode: opencodeAgentTools encode %q: %w", srcRel, err)
@@ -438,4 +454,159 @@ func opencodeMCPRename(srcRel string, in []byte) (out []byte, keys []string, err
 		return nil, nil, fmt.Errorf("opencode: opencodeMCPRename encode %q: %w", srcRel, err)
 	}
 	return out, keys, nil
+}
+
+// opencodeCommandKeys is opencode's recognized custom-command frontmatter set
+// (https://opencode.ai/docs/commands/). Claude command keys not in this set
+// (name, argument-hint, allowed-tools, disable-model-invocation, …) are dropped
+// — and argument-hint's value (`[type] [description]`) is not even valid YAML,
+// so dropping it is what makes the file parse at all.
+var opencodeCommandKeys = map[string]bool{
+	"description": true,
+	"agent":       true,
+	"model":       true,
+	"subtask":     true,
+}
+
+// opencodeCommandFrontmatter rewrites a claude-format command's frontmatter into
+// opencode's command schema. The raw claude frontmatter is NOT reliably valid
+// YAML (claude is lenient — `argument-hint: [type] [description]` fails a strict
+// parser), so this transform line-scans the frontmatter for opencode's
+// recognized top-level scalar keys rather than yaml.Unmarshal-ing the whole
+// block, drops everything else, and re-emits a clean frontmatter via the
+// deterministic encoder. The body (the prompt template — claude's $ARGUMENTS/$1
+// syntax is shared with opencode) is preserved byte-for-byte.
+//
+// Scope: top-level scalar keys only (claude command frontmatter is flat). A
+// block-scalar / nested value for a whitelisted key is not expected and not
+// handled. keys is nil (MergeReplace, file-owned). When the input carries no
+// frontmatter it passes through unchanged.
+func opencodeCommandFrontmatter(srcRel string, in []byte) (out []byte, keys []string, err error) {
+	fm, body, found := route.SplitFrontmatter(in)
+	if !found {
+		return in, nil, nil
+	}
+
+	doc := map[string]any{}
+	for _, line := range strings.Split(string(fm), "\n") {
+		key, val, ok := splitTopLevelScalar(line)
+		if !ok || !opencodeCommandKeys[key] {
+			continue
+		}
+		switch key {
+		case "subtask":
+			doc[key] = strings.EqualFold(val, "true")
+		case "model":
+			// Keep only opencode's provider/model form; drop a claude shorthand.
+			if isProviderModel(val) {
+				doc[key] = val
+			}
+		default: // description, agent
+			doc[key] = val
+		}
+	}
+
+	// Nothing opencode recognizes → keep just the body (the prompt template);
+	// emitting an empty frontmatter fence would be meaningless.
+	if len(doc) == 0 {
+		return body, nil, nil
+	}
+
+	out, err = route.EncodeFrontmatterDoc(doc, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opencode: opencodeCommandFrontmatter encode %q: %w", srcRel, err)
+	}
+	return out, nil, nil
+}
+
+// splitTopLevelScalar parses one `key: value` line at the top level (not
+// indented, not a comment/blank). Returns the key, the value with any matching
+// surrounding quotes stripped, and ok=false for lines that are not a bare
+// top-level scalar assignment (indented continuations, comments, list items).
+func splitTopLevelScalar(line string) (key, val string, ok bool) {
+	if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '#' || line[0] == '-' {
+		return "", "", false
+	}
+	idx := strings.IndexByte(line, ':')
+	if idx <= 0 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:idx])
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if !(c == '-' || c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return "", "", false
+		}
+	}
+	val = strings.TrimSpace(line[idx+1:])
+	if len(val) >= 2 {
+		if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
+			val = val[1 : len(val)-1]
+		}
+	}
+	return key, val, true
+}
+
+// opencode color validation: ^#[0-9a-fA-F]{6}$ or a theme name. Claude's
+// freeform color names map to hex; unknowns drop.
+var (
+	hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+	opencodeColorThemes = map[string]bool{
+		"primary": true, "secondary": true, "accent": true,
+		"success": true, "warning": true, "error": true, "info": true,
+	}
+
+	// claudeColorHex maps the common claude/CSS agent color names to a hex value
+	// opencode accepts. Intentionally small — an unmapped name is simply dropped.
+	claudeColorHex = map[string]string{
+		"red": "#e74c3c", "green": "#2ecc71", "blue": "#3498db",
+		"yellow": "#f1c40f", "orange": "#e67e22", "purple": "#9b59b6",
+		"pink": "#ff69b4", "cyan": "#00bcd4", "magenta": "#ff00ff",
+		"gray": "#95a5a6", "grey": "#95a5a6", "white": "#ffffff",
+		"black": "#000000", "brown": "#8d6e63",
+	}
+)
+
+// normalizeOpencodeColorField rewrites doc["color"] in place to an
+// opencode-valid value, or deletes it when the value cannot be made valid.
+func normalizeOpencodeColorField(doc map[string]any) {
+	raw, ok := doc["color"]
+	if !ok {
+		return
+	}
+	s, isStr := raw.(string)
+	if !isStr {
+		delete(doc, "color")
+		return
+	}
+	s = strings.TrimSpace(s)
+	if hexColorRe.MatchString(s) || opencodeColorThemes[strings.ToLower(s)] {
+		doc["color"] = s
+		return
+	}
+	if hex, found := claudeColorHex[strings.ToLower(s)]; found {
+		doc["color"] = hex
+		return
+	}
+	delete(doc, "color")
+}
+
+// normalizeOpencodeModelField deletes doc["model"] when it is a string not in
+// opencode's provider/model form (a claude shorthand opencode cannot resolve);
+// a provider/model value is left untouched.
+func normalizeOpencodeModelField(doc map[string]any) {
+	raw, ok := doc["model"]
+	if !ok {
+		return
+	}
+	if s, isStr := raw.(string); isStr && !isProviderModel(s) {
+		delete(doc, "model")
+	}
+}
+
+// isProviderModel reports whether s is in opencode's provider/model-id form
+// (contains a "/"), e.g. "anthropic/claude-sonnet-4-…".
+func isProviderModel(s string) bool {
+	return strings.Contains(strings.TrimSpace(s), "/")
 }
