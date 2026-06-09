@@ -299,6 +299,62 @@ func TestProject_TerminalExtensionEnforced(t *testing.T) {
 	}
 }
 
+// TestProject_TerminalExtensionDisambiguatesSameAnchor proves that when two
+// rules share a top-level anchor but differ on a "*.<ext>" terminal (gemini's
+// commands/**/*.md converter AND commands/**/*.toml passthrough), a FILE routes
+// to the rule whose terminal extension matches its own — NOT unconditionally to
+// the FIRST anchor match. Regression guard for the bug where a plugin's native
+// gemini-format commands/*.toml were silently dropped: matchRule returned the
+// .md rule for every file under commands/, and the WR-03 terminal-extension
+// guard then dropped the .toml ones (the .toml passthrough rule was dead code).
+func TestProject_TerminalExtensionDisambiguatesSameAnchor(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"commands/from-md.md":    "claude command body",
+		"commands/native.toml":   "prompt = \"native\"\n",
+		"commands/sub/deep.toml": "prompt = \"deep\"\n",
+	})
+	mdCalls := 0
+	rules := []Rule{
+		// .md → .toml with a converting Transform (must NOT see the .toml files).
+		{
+			FromGlob: "commands/**/*.md",
+			ToGlob:   ".gemini/commands/**/*.toml",
+			Merge:    adapter.MergeReplace,
+			Transform: func(_ string, in []byte) ([]byte, []string, error) {
+				mdCalls++
+				return []byte("converted"), nil, nil
+			},
+		},
+		// native .toml passthrough (verbatim) — previously shadowed/dead.
+		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace},
+	}
+
+	pr, err := Project(rules, src, "")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if mdCalls != 1 {
+		t.Errorf("md Transform called %d times; want 1 (only commands/from-md.md)", mdCalls)
+	}
+	got := map[string]string{}
+	for _, fw := range pr.FileWrites {
+		got[fw.Path] = string(fw.Content)
+	}
+	// The .md converts; both .toml files pass through verbatim (NOT dropped).
+	if v, ok := got[".gemini/commands/from-md.toml"]; !ok || v != "converted" {
+		t.Errorf(".md route: got %q (present=%v), want converted", v, ok)
+	}
+	if v, ok := got[".gemini/commands/native.toml"]; !ok || v != "prompt = \"native\"\n" {
+		t.Errorf(".toml passthrough native: got %q (present=%v), want verbatim (the dropped-command bug)", v, ok)
+	}
+	if v, ok := got[".gemini/commands/sub/deep.toml"]; !ok || v != "prompt = \"deep\"\n" {
+		t.Errorf(".toml passthrough nested: got %q (present=%v), want verbatim", v, ok)
+	}
+	if len(pr.FileWrites) != 3 {
+		t.Fatalf("expected 3 FileWrites (1 converted + 2 verbatim), got %d: %v", len(pr.FileWrites), pr.FileWrites)
+	}
+}
+
 // TestProject_TransformApplied (D-03): a rule whose Transform returns fixed
 // bytes + keys ["mcpServers.x"] yields a FileWrite carrying those Content/Keys.
 func TestProject_TransformApplied(t *testing.T) {

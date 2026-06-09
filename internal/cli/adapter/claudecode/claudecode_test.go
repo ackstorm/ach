@@ -407,13 +407,15 @@ func TestProjectionRules_Rows(t *testing.T) {
 		t.Errorf("AGENTS.md composite row must have nil Transform")
 	}
 
-	// mcp/**/* -> settingsJSONPath as MergeDeep WITH a non-nil Transform.
+	// mcp/**/* -> mcpJSONPath (project-root .mcp.json) as MergeDeep WITH a
+	// non-nil Transform. Claude reads plugin MCP from project-root .mcp.json,
+	// NOT from settings.json — so plugin MCP projects there.
 	mcp, ok := byFrom["mcp/**/*"]
 	if !ok {
 		t.Fatalf("ProjectionRules missing mcp/**/* deep-merge row")
 	}
-	if mcp.to != settingsJSONPath {
-		t.Errorf("mcp/**/* ToGlob = %q, want settingsJSONPath %q", mcp.to, settingsJSONPath)
+	if mcp.to != mcpJSONPath {
+		t.Errorf("mcp/**/* ToGlob = %q, want mcpJSONPath %q", mcp.to, mcpJSONPath)
 	}
 	if mcp.merge != adapter.MergeDeep {
 		t.Errorf("mcp/**/* Merge = %v, want MergeDeep", mcp.merge)

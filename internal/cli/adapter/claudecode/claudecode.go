@@ -43,11 +43,16 @@ import (
 // Target paths emitted by this adapter. Centralized as constants so
 // the test assertions and the production code stay in lock-step.
 const (
-	// settingsJSONPath is where claude-code MCP server definitions are
-	// written (user-directed; see the surgical-merge redesign plan). The
-	// adapter merges its mcpServers entries into this file surgically,
-	// preserving the user's other settings/servers.
+	// settingsJSONPath is the claude-code runtime-config file. RenderRuntime
+	// (the governed env-hydrate path) still targets it; plugin MCP projection
+	// does NOT (see mcpJSONPath).
 	settingsJSONPath = ".claude/settings.json"
+
+	// mcpJSONPath is Claude Code's per-project MCP registry — the file claude
+	// actually READS for plugin MCP servers (project-root .mcp.json). A
+	// plugin's mcp/ convention dir and root .mcp.json deep-merge here, NOT into
+	// settings.json (settings.json mcpServers is not the load path).
+	mcpJSONPath = ".mcp.json"
 
 	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
 	// alias contract (plan must_haves: ["claude", "cc"]).
@@ -328,9 +333,10 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
-		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
+		{FromGlob: "mcp/**/*", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 		// Root .mcp.json is Claude Code's standard plugin MCP location (alongside
-		// the mcp/ convention) — deep-merge it into .claude/settings.json too.
-		{FromGlob: ".mcp.json", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
+		// the mcp/ convention) — deep-merge it into the project-root .mcp.json,
+		// the file claude actually reads.
+		{FromGlob: ".mcp.json", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 	}
 }

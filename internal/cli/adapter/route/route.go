@@ -238,7 +238,19 @@ func resolveRecursiveGlobTarget(fromGlob, toGlob, srcRel string) (string, error)
 // topLevel (the source tree's first path element) — mirroring the codex
 // classify-on-parts[0] discipline. A rule with ProvenanceGate=="" applies
 // to any source; a gated rule applies only when source == gate.
-func matchRule(rules []Rule, topLevel, source string) (Rule, bool) {
+//
+// Terminal-extension disambiguation: when several rules share a top-level
+// anchor but differ on a "*.<ext>" terminal segment (e.g. gemini's
+// commands/**/*.md → .toml converter AND commands/**/*.toml passthrough), a
+// FILE is matched to the rule whose terminal extension equals the file's. The
+// anchor-only classification alone would always return the FIRST such rule and
+// the WR-03 terminal-extension guard would then silently drop every file of the
+// OTHER extension (this is the bug that dropped a plugin's native gemini-format
+// commands/*.toml). isFile=false (directories, anchor-only probes) keeps the
+// permissive first-anchor match so Project still recurses into the kind dir.
+func matchRule(rules []Rule, topLevel, rel, source string, isFile bool) (Rule, bool) {
+	var fallback Rule
+	var haveFallback bool
 	for _, r := range rules {
 		anchorFirst := topLevel
 		if a := globAnchor(r.FromGlob); a != "" {
@@ -250,7 +262,27 @@ func matchRule(rules []Rule, topLevel, source string) (Rule, bool) {
 		if r.ProvenanceGate != "" && r.ProvenanceGate != source {
 			continue
 		}
+		// For a concrete file, a rule whose FromGlob terminal is "*.<ext>" only
+		// applies when the file carries that extension. A rule with no terminal
+		// extension wildcard (skills/**/*, agents/**/*) matches any extension.
+		if isFile {
+			if base := filepath.Base(filepath.ToSlash(r.FromGlob)); strings.HasPrefix(base, "*.") {
+				if filepath.Ext(rel) != filepath.Ext(base) {
+					// Remember the first anchor match as a fallback so an
+					// unexpected extension still routes (and the existing WR-03
+					// guard inside Project decides drop), preserving prior
+					// behavior for trees with no extension-specific rule.
+					if !haveFallback {
+						fallback, haveFallback = r, true
+					}
+					continue
+				}
+			}
+		}
 		return r, true
+	}
+	if haveFallback {
+		return fallback, true
 	}
 	return Rule{}, false
 }
@@ -317,7 +349,7 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		topLevel := parts[0]
 
-		rule, ok := matchRule(rules, topLevel, source)
+		rule, ok := matchRule(rules, topLevel, rel, source, !d.IsDir())
 		if !ok {
 			// Only KNOWN component kinds are reported as dropped (so the user
 			// learns the target lacks support); metadata, docs, and
