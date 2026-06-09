@@ -159,6 +159,33 @@ func newCommit(opts Opts) (*commit, error) {
 		}
 	}
 
+	// Per-platform state file: the engine tracks each agent target in its own
+	// <ach-dir>/state-<platform>.json so a multi-target hydrate cannot let one
+	// platform's render overwrite another's projection buckets (step12WriteState
+	// replaces buckets wholesale). achDir stays the per-environment dir, so the
+	// platform-independent content cache (prompt/, artifact/, plugin/) is shared.
+	if opts.Platform != "" {
+		platformStatePath, perr := state.ResolvePlatformPath(workspaceCwd, opts.Environment, opts.Platform, opts.Global)
+		if perr != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("resolve per-platform state path: %v", perr),
+				Wrapped: perr,
+			}
+		}
+		// Adopt a pre-per-platform <ach-dir>/state.json that belongs to THIS
+		// platform (Adapter.ID match, or an untagged legacy state), carrying its
+		// file tracking forward so uninstall/--sync still manage those files.
+		if err := adoptLegacyEnvState(statePath, platformStatePath, opts.Platform); err != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("adopt legacy env state: %v", err),
+				Wrapped: err,
+			}
+		}
+		statePath = platformStatePath
+	}
+
 	// Resolve toolRoot — the base for adapter runtime-config writes. In
 	// project scope it is the workspace root (the dir that CONTAINS
 	// .ach/). In --global scope adapter configs go under $HOME (the tools'
@@ -280,6 +307,32 @@ func migrateLegacyFlatState(workspaceCwd string, stderr io.Writer) error {
 			loaded.Environment)
 	}
 	return nil
+}
+
+// adoptLegacyEnvState migrates a pre-per-platform <ach-dir>/state.json to the
+// per-platform <ach-dir>/state-<platform>.json so its file tracking carries
+// forward (uninstall/--sync keep working). It renames legacyPath → platformPath
+// ONLY when:
+//   - platformPath does not already exist (never clobber a real per-platform state), AND
+//   - the legacy state is readable AND belongs to THIS platform — its
+//     Adapter.ID == platform, or is empty (untagged legacy state predating
+//     platform tagging).
+//
+// A legacy state tagged for a DIFFERENT platform is left untouched (that
+// platform's own hydrate adopts it). All other conditions (missing/corrupt
+// legacy state) are silent no-ops — the fresh per-platform hydrate proceeds.
+func adoptLegacyEnvState(legacyPath, platformPath, platform string) error {
+	if _, err := os.Stat(platformPath); err == nil {
+		return nil // per-platform state already exists — nothing to adopt
+	}
+	loaded, err := state.Load(legacyPath)
+	if err != nil || loaded == nil {
+		return nil // no/unreadable legacy state
+	}
+	if loaded.Adapter.ID != "" && loaded.Adapter.ID != platform {
+		return nil // belongs to a different platform
+	}
+	return os.Rename(legacyPath, platformPath)
 }
 
 // run executes the §6.7 14-step commit sequence. Each stepN is an
@@ -1132,7 +1185,11 @@ func (c *commit) step10bRuntimeMirror(m *manifest.Manifest, includeRuntime bool,
 // always reflects the current Environment. Returns the rows in
 // runtimeMirrorBuckets order.
 func (c *commit) writeRuntimeMirror(m *manifest.Manifest) ([]state.FileEntry, error) {
-	runtimeDir := filepath.Join(c.achDir, "runtime")
+	// Per-platform runtime mirror dir so a multi-target hydrate does not let one
+	// platform's MCP/A2A snapshot overwrite another's (the snapshots differ per
+	// tool) and trigger false drift on the other's next hydrate.
+	runtimeRel := "runtime-" + c.opts.Platform
+	runtimeDir := filepath.Join(c.achDir, runtimeRel)
 	bucketRefs := map[string][]manifest.ContentRef{}
 	if m != nil && m.Runtime != nil {
 		bucketRefs["mcp"] = m.Runtime.MCPServers
@@ -1143,7 +1200,7 @@ func (c *commit) writeRuntimeMirror(m *manifest.Manifest) ([]state.FileEntry, er
 	entries := make([]state.FileEntry, 0, len(runtimeMirrorBuckets))
 	var madeDir bool
 	for _, name := range runtimeMirrorBuckets {
-		rel := filepath.Join("runtime", name+".json")
+		rel := filepath.Join(runtimeRel, name+".json")
 		abs := filepath.Join(runtimeDir, name+".json")
 		refs := bucketRefs[name]
 		if len(refs) == 0 {

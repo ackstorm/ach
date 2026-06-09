@@ -180,7 +180,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			assertHooksDropped(t, pe.id, stderr)
 			assertStateJSON(t, output, pe.id)
 			assertPerEnvNamespacing(t, output)
-			assertRuntimeMirror(t, output, pk)
+			assertRuntimeMirror(t, output, pe.id, pk)
 		})
 	}
 
@@ -396,7 +396,7 @@ type stateFile struct {
 // bound to the hydrated adapter with at least the runtime-config file row.
 func assertStateJSON(t *testing.T, output, id string) {
 	t.Helper()
-	path := phase7StatePath(output, phase7DemoEnvironment)
+	path := phase7StatePath(output, phase7DemoEnvironment, id)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("%s: read state.json %s: %v", id, path, err)
@@ -421,9 +421,10 @@ func assertStateJSON(t *testing.T, output, id string) {
 // legacy flat <output>/.ach/state.json.
 func assertPerEnvNamespacing(t *testing.T, output string) {
 	t.Helper()
-	nsState := filepath.Join(output, ".ach", phase7DemoEnvironment, "state.json")
-	if _, err := os.Stat(nsState); err != nil {
-		t.Errorf("per-env state.json missing at .ach/%s/state.json: %v", phase7DemoEnvironment, err)
+	// At least one per-platform state-<platform>.json under the per-env dir.
+	matches, _ := filepath.Glob(filepath.Join(output, ".ach", phase7DemoEnvironment, "state-*.json"))
+	if len(matches) == 0 {
+		t.Errorf("no per-platform state-*.json under .ach/%s/ (per-env namespaced layout)", phase7DemoEnvironment)
 	}
 	flatState := filepath.Join(output, ".ach", "state.json")
 	if _, err := os.Stat(flatState); err == nil {
@@ -434,14 +435,17 @@ func assertPerEnvNamespacing(t *testing.T, output string) {
 // assertRuntimeMirror asserts the .ach/<env>/runtime/ snapshots exist for the
 // demo Environment (which exposes mcp + a2a + model) and are credential-free
 // (OBS-02: the bearer lives only in the adapter config, never in the cache).
-func assertRuntimeMirror(t *testing.T, output, cred string) {
+func assertRuntimeMirror(t *testing.T, output, platform, cred string) {
 	t.Helper()
-	runtimeDir := filepath.Join(output, ".ach", phase7DemoEnvironment, "runtime")
+	// Per-platform runtime mirror dir (runtime-<platform>) so multi-target
+	// hydrate snapshots don't collide.
+	runtimeRel := "runtime-" + platform
+	runtimeDir := filepath.Join(output, ".ach", phase7DemoEnvironment, runtimeRel)
 	for _, name := range []string{"mcp", "a2a", "model"} {
 		p := filepath.Join(runtimeDir, name+".json")
 		b, err := os.ReadFile(p)
 		if err != nil {
-			t.Errorf("runtime mirror .ach/%s/runtime/%s.json missing: %v", phase7DemoEnvironment, name, err)
+			t.Errorf("runtime mirror .ach/%s/%s/%s.json missing: %v", phase7DemoEnvironment, runtimeRel, name, err)
 			continue
 		}
 		if !json.Valid(b) {

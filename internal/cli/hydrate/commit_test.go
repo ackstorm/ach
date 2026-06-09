@@ -873,7 +873,9 @@ func TestRun_RuntimeMirror_WritesSnapshotsAndState(t *testing.T) {
 		t.Fatalf("c.run = %v, want nil", err)
 	}
 
-	runtimeDir := filepath.Join(c.achDir, "runtime")
+	// Per-platform runtime mirror dir (runtime-<platform>).
+	runtimeRel := "runtime-" + c.opts.Platform
+	runtimeDir := filepath.Join(c.achDir, runtimeRel)
 	// mcp + model written; a2a NOT (empty bucket).
 	for _, name := range []string{"mcp", "model"} {
 		p := filepath.Join(runtimeDir, name+".json")
@@ -905,21 +907,21 @@ func TestRun_RuntimeMirror_WritesSnapshotsAndState(t *testing.T) {
 			t.Errorf("RuntimeFiles[%s]: hash=%q sourceHash=%q (want equal, non-empty)", e.Target, e.Hash, e.SourceHash)
 		}
 	}
-	if _, ok := gotTargets[filepath.Join("runtime", "mcp.json")]; !ok {
+	if _, ok := gotTargets[filepath.Join(runtimeRel, "mcp.json")]; !ok {
 		t.Errorf("RuntimeFiles missing runtime/mcp.json: %+v", rf)
 	}
-	if _, ok := gotTargets[filepath.Join("runtime", "model.json")]; !ok {
+	if _, ok := gotTargets[filepath.Join(runtimeRel, "model.json")]; !ok {
 		t.Errorf("RuntimeFiles missing runtime/model.json: %+v", rf)
 	}
 
 	// Byte-stable on re-run: same manifest → same hashes.
-	mcpHash1 := gotTargets[filepath.Join("runtime", "mcp.json")]
+	mcpHash1 := gotTargets[filepath.Join(runtimeRel, "mcp.json")]
 	rf2, err := c.writeRuntimeMirror(mustRuntimeManifest())
 	if err != nil {
 		t.Fatalf("re-run writeRuntimeMirror: %v", err)
 	}
 	for _, e := range rf2 {
-		if e.Target == filepath.Join("runtime", "mcp.json") && e.Hash != mcpHash1 {
+		if e.Target == filepath.Join(runtimeRel, "mcp.json") && e.Hash != mcpHash1 {
 			t.Errorf("mcp.json hash not stable across runs: %q vs %q", e.Hash, mcpHash1)
 		}
 	}
