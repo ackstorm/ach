@@ -676,7 +676,9 @@ func compactSegments(r hydrate.Result) []string {
 		segs = append(segs, countNoun(rs.A2AAgents, "a2a agent", "a2a agents"))
 	}
 	cs := r.ContextSummary
-	if cs.Plugins > 0 || len(r.ProjectedByKind) > 0 {
+	// Plugin segment only when there's a real plugin count — ProjectedByKind
+	// can carry component tallies, but a "0 plugins" prefix reads as a bug.
+	if cs.Plugins > 0 {
 		segs = append(segs, countNoun(cs.Plugins, "plugin", "plugins"))
 	}
 	segs = append(segs, kindSegments(r.ProjectedByKind)...)
@@ -687,10 +689,19 @@ func compactSegments(r hydrate.Result) []string {
 		}
 		segs = append(segs, countNoun(n, "prompt", "prompts"))
 	}
+	// Artifacts: fall back to the file count when the resource count is 0
+	// (mirrors prompts) so we never print "0 artifacts" while files exist.
 	if cs.Artifacts > 0 || cs.ArtifactFiles > 0 {
-		segs = append(segs, countNoun(cs.Artifacts, "artifact", "artifacts"))
+		n := cs.Artifacts
+		if n == 0 {
+			n = cs.ArtifactFiles
+		}
+		segs = append(segs, countNoun(n, "artifact", "artifacts"))
 	}
-	if cs.Skills > 0 {
+	// Standalone context.skills only when they would NOT collide with the
+	// plugin-projected "skills" already in ProjectedByKind — two bare "skills"
+	// segments on one line are ambiguous (and may double-count).
+	if cs.Skills > 0 && r.ProjectedByKind["skills"] == 0 {
 		segs = append(segs, countNoun(cs.Skills, "skill", "skills"))
 	}
 	segs = append(segs, countNoun(r.FilesWritten, "file", "files"))
