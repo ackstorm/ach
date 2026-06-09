@@ -17,6 +17,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
+	"github.com/ackstorm/ach/internal/keys"
 )
 
 // executeCommand moved to helpers_test.go (06-04) — single shared driver
@@ -618,14 +619,16 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 	}
 }
 
-// TestRunHydrate_ScopeNotice asserts the project-scope advisory line is
-// emitted to stderr when neither --global nor --output is set, and is
-// suppressed by --global, --output, and --no-warnings. Drives the engine
-// path with a stubbed hydrateRunFn so the notice — printed before the run —
-// is observable regardless of downstream wiring. --target short-circuits
-// autodetect so no workspace signal needs seeding.
-func TestRunHydrate_ScopeNotice(t *testing.T) {
-	const note = "using project scope"
+// TestRunHydrate_ScopeTip asserts the project-scope hint is rendered in the
+// stdout Tips footer when neither --global nor --output is set, and is dropped
+// by --global, --output (which switch scope), and --no-warnings (which drops
+// the whole footer). The pk- tip rides the same footer, so --global/--output
+// keep a footer (pk- tip) while --no-warnings removes it entirely. Drives the
+// engine path with a stubbed hydrateRunFn — facts/tips derive from the resolved
+// inputs, not the Result. --target short-circuits autodetect so no workspace
+// signal needs seeding.
+func TestRunHydrate_ScopeTip(t *testing.T) {
+	const scopeTip = "write under $HOME"
 
 	setup := func(t *testing.T) {
 		t.Helper()
@@ -643,50 +646,58 @@ func TestRunHydrate_ScopeNotice(t *testing.T) {
 		t.Cleanup(func() { hydrateRunFn = prev })
 	}
 
-	t.Run("default project scope emits notice", func(t *testing.T) {
+	t.Run("default project scope emits tip", func(t *testing.T) {
 		setup(t)
-		_, stderr, code, err := executeHydrateEngine(t, "demo", "--target", "claude-code")
+		stdout, _, code, err := executeHydrateEngine(t, "demo", "--target", "claude-code")
 		if err != nil {
 			t.Fatalf("hydrate engine: %v", err)
 		}
 		if code != exit.OK {
 			t.Errorf("code = %d; want 0", code)
 		}
-		if !strings.Contains(stderr, note) {
-			t.Errorf("stderr missing project-scope notice; got %q", stderr)
+		if !strings.Contains(stdout, scopeTip) {
+			t.Errorf("stdout missing project-scope tip; got %q", stdout)
 		}
 	})
 
-	t.Run("--global suppresses notice", func(t *testing.T) {
+	t.Run("--global drops scope tip, keeps footer", func(t *testing.T) {
 		setup(t)
-		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--global")
+		stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--global")
 		if err != nil {
 			t.Fatalf("hydrate engine: %v", err)
 		}
-		if strings.Contains(stderr, note) {
-			t.Errorf("stderr leaked project-scope notice under --global: %q", stderr)
+		if strings.Contains(stdout, scopeTip) {
+			t.Errorf("stdout leaked scope tip under --global: %q", stdout)
+		}
+		if !strings.Contains(stdout, "global scope") {
+			t.Errorf("stdout missing 'global scope' facts under --global: %q", stdout)
 		}
 	})
 
-	t.Run("--output suppresses notice", func(t *testing.T) {
+	t.Run("--output drops scope tip", func(t *testing.T) {
 		setup(t)
-		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--output", t.TempDir())
+		out := t.TempDir()
+		stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--output", out)
 		if err != nil {
 			t.Fatalf("hydrate engine: %v", err)
 		}
-		if strings.Contains(stderr, note) {
-			t.Errorf("stderr leaked project-scope notice under --output: %q", stderr)
+		if strings.Contains(stdout, scopeTip) {
+			t.Errorf("stdout leaked scope tip under --output: %q", stdout)
 		}
 	})
 
-	t.Run("--no-warnings suppresses notice", func(t *testing.T) {
+	t.Run("--no-warnings drops the whole footer", func(t *testing.T) {
 		setup(t)
-		_, stderr, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--no-warnings")
+		stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--no-warnings")
 		if err != nil {
 			t.Fatalf("hydrate engine: %v", err)
 		}
-		if strings.Contains(stderr, note) {
-			t.Errorf("stderr leaked project-scope notice under --no-warnings: %q", stderr)
+		if strings.Contains(stdout, "  Tips") || strings.Contains(stdout, scopeTip) {
+			t.Errorf("stdout leaked Tips footer under --no-warnings: %q", stdout)
+		}
+		// Facts stay even with --no-warnings (they are not warnings).
+		if !strings.Contains(stdout, "project scope") {
+			t.Errorf("stdout dropped scope facts under --no-warnings: %q", stdout)
 		}
 	})
 }
@@ -835,9 +846,10 @@ func TestHydrateSummary(t *testing.T) {
 			ArtifactFiles: 4,
 		},
 		ProjectedByKind: map[string]int{"commands": 12, "agents": 8, "skills": 4},
-	})
-	if !strings.Contains(got, `Hydrated "demo" environment for claude-code`) {
-		t.Errorf("summary missing header; got %q", got)
+	}, summaryMeta{keyPrefix: keys.PrefixPk})
+	// Header carries the scope + key-kind facts (always shown).
+	if !strings.Contains(got, `Hydrated "demo" environment for claude-code (project scope, pk- key)`) {
+		t.Errorf("summary missing header facts; got %q", got)
 	}
 	for _, want := range []string{
 		"  Runtime",
@@ -850,10 +862,46 @@ func TestHydrateSummary(t *testing.T) {
 		"    ✓ Artifacts: 1 artifact, 4 files",
 		"  Files",
 		"    ✓ 20 files written, 1 file preserved",
+		// Tips footer (default project scope + pk- key → both hints).
+		"  Tips",
+		"    • pass --global to write under $HOME instead of ./.ach",
+		"    • pk- fits personal use; Environment workloads want an ek- key",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q; got %q", want, got)
 		}
+	}
+}
+
+// TestHydrateSummary_Facts exercises scopeKeyFacts across the three scope arms
+// and confirms --no-warnings drops the Tips footer while keeping the facts.
+func TestHydrateSummary_Facts(t *testing.T) {
+	base := hydrate.Result{Environment: "demo", PlatformID: "claude-code"}
+	cases := []struct {
+		name      string
+		meta      summaryMeta
+		wantFacts string
+		wantTips  bool
+	}{
+		{"project+pk", summaryMeta{keyPrefix: keys.PrefixPk}, "(project scope, pk- key)", true},
+		{"global+ek", summaryMeta{global: true, keyPrefix: keys.PrefixEk}, "(global scope, ek- key)", false},
+		{"output+pk", summaryMeta{output: "/tmp/out", keyPrefix: keys.PrefixPk}, "(output /tmp/out, pk- key)", true},
+		{
+			"no-warnings drops tips",
+			summaryMeta{keyPrefix: keys.PrefixPk, noWarnings: true},
+			"(project scope, pk- key)", false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := summaryFromResult(base, tc.meta)
+			if !strings.Contains(got, tc.wantFacts) {
+				t.Errorf("missing facts %q; got %q", tc.wantFacts, got)
+			}
+			if hasTips := strings.Contains(got, "  Tips"); hasTips != tc.wantTips {
+				t.Errorf("Tips footer present=%v; want %v; got %q", hasTips, tc.wantTips, got)
+			}
+		})
 	}
 }
 
@@ -870,7 +918,7 @@ func TestHydrateSummaryRuntimeKinds(t *testing.T) {
 			A2AAgents:  2,
 		},
 		ProjectedByKind: map[string]int{"skills": 35},
-	})
+	}, summaryMeta{noWarnings: true})
 	for _, want := range []string{
 		"    ✓ Models: 3",
 		"    ✓ MCP servers: 1",
@@ -892,7 +940,7 @@ func TestHydrateSummary_StandaloneSkills(t *testing.T) {
 		FilesWritten:   3,
 		FilesPreserved: 0,
 		ContextSummary: hydrate.ContextSummary{Skills: 1, SkillFiles: 3},
-	})
+	}, summaryMeta{noWarnings: true})
 	if !strings.Contains(got, "    ✓ Skills: 1 total, 3 files") {
 		t.Errorf("summary missing Skills line; got %q", got)
 	}

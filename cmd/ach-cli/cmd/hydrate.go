@@ -62,11 +62,12 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// pkWarning is the spec §6.6 stderr warning emitted when `ach-cli env hydrate`
-// runs with a pk- credential. Trimmed from the original §6.6 verbatim text
-// (the budget-attribution prose was redundant for users) to a single
-// actionable line. The trailing newline is part of the const so Fprintf
-// composes cleanly.
+// pkWarning is the pk- credential advisory for the --raw path, which has no
+// success summary to host it. The engine path folds the same guidance into the
+// summary's Tips footer instead (see summaryFromResult / hydrateTips), so this
+// const is now emitted only when --raw short-circuits the engine. Gated by
+// --no-warnings in both paths. The trailing newline is part of the const so
+// Fprint composes cleanly.
 const pkWarning = "warning: hydrating with pk-; for Environment-scoped workloads, use ek-\n"
 
 // hydrateHTTPClient is a test-only seam: when non-nil it replaces the
@@ -438,17 +439,16 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	var runErr error
 	if in.raw {
 		runErr = runHydrateRaw(cmd, baseURL, bearer, effectiveEnv, in.verbose)
+		// --raw has no success summary to host advisories; keep the pk- tip on
+		// stderr. The engine path folds the same guidance into the summary's
+		// Tips footer (summaryFromResult), so it is emitted there, not here.
+		if runErr == nil && prefix == keys.PrefixPk && !in.noWarnings {
+			_, _ = fmt.Fprint(stderr, pkWarning)
+		}
 	} else {
 		runErr = runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
 	}
-	if runErr != nil {
-		return runErr
-	}
-
-	if prefix == keys.PrefixPk && !in.noWarnings {
-		_, _ = fmt.Fprint(stderr, pkWarning)
-	}
-	return nil
+	return runErr
 }
 
 // assertScopeFlags enforces the spec §6.3 scope-flag mutual exclusions:
@@ -497,14 +497,10 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		return err
 	}
 
-	// Scope notice (UX): with neither --global nor an explicit --output,
-	// hydration defaults to the project (cwd) scope. Surface that once to
-	// stderr so the user knows where files land and how to switch. Gated by
-	// --no-warnings alongside the other advisory lines.
-	if !in.global && in.output == "" && !in.noWarnings {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"note: no --global/--output set; using project scope (writing under ./.ach) — pass --global for $HOME\n")
-	}
+	// Classify the bearer once: drives both the pk- x-ach-environment header
+	// (below) and the summary's header facts + Tips footer (summaryFromResult).
+	// A classify error leaves the prefix zero — neither path acts on it.
+	bearerPrefix, _ := keys.ClassifyBearer(bearer)
 
 	limits, err := extract.LoadLimits()
 	if err != nil {
@@ -532,7 +528,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	// The surface manifest POST carries the Environment in its body; only
 	// these per-artifact content GETs rely on the header. effectiveEnv is
 	// guaranteed non-empty for pk- by the D-12 gate in runHydrate.
-	if prefix, perr := keys.ClassifyBearer(bearer); perr == nil && prefix == keys.PrefixPk {
+	if bearerPrefix == keys.PrefixPk {
 		// Security 2.10 (defense-in-depth): reject CRLF / NUL / control bytes
 		// in the env name before assigning to a header value. The Go stdlib's
 		// http.Transport already rejects these at write time, but failing
@@ -579,21 +575,45 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		return err
 	}
 	if !in.dryRun {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res))
+		meta := summaryMeta{
+			global:     in.global,
+			output:     in.output,
+			keyPrefix:  bearerPrefix,
+			noWarnings: in.noWarnings,
+		}
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res, meta))
 	}
 	return nil
+}
+
+// summaryMeta carries the scope + credential context the post-hydrate summary
+// needs to render its header facts (scope + key kind, always shown) and Tips
+// footer (actionable hints, suppressed by --no-warnings). Computed at the cobra
+// layer from the resolved inputs so summaryFromResult stays a pure renderer.
+type summaryMeta struct {
+	global     bool              // --global → home-root scope
+	output     string            // --output dir ("" when unset)
+	keyPrefix  keys.BearerPrefix // pk-/ek- classification of the bearer
+	noWarnings bool              // --no-warnings → drop the Tips footer
 }
 
 // summaryFromResult renders the post-hydrate success summary printed to
 // stdout. The summary groups Environment resources by hydrate domain (runtime
 // vs context) and keeps marketplace/plugin provenance out of the default view.
-func summaryFromResult(res hydrate.Result) string {
+// The header carries scope + key-kind facts; a trailing Tips footer surfaces
+// the actionable scope/credential hints unless --no-warnings.
+func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 	var b strings.Builder
+	facts := scopeKeyFacts(meta)
 	if res.Environment != "" {
-		fmt.Fprintf(&b, "Hydrated %q environment for %s\n\n", res.Environment, res.PlatformID)
+		fmt.Fprintf(&b, "Hydrated %q environment for %s", res.Environment, res.PlatformID)
 	} else {
-		fmt.Fprintf(&b, "Hydrated for %s\n\n", res.PlatformID)
+		fmt.Fprintf(&b, "Hydrated for %s", res.PlatformID)
 	}
+	if facts != "" {
+		fmt.Fprintf(&b, " (%s)", facts)
+	}
+	fmt.Fprint(&b, "\n\n")
 
 	if hasRuntimeSummary(res.RuntimeSummary) {
 		fmt.Fprintln(&b, "  Runtime")
@@ -640,7 +660,58 @@ func summaryFromResult(res hydrate.Result) string {
 	fmt.Fprintf(&b, "    ✓ %s written, %s preserved\n",
 		countNoun(res.FilesWritten, "file", "files"),
 		countNoun(res.FilesPreserved, "file", "files"))
+
+	// Tips footer: actionable scope/credential hints. Suppressed by
+	// --no-warnings (the header facts above are NOT — scope and key kind are
+	// facts about what happened, not warnings).
+	if !meta.noWarnings {
+		if tips := hydrateTips(meta); len(tips) > 0 {
+			fmt.Fprintln(&b)
+			fmt.Fprintln(&b, "  Tips")
+			for _, t := range tips {
+				fmt.Fprintf(&b, "    • %s\n", t)
+			}
+		}
+	}
 	return b.String()
+}
+
+// scopeKeyFacts renders the header parenthetical describing where files land
+// (scope) and which credential kind was used (key). Always shown — these are
+// facts, not warnings. Returns "" only if no scope can be determined (never in
+// practice: one of the three scope arms always matches).
+func scopeKeyFacts(meta summaryMeta) string {
+	parts := make([]string, 0, 2)
+	switch {
+	case meta.global:
+		parts = append(parts, "global scope")
+	case meta.output != "":
+		parts = append(parts, fmt.Sprintf("output %s", meta.output))
+	default:
+		parts = append(parts, "project scope")
+	}
+	switch meta.keyPrefix {
+	case keys.PrefixPk:
+		parts = append(parts, "pk- key")
+	case keys.PrefixEk:
+		parts = append(parts, "ek- key")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// hydrateTips collects the actionable hints for the Tips footer, each gated on
+// the condition that makes it relevant:
+//   - default project scope → how to target $HOME instead.
+//   - pk- credential → ek- is the right key for Environment-scoped workloads.
+func hydrateTips(meta summaryMeta) []string {
+	tips := make([]string, 0, 2)
+	if !meta.global && meta.output == "" {
+		tips = append(tips, "pass --global to write under $HOME instead of ./.ach")
+	}
+	if meta.keyPrefix == keys.PrefixPk {
+		tips = append(tips, "pk- fits personal use; Environment workloads want an ek- key")
+	}
+	return tips
 }
 
 func hasRuntimeSummary(s hydrate.RuntimeSummary) bool {
