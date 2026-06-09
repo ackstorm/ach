@@ -329,5 +329,8 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
 		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
+		// Root .mcp.json is Claude Code's standard plugin MCP location (alongside
+		// the mcp/ convention) — deep-merge it into .claude/settings.json too.
+		{FromGlob: ".mcp.json", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 	}
 }

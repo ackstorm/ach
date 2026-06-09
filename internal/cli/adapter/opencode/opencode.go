@@ -300,6 +300,9 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
 		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
+		// Root .mcp.json is Claude Code's standard plugin MCP location — deep-merge
+		// it into .opencode/opencode.json too (same rename transform).
+		{FromGlob: ".mcp.json", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPRename},
 	}
 }
 

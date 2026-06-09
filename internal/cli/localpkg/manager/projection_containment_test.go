@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	// Blank-import the two adapters under test so their init() registers them.
@@ -29,6 +30,51 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/localpkg/manager"
 )
+
+// TestProject_RootMcpJson_Routed pins the fix for "doesn't install mcp": a plugin
+// that declares its MCP server in a ROOT .mcp.json (Claude Code's standard
+// location, not a mcp/ dir) must have it deep-merged into the adapter's runtime
+// config — .claude/settings.json (mcpServers) / .opencode/opencode.json (mcp).
+func TestProject_RootMcpJson_Routed(t *testing.T) {
+	stage := t.TempDir()
+	mcp := `{"mcpServers":{"demo-cal":{"url":"https://mcp.example/demo"}}}`
+	if err := os.WriteFile(filepath.Join(stage, ".mcp.json"), []byte(mcp), 0o644); err != nil {
+		t.Fatalf("write .mcp.json: %v", err)
+	}
+	// A skill so the plugin is non-empty beyond the MCP file.
+	if err := os.MkdirAll(filepath.Join(stage, "skills", "s"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "skills", "s", "SKILL.md"),
+		[]byte("---\nname: s\ndescription: x\n---\n# s\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct{ id, target string }{
+		{"claude-code", ".claude/settings.json"},
+		{"opencode", ".opencode/opencode.json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			writes, err := manager.Project(stage, tc.id)
+			if err != nil {
+				t.Fatalf("Project(%s): %v", tc.id, err)
+			}
+			var found bool
+			for _, w := range writes {
+				if w.Path == tc.target {
+					found = true
+					if !strings.Contains(string(w.Content), "demo-cal") {
+						t.Errorf("%s: %s missing the MCP server name; got: %s", tc.id, tc.target, w.Content)
+					}
+				}
+			}
+			if !found {
+				t.Errorf("%s: root .mcp.json not routed to %s; got %v", tc.id, tc.target, pathList(writes))
+			}
+		})
+	}
+}
 
 // stageMixedTree builds a staged plugin tree carrying: a root AGENTS.md (the
 // only root-escaping source), a command in BOTH markdown and gemini-toml form,

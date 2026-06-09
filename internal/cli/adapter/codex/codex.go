@@ -318,6 +318,9 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "skills/**/*", ToGlob: ".agents/skills/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "agents/**/*.md", ToGlob: ".codex/agents/**/*.toml", Merge: adapter.MergeReplace, Transform: codexAgentTOML},
 		{FromGlob: "mcp/**/*", ToGlob: configTOMLPath, Merge: adapter.MergeDeep, Transform: codexMCPSurgery},
+		// Root .mcp.json is Claude Code's standard plugin MCP location — merge it
+		// into .codex/config.toml too (same header surgery as mcp/**/*).
+		{FromGlob: ".mcp.json", ToGlob: configTOMLPath, Merge: adapter.MergeDeep, Transform: codexMCPSurgery},
 	}
 }
 

@@ -338,8 +338,8 @@ func TestPimono_RenderRuntime_NilManifest_Errors(t *testing.T) {
 // AGENTS.md rows (they fall to route.Project's drop set); NO root catch-all.
 func TestPimono_ProjectionRules(t *testing.T) {
 	rules := (&Adapter{}).ProjectionRules()
-	if len(rules) != 3 {
-		t.Fatalf("ProjectionRules returned %d rows, want exactly 3", len(rules))
+	if len(rules) != 4 {
+		t.Fatalf("ProjectionRules returned %d rows, want exactly 4", len(rules))
 	}
 
 	type rowFields struct {
@@ -398,6 +398,16 @@ func TestPimono_ProjectionRules(t *testing.T) {
 	}
 	if !mcp.hasXform {
 		t.Errorf("mcp row must wire a non-nil Transform (mcpDeepKeys)")
+	}
+
+	// Row 4: root .mcp.json → .pi/mcp.json (MergeDeep, Transform wired) — the
+	// standard Claude Code plugin MCP location.
+	rootMCP, ok := byFrom[".mcp.json"]
+	if !ok {
+		t.Fatalf("ProjectionRules missing .mcp.json row")
+	}
+	if rootMCP.to != ".pi/mcp.json" || rootMCP.merge != adapter.MergeDeep || !rootMCP.hasXform {
+		t.Errorf(".mcp.json row = %+v, want .pi/mcp.json MergeDeep +Transform", rootMCP)
 	}
 
 	// NO rules/agents/AGENTS.md rows; NO OpenPackage root catch-all.

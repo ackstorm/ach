@@ -24,6 +24,7 @@ var KnownComponentKinds = map[string]bool{
 	"agents":    true,
 	"skills":    true,
 	"mcp":       true,
+	".mcp.json": true,
 	"prompts":   true,
 	"AGENTS.md": true,
 	"hooks":     true,

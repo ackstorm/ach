@@ -448,6 +448,7 @@ func TestCodex_ProjectionRules_RouteTargets(t *testing.T) {
 		"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, transform: false},
 		"agents/**/*.md":   {to: ".codex/agents/**/*.toml", merge: adapter.MergeReplace, transform: true},
 		"mcp/**/*":         {to: configTOMLPath, merge: adapter.MergeDeep, transform: true},
+		".mcp.json":        {to: configTOMLPath, merge: adapter.MergeDeep, transform: true},
 	}
 	if len(rules) != len(wants) {
 		t.Fatalf("ProjectionRules() = %d rules, want %d: %+v", len(rules), len(wants), rules)

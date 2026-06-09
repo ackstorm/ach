@@ -98,7 +98,7 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "claude-code",
 		mappingSection: "OPENPACKAGE-MAPPING.md §claude-code (drops = NONE at field level; FMT-03 CUT)",
-		rowCount:       6,
+		rowCount:       7,
 		rules: map[string]wantRule{
 			"rules/**/*":       {to: ".claude/rules/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"commands/**/*.md": {to: ".claude/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
@@ -106,6 +106,7 @@ var conformanceTables = []adapterConformance{
 			"skills/**/*":      {to: ".claude/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"AGENTS.md":        {to: "CLAUDE.md", merge: adapter.MergeComposite, hasXform: false},
 			"mcp/**/*":         {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".claude/settings.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// claude routes rules/commands/agents/skills/AGENTS.md/mcp; only
 		// prompts/ + hooks/ have no rule → dropped.
@@ -114,12 +115,13 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "codex",
 		mappingSection: "OPENPACKAGE-MAPPING.md §codex (FMT-01 field-lift, FMT-02 header surgery)",
-		rowCount:       4,
+		rowCount:       5,
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".codex/prompts/**/*.md", merge: adapter.MergeReplace, hasXform: false},
 			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"agents/**/*.md":   {to: ".codex/agents/**/*.toml", merge: adapter.MergeReplace, hasXform: true},
 			"mcp/**/*":         {to: ".codex/config.toml", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".codex/config.toml", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// codex routes commands/skills/agents/mcp; rules/, prompts/, AGENTS.md,
 		// hooks/ have no rule → dropped.
@@ -128,7 +130,7 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "gemini-cli",
 		mappingSection: "OPENPACKAGE-MAPPING.md §gemini-cli (ACH-original; drop hooks; AGENTS.md→GEMINI.md)",
-		rowCount:       6,
+		rowCount:       7,
 		rules: map[string]wantRule{
 			"agents/**/*":   {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"prompts/**/*":  {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
@@ -136,6 +138,7 @@ var conformanceTables = []adapterConformance{
 			"skills/**/*":   {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"AGENTS.md":     {to: "GEMINI.md", merge: adapter.MergeComposite, hasXform: false},
 			"mcp/**/*":      {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":     {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// gemini routes agents/prompts/commands/skills/AGENTS.md/mcp; only
 		// rules/ + hooks/ have no rule → dropped.
@@ -144,12 +147,13 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "opencode",
 		mappingSection: "OPENPACKAGE-MAPPING.md §opencode (FMT-04 tools-object, D-21 mcp rename)",
-		rowCount:       4,
+		rowCount:       5,
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"agents/**/*.md":   {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"skills/**/*":      {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// opencode routes commands/agents/skills/mcp; rules/, prompts/,
 		// AGENTS.md, hooks/ have no rule → dropped.
@@ -158,11 +162,12 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "pimono",
 		mappingSection: "OPENPACKAGE-MAPPING.md §pimono (global-only passthrough + D-33 .pi/mcp.json deep)",
-		rowCount:       3,
+		rowCount:       4,
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".pi/agent/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"skills/**/*":      {to: ".pi/agent/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},
 		// pimono routes commands/skills/mcp; rules/, agents/, prompts/,
 		// AGENTS.md, hooks/ have no rule → dropped (D-33: mcp NOT dropped).
