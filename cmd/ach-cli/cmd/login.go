@@ -343,7 +343,7 @@ func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, 
 		// distinct from ACH_BASE_URL (the synthetic-mode trigger).
 		if env := strings.TrimSpace(os.Getenv("ACH_PLATFORM_URL")); env != "" {
 			url = env
-			_, _ = fmt.Fprintf(stdout, "URL: %s (from ACH_PLATFORM_URL)\n", url)
+			_, _ = fmt.Fprintf(stdout, "URL: %s (read from env:ACH_PLATFORM_URL)\n", url)
 		}
 	}
 	if url == "" {

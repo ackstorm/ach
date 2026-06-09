@@ -406,7 +406,7 @@ func TestResolveBaseURL_EnvPrefill(t *testing.T) {
 		if got != "https://env.example" {
 			t.Errorf("url = %q; want env value", got)
 		}
-		if !strings.Contains(out.String(), "from ACH_PLATFORM_URL") {
+		if !strings.Contains(out.String(), "read from env:ACH_PLATFORM_URL") {
 			t.Errorf("stdout missing ACH_PLATFORM_URL echo; got %q", out.String())
 		}
 	})
