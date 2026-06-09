@@ -138,7 +138,12 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 //
 // Call AFTER Commit and BEFORE recording the new entry, so the just-installed
 // ref is not yet present in installed and cannot collide with itself.
-func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target string, recs []store.FileRec) {
+// ownersAt maps each target-relative path owned by a DIFFERENT installed entry
+// at the given target to its owning ref. Shared by the pre-commit conflict
+// resolver (manager.ResolveConflicts) and the post-commit collisionWarn so both
+// agree on what counts as "already owned". The installing ref is excluded so a
+// re-install never collides with itself.
+func ownersAt(installed *store.InstalledFile, ref, target string) map[string]string {
 	owners := make(map[string]string)
 	for _, e := range installed.Installed {
 		if e.Ref == ref || e.Target != target {
@@ -148,12 +153,44 @@ func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target stri
 			owners[f.RelPath] = e.Ref
 		}
 	}
-	for _, r := range recs {
-		if other, ok := owners[r.RelPath]; ok {
-			_, _ = fmt.Fprintf(w,
-				"! %s → %s: overwrote %s previously installed by %s\n",
-				ref, target, r.RelPath, other)
+	return owners
+}
+
+// reportConflictActions prints one line per namespace/skip resolution applied by
+// manager.ResolveConflicts (overwrite is reported post-commit by collisionWarn;
+// refuse aborts before reaching here).
+func reportConflictActions(w io.Writer, ref, target string, actions []manager.ConflictAction) {
+	for _, a := range actions {
+		switch a.Policy {
+		case manager.ConflictNamespace:
+			_, _ = fmt.Fprintf(w, "↳ %s → %s: namespaced %s → %s (clash with %s)\n",
+				ref, target, a.Path, a.NewPath, a.Owner)
+		case manager.ConflictSkip:
+			_, _ = fmt.Fprintf(w, "↳ %s → %s: skipped %s (kept %s's)\n",
+				ref, target, a.Path, a.Owner)
 		}
+	}
+}
+
+func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target string, recs []store.FileRec) {
+	owners := ownersAt(installed, ref, target)
+	for _, r := range recs {
+		other, ok := owners[r.RelPath]
+		if !ok {
+			continue
+		}
+		// Only a MergeReplace collision is a genuine last-wins clobber. Composite
+		// (marker-bounded block) and Deep (keyed JSON/TOML) merges are ADDITIVE —
+		// the prior install's content is preserved alongside this one — so they
+		// must not raise a false "overwrote" alarm (the .claude/settings.json MCP
+		// accretion, and the AGENTS.md→CLAUDE.md composite back when it was
+		// projected). FileRec.Merge: ""=replace (back-compat), "composite", "deep".
+		if r.Merge == "composite" || r.Merge == "deep" {
+			continue
+		}
+		_, _ = fmt.Fprintf(w,
+			"! %s → %s: overwrote %s previously installed by %s\n",
+			ref, target, r.RelPath, other)
 	}
 }
 
@@ -233,9 +270,10 @@ Use 'ach-cli repo add' to register a repo first.
 
 func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	var (
-		flagTargets []string
-		flagGlobal  bool
-		flagDest    string
+		flagTargets  []string
+		flagGlobal   bool
+		flagDest     string
+		flagConflict string
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -259,6 +297,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {
 				return err
+			}
+
+			policy, err := manager.ParseConflictPolicy(flagConflict)
+			if err != nil {
+				return &exit.CodedError{Code: exit.General, Msg: "install: " + err.Error()}
 			}
 
 			repos, err := store.LoadRepos()
@@ -317,13 +360,28 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
-					recs, err := manager.Commit(root, flagGlobal, targetID, name, writes)
+					// Conflict resolution (pre-commit): de-collide against files
+					// owned by OTHER installed refs at this target per --conflict.
+					// Only MergeReplace writes clash; additive merges pass through.
+					owners := ownersAt(installed, ref, targetID)
+					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name)
+					if err != nil {
+						return &exit.CodedError{
+							Code: exit.General,
+							Msg:  fmt.Sprintf("install: %s → %s: %v", ref, targetID, err),
+						}
+					}
+
+					recs, err := manager.Commit(root, flagGlobal, targetID, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
 							Msg:  fmt.Sprintf("install: commit for %s: %v", targetID, err),
 						}
 					}
+
+					// Report namespace/skip resolutions regardless of recs count.
+					reportConflictActions(cmd.ErrOrStderr(), ref, targetID, actions)
 
 					// A 0-file projection means nothing matched this adapter's
 					// rules (e.g. a root-SKILL.md-only repo resolved via the
@@ -332,11 +390,15 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					// do NOT record an installed.json entry — there is nothing to
 					// track or later uninstall. (Contrast the UPDATE path, which
 					// keeps the record because the old files were already removed
-					// and the resolved SHA still needs tracking.)
+					// and the resolved SHA still needs tracking.) Suppress the
+					// "nothing matched" note when every write was skipped by
+					// policy — the skip lines above already explain the 0 count.
 					if len(recs) == 0 {
-						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-							"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
-							ref, targetID, targetID)
+						if len(actions) == 0 {
+							_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+								"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
+								ref, targetID, targetID)
+						}
 						continue
 					}
 
@@ -369,6 +431,8 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		"Adapter(s) to install for (comma-separated or repeatable): claude, codex, gemini, opencode")
 	c.Flags().BoolVar(&flagGlobal, "global", false, "Install to $HOME instead of --dest / cwd")
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
+	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
+		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	_ = c.MarkFlagRequired("target")
 	return c
 }
@@ -486,8 +550,9 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 
 func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	var (
-		flagGlobal bool
-		flagDest   string
+		flagGlobal   bool
+		flagDest     string
+		flagConflict string
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -504,6 +569,11 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {
 				return err
+			}
+
+			policy, err := manager.ParseConflictPolicy(flagConflict)
+			if err != nil {
+				return &exit.CodedError{Code: exit.General, Msg: "update: " + err.Error()}
 			}
 
 			installed, err := store.LoadInstalled()
@@ -612,7 +682,19 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("update: project for %s: %v", e.Target, err),
 						}
 					}
-					recs, err := manager.Commit(root, flagGlobal, e.Target, name, writes)
+					// Conflict resolution against OTHER refs' files at this target
+					// (the ref's own old files were removed by Uninstall above and
+					// ownersAt excludes the same ref, so no self-collision).
+					owners := ownersAt(installed, ref, e.Target)
+					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name)
+					if err != nil {
+						return &exit.CodedError{
+							Code: exit.General,
+							Msg:  fmt.Sprintf("update: %s → %s: %v", ref, e.Target, err),
+						}
+					}
+
+					recs, err := manager.Commit(root, flagGlobal, e.Target, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -620,13 +702,16 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
+					reportConflictActions(cmd.ErrOrStderr(), ref, e.Target, actions)
+
 					// A 0-file projection means nothing matched this adapter's
 					// rules. On UPDATE we still warn — but, unlike INSTALL, we
 					// KEEP the record below: the old files were already removed
 					// by the Uninstall above and the new resolved SHA still needs
 					// tracking, so the entry must be upserted (now with empty
-					// Files) to keep installed.json consistent with disk.
-					if len(recs) == 0 {
+					// Files) to keep installed.json consistent with disk. Suppress
+					// the "nothing matched" note when every write was policy-skipped.
+					if len(recs) == 0 && len(actions) == 0 {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 							"! %s → %s: 0 files projected (nothing matched %s's rules — wrong kind/lens or empty resource)\n",
 							ref, e.Target, e.Target)
@@ -660,6 +745,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	}
 	c.Flags().BoolVar(&flagGlobal, "global", false, "Update from $HOME root")
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
+	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
+		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	return c
 }
 

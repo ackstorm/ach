@@ -47,6 +47,97 @@ func makeWorkingPluginRepo(t *testing.T, initialContent string) string {
 	return work
 }
 
+// ---- Group F: --conflict policy (cross-install clash) -----------------------
+
+// TestPluginCmd_Install_ConflictNamespace installs two direct plugins that both
+// ship commands/x.md into the SAME dest+target. With the default --conflict
+// namespace, the first keeps x.md and the second is leaf-prefixed to <name>-x.md,
+// so both survive. Confirms the cross-install collision is de-collided, not
+// clobbered.
+func TestPluginCmd_Install_ConflictNamespace(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	urlA := makeDirectPluginRepo(t)
+	urlB := makeDirectPluginRepo(t)
+	for name, url := range map[string]string{"a": urlA, "b": urlB} {
+		seedRepo(t, store.RepoEntry{
+			Name: name, Source: "git:" + url, Kind: "git", CloneURL: url, GitRef: "main",
+			Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+			AddedAt:  "2026-01-01T00:00:00Z",
+		})
+	}
+
+	destDir := t.TempDir()
+	install := func(ref string, extra ...string) (string, error) {
+		var buf bytes.Buffer
+		cmd := newPluginCmd()
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dest", destDir}, extra...))
+		err := cmd.Execute()
+		return buf.String(), err
+	}
+
+	if out, err := install("a@a"); err != nil {
+		t.Fatalf("install a@a: %v (%s)", err, out)
+	}
+	out, err := install("b@b")
+	if err != nil {
+		t.Fatalf("install b@b: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "namespaced") {
+		t.Errorf("expected a namespaced-resolution line; got: %s", out)
+	}
+
+	first := filepath.Join(destDir, ".claude", "commands", "x.md")
+	second := filepath.Join(destDir, ".claude", "commands", "b-x.md")
+	if _, err := os.Stat(first); err != nil {
+		t.Errorf("first install's x.md missing: %v", err)
+	}
+	if _, err := os.Stat(second); err != nil {
+		t.Errorf("second install's namespaced b-x.md missing: %v", err)
+	}
+}
+
+// TestPluginCmd_Install_ConflictRefuse asserts --conflict refuse aborts the
+// second (clashing) install with a non-nil error.
+func TestPluginCmd_Install_ConflictRefuse(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	urlA := makeDirectPluginRepo(t)
+	urlB := makeDirectPluginRepo(t)
+	for name, url := range map[string]string{"a": urlA, "b": urlB} {
+		seedRepo(t, store.RepoEntry{
+			Name: name, Source: "git:" + url, Kind: "git", CloneURL: url, GitRef: "main",
+			Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+			AddedAt:  "2026-01-01T00:00:00Z",
+		})
+	}
+
+	destDir := t.TempDir()
+	run := func(ref string, extra ...string) error {
+		var buf bytes.Buffer
+		cmd := newPluginCmd()
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dest", destDir}, extra...))
+		return cmd.Execute()
+	}
+
+	if err := run("a@a"); err != nil {
+		t.Fatalf("install a@a: %v", err)
+	}
+	if err := run("b@b", "--conflict", "refuse"); err == nil {
+		t.Error("expected --conflict refuse to abort the clashing install, got nil error")
+	}
+}
+
 // ---- Group C: multi-target INSTALL in one command ---------------------------
 
 // TestPluginCmd_Install_MultiTarget_OneArg verifies that
