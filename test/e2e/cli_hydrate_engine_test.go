@@ -97,12 +97,12 @@ const (
 	phase7OpencodeRuntimePath   = ".opencode/opencode.json"
 )
 
-// phase7StatePath returns the on-disk path of the engine's state.json.
-// Per spec §8.1 the <ach-dir> is now per-environment namespaced in BOTH
-// scopes — workspace scope (these tests pass --output) is
-// <output>/.ach/<environment>/state.json. Matches internal/cli/state.ResolvePath.
-func phase7StatePath(output, environment string) string {
-	return filepath.Join(output, ".ach", environment, "state.json")
+// phase7StatePath returns the on-disk path of the engine's per-platform state
+// file. The <ach-dir> is per-environment namespaced (spec §8.1) and the state
+// file is per-platform: <output>/.ach/<environment>/state-<platform>.json.
+// Matches internal/cli/state.ResolvePlatformPath.
+func phase7StatePath(output, environment, platform string) string {
+	return filepath.Join(output, ".ach", environment, "state-"+platform+".json")
 }
 
 // phase7AchTmpDir returns the on-disk <ach-dir>/tmp/ path the engine
@@ -202,7 +202,7 @@ func testPhase7BaselineNoOp(t *testing.T) {
 			code1, stdout1, stderr1)
 	}
 
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	stateBefore, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("baseline read state.json after first hydrate: %v", err)
@@ -304,7 +304,7 @@ func testPhase7Sc5SkillProjection(t *testing.T) {
 // state.WriteAtomic with no mode parameter (hardcoded 0o644); post-W5-02
 // the signature is required-mode and adapterDispatcherImpl.Render passes
 // 0o600. This assertion is the end-to-end proof.
-func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, runtimePath string, code int, stdout, stderr []byte) {
+func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, platformID, runtimePath string, code int, stdout, stderr []byte) {
 	t.Helper()
 	if code != 0 {
 		t.Fatalf("sc1: hydrate exit %d (want 0)\nstdout=%s\nstderr=%s",
@@ -329,7 +329,7 @@ func phase7Sc1AssertRunOutputs(t *testing.T, output, environment, runtimePath st
 			fullRuntimePath, got, 0o600, stdout, stderr)
 	}
 	// state.json present and asserts schemaVersion=2.
-	statePath := phase7StatePath(output, environment)
+	statePath := phase7StatePath(output, environment, platformID)
 	stateBytes, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("sc1: read state.json at %s: %v\nstdout=%s\nstderr=%s",
@@ -369,7 +369,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 		t.Fatalf("sc1_%s_pk: exec error: %v\nstdout=%s\nstderr=%s",
 			platformID, runErr, stdout, stderr)
 	}
-	phase7Sc1AssertRunOutputs(t, output, phase7DemoEnvironment, runtimePath,
+	phase7Sc1AssertRunOutputs(t, output, phase7DemoEnvironment, platformID, runtimePath,
 		code, stdout, stderr)
 }
 
@@ -402,7 +402,7 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 		t.Fatalf("sc1_%s_ek: exec error: %v\nstdout=%s\nstderr=%s",
 			platformID, runErr, stdout, stderr)
 	}
-	phase7Sc1AssertRunOutputs(t, output, phase7DemoEnvironment, runtimePath,
+	phase7Sc1AssertRunOutputs(t, output, phase7DemoEnvironment, platformID, runtimePath,
 		code, stdout, stderr)
 }
 
@@ -582,7 +582,7 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 		t.Fatalf("sc2 seed hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s",
 			codeSeed, stdoutSeed, stderrSeed)
 	}
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	stateBytesBefore, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("sc2: read seed state.json: %v", err)
@@ -871,7 +871,7 @@ func testPhase7Sc3DriftConflictPreserve(t *testing.T) {
 
 	// Corrupt state.json's hash for the runtime file entry — write a
 	// known-bogus hash so state-hash ≠ on-disk-hash ≠ upstream-hash.
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	if err := phase7CorruptStateHash(statePath); err != nil {
 		t.Fatalf("sc3 drift conflict: corrupt state.json: %v", err)
 	}
@@ -926,7 +926,7 @@ func testPhase7Sc3DriftForceOverrides(t *testing.T) {
 		t.Fatalf("sc3 drift force seed: exit %d\nstdout=%s\nstderr=%s",
 			codeSeed, stdoutSeed, stderrSeed)
 	}
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	if err := phase7CorruptStateHash(statePath); err != nil {
 		t.Fatalf("sc3 drift force: corrupt state.json: %v", err)
 	}
@@ -1485,7 +1485,7 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 		t.Fatalf("sc4 autoclaim rotate: read first-hydrate target %s: %v",
 			target, err)
 	}
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	stateBytes, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("sc4 autoclaim rotate: read first-hydrate state.json %s: %v",

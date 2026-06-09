@@ -97,7 +97,9 @@ empty JSON array under --json) and exits 0.`,
 				}
 				files = all
 			} else {
-				statePath, err := state.ResolvePath(cwd, flagEnvironment, flagGlobal)
+				// One env may now hold several per-platform state-<platform>.json
+				// files (+ a legacy state.json) — enumerate and show them all.
+				paths, err := state.ListStatePaths(cwd, flagEnvironment, flagGlobal)
 				if err != nil {
 					return &exit.CodedError{
 						Code:    exit.ConfigFile,
@@ -105,16 +107,18 @@ empty JSON array under --json) and exits 0.`,
 						Wrapped: err,
 					}
 				}
-				f, err := state.Load(statePath)
-				if err != nil {
-					return &exit.CodedError{
-						Code:    exit.ConfigFile,
-						Msg:     fmt.Sprintf("list: read state: %v", err),
-						Wrapped: err,
+				for _, p := range paths {
+					f, lerr := state.Load(p)
+					if lerr != nil {
+						return &exit.CodedError{
+							Code:    exit.ConfigFile,
+							Msg:     fmt.Sprintf("list: read state: %v", lerr),
+							Wrapped: lerr,
+						}
 					}
-				}
-				if f != nil {
-					files = []*state.File{f}
+					if f != nil {
+						files = append(files, f)
+					}
 				}
 			}
 
@@ -163,16 +167,24 @@ func loadAllWorkspaceStates(cwd string) ([]*state.File, error) {
 		}
 		return nil, err
 	}
-	out := make([]*state.File, 0, len(dirents))
+	var out []*state.File
 	for _, d := range dirents {
 		if !d.IsDir() {
 			continue
 		}
-		f, lerr := state.Load(filepath.Join(achRoot, d.Name(), "state.json"))
-		if lerr != nil || f == nil {
+		// Each env dir may hold several per-platform state-<platform>.json files
+		// (+ a legacy state.json); load them all.
+		paths, perr := state.ListStatePaths(cwd, d.Name(), false)
+		if perr != nil {
 			continue
 		}
-		out = append(out, f)
+		for _, p := range paths {
+			f, lerr := state.Load(p)
+			if lerr != nil || f == nil {
+				continue
+			}
+			out = append(out, f)
+		}
 	}
 	return out, nil
 }

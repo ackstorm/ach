@@ -160,7 +160,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		}
 		workspaceCwd = wd
 	}
-	statePath, err := state.ResolvePath(workspaceCwd, in.environment, in.global)
+	base, err := state.ResolvePath(workspaceCwd, in.environment, in.global)
 	if err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -168,7 +168,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			Wrapped: err,
 		}
 	}
-	achDir := filepath.Dir(statePath)
+	achDir := filepath.Dir(base)
 	toolRoot := workspaceCwd
 	if in.global {
 		home, herr := os.UserHomeDir()
@@ -182,52 +182,70 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		toolRoot = home
 	}
 
-	// (c) Load prev. Missing → nothing installed, clean exit 0.
-	prev, err := state.Load(statePath)
+	// (c) Enumerate every state file for the env — one per-platform
+	// state-<platform>.json per hydrated target (+ a legacy state.json). Missing
+	// → nothing installed, clean exit 0.
+	statePaths, err := state.ListStatePaths(workspaceCwd, in.environment, in.global)
 	if err != nil {
 		return &exit.CodedError{
-			Code:    exit.ConfigFile,
-			Msg:     fmt.Sprintf("read state.json: %v", err),
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("enumerate state files: %v", err),
 			Wrapped: err,
 		}
 	}
-	if prev == nil {
+	if len(statePaths) == 0 {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "nothing installed; no state.json found")
 		return nil
 	}
 
-	// (d) Acquire the workspace lock mirroring commit.go:step1Lock.
+	// (d) Acquire the env lock ONCE (achDir is shared across the env's
+	// per-platform states) mirroring commit.go:step1Lock.
 	lease, err := acquireUninstallLock(cmd, achDir, in.lockTimeout)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lease.Release() }()
 
-	// (e) Build the scope-filtered survivor set and (f) delegate the
-	// teardown to the single inverse-merge primitive.
-	scopedEmpty := hydrate.BuildScopedEmpty(prev, in.includeRuntime, in.onlyRuntime)
-	stats, err := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{
-		Force:  in.force,
-		Stderr: cmd.ErrOrStderr(),
-		// CR-01: under --dry-run the engine must classify only and
-		// mutate nothing. SyncOptions.DryRun gates every os.Remove /
-		// WriteAtomic / dir-prune inside Sync; the !in.dryRun guard
-		// below covers only the state.json write.
-		DryRun: in.dryRun,
-	})
-	if err != nil {
-		return &exit.CodedError{
-			Code:    exit.General,
-			Msg:     fmt.Sprintf("uninstall: %v", err),
-			Wrapped: err,
+	// (e-g) Tear down each platform's state in turn: scope-filtered survivor set
+	// → inverse-merge teardown → state cleanup. Shared workspace content (prompts/
+	// artifacts) removed by the first state is a graceful no-op for the rest.
+	var totalPruned, totalPreserved int
+	for _, sp := range statePaths {
+		prev, lerr := state.Load(sp)
+		if lerr != nil {
+			return &exit.CodedError{
+				Code:    exit.ConfigFile,
+				Msg:     fmt.Sprintf("read %s: %v", filepath.Base(sp), lerr),
+				Wrapped: lerr,
+			}
 		}
-	}
-
-	// (g) D-28 state cleanup. --dry-run writes nothing.
-	if !in.dryRun {
-		if err := cleanupState(statePath, scopedEmpty); err != nil {
-			return err
+		if prev == nil {
+			continue
 		}
+		scopedEmpty := hydrate.BuildScopedEmpty(prev, in.includeRuntime, in.onlyRuntime)
+		stats, serr := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{
+			Force:  in.force,
+			Stderr: cmd.ErrOrStderr(),
+			// CR-01: under --dry-run the engine must classify only and
+			// mutate nothing. SyncOptions.DryRun gates every os.Remove /
+			// WriteAtomic / dir-prune inside Sync; the !in.dryRun guard
+			// below covers only the state.json write.
+			DryRun: in.dryRun,
+		})
+		if serr != nil {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("uninstall: %v", serr),
+				Wrapped: serr,
+			}
+		}
+		if !in.dryRun {
+			if cerr := cleanupState(sp, scopedEmpty); cerr != nil {
+				return cerr
+			}
+		}
+		totalPruned += stats.Pruned
+		totalPreserved += stats.Preserved
 	}
 
 	// (h) Stats summary.
@@ -236,7 +254,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		dryRunSuffix = " (dry-run: nothing written)"
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"uninstall: pruned %d, preserved %d%s\n", stats.Pruned, stats.Preserved, dryRunSuffix)
+		"uninstall: pruned %d, preserved %d%s\n", totalPruned, totalPreserved, dryRunSuffix)
 	return nil
 }
 

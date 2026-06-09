@@ -115,7 +115,7 @@ func runProjectionIdempotence(t *testing.T, d projectionDescriptor) {
 			d.platformID)
 	}
 
-	statePath := phase7StatePath(output, phase7DemoEnvironment)
+	statePath := phase7StatePath(output, phase7DemoEnvironment, phase7PlatformClaudeCode)
 	stateBefore, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("%s: read state.json after first hydrate at %s: %v", d.platformID, statePath, err)
