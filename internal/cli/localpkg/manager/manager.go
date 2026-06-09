@@ -45,6 +45,11 @@ func schemeFor(s string) gitfetch.AuthScheme {
 	return gitfetch.AuthBearer
 }
 
+// pluginEntryMaxFileBytes caps each regular file when slicing a marketplace
+// plugin subtree out of the cached repo tar (mirrors the skill slicer's 64 MiB
+// per-file guard).
+const pluginEntryMaxFileBytes = 64 << 20
+
 // FetchCache memoizes git fetches within a SINGLE install/update invocation,
 // keyed by (url, ref, subtree, scheme). A plugin-marketplace repo cloned once to
 // read its marketplace.json is then reused for every plugin installed from it
@@ -334,9 +339,27 @@ func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, 
 		return ResolveResult{}, fmt.Errorf("manager: build entry spec for %q: %w", name, err)
 	}
 
-	entryTar, entrySHA, err := fetchEntry(ctx, entrySpec, cache)
-	if err != nil {
-		return ResolveResult{}, fmt.Errorf("manager: fetch marketplace entry %q: %w", name, err)
+	// When the entry is a subdir of the marketplace's OWN repo (a local-path
+	// entry, or a git-subdir/url whose URL is the marketplace repo), the plugin
+	// is already inside the repoTar we cloned to read marketplace.json — slice it
+	// out in-memory instead of cloning the whole repo again per plugin (mirrors
+	// resolveSkillMarketplace). gitfetch's subtree fetch re-roots the subtree to
+	// the archive root, so SliceSubtree(keepLeafDir=false) produces the same
+	// shape. External-repo entries (github, or a different URL) still fetch their
+	// own repo (cached). archiveRoot is "" — a git-clone tar is rooted at /.
+	var entryTar []byte
+	var entrySHA string
+	if entrySpec.Subtree != "" && entrySpec.URL == repo.CloneURL {
+		entryTar, err = contentkit.SliceSubtree(repoTar, "", entrySpec.Subtree, pluginEntryMaxFileBytes, false)
+		if err != nil {
+			return ResolveResult{}, fmt.Errorf("manager: slice plugin subtree %q: %w", name, err)
+		}
+		entrySHA = sha // the plugin subdir is at the marketplace repo's SHA
+	} else {
+		entryTar, entrySHA, err = fetchEntry(ctx, entrySpec, cache)
+		if err != nil {
+			return ResolveResult{}, fmt.Errorf("manager: fetch marketplace entry %q: %w", name, err)
+		}
 	}
 
 	if err := contentkit.VerifyPluginContents(bytes.NewReader(entryTar)); err != nil {

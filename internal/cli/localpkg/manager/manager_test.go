@@ -562,3 +562,78 @@ func TestResolveWithCache_RepoFetchedOnce(t *testing.T) {
 		t.Error("uncached resolve after repo deletion unexpectedly succeeded")
 	}
 }
+
+// makeLocalSubdirMarketplaceRepo builds a marketplace whose plugin is a LOCAL
+// SUBDIR of the marketplace repo (bare-string "local-path" source), so the
+// plugin is inside the repo tar cloned for marketplace.json — exercising the
+// slice-from-cache path (not a second fetch).
+func makeLocalSubdirMarketplaceRepo(t *testing.T) string {
+	t.Helper()
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "main", ".")
+
+	write := func(rel, content string) {
+		abs := filepath.Join(work, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write(".claude-plugin/marketplace.json", `{
+  "name": "local-mkt",
+  "owner": {"name": "t"},
+  "plugins": [
+    {"name": "myplug", "description": "d", "source": "./plugins/myplug"}
+  ]
+}`)
+	write("plugins/myplug/commands/hello.md", "# hello\nA local subdir plugin.\n")
+
+	runGit(t, work, "add", "-A")
+	runGit(t, work, "commit", "-m", "init local-subdir marketplace")
+	bare := t.TempDir()
+	runGit(t, work, "clone", "--bare", ".", bare)
+	return "file://" + bare
+}
+
+// TestResolve_PluginMarketplace_LocalSubdir_SlicesFromCache proves a local-subdir
+// marketplace plugin is sliced out of the cached repo tar with NO second fetch:
+// after the first resolve the bare repo is deleted, yet a second resolve through
+// the same cache still succeeds (marketplace read AND entry slice both served
+// from memory), while a fresh cache fails.
+func TestResolve_PluginMarketplace_LocalSubdir_SlicesFromCache(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	mktURL := makeLocalSubdirMarketplaceRepo(t)
+	repo := store.RepoEntry{Name: "lm", Kind: "git", CloneURL: mktURL, GitRef: "main"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cache := manager.NewFetchCache()
+	res, err := manager.ResolveWithCache(ctx, repo, "", "myplug", "plugin-marketplace", cache)
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(res.StageDir, "commands", "hello.md")); err != nil {
+		t.Errorf("sliced plugin missing commands/hello.md at stage root: %v", err)
+	}
+	_ = os.RemoveAll(res.StageDir)
+
+	// Delete the bare repo, then resolve again through the SAME cache.
+	if err := os.RemoveAll(strings.TrimPrefix(mktURL, "file://")); err != nil {
+		t.Fatalf("rm bare repo: %v", err)
+	}
+	res2, err := manager.ResolveWithCache(ctx, repo, "", "myplug", "plugin-marketplace", cache)
+	if err != nil {
+		t.Fatalf("cached resolve after repo deletion should succeed (sliced from cache): %v", err)
+	}
+	_ = os.RemoveAll(res2.StageDir)
+
+	// Control: a fresh cache must actually fetch → fails (deletion is real).
+	if _, err := manager.ResolveWithCache(ctx, repo, "", "myplug", "plugin-marketplace", manager.NewFetchCache()); err == nil {
+		t.Error("uncached resolve after repo deletion unexpectedly succeeded")
+	}
+}

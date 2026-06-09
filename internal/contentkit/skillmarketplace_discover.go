@@ -189,12 +189,37 @@ func tarRegularNames(tarball []byte) ([]string, error) {
 // skill sits at the repo root. Stage-2 stores the result at
 // skill-marketplace/<marketplace>/<name>.tar.gz.
 func SliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte, error) {
+	// keepLeafDir=true: the skill's <name> dir is kept as the top-level wrapper
+	// so the result has SKILL.md one dir deep (pdf/SKILL.md) and hydrate's
+	// single-wrapper strip lands it at .claude/skills/<name>/SKILL.md.
+	return SliceSubtree(tarball, archiveRoot, subtreePath, skillMarketplaceMaxFileBytes, true)
+}
+
+// SliceSubtree re-packs the entries under subtreePath (relative to archiveRoot)
+// from tarball into a fresh tar.gz, capping each regular file at maxFileBytes.
+// The re-root mode selects the output shape:
+//
+//   - keepLeafDir=true → the subtree's last segment becomes the top-level
+//     wrapper ("skills/pdf" → "pdf/SKILL.md"). Used for skills.
+//   - keepLeafDir=false → the subtree prefix is stripped ENTIRELY so its
+//     contents sit at the archive root ("research" → "commands/…"), matching
+//     what a gitfetch subtree fetch produces — so a marketplace plugin sliced
+//     from the cached repo tar is byte-structurally interchangeable with one
+//     fetched directly. Used for plugins.
+//
+// archiveRoot is the at-most-one wrapper dir to strip before matching
+// subtreePath (empty for git-clone tars, which are already rooted at /).
+func SliceSubtree(tarball []byte, archiveRoot, subtreePath string, maxFileBytes int64, keepLeafDir bool) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(tarball))
 	if err != nil {
-		return nil, fmt.Errorf("skillmkt: gzip open: %w", err)
+		return nil, fmt.Errorf("contentkit: slice gzip open: %w", err)
 	}
 	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
+
+	// Match normRel's cleaning of entry names so a "./sub" or trailing-slash
+	// subtreePath (e.g. a local-path entry's "./plugins/x") matches.
+	subtreePath = path.Clean(subtreePath)
 
 	var buf bytes.Buffer
 	outGz := gzip.NewWriter(&buf)
@@ -208,26 +233,38 @@ func SliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte,
 			break
 		}
 		if e != nil {
-			return nil, fmt.Errorf("skillmkt: tar read: %w", e)
+			return nil, fmt.Errorf("contentkit: slice tar read: %w", e)
 		}
 		rel := normRel(hdr.Name, archiveRoot)
 		if rel != subtreePath && !strings.HasPrefix(rel, prefix) {
 			continue
 		}
-		// Re-root: replace the subtreePath prefix with its last segment.
-		rerooted := base + strings.TrimPrefix(rel, subtreePath)
+
+		var rerooted string
+		if keepLeafDir {
+			// Replace the subtreePath prefix with its last segment.
+			rerooted = base + strings.TrimPrefix(rel, subtreePath)
+		} else {
+			// Strip the subtree prefix entirely; the bare subtree dir entry maps
+			// to "" and is skipped (its children carry the directory structure).
+			if rel == subtreePath {
+				continue
+			}
+			rerooted = strings.TrimPrefix(rel, prefix)
+		}
+
 		nh := &tar.Header{Name: rerooted, Mode: hdr.Mode, Size: hdr.Size, Typeflag: hdr.Typeflag, ModTime: hdr.ModTime}
 		if err := tw.WriteHeader(nh); err != nil {
-			return nil, fmt.Errorf("skillmkt: write header %s: %w", rerooted, err)
+			return nil, fmt.Errorf("contentkit: slice write header %s: %w", rerooted, err)
 		}
 		if hdr.Typeflag == tar.TypeReg {
 			// Explicit per-file byte cap.
-			n, cErr := io.Copy(tw, io.LimitReader(tr, skillMarketplaceMaxFileBytes+1))
+			n, cErr := io.Copy(tw, io.LimitReader(tr, maxFileBytes+1))
 			if cErr != nil {
-				return nil, fmt.Errorf("skillmkt: copy %s: %w", rel, cErr)
+				return nil, fmt.Errorf("contentkit: slice copy %s: %w", rel, cErr)
 			}
-			if n > skillMarketplaceMaxFileBytes {
-				return nil, fmt.Errorf("skillmkt: %s exceeds %d bytes", rel, skillMarketplaceMaxFileBytes)
+			if n > maxFileBytes {
+				return nil, fmt.Errorf("contentkit: slice %s exceeds %d bytes", rel, maxFileBytes)
 			}
 		}
 		wrote = true
@@ -239,7 +276,7 @@ func SliceSkillSubtree(tarball []byte, archiveRoot, subtreePath string) ([]byte,
 		return nil, err
 	}
 	if !wrote {
-		return nil, fmt.Errorf("skillmkt: subtree %q empty", subtreePath)
+		return nil, fmt.Errorf("contentkit: slice subtree %q empty", subtreePath)
 	}
 	return buf.Bytes(), nil
 }

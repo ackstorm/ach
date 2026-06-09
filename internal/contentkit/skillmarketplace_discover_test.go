@@ -3,8 +3,11 @@
 package contentkit
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +109,48 @@ func TestDiscoverSkillsInTree_SubPath(t *testing.T) {
 	}
 	if err := VerifySkillContents(bytes.NewReader(sub)); err != nil {
 		t.Errorf("sliced subPath subtree failed VerifySkillContents: %v", err)
+	}
+}
+
+// TestSliceSubtree_PluginStripMode pins keepLeafDir=false: the subtree prefix is
+// stripped ENTIRELY so the plugin's contents sit at the archive root (matching a
+// gitfetch subtree fetch), and sibling subtrees are excluded.
+func TestSliceSubtree_PluginStripMode(t *testing.T) {
+	tree := skillTarGz(t, map[string]string{
+		"research/commands/hello.md":          "# hello",
+		"research/.claude-plugin/plugin.json": "{}",
+		"other/x.md":                          "ignore me",
+	})
+	out, err := SliceSubtree(tree, "", "./research", 64<<20, false)
+	if err != nil {
+		t.Fatalf("SliceSubtree: %v", err)
+	}
+
+	gz, err := gzip.NewReader(bytes.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	got := map[string]bool{}
+	for {
+		hdr, e := tr.Next()
+		if e != nil {
+			break
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			got[hdr.Name] = true
+		}
+	}
+	want := []string{"commands/hello.md", ".claude-plugin/plugin.json"}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("missing re-rooted entry %q; got %v", w, got)
+		}
+	}
+	for bad := range got {
+		if strings.HasPrefix(bad, "research/") || strings.HasPrefix(bad, "other") {
+			t.Errorf("entry %q should have been stripped/excluded", bad)
+		}
 	}
 }
