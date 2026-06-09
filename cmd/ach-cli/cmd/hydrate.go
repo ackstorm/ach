@@ -175,10 +175,12 @@ I/O:
   --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
                       When neither --global nor --output is set, hydration
                       defaults to the project (cwd) scope and prints a note.
-  --target <id>       Override agent-target autodetection (claude-code /
+  --target <id[,id…]> Override agent-target autodetection (claude-code /
                       codex / gemini-cli / opencode / pimono +
-                      case-folded aliases). When omitted, the engine scans cwd
-                      (or $HOME under --global) and picks the
+                      case-folded aliases). Accepts a comma-separated list to
+                      hydrate several targets in one run (e.g.
+                      --target codex,opencode). When omitted, the engine scans
+                      cwd (or $HOME under --global) and picks the
                       single match; zero or multiple matches → exit 1.
 
 Credential resolution (D-11 mutex — all four sources mutually
@@ -279,7 +281,8 @@ Exit codes (spec §9.3):
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Relax SAFE-01 tar policy's symlink reject (unsafe escape hatch)")
 	cmd.Flags().StringVar(&flagTarget, "target", "",
-		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
+		"Override platform autodetection; comma-separated for several targets, e.g. codex,opencode "+
+			"(claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().BoolVar(&flagGlobal, "global", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	cmd.Flags().StringVar(&flagConflict, "conflict", "namespace",
@@ -492,7 +495,7 @@ func assertScopeFlags(in hydrateInputs) error {
 // short-circuit behavior; both impls are passed regardless so a future
 // commit.go uplink does not need a cobra-layer change.
 func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effectiveEnv string) error {
-	platformID, err := resolvePlatformOrAutodetect(in, cmd.ErrOrStderr())
+	platformIDs, err := resolvePlatformsOrAutodetect(in, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -542,46 +545,53 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		hc.ExtraHeaders = http.Header{"x-ach-environment": {effectiveEnv}}
 	}
 
-	// NewWiring constructs the default Extractor + AdapterDispatcher;
-	// both are threaded into Opts so commit.run()'s steps 7-10 invoke
-	// real impls (07-W5-01 gap closure).
-	ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force, in.global, in.conflict)
+	// Hydrate each resolved platform in turn. --target accepts a comma-
+	// separated list (mirroring local `plugin install --target a,b`); each
+	// target gets its own wiring, run, and summary. hc + limits above are
+	// platform-independent and shared across the loop. Fail-fast: a failing
+	// target returns immediately (earlier targets already committed).
+	for _, platformID := range platformIDs {
+		// NewWiring constructs the default Extractor + AdapterDispatcher;
+		// both are threaded into Opts so commit.run()'s steps 7-10 invoke
+		// real impls (07-W5-01 gap closure).
+		ext, ad := hydrate.NewWiring(hc, platformID, limits, in.allowSymlinks, in.force, in.global, in.conflict)
 
-	opts := hydrate.Opts{
-		Environment:       effectiveEnv,
-		Platform:          platformID,
-		Global:            in.global,
-		IncludeRuntime:    in.includeRuntime,
-		OnlyRuntime:       in.onlyRuntime,
-		Sync:              in.sync,
-		Force:             in.force,
-		Conflict:          in.conflict,
-		DryRun:            in.dryRun,
-		AllowSymlinks:     in.allowSymlinks,
-		Output:            in.output,
-		Wait:              in.wait,
-		LockTimeout:       in.lockTimeout,
-		BaseURL:           baseURL,
-		Bearer:            bearer,
-		Verbose:           in.verbose,
-		Stdout:            cmd.OutOrStdout(),
-		Stderr:            cmd.ErrOrStderr(),
-		Extractor:         ext,
-		AdapterDispatcher: ad,
-	}
-
-	res, err := hydrateRunFn(cmd.Context(), opts)
-	if err != nil {
-		return err
-	}
-	if !in.dryRun {
-		meta := summaryMeta{
-			global:     in.global,
-			output:     in.output,
-			keyPrefix:  bearerPrefix,
-			noWarnings: in.noWarnings,
+		opts := hydrate.Opts{
+			Environment:       effectiveEnv,
+			Platform:          platformID,
+			Global:            in.global,
+			IncludeRuntime:    in.includeRuntime,
+			OnlyRuntime:       in.onlyRuntime,
+			Sync:              in.sync,
+			Force:             in.force,
+			Conflict:          in.conflict,
+			DryRun:            in.dryRun,
+			AllowSymlinks:     in.allowSymlinks,
+			Output:            in.output,
+			Wait:              in.wait,
+			LockTimeout:       in.lockTimeout,
+			BaseURL:           baseURL,
+			Bearer:            bearer,
+			Verbose:           in.verbose,
+			Stdout:            cmd.OutOrStdout(),
+			Stderr:            cmd.ErrOrStderr(),
+			Extractor:         ext,
+			AdapterDispatcher: ad,
 		}
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res, meta))
+
+		res, err := hydrateRunFn(cmd.Context(), opts)
+		if err != nil {
+			return err
+		}
+		if !in.dryRun {
+			meta := summaryMeta{
+				global:     in.global,
+				output:     in.output,
+				keyPrefix:  bearerPrefix,
+				noWarnings: in.noWarnings,
+			}
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res, meta))
+		}
 	}
 	return nil
 }
@@ -777,17 +787,19 @@ func countNoun(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// resolvePlatformOrAutodetect dispatches platform resolution per
+// resolvePlatformsOrAutodetect dispatches platform resolution per
 // D-06: explicit --target > ACH_PLATFORM env > autodetect cwd
-// (workspace) > autodetect $HOME (global). Returns the canonical
-// platform id on success, or a typed CodedError on autodetect
+// (workspace) > autodetect $HOME (global). Explicit --target / ACH_PLATFORM
+// accept a comma-separated list (mirroring local `plugin install --target
+// a,b`), so this returns one-or-more canonical platform ids; autodetect
+// always yields exactly one. Returns a typed CodedError on autodetect
 // ambiguity / unknown id.
-func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, error) {
+func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string, error) {
 	if in.platform != "" {
-		return hydrate.ResolvePlatform(in.platform)
+		return resolvePlatformList(in.platform)
 	}
 	if in.envPlatform != "" {
-		return hydrate.ResolvePlatform(in.envPlatform)
+		return resolvePlatformList(in.envPlatform)
 	}
 
 	root := in.output
@@ -795,7 +807,7 @@ func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, er
 		if in.global {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				return "", &exit.CodedError{
+				return nil, &exit.CodedError{
 					Code:    exit.General,
 					Msg:     fmt.Sprintf("resolve $HOME for --global autodetect: %v", err),
 					Wrapped: err,
@@ -805,7 +817,7 @@ func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, er
 		} else {
 			cwd, err := os.Getwd()
 			if err != nil {
-				return "", &exit.CodedError{
+				return nil, &exit.CodedError{
 					Code:    exit.General,
 					Msg:     fmt.Sprintf("resolve cwd for autodetect: %v", err),
 					Wrapped: err,
@@ -814,7 +826,42 @@ func resolvePlatformOrAutodetect(in hydrateInputs, stderr io.Writer) (string, er
 			root = cwd
 		}
 	}
-	return hydrate.Autodetect(root, stderr)
+	id, err := hydrate.Autodetect(root, stderr)
+	if err != nil {
+		return nil, err
+	}
+	return []string{id}, nil
+}
+
+// resolvePlatformList parses an explicit --target / ACH_PLATFORM value into a
+// deduped, order-preserving list of canonical platform ids. The value may be
+// comma-separated (e.g. "codex,opencode"); each part is resolved via
+// hydrate.ResolvePlatform (alias-aware), and an unknown part surfaces its
+// CodedError. An effectively-empty value (all blanks) is an error.
+func resolvePlatformList(raw string) ([]string, error) {
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := hydrate.ResolvePlatform(part)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		return nil, &exit.CodedError{
+			Code: exit.General,
+			Msg:  "--target is empty: provide one or more platform ids (e.g. claude-code,codex)",
+		}
+	}
+	return out, nil
 }
 
 // resolveBearer returns (baseURL, bearer) for the request, dispatching

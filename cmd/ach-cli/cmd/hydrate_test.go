@@ -1001,3 +1001,48 @@ func TestHydrate_Help_MentionsConflict(t *testing.T) {
 		t.Errorf("--conflict usage missing policy list: %q", cmd.Flag("conflict").Usage)
 	}
 }
+
+// TestResolvePlatformList covers the multi-target --target parser: comma-split,
+// whitespace trimming, alias resolution, dedup (order-preserving), and the
+// unknown-id / empty-value error paths. This is the asymmetry fix that lets
+// `env hydrate --target codex,opencode` mirror local `plugin install`.
+func TestResolvePlatformList(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{"single", "codex", []string{"codex"}, false},
+		{"two", "codex,opencode", []string{"codex", "opencode"}, false},
+		{"alias", "claude", []string{"claude-code"}, false},
+		{"whitespace", " codex , opencode ", []string{"codex", "opencode"}, false},
+		{"dedup-order", "opencode,codex,opencode", []string{"opencode", "codex"}, false},
+		{"empty-parts-skipped", "codex,,opencode", []string{"codex", "opencode"}, false},
+		{"unknown", "codex,bogus-xyz", nil, true},
+		{"all-blank", " , ", nil, true},
+		{"empty", "", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolvePlatformList(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("resolvePlatformList(%q) = %v, want error", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolvePlatformList(%q): unexpected error: %v", tc.raw, err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("resolvePlatformList(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("resolvePlatformList(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
