@@ -154,8 +154,8 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 		t.Fatalf("RenderRuntime returned %d FileWrites, want 1", len(writes))
 	}
 	w := writes[0]
-	if w.Path != ".claude/settings.json" {
-		t.Errorf("FileWrite.Path = %q, want %q", w.Path, ".claude/settings.json")
+	if w.Path != ".mcp.json" {
+		t.Errorf("FileWrite.Path = %q, want %q", w.Path, ".mcp.json")
 	}
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)

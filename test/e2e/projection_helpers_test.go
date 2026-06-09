@@ -139,7 +139,7 @@ var projectionDescriptors = []projectionDescriptor{
 		platformID:     phase7PlatformClaudeCode, // "claude-code"
 		nativeDirs:     []string{".claude/agents", ".claude/commands", ".claude/skills"},
 		mustNotProject: []string{"agents", "commands", "skills"},
-		coOwnedFile:    ".claude/settings.json",
+		coOwnedFile:    ".mcp.json", // claude reads MCP from project-root .mcp.json
 		coOwnedKind:    "json-mcp",
 		mustDrop:       nil, // caveman's kinds are all routed by claude-code.
 		mustNotDrop:    []string{"agents", "commands", "skills"},

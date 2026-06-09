@@ -91,7 +91,7 @@ const (
 // const blocks (mcpJSONPath / configTOMLPath / settingsJSONPath /
 // configJSONPath). Tests cross-check the on-disk file at <output>/<path>.
 const (
-	phase7ClaudeCodeRuntimePath = ".claude/settings.json"
+	phase7ClaudeCodeRuntimePath = ".mcp.json"
 	phase7CodexRuntimePath      = ".codex/config.toml"
 	phase7GeminiRuntimePath     = ".gemini/settings.json"
 	phase7OpencodeRuntimePath   = ".opencode/opencode.json"
@@ -434,7 +434,8 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 // testPhase7Sc1ClaudeCodeSurgicalPreserve is the W6-01 surgical-merge proof:
 // a hydrate must MERGE ACH's MCP servers into the tool's native config while
 // preserving the user's pre-existing servers + unrelated settings. Pre-seed
-// .claude/settings.json with a user MCP server and a permissions block,
+// the project-root .mcp.json (claude's MCP load path) with a user MCP server
+// and an unrelated key block,
 // hydrate, then assert the user keys survive verbatim, ACH added >=1 server,
 // and an ACH-contributed server carries a populated x-ach-key bearer.
 //

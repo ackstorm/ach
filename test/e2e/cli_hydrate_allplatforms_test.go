@@ -75,7 +75,7 @@ type allPlatformExpect struct {
 var allPlatformExpects = []allPlatformExpect{
 	{
 		id:          "claude-code",
-		runtimePath: ".claude/settings.json",
+		runtimePath: ".mcp.json",
 		runtimeFmt:  "json",
 		skillsDir:   ".claude/skills",
 		agentsDir:   ".claude/agents",
