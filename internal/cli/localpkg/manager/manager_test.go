@@ -637,3 +637,46 @@ func TestResolve_PluginMarketplace_LocalSubdir_SlicesFromCache(t *testing.T) {
 		t.Error("uncached resolve after repo deletion unexpectedly succeeded")
 	}
 }
+
+// TestResolve_PluginMarketplace_WholeRepoEntry covers a single-plugin
+// marketplace whose entry source is "." (the repo root IS the plugin, e.g.
+// obra/superpowers): the cloned repoTar is served directly — the slice path must
+// NOT try to carve a "." subtree (which is empty). Regression for the slice opt.
+func TestResolve_PluginMarketplace_WholeRepoEntry(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "main", ".")
+	write := func(rel, content string) {
+		abs := filepath.Join(work, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write(".claude-plugin/marketplace.json", `{
+  "name": "whole-mkt", "owner": {"name": "t"},
+  "plugins": [{"name": "whole", "description": "d", "source": "."}]
+}`)
+	write("commands/hello.md", "# hello\n")
+	runGit(t, work, "add", "-A")
+	runGit(t, work, "commit", "-m", "init whole-repo marketplace")
+	bare := t.TempDir()
+	runGit(t, work, "clone", "--bare", ".", bare)
+
+	repo := store.RepoEntry{Name: "whole-mkt", Kind: "git", CloneURL: "file://" + bare, GitRef: "main"}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	res, err := manager.ResolveWithCache(ctx, repo, "", "whole", "plugin-marketplace", manager.NewFetchCache())
+	if err != nil {
+		t.Fatalf("resolve whole-repo plugin: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(res.StageDir) }()
+	if _, err := os.Stat(filepath.Join(res.StageDir, "commands", "hello.md")); err != nil {
+		t.Errorf("whole-repo plugin missing commands/hello.md: %v", err)
+	}
+}

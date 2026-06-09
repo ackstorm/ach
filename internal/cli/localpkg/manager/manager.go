@@ -349,13 +349,22 @@ func resolvePluginMarketplace(ctx context.Context, repo store.RepoEntry, token, 
 	// own repo (cached). archiveRoot is "" — a git-clone tar is rooted at /.
 	var entryTar []byte
 	var entrySHA string
-	if entrySpec.Subtree != "" && entrySpec.URL == repo.CloneURL {
-		entryTar, err = contentkit.SliceSubtree(repoTar, "", entrySpec.Subtree, pluginEntryMaxFileBytes, false)
+	switch sub := path.Clean(entrySpec.Subtree); {
+	case entrySpec.URL == repo.CloneURL && (sub == "." || sub == "/"):
+		// The marketplace repo ROOT itself is the plugin (a single-plugin
+		// marketplace whose entry source is ".") — the cloned repoTar IS the
+		// plugin. Serve it directly (no slice, no re-fetch).
+		entryTar, entrySHA = repoTar, sha
+	case entrySpec.URL == repo.CloneURL:
+		// A subdir of the marketplace's own repo: slice the plugin out of the
+		// already-cloned repoTar — no second network fetch.
+		entryTar, err = contentkit.SliceSubtree(repoTar, "", sub, pluginEntryMaxFileBytes, false)
 		if err != nil {
 			return ResolveResult{}, fmt.Errorf("manager: slice plugin subtree %q: %w", name, err)
 		}
 		entrySHA = sha // the plugin subdir is at the marketplace repo's SHA
-	} else {
+	default:
+		// External-repo entry (github, or a different URL): fetch its own repo.
 		entryTar, entrySHA, err = fetchEntry(ctx, entrySpec, cache)
 		if err != nil {
 			return ResolveResult{}, fmt.Errorf("manager: fetch marketplace entry %q: %w", name, err)
