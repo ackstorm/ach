@@ -546,10 +546,13 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	}
 
 	// Hydrate each resolved platform in turn. --target accepts a comma-
-	// separated list (mirroring local `plugin install --target a,b`); each
-	// target gets its own wiring, run, and summary. hc + limits above are
-	// platform-independent and shared across the loop. Fail-fast: a failing
-	// target returns immediately (earlier targets already committed).
+	// separated list (mirroring local `plugin install --target a,b`); hc +
+	// limits above are platform-independent and shared across the loop.
+	// Fail-fast: a failing target returns immediately (earlier targets already
+	// committed). Results are collected and rendered ONCE after the loop so a
+	// multi-target run shows a single shared header + Tips, not a repeated
+	// per-target summary.
+	results := make([]hydrate.Result, 0, len(platformIDs))
 	for _, platformID := range platformIDs {
 		// NewWiring constructs the default Extractor + AdapterDispatcher;
 		// both are threaded into Opts so commit.run()'s steps 7-10 invoke
@@ -583,17 +586,115 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		if err != nil {
 			return err
 		}
-		if !in.dryRun {
-			meta := summaryMeta{
-				global:     in.global,
-				output:     in.output,
-				keyPrefix:  bearerPrefix,
-				noWarnings: in.noWarnings,
-			}
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), summaryFromResult(res, meta))
+		results = append(results, res)
+	}
+	if !in.dryRun {
+		meta := summaryMeta{
+			global:     in.global,
+			output:     in.output,
+			keyPrefix:  bearerPrefix,
+			noWarnings: in.noWarnings,
 		}
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHydrateSummary(results, meta))
 	}
 	return nil
+}
+
+// renderHydrateSummary picks the summary shape by target count: a single target
+// keeps the full per-domain block (summaryFromResult), while 2+ targets collapse
+// to one shared header + a compact one-line-per-target body + a single Tips
+// footer (summaryFromResultsCompact) — the repeated header/Tips of N full blocks
+// reads as noise.
+func renderHydrateSummary(results []hydrate.Result, meta summaryMeta) string {
+	if len(results) == 1 {
+		return summaryFromResult(results[0], meta)
+	}
+	return summaryFromResultsCompact(results, meta)
+}
+
+// summaryFromResultsCompact renders the multi-target summary: one shared header
+// (environment + scope/key facts, identical across targets), one dense line per
+// target (platform id + its non-zero resource/file counts joined by " · "), and
+// a single shared Tips footer.
+func summaryFromResultsCompact(results []hydrate.Result, meta summaryMeta) string {
+	var b strings.Builder
+
+	env := ""
+	for _, r := range results {
+		if r.Environment != "" {
+			env = r.Environment
+			break
+		}
+	}
+	if env != "" {
+		fmt.Fprintf(&b, "Hydrated %q", env)
+	} else {
+		fmt.Fprint(&b, "Hydrated")
+	}
+	if facts := scopeKeyFacts(meta); facts != "" {
+		fmt.Fprintf(&b, " (%s)", facts)
+	}
+	fmt.Fprint(&b, "\n\n")
+
+	width := 0
+	for _, r := range results {
+		if len(r.PlatformID) > width {
+			width = len(r.PlatformID)
+		}
+	}
+	for _, r := range results {
+		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.PlatformID, strings.Join(compactSegments(r), " · "))
+	}
+
+	if !meta.noWarnings {
+		if tips := hydrateTips(meta); len(tips) > 0 {
+			fmt.Fprintln(&b)
+			fmt.Fprintln(&b, "  Tips")
+			for _, t := range tips {
+				fmt.Fprintf(&b, "    • %s\n", t)
+			}
+		}
+	}
+	return b.String()
+}
+
+// compactSegments flattens one hydrate Result's non-zero tallies into the dot-
+// joined segments of its compact line, in the same domain order the full
+// summary uses (runtime → plugins+kinds → prompts → artifacts → standalone
+// skills → files). Standalone skills (spec.context.skills) are distinct from
+// the plugin-projected skills already counted in ProjectedByKind.
+func compactSegments(r hydrate.Result) []string {
+	var segs []string
+	rs := r.RuntimeSummary
+	if rs.Models > 0 {
+		segs = append(segs, countNoun(rs.Models, "model", "models"))
+	}
+	if rs.MCPServers > 0 {
+		segs = append(segs, countNoun(rs.MCPServers, "mcp server", "mcp servers"))
+	}
+	if rs.A2AAgents > 0 {
+		segs = append(segs, countNoun(rs.A2AAgents, "a2a agent", "a2a agents"))
+	}
+	cs := r.ContextSummary
+	if cs.Plugins > 0 || len(r.ProjectedByKind) > 0 {
+		segs = append(segs, countNoun(cs.Plugins, "plugin", "plugins"))
+	}
+	segs = append(segs, kindSegments(r.ProjectedByKind)...)
+	if cs.Prompts > 0 || cs.PromptFiles > 0 {
+		n := cs.Prompts
+		if n == 0 {
+			n = cs.PromptFiles
+		}
+		segs = append(segs, countNoun(n, "prompt", "prompts"))
+	}
+	if cs.Artifacts > 0 || cs.ArtifactFiles > 0 {
+		segs = append(segs, countNoun(cs.Artifacts, "artifact", "artifacts"))
+	}
+	if cs.Skills > 0 {
+		segs = append(segs, countNoun(cs.Skills, "skill", "skills"))
+	}
+	segs = append(segs, countNoun(r.FilesWritten, "file", "files"))
+	return segs
 }
 
 // summaryMeta carries the scope + credential context the post-hydrate summary
@@ -734,6 +835,13 @@ func hasContextSummary(s hydrate.ContextSummary) bool {
 }
 
 func formatKindCounts(counts map[string]int) string {
+	return strings.Join(kindSegments(counts), ", ")
+}
+
+// kindSegments renders per-kind "N kind" labels (sorted by kind, zero counts
+// skipped) as a slice, so callers can join with ", " (verbose summary) or
+// " · " (compact multi-target line).
+func kindSegments(counts map[string]int) []string {
 	kinds := make([]string, 0, len(counts))
 	for k := range counts {
 		kinds = append(kinds, k)
@@ -747,7 +855,7 @@ func formatKindCounts(counts map[string]int) string {
 		}
 		parts = append(parts, countNoun(counts[k], kindSingular(k), kindPlural(k)))
 	}
-	return strings.Join(parts, ", ")
+	return parts
 }
 
 func kindSingular(kind string) string {
