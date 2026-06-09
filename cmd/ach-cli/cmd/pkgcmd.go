@@ -232,6 +232,15 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+// vlogf writes a progress line to w only when verbose is set. install/update
+// use it to narrate the per-repo clone + per-target projection so a long
+// multi-plugin install (dominated by the git clones) shows what it is doing.
+func vlogf(w io.Writer, verbose bool, format string, args ...any) {
+	if verbose {
+		_, _ = fmt.Fprintf(w, format, args...)
+	}
+}
+
 // ---- newPkgCmd: the parameterised parent + children factory -----------------
 
 // newPkgCmd builds a cobra parent command for `ach-cli plugin` or `ach-cli skill`
@@ -274,6 +283,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		flagGlobal   bool
 		flagDest     string
 		flagConflict string
+		flagVerbose  bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -343,15 +353,17 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 
 				token, _ := store.LoadToken(repo.Name)
 
+				ref := name + "@" + repoName
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, cloning %s)…\n", ref, lens, repo.Name)
 				rr, err := manager.Resolve(ctx, repo, token, name, lens)
 				if err != nil {
 					return cloneExitErr("install resolve", err)
 				}
 				defer func() { _ = os.RemoveAll(rr.StageDir) }() //nolint:gocritic
-
-				ref := name + "@" + repoName
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "  resolved %s @ %s\n", ref, shortSHA(rr.ResolvedSHA))
 
 				for _, targetID := range targets {
+					vlogf(cmd.ErrOrStderr(), flagVerbose, "  projecting → %s\n", targetID)
 					writes, err := manager.Project(rr.StageDir, targetID)
 					if err != nil {
 						return &exit.CodedError{
@@ -433,6 +445,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
+	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
 	_ = c.MarkFlagRequired("target")
 	return c
 }
@@ -553,6 +566,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 		flagGlobal   bool
 		flagDest     string
 		flagConflict string
+		flagVerbose  bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -637,11 +651,13 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 
 				token, _ := store.LoadToken(repo.Name)
 
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, cloning %s)…\n", ref, lens, repo.Name)
 				rr, err := manager.Resolve(ctx, repo, token, name, lens)
 				if err != nil {
 					return cloneExitErr("update resolve", err)
 				}
 				defer func() { _ = os.RemoveAll(rr.StageDir) }() //nolint:gocritic
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "  resolved %s @ %s\n", ref, shortSHA(rr.ResolvedSHA))
 
 				// Find all installed entries for this ref+kind.
 				var entries []store.InstalledEntry
@@ -747,6 +763,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
+	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
 	return c
 }
 

@@ -138,6 +138,37 @@ func TestPluginCmd_Install_ConflictRefuse(t *testing.T) {
 	}
 }
 
+// TestPluginCmd_Install_Verbose asserts --verbose narrates the per-repo clone
+// and per-target projection to stderr.
+func TestPluginCmd_Install_Verbose(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	url := makeDirectPluginRepo(t)
+	seedRepo(t, store.RepoEntry{
+		Name: "v", Source: "git:" + url, Kind: "git", CloneURL: url, GitRef: "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+		AddedAt:  "2026-01-01T00:00:00Z",
+	})
+
+	var buf bytes.Buffer
+	cmd := newPluginCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"install", "v@v", "--target", "claude", "--dest", t.TempDir(), "--verbose"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("verbose install: %v (%s)", err, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{"resolving v@v", "projecting → claude-code"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verbose output missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 // ---- Group C: multi-target INSTALL in one command ---------------------------
 
 // TestPluginCmd_Install_MultiTarget_OneArg verifies that
