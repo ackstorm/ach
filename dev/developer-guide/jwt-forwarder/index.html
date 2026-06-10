@@ -846,6 +846,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2. BackendIdentityPolicy (BIP) — turning JWT mint on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observability-confirming-a-jwt-was-attached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability — confirming a JWT was attached
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1277,6 +1294,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2. BackendIdentityPolicy (BIP) — turning JWT mint on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observability-confirming-a-jwt-was-attached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability — confirming a JWT was attached
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1551,6 +1585,19 @@ route).</p>
 on the request path. Operator → Postgres → forwarder cache is the only
 flow (issue #34 C1). Status conditions on the BIP CR are informational;
 the Forwarder reads from Postgres unconditionally.</p>
+<h3 id="observability-confirming-a-jwt-was-attached">Observability — confirming a JWT was attached<a class="headerlink" href="#observability-confirming-a-jwt-was-attached" title="Permanent link">&para;</a></h3>
+<p>On the mint path the Forwarder logs at <strong>Info</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>forwarder: backend identity forwarded (JWT minted)  kind=MCPServer target=&lt;name&gt; aud=mcp:&lt;name&gt; owner=&lt;email&gt; request_id=...
+</code></pre></div>
+<p>When no BIP matches it logs the same fact at <strong>Debug</strong>
+(<code>no backend identity policy; forwarding without JWT</code>) — raise the log
+level to see <em>why</em> identity is not being forwarded. The corresponding
+counters are <code>forwarder_jwt_signed_total{kind}</code> (mint) and
+<code>forwarder_jwt_suppressed_total{kind,reason}</code> with
+<code>reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}</code>.
+A common gotcha: the BIP must live in the <strong>same namespace as the
+forwarder Pod</strong> (<code>POD_NAMESPACE</code>) — the cache query is namespace-scoped,
+so a BIP in <code>default</code> is invisible and shows up as <code>reason=no_policy</code>.</p>
 <hr />
 <h2 id="3-litellm-intermediary-the-extra_headers-opt-in">3. LiteLLM intermediary — the <code>extra_headers</code> opt-in<a class="headerlink" href="#3-litellm-intermediary-the-extra_headers-opt-in" title="Permanent link">&para;</a></h2>
 <p>In the production ACH topology, <code>/mcp/&lt;name&gt;/*</code> proxies to LiteLLM's
@@ -1561,15 +1608,15 @@ strips the caller's <code>Authorization</code> header before calling the backend
 own credential, but it breaks the ACH JWT trust path.</p>
 <p>To opt in to forwarding, register (or re-register) the MCP server in
 LiteLLM with <code>extra_headers: ["authorization"]</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Authorization: Bearer &lt;master-key&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="s1">    &quot;server_name&quot;: &quot;demo-mcp-echo&quot;,</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="s1">    &quot;transport&quot;:   &quot;http&quot;,</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="s1">    &quot;url&quot;:         &quot;http://ach-mcp-echo.ach-system.svc&quot;,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="s1">    &quot;extra_headers&quot;: [&quot;authorization&quot;]</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="s1">  }&#39;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Authorization: Bearer &lt;master-key&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="s1">    &quot;server_name&quot;: &quot;demo-mcp-echo&quot;,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="s1">    &quot;transport&quot;:   &quot;http&quot;,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s1">    &quot;url&quot;:         &quot;http://ach-mcp-echo.ach-system.svc&quot;,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">    &quot;extra_headers&quot;: [&quot;authorization&quot;]</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s1">  }&#39;</span>
 </code></pre></div>
 <p>What the opt-in does:</p>
 <ul>
@@ -1630,33 +1677,33 @@ The verifier (<code>jwt/verify.go</code>) and JWKS cache (<code>jwt/jwks.go</cod
 <hr />
 <h2 id="5-end-to-end-verification-recipe">5. End-to-end verification recipe<a class="headerlink" href="#5-end-to-end-verification-recipe" title="Permanent link">&para;</a></h2>
 <p>The full round-trip can be exercised on a <code>kind</code> cluster:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">&quot;--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true&quot;</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">&quot;</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span>-f<span class="w"> </span>test/e2e/fixtures/phase4_bip_mcp_echo.yaml
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;x-ach-key: </span><span class="nv">$PK</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Accept: application/json, text/event-stream&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,</span>
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="s1">       &quot;method&quot;:&quot;tools/call&quot;,</span>
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="s1">       &quot;params&quot;:{&quot;name&quot;:&quot;demo-mcp-echo.echo&quot;,</span>
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="s1">                 &quot;arguments&quot;:{&quot;text&quot;:&quot;hello&quot;}}}&#39;</span>
-<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
-<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
-<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">  </span>--image<span class="o">=</span>curlimages/curl:latest<span class="w"> </span>--quiet<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>http://ach-mcp-echo.ach-system.svc/__capture/last
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">&quot;--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true&quot;</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span>-f<span class="w"> </span>test/e2e/fixtures/phase4_bip_mcp_echo.yaml
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;x-ach-key: </span><span class="nv">$PK</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Accept: application/json, text/event-stream&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="s1">       &quot;method&quot;:&quot;tools/call&quot;,</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="s1">       &quot;params&quot;:{&quot;name&quot;:&quot;demo-mcp-echo.echo&quot;,</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="s1">                 &quot;arguments&quot;:{&quot;text&quot;:&quot;hello&quot;}}}&#39;</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span>--image<span class="o">=</span>curlimages/curl:latest<span class="w"> </span>--quiet<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>http://ach-mcp-echo.ach-system.svc/__capture/last
 </code></pre></div>
 <p>A passing run prints the echoed text plus the verified claim set
 (<code>iss</code>, <code>sub</code>, <code>aud</code>, <code>kid</code>, <code>iat</code>, <code>exp</code>) inside the tool result.
