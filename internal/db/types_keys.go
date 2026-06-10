@@ -32,15 +32,19 @@ import "time"
 // /key/generate but rows seeded before that path runs (or written by
 // future migration backfills) leave them NULL.
 type PkKeyInfo struct {
-	KeyID         string     // PRIMARY KEY (always 'pkid_<…>')
-	OwnerEmail    string     // §16 DB-05 — verbatim, never normalized
-	ExpiresAt     time.Time  // post-check-and-extend wall-clock
-	LiteLLMUserID *string    // NULL until Phase 3 SSO write
-	LiteLLMToken  *string    // NULL until Phase 3 /key/generate response
-	Status        string     // 'active' | 'revoked' | 'expired'
-	CreatedAt     time.Time  // row-creation wall-clock (read by ListPersonalKeysByOwner)
-	LastUsedAt    *time.Time // NULL on freshly minted rows
-	RevokedAt     *time.Time // NULL while status='active'
+	KeyID         string    // PRIMARY KEY (always 'pkid_<…>')
+	OwnerEmail    string    // §16 DB-05 — verbatim, never normalized
+	ExpiresAt     time.Time // post-check-and-extend wall-clock
+	LiteLLMUserID *string   // NULL until Phase 3 SSO write
+	LiteLLMToken  *string   // NULL until Phase 3 /key/generate response
+	// TESTING-PHASE (reverts FIX01 §A.6): the LiteLLM virtual-key plaintext
+	// (sk-…). NULL for rows minted before migration 000011. Populated only by
+	// the resolve queries (PkCheckAndExtend / EkResolve); admin reads leave it nil.
+	LiteLLMKeyMaterial *string
+	Status             string     // 'active' | 'revoked' | 'expired'
+	CreatedAt          time.Time  // row-creation wall-clock (read by ListPersonalKeysByOwner)
+	LastUsedAt         *time.Time // NULL on freshly minted rows
+	RevokedAt          *time.Time // NULL while status='active'
 }
 
 // EkKeyInfo is the typed row shape returned by EkResolve, GetEnvironmentKey,
@@ -55,40 +59,44 @@ type PkKeyInfo struct {
 // invalidation barrier per KEY-08). EkResolve does NOT populate it (the
 // resolver path already has the plaintext and can recompute the hash).
 type EkKeyInfo struct {
-	KeyID          string     // PRIMARY KEY (always 'ekid_<…>')
-	CredentialHash string     // HMAC-SHA-256(pepper, plaintext) hex; populated by Get/Revoke only
-	Environment    string     // bound to exactly one Environment at creation
-	OwnerEmail     string     // §16 DB-05 — verbatim
-	Name           string     // human-friendly label (per §8.2)
-	LiteLLMUserID  *string    // NULL until Phase 3 SSO write
-	LiteLLMToken   *string    // NULL until Phase 3 /key/generate response
-	Status         string     // 'active' | 'revoked'
-	CreatedAt      time.Time  // row-creation wall-clock
-	LastUsedAt     *time.Time // NULL on freshly minted rows
-	RevokedAt      *time.Time // NULL while status='active'
+	KeyID          string  // PRIMARY KEY (always 'ekid_<…>')
+	CredentialHash string  // HMAC-SHA-256(pepper, plaintext) hex; populated by Get/Revoke only
+	Environment    string  // bound to exactly one Environment at creation
+	OwnerEmail     string  // §16 DB-05 — verbatim
+	Name           string  // human-friendly label (per §8.2)
+	LiteLLMUserID  *string // NULL until Phase 3 SSO write
+	LiteLLMToken   *string // NULL until Phase 3 /key/generate response
+	// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM virtual-key plaintext (sk-…).
+	LiteLLMKeyMaterial *string
+	Status             string     // 'active' | 'revoked'
+	CreatedAt          time.Time  // row-creation wall-clock
+	LastUsedAt         *time.Time // NULL on freshly minted rows
+	RevokedAt          *time.Time // NULL while status='active'
 }
 
 // PkInsertRow is the value-struct argument to InsertPersonalKey. Fields match
 // the INSERT column list verbatim; the helper writes status='active' and
 // created_at=DEFAULT (now()) without exposing them on this struct.
 type PkInsertRow struct {
-	KeyID          string
-	CredentialHash string // HMAC-SHA-256(pepper, plaintext) hex; per §16.1 NEVER the plaintext
-	OwnerEmail     string
-	ExpiresAt      time.Time // sliding-window starts at now()+7 days
-	LiteLLMUserID  *string
-	LiteLLMToken   *string
+	KeyID              string
+	CredentialHash     string // HMAC-SHA-256(pepper, plaintext) hex; per §16.1 NEVER the plaintext
+	OwnerEmail         string
+	ExpiresAt          time.Time // sliding-window starts at now()+7 days
+	LiteLLMUserID      *string
+	LiteLLMToken       *string
+	LiteLLMKeyMaterial *string // TESTING-PHASE (reverts FIX01 §A.6)
 }
 
 // EkInsertRow is the value-struct argument to InsertEnvironmentKey. Same
 // discipline as PkInsertRow — credential_hash is the HMAC hex, never the
 // plaintext bearer.
 type EkInsertRow struct {
-	KeyID          string
-	CredentialHash string
-	Environment    string
-	OwnerEmail     string
-	Name           string
-	LiteLLMUserID  *string
-	LiteLLMToken   *string
+	KeyID              string
+	CredentialHash     string
+	Environment        string
+	OwnerEmail         string
+	Name               string
+	LiteLLMUserID      *string
+	LiteLLMToken       *string
+	LiteLLMKeyMaterial *string // TESTING-PHASE (reverts FIX01 §A.6)
 }

@@ -71,6 +71,37 @@ func TestEkResolve_Active(t *testing.T) {
 	}
 }
 
+// TestEkResolve_ReturnsKeyMaterial verifies the round-trip of the
+// TESTING-PHASE (reverts FIX01 §A.6) litellm_key_material column: a row
+// inserted with the plaintext virtual key surfaces it on the resolve path.
+func TestEkResolve_ReturnsKeyMaterial(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	const hash = "h_ek_material"
+	material := "sk-test-ek-material"
+	if err := db.InsertEnvironmentKey(ctx, pool, db.EkInsertRow{
+		KeyID:              "ekid_material",
+		CredentialHash:     hash,
+		Environment:        "demo",
+		OwnerEmail:         "a@b.example",
+		Name:               "k-material",
+		LiteLLMKeyMaterial: &material,
+	}); err != nil {
+		t.Fatalf("InsertEnvironmentKey: %v", err)
+	}
+
+	row, err := db.EkResolve(ctx, pool, hash)
+	if err != nil {
+		t.Fatalf("EkResolve: %v", err)
+	}
+	if row == nil || row.LiteLLMKeyMaterial == nil || *row.LiteLLMKeyMaterial != material {
+		t.Fatalf("LiteLLMKeyMaterial = %v; want %q", row.LiteLLMKeyMaterial, material)
+	}
+}
+
 // TestEkResolve_Revoked verifies KEY-06: a revoked row returns (nil, nil)
 // because the status='active' predicate excludes it. The status='active'
 // CHECK constraint is authoritative for the auth decision.
