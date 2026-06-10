@@ -244,8 +244,7 @@ func removeInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) [
 	var removed []store.InstalledEntry
 	kept := f.Installed[:0]
 	for _, e := range f.Installed {
-		match := e.Ref == ref && e.Kind == string(kind)
-		if match && (target == "" || e.Target == target) {
+		if installMatches(e, ref, target, kind) {
 			removed = append(removed, e)
 		} else {
 			kept = append(kept, e)
@@ -253,6 +252,38 @@ func removeInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) [
 	}
 	f.Installed = kept
 	return removed
+}
+
+// findInstalled returns the matching entries WITHOUT mutating the store — the
+// non-destructive twin of removeInstalled used by the `--dry-run` preview.
+func findInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) []store.InstalledEntry {
+	var found []store.InstalledEntry
+	for _, e := range f.Installed {
+		if installMatches(e, ref, target, kind) {
+			found = append(found, e)
+		}
+	}
+	return found
+}
+
+// installMatches reports whether entry e is the requested ref+kind, optionally
+// narrowed to a single target ("" = any target).
+func installMatches(e store.InstalledEntry, ref, target string, kind pkgKind) bool {
+	return e.Ref == ref && e.Kind == string(kind) && (target == "" || e.Target == target)
+}
+
+// reportDryRunWrites prints the planned writes for one ref→target without
+// touching disk: "write" for file-owned (MergeReplace) resources, "merge" for
+// the co-owned deep/composite configs (.mcp.json, settings, …).
+func reportDryRunWrites(w io.Writer, ref, target string, writes []manager.PlannedWrite) {
+	_, _ = fmt.Fprintf(w, "[dry-run] %s → %s (%d files):\n", ref, target, len(writes))
+	for _, pw := range writes {
+		verb := "write"
+		if pw.Merge != adapter.MergeReplace {
+			verb = "merge"
+		}
+		_, _ = fmt.Fprintf(w, "    %-6s %s\n", verb, pw.Path)
+	}
 }
 
 // shortSHA returns the first 7 characters of a SHA, or the full string.
@@ -288,11 +319,12 @@ Children:
   install    Fetch and install a %s from a registered repo
   uninstall  Remove an installed %s
   update     Re-resolve and re-install (or all if no args given)
+  outdated   Check installed %ss against their source (read-only)
   list       Show installed %ss (from installed.json; not remote catalog)
 
 <name@repo> identifies a %s by name and the registered repo it came from.
 Use 'ach-cli repo add' to register a repo first.
-`, kindStr, kindStr, kindStr, kindStr, kindStr),
+`, kindStr, kindStr, kindStr, kindStr, kindStr, kindStr),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -301,6 +333,7 @@ Use 'ach-cli repo add' to register a repo first.
 		newPkgInstallCmd(kind),
 		newPkgUninstallCmd(kind),
 		newPkgUpdateCmd(kind),
+		newPkgOutdatedCmd(kind),
 		newPkgListCmd(kind),
 	)
 	return parent
@@ -315,6 +348,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		flagDest     string
 		flagConflict string
 		flagVerbose  bool
+		flagDryRun   bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -425,6 +459,15 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
+					// Report namespace/skip resolutions regardless of recs count.
+					reportConflictActions(cmd.ErrOrStderr(), ref, targetID, actions)
+
+					// --dry-run: show the projection plan and write nothing.
+					if flagDryRun {
+						reportDryRunWrites(cmd.OutOrStdout(), ref, targetID, resolved)
+						continue
+					}
+
 					recs, err := manager.Commit(root, flagGlobal, targetID, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
@@ -432,9 +475,6 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("install: commit for %s: %v", targetID, err),
 						}
 					}
-
-					// Report namespace/skip resolutions regardless of recs count.
-					reportConflictActions(cmd.ErrOrStderr(), ref, targetID, actions)
 
 					// A 0-file projection means nothing matched this adapter's
 					// rules (e.g. a root-SKILL.md-only repo resolved via the
@@ -475,6 +515,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				}
 			}
 
+			if flagDryRun {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "[dry-run] no changes written")
+				return nil
+			}
+
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: save installed: %v", err)}
 			}
@@ -489,6 +534,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
+	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Resolve + project and print the plan, but write nothing")
 	_ = c.MarkFlagRequired("target")
 	return c
 }
@@ -500,6 +546,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 		flagTargets []string
 		flagGlobal  bool
 		flagDest    string
+		flagDryRun  bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -526,9 +573,43 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("uninstall: load installed: %v", err)}
 			}
 
+			// In --dry-run, look up entries non-destructively (no mutation of
+			// `installed`) and classify via UninstallPlan instead of removing.
+			lookup := removeInstalled
+			if flagDryRun {
+				lookup = findInstalled
+			}
+
+			// processEntry uninstalls one matched entry, or — in --dry-run —
+			// prints the read-only plan (per-file remove/modify/skip/absent).
+			processEntry := func(e store.InstalledEntry) error {
+				if flagDryRun {
+					plan, perr := manager.UninstallPlan(root, e.Files)
+					if perr != nil {
+						return &exit.CodedError{Code: exit.General,
+							Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, perr)}
+					}
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"[dry-run] would uninstall %s ← %s (%d files):\n", e.Ref, e.Target, len(e.Files))
+					for _, v := range plan {
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "    %-6s %s\n", v.Op, v.RelPath)
+					}
+					return nil
+				}
+				skipped, unErr := manager.Uninstall(root, e.Files)
+				if unErr != nil {
+					return &exit.CodedError{Code: exit.General,
+						Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, unErr)}
+				}
+				for _, s := range skipped {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ uninstalled %s ← %s\n", e.Ref, e.Target)
+				return nil
+			}
+
 			for _, arg := range args {
-				atIdx := strings.LastIndex(arg, "@")
-				if atIdx < 0 {
+				if !strings.Contains(arg, "@") {
 					return &exit.CodedError{
 						Code: exit.General,
 						Msg:  fmt.Sprintf("uninstall: %q: expected format <name@repo>", arg),
@@ -536,60 +617,35 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 				}
 				ref := arg // full "name@repo"
 
-				if len(targets) == 0 {
-					// No --target given: remove all targets for this ref.
-					removed := removeInstalled(installed, ref, "", kind)
-					if len(removed) == 0 {
-						_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-							"%s %q not installed (nothing to remove)\n", kindStr, ref)
-						continue
-					}
-					for _, e := range removed {
-						skipped, unErr := manager.Uninstall(root, e.Files)
-						if unErr != nil {
-							return &exit.CodedError{
-								Code: exit.General,
-								Msg:  fmt.Sprintf("uninstall: %s: %v", ref, unErr),
-							}
-						}
-						for _, s := range skipped {
-							_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-								"! skipped user-modified file: %s\n", s)
-						}
-						_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-							"✓ uninstalled %s ← %s\n", ref, e.Target)
-					}
-				} else {
-					// --target(s) given: remove only the specified targets.
-					anyRemoved := false
-					for _, tid := range targets {
-						removed := removeInstalled(installed, ref, tid, kind)
-						if len(removed) == 0 {
+				// scopes: all targets ("") when no --target, else each requested id.
+				scopes := []string{""}
+				if len(targets) > 0 {
+					scopes = targets
+				}
+				for _, tid := range scopes {
+					entries := lookup(installed, ref, tid, kind)
+					if len(entries) == 0 {
+						if tid == "" {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+								"%s %q not installed (nothing to remove)\n", kindStr, ref)
+						} else {
 							_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 								"%s %q not installed for %s (nothing to remove)\n", kindStr, ref, tid)
-							continue
 						}
-						anyRemoved = true
-						for _, e := range removed {
-							skipped, unErr := manager.Uninstall(root, e.Files)
-							if unErr != nil {
-								return &exit.CodedError{
-									Code: exit.General,
-									Msg:  fmt.Sprintf("uninstall: %s ← %s: %v", ref, tid, unErr),
-								}
-							}
-							for _, s := range skipped {
-								_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-									"! skipped user-modified file: %s\n", s)
-							}
-							_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-								"✓ uninstalled %s ← %s\n", ref, e.Target)
+						continue
+					}
+					for _, e := range entries {
+						if err := processEntry(e); err != nil {
+							return err
 						}
 					}
-					_ = anyRemoved
 				}
 			}
 
+			if flagDryRun {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "[dry-run] no changes written")
+				return nil
+			}
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("uninstall: save installed: %v", err)}
 			}
@@ -599,6 +655,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringArrayVar(&flagTargets, "target", nil, "Limit uninstall to this adapter (optional)")
 	c.Flags().BoolVar(&flagGlobal, "global", false, "Uninstall from $HOME root")
 	c.Flags().StringVar(&flagDest, "dest", "", "Root directory (default: cwd)")
+	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Print the removal plan, but change nothing")
 	return c
 }
 
@@ -816,6 +873,102 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
+	return c
+}
+
+// ---- outdated ---------------------------------------------------------------
+
+// newPkgOutdatedCmd reports, read-only, whether each installed ref is behind its
+// source. It re-resolves the latest SHA (like update) but writes nothing — no
+// extract, no commit, no installed.json mutation.
+func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
+	var flagVerbose bool
+	kindStr := string(kind)
+	c := &cobra.Command{
+		Use:   "outdated [<name@repo>...]",
+		Short: fmt.Sprintf("Check installed %ss against their source (read-only; all if no args)", kindStr),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+
+			installed, err := store.LoadInstalled()
+			if err != nil {
+				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("outdated: load installed: %v", err)}
+			}
+			repos, err := store.LoadRepos()
+			if err != nil {
+				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("outdated: load repos: %v", err)}
+			}
+
+			// Distinct refs of this kind, optionally filtered to the args.
+			argSet := map[string]bool{}
+			for _, a := range args {
+				argSet[a] = true
+			}
+			var refs []string
+			seen := map[string]bool{}
+			for _, e := range installed.Installed {
+				if e.Kind != kindStr || (len(argSet) > 0 && !argSet[e.Ref]) {
+					continue
+				}
+				if !seen[e.Ref] {
+					seen[e.Ref] = true
+					refs = append(refs, e.Ref)
+				}
+			}
+			if len(refs) == 0 {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no %ss installed\n", kindStr)
+				return nil
+			}
+
+			fetchCache := manager.NewFetchCache()
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(tw, "REF\tTARGET\tCURRENT\tLATEST\tSTATUS")
+
+			for _, ref := range refs {
+				atIdx := strings.LastIndex(ref, "@")
+				if atIdx < 0 {
+					return &exit.CodedError{Code: exit.General,
+						Msg: fmt.Sprintf("outdated: %q: expected format <name@repo>", ref)}
+				}
+				name, repoName := ref[:atIdx], ref[atIdx+1:]
+
+				repo, err := findRepo(repoName, repos)
+				if err != nil {
+					return err
+				}
+				lens := preferredLens(kind, repo.Provides)
+				if lens == "" {
+					return &exit.CodedError{Code: exit.General,
+						Msg: fmt.Sprintf("outdated: repo %q does not provide %s or %s-marketplace", repoName, kindStr, kindStr)}
+				}
+				token, _ := store.LoadToken(repo.Name)
+				vlogf(cmd.ErrOrStderr(), flagVerbose, "→ resolving %s (%s lens, repo %s)…\n", ref, lens, repo.Name)
+				rr, err := manager.ResolveWithCache(ctx, repo, token, name, lens, fetchCache)
+				if err != nil {
+					return cloneExitErr("outdated resolve", err)
+				}
+				_ = os.RemoveAll(rr.StageDir) // read-only: only the SHA is needed
+
+				for _, e := range installed.Installed {
+					if e.Ref != ref || e.Kind != kindStr {
+						continue
+					}
+					status := "up to date"
+					if rr.ResolvedSHA != e.ResolvedSHA {
+						status = "outdated"
+					}
+					_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+						ref, e.Target, shortSHA(e.ResolvedSHA), shortSHA(rr.ResolvedSHA), status)
+				}
+			}
+			_ = tw.Flush()
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo resolution progress")
 	return c
 }
 

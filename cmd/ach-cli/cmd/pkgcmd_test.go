@@ -770,3 +770,78 @@ func TestCollisionWarn(t *testing.T) {
 		}
 	})
 }
+
+// TestPluginCmd_DryRun_And_Outdated covers the read-only additions: install
+// --dry-run (plan only, nothing written), outdated (read-only source check), and
+// uninstall --dry-run (plan only, nothing removed).
+func TestPluginCmd_DryRun_And_Outdated(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	pluginURL := makeDirectPluginRepo(t)
+	seedRepo(t, store.RepoEntry{
+		Name: "fix", Source: "git:" + pluginURL, Kind: "git",
+		CloneURL: pluginURL, GitRef: "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+		AddedAt:  "2026-01-01T00:00:00Z",
+	})
+	destDir := t.TempDir()
+	target := filepath.Join(destDir, ".claude", "commands", "x.md")
+
+	run := func(t *testing.T, args ...string) string {
+		t.Helper()
+		var buf bytes.Buffer
+		cmd := newPluginCmd()
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v: %v (out: %s)", args, err, buf.String())
+		}
+		return buf.String()
+	}
+
+	t.Run("install_dry_run_writes_nothing", func(t *testing.T) {
+		out := run(t, "install", "fix@fix", "--target", "claude", "--dest", destDir, "--dry-run")
+		if !strings.Contains(out, "[dry-run]") || !strings.Contains(out, "no changes written") {
+			t.Errorf("missing dry-run markers in: %s", out)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Errorf("dry-run install must not write %s (err=%v)", target, err)
+		}
+		installed, _ := store.LoadInstalled()
+		if len(installed.Installed) != 0 {
+			t.Errorf("dry-run install must not record installed.json: %+v", installed.Installed)
+		}
+	})
+
+	t.Run("real_install", func(t *testing.T) {
+		run(t, "install", "fix@fix", "--target", "claude", "--dest", destDir)
+		if _, err := os.Stat(target); err != nil {
+			t.Fatalf("expected %s after real install: %v", target, err)
+		}
+	})
+
+	t.Run("outdated_up_to_date", func(t *testing.T) {
+		out := run(t, "outdated")
+		if !strings.Contains(out, "fix@fix") || !strings.Contains(out, "up to date") {
+			t.Errorf("expected fix@fix up to date in: %s", out)
+		}
+	})
+
+	t.Run("uninstall_dry_run_removes_nothing", func(t *testing.T) {
+		out := run(t, "uninstall", "fix@fix", "--dest", destDir, "--dry-run")
+		if !strings.Contains(out, "would uninstall") || !strings.Contains(out, "remove") {
+			t.Errorf("missing uninstall plan in: %s", out)
+		}
+		if _, err := os.Stat(target); err != nil {
+			t.Errorf("dry-run uninstall must not remove %s: %v", target, err)
+		}
+		installed, _ := store.LoadInstalled()
+		if len(installed.Installed) == 0 {
+			t.Error("dry-run uninstall must not mutate installed.json")
+		}
+	})
+}

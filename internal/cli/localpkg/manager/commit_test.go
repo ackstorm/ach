@@ -623,3 +623,49 @@ func TestUninstall_DeepNonParseableSkips(t *testing.T) {
 		t.Errorf("non-parseable file should be preserved: %v", err)
 	}
 }
+
+// TestUninstallPlan_MatchesUninstall asserts the read-only plan classifies each
+// recorded file the same way Uninstall would act: remove for an untouched
+// replace file, skip for a user-modified one, absent for a missing one — without
+// touching disk.
+func TestUninstallPlan_MatchesUninstall(t *testing.T) {
+	root := t.TempDir()
+	recs, err := Commit(root, false, "claude-code", "myplugin", []PlannedWrite{
+		{Path: "keep/clean.txt", Content: []byte("clean"), Merge: adapter.MergeReplace},
+		{Path: "keep/edited.txt", Content: []byte("orig"), Merge: adapter.MergeReplace},
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	// Drift one file; add a phantom record for a file that does not exist.
+	if err := os.WriteFile(filepath.Join(root, "keep/edited.txt"), []byte("user edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recs = append(recs, store.FileRec{RelPath: "keep/gone.txt", Hash: "xxh3:none"})
+
+	plan, err := UninstallPlan(root, recs)
+	if err != nil {
+		t.Fatalf("UninstallPlan: %v", err)
+	}
+	got := map[string]string{}
+	for _, v := range plan {
+		got[v.RelPath] = v.Op
+	}
+	want := map[string]string{
+		"keep/clean.txt":  "remove",
+		"keep/edited.txt": "skip",
+		"keep/gone.txt":   "absent",
+	}
+	for rel, op := range want {
+		if got[rel] != op {
+			t.Errorf("plan[%s] = %q, want %q (full: %v)", rel, got[rel], op, got)
+		}
+	}
+
+	// The plan must NOT have mutated anything: both real files still present.
+	for _, rel := range []string{"keep/clean.txt", "keep/edited.txt"} {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Errorf("UninstallPlan mutated disk: %s missing: %v", rel, err)
+		}
+	}
+}

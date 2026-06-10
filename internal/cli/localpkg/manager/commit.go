@@ -128,27 +128,99 @@ func Commit(root string, global bool, adapterID, compositeID string, writes []Pl
 	return recs, nil
 }
 
-// Uninstall removes a package's recorded files under root, dispatching on each
-// FileRec's Merge kind so CO-OWNED files (deep-merged JSON/TOML, composite
-// marker blocks) are inverse-merged rather than deleted wholesale:
+// uninstallOp is the verdict classifyUninstall produces for one recorded file
+// given its current on-disk body: what uninstalling it WOULD do.
+type uninstallOp int
+
+const (
+	opAbsent uninstallOp = iota // file is gone from disk (handled by the caller)
+	opRemove                    // delete the whole file
+	opModify                    // rewrite with the inverse-merged content (co-owned)
+	opSkip                      // user-modified replace file — leave it untouched
+)
+
+// String renders the op for the user-facing uninstall plan (--dry-run).
+func (o uninstallOp) String() string {
+	switch o {
+	case opRemove:
+		return "remove"
+	case opModify:
+		return "modify"
+	case opSkip:
+		return "skip"
+	default:
+		return "absent"
+	}
+}
+
+// classifyUninstall decides — purely, with no I/O beyond the already-read body —
+// what uninstalling FileRec f means for its current on-disk body, dispatching on
+// the Merge kind:
 //
-//   - "composite": strip only this plugin's marked region (Keys[0]) from the
-//     host-memory file, preserving other plugins' blocks and the user's prose;
-//     delete the file only when nothing but whitespace remains.
+//   - "composite": strip only this plugin's marked region (Keys[0]); opRemove
+//     when nothing but whitespace remains, else opModify with the stripped body.
 //   - "deep": remove only this plugin's contributed dotted Keys from the
-//     JSON/TOML document, preserving sibling entries; delete the file only when
-//     the document becomes empty.
-//   - "" / replace: the legacy whole-file path — hash-check, then delete; on
-//     drift skip (recorded in the returned skipped list) to avoid clobbering
-//     user edits.
+//     JSON/TOML document; opRemove when the document becomes empty, else opModify
+//     with the re-encoded body. A non-parseable file (user broke it) → opSkip.
+//   - "" / replace: hash-check; opRemove on match, opSkip on drift (user-edited).
 //
-// Co-owned (deep/composite) files are NOT hash-skipped: another install/edit
-// legitimately changes the whole file, but removing only OUR contribution is
-// always safe. A parse failure on a deep file (the user broke the JSON/TOML
-// out from under us) is recorded in skipped rather than corrupting the file.
-// Missing files are treated as already-removed (no error). Empty ancestor dirs
-// are pruned after a file is fully removed (up to but not including root).
-// Returns the list of skipped RelPaths and any unexpected error.
+// Co-owned (deep/composite) files are NOT hash-checked — removing only OUR
+// contribution is always safe. For opModify the rewritten content is returned.
+// Shared by Uninstall (which performs the I/O) and UninstallPlan (which only
+// reports), so the act path and the --dry-run preview can never drift.
+func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error) {
+	switch f.Merge {
+	case mergeKindComposite:
+		if len(f.Keys) == 0 || f.Keys[0] == "" {
+			// Defensive: a recorded composite should always carry its marker id;
+			// fall back to the hash-gated whole-file verdict.
+			return classifyReplace(f, body), nil, nil
+		}
+		stripped := merge.PluginMarkerRE(f.Keys[0]).ReplaceAll(body, nil)
+		if len(bytes.TrimSpace(stripped)) == 0 {
+			return opRemove, nil, nil
+		}
+		return opModify, stripped, nil
+
+	case mergeKindDeep:
+		isTOML := strings.HasSuffix(f.RelPath, ".toml")
+		doc, perr := merge.ParseDoc(body, isTOML)
+		if perr != nil {
+			return opSkip, nil, nil
+		}
+		for _, k := range f.Keys {
+			merge.RemoveDottedKey(doc, k)
+		}
+		if len(doc) == 0 {
+			return opRemove, nil, nil
+		}
+		out, eerr := merge.EncodeDoc(doc, isTOML)
+		if eerr != nil {
+			return opSkip, nil, fmt.Errorf("encode deep %s: %w", f.RelPath, eerr)
+		}
+		return opModify, out, nil
+
+	default:
+		return classifyReplace(f, body), nil, nil
+	}
+}
+
+// classifyReplace is the whole-file verdict: opRemove when the on-disk hash
+// matches the recorded hash, opSkip on drift (user-modified — never clobber).
+func classifyReplace(f store.FileRec, body []byte) uninstallOp {
+	if hash.HashBytes(body) != f.Hash {
+		return opSkip
+	}
+	return opRemove
+}
+
+// Uninstall removes a package's recorded files under root, applying the
+// classifyUninstall verdict for each: opRemove deletes the file (pruning now-
+// empty ancestor dirs up to but not including root), opModify rewrites the
+// inverse-merged content (co-owned deep/composite files), opSkip records the
+// RelPath as skipped (drift — never clobbered). Missing files are treated as
+// already-removed. A remove failure is best-effort (non-fatal, no prune above
+// it). Returns the list of skipped RelPaths and any unexpected error.
 func Uninstall(root string, files []store.FileRec) (skipped []string, err error) {
 	for _, f := range files {
 		abs := filepath.Join(root, f.RelPath)
@@ -161,103 +233,58 @@ func Uninstall(root string, files []store.FileRec) (skipped []string, err error)
 			return skipped, fmt.Errorf("uninstall: read %s: %w", f.RelPath, rerr)
 		}
 
-		var (
-			removed bool
-			skip    bool
-			uerr    error
-		)
-		switch f.Merge {
-		case mergeKindComposite:
-			removed, uerr = uninstallComposite(abs, f, body)
-		case mergeKindDeep:
-			removed, skip, uerr = uninstallDeep(abs, f, body)
-		default:
-			removed, skip = uninstallReplace(abs, f, body)
+		op, newContent, cerr := classifyUninstall(f, body)
+		if cerr != nil {
+			return skipped, fmt.Errorf("uninstall: %w", cerr)
 		}
-		if uerr != nil {
-			return skipped, uerr
-		}
-		if skip {
+		switch op {
+		case opSkip:
 			skipped = append(skipped, f.RelPath)
-			continue
-		}
-		if removed {
-			// Prune now-empty ancestor directories (stop at root).
+		case opModify:
+			if werr := state.WriteAtomic(abs, newContent, 0o644); werr != nil {
+				return skipped, fmt.Errorf("uninstall: rewrite %s: %w", f.RelPath, werr)
+			}
+		case opRemove:
+			if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+				// Best-effort: a remove failure is non-fatal to the overall
+				// uninstall — skip pruning above it and move on.
+				continue
+			}
 			pruneEmptyDirs(root, filepath.Dir(abs))
 		}
 	}
 	return skipped, nil
 }
 
-// uninstallReplace is the legacy whole-file path: delete when the on-disk hash
-// matches the recorded hash, otherwise skip (drift). Returns (removed, skip).
-func uninstallReplace(abs string, f store.FileRec, body []byte) (removed, skip bool) {
-	if hash.HashBytes(body) != f.Hash {
-		// User-modified — skip, do not delete.
-		return false, true
-	}
-	if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-		// Best-effort: a remove failure here is non-fatal to the overall
-		// uninstall — treat as not-removed so we do not prune above it.
-		return false, false
-	}
-	return true, false
+// UninstallVerdict is one entry of an UninstallPlan: the read-only classification
+// of what Uninstall WOULD do to a recorded file, for the `--dry-run` preview.
+type UninstallVerdict struct {
+	RelPath string
+	// Op is one of: remove | modify | skip | absent.
+	Op string
 }
 
-// uninstallComposite strips this plugin's marked region (Keys[0]) from a
-// host-memory file. When nothing but whitespace remains, the file is deleted.
-// Co-owned files are intentionally NOT hash-checked — removing only the marked
-// block is always safe. A FileRec with no Keys falls back to the hash-gated
-// whole-file delete (defensive; should not occur for recorded composites).
-// Returns (removed, error).
-func uninstallComposite(abs string, f store.FileRec, body []byte) (bool, error) {
-	if len(f.Keys) == 0 || f.Keys[0] == "" {
-		removed, _ := uninstallReplace(abs, f, body)
-		return removed, nil
-	}
-	re := merge.PluginMarkerRE(f.Keys[0])
-	stripped := re.ReplaceAll(body, nil)
-	if len(bytes.TrimSpace(stripped)) == 0 {
-		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return false, fmt.Errorf("uninstall: remove composite %s: %w", f.RelPath, rerr)
+// UninstallPlan classifies each recorded file WITHOUT touching disk — the read-
+// only twin of Uninstall, sharing classifyUninstall so the preview matches the
+// act exactly. A missing file reports "absent".
+func UninstallPlan(root string, files []store.FileRec) ([]UninstallVerdict, error) {
+	out := make([]UninstallVerdict, 0, len(files))
+	for _, f := range files {
+		body, rerr := os.ReadFile(filepath.Join(root, f.RelPath))
+		if rerr != nil {
+			if errors.Is(rerr, os.ErrNotExist) {
+				out = append(out, UninstallVerdict{RelPath: f.RelPath, Op: opAbsent.String()})
+				continue
+			}
+			return nil, fmt.Errorf("uninstall plan: read %s: %w", f.RelPath, rerr)
 		}
-		return true, nil
-	}
-	if werr := state.WriteAtomic(abs, stripped, 0o644); werr != nil {
-		return false, fmt.Errorf("uninstall: rewrite composite %s: %w", f.RelPath, werr)
-	}
-	return false, nil
-}
-
-// uninstallDeep removes this plugin's contributed dotted Keys from a JSON/TOML
-// document. When the document becomes empty, the file is deleted. Co-owned
-// files are NOT hash-checked. If the file became non-parseable out from under
-// us, it is skipped (skip=true) rather than corrupted. Returns
-// (removed, skip, error).
-func uninstallDeep(abs string, f store.FileRec, body []byte) (removed, skip bool, err error) {
-	isTOML := strings.HasSuffix(f.RelPath, ".toml")
-	doc, perr := merge.ParseDoc(body, isTOML)
-	if perr != nil {
-		// File became non-parseable (user broke it) — skip rather than corrupt.
-		return false, true, nil
-	}
-	for _, k := range f.Keys {
-		merge.RemoveDottedKey(doc, k)
-	}
-	if len(doc) == 0 {
-		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return false, false, fmt.Errorf("uninstall: remove deep %s: %w", f.RelPath, rerr)
+		op, _, cerr := classifyUninstall(f, body)
+		if cerr != nil {
+			return nil, fmt.Errorf("uninstall plan: %w", cerr)
 		}
-		return true, false, nil
+		out = append(out, UninstallVerdict{RelPath: f.RelPath, Op: op.String()})
 	}
-	out, eerr := merge.EncodeDoc(doc, isTOML)
-	if eerr != nil {
-		return false, false, fmt.Errorf("uninstall: encode deep %s: %w", f.RelPath, eerr)
-	}
-	if werr := state.WriteAtomic(abs, out, 0o644); werr != nil {
-		return false, false, fmt.Errorf("uninstall: rewrite deep %s: %w", f.RelPath, werr)
-	}
-	return false, false, nil
+	return out, nil
 }
 
 // pruneEmptyDirs walks up the directory tree from dir toward root (exclusive),
