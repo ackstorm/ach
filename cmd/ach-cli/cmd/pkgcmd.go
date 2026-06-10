@@ -26,6 +26,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/gitignore"
 	"github.com/ackstorm/ach/internal/cli/localpkg/discover"
 	"github.com/ackstorm/ach/internal/cli/localpkg/manager"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
@@ -114,6 +115,36 @@ func resolveRoot(global bool, dest string) (string, error) {
 		return "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("getwd: %v", err)}
 	}
 	return cwd, nil
+}
+
+// collectIgnoreEntries appends the top-level .gitignore pattern (e.g. ".claude/")
+// for each just-installed file to dst, so the credential-bearing agent config is
+// kept out of git.
+func collectIgnoreEntries(dst []string, recs []store.FileRec) []string {
+	for _, r := range recs {
+		if e := gitignore.TopLevelEntry(r.RelPath); e != "" {
+			dst = append(dst, e)
+		}
+	}
+	return dst
+}
+
+// ensureProjectGitignore writes the ach-managed .gitignore block for the
+// installed entries under root. Project scope only (--global writes under $HOME,
+// no repo to guard); best-effort — a failure warns but never fails the command.
+func ensureProjectGitignore(w io.Writer, root string, global bool, entries []string) {
+	if global || len(entries) == 0 {
+		return
+	}
+	wrote, err := gitignore.Ensure(root, entries)
+	if err != nil {
+		_, _ = fmt.Fprintf(w, "warning: could not update .gitignore: %v\n", err)
+		return
+	}
+	if wrote {
+		_, _ = fmt.Fprintln(w,
+			"notice: updated .gitignore (ach-cli block: agent config carries credentials)")
+	}
 }
 
 // findRepo looks up a named repo from the store; returns CodedError{General} if absent.
@@ -329,6 +360,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			// installed from it, instead of re-cloning per item.
 			fetchCache := manager.NewFetchCache()
 
+			// Accumulate the top-level adapter dirs/files written across every
+			// target so the project .gitignore can exclude the credential-bearing
+			// config after the install completes.
+			var ignoreEntries []string
+
 			for _, arg := range args {
 				atIdx := strings.LastIndex(arg, "@")
 				if atIdx < 0 {
@@ -432,6 +468,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
 					upsertInstalled(installed, entry)
+					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ %s → %s (%d files)\n", ref, targetID, len(recs))
@@ -441,6 +478,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: save installed: %v", err)}
 			}
+			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
 			return nil
 		},
 	}
@@ -608,6 +646,10 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			// One fetch cache for the whole invocation (see install).
 			fetchCache := manager.NewFetchCache()
 
+			// Accumulate ignore entries for re-projected files (an update may
+			// introduce a new adapter dir/file the original install lacked).
+			var ignoreEntries []string
+
 			// Determine which refs to update.
 			var targets []string
 			if len(args) == 0 {
@@ -754,6 +796,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
 					upsertInstalled(installed, newEntry)
+					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ updated %s → %s (%s → %s, %d files)\n",
@@ -764,6 +807,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("update: save installed: %v", err)}
 			}
+			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
 			return nil
 		},
 	}
