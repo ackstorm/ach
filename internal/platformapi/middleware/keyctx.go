@@ -18,14 +18,17 @@ import (
 // Handlers retrieve it via KeyContextFromCtx(r.Context()); they NEVER
 // see the raw bearer plaintext (Authn discards it before next.ServeHTTP).
 type KeyContext struct {
-	KeyID         string
-	KeyType       keys.BearerPrefix
-	OwnerEmail    string
-	ExpiresAt     *time.Time
-	Environment   string
-	LiteLLMToken  *string
-	LiteLLMUserID *string
-	IsAdmin       bool
+	KeyID        string
+	KeyType      keys.BearerPrefix
+	OwnerEmail   string
+	ExpiresAt    *time.Time
+	Environment  string
+	LiteLLMToken *string
+	// TESTING-PHASE (reverts FIX01 §A.6): caller's own LiteLLM virtual-key
+	// plaintext (sk-…), forwarded by the proxy as x-litellm-api-key.
+	LiteLLMKeyMaterial *string
+	LiteLLMUserID      *string
+	IsAdmin            bool
 }
 
 // ctxKey is the private type used for the two context.Value keys this
@@ -50,14 +53,16 @@ func WithKeyContext(ctx context.Context, info *keystore.KeyInfo, isAdmin bool) c
 		return ctx
 	}
 	kc := KeyContext{
-		KeyID:         info.KeyID,
-		KeyType:       info.KeyType,
-		OwnerEmail:    info.OwnerEmail,
-		ExpiresAt:     info.ExpiresAt,
-		Environment:   info.Environment,
-		LiteLLMToken:  info.LiteLLMToken,
-		LiteLLMUserID: info.LiteLLMUserID,
-		IsAdmin:       isAdmin,
+		KeyID:        info.KeyID,
+		KeyType:      info.KeyType,
+		OwnerEmail:   info.OwnerEmail,
+		ExpiresAt:    info.ExpiresAt,
+		Environment:  info.Environment,
+		LiteLLMToken: info.LiteLLMToken,
+		// TESTING-PHASE (reverts FIX01 §A.6)
+		LiteLLMKeyMaterial: info.LiteLLMKeyMaterial,
+		LiteLLMUserID:      info.LiteLLMUserID,
+		IsAdmin:            isAdmin,
 	}
 	return context.WithValue(ctx, keyContextKey, kc)
 }

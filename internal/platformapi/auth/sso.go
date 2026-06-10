@@ -443,6 +443,10 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		ExpiresAt:      expiresAt,
 		LiteLLMUserID:  &userID,
 		LiteLLMToken:   &keyResp.Token,
+		// TESTING-PHASE (reverts FIX01 §A.6): persist the sk-… plaintext
+		// (keyResp.Key, previously discarded) so the forwarder can
+		// authenticate to LiteLLM as this user's own key.
+		LiteLLMKeyMaterial: &keyResp.Key,
 	}
 	if err := deps.callbackInsertPK(ctx, row); err != nil {
 		// Compensation: revoke the LiteLLM-side key we just minted.

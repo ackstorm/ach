@@ -442,6 +442,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	}
 	llToken := keyResp.Token
 	llUserID := userID
+	llMaterial := keyResp.Key // TESTING-PHASE (reverts FIX01 §A.6)
 
 	// Step 8: INSERT row with WARN-03 retry policy.
 	//
@@ -458,6 +459,8 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		Name:           cr.req.Name,
 		LiteLLMUserID:  &llUserID,
 		LiteLLMToken:   &llToken,
+		// TESTING-PHASE (reverts FIX01 §A.6)
+		LiteLLMKeyMaterial: &llMaterial,
 	}
 	insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)
 	if insertErr != nil {

@@ -145,7 +145,15 @@ func (c *captureLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntr
 
 func (c *captureLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 	c.lastKeyGenerateReq = req
-	return c.NoopClient.KeyGenerate(ctx, req)
+	resp, err := c.NoopClient.KeyGenerate(ctx, req)
+	if resp != nil {
+		// TESTING-PHASE (reverts FIX01 §A.6): production LiteLLM returns its
+		// own minted virtual-key plaintext (sk-…) in the response; ACH now
+		// persists it. The NoopClient echoes the (empty) req.Key, so override
+		// with a sentinel the mint test can assert on.
+		resp.Key = "sk-ek-xyz"
+	}
+	return resp, err
 }
 
 // fakeEnvStore returns a single ready environment whose authorizedTeams the
@@ -231,6 +239,15 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.KeyAlias, keys.EkidKeyIDPrefix) {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want %s prefix", got.KeyAlias, keys.EkidKeyIDPrefix)
+	}
+	// TESTING-PHASE (reverts FIX01 §A.6): the inserted ek_ row must carry the
+	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
+	inserted := deps.DB.(*fakeEkDB).inserted
+	if inserted == nil {
+		t.Fatalf("InsertEnvironmentKey was never called")
+	}
+	if inserted.LiteLLMKeyMaterial == nil || *inserted.LiteLLMKeyMaterial != "sk-ek-xyz" {
+		t.Fatalf("EkInsertRow.LiteLLMKeyMaterial = %v; want sk-ek-xyz", inserted.LiteLLMKeyMaterial)
 	}
 }
 
