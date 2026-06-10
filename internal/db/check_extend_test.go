@@ -184,6 +184,36 @@ func TestPkCheckAndExtend_UnknownHash(t *testing.T) {
 	}
 }
 
+// TestPkCheckAndExtend_ReturnsKeyMaterial verifies the round-trip of the
+// TESTING-PHASE (reverts FIX01 §A.6) litellm_key_material column: a row
+// inserted with the plaintext virtual key surfaces it on the resolve path.
+func TestPkCheckAndExtend_ReturnsKeyMaterial(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	const hash = "h_pk_material"
+	material := "sk-test-pk-material"
+	if err := db.InsertPersonalKey(ctx, pool, db.PkInsertRow{
+		KeyID:              "pkid_material",
+		CredentialHash:     hash,
+		OwnerEmail:         "a@b.example",
+		ExpiresAt:          time.Now().UTC().Add(time.Hour),
+		LiteLLMKeyMaterial: &material,
+	}); err != nil {
+		t.Fatalf("InsertPersonalKey: %v", err)
+	}
+
+	row, err := db.PkCheckAndExtend(ctx, pool, hash)
+	if err != nil {
+		t.Fatalf("PkCheckAndExtend: %v", err)
+	}
+	if row == nil || row.LiteLLMKeyMaterial == nil || *row.LiteLLMKeyMaterial != material {
+		t.Fatalf("LiteLLMKeyMaterial = %v; want %q", row.LiteLLMKeyMaterial, material)
+	}
+}
+
 // TestPkCheckAndExtend_NullableLitellmFields verifies a row with NULL
 // litellm_user_id + NULL litellm_token returns *PkKeyInfo where both
 // pointer fields are nil (not empty strings).
