@@ -449,21 +449,42 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 }
 
 // skillMarketplaceSubPath returns the in-repo directory that holds the skill
-// dirs (spec.<git>.path), or "" when skills sit at the repo root. s3/gcs/http
-// sources point directly at a pre-archived tarball and carry no sub-path. Used
-// as the discovery tree-walk hint over the whole-repo archive (a SkillMarketplace
-// is discovery, not a narrow-at-fetch object — F1).
+// dirs, used as the discovery tree-walk hint over the whole-repo archive (a
+// SkillMarketplace is discovery, not a narrow-at-fetch object — F1).
+//
+// For git-backed sources an UNSET spec.<git>.path defaults to "skills": the
+// overwhelmingly dominant convention is the anthropics/skills-style monorepo
+// (skill dirs under skills/<name>/SKILL.md), so the default spares every author
+// from the silent skills=0 footgun of forgetting it. Authors whose skill dirs
+// sit at the repo root opt out explicitly with path: "." (normSubPath in
+// contentkit maps "." back to root). The default is SkillMarketplace-only — it
+// lives here rather than as a +kubebuilder:default on the shared GitHubSource.Path
+// field, which would wrongly fetch-narrow Plugin/Artifact/Prompt/Skill objects.
+//
+// s3/gcs/http sources point directly at a pre-archived tarball and carry no
+// sub-path (and no convention default), so they always walk from the root.
 func skillMarketplaceSubPath(spec achv1alpha1.SkillMarketplaceSpec) string {
 	switch {
 	case spec.GitHub != nil:
-		return spec.GitHub.Path
+		return defaultSkillsRoot(spec.GitHub.Path)
 	case spec.GitLab != nil:
-		return spec.GitLab.Path
+		return defaultSkillsRoot(spec.GitLab.Path)
 	case spec.Bitbucket != nil:
-		return spec.Bitbucket.Path
+		return defaultSkillsRoot(spec.Bitbucket.Path)
 	default:
 		return ""
 	}
+}
+
+// defaultSkillsRoot applies the SkillMarketplace skills-root convention: an
+// unset path means the anthropics/skills-style "skills/" monorepo root. A
+// non-empty value (including the "." root opt-out) is returned verbatim — the
+// downstream contentkit.normSubPath collapses "." / "/" to the repo root.
+func defaultSkillsRoot(p string) string {
+	if strings.TrimSpace(p) == "" {
+		return "skills"
+	}
+	return p
 }
 
 // skillFailure is the per-skill failure record aggregated into status.message.

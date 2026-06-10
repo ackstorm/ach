@@ -419,9 +419,13 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   `PluginMarketplace` (which parses `.claude-plugin/marketplace.json`), a
   `SkillMarketplace` fetches the repo as one tar.gz and tree-walks it
   (`skillmarketplace_discover.go` `discoverSkillsInTree`) for every directory
-  one level under the skills-root (`spec.<git>.path`, e.g. `skills` for an
-  `anthropics/skills`-style monorepo, or repo-root when unset) whose
+  one level under the skills-root (`spec.<git>.path`) whose
   `<dir>/SKILL.md` frontmatter `name` == `<dir>` (agentskills.io ships no index).
+  For git sources an **unset `path` defaults to `skills`** (controller-side, in
+  `skillMarketplaceSubPath`) — the dominant `anthropics/skills`-style monorepo
+  layout; skill dirs at the **repo root** opt out with `path: "."`. The default
+  is NOT a `+kubebuilder:default` on the shared `GitHubSource.Path` (that would
+  wrongly fetch-narrow the OBJECT kinds Plugin/Artifact/Prompt/Skill).
   A `SkillMarketplace` is a **discovery** kind (like `PluginMarketplace`), NOT a
   narrow-at-fetch object: it strips `spec.<git>.path` before fetch (whole-repo
   tar, via `withoutGitPath`) and uses `path` only as the POST-FETCH skills-root
