@@ -866,6 +866,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3-litellm-intermediary-the-extra_headers-opt-in" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1314,6 +1325,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3-litellm-intermediary-the-extra_headers-opt-in" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1598,6 +1620,32 @@ counters are <code>forwarder_jwt_signed_total{kind}</code> (mint) and
 A common gotcha: the BIP must live in the <strong>same namespace as the
 forwarder Pod</strong> (<code>POD_NAMESPACE</code>) — the cache query is namespace-scoped,
 so a BIP in <code>default</code> is invisible and shows up as <code>reason=no_policy</code>.</p>
+<hr />
+<h2 id="26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase">2.6 LiteLLM gateway auth — <code>x-litellm-api-key</code> (per-user, TESTING-PHASE)<a class="headerlink" href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" title="Permanent link">&para;</a></h2>
+<p>Distinct from the backend-facing <code>Authorization</code> JWT (§2-§3), the Forwarder
+must authenticate the proxied request <strong>to LiteLLM itself</strong>. As of migration
+<code>000011</code> it does this with the <strong>caller's own LiteLLM virtual key</strong>, not the
+shared master key.</p>
+<ul>
+<li>At pk_/ek_ mint, platform-api persists the <code>/key/generate</code> <code>sk-…</code> plaintext
+  into the new <code>litellm_key_material</code> column (reversing FIX01 §A.6 — plaintext,
+  deliberate for this testing phase).</li>
+<li>The resolver carries it through <code>KeyInfo</code> → <code>KeyContext</code>; the Director writes
+  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/gemini</code>/<code>/a2a</code>, <code>Bearer</code>-
+  prefixed on <code>/mcp</code> (LiteLLM's MCP key parser requires the prefix).</li>
+<li>LiteLLM therefore attributes the request <strong>1:1 to the user</strong> (their own key,
+  their own budget/tags), and the master key never enters the data path — so it
+  can no longer leak to an MCP backend that echoes inbound headers.</li>
+<li>The <code>x-litellm-key-id</code> delegation header is <strong>no longer sent</strong> (it was only
+  meaningful when authenticating as the master and delegating).</li>
+<li><strong>No fallback:</strong> a key minted before <code>000011</code> has NULL material → the header
+  is forwarded empty (<code>Bearer</code> on <code>/mcp</code>) → LiteLLM <strong>401s</strong>. Re-mint the key.</li>
+</ul>
+<p>The master key survives <strong>only</strong> for the Forwarder's <code>TeamsResolver</code> precheck
+(<code>/user/info</code>, <code>unauthorized_team</code>) and for operator/platform-api admin tasks
+(<code>/key/generate</code>, <code>/user/new</code>, access-group sync) — never in the proxied user
+request. This is a TESTING-PHASE simplification; grep <code>TESTING-PHASE (reverts
+FIX01</code> for the full revert surface.</p>
 <hr />
 <h2 id="3-litellm-intermediary-the-extra_headers-opt-in">3. LiteLLM intermediary — the <code>extra_headers</code> opt-in<a class="headerlink" href="#3-litellm-intermediary-the-extra_headers-opt-in" title="Permanent link">&para;</a></h2>
 <p>In the production ACH topology, <code>/mcp/&lt;name&gt;/*</code> proxies to LiteLLM's
