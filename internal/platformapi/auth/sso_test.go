@@ -858,6 +858,38 @@ func (e *errOnlyVerifier) Verify(context.Context, string) (*oidc.IDToken, error)
 // TestCallbackHandler_FirstTimeSSOHappyPath (behavior 1):
 // UserInfoByEmail → 404 → UserNew + TeamMemberAdd succeed → KeyGenerate
 // → DB INSERT happy → 200 + JSON body with plaintext/key_id/owner_email.
+// assertFirstTimePKInsert verifies the personal_keys row the first-time SSO
+// path inserts. Extracted from the happy-path test to keep that function under
+// the gocyclo budget.
+//
+// NOTE: PkInsertRow has no Status field — InsertPersonalKey hardcodes
+// status='active' in the SQL (see internal/db/personal_keys.go). This invariant
+// is verified by the integration tests of Plan 03-03; the handler test only
+// confirms the row reaches the insert path.
+func assertFirstTimePKInsert(t *testing.T, dbRec *dbInsertRecord, plaintext string, pepper []byte) {
+	t.Helper()
+	if dbRec.calls != 1 {
+		t.Errorf("DB insert calls: got %d, want 1", dbRec.calls)
+	}
+	if dbRec.lastRow.OwnerEmail != "alice@example.com" {
+		t.Errorf("DB OwnerEmail: got %q, want alice@example.com", dbRec.lastRow.OwnerEmail)
+	}
+	// credential_hash must match HMAC(pepper, plaintext).
+	wantHash, _ := credhash.Hash(pepper, []byte(plaintext))
+	if dbRec.lastRow.CredentialHash != wantHash {
+		t.Errorf("DB CredentialHash mismatch: got %q, want %q", dbRec.lastRow.CredentialHash, wantHash)
+	}
+	wantExpires := time.Unix(1700000000, 0).UTC().Add(pkExpiryWindow)
+	if !dbRec.lastRow.ExpiresAt.Equal(wantExpires) {
+		t.Errorf("DB ExpiresAt: got %v, want %v", dbRec.lastRow.ExpiresAt, wantExpires)
+	}
+	// TESTING-PHASE (reverts FIX01 §A.6): the inserted row must carry the
+	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
+	if dbRec.lastRow.LiteLLMKeyMaterial == nil || *dbRec.lastRow.LiteLLMKeyMaterial != "sk-test-pk-material" {
+		t.Fatalf("DB LiteLLMKeyMaterial = %v; want sk-test-pk-material", dbRec.lastRow.LiteLLMKeyMaterial)
+	}
+}
+
 func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	fix := newRealOIDC(t, "ach")
 	defer fix.Close()
@@ -934,31 +966,8 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want pkid_ prefix", gotReq.KeyAlias)
 	}
 
-	// DB INSERT row.
-	if dbRec.calls != 1 {
-		t.Errorf("DB insert calls: got %d, want 1", dbRec.calls)
-	}
-	// NOTE: PkInsertRow has no Status field — InsertPersonalKey hardcodes
-	// status='active' in the SQL (see internal/db/personal_keys.go). This
-	// invariant is verified by the integration tests of Plan 03-03; the
-	// handler test only confirms the row reaches the insert path.
-	if dbRec.lastRow.OwnerEmail != "alice@example.com" {
-		t.Errorf("DB OwnerEmail: got %q, want alice@example.com", dbRec.lastRow.OwnerEmail)
-	}
-	// credential_hash must match HMAC(pepper, plaintext).
-	wantHash, _ := credhash.Hash(pepper, []byte(got.Plaintext))
-	if dbRec.lastRow.CredentialHash != wantHash {
-		t.Errorf("DB CredentialHash mismatch: got %q, want %q", dbRec.lastRow.CredentialHash, wantHash)
-	}
-	wantExpires := time.Unix(1700000000, 0).UTC().Add(pkExpiryWindow)
-	if !dbRec.lastRow.ExpiresAt.Equal(wantExpires) {
-		t.Errorf("DB ExpiresAt: got %v, want %v", dbRec.lastRow.ExpiresAt, wantExpires)
-	}
-	// TESTING-PHASE (reverts FIX01 §A.6): the inserted row must carry the
-	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
-	if dbRec.lastRow.LiteLLMKeyMaterial == nil || *dbRec.lastRow.LiteLLMKeyMaterial != "sk-test-pk-material" {
-		t.Fatalf("DB LiteLLMKeyMaterial = %v; want sk-test-pk-material", dbRec.lastRow.LiteLLMKeyMaterial)
-	}
+	// DB INSERT row (extracted to keep this test under the gocyclo budget).
+	assertFirstTimePKInsert(t, dbRec, got.Plaintext, pepper)
 
 	// Cookie cleared on success.
 	setCookieHeaders := resp.Header.Values("Set-Cookie")

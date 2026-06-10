@@ -187,6 +187,35 @@ so a BIP in `default` is invisible and shows up as `reason=no_policy`.
 
 ---
 
+## 2.6 LiteLLM gateway auth — `x-litellm-api-key` (per-user, TESTING-PHASE)
+
+Distinct from the backend-facing `Authorization` JWT (§2-§3), the Forwarder
+must authenticate the proxied request **to LiteLLM itself**. As of migration
+`000011` it does this with the **caller's own LiteLLM virtual key**, not the
+shared master key.
+
+- At pk_/ek_ mint, platform-api persists the `/key/generate` `sk-…` plaintext
+  into the new `litellm_key_material` column (reversing FIX01 §A.6 — plaintext,
+  deliberate for this testing phase).
+- The resolver carries it through `KeyInfo` → `KeyContext`; the Director writes
+  it as `x-litellm-api-key` — **bare** on `/v1`/`/gemini`/`/a2a`, `Bearer `-
+  prefixed on `/mcp` (LiteLLM's MCP key parser requires the prefix).
+- LiteLLM therefore attributes the request **1:1 to the user** (their own key,
+  their own budget/tags), and the master key never enters the data path — so it
+  can no longer leak to an MCP backend that echoes inbound headers.
+- The `x-litellm-key-id` delegation header is **no longer sent** (it was only
+  meaningful when authenticating as the master and delegating).
+- **No fallback:** a key minted before `000011` has NULL material → the header
+  is forwarded empty (`Bearer ` on `/mcp`) → LiteLLM **401s**. Re-mint the key.
+
+The master key survives **only** for the Forwarder's `TeamsResolver` precheck
+(`/user/info`, `unauthorized_team`) and for operator/platform-api admin tasks
+(`/key/generate`, `/user/new`, access-group sync) — never in the proxied user
+request. This is a TESTING-PHASE simplification; grep `TESTING-PHASE (reverts
+FIX01` for the full revert surface.
+
+---
+
 ## 3. LiteLLM intermediary — the `extra_headers` opt-in
 
 In the production ACH topology, `/mcp/<name>/*` proxies to LiteLLM's
