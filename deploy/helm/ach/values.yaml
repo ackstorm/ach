@@ -245,9 +245,10 @@ ingress:
 #   - forwarder + platform-api → Pod-level annotations on their own
 #     Pod templates.
 #
-# Prometheus Operator users: examples/prometheus-servicemonitor.yaml
-# ships an opt-in ServiceMonitor manifest as an alternative to the
-# default pod-scrape annotations.
+# Prometheus Operator users: set metrics.serviceMonitor.enabled=true
+# (below) to render a ServiceMonitor as an alternative to the default
+# pod-scrape annotations. examples/prometheus-servicemonitor.yaml is the
+# equivalent standalone manifest for non-Helm / reference use.
 #
 # Spec v4 §5.2 RBAC reversal — Content Service no longer holds
 # informers over ACH CRDs (Phase 5 D-Discretion + Plan 05-06). The
@@ -259,12 +260,23 @@ ingress:
 # returns "yes" — that grant is needed by the OPERATOR reconcilers
 # (Phase 1 Plan 01-09); CS code never exercises it.
 #
-# metrics.serviceMonitor: enabled=false (default), do not render
-# prometheus-operator ServiceMonitor CR. Set true when prometheus-operator
-# is installed in the cluster.
+# metrics.serviceMonitor: render a prometheus-operator ServiceMonitor
+# (templates/servicemonitor.yaml) covering forwarder, platform-api,
+# content-service and operator metrics. enabled=false (default) → render
+# nothing and rely on the pod-level prometheus.io/scrape annotations above.
+# Set enabled=true ONLY when the Prometheus Operator CRDs are installed —
+# otherwise `helm install` fails with `no matches for kind "ServiceMonitor"`.
 metrics:
   serviceMonitor:
     enabled: false
+    # interval: scrape interval; empty → Prometheus global default.
+    interval: 30s
+    # scrapeTimeout: per-scrape timeout (must be ≤ interval); empty → default.
+    scrapeTimeout: ""
+    # labels: extra labels on the ServiceMonitor so your Prometheus's
+    # serviceMonitorSelector matches it (kube-prometheus-stack commonly
+    # requires `release: <prometheus-release-name>`).
+    labels: {}
 
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.

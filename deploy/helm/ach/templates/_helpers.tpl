@@ -36,6 +36,21 @@ so LiteLLM is configured ONCE. The same block also renders
 LiteLLMConnection/default (templates/litellmconnection.yaml) for the
 forwarder + operator. Emitted only when litellmConnection.enabled.
 */}}
+{{/*
+ach.serviceMonitorEndpointTuning — shared interval/scrapeTimeout block for
+every ServiceMonitor endpoint, so the three endpoints stay in lock-step.
+Both fields render only when set (empty → Prometheus default). Call with the
+root context: include "ach.serviceMonitorEndpointTuning" .
+*/}}
+{{- define "ach.serviceMonitorEndpointTuning" -}}
+{{- with .Values.metrics.serviceMonitor.interval }}
+interval: {{ . | quote }}
+{{- end }}
+{{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+scrapeTimeout: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
 {{- define "ach.litellmConnectionEnv" -}}
 {{- if .Values.litellmConnection.enabled -}}
 - name: ACH_LITELLM_BASE_URL

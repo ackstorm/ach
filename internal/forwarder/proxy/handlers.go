@@ -119,6 +119,13 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		if winner == nil {
 			metrics.IncJWTSuppressed(kind, "no_policy")
 			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			if deps.Deps.Logger != nil {
+				deps.Deps.Logger.Debug("forwarder: no backend identity policy; forwarding without JWT",
+					"kind", kind,
+					"target", name,
+					"request_id", reqID,
+				)
+			}
 			rp.ServeHTTP(w, r)
 			return
 		}
@@ -137,6 +144,19 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		}
 		metrics.IncJWTSigned(kind)
 		metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+		if deps.Deps.Logger != nil {
+			// BFI event: the forwarder minted + is attaching the ACH identity
+			// JWT for this backend. Info-level (a meaningful trust-path event,
+			// same verbosity as the per-request AccessLog) so operators can
+			// confirm identity forwarding without raising the log level.
+			deps.Deps.Logger.Info("forwarder: backend identity forwarded (JWT minted)",
+				"kind", kind,
+				"target", name,
+				"aud", audPrefix+name,
+				"owner", kc.OwnerEmail,
+				"request_id", reqID,
+			)
+		}
 
 		// 4. Hand off — Director reads jwtCtxKey and writes Authorization
 		//    AFTER headers.StripAndRewrite (jwt-LAST ordering, D-05).

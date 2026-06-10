@@ -133,6 +133,26 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 	if respAllowed.StatusCode == http.StatusForbidden {
 		t.Fatalf("expected non-403 on /mcp/allowed (precheck should pass); got 403")
 	}
+
+	// Bare "/mcp/<name>" (NO trailing slash) — the exact form hydrate writes
+	// into runtime config (platformapi/hydrate/handler.go) and the form that
+	// previously 404'd at the chi router before reaching precheck (the bare
+	// route was missing; only "/mcp/{name}/*" was registered). A router miss
+	// returns chi's plain 404, so a 404 HERE means the bare route regressed.
+	// We assert it reaches precheck (non-403 AND non-404).
+	reqBare, _ := http.NewRequest(http.MethodGet, forwarderURL+"/mcp/demo-mcp-jwt", nil)
+	reqBare.Header.Set("x-ach-key", ek)
+	respBare, err := http.DefaultClient.Do(reqBare)
+	if err != nil {
+		t.Fatalf("bare-path mcp request: %v", err)
+	}
+	respBare.Body.Close()
+	if respBare.StatusCode == http.StatusNotFound {
+		t.Fatalf("bare /mcp/demo-mcp-jwt 404'd — the slash-less route regressed (router miss)")
+	}
+	if respBare.StatusCode == http.StatusForbidden {
+		t.Fatalf("expected non-403 on bare /mcp/demo-mcp-jwt (precheck should pass); got 403")
+	}
 }
 
 // testPhase4SC2EkTagInjection — FWD-06 v1alpha1 scope. The forwarder injects

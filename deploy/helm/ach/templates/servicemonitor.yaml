@@ -1,0 +1,53 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+# Prometheus Operator ServiceMonitor (monitoring.coreos.com/v1) — opt-in via
+# metrics.serviceMonitor.enabled. One ServiceMonitor enumerates each metric
+# port across the ach Services by name:
+#   - "traffic" → forwarder        :8080  (ach-forwarder)
+#   - "http"    → platform-api      :8080  (ach-platform-api)
+#                 content-service   :8082  (ach-content-service)
+#   - "metrics" → operator          :8080  (ach-operator-metrics)
+# The gateway Service also carries an "http" port but serves NO /metrics (dumb
+# edge proxy), so it is excluded by the component selector below — otherwise
+# the "http" endpoint would generate a failing scrape target for it.
+#
+# REQUIRES the Prometheus Operator CRDs; enabling this without them makes
+# `helm install` fail with `no matches for kind "ServiceMonitor"`.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ach
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: NotIn
+        values:
+          - gateway
+  endpoints:
+    - port: traffic
+      path: /metrics
+      {{- with include "ach.serviceMonitorEndpointTuning" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+    - port: http
+      path: /metrics
+      {{- with include "ach.serviceMonitorEndpointTuning" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+    - port: metrics
+      path: /metrics
+      {{- with include "ach.serviceMonitorEndpointTuning" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+{{- end }}

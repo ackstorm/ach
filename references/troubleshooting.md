@@ -317,6 +317,29 @@ WHY IT FAILS: The verifier is intentionally strict — the trust path is
 only meaningful if the backend refuses on the slightest mismatch. Fix
 the configuration, not the verifier.
 
+### ❌ `POST /mcp/<name>` 404s while LiteLLM serves it directly
+```
+{"msg":"platform-api: access","method":"POST","path":"/mcp/vmcp-zoho","status":404,"latency_ms":0}
+```
+Two red herrings make this one confusing. (1) The `platform-api: access`
+label does NOT mean platform-api handled it — `AccessLog`
+(`internal/platformapi/middleware`) is shared middleware the forwarder
+reuses verbatim, so a forwarder 404 still logs that label. (2) The gateway
+routes `/mcp/` to the forwarder correctly (`internal/gateway/routes.go`);
+the request reaches the forwarder.
+✅ The tell is `latency_ms:0` with a 404: chi rejected the path at the
+ROUTER, before precheck/JWT/LiteLLM ran (a real LiteLLM 404 has non-zero
+latency; a precheck miss is 403, not 404; a missing Environment is a 404
+but carries a JSON `environment_not_found` envelope, not chi's plain
+`404 page not found`). The forwarder registers BOTH `/mcp/{name}` and
+`/mcp/{name}/*` (`internal/forwarder/server.go`) precisely because chi
+(no `RedirectSlashes`) will not match a slash-less `/mcp/<name>` against a
+`/{name}/*`-only route. If a bare `/mcp/<name>` 404s, that bare route
+regressed — `TestRouteAcceptsBareAndSubpathNames` guards it.
+WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
+(`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
+A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
+
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
 A CR's projection collides with a row created by the UI (`origin='ui'`). The
 operator refuses to clobber the UI-managed row.
