@@ -2,9 +2,12 @@
 #
 # Used by:  scripts/cluster.sh hydrate_litellm
 # Chart:    oci://docker.litellm.ai/berriai/litellm-helm  (upstream, OCI, BETA)
-# Image:    v1.83.10-stable (matches sister alitellm-operator's
-#           auto-memory litellm_version_target.md — the same upstream tag
-#           ach's internal/litellm REST client was validated against).
+# Image:    v1.87.1 (bumped from v1.83.10-stable, 2026-06-10). v1.83.10's MCP
+#           gateway rejected non-admin virtual keys on /mcp/<name> with an
+#           admin-only-route exception; v1.87.1 is required so the forwarder's
+#           per-user x-litellm-api-key (litellm_key_material) is accepted on the
+#           MCP gateway. NOTE: litellm-database publishes a bare `v1.87.1` tag,
+#           NOT a `-stable` variant — keep the suffix off.
 #
 # WARNING: the upstream litellm-helm chart is in BETA. When bumping
 # `chartVersion`, re-run `make e2e-full` and inspect any failed scenarios
@@ -24,7 +27,7 @@ chartVersion: 1.84.0
 
 image:
   repository: ghcr.io/berriai/litellm-database
-  tag: v1.83.10-stable
+  tag: v1.87.1
   # Override chart default `Always`: cluster.sh pre-pulls + kind-loads
   # this image into the node before `helm install`. With `Always`,
   # kubelet round-trips ghcr.io on every Pod start (and every
