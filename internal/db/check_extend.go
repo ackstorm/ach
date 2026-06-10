@@ -19,6 +19,16 @@
 // statement, embedded as two parallel CASE expressions. The auth decision
 // (the candidate CTE) NEVER reads last_used_at; the sliding-window debounce
 // is purely a write-side concern (Hub §7.1 v9).
+//
+// Absolute max lifetime: the 7-day window is SLIDING — an actively-used (incl.
+// actively-abused) pk_ would otherwise never expire. A hard cap of
+// created_at + 90 days bounds it: the candidate predicate rejects any key past
+// the cap (re-login required), and the extend LEAST()-clamps expires_at so the
+// sliding window can never push past created_at + 90d. pk_ is the management-
+// plane credential that lives on laptops (the most-leaked class); re-login is a
+// cheap SSO round-trip, so the cap converts the only unbounded credential into a
+// bounded one. The 90d/7d intervals are inline constants (promote to config if a
+// deployer ever needs to tune them).
 
 package db
 
@@ -57,6 +67,7 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		     WHERE credential_hash = $1
 		       AND status = 'active'
 		       AND expires_at > now()
+		       AND created_at + interval '90 days' > now()
 		     FOR UPDATE
 		)
 		UPDATE personal_keys SET
@@ -69,7 +80,8 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		    expires_at = CASE
 		        WHEN personal_keys.last_used_at IS NULL
 		          OR personal_keys.last_used_at < now() - interval '5 minutes'
-		        THEN now() + interval '7 days'
+		        THEN LEAST(now() + interval '7 days',
+		                   personal_keys.created_at + interval '90 days')
 		        ELSE personal_keys.expires_at
 		    END
 		  FROM candidate

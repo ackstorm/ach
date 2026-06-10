@@ -166,6 +166,68 @@ func TestPkCheckAndExtend_Expired(t *testing.T) {
 	}
 }
 
+// TestPkCheckAndExtend_AbsoluteMaxLifetime_Rejected verifies the hard cap: a key
+// kept alive by the sliding window (expires_at still in the future) but created
+// more than 90 days ago is rejected — (nil, nil), re-login required. Without the
+// cap an actively-abused pk_ would slide forever.
+func TestPkCheckAndExtend_AbsoluteMaxLifetime_Rejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	// created 91 days ago, but expires_at still 1 day out (slid past the cap).
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email,
+			status, created_at, expires_at, last_used_at)
+		VALUES ('pkid_old', 'h_pk_old', 'a@b.example',
+			'active', now() - interval '91 days', now() + interval '1 day',
+			now() - interval '10 minutes')
+	`)
+
+	info, err := db.PkCheckAndExtend(ctx, pool, "h_pk_old")
+	if err != nil {
+		t.Fatalf("PkCheckAndExtend: %v", err)
+	}
+	if info != nil {
+		t.Errorf("key past 90d absolute lifetime returned non-nil PkKeyInfo: %+v", info)
+	}
+}
+
+// TestPkCheckAndExtend_ExtendCappedAtMaxLifetime verifies the sliding extend is
+// LEAST()-clamped to created_at+90d: a stale key created 89 days ago extends to
+// created_at+90d (≈ now()+1d), NOT now()+7d — the window cannot push past the cap.
+func TestPkCheckAndExtend_ExtendCappedAtMaxLifetime(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	// created 89 days ago, stale last_used → extend fires; cap = now()+1d.
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email,
+			status, created_at, expires_at, last_used_at)
+		VALUES ('pkid_near', 'h_pk_near', 'a@b.example',
+			'active', now() - interval '89 days', now() + interval '6 days',
+			now() - interval '10 minutes')
+	`)
+
+	info, err := db.PkCheckAndExtend(ctx, pool, "h_pk_near")
+	if err != nil {
+		t.Fatalf("PkCheckAndExtend: %v", err)
+	}
+	if info == nil {
+		t.Fatal("PkCheckAndExtend returned (nil, nil); want non-nil (key is 89d < 90d)")
+	}
+	now := time.Now().UTC()
+	// Capped at created_at+90d ≈ now()+1d — must be well under the 7d sliding target.
+	wantCap := now.Add(24 * time.Hour)
+	if d := wantCap.Sub(info.ExpiresAt); d < -5*time.Second || d > 5*time.Second {
+		t.Errorf("expires_at=%v not within 5s of cap now+1d=%v (delta=%v); sliding window not clamped",
+			info.ExpiresAt, wantCap, d)
+	}
+}
+
 // TestPkCheckAndExtend_UnknownHash verifies KEY-04: an unknown credential_hash
 // returns (nil, nil). All three causes (revoked/expired/unknown) are
 // indistinguishable to the caller.
