@@ -36,7 +36,9 @@ type Deps struct {
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
-// authenticated /v1, /gemini, /mcp/{name}/*, /a2a/{name}/* routes.
+// authenticated /v1, /gemini, /mcp/{name}[/*], /a2a/{name}[/*] routes (the
+// bare and subpath forms are both registered so a slash-less MCP endpoint
+// resolves — see the route block below).
 // D-02 middleware chain: RequestID → RecoverPanic → AccessLog → Authn
 // (per-route bypass for JWKS).
 func New(deps Deps) http.Handler {
@@ -70,7 +72,16 @@ func New(deps Deps) http.Handler {
 		r.Use(pamw.Authn(deps.Resolver, nil, nil)) // no allowlist, no audit
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))
+		// Both the bare "/mcp/{name}" and the subpath "/mcp/{name}/*" forms
+		// are registered: chi (no RedirectSlashes here) does NOT match a
+		// trailing-slash-less path against "/{name}/*", and the canonical MCP
+		// endpoint LiteLLM serves — the one hydrate writes into runtime config
+		// (platformapi/hydrate/handler.go) — is the bare "/mcp/<name>" form.
+		// Without the bare route a client POSTing "/mcp/<name>" 404s at the
+		// router before precheck/proxy ever run. Same for /a2a.
+		r.Handle("/mcp/{name}", proxy.HandlerMCP(hdeps))
 		r.Handle("/mcp/{name}/*", proxy.HandlerMCP(hdeps))
+		r.Handle("/a2a/{name}", proxy.HandlerA2A(hdeps))
 		r.Handle("/a2a/{name}/*", proxy.HandlerA2A(hdeps))
 	})
 

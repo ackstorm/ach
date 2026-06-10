@@ -167,6 +167,24 @@ on the request path. Operator → Postgres → forwarder cache is the only
 flow (issue #34 C1). Status conditions on the BIP CR are informational;
 the Forwarder reads from Postgres unconditionally.
 
+### Observability — confirming a JWT was attached
+
+On the mint path the Forwarder logs at **Info**:
+
+```
+forwarder: backend identity forwarded (JWT minted)  kind=MCPServer target=<name> aud=mcp:<name> owner=<email> request_id=...
+```
+
+When no BIP matches it logs the same fact at **Debug**
+(`no backend identity policy; forwarding without JWT`) — raise the log
+level to see *why* identity is not being forwarded. The corresponding
+counters are `forwarder_jwt_signed_total{kind}` (mint) and
+`forwarder_jwt_suppressed_total{kind,reason}` with
+`reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}`.
+A common gotcha: the BIP must live in the **same namespace as the
+forwarder Pod** (`POD_NAMESPACE`) — the cache query is namespace-scoped,
+so a BIP in `default` is invisible and shows up as `reason=no_policy`.
+
 ---
 
 ## 3. LiteLLM intermediary — the `extra_headers` opt-in

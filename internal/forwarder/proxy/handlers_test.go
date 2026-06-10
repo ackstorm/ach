@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -430,6 +431,60 @@ func TestHandlerMCP_SigningFailure(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &env2)
 	if env2.Error.Code != "internal_error" {
 		t.Errorf("code = %s; want internal_error", env2.Error.Code)
+	}
+}
+
+// H10: HandlerMCP — on a resolving BIP the forwarder emits an Info
+// "backend identity forwarded" log (the BFI visibility hook) carrying the
+// target, audience and owner so operators can confirm identity forwarding
+// from the logs, not just metrics.
+func TestHandlerMCP_LogsBFIOnMint(t *testing.T) {
+	upstream, _ := upstreamSpy()
+	defer upstream.Close()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	env := makeEnvRow("demo", []string{"server-x"}, nil, nil)
+	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
+	deps := mkDeps(t, upstream, &mockSigner{returnToken: "JWT"},
+		precheck.Deps{EnvProvider: newEnvProvider(env)}, newBIPResolver(bipRow))
+	deps.Deps.Logger = logger // capture the BFI line
+
+	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "server-x")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	HandlerMCP(deps)(httptest.NewRecorder(), r)
+
+	const wantMsg = "forwarder: backend identity forwarded (JWT minted)"
+	var rec struct {
+		Msg    string `json:"msg"`
+		Kind   string `json:"kind"`
+		Target string `json:"target"`
+		Aud    string `json:"aud"`
+		Owner  string `json:"owner"`
+	}
+	found := false
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line not JSON: %q (%v)", line, err)
+		}
+		if rec.Msg == wantMsg {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("BFI log line %q not emitted; logs:\n%s", wantMsg, buf.String())
+	}
+	if rec.Kind != "MCPServer" || rec.Target != "server-x" || rec.Aud != "mcp:server-x" || rec.Owner != "u@e" {
+		t.Errorf("BFI log fields = %+v; want kind=MCPServer target=server-x aud=mcp:server-x owner=u@e", rec)
 	}
 }
 
