@@ -17,6 +17,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/gitignore"
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/lock"
@@ -580,6 +581,10 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		return result, err
 	}
 	c.maybeKill(12)
+
+	// Step 12b: ensure the project .gitignore ignores the credential-bearing
+	// agent config this hydrate wrote (project scope only).
+	c.step12bGitignore(renderResult)
 
 	// Step 13: cleanup tmp.
 	c.step13Cleanup()
@@ -1297,6 +1302,42 @@ func skillsSectionFromRender(render RenderResult) []state.FileEntry {
 		})
 	}
 	return out
+}
+
+// step12bGitignore appends an ach-managed block to <toolRoot>/.gitignore listing
+// the top-level dirs/files this hydrate wrote under the project root (the adapter
+// dirs, a project-root .mcp.json when claude generated one, and ACH's own .ach/
+// cache) so the credential-bearing agent config is not accidentally committed.
+//
+// Project scope only — under --global toolRoot is $HOME (no repo to guard) — and
+// never on --dry-run. Best-effort: a .gitignore write failure warns but never
+// fails the hydrate (the config files are already published; the ignore block is
+// defense-in-depth on top of their 0600 mode).
+func (c *commit) step12bGitignore(render RenderResult) {
+	// toolRoot is always set in production (newCommit resolves workspaceCwd or
+	// $HOME). An empty toolRoot only occurs in direct-struct unit tests; guard
+	// it so we never write a .gitignore into the current working directory.
+	if c.opts.Global || c.opts.DryRun || c.toolRoot == "" {
+		return
+	}
+	entries := []string{".ach/"}
+	for _, set := range [][]FileWrite{render.WrittenFiles, render.ProjectedFiles, render.ProjectedSkillFiles} {
+		for _, fw := range set {
+			if e := gitignore.TopLevelEntry(fw.Target); e != "" {
+				entries = append(entries, e)
+			}
+		}
+	}
+	wrote, err := gitignore.Ensure(c.toolRoot, entries)
+	if err != nil {
+		_, _ = fmt.Fprintf(c.opts.Stderr,
+			"warning: could not update .gitignore (agent config may be committable): %v\n", err)
+		return
+	}
+	if wrote {
+		_, _ = fmt.Fprintln(c.opts.Stderr,
+			"notice: updated .gitignore (ach-cli block: agent config carries credentials)")
+	}
 }
 
 // step13Cleanup — final state.SweepTmp(achDir). Errors swallowed per

@@ -1466,3 +1466,47 @@ func TestCommit_DropWarning_EmptyNoWarning(t *testing.T) {
 		t.Errorf("unexpected drop warning for empty drop list:\n%s", stderr.String())
 	}
 }
+
+// TestStep12bGitignore asserts the hydrate engine writes the ach-managed
+// .gitignore block under toolRoot (project scope) listing .ach/ plus the
+// top-level adapter dirs/files it wrote, and is a no-op under --global / empty
+// toolRoot (the unit-test default) so it never pollutes the working directory.
+func TestStep12bGitignore(t *testing.T) {
+	t.Run("project scope writes block", func(t *testing.T) {
+		root := t.TempDir()
+		c := &commit{opts: Opts{Stderr: &bytes.Buffer{}}, toolRoot: root}
+		c.step12bGitignore(RenderResult{
+			WrittenFiles:        []FileWrite{{Target: ".mcp.json"}},
+			ProjectedFiles:      []FileWrite{{Target: ".claude/agents/a.md"}},
+			ProjectedSkillFiles: []FileWrite{{Target: ".claude/skills/s/SKILL.md"}},
+		})
+		body, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+		if err != nil {
+			t.Fatalf("read .gitignore: %v", err)
+		}
+		for _, want := range []string{".ach/", ".claude/", ".mcp.json"} {
+			if !strings.Contains(string(body), "\n"+want+"\n") {
+				t.Errorf(".gitignore missing %q; got:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("global scope is a no-op", func(t *testing.T) {
+		root := t.TempDir()
+		c := &commit{opts: Opts{Global: true, Stderr: &bytes.Buffer{}}, toolRoot: root}
+		c.step12bGitignore(RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/a.md"}}})
+		if _, err := os.Stat(filepath.Join(root, ".gitignore")); !os.IsNotExist(err) {
+			t.Errorf("--global must not write .gitignore; stat err=%v", err)
+		}
+	})
+
+	t.Run("empty toolRoot is a no-op", func(t *testing.T) {
+		c := &commit{opts: Opts{Stderr: &bytes.Buffer{}}, toolRoot: ""}
+		// Must not panic or write to cwd.
+		c.step12bGitignore(RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/a.md"}}})
+		if _, err := os.Stat(".gitignore"); !os.IsNotExist(err) {
+			_ = os.Remove(".gitignore")
+			t.Errorf("empty toolRoot must not write ./.gitignore")
+		}
+	})
+}

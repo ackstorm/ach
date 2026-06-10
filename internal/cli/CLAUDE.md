@@ -109,6 +109,31 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
   {namespace(default), refuse, replace, skip}; only `MergeReplace` clashes
   count. `namespace` renames via `internal/cli/namespace.Leaf`.
 
+### Credential safety — the `.gitignore` block (`internal/cli/gitignore`)
+
+The projected adapter config carries the forwarder bearer / LiteLLM key in
+plaintext (project-root `.mcp.json`, `.codex/config.toml`,
+`.opencode/opencode.json`, `.gemini/settings.json`, `.pi/mcp.json`). mode `0600`
+guards other local users; a `.gitignore` entry guards against an accidental
+`git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
+in PROJECT scope only (`--global` writes under `$HOME`, no repo):
+
+- `env hydrate` → `commit.go` `step12bGitignore` (entries = `.ach/` + the
+  top-level dir/file of every projected/written file).
+- local `plugin/skill install`/`update` → `pkgcmd.go` `ensureProjectGitignore`
+  (entries = the top-level dir/file of every installed file).
+
+`gitignore.Ensure` maintains a marker-bounded block (`# BEGIN ach-cli …` / `#
+END ach-cli`), preserving any pre-existing `.gitignore` verbatim and
+accumulating the sorted, deduped union across runs (idempotent — no rewrite of a
+byte-identical file). It ignores **whole hydrated dirs** (`.claude/`, …), not
+just credential files, so e.g. `.claude/skills/` is also covered. Best-effort:
+a write failure warns but never fails the command. `TopLevelEntry` maps a
+written path to its pattern (`.claude/agents/x.md` → `.claude/`; `.mcp.json` →
+`.mcp.json`). NOT removed on uninstall (an ignored absent dir is harmless;
+removal would need cross-env reference counting). The hydrate engine guards
+`toolRoot == ""` so direct-struct unit tests never pollute cwd.
+
 ## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
