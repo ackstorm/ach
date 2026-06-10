@@ -341,7 +341,26 @@ reconcile_litellm() {
   # the jwt route, nothing on the nojwt route) instead of dropping it. The
   # backend runs with ACH_REQUIRE_JWT=false (testMocks.mcpEcho.requireJwt)
   # so the tokenless nojwt route is accepted and recorded jwt_present=false.
+  #
+  # allow_all_keys: true is REQUIRED (issue #41 B): the forwarder now sends the
+  # CALLER's own non-admin virtual key as x-litellm-api-key (never the master).
+  # LiteLLM's MCP gateway object-permission check rejects a non-admin key for a
+  # server unless the key is explicitly granted OR the server opts in via
+  # allow_all_keys. Without it the key gets a 200 "User not allowed to call
+  # this tool"; with it the key reaches the upstream like an admin would.
+  # auth_type:none + available_on_public_internet:true mirror the live setup.
+  #
+  # POST /v1/mcp/server is NOT idempotent (each call mints a new server_id),
+  # so re-running cluster-up/sync would pile up duplicate rows with ambiguous
+  # routing. Delete any existing rows for the name first.
   for srv in demo-mcp-jwt demo-mcp-nojwt; do
+    for sid in $(curl -s http://localhost:4001/v1/mcp/server \
+        -H 'Authorization: Bearer sk-test-master-key' \
+        | jq -r --arg n "${srv}" '.[] | select(.server_name==$n) | .server_id'); do
+      curl -s -o /dev/null -X DELETE "http://localhost:4001/v1/mcp/server/${sid}" \
+        -H 'Authorization: Bearer sk-test-master-key'
+      echo "[cluster.sh]   mcp server '${srv}' (stale ${sid}) deleted"
+    done
     seed_out="$(curl -s -X POST http://localhost:4001/v1/mcp/server \
         -H 'Authorization: Bearer sk-test-master-key' \
         -H 'Content-Type: application/json' \
@@ -349,7 +368,10 @@ reconcile_litellm() {
           \"server_name\": \"${srv}\",
           \"transport\": \"http\",
           \"url\": \"http://ach-mcp-echo.ach-system.svc\",
-          \"extra_headers\": [\"authorization\"]
+          \"extra_headers\": [\"authorization\"],
+          \"allow_all_keys\": true,
+          \"auth_type\": \"none\",
+          \"available_on_public_internet\": true
         }" 2>&1)"
     echo "[cluster.sh]   mcp server '${srv}' → ${seed_out}"
   done

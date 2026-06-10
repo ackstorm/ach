@@ -137,6 +137,42 @@ func TestDirector_McpBearerPrefix(t *testing.T) {
 	}
 }
 
+// Issue #41 (B): LiteLLM v1.87.1's MCP gateway grants non-admin virtual
+// keys ONLY on the exact single-segment /mcp/{server} route
+// (mcp_inference_routes lists "/mcp/{subpath}", one segment); a trailing
+// slash or deeper subpath falls through to the proxy-admin-only route check
+// (500). Since Feature 2 forwards the caller's OWN (non-admin) key, the
+// Director must collapse any /mcp/<server>/... to the bare /mcp/<server> the
+// gateway accepts. Hydrate already writes the bare URL; this normalizes
+// clients (and the e2e) that append a slash/subpath.
+func TestDirector_McpPathNormalizedToBareServer(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"),
+		Logger:          slog.Default(),
+	}
+	rp := New(deps)
+	material := "sk-user-1"
+
+	cases := []struct {
+		in, want string
+	}{
+		{"/mcp/demo-mcp-jwt", "/mcp/demo-mcp-jwt"},     // already bare — unchanged
+		{"/mcp/demo-mcp-jwt/", "/mcp/demo-mcp-jwt"},    // trailing slash stripped
+		{"/mcp/demo-mcp-jwt/mcp", "/mcp/demo-mcp-jwt"}, // streamable subpath collapsed
+		{"/mcp/demo-mcp-jwt/tools/call", "/mcp/demo-mcp-jwt"},
+		{"/v1/chat/completions", "/v1/chat/completions"}, // non-mcp untouched
+	}
+	for _, tc := range cases {
+		kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &material}
+		req := httptest.NewRequest(http.MethodPost, tc.in, strings.NewReader("{}"))
+		req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
+		rp.Director(req)
+		if req.URL.Path != tc.want {
+			t.Errorf("Director(%q): path = %q; want %q", tc.in, req.URL.Path, tc.want)
+		}
+	}
+}
+
 // PR5: JWT written LAST — strip clears any client Authorization, then
 // the per-request JWT (via WithJWT) is the sole bearer on the upstream req.
 func TestDirector_JWTWrittenLast(t *testing.T) {

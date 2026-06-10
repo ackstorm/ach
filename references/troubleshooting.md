@@ -353,6 +353,31 @@ the column; existing rows are not backfilled (the one-time `sk-…` is gone). No
 the master key is still used for the teams precheck (`/user/info`) and for
 operator/platform-api admin — just never in the proxied data path.
 
+### ❌ LiteLLM 500 `MCP request failed` / `Only proxy admin … Route=/mcp/<n>/`
+The forwarder now sends the caller's **non-admin** virtual key (post-`000011`),
+and LiteLLM's MCP gateway guards it two ways (full analysis: jwt-forwarder.md
+§2.6.1):
+1. **Admin-only route.** `mcp_inference_routes` only whitelists the single-segment
+   `/mcp/{subpath}` for non-admin keys. A trailing slash (`/mcp/<n>/`) or deeper
+   subpath (`/mcp/<n>/mcp`) misses it → `_raise_admin_only_route_exception` →
+   `500`. ✅ The Director collapses the upstream path to the bare `/mcp/<server>`
+   (`mcpServerPath`, `proxy.go`); hydrate already writes the bare URL. If a `500`
+   reappears, confirm the Director normalization is intact
+   (`TestDirector_McpPathNormalizedToBareServer`).
+2. **Object-permission** (`200` body `"User not allowed to call this tool"`). The
+   key isn't granted the server. ✅ Register the MCP server with
+   `allow_all_keys: true` (the e2e seed in `scripts/cluster.sh` does this). WHY:
+   `proxy_admin` (the old master path) bypassed both guards; a per-user key needs
+   the bare route AND an explicit grant. The backend identity still rides the JWT.
+
+### ❌ Duplicate MCP servers / ambiguous `/mcp/<name>` routing
+`POST /v1/mcp/server` is **not** idempotent — each call mints a new `server_id`,
+so re-running `cluster-up`/`cluster-sync` piled up duplicate `demo-mcp-*` rows
+with the same `server_name` (LiteLLM then routes to an arbitrary one). ✅ The
+seed in `scripts/cluster.sh` now `DELETE`s every existing row for the name
+(`jq` over the `GET /v1/mcp/server` array) before re-creating it. If you see
+stale duplicates from an older run, delete them by `server_id` and re-sync.
+
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
 A CR's projection collides with a row created by the UI (`origin='ui'`). The
 operator refuses to clobber the UI-managed row.
