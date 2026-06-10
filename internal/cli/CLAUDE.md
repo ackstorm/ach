@@ -48,13 +48,22 @@ ach-cli env list | describe <name> | hydrate <name> --target … [--global] | st
 
 # local-first serverless package manager (no k8s, no CRD)
 ach-cli repo   add <source> --name <n> [--token] [--auth bearer|oauth2] [--path] | list | remove | update
-ach-cli plugin list [--repo] | install <name@repo>… --target … [--global] [--conflict …] [--verbose] | uninstall | update
-ach-cli skill  list [--repo] | install <name@repo>… --target … | uninstall | update
+ach-cli plugin list [--repo] | install <name@repo>… --target … [--global] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
+ach-cli skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
 ```
 
 `env*` = the governed path (platform-api → Dex → hydrate). `repo`/`plugin`/
 `skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,repo,plugin,skill}.go`
-(parents) + `pkgcmd.go` (shared install/uninstall/update RunE for plugin+skill).
+(parents) + `pkgcmd.go` (shared install/uninstall/update/outdated RunE for plugin+skill).
+
+**Read-only verbs (mirror the governed path's preview/drift affordances):**
+`install`/`uninstall --dry-run` resolve + project (or classify) and print the
+plan — written/removed nothing. `outdated` re-resolves each installed ref's SHA
+(`manager.ResolveWithCache`, read-only — discards the stage) and reports
+`up to date` vs `outdated`. Uninstall's act/preview share one classifier:
+`manager.classifyUninstall` → `Uninstall` (acts) and `UninstallPlan` (reports the
+per-file `remove`/`modify`/`skip`/`absent` verdict), so the `--dry-run` preview
+can never drift from the real removal.
 
 ## Architecture: the UNIFIED projection engine
 
