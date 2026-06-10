@@ -146,12 +146,13 @@ func requestWithKC(t *testing.T, method, path string, kc middleware.KeyContext, 
 		r.ContentLength = int64(len(body))
 	}
 	ctx := middleware.WithKeyContext(r.Context(), &keystore.KeyInfo{
-		KeyID:         kc.KeyID,
-		KeyType:       kc.KeyType,
-		OwnerEmail:    kc.OwnerEmail,
-		Environment:   kc.Environment,
-		LiteLLMToken:  kc.LiteLLMToken,
-		LiteLLMUserID: kc.LiteLLMUserID,
+		KeyID:              kc.KeyID,
+		KeyType:            kc.KeyType,
+		OwnerEmail:         kc.OwnerEmail,
+		Environment:        kc.Environment,
+		LiteLLMToken:       kc.LiteLLMToken,
+		LiteLLMKeyMaterial: kc.LiteLLMKeyMaterial,
+		LiteLLMUserID:      kc.LiteLLMUserID,
 	}, kc.IsAdmin)
 	ctx = middleware.WithRequestID(ctx, "req_test")
 	return r.WithContext(ctx)
@@ -200,9 +201,8 @@ func mkDeps(t *testing.T, upstream *httptest.Server, signer jwt.Signer, resolver
 	u := mustParseURL(t, upstream.URL)
 	return HandlerDeps{
 		Deps: Deps{
-			LiteLLMUpstream:  u,
-			LiteLLMMasterKey: "shared",
-			Logger:           slog.Default(),
+			LiteLLMUpstream: u,
+			Logger:          slog.Default(),
 		},
 		Signer:       signer,
 		BIPResolver:  bipResolver,

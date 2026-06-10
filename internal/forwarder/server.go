@@ -23,16 +23,15 @@ import (
 // + C2) that replaced the controller-runtime informers — the traffic
 // path no longer reads from the cached k8s client.
 type Deps struct {
-	BIPResolver      proxy.BIPResolver
-	EnvProvider      precheck.EnvProvider
-	Resolver         keystore.Resolver
-	TeamsResolver    keystore.TeamsResolver
-	Signer           jwt.Signer
-	Logger           *slog.Logger
-	BaseURL          string
-	Namespace        string
-	LiteLLMUpstream  *url.URL
-	LiteLLMMasterKey string
+	BIPResolver     proxy.BIPResolver
+	EnvProvider     precheck.EnvProvider
+	Resolver        keystore.Resolver
+	TeamsResolver   keystore.TeamsResolver
+	Signer          jwt.Signer
+	Logger          *slog.Logger
+	BaseURL         string
+	Namespace       string
+	LiteLLMUpstream *url.URL
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -54,9 +53,8 @@ func New(deps Deps) http.Handler {
 	// Authenticated subtree.
 	hdeps := proxy.HandlerDeps{
 		Deps: proxy.Deps{
-			LiteLLMUpstream:  deps.LiteLLMUpstream,
-			LiteLLMMasterKey: deps.LiteLLMMasterKey,
-			Logger:           deps.Logger,
+			LiteLLMUpstream: deps.LiteLLMUpstream,
+			Logger:          deps.Logger,
 		},
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,

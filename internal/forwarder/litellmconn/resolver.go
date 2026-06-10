@@ -48,9 +48,10 @@ type Resolution struct {
 
 	// MasterKey is the literal string read from the Secret data at the
 	// key named by CR Spec.MasterKeySecretRef.Key. Used by the forwarder
-	// both as the litellm REST admin credential AND as the
-	// x-litellm-api-key header value StripAndRewrite injects on every
-	// proxied request (proxy-trust assertion).
+	// as the litellm REST admin credential for the TeamsResolver precheck
+	// (/user/info). TESTING-PHASE (reverts FIX01 §A.6 / D-13): it is NO
+	// LONGER injected as the x-litellm-api-key header on proxied requests —
+	// the Director forwards the caller's own LiteLLM virtual key instead.
 	MasterKey string
 }
 

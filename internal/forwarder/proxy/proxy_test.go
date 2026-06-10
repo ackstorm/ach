@@ -32,20 +32,20 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 func newDepsWithUpstream(t *testing.T, upstream *httptest.Server) Deps {
 	t.Helper()
 	return Deps{
-		LiteLLMUpstream:  mustParseURL(t, upstream.URL),
-		LiteLLMMasterKey: "shared-secret",
-		Logger:           slog.Default(),
+		LiteLLMUpstream: mustParseURL(t, upstream.URL),
+		Logger:          slog.Default(),
 	}
 }
 
 func ctxWithKeyAndJWT(kc middleware.KeyContext, jwt string) context.Context {
 	ctx := middleware.WithKeyContext(context.Background(), &keystore.KeyInfo{
-		KeyID:         kc.KeyID,
-		KeyType:       kc.KeyType,
-		OwnerEmail:    kc.OwnerEmail,
-		Environment:   kc.Environment,
-		LiteLLMToken:  kc.LiteLLMToken,
-		LiteLLMUserID: kc.LiteLLMUserID,
+		KeyID:              kc.KeyID,
+		KeyType:            kc.KeyType,
+		OwnerEmail:         kc.OwnerEmail,
+		Environment:        kc.Environment,
+		LiteLLMToken:       kc.LiteLLMToken,
+		LiteLLMKeyMaterial: kc.LiteLLMKeyMaterial,
+		LiteLLMUserID:      kc.LiteLLMUserID,
 	}, kc.IsAdmin)
 	if jwt != "" {
 		ctx = WithJWT(ctx, jwt)
@@ -55,27 +55,27 @@ func ctxWithKeyAndJWT(kc middleware.KeyContext, jwt string) context.Context {
 
 // PR1: New returns a non-nil ReverseProxy.
 func TestNew_NonNil(t *testing.T) {
-	deps := Deps{LiteLLMUpstream: mustParseURL(t, "http://localhost:1"), LiteLLMMasterKey: "k", Logger: slog.Default()}
+	deps := Deps{LiteLLMUpstream: mustParseURL(t, "http://localhost:1"), Logger: slog.Default()}
 	if got := New(deps); got == nil {
 		t.Fatal("New returned nil")
 	}
 }
 
-// PR2+PR3: Director rewrites scheme/host, strips Authorization + x-ach-*,
-// writes x-litellm-api-key + x-litellm-key-id.
-func TestDirector_RewriteAndStrip(t *testing.T) {
+// PR2+PR3: Director rewrites scheme/host, strips Authorization + x-ach-*, and
+// — TESTING-PHASE (reverts FIX01 §A.6 / D-13) — writes the CALLER's own LiteLLM
+// virtual key as x-litellm-api-key (bare on /v1), with NO x-litellm-key-id.
+func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
-		LiteLLMMasterKey: "shared-secret",
-		Logger:           slog.Default(),
+		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:          slog.Default(),
 	}
 	rp := New(deps)
 
-	litellmToken := "lt-token-123"
+	material := "sk-user-1"
 	kc := middleware.KeyContext{
-		KeyType:      keys.PrefixPk,
-		OwnerEmail:   "u@example.com",
-		LiteLLMToken: &litellmToken,
+		KeyType:            keys.PrefixPk,
+		OwnerEmail:         "u@example.com",
+		LiteLLMKeyMaterial: &material,
 	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer evil")
@@ -100,41 +100,40 @@ func TestDirector_RewriteAndStrip(t *testing.T) {
 	if got := req.Header.Get("x-ach-key"); got != "" {
 		t.Errorf("x-ach-key = %q; want stripped", got)
 	}
-	if got := req.Header.Get("x-litellm-api-key"); got != "shared-secret" {
-		t.Errorf("x-litellm-api-key = %q; want bare shared-secret on /v1", got)
+	if got := req.Header.Get("x-litellm-api-key"); got != material {
+		t.Errorf("x-litellm-api-key = %q; want bare user material %q on /v1", got, material)
 	}
-	if got := req.Header.Get("x-litellm-key-id"); got != litellmToken {
-		t.Errorf("x-litellm-key-id = %q; want %s", got, litellmToken)
+	if _, ok := req.Header["X-Litellm-Key-Id"]; ok {
+		t.Errorf("x-litellm-key-id must be absent (delegation removed)")
 	}
 }
 
 // Issue #41: the "Bearer " prefix on x-litellm-api-key is MCP-only. /mcp
-// gets "Bearer <masterKey>"; /v1 gets the bare key (asserted in
-// TestDirector_RewriteAndStrip).
+// gets "Bearer <material>"; /v1 gets the bare value (asserted in
+// TestDirector_ForwardsUserMaterial).
 func TestDirector_McpBearerPrefix(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
-		LiteLLMMasterKey: "shared-secret",
-		Logger:           slog.Default(),
+		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:          slog.Default(),
 	}
 	rp := New(deps)
 
-	litellmToken := "lt-token-123"
+	material := "sk-user-1"
 	kc := middleware.KeyContext{
-		KeyType:      keys.PrefixPk,
-		OwnerEmail:   "u@example.com",
-		LiteLLMToken: &litellmToken,
+		KeyType:            keys.PrefixPk,
+		OwnerEmail:         "u@example.com",
+		LiteLLMKeyMaterial: &material,
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp/some-server", strings.NewReader("{}"))
 	req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
 
 	rp.Director(req)
 
-	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared-secret" {
-		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer shared-secret", got)
+	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer "+material {
+		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer %s", got, material)
 	}
-	if got := req.Header.Get("x-litellm-key-id"); got != litellmToken {
-		t.Errorf("x-litellm-key-id = %q; want %s (LiteLLM token forwarded on /mcp)", got, litellmToken)
+	if _, ok := req.Header["X-Litellm-Key-Id"]; ok {
+		t.Errorf("x-litellm-key-id must be absent (delegation removed)")
 	}
 }
 
@@ -142,12 +141,12 @@ func TestDirector_McpBearerPrefix(t *testing.T) {
 // the per-request JWT (via WithJWT) is the sole bearer on the upstream req.
 func TestDirector_JWTWrittenLast(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream:  mustParseURL(t, "http://upstream:4000"),
-		LiteLLMMasterKey: "shared",
-		Logger:           slog.Default(),
+		LiteLLMUpstream: mustParseURL(t, "http://upstream:4000"),
+		Logger:          slog.Default(),
 	}
 	rp := New(deps)
-	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
+	material := "sk-user-1"
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &material}
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp/foo", nil)
 	req.Header.Set("Authorization", "Bearer client-injected") // adversary tries to spoof
@@ -158,8 +157,8 @@ func TestDirector_JWTWrittenLast(t *testing.T) {
 	if got := req.Header.Get("Authorization"); got != "Bearer ACH-JWT-TOKEN" {
 		t.Errorf("Authorization = %q; want Bearer ACH-JWT-TOKEN (strip first, JWT last)", got)
 	}
-	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer shared" {
-		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer shared (MCP prefix survives JWT-last write)", got)
+	if got := req.Header.Get("x-litellm-api-key"); got != "Bearer "+material {
+		t.Errorf("x-litellm-api-key on /mcp = %q; want Bearer %s (MCP prefix survives JWT-last write)", got, material)
 	}
 }
 
@@ -174,9 +173,8 @@ func TestErrorHandler_502Envelope(t *testing.T) {
 	_ = ln.Close() // closed before any client connects
 
 	deps := Deps{
-		LiteLLMUpstream:  mustParseURL(t, "http://"+addr),
-		LiteLLMMasterKey: "k",
-		Logger:           slog.Default(),
+		LiteLLMUpstream: mustParseURL(t, "http://"+addr),
+		Logger:          slog.Default(),
 	}
 	rp := New(deps)
 

@@ -52,10 +52,15 @@ func TestPhase4Invariants(t *testing.T) {
 }
 
 // testPhase4SC1HeaderRewrite — pk_ → /v1/chat/completions reaches LiteLLM
-// with the shared-key headers AND without any client-supplied Authorization
-// or x-ach-*. We can't peek inside the in-cluster LiteLLM upstream's request
-// log directly, so we rely on the fact that LiteLLM returns 401 when the
-// shared key is absent: any non-401 status indicates header rewrite succeeded.
+// authenticated as the CALLER's own LiteLLM virtual key AND without any
+// client-supplied Authorization or x-ach-*. TESTING-PHASE (reverts FIX01 §A.6 /
+// D-13): the forwarder no longer injects the shared master key — it forwards
+// the per-user material persisted at mint (migration 000011) as
+// x-litellm-api-key. A freshly-minted e2e pk_ therefore carries real material,
+// so LiteLLM accepts it. We can't peek inside the in-cluster LiteLLM upstream's
+// request log directly, so we rely on the fact that LiteLLM returns 401 when the
+// forwarded key is invalid/absent: any non-401 status indicates header rewrite
+// (and per-user material forwarding) succeeded.
 func testPhase4SC1HeaderRewrite(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
