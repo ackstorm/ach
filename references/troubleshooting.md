@@ -340,6 +340,19 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
+After migration `000011` the forwarder authenticates to LiteLLM with the
+**caller's own** virtual key (`litellm_key_material`), not the master key
+(TESTING-PHASE reversal of FIX01 §A.6). A key minted **before** `000011` has a
+NULL `litellm_key_material`, so the forwarder sends an empty `x-litellm-api-key`
+(`Bearer ` on `/mcp`) and LiteLLM rejects it `401`.
+✅ Re-mint the pk_/ek_ (`ach-cli login` again, or recreate the env-key) — the
+fresh key persists its material. There is **no master fallback** by design.
+WHY IT FAILS: only mint (`platformapi/auth/sso.go`, `envkeys/handler.go`) writes
+the column; existing rows are not backfilled (the one-time `sk-…` is gone). Note
+the master key is still used for the teams precheck (`/user/info`) and for
+operator/platform-api admin — just never in the proxied data path.
+
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
 A CR's projection collides with a row created by the UI (`origin='ui'`). The
 operator refuses to clobber the UI-managed row.
