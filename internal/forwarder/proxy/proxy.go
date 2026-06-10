@@ -82,6 +82,15 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
 			// requires a "Bearer " prefix; /v1, /gemini, /a2a take the bare value.
 			if routeFor(req.URL.Path) == "/mcp" {
+				// Collapse to the bare /mcp/<server> form. LiteLLM v1.87.1's MCP
+				// gateway grants non-admin virtual keys ONLY on the exact
+				// single-segment route (mcp_inference_routes lists
+				// "/mcp/{subpath}"); a trailing slash or deeper subpath falls
+				// through to the proxy-admin-only check → 500. Since we forward
+				// the caller's own non-admin key (never the master), the upstream
+				// path must be the single segment the gateway accepts.
+				req.URL.Path = mcpServerPath(req.URL.Path)
+				req.URL.RawPath = ""
 				req.Header.Set("X-Litellm-Api-Key", "Bearer "+material)
 			}
 
@@ -124,6 +133,21 @@ func routeFor(path string) string {
 		return "/a2a"
 	}
 	return "unknown"
+}
+
+// mcpServerPath collapses any "/mcp/<server>/..." or "/mcp/<server>/" to the
+// bare single-segment "/mcp/<server>" form LiteLLM's MCP gateway accepts for
+// non-admin virtual keys (see Director). "/mcp" and "/mcp/" (no server) are
+// returned unchanged — there is no segment to normalize.
+func mcpServerPath(path string) string {
+	rest := strings.TrimPrefix(path, "/mcp/")
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	if rest == "" {
+		return path
+	}
+	return "/mcp/" + rest
 }
 
 // keyTypeFor maps a KeyContext.KeyType to the Hub §18.5 normative

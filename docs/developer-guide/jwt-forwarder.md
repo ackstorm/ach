@@ -214,6 +214,33 @@ The master key survives **only** for the Forwarder's `TeamsResolver` precheck
 request. This is a TESTING-PHASE simplification; grep `TESTING-PHASE (reverts
 FIX01` for the full revert surface.
 
+### 2.6.1 The MCP gateway accepts the user key only on the bare path + `allow_all_keys`
+
+Forwarding the caller's **non-admin** virtual key (§2.6) instead of the master
+collides with two LiteLLM MCP-gateway guards. Both must be satisfied or the
+`/mcp` request fails even though the same key works on `/v1`:
+
+1. **Route-level (admin-only).** LiteLLM's `mcp_inference_routes` lists
+   `/mcp/{subpath}` — a **single** path segment. `/mcp/<server>` matches and is
+   treated as an LLM-API route (any key); `/mcp/<server>/` (trailing slash) and
+   `/mcp/<server>/mcp` do **not** match, fall through to
+   `_raise_admin_only_route_exception`, and 500 for anything but `proxy_admin`.
+   The Forwarder Director therefore **collapses the upstream `/mcp` path to the
+   bare `/mcp/<server>`** (`mcpServerPath`, `proxy.go`) — hydrate already writes
+   the bare URL (`platformapi/hydrate/handler.go`), but a client (or test) that
+   appends a slash/subpath is normalized back.
+2. **Object-permission.** Even on the bare path, a non-admin key is rejected
+   (`200` body `"User not allowed to call this tool"`) unless it is granted the
+   server. The simplest grant is registering the MCP server with
+   `allow_all_keys: true` (the e2e seed in `scripts/cluster.sh` does this; the
+   live setup mirrors it). With it the user key reaches the upstream exactly as
+   `proxy_admin` would; the per-user identity to the backend still flows via the
+   `Authorization` JWT (§2-§3), unchanged.
+
+`proxy_admin` (master) sidestepped both guards, which is why the pre-§2.6
+master-key path worked on any `/mcp` URL. `/a2a` may carry the same gateway
+guards; it has no full round-trip e2e yet — track as a follow-up.
+
 ---
 
 ## 3. LiteLLM intermediary — the `extra_headers` opt-in
@@ -226,7 +253,8 @@ strips the caller's `Authorization` header before calling the backend**
 own credential, but it breaks the ACH JWT trust path.
 
 To opt in to forwarding, register (or re-register) the MCP server in
-LiteLLM with `extra_headers: ["authorization"]`:
+LiteLLM with `extra_headers: ["authorization"]` (and `allow_all_keys: true`
+so the per-user virtual key is accepted — see §2.6.1):
 
 ```bash
 curl -s -X POST http://litellm.litellm-system.svc:4000/v1/mcp/server \
@@ -236,7 +264,8 @@ curl -s -X POST http://litellm.litellm-system.svc:4000/v1/mcp/server \
     "server_name": "demo-mcp-echo",
     "transport":   "http",
     "url":         "http://ach-mcp-echo.ach-system.svc",
-    "extra_headers": ["authorization"]
+    "extra_headers": ["authorization"],
+    "allow_all_keys": true
   }'
 ```
 
