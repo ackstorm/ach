@@ -156,6 +156,41 @@ func TestRecoverPanicWritesEnvelope(t *testing.T) {
 	}
 }
 
+// TestRecoverPanicRepropagatesAbortHandler — http.ErrAbortHandler is the
+// stdlib sentinel httputil.ReverseProxy panics with when a streamed (SSE/MCP)
+// response is aborted (client disconnect / upstream close). It MUST be
+// re-panicked so net/http closes the conn silently — not logged as an ERROR
+// nor turned into a (superfluous) 500 over an already-started stream.
+func TestRecoverPanicRepropagatesAbortHandler(t *testing.T) {
+	opLog, opBuf := newOpCapture()
+	auLog, auBuf := newAuditCapture()
+
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+	chain := RequestID(RecoverPanic(opLog, auLog)(inner))
+
+	rec := httptest.NewRecorder()
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		chain.ServeHTTP(rec, httptest.NewRequest("GET", "/mcp/x", nil))
+	}()
+
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("expected ErrAbortHandler to propagate, got %v", recovered)
+	}
+	if strings.Contains(opBuf.String(), "recovered from panic") {
+		t.Fatalf("ErrAbortHandler must NOT be logged as a recovered panic: %s", opBuf.String())
+	}
+	if auBuf.Len() != 0 {
+		t.Fatalf("ErrAbortHandler must NOT emit an audit event: %s", auBuf.String())
+	}
+	if rec.Code != http.StatusOK { // httptest default; RecoverPanic wrote no 500
+		t.Fatalf("RecoverPanic must not write a 500 envelope over the stream, got %d", rec.Code)
+	}
+}
+
 // TestAccessLogShapeNoBodyNoHeaders — access log records
 // {method, path, status, latency_ms, request_id} only; never request /
 // response bodies or headers.

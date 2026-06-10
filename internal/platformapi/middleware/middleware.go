@@ -63,6 +63,16 @@ func RecoverPanic(opLogger, auditLog *slog.Logger) func(http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
+					// http.ErrAbortHandler is the stdlib sentinel
+					// httputil.ReverseProxy panics with to abort a streamed
+					// (SSE/MCP) response — client disconnect or upstream close.
+					// Re-panic so net/http closes the conn silently: it is NOT
+					// an internal error, and rendering a 500 over an
+					// already-started stream just yields a superfluous
+					// WriteHeader. (net/http suppresses its stack trace.)
+					if rec == http.ErrAbortHandler {
+						panic(rec)
+					}
 					reqID := RequestIDFromCtx(r.Context())
 					if opLogger != nil {
 						opLogger.Error("platform-api: recovered from panic",
