@@ -874,6 +874,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6.1 The MCP gateway accepts the user key only on the bare path + allow_all_keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1333,6 +1350,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6.1 The MCP gateway accepts the user key only on the bare path + allow_all_keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1646,6 +1680,31 @@ shared master key.</p>
 (<code>/key/generate</code>, <code>/user/new</code>, access-group sync) — never in the proxied user
 request. This is a TESTING-PHASE simplification; grep <code>TESTING-PHASE (reverts
 FIX01</code> for the full revert surface.</p>
+<h3 id="261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys">2.6.1 The MCP gateway accepts the user key only on the bare path + <code>allow_all_keys</code><a class="headerlink" href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" title="Permanent link">&para;</a></h3>
+<p>Forwarding the caller's <strong>non-admin</strong> virtual key (§2.6) instead of the master
+collides with two LiteLLM MCP-gateway guards. Both must be satisfied or the
+<code>/mcp</code> request fails even though the same key works on <code>/v1</code>:</p>
+<ol>
+<li><strong>Route-level (admin-only).</strong> LiteLLM's <code>mcp_inference_routes</code> lists
+   <code>/mcp/{subpath}</code> — a <strong>single</strong> path segment. <code>/mcp/&lt;server&gt;</code> matches and is
+   treated as an LLM-API route (any key); <code>/mcp/&lt;server&gt;/</code> (trailing slash) and
+   <code>/mcp/&lt;server&gt;/mcp</code> do <strong>not</strong> match, fall through to
+   <code>_raise_admin_only_route_exception</code>, and 500 for anything but <code>proxy_admin</code>.
+   The Forwarder Director therefore <strong>collapses the upstream <code>/mcp</code> path to the
+   bare <code>/mcp/&lt;server&gt;</code></strong> (<code>mcpServerPath</code>, <code>proxy.go</code>) — hydrate already writes
+   the bare URL (<code>platformapi/hydrate/handler.go</code>), but a client (or test) that
+   appends a slash/subpath is normalized back.</li>
+<li><strong>Object-permission.</strong> Even on the bare path, a non-admin key is rejected
+   (<code>200</code> body <code>"User not allowed to call this tool"</code>) unless it is granted the
+   server. The simplest grant is registering the MCP server with
+   <code>allow_all_keys: true</code> (the e2e seed in <code>scripts/cluster.sh</code> does this; the
+   live setup mirrors it). With it the user key reaches the upstream exactly as
+   <code>proxy_admin</code> would; the per-user identity to the backend still flows via the
+   <code>Authorization</code> JWT (§2-§3), unchanged.</li>
+</ol>
+<p><code>proxy_admin</code> (master) sidestepped both guards, which is why the pre-§2.6
+master-key path worked on any <code>/mcp</code> URL. <code>/a2a</code> may carry the same gateway
+guards; it has no full round-trip e2e yet — track as a follow-up.</p>
 <hr />
 <h2 id="3-litellm-intermediary-the-extra_headers-opt-in">3. LiteLLM intermediary — the <code>extra_headers</code> opt-in<a class="headerlink" href="#3-litellm-intermediary-the-extra_headers-opt-in" title="Permanent link">&para;</a></h2>
 <p>In the production ACH topology, <code>/mcp/&lt;name&gt;/*</code> proxies to LiteLLM's
@@ -1655,7 +1714,8 @@ strips the caller's <code>Authorization</code> header before calling the backend
 — a sensible posture for the generic case where the gateway holds its
 own credential, but it breaks the ACH JWT trust path.</p>
 <p>To opt in to forwarding, register (or re-register) the MCP server in
-LiteLLM with <code>extra_headers: ["authorization"]</code>:</p>
+LiteLLM with <code>extra_headers: ["authorization"]</code> (and <code>allow_all_keys: true</code>
+so the per-user virtual key is accepted — see §2.6.1):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Authorization: Bearer &lt;master-key&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
@@ -1663,8 +1723,9 @@ LiteLLM with <code>extra_headers: ["authorization"]</code>:</p>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="s1">    &quot;server_name&quot;: &quot;demo-mcp-echo&quot;,</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="s1">    &quot;transport&quot;:   &quot;http&quot;,</span>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s1">    &quot;url&quot;:         &quot;http://ach-mcp-echo.ach-system.svc&quot;,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">    &quot;extra_headers&quot;: [&quot;authorization&quot;]</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s1">  }&#39;</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">    &quot;extra_headers&quot;: [&quot;authorization&quot;],</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s1">    &quot;allow_all_keys&quot;: true</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="s1">  }&#39;</span>
 </code></pre></div>
 <p>What the opt-in does:</p>
 <ul>
