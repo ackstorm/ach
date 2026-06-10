@@ -49,6 +49,9 @@ type Claims struct {
 	// Aud is the JWT "aud" (audience) claim. Production forwarder code
 	// sets "mcp:<name>" on /mcp/<name> and "a2a:<name>" on /a2a/<name>.
 	Aud string
+	// Email is the JWT "email" claim: the bare owner email (no namespace
+	// prefix), for consumers that key by email. Optional; omitted when empty.
+	Email string
 }
 
 // JWK is the RFC 7517 JSON Web Key wire shape for a single Ed25519
@@ -174,6 +177,11 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 		"aud": c.Aud,
 		"iat": now,
 		"exp": now + 120, // FWD-07 / Hub §9.1: 120-second skew window. NO jti.
+	}
+	// "email" is additive (bare owner email, no namespace prefix) for consumers
+	// that key by email; sub stays namespace-qualified. Omitted when empty.
+	if c.Email != "" {
+		claims["email"] = c.Email
 	}
 	token := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, claims)
 	token.Header["kid"] = slot.kid
