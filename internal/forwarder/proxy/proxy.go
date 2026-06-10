@@ -40,12 +40,13 @@ func jwtFromCtx(ctx context.Context) (string, bool) {
 }
 
 // Deps wires the proxy's static configuration. One *url.URL pre-parsed
-// at process start; one shared LiteLLM API key (Hub §9.1 "x-litellm-api-key");
-// one structured logger.
+// at process start; one structured logger. The per-request LiteLLM auth key
+// (the caller's own virtual key) is sourced from the KeyContext in Director —
+// TESTING-PHASE (reverts FIX01 §A.6 / D-13), the shared master key is no longer
+// part of the forward path.
 type Deps struct {
-	LiteLLMUpstream  *url.URL
-	LiteLLMMasterKey string
-	Logger           *slog.Logger
+	LiteLLMUpstream *url.URL
+	Logger          *slog.Logger
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
@@ -68,37 +69,20 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// URL.Host — never leak client-supplied Host to LiteLLM.
 			req.Host = ""
 
-			// W4 (REVIEW): KeyContext is gated by Authn middleware on all
-			// production routes, but if a future test or refactor reaches
-			// Director without Authn, falling through with an empty token
-			// would write "x-litellm-key-id: " to the upstream. Defensive
-			// pattern: only invoke StripAndRewrite with a non-empty token,
-			// and otherwise strip + ensure the header is gone afterwards
-			// (X-Litellm-* prefix strip already covers any inherited
-			// value from the client).
-			litellmToken := ""
-			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMToken != nil {
-				litellmToken = *kc.LiteLLMToken
+			// TESTING-PHASE (reverts FIX01 §A.6 / D-13): forward the CALLER's
+			// own LiteLLM virtual key as x-litellm-api-key (1:1 identity). The
+			// master key is no longer sent; x-litellm-key-id delegation is gone.
+			// A nil/empty material writes an empty header (no fallback) — keys
+			// minted before migration 000011 fail upstream, by design.
+			material := ""
+			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMKeyMaterial != nil {
+				material = *kc.LiteLLMKeyMaterial
 			}
-			headers.StripAndRewrite(req.Header, deps.LiteLLMMasterKey, litellmToken)
-			if litellmToken == "" {
-				// StripAndRewrite Set'd an empty value — re-strip so the
-				// upstream never sees a misleading "x-litellm-key-id: ".
-				req.Header.Del("X-Litellm-Key-Id")
-			}
-			if deps.LiteLLMMasterKey == "" {
-				// Same defense for the master key: never forward an empty
-				// "x-litellm-api-key:" header (misconfig caught by precheck,
-				// but keep the Director symmetric with the key-id guard).
-				req.Header.Del("X-Litellm-Api-Key")
-			}
-			// MCP route only: LiteLLM's MCP key parser
-			// (user_api_key_auth_mcp.py) nullifies any x-litellm-api-key
-			// lacking a "Bearer " prefix. /v1, /gemini, and /a2a validate
-			// the bare master key, so the prefix is scoped to /mcp here
-			// rather than baked into the shared StripAndRewrite (#41).
-			if deps.LiteLLMMasterKey != "" && routeFor(req.URL.Path) == "/mcp" {
-				req.Header.Set("X-Litellm-Api-Key", "Bearer "+deps.LiteLLMMasterKey)
+			headers.StripAndRewrite(req.Header, material)
+			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
+			// requires a "Bearer " prefix; /v1, /gemini, /a2a take the bare value.
+			if routeFor(req.URL.Path) == "/mcp" {
+				req.Header.Set("X-Litellm-Api-Key", "Bearer "+material)
 			}
 
 			// JWT write LAST — strip just cleared any client Authorization.

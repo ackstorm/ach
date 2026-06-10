@@ -354,16 +354,15 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 
 	out.server = forwarder.Deps{
-		BIPResolver:      bipCache, // C1/C4: Postgres-backed BIP cache
-		EnvProvider:      envStore, // C2/C5: Postgres-backed Env cache
-		Resolver:         cachedResolver,
-		TeamsResolver:    teamsResolver,
-		Signer:           out.signer,
-		Logger:           logger,
-		BaseURL:          cfg.BaseURL,
-		Namespace:        cfg.Namespace,
-		LiteLLMUpstream:  llmUpstream,      // B2: from LiteLLMConnection CR
-		LiteLLMMasterKey: llmRes.MasterKey, // B2: from MasterKeySecretRef
+		BIPResolver:     bipCache, // C1/C4: Postgres-backed BIP cache
+		EnvProvider:     envStore, // C2/C5: Postgres-backed Env cache
+		Resolver:        cachedResolver,
+		TeamsResolver:   teamsResolver,
+		Signer:          out.signer,
+		Logger:          logger,
+		BaseURL:         cfg.BaseURL,
+		Namespace:       cfg.Namespace,
+		LiteLLMUpstream: llmUpstream, // B2: from LiteLLMConnection CR
 	}
 	return out, nil
 }

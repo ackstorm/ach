@@ -53,20 +53,22 @@ const authHeader = "Authorization"
 //     - case-insensitive prefix "x-ach-"
 //     - canonical-case form is in the static hopByHopSet
 //     - canonical-case form is in the Connection-named set
-//  3. WRITE PASS — h.Set("x-litellm-api-key", masterKey) and
-//     h.Set("x-litellm-key-id", litellmToken). http.Header.Set canonicalizes
-//     to "X-Litellm-Api-Key" / "X-Litellm-Key-Id".
+//  3. WRITE PASS — h.Set("x-litellm-api-key", litellmAPIKey). http.Header.Set
+//     canonicalizes to "X-Litellm-Api-Key".
+//
+// TESTING-PHASE (reverts FIX01 §A.6 / D-13): the value written is the CALLER's
+// own LiteLLM virtual key (litellmAPIKey) — NOT the shared master key — so
+// LiteLLM attributes the request 1:1 to the user. The x-litellm-key-id
+// delegation header is no longer written (we authenticate as the user's own
+// key). An empty litellmAPIKey writes an empty header (callers with no stored
+// material — pre-migration keys — fail upstream, by design).
 //
 // The function NEVER writes Authorization — JWT attach for /mcp + /a2a is the
 // per-route handler's job AFTER this generic transform runs.
 //
 // Pure: no I/O, no logging, no panics on adversarial Connection token shapes
 // (empty value, whitespace-only, comma-only, multi-value entries).
-// masterKey is the value LiteLLM upstream trusts via the
-// x-litellm-api-key header (proxy-trust assertion — without it, LiteLLM
-// rejects requests with 401). Sourced from LiteLLMConnection CR's
-// MasterKeySecretRef at forwarder bootstrap.
-func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
+func StripAndRewrite(h http.Header, litellmAPIKey string) {
 	// 1. Collect Connection-named tokens into a canonical-case set BEFORE the
 	//    strip pass so the iteration below can drop them. h.Values traverses
 	//    every entry (h.Add may have appended multiple Connection headers).
@@ -107,11 +109,12 @@ func StripAndRewrite(h http.Header, masterKey, litellmToken string) {
 		}
 	}
 
-	// 3. Write pass. h.Set canonicalizes the keys.
-	// The bare master key is written here for ALL routes. The "Bearer "
-	// prefix that LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
-	// requires is applied ONLY on the /mcp route by the proxy Director —
-	// /v1, /gemini, and /a2a validate the bare master key.
-	h.Set("x-litellm-api-key", masterKey)
-	h.Set("x-litellm-key-id", litellmToken)
+	// 3. Write pass. h.Set canonicalizes the key.
+	// TESTING-PHASE (reverts FIX01 §A.6 / D-13): the caller's own LiteLLM
+	// virtual key is written here for ALL routes. The "Bearer " prefix that
+	// LiteLLM's MCP key parser (user_api_key_auth_mcp.py) requires is applied
+	// ONLY on the /mcp route by the proxy Director — /v1, /gemini, and /a2a
+	// take the bare value. The x-litellm-key-id delegation header is no longer
+	// written.
+	h.Set("x-litellm-api-key", litellmAPIKey)
 }
