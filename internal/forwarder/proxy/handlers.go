@@ -132,9 +132,10 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 
 		// 3. Sign + stash for Director.
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
-			Iss: deps.BaseURL,
-			Sub: deps.Namespace + "/" + kc.OwnerEmail,
-			Aud: audPrefix + name,
+			Iss:   deps.BaseURL,
+			Sub:   deps.Namespace + "/" + kc.OwnerEmail,
+			Aud:   audPrefix + name,
+			Email: kc.OwnerEmail,
 		})
 		if err != nil {
 			metrics.IncJWTSuppressed(kind, "signing_failure")

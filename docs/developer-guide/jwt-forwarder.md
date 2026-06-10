@@ -74,12 +74,19 @@ verify offline.
 | `kid`         | Stable id of the signing slot (e.g. `ach-jwt-<ulid>` or `dev-<ts>`) | FWD-08 |
 | `iss`         | Forwarder `ACH_BASE_URL` (HTTPS-only in prod per FWD-10) | Hub §9.1 |
 | `sub`         | `<namespace>/<owner-email>`                      | Hub §9.1   |
+| `email`       | Bare `<owner-email>` (no namespace prefix); **omitted when empty** — additive, for consumers that key by email | — |
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
 | `jti`         | **NOT emitted** (deliberate; Hub §9.1 + §20)     | Hub §9.1   |
 
 Authoritative implementation: [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go).
+
+`sub` stays namespace-qualified (`<namespace>/<owner-email>`) per Hub §9.1 — do
+not change it. The additive `email` claim exists because some backends key their
+per-user token storage by the **bare** email and read `email` first, falling
+back to `sub`; without `email` they would store/lookup under the prefixed
+`ach/<email>` and miss. It is omitted entirely when the owner email is empty.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the

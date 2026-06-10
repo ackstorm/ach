@@ -193,6 +193,51 @@ func TestEd25519Signer_Sign_ClaimsShape(t *testing.T) {
 	}
 }
 
+// Email claim — emitted (bare email, no namespace prefix) only when non-empty.
+// sub stays namespace-qualified; email is the additive claim for consumers that
+// key by bare email.
+func TestEd25519Signer_Sign_EmailClaim(t *testing.T) {
+	s := NewEd25519Signer()
+	slot, err := newSignerSlot("kid-c1", freshSeed(t))
+	if err != nil {
+		t.Fatalf("newSignerSlot: %v", err)
+	}
+	s.loadCurrent(slot)
+
+	decode := func(t *testing.T, c Claims) map[string]any {
+		t.Helper()
+		tok, err := s.Sign(context.Background(), c)
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1])
+		if err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		var claims map[string]any
+		if err := json.Unmarshal(payload, &claims); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		return claims
+	}
+
+	// Non-empty Email → "email" claim present and equal to the bare email.
+	withEmail := decode(t, Claims{Iss: "i", Sub: "ach/u@example.com", Aud: "mcp:x", Email: "u@example.com"})
+	if got, ok := withEmail["email"]; !ok || got != "u@example.com" {
+		t.Fatalf("email claim = %v (present=%v); want %q", got, ok, "u@example.com")
+	}
+	// sub stays namespace-qualified — email is additive, not a replacement.
+	if withEmail["sub"] != "ach/u@example.com" {
+		t.Fatalf("sub mutated = %v; want namespace-qualified unchanged", withEmail["sub"])
+	}
+
+	// Empty Email → "email" claim omitted entirely (no empty string emitted).
+	noEmail := decode(t, Claims{Iss: "i", Sub: "ach/u@example.com", Aud: "mcp:x"})
+	if _, ok := noEmail["email"]; ok {
+		t.Fatalf("email claim must be omitted when empty, got %v", noEmail["email"])
+	}
+}
+
 // Test 7 — Sign always uses current; next is published in JWKS only.
 func TestEd25519Signer_Sign_AlwaysCurrent(t *testing.T) {
 	s := NewEd25519Signer()
