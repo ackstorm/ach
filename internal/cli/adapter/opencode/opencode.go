@@ -435,9 +435,11 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 // requires type="remote" (NOT "http"/"streamable-http") + url, headers optional.
 // `enabled` is carried (default true). Every other source field (description,
 // timeout-spelling variants, …) is DROPPED so a closed-schema reject can't
-// happen. Headers are copied THROUGH unchanged (any `${env:X}` literal is the
-// plugin author's value; opencode resolves it at its own runtime — ACH never
-// reads the secret).
+// happen. Header/environment values have their env-var refs rewritten from the
+// universal `${VAR}` to opencode's `{env:VAR}` (rewriteEnvVarsInStringMap):
+// opencode does NOT understand `${VAR}`, so a verbatim ref would reach it
+// un-interpolated and (for an API-key header) auth would fail. ACH rewrites only
+// the placeholder wrapper — it never reads the secret value.
 //
 // keys returns the contributed dotted paths `["mcp.<id>", …]` (sorted) matching
 // the runtime encoder prefix (renderConfigJSON contributes `mcp.<server.ID>`),
@@ -484,6 +486,37 @@ func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, er
 	return out, keys, nil
 }
 
+// opencodeEnvVarRe matches the universal `${VAR}` env-var reference (VAR is a
+// POSIX-shell-style name). It deliberately does NOT match `${VAR:-default}`
+// (opencode has no default syntax) nor a bare `$VAR`.
+var opencodeEnvVarRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// convertEnvVarSyntax rewrites every universal `${VAR}` to opencode's
+// `{env:VAR}`. opencode (verified vs 1.16.0) does NOT understand `${VAR}`, so an
+// MCP header like "Bearer ${LITELLM_API_KEY}" must become
+// "Bearer {env:LITELLM_API_KEY}" or it reaches opencode un-interpolated.
+// Multiple refs per value convert independently; surrounding text is preserved;
+// an already-`{env:VAR}` value is untouched (idempotent — the regex matches only
+// the `${…}` form). ACH rewrites the wrapper only; it never resolves VAR.
+func convertEnvVarSyntax(s string) string {
+	return opencodeEnvVarRe.ReplaceAllString(s, "{env:$1}")
+}
+
+// rewriteEnvVarsInStringMap returns a copy of m with convertEnvVarSyntax applied
+// to every string value (non-string values pass through). Used for MCP remote
+// `headers` and stdio `environment` maps.
+func rewriteEnvVarsInStringMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if s, ok := v.(string); ok {
+			out[k] = convertEnvVarSyntax(s)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // opencodeMCPEntry converts a single Claude/universal MCP server entry to
 // opencode's local|remote schema. Idempotent: a value already in opencode shape
 // (command as an array, type already local/remote) round-trips unchanged.
@@ -504,7 +537,7 @@ func convertOpencodeMCPEntry(e map[string]any) map[string]any {
 			out["url"] = u
 		}
 		if h, ok := e["headers"].(map[string]any); ok && len(h) > 0 {
-			out["headers"] = h
+			out["headers"] = rewriteEnvVarsInStringMap(h)
 		}
 		if t, ok := e["timeout"]; ok {
 			out["timeout"] = t
@@ -531,9 +564,9 @@ func convertOpencodeMCPEntry(e map[string]any) map[string]any {
 	out := map[string]any{"type": opencodeMCPLocal, "enabled": enabled, "command": cmd}
 	// env (Claude) or environment (opencode) → environment.
 	if env, ok := e["environment"].(map[string]any); ok && len(env) > 0 {
-		out["environment"] = env
+		out["environment"] = rewriteEnvVarsInStringMap(env)
 	} else if env, ok := e["env"].(map[string]any); ok && len(env) > 0 {
-		out["environment"] = env
+		out["environment"] = rewriteEnvVarsInStringMap(env)
 	}
 	if t, ok := e["timeout"]; ok {
 		out["timeout"] = t

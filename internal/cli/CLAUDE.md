@@ -194,7 +194,10 @@ https://opencode.ai/docs/mcp-servers/, verified against the real binary):
 stdio `{command,args,env}` → `{type:"local", command:[cmd,…args], enabled:true,
 environment}`; remote `{url|type:streamable-http,…}` →
 `{type:"remote", url, enabled:true, headers}`. Non-schema fields (description,
-…) dropped; `type` normalized (streamable-http→remote); headers carried verbatim.
+…) dropped; `type` normalized (streamable-http→remote); header/`environment`
+values have env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` —
+opencode does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
+un-interpolated; ACH rewrites only the wrapper, never reads the secret).
 **Lesson: validate adapter output against the real tool — OpenPackage ≠ ground
 truth for opencode's strict schema.**
 

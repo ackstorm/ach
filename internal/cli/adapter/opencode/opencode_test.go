@@ -649,13 +649,58 @@ func TestOpencodeMCPConvert_RemoteShape(t *testing.T) {
 	if _, ok := cal["description"]; ok {
 		t.Errorf("non-schema field 'description' must be dropped:\n%s", out)
 	}
-	// Auth header is carried through verbatim (the ${...} literal is the plugin
-	// author's; opencode resolves it at runtime — ACH never reads the secret).
-	if !bytes.Contains(out, []byte(`${LITELLM_API_KEY}`)) {
-		t.Errorf("auth header literal not preserved:\n%s", out)
+	// Auth header env-var ref is rewritten to opencode's `{env:VAR}` form —
+	// opencode does NOT understand the universal `${VAR}` (verified vs 1.16.0),
+	// so a verbatim `${LITELLM_API_KEY}` would reach it un-interpolated and auth
+	// would fail. ACH rewrites only the wrapper, never reads the secret.
+	if !bytes.Contains(out, []byte(`{env:LITELLM_API_KEY}`)) {
+		t.Errorf("auth header ${VAR} not rewritten to {env:VAR}:\n%s", out)
+	}
+	if bytes.Contains(out, []byte(`${LITELLM_API_KEY}`)) {
+		t.Errorf("universal ${VAR} form must not survive for opencode:\n%s", out)
 	}
 	if !reflect.DeepEqual(keys, []string{"mcp.cal"}) {
 		t.Errorf("keys = %v, want [mcp.cal]", keys)
+	}
+}
+
+// TestConvertEnvVarSyntax: universal `${VAR}` → opencode `{env:VAR}`. opencode
+// has no `${VAR}` support, so every ref in an MCP header/environment value is
+// rewritten. Multiple refs convert independently; surrounding text is preserved;
+// an already-`{env:VAR}` value is untouched (idempotent); `${VAR:-default}` is
+// left verbatim (opencode has no default syntax to map it to).
+func TestConvertEnvVarSyntax(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Bearer ${LITELLM_API_KEY}", "Bearer {env:LITELLM_API_KEY}"},
+		{"${A}", "{env:A}"},
+		{"Bearer ${A}${B}", "Bearer {env:A}{env:B}"},   // multiple, independent
+		{"plain-literal-token", "plain-literal-token"}, // no placeholder
+		{"Bearer {env:A}", "Bearer {env:A}"},           // already converted (idempotent)
+		{"${VAR:-default}", "${VAR:-default}"},         // defaults unsupported → verbatim
+		{"$NOT_BRACED", "$NOT_BRACED"},                 // non-braced $ untouched
+	}
+	for _, tc := range cases {
+		if got := convertEnvVarSyntax(tc.in); got != tc.want {
+			t.Errorf("convertEnvVarSyntax(%q) = %q; want %q", tc.in, got, tc.want)
+		}
+	}
+	// idempotent: convert(convert(x)) == convert(x)
+	once := convertEnvVarSyntax("Bearer ${A}${B}")
+	if twice := convertEnvVarSyntax(once); twice != once {
+		t.Errorf("not idempotent: %q -> %q", once, twice)
+	}
+}
+
+// TestOpencodeMCPConvert_LocalEnvVarRewrite: a stdio entry's `environment`
+// values get the same `${VAR}` → `{env:VAR}` rewrite as remote headers.
+func TestOpencodeMCPConvert_LocalEnvVarRewrite(t *testing.T) {
+	in := []byte(`{"mcpServers":{"x":{"command":"x","env":{"TOK":"${SECRET}"}}}}`)
+	out, _, err := opencodeMCPConvert("mcp/x.json", in)
+	if err != nil {
+		t.Fatalf("opencodeMCPConvert: %v", err)
+	}
+	if !bytes.Contains(out, []byte(`{env:SECRET}`)) || bytes.Contains(out, []byte(`${SECRET}`)) {
+		t.Errorf("environment ${VAR} not rewritten to {env:VAR}:\n%s", out)
 	}
 }
 
