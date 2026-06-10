@@ -236,8 +236,9 @@ func TestContentTypeJSONIdempotent(t *testing.T) {
 // TestAuthnHappyPathPk — valid pk_ plaintext resolves; ctx receives
 // populated KeyContext with KeyType=PrefixPk.
 func TestAuthnHappyPathPk(t *testing.T) {
+	material := "sk-test-pk-material" // TESTING-PHASE (reverts FIX01 §A.6)
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
-		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com"}, nil
+		return &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com", LiteLLMKeyMaterial: &material}, nil
 	})
 	var observed KeyContext
 	var ok bool
@@ -255,6 +256,11 @@ func TestAuthnHappyPathPk(t *testing.T) {
 	}
 	if !ok || observed.KeyID != "pkid_a" || observed.KeyType != keys.PrefixPk {
 		t.Fatalf("unexpected KeyContext: ok=%v info=%+v", ok, observed)
+	}
+	// TESTING-PHASE (reverts FIX01 §A.6): LiteLLMKeyMaterial must propagate
+	// from KeyInfo through WithKeyContext into the observed KeyContext.
+	if observed.LiteLLMKeyMaterial == nil || *observed.LiteLLMKeyMaterial != material {
+		t.Fatalf("LiteLLMKeyMaterial = %v; want %q", observed.LiteLLMKeyMaterial, material)
 	}
 }
 

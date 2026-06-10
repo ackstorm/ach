@@ -129,6 +129,8 @@ func pkLookupFor(pool *pgxpool.Pool) dbLookupFn {
 			ExpiresAt:     &expires,
 			LiteLLMUserID: row.LiteLLMUserID,
 			LiteLLMToken:  row.LiteLLMToken,
+			// TESTING-PHASE (reverts FIX01 §A.6)
+			LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 		}, nil
 	}
 }
@@ -151,6 +153,8 @@ func ekLookupFor(pool *pgxpool.Pool) dbLookupFn {
 			Environment:   row.Environment,
 			LiteLLMUserID: row.LiteLLMUserID,
 			LiteLLMToken:  row.LiteLLMToken,
+			// TESTING-PHASE (reverts FIX01 §A.6)
+			LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 		}, nil
 	}
 }

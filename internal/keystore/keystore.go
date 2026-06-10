@@ -55,6 +55,9 @@ type KeyInfo struct {
 	Environment   string            `json:"environment,omitempty"`
 	LiteLLMUserID *string           `json:"litellm_user_id,omitempty"`
 	LiteLLMToken  *string           `json:"litellm_token,omitempty"`
+	// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM virtual-key plaintext (sk-…),
+	// forwarded as x-litellm-api-key so LiteLLM sees the caller's own key.
+	LiteLLMKeyMaterial *string `json:"litellm_key_material,omitempty"`
 }
 
 // Resolver is the single per-request authentication contract. The Authn

@@ -670,7 +670,11 @@ func newFakeLiteLLM() *fakeLiteLLM {
 		teamMemberAddError: func(string, string, string) error { return nil },
 		keyGenerateBehaviour: func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 			return &litellm.KeyGenerateResponse{
-				Key:    req.Key,
+				// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM mints its own
+				// virtual-key plaintext (sk-…) in the response; ACH now
+				// persists it. Use a fixed sentinel so the mint test can
+				// assert the inserted row carries it.
+				Key:    "sk-test-pk-material",
 				Token:  "litellm-token-" + req.UserID,
 				UserID: req.UserID,
 			}, nil
@@ -949,6 +953,11 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	wantExpires := time.Unix(1700000000, 0).UTC().Add(pkExpiryWindow)
 	if !dbRec.lastRow.ExpiresAt.Equal(wantExpires) {
 		t.Errorf("DB ExpiresAt: got %v, want %v", dbRec.lastRow.ExpiresAt, wantExpires)
+	}
+	// TESTING-PHASE (reverts FIX01 §A.6): the inserted row must carry the
+	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
+	if dbRec.lastRow.LiteLLMKeyMaterial == nil || *dbRec.lastRow.LiteLLMKeyMaterial != "sk-test-pk-material" {
+		t.Fatalf("DB LiteLLMKeyMaterial = %v; want sk-test-pk-material", dbRec.lastRow.LiteLLMKeyMaterial)
 	}
 
 	// Cookie cleared on success.
