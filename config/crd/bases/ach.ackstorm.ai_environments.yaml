@@ -131,6 +131,15 @@ spec:
                       type: string
                     type: array
                 type: object
+              notice:
+                description: |-
+                  Notice is an optional free-text advisory shown to the user after
+                  `ach-cli env hydrate` and in `env describe` / `env list`. Use it for
+                  operational reminders ("re-login after key rotation") or model guidance
+                  ("works best with the openai-* models"). Plain text, not interpreted;
+                  empty (the default) renders nothing anywhere.
+                maxLength: 2048
+                type: string
               runtime:
                 default: {}
                 description: |-

@@ -349,6 +349,7 @@ _Appears in:_
 | `runtime` _[RuntimeBlock](#runtimeblock)_ | Runtime is the execution-resource bundle projected into the LiteLLM<br />access group (§6.2). Optional in the manifest; defaults to an empty<br />block whose list fields backfill to [] so CRD-02 ("always present in<br />the hydrate response") holds even when the author omits it. | \{  \} |  |
 | `context` _[ContextBlock](#contextblock)_ | Context is the content-resource bundle served by Content Service<br />(§10, §15.6). Optional in the manifest; defaults to an empty block<br />whose list fields backfill to [] so CRD-02 ("always present in the<br />hydrate response") holds even when the author omits it. | \{  \} |  |
 | `authorizedTeams` _string array_ | AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment<br />is unusable when no entry resolves to an existing LiteLLM Team;<br />admission requires at least one entry per Hub §6 (informational —<br />reconcile-time existence is verified per §6.4). |  | MinItems: 1 <br />Required: \{\} <br /> |
+| `notice` _string_ | Notice is an optional free-text advisory shown to the user after<br />`ach-cli env hydrate` and in `env describe` / `env list`. Use it for<br />operational reminders ("re-login after key rotation") or model guidance<br />("works best with the openai-* models"). Plain text, not interpreted;<br />empty (the default) renders nothing anywhere. |  | MaxLength: 2048 <br /> |
 
 
 #### EnvironmentStatus
