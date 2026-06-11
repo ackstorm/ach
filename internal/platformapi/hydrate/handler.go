@@ -98,6 +98,7 @@ type HydrateResponse struct {
 	Environment   string       `json:"environment"`
 	Runtime       RuntimeBlock `json:"runtime"`
 	Context       ContextBlock `json:"context"`
+	Notice        string       `json:"notice,omitempty"`
 }
 
 // emptyRuntime returns a RuntimeBlock with all three slices initialized to
@@ -267,6 +268,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 			Environment:   envName,
 			Runtime:       toRuntimeBlockFromRow(env, deps.BaseURL),
 			Context:       toContextBlockFromRow(env, deps.BaseURL),
+			Notice:        env.Notice,
 		}
 
 		// Audit success — ActionHydrate + OutcomeCreated (created is the

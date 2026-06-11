@@ -396,6 +396,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 	result.RuntimeSummary = c.runtimeSummary(m)
 	result.ContextSummary = c.contextSummary(m)
+	result.Notice = m.Notice
 	c.maybeKill(5)
 
 	// Step 6: scope-aware diff.

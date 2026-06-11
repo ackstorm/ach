@@ -55,6 +55,7 @@ type Manifest struct {
 	Environment   string        `json:"environment"`
 	Runtime       *RuntimeBlock `json:"runtime"`
 	Context       *ContextBlock `json:"context"`
+	Notice        string        `json:"notice,omitempty"`
 }
 
 // ErrSchemaMismatch is returned (wrapped with %w via fmt.Errorf) when

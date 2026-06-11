@@ -67,6 +67,9 @@ type EnvironmentRow struct {
 	AccessGroupSyncedCondition          []byte
 	ExecutionResourcesResolvedCondition []byte
 
+	// Notice is spec.notice — optional post-hydrate advisory text (may be "").
+	Notice string
+
 	DeletionTimestamp *time.Time // non-nil = drain-mode (CS-09)
 	ResourceVersion   string     // K8s metadata.resourceVersion at write time
 	UpdatedAt         time.Time  // server-set on UPSERT
@@ -96,18 +99,19 @@ const upsertEnvironmentSQL = `
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     available_condition, access_group_synced_condition,
 	     execution_resources_resolved_condition,
-	     resource_version, context_skills, updated_at, origin, locked)
+	     resource_version, context_skills, notice, updated_at, origin, locked)
 	VALUES ($1, $2,
 	        $3, $4, $5, $6,
 	        $7, $8, $9,
 	        $10, $11, $12,
-	        $13, $14, now(), 'cr', TRUE)
+	        $13, $14, $15, now(), 'cr', TRUE)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    authorized_teams                       = EXCLUDED.authorized_teams,
 	    context_prompts                        = EXCLUDED.context_prompts,
 	    context_plugins                        = EXCLUDED.context_plugins,
 	    context_artifacts                      = EXCLUDED.context_artifacts,
 	    context_skills                         = EXCLUDED.context_skills,
+	    notice                                 = EXCLUDED.notice,
 	    runtime_models                         = EXCLUDED.runtime_models,
 	    runtime_mcp_servers                    = EXCLUDED.runtime_mcp_servers,
 	    runtime_a2a_agents                     = EXCLUDED.runtime_a2a_agents,
@@ -143,6 +147,7 @@ func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) err
 		row.ExecutionResourcesResolvedCondition,
 		row.ResourceVersion,
 		row.ContextSkills,
+		row.Notice,
 	)
 }
 
@@ -159,7 +164,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 	const sql = `
 		SELECT namespace, name,
 		       authorized_teams, context_prompts, context_plugins, context_artifacts,
-		       context_skills,
+		       context_skills, notice,
 		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
@@ -171,7 +176,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
 		&r.Namespace, &r.Name,
 		&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
-		&r.ContextSkills,
+		&r.ContextSkills, &r.Notice,
 		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
 		&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 		&r.ExecutionResourcesResolvedCondition,
@@ -198,7 +203,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 	const sql = `
 		SELECT namespace, name,
 		       authorized_teams, context_prompts, context_plugins, context_artifacts,
-		       context_skills,
+		       context_skills, notice,
 		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
@@ -221,7 +226,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 		if err := rows.Scan(
 			&r.Namespace, &r.Name,
 			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
-			&r.ContextSkills,
+			&r.ContextSkills, &r.Notice,
 			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
 			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 			&r.ExecutionResourcesResolvedCondition,
