@@ -23,6 +23,7 @@ type EnvView struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
 	Status    string `json:"status,omitempty"`
+	Notice    string `json:"notice,omitempty"`
 }
 
 // EkRowView + FormatEkList moved to ek.go (06-05) — single source of truth
