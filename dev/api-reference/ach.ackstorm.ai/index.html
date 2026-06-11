@@ -3123,6 +3123,12 @@ CRD-02 at admission.</p>
 <td></td>
 <td>MinItems: 1 <br />Required: {} <br /></td>
 </tr>
+<tr>
+<td><code>notice</code> <em>string</em></td>
+<td>Notice is an optional free-text advisory shown to the user after<br /><code>ach-cli env hydrate</code> and in <code>env describe</code> / <code>env list</code>. Use it for<br />operational reminders ("re-login after key rotation") or model guidance<br />("works best with the openai-* models"). Plain text, not interpreted;<br />empty (the default) renders nothing anywhere.</td>
+<td></td>
+<td>MaxLength: 2048 <br /></td>
+</tr>
 </tbody>
 </table>
 <h4 id="environmentstatus">EnvironmentStatus<a class="headerlink" href="#environmentstatus" title="Permanent link">&para;</a></h4>
