@@ -1084,3 +1084,20 @@ func TestSummaryFromResultsCompact(t *testing.T) {
 		t.Errorf("compact segment %q count = %d, want 2 (one per target)\n%s", wantSeg, n, out)
 	}
 }
+
+// TestRenderHydrateSummary_NoticeBlock asserts the post-hydrate summary
+// appends the environment notice when present, and omits it when empty.
+func TestRenderHydrateSummary_NoticeBlock(t *testing.T) {
+	withNotice := renderHydrateSummary(
+		[]hydrate.Result{{Environment: "demo", PlatformID: "claude-code", Notice: "re-login first"}},
+		summaryMeta{noWarnings: true})
+	if !strings.Contains(withNotice, "Notice") || !strings.Contains(withNotice, "re-login first") {
+		t.Errorf("missing notice block:\n%s", withNotice)
+	}
+	none := renderHydrateSummary(
+		[]hydrate.Result{{Environment: "demo", PlatformID: "claude-code"}},
+		summaryMeta{noWarnings: true})
+	if strings.Contains(none, "Notice") {
+		t.Errorf("notice block rendered for empty notice:\n%s", none)
+	}
+}

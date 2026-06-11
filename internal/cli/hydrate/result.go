@@ -21,6 +21,10 @@ type Result struct {
 	// human-facing success summary.
 	Environment string
 
+	// Notice is the environment's spec.notice, surfaced verbatim in the
+	// post-hydrate success summary. Empty when the environment sets none.
+	Notice string
+
 	// FilesWritten is the total count of files committed to disk
 	// across every category (prompts, plugins, artifacts, runtime,
 	// adapter). Counted in step 8 (extract) and step 10 (adapter).

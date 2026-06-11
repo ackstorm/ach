@@ -180,9 +180,9 @@ func FormatEnvList(envs []EnvView) string {
 	}
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tSTATUS")
+	_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tSTATUS\tNOTICE")
 	for _, e := range envs {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Namespace, e.Status)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Namespace, e.Status, truncateNotice(e.Notice, 40))
 	}
 	_ = tw.Flush()
 	return sb.String()
@@ -204,6 +204,9 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	}
 	if env.Status != "" {
 		_, _ = fmt.Fprintf(&sb, "Status: %s\n", env.Status)
+	}
+	if env.Notice != "" {
+		_, _ = fmt.Fprintf(&sb, "Notice:\n  %s\n", strings.ReplaceAll(env.Notice, "\n", "\n  "))
 	}
 
 	if !hydrateAvailable || h == nil {
@@ -248,4 +251,21 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	_ = tw.Flush()
 
 	return sb.String()
+}
+
+// truncateNotice collapses a notice to its first non-empty line and caps it at
+// max runes (appending "…" when truncated) so it fits one table cell.
+func truncateNotice(s string, max int) string {
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) > max {
+		return string(r[:max-1]) + "…"
+	}
+	return s
 }

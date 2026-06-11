@@ -606,10 +606,28 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 // footer (summaryFromResultsCompact) — the repeated header/Tips of N full blocks
 // reads as noise.
 func renderHydrateSummary(results []hydrate.Result, meta summaryMeta) string {
+	var body string
 	if len(results) == 1 {
-		return summaryFromResult(results[0], meta)
+		body = summaryFromResult(results[0], meta)
+	} else {
+		body = summaryFromResultsCompact(results, meta)
 	}
-	return summaryFromResultsCompact(results, meta)
+	if notice := firstNotice(results); notice != "" {
+		body += "\n  Notice\n    " + strings.ReplaceAll(notice, "\n", "\n    ") + "\n"
+	}
+	return body
+}
+
+// firstNotice returns the first non-empty environment notice across results
+// (all targets hydrate the same environment, so the notice is identical when
+// present).
+func firstNotice(results []hydrate.Result) string {
+	for _, r := range results {
+		if r.Notice != "" {
+			return r.Notice
+		}
+	}
+	return ""
 }
 
 // summaryFromResultsCompact renders the multi-target summary: one shared header

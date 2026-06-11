@@ -261,3 +261,36 @@ func TestFormatEkList(t *testing.T) {
 // TestFormatEkList_Empty moved to ek_test.go (06-05) — single source of
 // truth for the empty-slice marker assertion (now strict-matches
 // "No env-keys found").
+
+// TestFormatEnvList_NoticeTruncated asserts the list shows a truncated,
+// single-line notice in the NOTICE column.
+func TestFormatEnvList_NoticeTruncated(t *testing.T) {
+	out := FormatEnvList([]EnvView{
+		{Name: "demo", Namespace: "ach-system", Status: "Available",
+			Notice: "first line of the notice\nsecond line that must not appear"},
+	})
+	if !strings.Contains(out, "NOTICE") {
+		t.Errorf("list missing NOTICE column header:\n%s", out)
+	}
+	if strings.Contains(out, "second line") {
+		t.Errorf("list leaked multi-line notice:\n%s", out)
+	}
+	if !strings.Contains(out, "first line") {
+		t.Errorf("list dropped the notice first line:\n%s", out)
+	}
+}
+
+// TestFormatEnvDescribe_NoticeFull asserts describe renders the full notice
+// in a dedicated block.
+func TestFormatEnvDescribe_NoticeFull(t *testing.T) {
+	out := FormatEnvDescribe(
+		EnvView{Name: "demo", Namespace: "ach-system", Status: "Available",
+			Notice: "line one\nline two"},
+		nil, false)
+	if !strings.Contains(out, "Notice:") {
+		t.Errorf("describe missing Notice block:\n%s", out)
+	}
+	if !strings.Contains(out, "line one") || !strings.Contains(out, "line two") {
+		t.Errorf("describe dropped notice content:\n%s", out)
+	}
+}
