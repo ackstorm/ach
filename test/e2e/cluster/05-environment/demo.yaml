@@ -36,6 +36,7 @@ spec:
   authorizedTeams:
     - default
   notice: "demo environment — re-login after key rotation"
+  description: "demo environment — data-team sandbox"
   runtime:
     models:
       - demo-model

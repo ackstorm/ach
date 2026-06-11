@@ -262,35 +262,35 @@ func TestFormatEkList(t *testing.T) {
 // truth for the empty-slice marker assertion (now strict-matches
 // "No env-keys found").
 
-// TestFormatEnvList_NoticeTruncated asserts the list shows a truncated,
-// single-line notice in the NOTICE column.
-func TestFormatEnvList_NoticeTruncated(t *testing.T) {
+// TestFormatEnvList_DescriptionTruncated asserts the list shows a truncated,
+// single-line description in the DESCRIPTION column.
+func TestFormatEnvList_DescriptionTruncated(t *testing.T) {
 	out := FormatEnvList([]EnvView{
 		{Name: "demo", Namespace: "ach-system", Status: "Available",
-			Notice: "first line of the notice\nsecond line that must not appear"},
+			Description: "first line of the description\nsecond line that must not appear"},
 	})
-	if !strings.Contains(out, "NOTICE") {
-		t.Errorf("list missing NOTICE column header:\n%s", out)
+	if !strings.Contains(out, "DESCRIPTION") {
+		t.Errorf("list missing DESCRIPTION column header:\n%s", out)
 	}
 	if strings.Contains(out, "second line") {
-		t.Errorf("list leaked multi-line notice:\n%s", out)
+		t.Errorf("list leaked multi-line description:\n%s", out)
 	}
 	if !strings.Contains(out, "first line") {
-		t.Errorf("list dropped the notice first line:\n%s", out)
+		t.Errorf("list dropped the description first line:\n%s", out)
 	}
 }
 
-// TestFormatEnvDescribe_NoticeFull asserts describe renders the full notice
-// in a dedicated block.
-func TestFormatEnvDescribe_NoticeFull(t *testing.T) {
+// TestFormatEnvDescribe_DescriptionFull asserts describe renders the full
+// description in a dedicated block.
+func TestFormatEnvDescribe_DescriptionFull(t *testing.T) {
 	out := FormatEnvDescribe(
 		EnvView{Name: "demo", Namespace: "ach-system", Status: "Available",
-			Notice: "line one\nline two"},
+			Description: "line one\nline two"},
 		nil, false)
-	if !strings.Contains(out, "Notice:") {
-		t.Errorf("describe missing Notice block:\n%s", out)
+	if !strings.Contains(out, "Description:") {
+		t.Errorf("describe missing Description block:\n%s", out)
 	}
 	if !strings.Contains(out, "line one") || !strings.Contains(out, "line two") {
-		t.Errorf("describe dropped notice content:\n%s", out)
+		t.Errorf("describe dropped description content:\n%s", out)
 	}
 }

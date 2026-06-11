@@ -88,7 +88,7 @@ type EnvironmentView struct {
 	ResourceVersion   string                   `json:"resourceVersion,omitempty"`
 	Origin            string                   `json:"origin,omitempty"`
 	Locked            bool                     `json:"locked"`
-	Notice            string                   `json:"notice,omitempty"`
+	Description       string                   `json:"description,omitempty"`
 }
 
 // RowToView maps a flat db.EnvironmentRow into the nested EnvironmentView.
@@ -123,7 +123,7 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 			A2AAgents:  r.RuntimeA2AAgents,
 		},
 		ResourceVersion: r.ResourceVersion,
-		Notice:          r.Notice,
+		Description:     r.Description,
 	}
 	if r.DeletionTimestamp != nil {
 		t := metav1.NewTime(*r.DeletionTimestamp)

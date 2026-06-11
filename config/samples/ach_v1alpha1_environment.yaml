@@ -12,6 +12,7 @@ spec:
   notice: |
     This environment works best with the openai-* models.
     Remember to re-login after rotating your keys.
+  description: "Example environment for the kustomize sample."
   runtime:
     models: []
     mcpServers: []
