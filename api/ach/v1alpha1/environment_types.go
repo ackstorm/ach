@@ -131,15 +131,24 @@ type EnvironmentSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	AuthorizedTeams []string `json:"authorizedTeams"`
 
-	// Notice is an optional free-text advisory shown to the user after
-	// `ach-cli env hydrate` and in `env describe` / `env list`. Use it for
-	// operational reminders ("re-login after key rotation") or model guidance
-	// ("works best with the openai-* models"). Plain text, not interpreted;
-	// empty (the default) renders nothing anywhere.
+	// Notice is an optional free-text advisory shown to the user ONLY after
+	// `ach-cli env hydrate` (it is not surfaced in `env list` / `env describe`
+	// — use Description for catalog metadata). Use it for operational reminders
+	// ("re-login after key rotation") or model guidance ("works best with the
+	// openai-* models"). Plain text, not interpreted; empty renders nothing.
 	//
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
 	Notice string `json:"notice,omitempty"`
+
+	// Description is optional catalog metadata describing what this Environment
+	// is. It is surfaced in `ach-cli env list` (truncated) and `env describe`
+	// (full) — the browse-time "what is this" text, distinct from Notice's
+	// post-hydrate advisory. Plain text, not interpreted; empty renders nothing.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=2048
+	Description string `json:"description,omitempty"`
 }
 
 // EnvironmentStatus defines the observed state of Environment (Hub §6.4, §6.6).
