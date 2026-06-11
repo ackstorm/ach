@@ -9,6 +9,9 @@ metadata:
 spec:
   authorizedTeams:
     - default
+  notice: |
+    This environment works best with the openai-* models.
+    Remember to re-login after rotating your keys.
   runtime:
     models: []
     mcpServers: []
