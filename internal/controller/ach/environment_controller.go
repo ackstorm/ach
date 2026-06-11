@@ -548,6 +548,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ExecutionResourcesResolvedCondition: execResolvedBytes,
 		ResourceVersion:                     env.ResourceVersion,
 		Notice:                              env.Spec.Notice,
+		Description:                         env.Spec.Description,
 	}
 	// Issue #34: project + NOTIFY atomically so any consumer waking on
 	// ach_environments_changed SELECTs a snapshot that already reflects
