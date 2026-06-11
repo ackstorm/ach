@@ -20,10 +20,10 @@ import (
 // json tags are present so callers can decode the wire payload
 // directly into []EnvView when convenient.
 type EnvView struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Notice    string `json:"notice,omitempty"`
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // EkRowView + FormatEkList moved to ek.go (06-05) — single source of truth
@@ -180,9 +180,9 @@ func FormatEnvList(envs []EnvView) string {
 	}
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tSTATUS\tNOTICE")
+	_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tSTATUS\tDESCRIPTION")
 	for _, e := range envs {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Namespace, e.Status, truncateNotice(e.Notice, 40))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Namespace, e.Status, truncateField(e.Description, 40))
 	}
 	_ = tw.Flush()
 	return sb.String()
@@ -205,8 +205,8 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	if env.Status != "" {
 		_, _ = fmt.Fprintf(&sb, "Status: %s\n", env.Status)
 	}
-	if env.Notice != "" {
-		_, _ = fmt.Fprintf(&sb, "Notice:\n  %s\n", strings.ReplaceAll(env.Notice, "\n", "\n  "))
+	if env.Description != "" {
+		_, _ = fmt.Fprintf(&sb, "Description:\n  %s\n", strings.ReplaceAll(env.Description, "\n", "\n  "))
 	}
 
 	if !hydrateAvailable || h == nil {
@@ -253,9 +253,9 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	return sb.String()
 }
 
-// truncateNotice collapses a notice to its first non-empty line and caps it at
+// truncateField collapses a field to its first non-empty line and caps it at
 // max runes (appending "…" when truncated) so it fits one table cell.
-func truncateNotice(s string, max int) string {
+func truncateField(s string, max int) string {
 	if s == "" {
 		return ""
 	}
