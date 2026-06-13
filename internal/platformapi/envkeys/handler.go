@@ -486,7 +486,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		defer cancel()
 		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, llToken); cleanupErr != nil {
 			deps.Logger.Error("envkeys.create: compensation RevokeKey failed",
-				"token", llToken, "err", cleanupErr)
+				"key_id", keyID, "err", cleanupErr)
 		}
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
 			Action:    audit.ActionEkCreate,
@@ -673,7 +673,7 @@ func RevokeHandler(deps Deps) http.HandlerFunc {
 				KeyID:     keyID,
 				Target:    &audit.Target{Kind: "environment", Name: row.Environment},
 			})
-			deps.Logger.Error("envkeys.revoke: LiteLLM RevokeKey failed", "token", llToken, "err", err)
+			deps.Logger.Error("envkeys.revoke: LiteLLM RevokeKey failed", "key_id", keyID, "err", err)
 			render.Error(w, st, oc, msg, reqID)
 			return
 		}

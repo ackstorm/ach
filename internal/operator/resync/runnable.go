@@ -156,6 +156,9 @@ func (r *Resync) push(ctx context.Context, ch chan<- event.GenericEvent, obj cli
 	select {
 	case ch <- event.GenericEvent{Object: obj}:
 	case <-ctx.Done():
+	default:
+		r.Log.Info("resync: channel full; dropping signal (recovered on next sweep)",
+			"kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", obj.GetName())
 	}
 }
 

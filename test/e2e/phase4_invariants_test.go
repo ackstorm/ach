@@ -350,7 +350,7 @@ func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
 			t.Fatalf("flip-to-mint: iss=%q want %q", snap.JWTClaims.Iss, forwarderBaseURL(t))
 		}
 		if snap.JWTClaims.Sub == "" {
-			t.Fatalf("flip-to-mint: sub empty, want <namespace>/<ownerEmail>")
+			t.Fatalf("flip-to-mint: sub empty, want <ownerEmail>")
 		}
 	})
 }

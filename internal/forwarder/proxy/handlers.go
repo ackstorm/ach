@@ -27,7 +27,7 @@ type BIPResolver interface {
 }
 
 // HandlerDeps extends proxy.Deps with the per-route dependencies
-// (signer, BIP resolver, precheck deps, base URL, namespace).
+// (signer, BIP resolver, precheck deps, base URL).
 type HandlerDeps struct {
 	// Deps wires the shared *httputil.ReverseProxy.
 	Deps Deps
@@ -41,8 +41,6 @@ type HandlerDeps struct {
 	PrecheckDeps precheck.Deps
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
-	// Namespace is the POD_NAMESPACE; used as the JWT "sub" prefix.
-	Namespace string
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
@@ -133,7 +131,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		// 3. Sign + stash for Director.
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
 			Iss:   deps.BaseURL,
-			Sub:   deps.Namespace + "/" + kc.OwnerEmail,
+			Sub:   kc.OwnerEmail,
 			Aud:   audPrefix + name,
 			Email: kc.OwnerEmail,
 		})

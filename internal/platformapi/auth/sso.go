@@ -456,7 +456,7 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
 			deps.Logger.Error("sso.callback: compensation revoke failed",
-				"err", cleanupErr, "litellm_token", keyResp.Token)
+				"err", cleanupErr, "key_id", keyID)
 		}
 		cancel()
 

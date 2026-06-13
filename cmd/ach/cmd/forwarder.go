@@ -361,7 +361,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Signer:          out.signer,
 		Logger:          logger,
 		BaseURL:         cfg.BaseURL,
-		Namespace:       cfg.Namespace,
 		LiteLLMUpstream: llmUpstream, // B2: from LiteLLMConnection CR
 	}
 	return out, nil

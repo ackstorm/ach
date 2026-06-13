@@ -149,11 +149,16 @@ func (r *SkillMarketplaceReconciler) reconcileDelete(ctx context.Context, cr *ac
 			return ctrl.Result{}, fmt.Errorf("db list skill_marketplace_skills on delete: %w", err)
 		}
 		for _, row := range rows {
-			if err := achdb.DeleteSkillMarketplaceSkill(ctx, r.DB, cr.Name, row.Name); err != nil {
+			payload := fmt.Sprintf("%s/%s", cr.Name, row.Name)
+			if err := achdb.WithTxNotify(ctx, r.DB, skillMarketplaceSkillsChannel, payload, func(tx pgx.Tx) error {
+				return achdb.DeleteSkillMarketplaceSkillTx(ctx, tx, cr.Name, row.Name)
+			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("db delete skill_marketplace_skill %s/%s: %w", cr.Name, row.Name, err)
 			}
 		}
-		if err := achdb.DeleteSkillMarketplace(ctx, r.DB, cr.Namespace, cr.Name); err != nil {
+		if err := achdb.WithTxNotify(ctx, r.DB, skillMarketplacesChannel, cr.Name, func(tx pgx.Tx) error {
+			return achdb.DeleteSkillMarketplaceTx(ctx, tx, cr.Namespace, cr.Name)
+		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("db delete skill_marketplace %s/%s: %w", cr.Namespace, cr.Name, err)
 		}
 	}
@@ -351,7 +356,10 @@ func (r *SkillMarketplaceReconciler) sweepVanishedSkills(ctx context.Context, cr
 		if err := os.Remove(cachePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("stage-3 cache file remove %s/%s: %w", cr.Name, row.Name, err)
 		}
-		if err := achdb.DeleteSkillMarketplaceSkill(ctx, r.DB, cr.Name, row.Name); err != nil {
+		payload := fmt.Sprintf("%s/%s", cr.Name, row.Name)
+		if err := achdb.WithTxNotify(ctx, r.DB, skillMarketplaceSkillsChannel, payload, func(tx pgx.Tx) error {
+			return achdb.DeleteSkillMarketplaceSkillTx(ctx, tx, cr.Name, row.Name)
+		}); err != nil {
 			return fmt.Errorf("stage-3 db delete %s/%s: %w", cr.Name, row.Name, err)
 		}
 	}

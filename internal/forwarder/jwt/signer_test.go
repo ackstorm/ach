@@ -222,17 +222,17 @@ func TestEd25519Signer_Sign_EmailClaim(t *testing.T) {
 	}
 
 	// Non-empty Email → "email" claim present and equal to the bare email.
-	withEmail := decode(t, Claims{Iss: "i", Sub: "ach/u@example.com", Aud: "mcp:x", Email: "u@example.com"})
+	withEmail := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x", Email: "u@example.com"})
 	if got, ok := withEmail["email"]; !ok || got != "u@example.com" {
 		t.Fatalf("email claim = %v (present=%v); want %q", got, ok, "u@example.com")
 	}
-	// sub stays namespace-qualified — email is additive, not a replacement.
-	if withEmail["sub"] != "ach/u@example.com" {
-		t.Fatalf("sub mutated = %v; want namespace-qualified unchanged", withEmail["sub"])
+	// sub is the bare owner-email; email mirrors it (additive, not a replacement).
+	if withEmail["sub"] != "u@example.com" {
+		t.Fatalf("sub mutated = %v; want bare owner-email unchanged", withEmail["sub"])
 	}
 
 	// Empty Email → "email" claim omitted entirely (no empty string emitted).
-	noEmail := decode(t, Claims{Iss: "i", Sub: "ach/u@example.com", Aud: "mcp:x"})
+	noEmail := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x"})
 	if _, ok := noEmail["email"]; ok {
 		t.Fatalf("email claim must be omitted when empty, got %v", noEmail["email"])
 	}
