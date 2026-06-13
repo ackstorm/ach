@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -247,6 +248,35 @@ func TestExtract_BombCapTrip_FileNotWritten(t *testing.T) {
 		t.Errorf("file big.bin still present after bomb-cap trip — SAFE-03 ordering violated")
 	} else if !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("Stat after bomb-cap trip: want IsNotExist, got %v", statErr)
+	}
+}
+
+// TestExtract_ArchiveWideBombCap asserts the cap is cumulative across
+// entries: N files each individually under the per-file cap must still
+// trip ErrBombCapExceeded once their archive-wide total exceeds it. (#4)
+func TestExtract_ArchiveWideBombCap(t *testing.T) {
+	// 4 files of 200 bytes each = 800 total; cap at 512 => the archive
+	// total trips even though each file is individually under cap.
+	body := bytes.Repeat([]byte("A"), 200)
+	entries := make([]tarEntry, 4)
+	for i := range entries {
+		entries[i] = tarEntry{hdr: &tar.Header{
+			Typeflag: tar.TypeReg,
+			Name:     fmt.Sprintf("f%d.bin", i),
+			Mode:     0o644,
+			Size:     int64(len(body)),
+		}, body: body}
+	}
+	data := makeTarGz(t, entries)
+
+	dst := t.TempDir()
+	limits := generousLimits()
+	limits.MaxExtractedPluginBytes = 512 // below the 800-byte archive total
+
+	_, err := extract.Extract(context.Background(), bytes.NewReader(data), dst,
+		extract.KindPlugin, limits, false)
+	if !errors.Is(err, extract.ErrBombCapExceeded) {
+		t.Fatalf("want ErrBombCapExceeded for over-budget archive, got %v", err)
 	}
 }
 

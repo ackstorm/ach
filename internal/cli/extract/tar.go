@@ -155,7 +155,16 @@ func Extract(
 			// and the package itself normalizes any pre-USTAR null-byte
 			// typeflag entries into TypeReg before returning; no need for a
 			// separate case (the constant is now staticcheck-deprecated).
-			fw, written, err := writeRegular(target, hdr, tr, maxBytes)
+			//
+			// Pass the *remaining* budget (cap minus bytes already written
+			// this archive) so the cap is cumulative across entries — N
+			// files each just under the per-file cap can no longer extract
+			// N × maxBytes. (#4)
+			remaining := maxBytes - res.BytesWritten
+			if maxBytes <= 0 {
+				remaining = 0 // 0 => capWriter treats as "no cap" (existing semantics)
+			}
+			fw, written, err := writeRegular(target, hdr, tr, remaining)
 			if err != nil {
 				return res, err
 			}
