@@ -1283,7 +1283,7 @@ operator implements the verifying side.</p>
 </tr>
 <tr>
 <td><code>sub</code></td>
-<td><code>&lt;namespace&gt;/&lt;owner-email&gt;</code></td>
+<td><code>&lt;owner-email&gt;</code></td>
 <td>Hub §9.1</td>
 </tr>
 <tr>
@@ -1336,7 +1336,7 @@ operator implements the verifying side.</p>
    install. <code>aud</code> is fixed per route (a backend that serves multiple
    <code>&lt;name&gt;</code>s accepts a small allowlist).</li>
 <li><strong>Do NOT trust <code>sub</code> as identity</strong> unless your security model
-   matches ACH's. <code>sub</code> carries <code>&lt;namespace&gt;/&lt;owner-email&gt;</code> — useful
+   matches ACH's. <code>sub</code> carries the bare <code>&lt;owner-email&gt;</code> — useful
    for audit, NOT authorization.</li>
 </ol>
 <h2 id="reference-implementation">Reference implementation<a class="headerlink" href="#reference-implementation" title="Permanent link">&para;</a></h2>

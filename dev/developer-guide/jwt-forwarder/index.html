@@ -1534,12 +1534,12 @@ verify offline.</p>
 </tr>
 <tr>
 <td><code>sub</code></td>
-<td><code>&lt;namespace&gt;/&lt;owner-email&gt;</code></td>
+<td>Bare <code>&lt;owner-email&gt;</code> (no namespace prefix)</td>
 <td>Hub §9.1</td>
 </tr>
 <tr>
 <td><code>email</code></td>
-<td>Bare <code>&lt;owner-email&gt;</code> (no namespace prefix); <strong>omitted when empty</strong> — additive, for consumers that key by email</td>
+<td>Bare <code>&lt;owner-email&gt;</code> (mirrors <code>sub</code>); <strong>omitted when empty</strong> — additive, for consumers that key by email</td>
 <td>—</td>
 </tr>
 <tr>
@@ -1565,11 +1565,10 @@ verify offline.</p>
 </tbody>
 </table>
 <p>Authoritative implementation: <a href="https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go"><code>internal/forwarder/jwt/signer.go</code></a>.</p>
-<p><code>sub</code> stays namespace-qualified (<code>&lt;namespace&gt;/&lt;owner-email&gt;</code>) per Hub §9.1 — do
-not change it. The additive <code>email</code> claim exists because some backends key their
-per-user token storage by the <strong>bare</strong> email and read <code>email</code> first, falling
-back to <code>sub</code>; without <code>email</code> they would store/lookup under the prefixed
-<code>ach/&lt;email&gt;</code> and miss. It is omitted entirely when the owner email is empty.</p>
+<p><code>sub</code> is the bare <code>&lt;owner-email&gt;</code> (no namespace prefix). The additive <code>email</code>
+claim mirrors it for backends that key their per-user token storage by email and
+read <code>email</code> first, falling back to <code>sub</code>. It is omitted entirely when the owner
+email is empty.</p>
 <p>The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
 Forwarder and the backend MUST stay well under 120 s for the trust path
@@ -1783,7 +1782,7 @@ traverses LiteLLM.</p>
    (<code>mcp:&lt;bare-name&gt;</code> or <code>a2a:&lt;bare-name&gt;</code>) for the route(s) this
    backend serves.</li>
 <li><strong>Do not trust <code>sub</code> as identity</strong> unless your security model
-   matches ACH's. <code>sub</code> carries <code>&lt;namespace&gt;/&lt;owner-email&gt;</code> for audit
+   matches ACH's. <code>sub</code> carries the bare <code>&lt;owner-email&gt;</code> for audit
    purposes — not for authorization decisions.</li>
 <li><strong>Refuse on the slightest mismatch.</strong> The trust path is only
    meaningful if the backend rejects on any failure. There is no
