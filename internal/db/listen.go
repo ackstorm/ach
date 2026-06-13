@@ -129,6 +129,31 @@ func (l *Listener) runOnce(ctx context.Context) error {
 	}
 }
 
+// signalTrigger does a non-blocking send on a size-1 channel: if a
+// trigger is already pending, the extra signal is coalesced (dropped).
+// This is what the NOTIFY Handler calls — it MUST NOT block.
+func signalTrigger(trigger chan<- struct{}) {
+	select {
+	case trigger <- struct{}{}:
+	default:
+	}
+}
+
+// runRefreshTriggers consumes coalesced triggers and runs refresh in its
+// own goroutine, so a slow refresh never blocks the Listener goroutine.
+func runRefreshTriggers(ctx context.Context, trigger <-chan struct{}, refresh func(context.Context) error, log logr.Logger) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-trigger:
+			if err := refresh(ctx); err != nil {
+				log.Error(err, "notify-driven refresh failed")
+			}
+		}
+	}
+}
+
 // RunRefreshLoop drives the standard cache-freshness lifecycle shared by
 // the forwarder's bipcache and envstore: an initial refresh, a LISTEN
 // subscription on channel for event-driven refresh, and a periodic
@@ -148,12 +173,13 @@ func RunRefreshLoop(
 		log.Error(err, "initial refresh failed; will retry on next NOTIFY or tick")
 	}
 
+	// NOTIFY handler must not block the Listener goroutine (Handler
+	// contract). It only fires a coalescing trigger; a dedicated
+	// goroutine runs the (slow) refresh. (#7)
+	trigger := make(chan struct{}, 1)
+	go runRefreshTriggers(ctx, trigger, refresh, log)
 	lis := NewListener(pool, log.WithName("listen"))
-	lis.Subscribe(channel, func(_ string) {
-		if err := refresh(ctx); err != nil {
-			log.Error(err, "notify-driven refresh failed")
-		}
-	})
+	lis.Subscribe(channel, func(_ string) { signalTrigger(trigger) })
 	go func() { _ = lis.Run(ctx) }()
 
 	ticker := time.NewTicker(interval)
