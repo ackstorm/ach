@@ -73,8 +73,8 @@ verify offline.
 | `typ`         | `JWT`                                            | RFC 7519   |
 | `kid`         | Stable id of the signing slot (e.g. `ach-jwt-<ulid>` or `dev-<ts>`) | FWD-08 |
 | `iss`         | Forwarder `ACH_BASE_URL` (HTTPS-only in prod per FWD-10) | Hub §9.1 |
-| `sub`         | `<namespace>/<owner-email>`                      | Hub §9.1   |
-| `email`       | Bare `<owner-email>` (no namespace prefix); **omitted when empty** — additive, for consumers that key by email | — |
+| `sub`         | Bare `<owner-email>` (no namespace prefix)       | Hub §9.1   |
+| `email`       | Bare `<owner-email>` (mirrors `sub`); **omitted when empty** — additive, for consumers that key by email | — |
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
@@ -82,11 +82,10 @@ verify offline.
 
 Authoritative implementation: [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go).
 
-`sub` stays namespace-qualified (`<namespace>/<owner-email>`) per Hub §9.1 — do
-not change it. The additive `email` claim exists because some backends key their
-per-user token storage by the **bare** email and read `email` first, falling
-back to `sub`; without `email` they would store/lookup under the prefixed
-`ach/<email>` and miss. It is omitted entirely when the owner email is empty.
+`sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`
+claim mirrors it for backends that key their per-user token storage by email and
+read `email` first, falling back to `sub`. It is omitted entirely when the owner
+email is empty.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
@@ -324,7 +323,7 @@ Recommended posture (full detail and a runnable Go reference at
    (`mcp:<bare-name>` or `a2a:<bare-name>`) for the route(s) this
    backend serves.
 4. **Do not trust `sub` as identity** unless your security model
-   matches ACH's. `sub` carries `<namespace>/<owner-email>` for audit
+   matches ACH's. `sub` carries the bare `<owner-email>` for audit
    purposes — not for authorization decisions.
 5. **Refuse on the slightest mismatch.** The trust path is only
    meaningful if the backend rejects on any failure. There is no

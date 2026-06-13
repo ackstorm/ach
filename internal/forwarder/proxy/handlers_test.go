@@ -208,7 +208,6 @@ func mkDeps(t *testing.T, upstream *httptest.Server, signer jwt.Signer, resolver
 		BIPResolver:  bipResolver,
 		PrecheckDeps: resolver,
 		BaseURL:      "https://ach.example.com",
-		Namespace:    "ach-system",
 	}
 }
 
@@ -301,8 +300,8 @@ func TestHandlerMCP_EkWithJWT(t *testing.T) {
 	if signer.lastClaims.Aud != "mcp:server-x" {
 		t.Errorf("aud = %s; want mcp:server-x", signer.lastClaims.Aud)
 	}
-	if signer.lastClaims.Sub != "ach-system/u@e" {
-		t.Errorf("sub = %s; want ach-system/u@e", signer.lastClaims.Sub)
+	if signer.lastClaims.Sub != "u@e" {
+		t.Errorf("sub = %s; want u@e", signer.lastClaims.Sub)
 	}
 	if signer.lastClaims.Iss != "https://ach.example.com" {
 		t.Errorf("iss = %s; want https://ach.example.com", signer.lastClaims.Iss)

@@ -18,7 +18,7 @@ operator implements the verifying side.
 | Signing algorithm | EdDSA (Ed25519) | FWD-07 |
 | Header `kid` | Stable id of the signing slot | FWD-08 |
 | `iss` | Forwarder `ACH_BASE_URL` (HTTPS-only) | FWD-10 |
-| `sub` | `<namespace>/<owner-email>` | Hub §9.1 |
+| `sub` | `<owner-email>` | Hub §9.1 |
 | `aud` | `mcp:<bare-name>` on `/mcp/<bare-name>` | Hub §9.1 |
 | `exp - iat` | 120 seconds | FWD-07 |
 | `jti` | Not emitted | Hub §9.1 + §20 |
@@ -40,7 +40,7 @@ operator implements the verifying side.
    install. `aud` is fixed per route (a backend that serves multiple
    `<name>`s accepts a small allowlist).
 4. **Do NOT trust `sub` as identity** unless your security model
-   matches ACH's. `sub` carries `<namespace>/<owner-email>` — useful
+   matches ACH's. `sub` carries the bare `<owner-email>` — useful
    for audit, NOT authorization.
 
 ## Reference implementation

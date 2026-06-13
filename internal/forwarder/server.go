@@ -30,7 +30,6 @@ type Deps struct {
 	Signer          jwt.Signer
 	Logger          *slog.Logger
 	BaseURL         string
-	Namespace       string
 	LiteLLMUpstream *url.URL
 }
 
@@ -62,8 +61,7 @@ func New(deps Deps) http.Handler {
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 		},
-		BaseURL:   deps.BaseURL,
-		Namespace: deps.Namespace,
+		BaseURL: deps.BaseURL,
 	}
 
 	r.Group(func(r chi.Router) {
