@@ -134,3 +134,25 @@ func TestResync_Describe(t *testing.T) {
 // import is here only to assert the scheme builder is functional and the
 // fake client can compile against it.
 var _ = corev1.Pod{}
+
+// TestPush_FullChannelDropsAndDoesNotBlock verifies push uses a default
+// drop-and-log branch so a full (unbuffered, unread) channel never stalls
+// the sweep goroutine. (#5)
+func TestPush_FullChannelDropsAndDoesNotBlock(t *testing.T) {
+	ch := make(chan event.GenericEvent) // unbuffered, no reader => always "full"
+	r := &Resync{Log: logr.Discard()}
+	obj := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ach-system", Name: "demo"},
+	}
+	done := make(chan struct{})
+	go func() {
+		r.push(context.Background(), ch, obj) // must NOT block
+		close(done)
+	}()
+	select {
+	case <-done:
+		// dropped via default branch — correct
+	case <-time.After(2 * time.Second):
+		t.Fatal("push blocked on a full channel; expected drop-and-log default branch")
+	}
+}
