@@ -183,6 +183,19 @@ func DeleteMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, marketplac
 	return nil
 }
 
+// DeleteMarketplacePluginTx is the tx-form of DeleteMarketplacePlugin,
+// used inside WithTxNotify so removals emit ach_marketplace_plugins_changed.
+func DeleteMarketplacePluginTx(ctx context.Context, tx pgx.Tx, marketplaceName, name string) error {
+	const sql = `DELETE FROM marketplace_plugins WHERE marketplace_name = $1 AND name = $2`
+	if _, err := tx.Exec(ctx, sql, marketplaceName, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeleteMarketplacePlugin(%s/%s): %w", marketplaceName, name, err)
+	}
+	return nil
+}
+
 // MaxMarketplaceForceRefresh returns the most recent force_refresh_requested_at
 // across every row under marketplaceName. Returns the Go zero time when no
 // row has a pending marker (NULL force_refresh_requested_at on every row).

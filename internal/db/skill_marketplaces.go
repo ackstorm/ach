@@ -133,3 +133,16 @@ func DeleteSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, ns, name st
 	}
 	return nil
 }
+
+// DeleteSkillMarketplaceTx is the tx-form of DeleteSkillMarketplace, used
+// inside WithTxNotify so removals emit ach_skill_marketplaces_changed.
+func DeleteSkillMarketplaceTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	const sql = `DELETE FROM skill_marketplaces WHERE namespace = $1 AND name = $2`
+	if _, err := tx.Exec(ctx, sql, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeleteSkillMarketplace(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}

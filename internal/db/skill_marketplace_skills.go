@@ -180,6 +180,19 @@ func DeleteSkillMarketplaceSkill(ctx context.Context, pool *pgxpool.Pool, market
 	return nil
 }
 
+// DeleteSkillMarketplaceSkillTx is the tx-form of DeleteSkillMarketplaceSkill,
+// used inside WithTxNotify so removals emit ach_skill_marketplace_skills_changed.
+func DeleteSkillMarketplaceSkillTx(ctx context.Context, tx pgx.Tx, marketplaceName, name string) error {
+	const sql = `DELETE FROM skill_marketplace_skills WHERE marketplace_name = $1 AND name = $2`
+	if _, err := tx.Exec(ctx, sql, marketplaceName, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeleteSkillMarketplaceSkill(%s/%s): %w", marketplaceName, name, err)
+	}
+	return nil
+}
+
 // MaxSkillMarketplaceForceRefresh returns the most recent
 // force_refresh_requested_at across every row under marketplaceName. Returns
 // the Go zero time when no row has a pending marker. Mirrors

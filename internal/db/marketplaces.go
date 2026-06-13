@@ -133,3 +133,16 @@ func DeleteMarketplace(ctx context.Context, pool *pgxpool.Pool, ns, name string)
 	}
 	return nil
 }
+
+// DeleteMarketplaceTx is the tx-form of DeleteMarketplace, used inside
+// WithTxNotify so removals emit ach_marketplaces_changed.
+func DeleteMarketplaceTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	const sql = `DELETE FROM marketplaces WHERE namespace = $1 AND name = $2`
+	if _, err := tx.Exec(ctx, sql, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeleteMarketplace(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
