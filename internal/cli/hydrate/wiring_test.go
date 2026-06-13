@@ -20,6 +20,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/manifest"
+	"github.com/ackstorm/ach/internal/cli/merge"
 	"github.com/ackstorm/ach/internal/cli/state"
 
 	// Blank-import all four adapter subpackages so init() registers
@@ -464,6 +465,18 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
+	// Realistic partial hash: publishFile stores SubtreeHash of ACH's
+	// contributed subtree (mcpServers.foo), NOT the whole-file hash. The
+	// drift gate recomputes the same scoped hash from disk. (#2)
+	oursMap, err := merge.ParseDoc([]byte(`{"mcpServers":{"foo":{"url":"http://foo"}}}`), false)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	subHash, err := merge.SubtreeHash(oursMap)
+	if err != nil {
+		t.Fatalf("SubtreeHash: %v", err)
+	}
+
 	prev := &state.File{
 		SchemaVersion: "3",
 		Environment:   "demo",
@@ -472,7 +485,7 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 			Files: []state.FileEntry{
 				{
 					Target: target,
-					Hash:   hashOf(t, original),
+					Hash:   subHash,
 					Merge:  "deep",
 					Keys:   []string{"mcpServers.foo"},
 				},
@@ -523,8 +536,11 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 			Files: []state.FileEntry{
 				{
 					Target: target,
-					Hash:   hashOf(t, original),
-					Merge:  "composite",
+					// Realistic partial hash: publishFile stores the hash of
+					// ACH's marker-bounded region (incl. the trailing \n the
+					// genericMarkerRE captures), NOT the whole file. (#2)
+					Hash:  hash.HashBytes([]byte("<!-- ach:begin -->XXX<!-- ach:end -->\n")),
+					Merge: "composite",
 					// Empty Keys → genericMarkerRE backward-compat fallback (D-07).
 					Keys: nil,
 				},
@@ -630,6 +646,18 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 		t.Fatalf("seed composite: %v", err)
 	}
 
+	// Realistic partial hashes: publishFile stores the scoped subtree/region
+	// hash for deep/composite entries, NOT the whole-file hash. (#2)
+	deepOurs, err := merge.ParseDoc([]byte(`{"mcpServers":{"foo":{"url":"http://foo"}}}`), false)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	deepSubHash, err := merge.SubtreeHash(deepOurs)
+	if err != nil {
+		t.Fatalf("SubtreeHash: %v", err)
+	}
+	compRegionHash := hash.HashBytes([]byte("<!-- ach:begin -->XXX<!-- ach:end -->\n"))
+
 	prev := &state.File{
 		SchemaVersion: "3",
 		Environment:   "demo",
@@ -639,8 +667,8 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 		Adapter: state.AdapterSection{
 			ID: "claude-code",
 			Files: []state.FileEntry{
-				{Target: deepTarget, Hash: hashOf(t, deepBody), Merge: "deep", Keys: []string{"mcpServers.foo"}},
-				{Target: compTarget, Hash: hashOf(t, compBody), Merge: "composite"},
+				{Target: deepTarget, Hash: deepSubHash, Merge: "deep", Keys: []string{"mcpServers.foo"}},
+				{Target: compTarget, Hash: compRegionHash, Merge: "composite"},
 			},
 		},
 	}
@@ -679,6 +707,87 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	}
 	if _, derr := os.Stat(filepath.Join(achDir, "nested", "deep")); derr != nil {
 		t.Errorf("dry-run pruned a parent dir: %v", derr)
+	}
+}
+
+// TestSync_Deep_RemovesAchKeysDespiteUserContent proves that with a
+// realistic subtree hash, uninstall removes ACH's deep-merged key even
+// when the user added their own sibling key — the scoped-hash gate no
+// longer mistakes the user's addition for drift on ACH's region. (#2)
+func TestSync_Deep_RemovesAchKeysDespiteUserContent(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	target := filepath.Join(achDir, ".mcp.json")
+
+	// ACH contributed mcpServers.foo; the user separately added mcpServers.bar.
+	achContent := []byte(`{"mcpServers":{"foo":{"url":"http://foo"}}}`)
+	oursMap, err := merge.ParseDoc(achContent, false)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	achHash, err := merge.SubtreeHash(oursMap) // == what publishFile stores
+	if err != nil {
+		t.Fatalf("SubtreeHash: %v", err)
+	}
+	onDisk := `{"mcpServers":{"foo":{"url":"http://foo"},"bar":{"url":"http://bar"}}}`
+	if err := os.WriteFile(target, []byte(onDisk), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	prev := &state.File{
+		SchemaVersion: "3", Environment: "demo",
+		Adapter: state.AdapterSection{ID: "claude-code", Files: []state.FileEntry{{
+			Target: target, Hash: achHash, Merge: "deep", Keys: []string{"mcpServers.foo"},
+		}}},
+	}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
+
+	var stderr bytes.Buffer
+	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(target)
+	if strings.Contains(string(body), `"foo"`) {
+		t.Errorf("uninstall left ACH key mcpServers.foo: %s", body)
+	}
+	if !strings.Contains(string(body), `"bar"`) {
+		t.Errorf("uninstall wrongly removed user key mcpServers.bar: %s", body)
+	}
+}
+
+// TestSync_Composite_RemovesAchBlockKeepsUserProse proves the per-plugin
+// composite block (PluginMarkerRE path, Keys=[id]) is removed on uninstall
+// while surrounding user prose survives, using the realistic block hash. (#2)
+func TestSync_Composite_RemovesAchBlockKeepsUserProse(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	target := filepath.Join(achDir, "CLAUDE.md")
+
+	block := merge.CompositeBlock("pluginX", []byte("ACH plugin guidance\n"))
+	blockHash := hash.HashBytes(block) // == what publishFile stores
+	onDisk := "# My notes\n\n" + string(block) + "\nmore user prose\n"
+	if err := os.WriteFile(target, []byte(onDisk), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	prev := &state.File{
+		SchemaVersion: "3", Environment: "demo",
+		Adapter: state.AdapterSection{ID: "claude-code", Files: []state.FileEntry{{
+			Target: target, Hash: blockHash, Merge: "composite", Keys: []string{"pluginX"},
+		}}},
+	}
+	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
+
+	var stderr bytes.Buffer
+	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(target)
+	if strings.Contains(string(body), "ACH plugin guidance") {
+		t.Errorf("uninstall left the ACH composite block: %s", body)
+	}
+	if !strings.Contains(string(body), "My notes") || !strings.Contains(string(body), "more user prose") {
+		t.Errorf("uninstall damaged user prose: %s", body)
 	}
 }
 

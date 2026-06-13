@@ -1423,6 +1423,54 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	return stats, nil
 }
 
+// currentScopedHash recomputes, from the on-disk file, the hash of ONLY
+// ACH's contributed region for this entry, matching the partial hash that
+// publishFile stored in e.Hash at hydrate time. present=false means ACH's
+// region is no longer in the file (already removed) — the caller then
+// skips the drift gate. (#2)
+func currentScopedHash(e state.FileEntry, abs string) (current string, present bool, err error) {
+	switch e.Merge {
+	case mergeStrDeep:
+		isTOML := strings.ToLower(filepath.Ext(abs)) == extTOML
+		diskMap, ok, derr := merge.ReadParseDoc(abs, isTOML)
+		if derr != nil {
+			return "", false, derr
+		}
+		if !ok {
+			return "", false, nil
+		}
+		sub, found := merge.ExtractByKeys(diskMap, e.Keys)
+		if !found {
+			return "", false, nil
+		}
+		h, herr := merge.SubtreeHash(sub)
+		if herr != nil {
+			return "", false, herr
+		}
+		return h, true, nil
+	case mergeStrComposite:
+		body, rerr := os.ReadFile(abs)
+		if rerr != nil {
+			return "", false, rerr
+		}
+		re := genericMarkerRE
+		if len(e.Keys) > 0 {
+			re = merge.PluginMarkerRE(e.Keys[0])
+		}
+		region := re.Find(body)
+		if region == nil {
+			return "", false, nil
+		}
+		return hash.HashBytes(region), true, nil
+	default: // "" / mergeStrReplace — whole-file hash, unchanged behavior.
+		h, herr := hash.HashFile(abs)
+		if herr != nil {
+			return "", false, herr
+		}
+		return h, true, nil
+	}
+}
+
 // syncOne handles a single state entry's removal/inverse-merge.
 // Returns (preserved, err) — preserved=true when drift-wins skipped
 // the work.
@@ -1445,11 +1493,11 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	// Drift-wins gate: compare on-disk xxh3 to prev.Hash. Mismatch +
 	// !Force → preserve.
 	if !opts.Force && e.Hash != "" {
-		current, err := hash.HashFile(abs)
+		current, present, err := currentScopedHash(e, abs)
 		if err != nil {
 			return false, fmt.Errorf("sync hash %s: %w", abs, err)
 		}
-		if current != e.Hash {
+		if present && current != e.Hash {
 			warnPreserved(opts.Stderr, abs,
 				"local edits detected; pass --force to remove")
 			return true, nil
