@@ -230,7 +230,13 @@ func phase6RunAch(t *testing.T, xdgHome string, args ...string) ([]byte, []byte,
 	cmd := exec.CommandContext(ctx, phase6BinaryPath, args...)
 	// E2E_RUN_ENV exports ACH_BASE_URL for in-process HTTP helpers. Strip the
 	// CLI synthetic-mode vars here so ach-cli reads the seeded disk config.
-	cmd.Env = append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome)
+	// ACH_INSECURE=1: the kind+Helm gateway is http://localhost:8080 and the
+	// CLI now refuses plaintext http:// by default (G19, decision B), so the
+	// e2e opt-in is mandatory for the local fixture.
+	cmd.Env = append(cleanEnv(os.Environ()),
+		"XDG_CONFIG_HOME="+xdgHome,
+		"ACH_INSECURE=1",
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

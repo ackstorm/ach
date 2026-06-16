@@ -14,5 +14,7 @@
 // The on-disk config file at `~/.config/ach/config.yaml` is the local
 // trust artifact Hub §15.4 authorizes to hold pk_/ek_ plaintext at
 // mode 0600. The discipline that keeps that posture honest — file
-// mode, atomic rename, HTTPS-only refusal — lives in `config`.
+// mode, atomic rename, and https:// by default (plaintext http:// only
+// under an explicit --insecure / ACH_INSECURE opt-in, G19) — lives in
+// `config`.
 package cli

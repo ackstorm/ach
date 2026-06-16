@@ -9,11 +9,12 @@
 //
 // Behavior (Hub §10.1 conditional GET):
 //
-//  1. New() accepts both http:// and https:// URLs. The original
-//     HTTPS-only invariant (T-02-02-03) was lifted in Phase 02.1 to
-//     admit in-cluster development fixture-servers; production
-//     deployments are expected to use https:// by convention but the
-//     constraint is no longer machine-enforced.
+//  1. New() accepts both http:// and https:// URLs. Plaintext http:// is
+//     a DEV/E2E-ONLY concession (G19 decision D): the original HTTPS-only
+//     invariant (T-02-02-03) was lifted in Phase 02.1 to admit in-cluster
+//     development fixture-servers. Production MUST use https:// by
+//     convention — this is NOT machine-enforced here (unlike the CLI Hub
+//     URL, which is hard-refused by default per G19 decision B).
 //  2. Fetch issues GET against spec.URL. If req.PriorRev is non-empty,
 //     it is parsed as "<etag>|<last-modified>" (fetcher-internal
 //     convention) and the corresponding If-None-Match and

@@ -401,7 +401,10 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	// sets ACH_BASE_URL): they would flip the CLI into synthetic mode and
 	// ignore the seeded XDG disk-config credential (half-set-erroring when no
 	// ACH_API_KEY is present). These tests authenticate via the seeded config.
-	env := append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome)
+	// ACH_INSECURE=1: the kind+Helm gateway is http://localhost:8080 and the
+	// CLI now refuses plaintext http:// by default (G19, decision B), so the
+	// e2e opt-in is mandatory for the local fixture.
+	env := append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome, "ACH_INSECURE=1")
 	env = append(env, extraEnv...)
 	cmd.Env = env
 	var stdout, stderr bytes.Buffer

@@ -37,8 +37,10 @@ var (
 
 	// ErrUpstreamInvalid indicates the upstream is reachable and
 	// authorized but produced a malformed response: the requested object
-	// returned 200 OK with an unparsable body, the configured URL/repo
-	// has an invalid shape, or the HTTPSource URL is not https://.
+	// returned 200 OK with an unparsable body, or the configured URL/repo
+	// has an invalid shape. NOTE: an HTTPSource plaintext http:// URL is
+	// NOT upstream-invalid — it is a dev/e2e-only concession (G19 decision
+	// D); production https:// is convention, not machine-enforced.
 	// Caller surfaces SourceReachable=False, reason=UpstreamInvalid.
 	ErrUpstreamInvalid = errors.New("sources: upstream invalid")
 

@@ -45,7 +45,10 @@ is needed to reach the demo state:
 make cluster-up
 
 # 2. Build the CLI + run the hydrate demo against the already-synced demo Env.
+#    The kind+Helm gateway is plaintext http://localhost:8080, so the CLI needs
+#    the insecure opt-in (it refuses http:// by default — localhost included).
 make build-all
+export ACH_INSECURE=1                                      # or pass --insecure per command
 ./bin/ach-cli login                                        # device-code SSO (browser opens)
 ./bin/ach-cli env hydrate demo > hydrate.json              # POST /platform/hydrate
 ```
