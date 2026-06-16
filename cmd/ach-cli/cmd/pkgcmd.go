@@ -156,7 +156,7 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 	}
 	return store.RepoEntry{}, &exit.CodedError{
 		Code: exit.General,
-		Msg:  fmt.Sprintf("repo %q not registered (run: ach-cli repo add)", name),
+		Msg:  fmt.Sprintf("repo %q not registered (run: ach-cli local repo add)", name),
 	}
 }
 
@@ -323,7 +323,7 @@ Children:
   list       Show installed %ss (from installed.json; not remote catalog)
 
 <name@repo> identifies a %s by name and the registered repo it came from.
-Use 'ach-cli repo add' to register a repo first.
+Use 'ach-cli local repo add' to register a repo first.
 `, kindStr, kindStr, kindStr, kindStr, kindStr, kindStr),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -984,7 +984,7 @@ func newPkgListCmd(kind pkgKind) *cobra.Command {
 
 Lists only locally-installed items recorded in installed.json. To see
 all available %ss in a remote repo catalog, you would need to re-clone
-the repo (not supported in v1 list — run 'ach-cli repo update' to refresh).
+the repo (not supported in v1 list — run 'ach-cli local repo update' to refresh).
 `, kindStr, kindStr),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

@@ -8,8 +8,10 @@
 //   - update     Re-resolve and re-install (or all if no args)
 //   - list       Show installed plugins (from installed.json)
 //
-// Repo registration: use `ach-cli repo add` first.
+// Repo registration: use `ach-cli local repo add` first.
 // Lens preference: plugin-marketplace > plugin.
+//
+// Registered under the `local` parent (G9) — see local.go.
 
 package cmd
 
@@ -17,8 +19,4 @@ import "github.com/spf13/cobra"
 
 func newPluginCmd() *cobra.Command {
 	return newPkgCmd(kindPlugin)
-}
-
-func init() {
-	rootCmd.AddCommand(newPluginCmd())
 }

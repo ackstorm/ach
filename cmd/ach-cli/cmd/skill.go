@@ -8,8 +8,10 @@
 //   - update     Re-resolve and re-install (or all if no args)
 //   - list       Show installed skills (from installed.json)
 //
-// Repo registration: use `ach-cli repo add` first.
+// Repo registration: use `ach-cli local repo add` first.
 // Lens preference: skill-marketplace > skill.
+//
+// Registered under the `local` parent (G9) — see local.go.
 
 package cmd
 
@@ -17,8 +19,4 @@ import "github.com/spf13/cobra"
 
 func newSkillCmd() *cobra.Command {
 	return newPkgCmd(kindSkill)
-}
-
-func init() {
-	rootCmd.AddCommand(newSkillCmd())
 }
