@@ -100,16 +100,77 @@ func TestSave_RefuseInvalidScheme(t *testing.T) {
 	}
 }
 
-// TestSave_AcceptsHTTPAndHTTPS asserts Save accepts both http:// and
-// https:// URLs (http:// is no longer rejected — the command layer warns
-// about plaintext transport instead).
-func TestSave_AcceptsHTTPAndHTTPS(t *testing.T) {
-	for _, url := range []string{"http://localhost:8080", "https://hub.example.com"} {
-		path := filepath.Join(t.TempDir(), "config.yaml")
-		f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: url}}}
-		if err := config.Save(path, f); err != nil {
-			t.Errorf("Save(%q) returned %v, want nil", url, err)
+// TestValidateSecureURL asserts the transport-posture gate (G19): https://
+// always ok; http:// is ErrInsecureURL unless allowInsecure; a non-http(s)
+// scheme is ErrInvalidURLScheme regardless of allowInsecure.
+func TestValidateSecureURL(t *testing.T) {
+	cases := []struct {
+		url      string
+		insecure bool
+		wantErr  error
+	}{
+		{"https://hub.example.com", false, nil},
+		{"http://hub.example.com", false, config.ErrInsecureURL},
+		{"http://localhost:8080", false, config.ErrInsecureURL}, // localhost also refused
+		{"http://localhost:8080", true, nil},                    // opt-in
+		{"https://x", true, nil},
+		{"ftp://x", false, config.ErrInvalidURLScheme},
+		{"ftp://x", true, config.ErrInvalidURLScheme}, // insecure does not excuse a bad scheme
+	}
+	for _, c := range cases {
+		err := config.ValidateSecureURL(c.url, c.insecure)
+		if c.wantErr == nil && err != nil {
+			t.Errorf("%s insecure=%v: unexpected %v", c.url, c.insecure, err)
 		}
+		if c.wantErr != nil && !errors.Is(err, c.wantErr) {
+			t.Errorf("%s insecure=%v: want %v, got %v", c.url, c.insecure, c.wantErr, err)
+		}
+	}
+}
+
+// TestSave_RefusesHTTPByDefault asserts Save refuses a plaintext http://
+// profile when no opt-in is present (G19, decision B — localhost included).
+func TestSave_RefusesHTTPByDefault(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "") // ensure no env opt-in
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: "http://localhost:8080"}}}
+	if err := config.Save(path, f); !errors.Is(err, config.ErrInsecureURL) {
+		t.Fatalf("Save(http) = %v, want ErrInsecureURL", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("file should not exist after refused save, stat err = %v", statErr)
+	}
+}
+
+// TestSave_AcceptsHTTPS asserts an https:// profile saves with no opt-in.
+func TestSave_AcceptsHTTPS(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: "https://hub.example.com"}}}
+	if err := config.Save(path, f); err != nil {
+		t.Errorf("Save(https) returned %v, want nil", err)
+	}
+}
+
+// TestSaveInsecure_AcceptsHTTP asserts the explicit opt-in path writes an
+// http:// profile.
+func TestSaveInsecure_AcceptsHTTP(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: "http://localhost:8080"}}}
+	if err := config.SaveInsecure(path, f, true); err != nil {
+		t.Errorf("SaveInsecure(http, true) returned %v, want nil", err)
+	}
+}
+
+// TestSave_AcceptsHTTP_WithEnvOptIn asserts ACH_INSECURE=1 makes the default
+// Save accept http:// (the global opt-in the error message promises).
+func TestSave_AcceptsHTTP_WithEnvOptIn(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "1")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	f := &config.File{Profiles: map[string]*config.Profile{"x": {URL: "http://localhost:8080"}}}
+	if err := config.Save(path, f); err != nil {
+		t.Errorf("Save(http) with ACH_INSECURE=1 returned %v, want nil", err)
 	}
 }
 
@@ -185,16 +246,53 @@ func TestLoad_RefuseInvalidScheme(t *testing.T) {
 	}
 }
 
-// TestLoad_AcceptsHTTP asserts Load accepts an http:// profile URL with
-// no env var required (the command layer warns about plaintext transport).
-func TestLoad_AcceptsHTTP(t *testing.T) {
+// TestLoad_RefusesHTTPByDefault asserts Load refuses a plaintext http://
+// profile with no opt-in present (G19, decision B — localhost included). The
+// error names the profile and preserves ErrInsecureURL for errors.Is.
+func TestLoad_RefusesHTTPByDefault(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "") // ensure no env opt-in
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("default: dev\nprofiles:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := config.Load(path)
+	if !errors.Is(err, config.ErrInsecureURL) {
+		t.Fatalf("Load(http) returned %v, want ErrInsecureURL", err)
+	}
+	if !strings.Contains(err.Error(), "dev") {
+		t.Errorf("Load error %q does not name the offending profile", err.Error())
+	}
+}
+
+// TestLoadInsecure_AcceptsHTTP asserts the explicit opt-in path loads an
+// http:// profile.
+func TestLoadInsecure_AcceptsHTTP(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("default: dev\nprofiles:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := config.LoadInsecure(path, true)
+	if err != nil {
+		t.Fatalf("LoadInsecure(http, true) returned %v, want nil", err)
+	}
+	if f.Profiles["dev"].URL != "http://localhost:8080" {
+		t.Errorf("URL not preserved; got %q", f.Profiles["dev"].URL)
+	}
+}
+
+// TestLoad_AcceptsHTTP_WithEnvOptIn asserts ACH_INSECURE=1 makes the default
+// Load accept an http:// profile (the global opt-in the error promises, so
+// read-only commands like whoami/logout still work for localhost dev).
+func TestLoad_AcceptsHTTP_WithEnvOptIn(t *testing.T) {
+	t.Setenv("ACH_INSECURE", "1")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("default: dev\nprofiles:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	f, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("Load(http) returned %v, want nil", err)
+		t.Fatalf("Load(http) with ACH_INSECURE=1 returned %v, want nil", err)
 	}
 	if f.Profiles["dev"].URL != "http://localhost:8080" {
 		t.Errorf("URL not preserved; got %q", f.Profiles["dev"].URL)
