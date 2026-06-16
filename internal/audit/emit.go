@@ -92,10 +92,12 @@ type Target struct {
 //   - Appends every k/v pair in e.Extra. Map iteration order is
 //     non-deterministic but slog records are matched by attribute
 //     name, not order, downstream.
-//   - ctx is currently unused but kept in the signature for future
-//     context-derived attributes (trace_id, span_id, request-scope
-//     deadline). Callers SHOULD pass r.Context() so wiring is in
-//     place when those attributes are added.
+//   - Derives the G20 forensics/governance attributes (environment,
+//     source.ip, source.user_agent, route) from the request-scoped
+//     RequestMeta on ctx (set by middleware) whenever the matching Event
+//     field is empty — so every call site gets them without threading the
+//     values by hand. An explicitly-set Event field always wins. Callers
+//     SHOULD pass r.Context() so this wiring is in place.
 //
 // Audit-safety contract (referenced from audit/doc.go +
 // .planning/phases/03-hub-identity-platform-api/03-CONTEXT.md D-19):
@@ -108,7 +110,24 @@ type Target struct {
 // [feedback_litellm_operator_no_redaction_filter] memory pattern
 // applies: discipline over scrubbing.
 func EmitAudit(ctx context.Context, logger *slog.Logger, e Event) {
-	_ = ctx // reserved for future ctx-derived attributes (trace_id, etc.)
+	// G20: fall back to request-scoped RequestMeta on ctx for any field the
+	// caller left empty, so all sites get forensics/governance attrs uniformly.
+	meta := requestMetaFromCtx(ctx)
+	if e.Environment == "" {
+		e.Environment = meta.Environment
+	}
+	if e.SourceIP == "" {
+		e.SourceIP = meta.SourceIP
+	}
+	if e.UserAgent == "" {
+		e.UserAgent = meta.UserAgent
+	}
+	if e.Route == "" {
+		e.Route = meta.Route
+	}
+	if e.Route == "" {
+		e.Route = routePatternFromCtx(ctx)
+	}
 
 	// 4 always-present attributes × 2 slots each = 8 capacity floor;
 	// pre-size for key.id (2) + target.* (4) + the 4 G20 fields (8) +

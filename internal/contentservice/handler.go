@@ -165,12 +165,17 @@ func (d Deps) emitAudit(ctx context.Context, kind, name, outcome string, info *k
 	if d.AuditLog == nil {
 		return
 	}
+	env := ""
+	if info != nil {
+		env = info.Environment
+	}
 	audit.EmitAudit(ctx, d.AuditLog, audit.Event{
-		Action:    audit.ActionContentGet,
-		Outcome:   outcome,
-		Actor:     actorFromInfo(info),
-		RequestID: middleware.RequestIDFromCtx(ctx),
-		KeyID:     keyIDFromInfo(info),
-		Target:    &audit.Target{Kind: kind, Name: name},
+		Action:      audit.ActionContentGet,
+		Outcome:     outcome,
+		Actor:       actorFromInfo(info),
+		RequestID:   middleware.RequestIDFromCtx(ctx),
+		KeyID:       keyIDFromInfo(info),
+		Target:      &audit.Target{Kind: kind, Name: name},
+		Environment: env, // G20: the key-bound Environment (governance dim)
 	})
 }

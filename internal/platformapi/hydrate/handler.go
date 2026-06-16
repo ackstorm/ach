@@ -203,6 +203,11 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		// G20: the resolved target env is the governance dimension for every
+		// subsequent audit emit (authoritative even for pk_ callers, whose key
+		// is not env-bound). Push it onto ctx so the fallback attaches it.
+		ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: envName})
+
 		env, err := deps.Store.GetEnvironment(ctx, envName)
 		if err != nil {
 			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
