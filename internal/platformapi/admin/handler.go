@@ -544,12 +544,14 @@ func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// isRefreshableKind gates the four kinds Platform API may force-refresh.
+// isRefreshableKind gates the kinds Platform API may force-refresh.
 // Unknown kind resolves to a 400 at the bad-request gate before any DB
 // round trip — same closed set as the pre-issue-34 newACHObject helper.
+// skill / skillmarketplace joined the set in G8 (db.SetForceRefresh routes
+// them to external_refs / skill_marketplace_skills respectively).
 func isRefreshableKind(kind string) bool {
 	switch kind {
-	case "plugin", "prompt", "artifact", "pluginmarketplace":
+	case "plugin", "prompt", "artifact", "pluginmarketplace", "skill", "skillmarketplace":
 		return true
 	}
 	return false
