@@ -14,6 +14,8 @@ func setRequiredPlatformAPIEnv(t *testing.T) {
 	t.Setenv("ACH_BASE_URL", "http://localhost:8080")
 	t.Setenv("ACH_DB_URL", "postgres://ach:ach@localhost:5432/ach?sslmode=disable")
 	t.Setenv("ACH_CREDENTIAL_HASH_PEPPER", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	// ACH_KEY_ENCRYPTION_KEY: base64std of 32 zero bytes (G3 DEK, AES-256).
+	t.Setenv("ACH_KEY_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	t.Setenv("ACH_LITELLM_BASE_URL", "http://litellm:4000")
 	t.Setenv("ACH_LITELLM_MASTER_KEY", "sk-test")
 	t.Setenv("ACH_DEX_ISSUER_URL", "http://dex:5556/dex")

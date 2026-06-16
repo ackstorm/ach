@@ -18,6 +18,7 @@ import (
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
@@ -82,14 +83,19 @@ type redisOps interface {
 //   - Namespace: deployment namespace; composed into Actor strings as
 //     "<namespace>/<email>" via middleware.ActorFromCtx.
 type Deps struct {
-	LiteLLM   litellm.Client
-	DB        dbOps
-	Store     envStore
-	Redis     redisOps
-	Pepper    []byte
-	Audit     *slog.Logger
-	Logger    *slog.Logger
-	Namespace string
+	LiteLLM litellm.Client
+	DB      dbOps
+	Store   envStore
+	Redis   redisOps
+	Pepper  []byte
+	// KeyEncryptionKey is the 32-byte AES-256 DEK sourced from
+	// ACH_KEY_ENCRYPTION_KEY (G3) — used to keycrypt.Seal the LiteLLM
+	// virtual-key material before INSERT so it is never persisted in
+	// cleartext. Required (validated at process start by dekenv.Load).
+	KeyEncryptionKey []byte
+	Audit            *slog.Logger
+	Logger           *slog.Logger
+	Namespace        string
 }
 
 // CreateRequest is the POST /platform/env-keys request body shape (D-16
@@ -442,7 +448,21 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	}
 	llToken := keyResp.Token
 	llUserID := userID
-	llMaterial := keyResp.Key // TESTING-PHASE (reverts FIX01 §A.6)
+	// G3: seal the LiteLLM virtual-key material (sk-…) at rest. On seal
+	// failure (misconfigured DEK / RNG) minting cannot proceed safely:
+	// compensate by revoking the LiteLLM-side key we just minted, then 500.
+	// Never log keyResp.Key, the sealed blob, or the DEK.
+	llMaterial, err := keycrypt.Seal(deps.KeyEncryptionKey, []byte(keyResp.Key))
+	if err != nil {
+		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, llToken); cleanupErr != nil {
+			deps.Logger.Error("envkeys.create: compensation RevokeKey failed after seal error",
+				"key_id", keyID, "err", cleanupErr)
+		}
+		cancel()
+		cr.emitInternalError("envkeys.create: seal key material failed", err)
+		return
+	}
 
 	// Step 8: INSERT row with WARN-03 retry policy.
 	//
@@ -459,7 +479,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		Name:           cr.req.Name,
 		LiteLLMUserID:  &llUserID,
 		LiteLLMToken:   &llToken,
-		// TESTING-PHASE (reverts FIX01 §A.6)
+		// G3: LiteLLM virtual-key material, encrypted at rest (keycrypt blob).
 		LiteLLMKeyMaterial: &llMaterial,
 	}
 	insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)

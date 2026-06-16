@@ -38,6 +38,7 @@ import (
 	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
@@ -56,8 +57,9 @@ var platformAPICmd = &cobra.Command{
 	Long: `Boot the chi-backed REST API exposing the ACH platform surface (Login,
 EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
 without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
-pepper, the four Dex OAuth2 vars, ACH_LITELLM_BASE_URL +
-ACH_LITELLM_MASTER_KEY, ACH_REDIS_ADDR, and POD_NAMESPACE.`,
+pepper, ACH_KEY_ENCRYPTION_KEY (the AES-256 DEK for at-rest key material),
+the four Dex OAuth2 vars, ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY,
+ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 	RunE: runPlatformAPI,
 }
 
@@ -67,6 +69,7 @@ type platformAPIConfig struct {
 	BaseURL          string
 	DBURL            string
 	Pepper           []byte
+	KeyEncryptionKey []byte
 	LiteLLMBaseURL   string
 	LiteLLMMasterKey string
 	DexIssuerURL     string
@@ -102,6 +105,11 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	cfg.Pepper = pepper
+	dek, err := dekenv.Load()
+	if err != nil {
+		return nil, err
+	}
+	cfg.KeyEncryptionKey = dek
 	if cfg.LiteLLMBaseURL, err = config.MustEnvNonEmpty("ACH_LITELLM_BASE_URL"); err != nil {
 		return nil, err
 	}
@@ -258,20 +266,21 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	}
 
 	out.server = platformapi.Deps{
-		Pool:            pool,
-		Redis:           out.redis,
-		LiteLLM:         liteLLM,
-		Pepper:          cfg.Pepper,
-		Allowlist:       allowlist,
-		IDTokenVerifier: idTokenVerifier,
-		OAuth2Cfg:       oauth2Cfg,
-		Store:           platformStore,
-		Resolver:        cachedResolver,
-		Audit:           auditLog,
-		Logger:          logger,
-		BaseURL:         cfg.BaseURL,
-		Namespace:       cfg.Namespace,
-		InsecureCookie:  cfg.InsecureCookie,
+		Pool:             pool,
+		Redis:            out.redis,
+		LiteLLM:          liteLLM,
+		Pepper:           cfg.Pepper,
+		KeyEncryptionKey: cfg.KeyEncryptionKey,
+		Allowlist:        allowlist,
+		IDTokenVerifier:  idTokenVerifier,
+		OAuth2Cfg:        oauth2Cfg,
+		Store:            platformStore,
+		Resolver:         cachedResolver,
+		Audit:            auditLog,
+		Logger:           logger,
+		BaseURL:          cfg.BaseURL,
+		Namespace:        cfg.Namespace,
+		InsecureCookie:   cfg.InsecureCookie,
 	}
 	return out, nil
 }

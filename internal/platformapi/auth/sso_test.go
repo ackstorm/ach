@@ -31,8 +31,21 @@ import (
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/litellm"
 )
+
+// testDEK is a deterministic 32-byte data-encryption key for the callback
+// seal path (G3). The callback now encrypts the LiteLLM virtual-key material
+// at rest, so every Deps that drives a successful KeyGenerate+insert must
+// carry a valid DEK.
+func testDEK() []byte {
+	k := make([]byte, keycrypt.KeySize)
+	for i := range k {
+		k[i] = byte(i + 1)
+	}
+	return k
+}
 
 // minimalDeps builds a Deps struct sufficient for LoginHandler tests:
 // only OAuth2Cfg is consulted by the login redirect path. The remaining
@@ -805,15 +818,16 @@ func runCallback(t *testing.T, tc *callbackTestCase) *httptest.ResponseRecorder 
 	// Build the Deps.
 	auditBuf := &bytes.Buffer{}
 	deps := Deps{
-		IDTokenVerifier: tc.oidcFix.provider.Verifier(&oidc.Config{ClientID: tc.oidcFix.clientID}),
-		OAuth2Cfg:       tc.oidcFix.cfg,
-		LiteLLM:         tc.litellm,
-		Pepper:          tc.pepper,
-		Audit:           slog.New(slog.NewJSONHandler(auditBuf, nil)),
-		Logger:          slog.New(slog.NewTextHandler(io_Discard{}, nil)),
-		Namespace:       "ach-system",
-		InsertPKFn:      tc.dbInsert.insertFn,
-		NowFn:           func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		IDTokenVerifier:  tc.oidcFix.provider.Verifier(&oidc.Config{ClientID: tc.oidcFix.clientID}),
+		OAuth2Cfg:        tc.oidcFix.cfg,
+		LiteLLM:          tc.litellm,
+		Pepper:           tc.pepper,
+		KeyEncryptionKey: testDEK(),
+		Audit:            slog.New(slog.NewJSONHandler(auditBuf, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io_Discard{}, nil)),
+		Namespace:        "ach-system",
+		InsertPKFn:       tc.dbInsert.insertFn,
+		NowFn:            func() time.Time { return time.Unix(1700000000, 0).UTC() },
 	}
 	if tc.verifyErr != nil {
 		deps.IDTokenVerifier = &errOnlyVerifier{err: tc.verifyErr}
@@ -883,10 +897,17 @@ func assertFirstTimePKInsert(t *testing.T, dbRec *dbInsertRecord, plaintext stri
 	if !dbRec.lastRow.ExpiresAt.Equal(wantExpires) {
 		t.Errorf("DB ExpiresAt: got %v, want %v", dbRec.lastRow.ExpiresAt, wantExpires)
 	}
-	// TESTING-PHASE (reverts FIX01 §A.6): the inserted row must carry the
-	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
-	if dbRec.lastRow.LiteLLMKeyMaterial == nil || *dbRec.lastRow.LiteLLMKeyMaterial != "sk-test-pk-material" {
-		t.Fatalf("DB LiteLLMKeyMaterial = %v; want sk-test-pk-material", dbRec.lastRow.LiteLLMKeyMaterial)
+	// G3: the inserted row must carry the LiteLLM virtual-key material
+	// ENCRYPTED at rest (keycrypt blob), never the sk-… plaintext.
+	if dbRec.lastRow.LiteLLMKeyMaterial == nil {
+		t.Fatal("DB LiteLLMKeyMaterial is nil; want sealed key material")
+	}
+	if *dbRec.lastRow.LiteLLMKeyMaterial == "sk-test-pk-material" {
+		t.Fatal("DB LiteLLMKeyMaterial stored in PLAINTEXT — must be encrypted (G3)")
+	}
+	pt, err := keycrypt.Open(testDEK(), *dbRec.lastRow.LiteLLMKeyMaterial)
+	if err != nil || string(pt) != "sk-test-pk-material" {
+		t.Fatalf("sealed material did not open to sk-test-pk-material: %v / %q", err, pt)
 	}
 }
 
@@ -1883,16 +1904,17 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 	// Build a callback driver mirroring runCallback but injecting Redis.
 	auditBuf := &bytes.Buffer{}
 	deps := Deps{
-		IDTokenVerifier: fix.provider.Verifier(&oidc.Config{ClientID: fix.clientID}),
-		OAuth2Cfg:       fix.cfg,
-		LiteLLM:         flm,
-		Pepper:          []byte("pepper-d20-32-bytes-aaaaaa"),
-		Audit:           slog.New(slog.NewJSONHandler(auditBuf, nil)),
-		Logger:          slog.New(slog.NewTextHandler(io_Discard{}, nil)),
-		Namespace:       "ach-system",
-		InsertPKFn:      dbRec.insertFn,
-		NowFn:           func() time.Time { return time.Unix(1700000000, 0).UTC() },
-		Redis:           rc,
+		IDTokenVerifier:  fix.provider.Verifier(&oidc.Config{ClientID: fix.clientID}),
+		OAuth2Cfg:        fix.cfg,
+		LiteLLM:          flm,
+		Pepper:           []byte("pepper-d20-32-bytes-aaaaaa"),
+		KeyEncryptionKey: testDEK(),
+		Audit:            slog.New(slog.NewJSONHandler(auditBuf, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io_Discard{}, nil)),
+		Namespace:        "ach-system",
+		InsertPKFn:       dbRec.insertFn,
+		NowFn:            func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		Redis:            rc,
 	}
 
 	// Drive the cookie + URL state with the packed session_id suffix.

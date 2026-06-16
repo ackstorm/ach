@@ -22,6 +22,7 @@ import (
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
 	cli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
@@ -70,6 +71,12 @@ type Deps struct {
 	// ACH_CREDENTIAL_HASH_PEPPER (Phase 1 D-09) — used to derive
 	// credential_hash before INSERT.
 	Pepper []byte
+
+	// KeyEncryptionKey is the 32-byte AES-256 DEK sourced from
+	// ACH_KEY_ENCRYPTION_KEY (G3) — used to keycrypt.Seal the LiteLLM
+	// virtual-key material before INSERT so it is never persisted in
+	// cleartext. Required (validated at process start by dekenv.Load).
+	KeyEncryptionKey []byte
 
 	// Audit is the *slog.Logger returned by audit.NewLogger (Phase 2 D-17)
 	// — the audit=true predicate is already attached.
@@ -432,9 +439,24 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		return
 	}
 
-	// Step 7: INSERT row. On failure compensate by revoking the
-	// LiteLLM-side key (best-effort — RevokeKey error is logged but
-	// does NOT alter the 500 response).
+	// Step 7: seal the LiteLLM virtual-key material (sk-…) at rest (G3),
+	// then INSERT row. On failure compensate by revoking the LiteLLM-side
+	// key (best-effort — RevokeKey error is logged but does NOT alter the
+	// 500 response). Never log keyResp.Key, the sealed blob, or the DEK.
+	sealedMaterial, err := keycrypt.Seal(deps.KeyEncryptionKey, []byte(keyResp.Key))
+	if err != nil {
+		// Sealing failed (misconfigured DEK / RNG): minting cannot proceed
+		// safely. Compensate by revoking the LiteLLM-side key we just minted.
+		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
+			deps.Logger.Error("sso.callback: compensation revoke failed after seal error",
+				"err", cleanupErr, "key_id", keyID)
+		}
+		cancel()
+		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
+			"failed to seal personal key material", reqID, keyID)
+		return
+	}
 	expiresAt := deps.callbackNow().Add(pkExpiryWindow)
 	row := db.PkInsertRow{
 		KeyID:          keyID,
@@ -443,10 +465,10 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		ExpiresAt:      expiresAt,
 		LiteLLMUserID:  &userID,
 		LiteLLMToken:   &keyResp.Token,
-		// TESTING-PHASE (reverts FIX01 §A.6): persist the sk-… plaintext
-		// (keyResp.Key, previously discarded) so the forwarder can
-		// authenticate to LiteLLM as this user's own key.
-		LiteLLMKeyMaterial: &keyResp.Key,
+		// G3: LiteLLM virtual-key material, encrypted at rest (keycrypt blob).
+		// The forwarder decrypts on use to authenticate to LiteLLM as this
+		// user's own key.
+		LiteLLMKeyMaterial: &sealedMaterial,
 	}
 	if err := deps.callbackInsertPK(ctx, row); err != nil {
 		// Compensation: revoke the LiteLLM-side key we just minted.

@@ -42,6 +42,11 @@ type Deps struct {
 	// Pepper is the server-side HMAC pepper (Phase 1 D-09).
 	Pepper []byte
 
+	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
+	// G3) used to keycrypt.Seal LiteLLM virtual-key material at rest on the
+	// SSO + env-key mint paths. Required (validated at process start).
+	KeyEncryptionKey []byte
+
 	// Allowlist is the admin allowlist (loaded by admin.LoadAllowlist at
 	// process start per D-22). Threaded into middleware.Authn so
 	// KeyContext.IsAdmin is populated uniformly per BLK-02.
@@ -104,16 +109,17 @@ func New(deps Deps) http.Handler {
 
 	// SSO endpoints (unauthenticated; D-02 carve-out).
 	authDeps := auth.Deps{
-		IDTokenVerifier: deps.IDTokenVerifier,
-		OAuth2Cfg:       deps.OAuth2Cfg,
-		LiteLLM:         deps.LiteLLM,
-		Pool:            deps.Pool,
-		Redis:           deps.Redis, // Phase 6 D-20: callback writeback target.
-		Pepper:          deps.Pepper,
-		Audit:           deps.Audit,
-		Logger:          deps.Logger,
-		Namespace:       deps.Namespace,
-		InsecureCookie:  deps.InsecureCookie,
+		IDTokenVerifier:  deps.IDTokenVerifier,
+		OAuth2Cfg:        deps.OAuth2Cfg,
+		LiteLLM:          deps.LiteLLM,
+		Pool:             deps.Pool,
+		Redis:            deps.Redis, // Phase 6 D-20: callback writeback target.
+		Pepper:           deps.Pepper,
+		KeyEncryptionKey: deps.KeyEncryptionKey,
+		Audit:            deps.Audit,
+		Logger:           deps.Logger,
+		Namespace:        deps.Namespace,
+		InsecureCookie:   deps.InsecureCookie,
 	}
 	r.Get("/platform/auth/login", auth.LoginHandler(authDeps))
 	r.Get("/platform/auth/sso/callback", auth.CallbackHandler(authDeps))
@@ -148,14 +154,15 @@ func New(deps Deps) http.Handler {
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))
 
 		envkeysDeps := envkeys.Deps{
-			LiteLLM:   deps.LiteLLM,
-			DB:        newEnvkeysDB(deps.Pool),
-			Store:     deps.Store,
-			Redis:     newRedisDelAdapter(deps.Redis),
-			Pepper:    deps.Pepper,
-			Audit:     deps.Audit,
-			Logger:    deps.Logger,
-			Namespace: deps.Namespace,
+			LiteLLM:          deps.LiteLLM,
+			DB:               newEnvkeysDB(deps.Pool),
+			Store:            deps.Store,
+			Redis:            newRedisDelAdapter(deps.Redis),
+			Pepper:           deps.Pepper,
+			KeyEncryptionKey: deps.KeyEncryptionKey,
+			Audit:            deps.Audit,
+			Logger:           deps.Logger,
+			Namespace:        deps.Namespace,
 		}
 		r.Route("/platform/env-keys", envkeys.Mount(envkeysDeps))
 

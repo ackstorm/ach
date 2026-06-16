@@ -14,11 +14,23 @@ import (
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
+
+// keyEncTestDEK is a deterministic 32-byte data-encryption key for the
+// CreateHandler seal path (G3). Every Deps that drives a successful
+// KeyGenerate+insert must carry a valid DEK or the seal fails with 500.
+func keyEncTestDEK() []byte {
+	k := make([]byte, keycrypt.KeySize)
+	for i := range k {
+		k[i] = byte(i + 1)
+	}
+	return k
+}
 
 // TestIsEnterpriseTagsRejection covers the detector that drives the
 // drop-tags-and-retry degradation: only a 403 *litellm.APIError whose body
@@ -202,13 +214,14 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 		AuthorizedTeams: []string{"default"},
 	}}
 	deps := Deps{
-		LiteLLM:   flm,
-		DB:        &fakeEkDB{},
-		Store:     store,
-		Pepper:    []byte("test-pepper"),
-		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Namespace: "ach",
+		LiteLLM:          flm,
+		DB:               &fakeEkDB{},
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -240,14 +253,21 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 	if !strings.HasPrefix(got.KeyAlias, keys.EkidKeyIDPrefix) {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want %s prefix", got.KeyAlias, keys.EkidKeyIDPrefix)
 	}
-	// TESTING-PHASE (reverts FIX01 §A.6): the inserted ek_ row must carry the
-	// LiteLLM virtual-key plaintext (keyResp.Key) the fake returned.
+	// G3: the inserted ek_ row must carry the LiteLLM virtual-key material
+	// ENCRYPTED at rest (keycrypt blob), never the sk-… plaintext.
 	inserted := deps.DB.(*fakeEkDB).inserted
 	if inserted == nil {
 		t.Fatalf("InsertEnvironmentKey was never called")
 	}
-	if inserted.LiteLLMKeyMaterial == nil || *inserted.LiteLLMKeyMaterial != "sk-ek-xyz" {
-		t.Fatalf("EkInsertRow.LiteLLMKeyMaterial = %v; want sk-ek-xyz", inserted.LiteLLMKeyMaterial)
+	if inserted.LiteLLMKeyMaterial == nil {
+		t.Fatal("EkInsertRow.LiteLLMKeyMaterial is nil; want sealed key material")
+	}
+	if *inserted.LiteLLMKeyMaterial == "sk-ek-xyz" {
+		t.Fatal("EkInsertRow.LiteLLMKeyMaterial stored in PLAINTEXT — must be encrypted (G3)")
+	}
+	pt, err := keycrypt.Open(keyEncTestDEK(), *inserted.LiteLLMKeyMaterial)
+	if err != nil || string(pt) != "sk-ek-xyz" {
+		t.Fatalf("sealed material did not open to sk-ek-xyz: %v / %q", err, pt)
 	}
 }
 
@@ -307,13 +327,14 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 		AuthorizedTeams: []string{"default"},
 	}}
 	deps := Deps{
-		LiteLLM:   flm,
-		DB:        &fakeEkDB{},
-		Store:     store,
-		Pepper:    []byte("test-pepper"),
-		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Namespace: "ach",
+		LiteLLM:          flm,
+		DB:               &fakeEkDB{},
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -366,13 +387,14 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 		AuthorizedTeams: []string{"default"},
 	}}
 	deps := Deps{
-		LiteLLM:   flm,
-		DB:        &fakeEkDB{},
-		Store:     store,
-		Pepper:    []byte("test-pepper"),
-		Audit:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Namespace: "ach",
+		LiteLLM:          flm,
+		DB:               &fakeEkDB{},
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
