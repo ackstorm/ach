@@ -188,8 +188,7 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 }
 
 // TestLogin_RejectInvalidScheme refuses a URL that is neither http:// nor
-// https:// (here ftp://) with exit 1. http:// is now accepted (with a
-// plaintext-transport warning) — see resolveBaseURL + runLogin.
+// https:// (here ftp://) with exit 1 — see resolveBaseURL + runLogin.
 func TestLogin_RejectInvalidScheme(t *testing.T) {
 	loginTestEnv(t)
 
@@ -206,6 +205,53 @@ func TestLogin_RejectInvalidScheme(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "http:// or https://") {
 		t.Errorf("err message missing scheme hint; got %q", err.Error())
+	}
+}
+
+// TestLogin_RefusesHTTP_ByDefault asserts G19 decision B: a plaintext http://
+// Hub URL (localhost included) is refused with exit 1 and the error cites the
+// ACH_INSECURE opt-in. No device-code call is made.
+func TestLogin_RefusesHTTP_ByDefault(t *testing.T) {
+	loginTestEnv(t)
+	_, _, code, err := executeLogin(t,
+		"--profile", "dev",
+		"--base-url", "http://localhost:8080",
+		"--no-browser",
+	)
+	if code != exit.General {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("error should cite the ACH_INSECURE opt-in, got %v", err)
+	}
+}
+
+// TestLogin_AllowsHTTP_WithInsecureFlag asserts --insecure passes the URL gate
+// (login then fails later on the unreachable endpoint — NOT on the gate).
+func TestLogin_AllowsHTTP_WithInsecureFlag(t *testing.T) {
+	loginTestEnv(t)
+	_, _, _, err := executeLogin(t,
+		"--profile", "dev",
+		"--base-url", "http://127.0.0.1:1",
+		"--no-browser",
+		"--insecure",
+	)
+	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("--insecure should pass the URL gate, got refusal: %v", err)
+	}
+}
+
+// TestLogin_AllowsHTTP_WithInsecureEnv asserts ACH_INSECURE=1 passes the gate.
+func TestLogin_AllowsHTTP_WithInsecureEnv(t *testing.T) {
+	loginTestEnv(t)
+	t.Setenv("ACH_INSECURE", "1")
+	_, _, _, err := executeLogin(t,
+		"--profile", "dev",
+		"--base-url", "http://127.0.0.1:1",
+		"--no-browser",
+	)
+	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("ACH_INSECURE=1 should pass the URL gate, got refusal: %v", err)
 	}
 }
 

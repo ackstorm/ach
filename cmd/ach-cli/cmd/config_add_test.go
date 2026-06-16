@@ -150,15 +150,40 @@ func TestConfigAdd_InvalidInputs_Exit1(t *testing.T) {
 	}
 }
 
-func TestConfigAdd_HTTPWarns(t *testing.T) {
+// TestConfigAdd_RefusesHTTP_ByDefault asserts G19 decision B: `config add`
+// with a plaintext http:// URL (localhost included) is refused with exit 1
+// and the error cites the ACH_INSECURE opt-in.
+func TestConfigAdd_RefusesHTTP_ByDefault(t *testing.T) {
 	configTestEnv(t)
-	_, stderr, code, err := executeConfig(t, "add",
+	_, _, code, err := executeConfig(t, "add",
+		"--profile", "dev", "--url", "http://localhost:8080", "--api-key", validEK)
+	if code != exit.General {
+		t.Fatalf("add(http): code=%d, want 1", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("error should cite the ACH_INSECURE opt-in; got %v", err)
+	}
+}
+
+// TestConfigAdd_AllowsHTTP_WithInsecureFlag asserts --insecure writes the
+// http:// profile (exit 0).
+func TestConfigAdd_AllowsHTTP_WithInsecureFlag(t *testing.T) {
+	configTestEnv(t)
+	_, _, code, err := executeConfig(t, "add",
+		"--profile", "dev", "--url", "http://localhost:8080", "--api-key", validEK, "--insecure")
+	if err != nil || code != exit.OK {
+		t.Fatalf("add(http,--insecure): code=%d err=%v", code, err)
+	}
+}
+
+// TestConfigAdd_AllowsHTTP_WithInsecureEnv asserts ACH_INSECURE=1 writes it.
+func TestConfigAdd_AllowsHTTP_WithInsecureEnv(t *testing.T) {
+	configTestEnv(t)
+	t.Setenv("ACH_INSECURE", "1")
+	_, _, code, err := executeConfig(t, "add",
 		"--profile", "dev", "--url", "http://localhost:8080", "--api-key", validEK)
 	if err != nil || code != exit.OK {
-		t.Fatalf("add: code=%d err=%v", code, err)
-	}
-	if !strings.Contains(stderr, "plaintext http://") {
-		t.Errorf("missing http:// warning; stderr: %q", stderr)
+		t.Fatalf("add(http,env): code=%d err=%v", code, err)
 	}
 }
 

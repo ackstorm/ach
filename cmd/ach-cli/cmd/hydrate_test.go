@@ -211,6 +211,56 @@ func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
 	}
 }
 
+// seedHTTPProfile writes a config.yaml with an http:// profile DIRECTLY (a
+// config.Save would itself refuse it now), so the command under test sees an
+// on-disk http:// profile to gate.
+func seedHTTPProfile(t *testing.T, dir, url string) {
+	t.Helper()
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	yaml := "default: prod\nprofiles:\n  prod:\n    url: " + url +
+		"\n    pk: pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("seed http profile: %v", err)
+	}
+}
+
+// TestHydrate_RefusesHTTP_ByDefault_NoHTTP asserts G19 decision B: a plaintext
+// http:// profile URL is refused before any HTTP call, citing ACH_INSECURE.
+func TestHydrate_RefusesHTTP_ByDefault_NoHTTP(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedHTTPProfile(t, dir, "http://localhost:8080")
+	swapHydrateHTTPClientForTest(t, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "demo")
+	if code == exit.OK {
+		t.Fatalf("hydrate(http) succeeded; want refusal")
+	}
+	if err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("error should cite the ACH_INSECURE opt-in; got %v", err)
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 0 {
+		t.Errorf("HTTP calls = %d; want 0 (refused before any call)", got)
+	}
+}
+
+// TestHydrate_AllowsHTTP_WithInsecureFlag asserts --insecure passes the URL
+// gate (hydrate then fails later on transport — NOT on the insecure refusal).
+func TestHydrate_AllowsHTTP_WithInsecureFlag(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedHTTPProfile(t, dir, "http://127.0.0.1:1")
+	swapHydrateHTTPClientForTest(t, mock.server.Client())
+
+	_, _, _, err := executeHydrate(t, "demo", "--insecure")
+	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("--insecure should pass the URL gate, got refusal: %v", err)
+	}
+}
+
 // Test 5: ek_ via --env-key WITHOUT --environment → POSTs without
 // environment in body, returns 200, exit 0. No pk_ warning emitted.
 func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {

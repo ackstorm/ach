@@ -64,6 +64,7 @@ func newLoginCmd() *cobra.Command {
 		flagBaseURL    string
 		flagNoBrowser  bool
 		flagNoWarnings bool
+		flagInsecure   bool
 	)
 
 	cmd := &cobra.Command{
@@ -97,7 +98,7 @@ Flags:
   --no-warnings         Suppress config-file file-mode warnings to stderr
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings)
+			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings, flagInsecure)
 		},
 	}
 
@@ -105,13 +106,15 @@ Flags:
 	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
 	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
+	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
+		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
 
 	return cmd
 }
 
 // runLogin is the RunE body, extracted so newLoginCmd's closure stays
 // short.
-func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings bool) error {
+func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings, insecure bool) error {
 	ctx := cmd.Context()
 
 	// Step 1 — synthetic-mode gate via the centralized 06-07 helper.
@@ -173,10 +176,11 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	if err != nil {
 		return err
 	}
-	if !noWarnings && strings.HasPrefix(url, "http://") {
-		_, _ = fmt.Fprintf(stderr,
-			"warning: profile %q uses plaintext http:// — credentials are sent "+
-				"unencrypted (safe only on trusted/internal networks)\n", url)
+	// G19: refuse a plaintext http:// Hub URL unless the user opted into
+	// insecure transport (--insecure flag OR ACH_INSECURE env). localhost is
+	// NOT exempt (decision B). https:// always proceeds.
+	if err := config.ValidateSecureURL(url, insecure || config.InsecureFromEnv()); err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 
 	// Step 5 — device-code init.

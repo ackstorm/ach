@@ -105,6 +105,7 @@ func newHydrateCmd() *cobra.Command {
 		// Phase 6 surface — preserved.
 		flagNoWarnings bool
 		flagVerbose    bool
+		flagInsecure   bool
 		flagAPIKey     string
 		flagEnvKey     string
 		flagProfile    string
@@ -229,6 +230,7 @@ Exit codes (spec §9.3):
 				environment:    env,
 				noWarnings:     flagNoWarnings,
 				verbose:        flagVerbose,
+				insecure:       flagInsecure,
 				flagAPIKey:     flagAPIKey,
 				flagEnvKey:     flagEnvKey,
 				flagProfile:    flagProfile,
@@ -254,6 +256,8 @@ Exit codes (spec §9.3):
 		"Suppress the §6.6 pk- stderr warning")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false,
 		"Dump redacted request headers to stderr")
+	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
+		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "",
 		"Override credential (pk-… or ek-… raw plaintext)")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "",
@@ -318,6 +322,7 @@ type hydrateInputs struct {
 	environment string
 	noWarnings  bool
 	verbose     bool
+	insecure    bool
 	flagAPIKey  string
 	flagEnvKey  string
 	flagProfile string
@@ -427,14 +432,12 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		}
 	}
 
-	stderr := cmd.ErrOrStderr()
-	// Plaintext-transport warning: http:// profile URLs are accepted
-	// (config.validateProfiles no longer rejects them), but credentials
-	// ride unencrypted. Emit a one-line stderr warning unless suppressed.
-	if !in.noWarnings && strings.HasPrefix(baseURL, "http://") {
-		_, _ = fmt.Fprintf(stderr,
-			"warning: profile %q uses plaintext http:// — credentials are sent "+
-				"unencrypted (safe only on trusted/internal networks)\n", baseURL)
+	// G19: refuse a plaintext http:// Hub URL (from profile, --base-url, or
+	// ACH_BASE_URL) unless the user opted into insecure transport (--insecure
+	// flag OR ACH_INSECURE env). localhost is NOT exempt (decision B). This
+	// runs BEFORE any engine call so no credential leaves over plaintext.
+	if err := config.ValidateSecureURL(baseURL, in.insecure || config.InsecureFromEnv()); err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 
 	// D-04 dispatch. --raw short-circuits BEFORE any engine call so
@@ -446,7 +449,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		// stderr. The engine path folds the same guidance into the summary's
 		// Tips footer (summaryFromResult), so it is emitted there, not here.
 		if runErr == nil && prefix == keys.PrefixPk && !in.noWarnings {
-			_, _ = fmt.Fprint(stderr, pkWarning)
+			_, _ = fmt.Fprint(cmd.ErrOrStderr(), pkWarning)
 		}
 	} else {
 		runErr = runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
@@ -1017,7 +1020,9 @@ func resolveBearer(in hydrateInputs) (string, string, error) {
 	if err != nil {
 		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	file, err := config.Load(configPath)
+	// G19: honor the --insecure flag (OR ACH_INSECURE env) when reading the
+	// profile, so a localhost http:// profile loads under an explicit opt-in.
+	file, err := config.LoadInsecure(configPath, in.insecure || config.InsecureFromEnv())
 	if err != nil {
 		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}

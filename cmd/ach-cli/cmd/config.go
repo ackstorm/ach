@@ -302,12 +302,13 @@ func newConfigRenameCmd() *cobra.Command {
 // Profile.EK label map (see `--env-key`, added separately).
 func newConfigAddCmd() *cobra.Command {
 	var (
-		flagProfile string
-		flagURL     string
-		flagAPIKey  string
-		flagEnvKeys []string
-		flagDefault bool
-		flagForce   bool
+		flagProfile  string
+		flagURL      string
+		flagAPIKey   string
+		flagEnvKeys  []string
+		flagDefault  bool
+		flagForce    bool
+		flagInsecure bool
 	)
 	c := &cobra.Command{
 		Use:   "add --profile <name> --url <url> --api-key <pk-|ek->",
@@ -325,7 +326,7 @@ ach hydrate when no --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY is set).
 Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce)
+			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce, flagInsecure)
 		},
 	}
 	c.Flags().StringVar(&flagProfile, "profile", "", "Profile name to create (DNS-1123 label)")
@@ -333,6 +334,8 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk- or ek- plaintext to store")
 	c.Flags().BoolVar(&flagDefault, "default", false, "Set this profile as the default")
 	c.Flags().BoolVar(&flagForce, "force", false, "Overwrite an existing profile of the same name")
+	c.Flags().BoolVar(&flagInsecure, "insecure", false,
+		"Allow a plaintext http:// Hub URL (credentials stored/used unencrypted; localhost still requires this)")
 	c.Flags().StringArrayVar(&flagEnvKeys, "env-key", nil,
 		"Seed a labelled ek- into profiles.<name>.ek (label=ek-...); repeatable")
 	_ = c.MarkFlagRequired("profile")
@@ -344,12 +347,12 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 // runConfigAdd validates the three required inputs, then creates (or,
 // with --force, overwrites) the named profile and saves it 0600. The
 // first profile written becomes the default; --default forces it.
-func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force bool) error {
+func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force, insecure bool) error {
 	if err := configSyntheticGuard("add"); err != nil {
 		return err
 	}
+	allowInsecure := insecure || config.InsecureFromEnv()
 	stdout := cmd.OutOrStdout()
-	stderr := cmd.ErrOrStderr()
 
 	// Validate name — DNS-1123 label (reuse login's package-level pattern).
 	if !profileNamePattern.MatchString(name) {
@@ -399,10 +402,11 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string
 		}
 		ekMap[label] = ek
 	}
-	if strings.HasPrefix(url, "http://") {
-		_, _ = fmt.Fprintf(stderr,
-			"warning: profile %q uses plaintext http:// — credentials are sent "+
-				"unencrypted (safe only on trusted/internal networks)\n", url)
+	// G19: refuse a plaintext http:// URL unless the user opted into insecure
+	// transport (--insecure flag OR ACH_INSECURE env). localhost is NOT exempt
+	// (decision B). SaveInsecure below is the backstop with the same gate.
+	if err := config.ValidateSecureURL(url, allowInsecure); err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 
 	path, err := config.Path()
@@ -447,7 +451,7 @@ func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string
 	if setDefault || file.Default == "" {
 		file.Default = name
 	}
-	if err := config.Save(path, file); err != nil {
+	if err := config.SaveInsecure(path, file, allowInsecure); err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
 	_, _ = fmt.Fprintf(stdout, "added profile %s (%s)\n", name, config.Mask(apiKey))
