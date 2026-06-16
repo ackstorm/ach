@@ -1155,6 +1155,51 @@ func TestRun_Step11Sync_NotInvokedUnderDryRun(t *testing.T) {
 	}
 }
 
+// TestRun_Step11Sync_PassesComposedNextState asserts the G5 fix: step 11 feeds
+// the COMPOSED next-state as `newFile` (not existingState twice). Before the
+// fix prev and newFile were the same pointer, so the set-difference was always
+// empty and nothing pruned. Here existing has plugins A+B, the render projects
+// only A, and the composed newFile must omit the dropped pluginB.
+func TestRun_Step11Sync_PassesComposedNextState(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Sync = true
+	c.opts.Platform = "claude-code" // make the adapter run so Plugins recompose.
+	store.loadFn = func(_ string) (*state.File, error) {
+		return &state.File{
+			SchemaVersion: "3",
+			Environment:   "demo",
+			Plugins:       []state.FileEntry{{Target: "pluginA"}, {Target: "pluginB"}},
+		}, nil
+	}
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{ProjectedFiles: []FileWrite{{Target: "pluginA"}}},
+	}
+
+	prevSync := syncFn
+	t.Cleanup(func() { syncFn = prevSync })
+	var gotPrev, gotNew *state.File
+	syncFn = func(prev, newFile *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
+		gotPrev, gotNew = prev, newFile
+		return SyncStats{}, nil
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if gotNew == nil {
+		t.Fatal("syncFn newFile is nil; step 11 did not pass a composed state")
+	}
+	if gotPrev == gotNew {
+		t.Fatal("prev and newFile are the same pointer — the STATE-05 no-op bug")
+	}
+	if containsTarget(gotNew.Plugins, "pluginB") {
+		t.Fatal("composed newFile still contains the dropped resource pluginB")
+	}
+	if !containsTarget(gotNew.Plugins, "pluginA") {
+		t.Fatal("composed newFile missing the surviving resource pluginA")
+	}
+}
+
 // TestCommit_Step6Diff_OnlyRuntime_SkipsContext seeds a manifest with
 // both runtime and context entries; asserts step6Diff under
 // OnlyRuntime emits ONLY runtime targets and the context iteration

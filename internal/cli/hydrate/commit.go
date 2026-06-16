@@ -552,13 +552,15 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// sc2_commit_sequence_sigkill. T-07-W5-01-03 — gated on !DryRun.
 	c.maybeKill(11)
 	if c.opts.Sync && !c.opts.DryRun {
-		// TODO(STATE-05 composition): newFile arg is the composed
-		// next-state once step12 builds it from
-		// ExtractResult/RenderResult — for now, pass existingState as
-		// a safe no-op until the composition follow-up plan lands.
-		// Sync is wired so future composition automatically activates
-		// STATE-05 inverse-merge.
-		stats, err := syncFn(existingState, existingState, c.achDir, c.toolRoot, SyncOptions{
+		// STATE-05: prune state entries (and their projected files) for
+		// resources dropped from the Environment. composeNextState is PURE
+		// (no I/O), so state.json is still untouched at the maybeKill(11)
+		// boundary above (the sc2 invariant). Passing the composed next-state
+		// as newFile is the fix — previously existingState was passed as BOTH
+		// prev and newFile, so the inverse-merge set-difference was always
+		// empty and nothing was ever pruned.
+		composed := c.composeNextState(existingState, m, renderResult, adapterRan, result.PlatformID, runtimeFiles)
+		stats, err := syncFn(existingState, composed, c.achDir, c.toolRoot, SyncOptions{
 			Force:  c.opts.Force,
 			Stderr: c.opts.Stderr,
 		})
