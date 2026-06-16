@@ -210,8 +210,10 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	out.metricsHandler = metrics.Handler(out.metricsReg)
 
 	// G7: typed platform-api collectors (hydrate duration + login total)
-	// registered on the same process-local Registry.
+	// + key-resolution cache hit/miss counters, registered on the same
+	// process-local Registry.
 	platformAPICollectors := metrics.NewPlatformAPICollectors(out.metricsReg)
+	keystoreCollectors := metrics.NewKeystoreCollectors(out.metricsReg)
 
 	pool, err := db.Open(ctx, cfg.DBURL)
 	if err != nil {
@@ -256,7 +258,8 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper)
+	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper,
+		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}

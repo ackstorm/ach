@@ -13,8 +13,13 @@ import (
 
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/keys"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/sfdetach"
 )
+
+// cacheLayerRedis is the value of the "layer" label on the key-resolution
+// cache counters — the only cache layer in v1alpha1 (D-07).
+const cacheLayerRedis = "redis"
 
 // defaultTTL is the hard 60-second ceiling on every cache entry per Hub
 // §5.1 / FWD-02 / KEY-04. NOT a knob — anything longer breaks the
@@ -89,18 +94,28 @@ type Resolver interface {
 // goroutines on the same freshly-rotated bearer results in exactly one
 // DB call.
 type redisCachedResolver struct {
-	inner  Resolver
-	redis  *redis.Client
-	pepper []byte
-	sf     singleflight.Group
-	ttl    time.Duration
+	inner   Resolver
+	redis   *redis.Client
+	pepper  []byte
+	sf      singleflight.Group
+	ttl     time.Duration
+	metrics *achmetrics.KeystoreCollectors // G7; nil-tolerant
+}
+
+// Option configures a redisCachedResolver at construction time.
+type Option func(*redisCachedResolver)
+
+// WithCacheMetrics wires the G7 key-resolution cache hit/miss counters.
+// Optional — omit it (or pass nil) to disable the counters.
+func WithCacheMetrics(m *achmetrics.KeystoreCollectors) Option {
+	return func(r *redisCachedResolver) { r.metrics = m }
 }
 
 // NewCachedResolver constructs the production redisCachedResolver
 // instance. Refuses an empty pepper (D-07: every cache key derives from
 // the pepper, so a missing pepper would silently weaken the hash and
 // reveal cache lookup paths).
-func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte) (Resolver, error) {
+func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte, opts ...Option) (Resolver, error) {
 	if len(pepper) == 0 {
 		return nil, ErrEmptyPepper
 	}
@@ -110,12 +125,16 @@ func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte)
 	if redisClient == nil {
 		return nil, errors.New("keystore: nil redis client")
 	}
-	return &redisCachedResolver{
+	r := &redisCachedResolver{
 		inner:  inner,
 		redis:  redisClient,
 		pepper: append([]byte(nil), pepper...), // defensive copy
 		ttl:    defaultTTL,
-	}, nil
+	}
+	for _, o := range opts {
+		o(r)
+	}
+	return r, nil
 }
 
 // Resolve implements the cache → single-flighted-DB lookup flow per D-07.
@@ -140,15 +159,29 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 	}
 	cacheKey := cacheKeyPrefix + hash
 
+	// G7 label: classify the bearer once for the key_type dimension. A
+	// malformed bearer (no recognizable prefix) is bucketed as "unknown".
+	keyType := "unknown"
+	if bp, classifyErr := keys.ClassifyBearer(plaintext); classifyErr == nil {
+		keyType = string(bp)
+	}
+
 	// Cache hit fast path.
 	if raw, getErr := r.redis.Get(ctx, cacheKey).Bytes(); getErr == nil {
 		var info KeyInfo
 		if jsonErr := json.Unmarshal(raw, &info); jsonErr == nil {
+			if r.metrics != nil {
+				r.metrics.Hits.WithLabelValues(keyType, cacheLayerRedis).Inc()
+			}
 			return &info, nil
 		}
 		// Malformed cache entry — fall through to inner.Resolve as if
 		// the cache had missed. We do NOT DEL the bad entry; the next
 		// SET on miss overwrites it (and the 60s TTL caps the worst case).
+	}
+
+	if r.metrics != nil {
+		r.metrics.Misses.WithLabelValues(keyType, cacheLayerRedis).Inc()
 	}
 
 	// Single-flight DB lookup on a detached-but-bounded leader context so

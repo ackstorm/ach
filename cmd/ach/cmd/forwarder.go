@@ -201,6 +201,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	litellmUnreachable := metrics.MustRegisterLitellmUnreachable(reg)
 	litellmUnreachable.WithLabelValues("forwarder").Add(0) // expose family at 0 (§18.5)
 	forwardermetrics.InitCollectors(fwdCollectors, litellmUnreachable)
+	// G7: key-resolution cache hit/miss counters on the forwarder registry.
+	keystoreCollectors := metrics.NewKeystoreCollectors(reg)
 	// /metrics is unauthenticated on the main traffic listener (D-10);
 	// internal cluster network only — see Helm values.yaml metricsAuth
 	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted:
@@ -293,7 +295,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper)
+	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper,
+		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
