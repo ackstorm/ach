@@ -323,6 +323,41 @@ func TestOperatorCollectors_ExternalRefRefreshLabels(t *testing.T) {
 	}
 }
 
+// TestPlatformAPICollectors — asserts both platform-api families register
+// and record (G7): the hydrate histogram (no extra label) and the login
+// counter keyed by {outcome}.
+func TestPlatformAPICollectors(t *testing.T) {
+	reg := NewRegistry()
+	c := NewPlatformAPICollectors(reg)
+	if c == nil {
+		t.Fatal("NewPlatformAPICollectors returned nil")
+	}
+	c.HydrateDuration.Observe(0.01)
+	c.Login.WithLabelValues("created").Inc()
+
+	names := familyNames(t, reg)
+	want := map[string]bool{
+		"platform_api_hydrate_duration_seconds": false,
+		"platform_api_login_total":              false,
+	}
+	for _, n := range names {
+		if _, ok := want[n]; ok {
+			want[n] = true
+		}
+	}
+	for n, seen := range want {
+		if !seen {
+			t.Errorf("family %s not registered; got %v", n, names)
+		}
+	}
+	if got, w := metricLabelKeys(t, reg, "platform_api_login_total"), []string{"outcome"}; !equalStringSlices(got, w) {
+		t.Errorf("platform_api_login_total label keys: got %v, want %v", got, w)
+	}
+	if v := counterValue(t, reg, "platform_api_login_total", map[string]string{"outcome": "created"}); v != 1 {
+		t.Errorf("platform_api_login_total{created} = %v, want 1", v)
+	}
+}
+
 // TestHandler_ServesFromRegistry — wires metrics.Handler(reg) into an
 // httptest.Server, GETs "/", and asserts the response body carries
 // the registered metric name in Prometheus text format. Proves D-10

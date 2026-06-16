@@ -136,6 +136,11 @@ func TokenHandler(deps Deps) http.HandlerFunc {
 			RequestID: reqID,
 			KeyID:     consumed.KeyID,
 		})
+		// G7: platform_api_login_total{outcome="created"} on CLI login
+		// completion (the /token poll that consumes the minted pk_).
+		if deps.Metrics != nil {
+			deps.Metrics.Login.WithLabelValues(audit.OutcomeCreated).Inc()
+		}
 
 		render.JSON(w, http.StatusOK, TokenResponse{
 			KeyID:      consumed.KeyID,

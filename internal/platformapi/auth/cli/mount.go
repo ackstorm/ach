@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
+
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
 // Deps is the dependency bag for the device-code endpoints. server.go
@@ -55,6 +57,10 @@ type Deps struct {
 	// InitResponse so the client doesn't hard-code it. Defaults to
 	// DefaultPollInterval (2s) when zero.
 	PollInterval time.Duration
+
+	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
+	// increment platform_api_login_total{outcome} on the /token branch.
+	Metrics *achmetrics.PlatformAPICollectors
 }
 
 // sessionTTL returns the configured TTL or the package default.

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 	"github.com/ackstorm/ach/internal/platformapi/store"
@@ -42,6 +44,9 @@ type Deps struct {
 	LiteLLM litellm.Client
 	BaseURL string
 	Audit   *slog.Logger
+	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
+	// observe platform_api_hydrate_duration_seconds per request.
+	Metrics *achmetrics.PlatformAPICollectors
 }
 
 // HydrateRequest is the strict JSON shape POST /platform/hydrate accepts.
@@ -139,6 +144,12 @@ func emptyContext() ContextBlock {
 //   - 200 OK                         — HydrateResponse
 func HydrateHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		defer func() {
+			if deps.Metrics != nil {
+				deps.Metrics.HydrateDuration.Observe(time.Since(start).Seconds())
+			}
+		}()
 		ctx := r.Context()
 		reqID := middleware.RequestIDFromCtx(ctx)
 		actor := middleware.ActorFromCtx(ctx)
