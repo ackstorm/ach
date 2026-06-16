@@ -133,6 +133,41 @@ dockers:
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.source={{.GitURL}}"
+  # ach-cli image (G4): distroless static, no extra_files (server-free).
+  - id: ach-cli-amd64
+    ids: [ach-cli]
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-amd64"
+    dockerfile: Dockerfile.ach-cli
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=ach-cli"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+  - id: ach-cli-arm64
+    ids: [ach-cli]
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-arm64"
+    dockerfile: Dockerfile.ach-cli
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=ach-cli"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
 
 docker_manifests:
   - name_template: "ghcr.io/ackstorm/ach:v{{ .Version }}"
@@ -143,6 +178,15 @@ docker_manifests:
     image_templates:
       - "ghcr.io/ackstorm/ach:v{{ .Version }}-amd64"
       - "ghcr.io/ackstorm/ach:v{{ .Version }}-arm64"
+    skip_push: "{{ if .Prerelease }}true{{ else }}false{{ end }}"
+  - name_template: "ghcr.io/ackstorm/ach-cli:v{{ .Version }}"
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-arm64"
+  - name_template: "ghcr.io/ackstorm/ach-cli:latest"
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-amd64"
+      - "ghcr.io/ackstorm/ach-cli:v{{ .Version }}-arm64"
     skip_push: "{{ if .Prerelease }}true{{ else }}false{{ end }}"
 
 checksum:

@@ -28,6 +28,7 @@ for the object the operator reconciles in e2e, look there.
 | `14-mcpserver-context7.yaml`          | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
 | `15-mcpserver-echo.yaml`              | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
 | `prometheus-servicemonitor.yaml`      | `ServiceMonitor`                           | Example Prometheus scrape config for the ach metrics endpoints. |
+| `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli env hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
 | `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 

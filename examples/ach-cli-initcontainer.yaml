@@ -1,0 +1,81 @@
+# ach-cli as an InitContainer (G4) — headless agent workspace bootstrap.
+#
+# The ghcr.io/ackstorm/ach-cli image runs `env hydrate` in an initContainer,
+# writing the projected agent config into a shared emptyDir BEFORE the main
+# agent container starts. The agent container then reads a fully-hydrated
+# /workspace with no SSO / no browser — credentials are an ek_ (Environment-
+# bound) injected via secretKeyRef.
+#
+# Apply: kubectl apply -f examples/ach-cli-initcontainer.yaml
+# Prereqs: a Secret `ach-agent-creds` with keys ACH_BASE_URL + ACH_API_KEY
+#          (the ek_), and an Environment named in ACH_ENVIRONMENT below.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ach-agent
+  labels:
+    app: ach-agent
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+    - name: hydrate
+      image: ghcr.io/ackstorm/ach-cli:latest
+      # env hydrate <ENV> --target claudecode --include-runtime --output=/workspace
+      args:
+        - env
+        - hydrate
+        - "$(ACH_ENVIRONMENT)"
+        - --target=claudecode
+        - --include-runtime
+        - --output=/workspace
+      env:
+        - name: ACH_ENVIRONMENT
+          value: demo
+        - name: ACH_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ach-agent-creds
+              key: ACH_BASE_URL
+        - name: ACH_API_KEY # an ek_ (Environment-bound) — NOT a pk_
+          valueFrom:
+            secretKeyRef:
+              name: ach-agent-creds
+              key: ACH_API_KEY
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65532
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+  containers:
+    - name: agent
+      # Replace with your agent runtime image; it reads the hydrated config
+      # from the shared /workspace mount the initContainer populated.
+      image: ghcr.io/example/your-agent:latest
+      workingDir: /workspace
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65532
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+  volumes:
+    - name: workspace
+      emptyDir: {}

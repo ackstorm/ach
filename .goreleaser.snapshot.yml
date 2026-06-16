@@ -104,6 +104,45 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.source={{.GitURL}}"
       - "--label=org.opencontainers.image.description=Snapshot build from main branch"
+  # ach-cli image (G4): distroless static, no extra_files.
+  - id: ach-cli-amd64
+    ids: [ach-cli]
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:main-amd64"
+      - "ghcr.io/ackstorm/ach-cli:main-{{ .ShortCommit }}-amd64"
+    dockerfile: Dockerfile.ach-cli
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=ach-cli"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Snapshot build from main branch"
+  - id: ach-cli-arm64
+    ids: [ach-cli]
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:main-arm64"
+      - "ghcr.io/ackstorm/ach-cli:main-{{ .ShortCommit }}-arm64"
+    dockerfile: Dockerfile.ach-cli
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=ach-cli"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.description=Snapshot build from main branch"
 
 docker_manifests:
   - name_template: "ghcr.io/ackstorm/ach:main"
@@ -114,6 +153,14 @@ docker_manifests:
     image_templates:
       - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-amd64"
       - "ghcr.io/ackstorm/ach:main-{{ .ShortCommit }}-arm64"
+  - name_template: "ghcr.io/ackstorm/ach-cli:main"
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:main-amd64"
+      - "ghcr.io/ackstorm/ach-cli:main-arm64"
+  - name_template: "ghcr.io/ackstorm/ach-cli:main-{{ .ShortCommit }}"
+    image_templates:
+      - "ghcr.io/ackstorm/ach-cli:main-{{ .ShortCommit }}-amd64"
+      - "ghcr.io/ackstorm/ach-cli:main-{{ .ShortCommit }}-arm64"
 
 checksum:
   name_template: 'checksums.txt'
