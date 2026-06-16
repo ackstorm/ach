@@ -496,3 +496,15 @@ The structural fix is already in: both mock Dockerfiles use **explicit
 allow-list `COPY`** (never `COPY . .`), so a source edit busts the layer cache
 deterministically. Re-validate with `make e2e-run` (NOT `e2e-full`, whose
 `cluster-up` rebuild could re-cache a stale layer on an unchanged tree).
+
+### ❌ First SSO login returns `500 default_team_missing`
+A login that arrives BEFORE the operator's first successful `EnsureDefaultTeam`
+(operator just started / `LiteLLMConnection` not yet `Ready` / LiteLLM briefly
+unreachable) can 500 with audit `outcome=default_team_missing`.
+✅ It SELF-HEALS — the next LiteLLMConnection reconcile creates the canonical
+`default` team (idempotent list-first → `POST /team/new`), and subsequent logins
+succeed. No manual action needed; the operator bootstraps the team proactively
+(`litellmconnection_controller.go`), so in steady state it is present before any
+login. WHY: ACH does NOT lazily create the default team in the SSO path — that is
+a fail-loud signal (`auth/doc.go`) — but the operator's proactive bootstrap closes
+the gap once the control plane converges. The 500 is transient, not a dead-end.
