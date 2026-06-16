@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/lock"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
@@ -1197,6 +1198,56 @@ func TestRun_Step11Sync_PassesComposedNextState(t *testing.T) {
 	}
 	if !containsTarget(gotNew.Plugins, "pluginA") {
 		t.Fatal("composed newFile missing the surviving resource pluginA")
+	}
+}
+
+// TestSync_PrunesDroppedPlugin_EndToEnd is the G5 acceptance criterion against
+// the REAL composeNextState + REAL Sync on real disk: an Environment that had
+// plugins A and B, re-hydrated against a render that projects only A, prunes
+// B's projected file while preserving A's. (Combined with
+// TestRun_Step11Sync_PassesComposedNextState, this closes the silent-no-op
+// bug end-to-end — orchestrator passes the composed state, Sync acts on it.)
+func TestSync_PrunesDroppedPlugin_EndToEnd(t *testing.T) {
+	achDir := t.TempDir()
+	fileA := filepath.Join(achDir, ".claude", "agents", "pluginA.md")
+	fileB := filepath.Join(achDir, ".claude", "agents", "pluginB.md")
+	for _, p := range []string{fileA, fileB} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(p), err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", p, err)
+		}
+	}
+
+	c := &commit{opts: Opts{Environment: "demo"}, achDir: achDir, toolRoot: achDir}
+	// Prior hydrate recorded BOTH plugins (hashes match the on-disk content so
+	// neither is treated as a local edit).
+	existing := &state.File{
+		SchemaVersion: "3",
+		Environment:   "demo",
+		Plugins: []state.FileEntry{
+			{Target: fileA, Hash: hash.HashBytes([]byte("x"))},
+			{Target: fileB, Hash: hash.HashBytes([]byte("x"))},
+		},
+	}
+	// The fresh render projects ONLY pluginA — pluginB was dropped from the Env.
+	render := RenderResult{ProjectedFiles: []FileWrite{{Target: fileA, Hash: hash.HashBytes([]byte("x"))}}}
+	composed := c.composeNextState(existing, nil, render, true /*adapterRan*/, "claude-code", nil)
+
+	var stderr bytes.Buffer
+	stats, err := Sync(existing, composed, achDir, achDir, SyncOptions{Stderr: &stderr})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if stats.Pruned != 1 {
+		t.Errorf("Pruned = %d; want 1 (pluginB)", stats.Pruned)
+	}
+	if _, err := os.Stat(fileB); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("pluginB file should be pruned; stat err = %v", err)
+	}
+	if _, err := os.Stat(fileA); err != nil {
+		t.Errorf("pluginA file should be preserved; stat err = %v", err)
 	}
 }
 
