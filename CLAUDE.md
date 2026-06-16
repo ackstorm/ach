@@ -269,7 +269,8 @@ gates).
 
 Service-specific debugging (content-service 404, forwarder JWT 401,
 SourceReachable rate-limit, AccessGroupSynced, hydrate-golden diff, mcp-echo,
-ConflictWithUIRow, stale image roll) → **`references/troubleshooting.md`**. The
+ConflictWithUIRow (dormant/reserved — no UI write path in v1alpha1),
+stale image roll) → **`references/troubleshooting.md`**. The
 seven below are the cross-cutting workflow traps:
 
 ### ❌ Prefixing a `make` target with `./scripts/dev.sh`

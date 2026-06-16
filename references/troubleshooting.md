@@ -379,17 +379,21 @@ seed in `scripts/cluster.sh` now `DELETE`s every existing row for the name
 stale duplicates from an older run, delete them by `server_id` and re-sync.
 
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
-A CR's projection collides with a row created by the UI (`origin='ui'`). The
-operator refuses to clobber the UI-managed row.
-✅ Rename the CR, or delete the UI row from Postgres before letting the
-operator reconcile. UI and CR row names must be disjoint within a (namespace).
-WHY IT FAILS: every projection table (environments, plugins, prompts, artifacts,
-litellm_connections, backend_identity_policies, external_refs, marketplace_plugins)
-has an `origin TEXT CHECK IN ('cr','ui')` column. The operator's UPSERTs are
-guarded by `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; the
-filter miss returns `pgx.ErrNoRows` which the helper maps to `ErrOriginConflict`,
-which the reconciler maps to `Synced=False reason=ConflictWithUIRow` and a 1-min
-requeue.
+**Dormant / unreachable in v1alpha1.** The v1alpha1 write path is **GitOps/CRD
+only** — there is no UI write path, so `origin='ui'` rows are never produced and
+this condition cannot fire in practice. The machinery is **reserved** for the
+future UI Objects API (#34, whose promotion half is unbuilt).
+✅ N/A in v1alpha1 — there is nothing to fix; you will not encounter this. If you
+somehow see it, an `origin='ui'` row was written by hand into Postgres (the
+control plane never does this) — remove that row.
+WHY (reserved-machinery background): every projection table (environments,
+plugins, prompts, artifacts, litellm_connections, backend_identity_policies,
+external_refs, marketplace_plugins) carries an `origin TEXT CHECK IN ('cr','ui')`
+column. The operator's UPSERTs are guarded by
+`ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; a filter miss
+returns `pgx.ErrNoRows`, which the helper maps to `ErrOriginConflict` and the
+reconciler maps to `Synced=False reason=ConflictWithUIRow` with a 1-min requeue.
+Until a UI write path ships, that guard simply never trips.
 
 ### ❌ orphan-cleanup revoked a LiteLLM key it should not have (or revoked nothing)
 The operator's orphan-cleanup loop (`internal/orphan`, OP-15 / Hub §18.4)
