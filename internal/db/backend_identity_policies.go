@@ -5,8 +5,8 @@
 //
 // One row per BackendIdentityPolicy CR. The operator's BIP reconciler writes
 // the projection so the forwarder can resolve per-target JWT mint policy
-// without an informer. ResolveWinner semantics (alphabetically LAST BIP per
-// (targetKind, targetName) wins; an alpha-LAST opt-out row returns nil)
+// without an informer. ResolveWinner semantics (alphabetically FIRST BIP per
+// (targetKind, targetName) wins; an alpha-FIRST opt-out row returns nil)
 // live in internal/forwarder/bipcache — this package surfaces the raw rows
 // ordered by name ASC and the cache implements the winner-picking logic.
 //
@@ -170,7 +170,7 @@ func GetBIPByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*BI
 
 // ListBIPsByTarget returns every live row matching (namespace, target_kind,
 // target_name) ordered by name ASC. Caller (bipcache.Resolve) picks the
-// alpha-LAST winner. Rows with deletion_timestamp set are excluded.
+// alpha-FIRST winner. Rows with deletion_timestamp set are excluded.
 func ListBIPsByTarget(ctx context.Context, pool *pgxpool.Pool, ns, targetKind, targetName string) ([]BIPRow, error) {
 	const sql = `
 		SELECT namespace, name, target_kind, target_name,

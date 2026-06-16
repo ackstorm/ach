@@ -33,7 +33,7 @@ type targetKey struct {
 // Cache is a Postgres-backed BackendIdentityPolicy lookup table. The
 // underlying state lives in an atomic.Pointer to a map keyed by
 // (kind, name) → []BIPRow sorted by Name ASC; Resolve picks the
-// alpha-LAST winner per the ResolveWinner contract.
+// alpha-FIRST winner per the ResolveWinner contract.
 //
 // Zero-value Cache is invalid — use New.
 type Cache struct {
@@ -58,8 +58,8 @@ func New(pool *pgxpool.Pool, ns string, log logr.Logger) *Cache {
 // bip.ResolveWinner:
 //
 //  1. zero matches               → nil
-//  2. alpha-LAST.ForwardIdentityJWT == false (explicit opt-out) → nil
-//  3. otherwise the alpha-LAST row
+//  2. alpha-FIRST.ForwardIdentityJWT == false (explicit opt-out) → nil
+//  3. otherwise the alpha-FIRST row
 //
 // The returned pointer addresses a copy of the cached row; callers may
 // retain it past the next Refresh.
@@ -69,11 +69,11 @@ func (c *Cache) Resolve(targetKind, targetName string) *db.BIPRow {
 	if len(rows) == 0 {
 		return nil
 	}
-	last := rows[len(rows)-1]
-	if !last.ForwardIdentityJWT {
+	first := rows[0] // alpha-FIRST winner (frozen §9.3 + house convention; G15)
+	if !first.ForwardIdentityJWT {
 		return nil
 	}
-	return &last
+	return &first
 }
 
 // Refresh reads the full BIP set for the namespace from Postgres and
@@ -90,7 +90,8 @@ func (c *Cache) Refresh(ctx context.Context) error {
 		next[k] = append(next[k], r)
 	}
 	// db.ListAllBIPs already orders by name ASC at the SQL layer, but
-	// guard against future writers by sorting per-group as well.
+	// guard against future writers by sorting per-group as well. Rows are
+	// name-ASC so rows[0] is the alpha-FIRST winner Resolve returns.
 	for k := range next {
 		sort.SliceStable(next[k], func(i, j int) bool {
 			return next[k][i].Name < next[k][j].Name

@@ -100,9 +100,9 @@ func upsertBIP(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name, kind
 	require.NoError(t, err)
 }
 
-// TestResolve_AlphaLastWinnerOptIn — three BIPs target MCPServer/foo with
-// names a/b/c, all forwardJWT=true; resolve returns row "c".
-func TestResolve_AlphaLastWinnerOptIn(t *testing.T) {
+// TestResolve_AlphaFirstWinnerOptIn — three BIPs target MCPServer/foo with
+// names a/b/c, all forwardJWT=true; resolve returns row "a".
+func TestResolve_AlphaFirstWinnerOptIn(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupPostgres(t, ctx)
 	defer cleanup()
@@ -116,11 +116,11 @@ func TestResolve_AlphaLastWinnerOptIn(t *testing.T) {
 
 	got := c.Resolve("MCPServer", "foo")
 	require.NotNil(t, got)
-	require.Equal(t, "c", got.Name)
+	require.Equal(t, "a", got.Name)
 }
 
 // TestResolve_SingleOptOut — B4 fixture: one BIP, forwardJWT=false →
-// Resolve returns nil (explicit opt-out at alpha-LAST).
+// Resolve returns nil (explicit opt-out at alpha-FIRST).
 func TestResolve_SingleOptOut(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupPostgres(t, ctx)
@@ -135,7 +135,7 @@ func TestResolve_SingleOptOut(t *testing.T) {
 }
 
 // TestResolve_OptInThenOptOut — B6 fixture: {a:opt-in, b:opt-out} → the
-// alpha-LAST is b (opt-out), so Resolve returns nil.
+// alpha-FIRST is a (opt-in), so Resolve returns row "a".
 func TestResolve_OptInThenOptOut(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupPostgres(t, ctx)
@@ -147,7 +147,9 @@ func TestResolve_OptInThenOptOut(t *testing.T) {
 	c := bipcache.New(pool, testNS, logr.Discard())
 	require.NoError(t, c.Refresh(ctx))
 
-	require.Nil(t, c.Resolve("MCPServer", "foo"))
+	got := c.Resolve("MCPServer", "foo")
+	require.NotNil(t, got)
+	require.Equal(t, "a", got.Name)
 }
 
 // TestResolve_NoMatches — empty set returns nil.

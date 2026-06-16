@@ -5,7 +5,7 @@
 // internal/forwarder/bip package.
 //
 // Resolve mirrors internal/forwarder/bip.ResolveWinner semantics 1:1:
-//  1. Take the alphabetically-LAST BIP matching (targetKind, targetName).
+//  1. Take the alphabetically-FIRST BIP matching (targetKind, targetName).
 //  2. If that row's ForwardIdentityJWT is FALSE — explicit opt-out — return nil.
 //  3. Otherwise return the row.
 //
