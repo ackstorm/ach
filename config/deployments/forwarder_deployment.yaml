@@ -56,6 +56,13 @@ spec:
                 secretKeyRef:
                   name: ach-credential-hash-pepper
                   key: pepper
+            # G3: AES-256 DEK — forwarder decrypts sealed LiteLLM key material
+            # on the request path. Refuses to start without it (dekenv.Load).
+            - name: ACH_KEY_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ach-key-encryption-key
+                  key: dek
             - name: ACH_NAMESPACE
               valueFrom:
                 fieldRef:

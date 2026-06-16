@@ -59,6 +59,36 @@ startup; a missing Secret turns the whole JWT trust path unreachable,
 which would silently degrade upstream auth. Refusing to start is the
 correct posture — fix the seed, not the check.
 
+### ❌ platform-api / forwarder CrashLoopBackOff: `ACH_KEY_ENCRYPTION_KEY` missing/invalid (G3)
+```bash
+kubectl -n ach-system logs deploy/ach-platform-api
+# validateConfig: ACH_KEY_ENCRYPTION_KEY is not set
+# (or) ACH_KEY_ENCRYPTION_KEY still holds the placeholder value
+# (or) ACH_KEY_ENCRYPTION_KEY decoded to 16 bytes: must be 32 bytes
+```
+✅ Both platform-api and forwarder require the AES-256 DEK that seals
+LiteLLM virtual-key material at rest (G3 — same hard-requirement posture
+as the credential-hash pepper). Provision the `ach-key-encryption-key`
+Secret (key `dek`) with base64 of **exactly 32 bytes** wherever the pepper
+Secret lives: `openssl rand -base64 32`. The kind/e2e harness seeds a
+fixed dev value in `test/e2e/cluster/02-ach/secrets/`. WHY: `dekenv.Load`
+rejects an unset value, the `REPLACE-ME-WITH-RANDOM-` placeholder, and any
+value that does not decode to 32 bytes — encryption is always on, there is
+no plaintext fallback.
+
+### ❌ Upstream 401 + forwarder logs `key material decrypt failed` (G3)
+```bash
+kubectl -n ach-system logs deploy/ach-forwarder -c forwarder | grep 'key material decrypt failed'
+```
+✅ The forwarder decrypts the sealed LiteLLM key material per request; on a
+decrypt failure it forwards **no** key, so LiteLLM returns 401. Cause is
+either a **DEK mismatch** (platform-api sealed under a different
+`ACH_KEY_ENCRYPTION_KEY` than the forwarder holds) or a **legacy/plaintext
+row** (a `pk_`/`ek_` minted before migration 000014, whose material was
+nulled). Fix: ensure platform-api and forwarder mount the SAME DEK Secret,
+then **re-mint** the affected key (`ach-cli login` / `ach-cli env-keys
+create`). The log never prints the material or the DEK.
+
 ### ❌ `helm install` aborts: `no matches for kind "LiteLLMConnection"`
 ```bash
 # Error: failed post-install: ... resource mapping not found for name: "default"

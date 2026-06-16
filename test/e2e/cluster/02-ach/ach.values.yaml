@@ -22,6 +22,13 @@ extraEnv:
       secretKeyRef:
         name: ach-credential-hash-pepper
         key: pepper
+  # G3: AES-256 DEK — platform-api seals / forwarder opens LiteLLM key
+  # material at rest. Both refuse to start without it (dekenv.Load).
+  - name: ACH_KEY_ENCRYPTION_KEY
+    valueFrom:
+      secretKeyRef:
+        name: ach-key-encryption-key
+        key: dek
   - name: ACH_BASE_URL
     value: "http://localhost:8080"
   # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY are NOT set here anymore.

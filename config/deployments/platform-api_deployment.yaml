@@ -55,6 +55,13 @@ spec:
                 secretKeyRef:
                   name: ach-credential-hash-pepper
                   key: pepper
+            # G3: AES-256 DEK — platform-api seals LiteLLM key material at
+            # mint. Refuses to start without it (dekenv.Load).
+            - name: ACH_KEY_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ach-key-encryption-key
+                  key: dek
             - name: ACH_DB_URL
               valueFrom:
                 secretKeyRef:
