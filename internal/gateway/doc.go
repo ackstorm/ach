@@ -14,4 +14,8 @@
 // directly via ACH_DEX_ISSUER_URL in prod; proxied by the e2e nginx shim
 // in dev). Only /platform, /content, /v1, /gemini, /mcp, /a2a,
 // /.well-known are proxied; /healthz returns 200 locally for probes.
+//
+// The gateway is OPTIONAL packaging, not a 6th logic mode: it carries no
+// business logic, is toggled by the Helm `gateway.enabled` flag, and
+// per-service Ingress is the supported alternative when it is disabled.
 package gateway
