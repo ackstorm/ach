@@ -12,6 +12,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/forwarder/headers"
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
@@ -47,6 +48,12 @@ func jwtFromCtx(ctx context.Context) (string, bool) {
 type Deps struct {
 	LiteLLMUpstream *url.URL
 	Logger          *slog.Logger
+
+	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
+	// G3). The KeyContext carries the LiteLLM virtual-key material SEALED at
+	// rest (keycrypt blob); Director decrypts it once per request before
+	// forwarding. Required (validated at process start by dekenv.Load).
+	KeyEncryptionKey []byte
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
@@ -72,11 +79,22 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// TESTING-PHASE (reverts FIX01 §A.6 / D-13): forward the CALLER's
 			// own LiteLLM virtual key as x-litellm-api-key (1:1 identity). The
 			// master key is no longer sent; x-litellm-key-id delegation is gone.
-			// A nil/empty material writes an empty header (no fallback) — keys
-			// minted before migration 000011 fail upstream, by design.
+			// G3: the KeyContext carries the material SEALED at rest — decrypt it
+			// once here. A nil/empty material (or a decrypt failure) writes an
+			// empty header (no fallback) — keys minted before migration 000014,
+			// or under a different DEK, fail upstream by design.
 			material := ""
 			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMKeyMaterial != nil {
-				material = *kc.LiteLLMKeyMaterial
+				pt, err := keycrypt.Open(deps.KeyEncryptionKey, *kc.LiteLLMKeyMaterial)
+				if err != nil {
+					// Wrong DEK / legacy plaintext row / corruption: forward no
+					// key — upstream 401, by design. Never log the material.
+					if deps.Logger != nil {
+						deps.Logger.Warn("key material decrypt failed", slog.String("err", err.Error()))
+					}
+				} else {
+					material = string(pt)
+				}
 			}
 			headers.StripAndRewrite(req.Header, material)
 			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)

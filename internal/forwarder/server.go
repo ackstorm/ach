@@ -23,14 +23,18 @@ import (
 // + C2) that replaced the controller-runtime informers — the traffic
 // path no longer reads from the cached k8s client.
 type Deps struct {
-	BIPResolver     proxy.BIPResolver
-	EnvProvider     precheck.EnvProvider
-	Resolver        keystore.Resolver
-	TeamsResolver   keystore.TeamsResolver
-	Signer          jwt.Signer
-	Logger          *slog.Logger
-	BaseURL         string
-	LiteLLMUpstream *url.URL
+	BIPResolver   proxy.BIPResolver
+	EnvProvider   precheck.EnvProvider
+	Resolver      keystore.Resolver
+	TeamsResolver keystore.TeamsResolver
+	Signer        jwt.Signer
+	Logger        *slog.Logger
+	BaseURL       string
+	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
+	// G3); the proxy Director decrypts the sealed LiteLLM key material per
+	// request before forwarding. Required (validated at process start).
+	KeyEncryptionKey []byte
+	LiteLLMUpstream  *url.URL
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -52,8 +56,9 @@ func New(deps Deps) http.Handler {
 	// Authenticated subtree.
 	hdeps := proxy.HandlerDeps{
 		Deps: proxy.Deps{
-			LiteLLMUpstream: deps.LiteLLMUpstream,
-			Logger:          deps.Logger,
+			LiteLLMUpstream:  deps.LiteLLMUpstream,
+			Logger:           deps.Logger,
+			KeyEncryptionKey: deps.KeyEncryptionKey,
 		},
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,

@@ -13,6 +13,8 @@
 //
 // Refuses to start when:
 //   - ACH_BASE_URL is not http(s)://
+//   - ACH_KEY_ENCRYPTION_KEY is unset / placeholder / not a 32-byte base64
+//     DEK (G3 — the proxy decrypts sealed LiteLLM key material per request)
 //   - LiteLLMConnection/default CR is missing OR its Spec.Endpoint is
 //     not a parseable http(s):// URL OR its MasterKeySecretRef does not
 //     resolve to a non-empty Secret data entry (B2 refactor — replaces
@@ -61,6 +63,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
+	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
@@ -80,8 +83,8 @@ var forwarderCmd = &cobra.Command{
 	Long: `Boot the chi-backed reverse proxy on /v1, /gemini, /mcp/{name},
 /a2a/{name} with §5.1 header strip+rewrite, §9 Ed25519 JWT signing gated
 by BackendIdentityPolicy, and /.well-known/jwks.json. Refuses to start
-when ACH_BASE_URL is not http(s):// or the ach-jwt-signing-keys
-Secret is missing/malformed (FWD-09).`,
+when ACH_BASE_URL is not http(s)://, ACH_KEY_ENCRYPTION_KEY is unset/invalid
+(G3), or the ach-jwt-signing-keys Secret is missing/malformed (FWD-09).`,
 	RunE: runForwarder,
 }
 
@@ -95,17 +98,18 @@ Secret is missing/malformed (FWD-09).`,
 // resolved values out of forwarderConfig makes the config "env only"
 // and the CR-derived values flow through local vars instead.
 type forwarderConfig struct {
-	BaseURL         string
-	DBURL           string
-	Pepper          []byte
-	RedisAddr       string
-	RedisPassword   string
-	RedisTLS        bool
-	RedisDB         int
-	TrafficBindAddr string
-	HealthBindAddr  string
-	Namespace       string
-	JWTSecretName   string
+	BaseURL          string
+	DBURL            string
+	Pepper           []byte
+	KeyEncryptionKey []byte
+	RedisAddr        string
+	RedisPassword    string
+	RedisTLS         bool
+	RedisDB          int
+	TrafficBindAddr  string
+	HealthBindAddr   string
+	Namespace        string
+	JWTSecretName    string
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -127,6 +131,11 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, err
 	}
 	cfg.Pepper = pepper
+	dek, err := dekenv.Load()
+	if err != nil {
+		return nil, err
+	}
+	cfg.KeyEncryptionKey = dek
 
 	// B2: LiteLLM endpoint + master key now sourced from
 	// LiteLLMConnection/default CR at buildForwarderDeps time.
@@ -354,14 +363,15 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 
 	out.server = forwarder.Deps{
-		BIPResolver:     bipCache, // C1/C4: Postgres-backed BIP cache
-		EnvProvider:     envStore, // C2/C5: Postgres-backed Env cache
-		Resolver:        cachedResolver,
-		TeamsResolver:   teamsResolver,
-		Signer:          out.signer,
-		Logger:          logger,
-		BaseURL:         cfg.BaseURL,
-		LiteLLMUpstream: llmUpstream, // B2: from LiteLLMConnection CR
+		BIPResolver:      bipCache, // C1/C4: Postgres-backed BIP cache
+		EnvProvider:      envStore, // C2/C5: Postgres-backed Env cache
+		Resolver:         cachedResolver,
+		TeamsResolver:    teamsResolver,
+		Signer:           out.signer,
+		Logger:           logger,
+		BaseURL:          cfg.BaseURL,
+		KeyEncryptionKey: cfg.KeyEncryptionKey,
+		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
 	}
 	return out, nil
 }

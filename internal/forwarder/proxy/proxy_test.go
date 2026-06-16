@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
@@ -27,6 +28,29 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 		t.Fatalf("url.Parse: %v", err)
 	}
 	return u
+}
+
+// testProxyDEK is a deterministic 32-byte data-encryption key for the
+// decrypt-on-use path (G3). The forwarder stores key material as a sealed
+// keycrypt blob, so tests seal with this DEK and set it on Deps.
+func testProxyDEK() []byte {
+	k := make([]byte, keycrypt.KeySize)
+	for i := range k {
+		k[i] = byte(i + 1)
+	}
+	return k
+}
+
+// sealMaterial returns the keycrypt blob the forwarder would read from the
+// KeyContext (the platform-api sealed it on mint). Director decrypts it back
+// to the plaintext the tests assert on.
+func sealMaterial(t *testing.T, plaintext string) string {
+	t.Helper()
+	blob, err := keycrypt.Seal(testProxyDEK(), []byte(plaintext))
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	return blob
 }
 
 func newDepsWithUpstream(t *testing.T, upstream *httptest.Server) Deps {
@@ -66,16 +90,18 @@ func TestNew_NonNil(t *testing.T) {
 // virtual key as x-litellm-api-key (bare on /v1), with NO x-litellm-key-id.
 func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
-		Logger:          slog.Default(),
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
 	}
 	rp := New(deps)
 
 	material := "sk-user-1"
+	sealed := sealMaterial(t, material)
 	kc := middleware.KeyContext{
 		KeyType:            keys.PrefixPk,
 		OwnerEmail:         "u@example.com",
-		LiteLLMKeyMaterial: &material,
+		LiteLLMKeyMaterial: &sealed,
 	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer evil")
@@ -113,16 +139,18 @@ func TestDirector_ForwardsUserMaterial(t *testing.T) {
 // TestDirector_ForwardsUserMaterial).
 func TestDirector_McpBearerPrefix(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
-		Logger:          slog.Default(),
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
 	}
 	rp := New(deps)
 
 	material := "sk-user-1"
+	sealed := sealMaterial(t, material)
 	kc := middleware.KeyContext{
 		KeyType:            keys.PrefixPk,
 		OwnerEmail:         "u@example.com",
-		LiteLLMKeyMaterial: &material,
+		LiteLLMKeyMaterial: &sealed,
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp/some-server", strings.NewReader("{}"))
 	req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
@@ -147,11 +175,12 @@ func TestDirector_McpBearerPrefix(t *testing.T) {
 // clients (and the e2e) that append a slash/subpath.
 func TestDirector_McpPathNormalizedToBareServer(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"),
-		Logger:          slog.Default(),
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
 	}
 	rp := New(deps)
-	material := "sk-user-1"
+	sealed := sealMaterial(t, "sk-user-1")
 
 	cases := []struct {
 		in, want string
@@ -163,7 +192,7 @@ func TestDirector_McpPathNormalizedToBareServer(t *testing.T) {
 		{"/v1/chat/completions", "/v1/chat/completions"}, // non-mcp untouched
 	}
 	for _, tc := range cases {
-		kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &material}
+		kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &sealed}
 		req := httptest.NewRequest(http.MethodPost, tc.in, strings.NewReader("{}"))
 		req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
 		rp.Director(req)
@@ -177,12 +206,14 @@ func TestDirector_McpPathNormalizedToBareServer(t *testing.T) {
 // the per-request JWT (via WithJWT) is the sole bearer on the upstream req.
 func TestDirector_JWTWrittenLast(t *testing.T) {
 	deps := Deps{
-		LiteLLMUpstream: mustParseURL(t, "http://upstream:4000"),
-		Logger:          slog.Default(),
+		LiteLLMUpstream:  mustParseURL(t, "http://upstream:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
 	}
 	rp := New(deps)
 	material := "sk-user-1"
-	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &material}
+	sealed := sealMaterial(t, material)
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e", LiteLLMKeyMaterial: &sealed}
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp/foo", nil)
 	req.Header.Set("Authorization", "Bearer client-injected") // adversary tries to spoof
