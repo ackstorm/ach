@@ -78,6 +78,7 @@ verify offline.
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
+| `nbf`         | **NOT emitted** (deliberate; see note below)     | Hub §9.1   |
 | `jti`         | **NOT emitted** (deliberate; Hub §9.1 + §20)     | Hub §9.1   |
 
 Authoritative implementation: [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go).
@@ -85,7 +86,14 @@ Authoritative implementation: [`internal/forwarder/jwt/signer.go`](https://githu
 `sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`
 claim mirrors it for backends that key their per-user token storage by email and
 read `email` first, falling back to `sub`. It is omitted entirely when the owner
-email is empty.
+email is empty. The legacy `<namespace>/<email>` `sub` form is **gone**
+(pre-release hard-cut) — do not split `sub` on `/`; key on `iss` + `sub`.
+
+**`nbf` is intentionally omitted.** With a 120 s `exp` it would add only
+clock-skew risk for no security gain — `exp` is the sole time bound. The minted
+claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`):
+**no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` / `exp` only and MUST
+NOT require `nbf`.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the

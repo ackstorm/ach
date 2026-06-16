@@ -12,6 +12,11 @@ Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
    environment-configured expectations.
 4. Returns the echoed text plus the verified claims as JSON.
 
+> **JWT claims.** Backends verify `iss` / `aud` / `exp` only — `nbf` is
+> **absent** (intentional; `exp` is the sole time bound), so do not require it.
+> `sub` is the bare `<owner-email>` (no namespace prefix); the additive `email`
+> claim mirrors `sub`.
+
 ## Environment
 
 | Var | Required | Default | Purpose |
