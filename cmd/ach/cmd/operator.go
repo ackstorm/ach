@@ -456,6 +456,11 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to add orphan-cleanup Runnable: %w", err)
 	}
 
+	// G7: register the ACH-domain operator collectors (environment_available
+	// + operator_external_ref_refresh_total) on controller-runtime's metrics
+	// Registry so the operator /metrics surfaces them.
+	opMetrics := achmetrics.NewOperatorCollectors(crmetrics.Registry)
+
 	if err = (&achcontroller.EnvironmentReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
@@ -465,6 +470,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:           dbPool,
 		Snapshotter:  snapshotter,
 		ResyncSource: envCh,
+		Metrics:      opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Environment: %w", err)
 	}
@@ -478,6 +484,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		PluginMaxSizeMiB: pluginMaxSizeMiB,
 		Fetchers:         nil,
 		ResyncSource:     pluginCh,
+		Metrics:          opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Plugin: %w", err)
 	}
@@ -503,6 +510,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:           dbPool,
 		Fetchers:     nil,
 		ResyncSource: artifactCh,
+		Metrics:      opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Artifact: %w", err)
 	}
@@ -515,6 +523,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:           dbPool,
 		Fetchers:     nil,
 		ResyncSource: promptCh,
+		Metrics:      opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Prompt: %w", err)
 	}
@@ -528,6 +537,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		SkillMaxSizeMiB: skillMaxSizeMiB,
 		Fetchers:        nil,
 		ResyncSource:    skillCh,
+		Metrics:         opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Skill: %w", err)
 	}

@@ -288,6 +288,41 @@ func TestContentServiceCollectors_NoForbiddenLabels(t *testing.T) {
 	}
 }
 
+// TestOperatorCollectors_EnvironmentAvailableLabels — asserts the
+// environment_available gauge registers with the {name} label and records
+// the set value (G7).
+func TestOperatorCollectors_EnvironmentAvailableLabels(t *testing.T) {
+	reg := NewRegistry()
+	c := NewOperatorCollectors(reg)
+	if c == nil {
+		t.Fatal("NewOperatorCollectors returned nil")
+	}
+	c.EnvironmentAvailable.WithLabelValues("prod").Set(1)
+
+	if got, want := metricLabelKeys(t, reg, "environment_available"), []string{"name"}; !equalStringSlices(got, want) {
+		t.Errorf("environment_available label keys: got %v, want %v", got, want)
+	}
+	if v := gaugeValue(t, reg, "environment_available", map[string]string{"name": "prod"}); v != 1 {
+		t.Errorf("environment_available{name=prod} = %v, want 1", v)
+	}
+}
+
+// TestOperatorCollectors_ExternalRefRefreshLabels — asserts the
+// operator_external_ref_refresh_total counter registers with the
+// {kind,result,type} label set and increments (G7).
+func TestOperatorCollectors_ExternalRefRefreshLabels(t *testing.T) {
+	reg := NewRegistry()
+	c := NewOperatorCollectors(reg)
+	c.ExternalRefRefresh.WithLabelValues("plugin", "github", "synced").Inc()
+
+	if got, want := metricLabelKeys(t, reg, "operator_external_ref_refresh_total"), []string{"kind", "result", "type"}; !equalStringSlices(got, want) {
+		t.Errorf("operator_external_ref_refresh_total label keys: got %v, want %v", got, want)
+	}
+	if v := counterValue(t, reg, "operator_external_ref_refresh_total", map[string]string{"kind": "plugin", "type": "github", "result": "synced"}); v != 1 {
+		t.Errorf("operator_external_ref_refresh_total{plugin,github,synced} = %v, want 1", v)
+	}
+}
+
 // TestHandler_ServesFromRegistry — wires metrics.Handler(reg) into an
 // httptest.Server, GETs "/", and asserts the response body carries
 // the registered metric name in Prometheus text format. Proves D-10
@@ -321,6 +356,61 @@ func TestHandler_ServesFromRegistry(t *testing.T) {
 	if !strings.Contains(string(body), "# HELP "+name) {
 		t.Errorf("response body missing HELP line for %q", name)
 	}
+}
+
+// metricValue gathers reg, locates the family `name`, and returns the
+// value of the single metric whose label set equals want. Reads the
+// Gauge or Counter value, whichever is populated. Fatals if no matching
+// series exists.
+func metricValue(t *testing.T, reg *prometheus.Registry, name string, want map[string]string) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("metricValue: Gather: %v", err)
+	}
+	for _, fam := range families {
+		if fam.GetName() != name {
+			continue
+		}
+		for _, m := range fam.GetMetric() {
+			got := map[string]string{}
+			for _, l := range m.GetLabel() {
+				got[l.GetName()] = l.GetValue()
+			}
+			if len(got) != len(want) {
+				continue
+			}
+			match := true
+			for k, v := range want {
+				if got[k] != v {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+			if m.GetGauge() != nil {
+				return m.GetGauge().GetValue()
+			}
+			if m.GetCounter() != nil {
+				return m.GetCounter().GetValue()
+			}
+			return 0
+		}
+	}
+	t.Fatalf("metricValue: no %s series matching %v", name, want)
+	return 0
+}
+
+func gaugeValue(t *testing.T, reg *prometheus.Registry, name string, want map[string]string) float64 {
+	t.Helper()
+	return metricValue(t, reg, name, want)
+}
+
+func counterValue(t *testing.T, reg *prometheus.Registry, name string, want map[string]string) float64 {
+	t.Helper()
+	return metricValue(t, reg, name, want)
 }
 
 // equalStringSlices returns true iff both slices are nil-or-empty

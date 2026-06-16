@@ -30,6 +30,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/pluginref"
 	"github.com/ackstorm/ach/internal/skillref"
 	"github.com/ackstorm/ach/internal/snapshot"
@@ -89,6 +90,23 @@ type EnvironmentReconciler struct {
 	// listener (NOTIFY ach_refresh). When non-nil the SetupWithManager
 	// wires WatchesRawSource on the corresponding builder.
 	ResyncSource chan event.GenericEvent
+
+	// Metrics is the operator collector set (G7). Nil-tolerant: unit/
+	// envtest leave it unset and skip the environment_available gauge.
+	Metrics *achmetrics.OperatorCollectors
+}
+
+// recordAvailableGauge sets environment_available{name} to 1 when the
+// rolled-up Available condition is True, else 0 (G7). Nil-tolerant.
+func (r *EnvironmentReconciler) recordAvailableGauge(name string, available metav1.Condition) {
+	if r.Metrics == nil {
+		return
+	}
+	v := 0.0
+	if available.Status == metav1.ConditionTrue {
+		v = 1.0
+	}
+	r.Metrics.EnvironmentAvailable.WithLabelValues(name).Set(v)
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=environments,verbs=get;list;watch;create;update;patch;delete
@@ -171,6 +189,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		available.ObservedGeneration = env.Generation
 		available.LastTransitionTime = metav1.Now()
 		apimeta.SetStatusCondition(&env.Status.Conditions, available)
+		r.recordAvailableGauge(env.Name, available)
 		env.Status.ObservedGeneration = env.Generation
 		// Spec v4 §5.2 / D-15: dual-write the projection row BEFORE the
 		// best-effort K8s Status update. The back-compat branch ships
@@ -308,6 +327,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	available.ObservedGeneration = env.Generation
 	available.LastTransitionTime = metav1.Now()
 	apimeta.SetStatusCondition(&env.Status.Conditions, available)
+	r.recordAvailableGauge(env.Name, available)
 	env.Status.ObservedGeneration = env.Generation
 
 	// Spec v4 §5.2 / D-15: DB-first, K8s best-effort. Write the
@@ -495,6 +515,11 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	controllerutil.RemoveFinalizer(env, environmentFinalizer)
 	if err := r.Update(ctx, env); err != nil {
 		return ctrl.Result{}, err
+	}
+	// G7: drop the environment_available{name} series so a deleted
+	// Environment does not leave a stale gauge behind.
+	if r.Metrics != nil {
+		r.Metrics.EnvironmentAvailable.DeleteLabelValues(env.Name)
 	}
 	logger.Info("§6.5 drain complete; finalizer removed", "env", env.Name)
 	return ctrl.Result{}, nil
