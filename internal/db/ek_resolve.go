@@ -50,7 +50,7 @@ func EkResolve(ctx context.Context, pool *pgxpool.Pool, credentialHashHex string
 		 WHERE credential_hash = $1
 		   AND status = 'active'
 		RETURNING key_id, environment, owner_email, name,
-		          litellm_user_id, litellm_token, litellm_key_material
+		          litellm_user_id, litellm_token, litellm_key_material_enc
 	`
 	r := &EkKeyInfo{}
 	err := pool.QueryRow(ctx, sql, credentialHashHex).Scan(

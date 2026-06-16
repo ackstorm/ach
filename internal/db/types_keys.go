@@ -37,9 +37,11 @@ type PkKeyInfo struct {
 	ExpiresAt     time.Time // post-check-and-extend wall-clock
 	LiteLLMUserID *string   // NULL until Phase 3 SSO write
 	LiteLLMToken  *string   // NULL until Phase 3 /key/generate response
-	// TESTING-PHASE (reverts FIX01 §A.6): the LiteLLM virtual-key plaintext
-	// (sk-…). NULL for rows minted before migration 000011. Populated only by
-	// the resolve queries (PkCheckAndExtend / EkResolve); admin reads leave it nil.
+	// LiteLLM virtual-key material, encrypted at rest (keycrypt blob —
+	// base64std(version||nonce||ciphertext), AES-256-GCM; G3). NULL for rows
+	// minted before migration 000014 (the testing-phase plaintext was nulled on
+	// rename). Populated only by the resolve queries (PkCheckAndExtend /
+	// EkResolve); admin reads leave it nil. The forwarder decrypts on use.
 	LiteLLMKeyMaterial *string
 	Status             string     // 'active' | 'revoked' | 'expired'
 	CreatedAt          time.Time  // row-creation wall-clock (read by ListPersonalKeysByOwner)
@@ -66,7 +68,7 @@ type EkKeyInfo struct {
 	Name           string  // human-friendly label (per §8.2)
 	LiteLLMUserID  *string // NULL until Phase 3 SSO write
 	LiteLLMToken   *string // NULL until Phase 3 /key/generate response
-	// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM virtual-key plaintext (sk-…).
+	// LiteLLM virtual-key material, encrypted at rest (keycrypt blob; G3).
 	LiteLLMKeyMaterial *string
 	Status             string     // 'active' | 'revoked'
 	CreatedAt          time.Time  // row-creation wall-clock
@@ -84,7 +86,7 @@ type PkInsertRow struct {
 	ExpiresAt          time.Time // sliding-window starts at now()+7 days
 	LiteLLMUserID      *string
 	LiteLLMToken       *string
-	LiteLLMKeyMaterial *string // TESTING-PHASE (reverts FIX01 §A.6)
+	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
 }
 
 // EkInsertRow is the value-struct argument to InsertEnvironmentKey. Same
@@ -98,5 +100,5 @@ type EkInsertRow struct {
 	Name               string
 	LiteLLMUserID      *string
 	LiteLLMToken       *string
-	LiteLLMKeyMaterial *string // TESTING-PHASE (reverts FIX01 §A.6)
+	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
 }

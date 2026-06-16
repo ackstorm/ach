@@ -96,7 +96,7 @@ func InsertPersonalKey(ctx context.Context, pool *pgxpool.Pool, row PkInsertRow)
 	const sql = `
 		INSERT INTO personal_keys
 		    (key_id, credential_hash, owner_email, expires_at,
-		     status, litellm_user_id, litellm_token, litellm_key_material)
+		     status, litellm_user_id, litellm_token, litellm_key_material_enc)
 		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
 	`
 	if _, err := pool.Exec(ctx, sql,

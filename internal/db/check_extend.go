@@ -91,7 +91,7 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		          personal_keys.expires_at,
 		          personal_keys.litellm_user_id,
 		          personal_keys.litellm_token,
-		          personal_keys.litellm_key_material
+		          personal_keys.litellm_key_material_enc
 	`
 	r := &PkKeyInfo{}
 	err := pool.QueryRow(ctx, sql, credentialHashHex).Scan(

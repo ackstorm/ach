@@ -38,7 +38,7 @@ func InsertEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, row EkInsertR
 	const sql = `
 		INSERT INTO environment_keys
 		    (key_id, credential_hash, environment, owner_email, name,
-		     status, litellm_user_id, litellm_token, litellm_key_material)
+		     status, litellm_user_id, litellm_token, litellm_key_material_enc)
 		VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8)
 	`
 	if _, err := pool.Exec(ctx, sql,
