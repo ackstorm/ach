@@ -26,8 +26,10 @@
 // Decisions baked in (Phase 6 set, preserved through the engine path
 // too):
 //   - D-09: surface-only `--raw` path — no on-disk write, no diff.
-//   - D-10: stderr §6.6 pk- warning emitted BEFORE the HTTP call;
-//     suppressed by --no-warnings. Applies to BOTH dispatch modes.
+//   - D-10: stderr §6.6 pk- advisory (pk- is not Environment-scoped) —
+//     on the --raw path it is emitted AFTER successful output so it does
+//     not bury the streamed bytes; the engine path folds the same guidance
+//     into the summary Tips footer. Suppressed by --no-warnings in both.
 //   - D-11: mutex credential sources (--api-key, --env-key,
 //     ACH_API_KEY, ACH_ENV_KEY). Explicit closed list — adding a new
 //     source requires editing assertMutexCreds.
@@ -68,7 +70,8 @@ import (
 // const is now emitted only when --raw short-circuits the engine. Gated by
 // --no-warnings in both paths. The trailing newline is part of the const so
 // Fprint composes cleanly.
-const pkWarning = "warning: hydrating with pk-; for Environment-scoped workloads, use ek-\n"
+const pkWarning = "warning: pk- is not Environment-scoped; use an ek- key for " +
+	"Environment-bound workloads (CI / agents)\n"
 
 // hydrateHTTPClient is a test-only seam: when non-nil it replaces the
 // default *http.Client inside the httpclient.Client built by hydrate.
@@ -849,7 +852,7 @@ func hydrateTips(meta summaryMeta) []string {
 		tips = append(tips, "pass --global to write under $HOME instead of ./.ach")
 	}
 	if meta.keyPrefix == keys.PrefixPk {
-		tips = append(tips, "pk- fits personal use; Environment workloads want an ek- key")
+		tips = append(tips, "pk- is not Environment-scoped; Environment workloads (CI/agents) want an ek- key")
 	}
 	return tips
 }
