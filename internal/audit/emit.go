@@ -32,6 +32,16 @@ import (
 //   - Target — optional; resource-scoped events MUST populate it
 //     (Environment lifecycle, EK create/revoke, etc.). Nil omits both
 //     target.kind and target.name.
+//   - Environment — G20 first-class governance dimension: the resolved
+//     Environment name the request operated under (hydrate envName,
+//     ek row environment, content-bound env). Optional — empty omits the
+//     "environment" attribute. Promoted out of Extra so dashboards and
+//     access policies can key on it directly.
+//   - SourceIP / UserAgent — G20 first-class forensics: the client
+//     RemoteAddr (preferring the first X-Forwarded-For hop) and the
+//     User-Agent header, captured by middleware. Optional — empty omits.
+//   - Route — G20 first-class: the chi route pattern the request matched
+//     (e.g. "/platform/hydrate"). Optional — empty omits.
 //   - Extra — optional additional context attributes (e.g. "team":
 //     "default" on the SSO-default-team-missing branch). MUST NOT
 //     carry plaintext, credential_hash, response bodies, or raw error
@@ -42,13 +52,17 @@ import (
 // pkid_/ekid_ prefix) and the target.kind / target.name pairing so the
 // composition stays auditable at code review.
 type Event struct {
-	Action    string
-	Outcome   string
-	Actor     string
-	RequestID string
-	KeyID     string
-	Target    *Target
-	Extra     map[string]string
+	Action      string
+	Outcome     string
+	Actor       string
+	RequestID   string
+	KeyID       string
+	Target      *Target
+	Environment string // G20: first-class governance dimension
+	SourceIP    string // G20: forensics (RemoteAddr / X-Forwarded-For)
+	UserAgent   string // G20: forensics
+	Route       string // G20: request route (chi RoutePattern)
+	Extra       map[string]string
 }
 
 // Target is the resource a request operated on. Kind is a stable
@@ -97,8 +111,9 @@ func EmitAudit(ctx context.Context, logger *slog.Logger, e Event) {
 	_ = ctx // reserved for future ctx-derived attributes (trace_id, etc.)
 
 	// 4 always-present attributes × 2 slots each = 8 capacity floor;
-	// pre-size for key.id (2) + target.* (4) + headroom for Extra.
-	attrs := make([]any, 0, 8+2+4+2*len(e.Extra))
+	// pre-size for key.id (2) + target.* (4) + the 4 G20 fields (8) +
+	// headroom for Extra.
+	attrs := make([]any, 0, 8+2+4+8+2*len(e.Extra))
 	attrs = append(attrs,
 		"action", e.Action,
 		"outcome", e.Outcome,
@@ -110,6 +125,19 @@ func EmitAudit(ctx context.Context, logger *slog.Logger, e Event) {
 	}
 	if e.Target != nil {
 		attrs = append(attrs, "target.kind", e.Target.Kind, "target.name", e.Target.Name)
+	}
+	// G20 first-class fields — each omitted when empty (mirrors key.id).
+	if e.Environment != "" {
+		attrs = append(attrs, "environment", e.Environment)
+	}
+	if e.SourceIP != "" {
+		attrs = append(attrs, "source.ip", e.SourceIP)
+	}
+	if e.UserAgent != "" {
+		attrs = append(attrs, "source.user_agent", e.UserAgent)
+	}
+	if e.Route != "" {
+		attrs = append(attrs, "route", e.Route)
 	}
 	for k, v := range e.Extra {
 		attrs = append(attrs, k, v)
