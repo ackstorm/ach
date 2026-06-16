@@ -125,6 +125,7 @@ independent collections.)
 |----------------------------------------|------------------------------------------|
 | Any `make` command / command organization | `references/makefile.md` (command list + 3-context model) |
 | Repo layout / synced fixtures / examples | `references/repo-layout.md` + `verify_all` in `scripts/cluster.sh` |
+| Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
 | New/changed SYNCED CR fixtures         | `test/e2e/cluster/{04-objects,05-environment}/` + `references/repo-layout.md` |
