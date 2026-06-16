@@ -347,7 +347,9 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 // runConfigAdd validates the three required inputs, then creates (or,
 // with --force, overwrites) the named profile and saves it 0600. The
 // first profile written becomes the default; --default forces it.
-func runConfigAdd(cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force, insecure bool) error {
+func runConfigAdd(
+	cmd *cobra.Command, name, url, apiKey string, envKeys []string, setDefault, force, insecure bool,
+) error {
 	if err := configSyntheticGuard("add"); err != nil {
 		return err
 	}

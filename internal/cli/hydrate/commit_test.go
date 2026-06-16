@@ -263,7 +263,7 @@ func TestComposeNextState_IsPure_AndReflectsRender(t *testing.T) {
 		ProjectedFiles: []FileWrite{{Target: "pluginA"}},
 	}
 
-	next := c.composeNextState(existing, nil, render, true /*adapterRan*/, "claude-code", nil)
+	next := c.composeNextState(existing, nil, render, true /* adapterRan */, "claude-code", nil)
 
 	// 1. purity: composing must not write state.json.
 	if store.saveCount != 0 {
@@ -1233,7 +1233,7 @@ func TestSync_PrunesDroppedPlugin_EndToEnd(t *testing.T) {
 	}
 	// The fresh render projects ONLY pluginA — pluginB was dropped from the Env.
 	render := RenderResult{ProjectedFiles: []FileWrite{{Target: fileA, Hash: hash.HashBytes([]byte("x"))}}}
-	composed := c.composeNextState(existing, nil, render, true /*adapterRan*/, "claude-code", nil)
+	composed := c.composeNextState(existing, nil, render, true /* adapterRan */, "claude-code", nil)
 
 	var stderr bytes.Buffer
 	stats, err := Sync(existing, composed, achDir, achDir, SyncOptions{Stderr: &stderr})
