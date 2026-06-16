@@ -1036,11 +1036,13 @@ func (c *commit) warnDropped(byKind map[string][]string, flat []string) {
 // drift / auto-claim (sc3 / sc4) cannot fire. The adapter section is replaced
 // only when the adapter actually ran this hydrate; a context-only run leaves
 // the prior adapter section untouched (spec §8.2 field rules).
-func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string, runtimeFiles []state.FileEntry) error {
-	if c.opts.DryRun {
-		return nil
-	}
-
+// composeNextState builds the post-hydrate state.File in memory. PURE — no
+// I/O. Used by BOTH step 11 (the --sync prune target / newFile, STATE-05) and
+// step 12 (the persisted state), so the set the sync diffs against and the set
+// actually written are guaranteed identical. Keeping it I/O-free is what lets
+// step 11 run AFTER the maybeKill(11) SIGKILL boundary without ever touching
+// state.json (the sc2 invariant — see step12WriteState's caller).
+func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string, runtimeFiles []state.FileEntry) *state.File {
 	// Build the next-state from the prior + the manifest environment.
 	next := &state.File{
 		SchemaVersion: "3",
@@ -1088,6 +1090,14 @@ func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, re
 	// now-empty bucket.
 	next.RuntimeFiles = runtimeFiles
 
+	return next
+}
+
+func (c *commit) step12WriteState(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool, platformID string, runtimeFiles []state.FileEntry) error {
+	if c.opts.DryRun {
+		return nil
+	}
+	next := c.composeNextState(existing, m, render, adapterRan, platformID, runtimeFiles)
 	if err := c.stateStore.Save(c.statePath, next); err != nil {
 		return &exit.CodedError{
 			Code:    exit.General,

@@ -230,6 +230,53 @@ func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
 	}
 }
 
+// containsTarget reports whether any FileEntry in the slice targets `target`.
+func containsTarget(entries []state.FileEntry, target string) bool {
+	for _, e := range entries {
+		if e.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+// TestComposeNextState_IsPure_AndReflectsRender asserts G5.1: composeNextState
+// is pure (no state.json write) and recomposes the Plugins bucket from the
+// fresh render, so a resource dropped from the Environment is ABSENT from the
+// composed next-state (the precondition for --sync to prune it).
+func TestComposeNextState_IsPure_AndReflectsRender(t *testing.T) {
+	store := &fakeStateStore{}
+	c := &commit{
+		opts:       Opts{Environment: "demo"},
+		stateStore: store,
+	}
+	// Existing state has plugins A and B.
+	existing := &state.File{
+		SchemaVersion: "3",
+		Plugins: []state.FileEntry{
+			{Target: "pluginA"}, {Target: "pluginB"},
+		},
+	}
+	// The fresh render projects ONLY pluginA (pluginB was dropped from the Env).
+	render := RenderResult{
+		ProjectedFiles: []FileWrite{{Target: "pluginA"}},
+	}
+
+	next := c.composeNextState(existing, nil, render, true /*adapterRan*/, "claude-code", nil)
+
+	// 1. purity: composing must not write state.json.
+	if store.saveCount != 0 {
+		t.Fatalf("composeNextState performed I/O — saveCount=%d, want 0", store.saveCount)
+	}
+	// 2. correctness: the dropped pluginB must be ABSENT; pluginA must survive.
+	if containsTarget(next.Plugins, "pluginB") {
+		t.Fatal("dropped resource still present in composed next-state")
+	}
+	if !containsTarget(next.Plugins, "pluginA") {
+		t.Fatal("surviving resource missing from composed next-state")
+	}
+}
+
 // TestRemapGlobalPath covers the W6-01 --global path remap, generalized for
 // D-22 (plan 03-01): opencode's GLOBAL config root is XDG ~/.config/opencode/,
 // not the project ~/.opencode/, so ALL .opencode/* projected paths remap (not
