@@ -197,9 +197,6 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// ExecutionResourcesResolved — the JSON marshal still works and
 		// envtest mode gets the projection row Plan 05-05 will read.
 		if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
-			if errors.Is(err, achdb.ErrOriginConflict) {
-				return r.writeConflictWithUIRow(ctx, &env, logger)
-			}
 			return ctrl.Result{}, err
 		}
 		desiredStatus := env.Status
@@ -338,9 +335,6 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// ExecutionResourcesResolved into jsonb bytes) and calls
 	// achdb.UpsertEnvironment under the nil-DB gate.
 	if err := r.writeEnvironmentProjection(ctx, &env, available); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return r.writeConflictWithUIRow(ctx, &env, logger)
-		}
 		return ctrl.Result{}, err
 	}
 	desiredStatus := env.Status
@@ -575,18 +569,15 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		Notice:                              env.Spec.Notice,
 		Description:                         env.Spec.Description,
 	}
-	// Issue #34: project + NOTIFY atomically so any consumer waking on
-	// ach_environments_changed SELECTs a snapshot that already reflects
-	// the upsert. ErrOriginConflict (UI-owned row) is mapped to the
-	// closed-set Synced=False/ConflictWithUIRow condition above by the
-	// reconciler, so we return it raw here and let the caller handle.
+	// Issue #34 + GitOps-wins (G2): project + NOTIFY atomically so any
+	// consumer waking on ach_environments_changed SELECTs a snapshot that
+	// already reflects the upsert. The operator UPSERT is un-gated and takes
+	// over any UI-owned row (origin 'ui'→'cr'), so it never returns
+	// ErrOriginConflict — a CR is always authoritative.
 	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
 	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
 		return achdb.UpsertEnvironmentTx(ctx, tx, row)
 	}); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return err
-		}
 		return fmt.Errorf("db upsert environment projection: %w", err)
 	}
 	return nil
@@ -1037,27 +1028,6 @@ func classifyDrainErr(label string, err error) error {
 	// Wrap so the operator log carries the label and the underlying
 	// error string; controller-runtime still requeues.
 	return fmt.Errorf("%s: %w", label, err)
-}
-
-// writeConflictWithUIRow flips AccessGroupSynced=False/ConflictWithUIRow
-// when the projection upsert is blocked by a UI-origin row holding the
-// same PK. Requeues in 1 minute so the operator does not hot-loop. The
-// CR status surfaces enough detail for an operator to investigate (the
-// row's UI lock will be released elsewhere; the next reconcile retries).
-func (r *EnvironmentReconciler) writeConflictWithUIRow(
-	ctx context.Context,
-	env *achv1alpha1.Environment,
-	logger logr.Logger,
-) (ctrl.Result, error) {
-	setConflictWithUIRowCondition(&env.Status.Conditions, "AccessGroupSynced", env.Generation)
-	env.Status.ObservedGeneration = env.Generation
-	desiredStatus := env.Status
-	if err := retryStatusUpdate(ctx, r.Client, env, func(fresh *achv1alpha1.Environment) {
-		fresh.Status = desiredStatus
-	}); err != nil {
-		logger.Error(err, "status update failed", "reason", ReasonConflictWithUIRow)
-	}
-	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
