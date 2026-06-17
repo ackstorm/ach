@@ -62,3 +62,61 @@ scrapeTimeout: {{ . | quote }}
       key: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+ach.contentServiceContainer — the content-service container spec, shared by
+the sidecar in the operator Pod (default) and the standalone Deployment
+(contentService.standalone=true, G16 RWX split). Defined ONCE so the two
+render paths cannot drift. The container is a READER of the artifact cache
+(mounts `cache` readOnly at /var/cache/ach via sendfile(2)); the operator
+container is the sole writer. Call with the root context and nindent 8:
+  {{- include "ach.contentServiceContainer" . | nindent 8 }}
+*/}}
+{{- define "ach.contentServiceContainer" -}}
+- name: content-service
+  image: {{ include "ach.image" . }}
+  imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+  args: {{ toYaml .Values.contentService.args | nindent 4 }}
+  ports:
+    - name: cs-http
+      containerPort: 8082
+  env:
+    - name: ACH_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: ACH_CACHE_ROOT
+      value: /var/cache/ach
+    - name: CONTENT_SERVICE_HEALTH_BIND_ADDRESS
+      value: ":8082"
+    {{- with .Values.extraEnv }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
+    # single litellmConnection block — do NOT also set them in extraEnv.
+    {{- include "ach.litellmConnectionEnv" . | nindent 4 }}
+  volumeMounts:
+    - name: cache
+      mountPath: /var/cache/ach
+      readOnly: true
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8082
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: 8082
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  resources: {{ toYaml .Values.contentService.resources | nindent 4 }}
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+{{- end -}}
