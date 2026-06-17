@@ -97,8 +97,10 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 //  1. Both examples/09 + examples/10 are admitted (CRD validation
 //     passes on the same (target.kind, target.name) duplicate).
 //  2. Both carry the BIP finalizer.
-//  3. status.conditions is empty on both (no DuplicateTarget — by
-//     design per memory feedback_bip_no_shadow_logic).
+//  3. NameConflict (G15): the alpha-FIRST winner (bipA) carries no
+//     NameConflict; the alpha-LAST loser (bipB) carries the advisory
+//     Synced=False/NameConflict referencing the winner. Runtime stays
+//     forwarder-resolved — the condition is advisory only.
 //  4. Delete both: finalizers removed cleanly within 30s.
 //
 // Wall clock: ~3s warm.
@@ -137,8 +139,11 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	// Invariant assertions.
 	assertBIPFinalizerPresent(t, bipA)
 	assertBIPFinalizerPresent(t, bipB)
-	assertBIPConditionsEmpty(t, bipA)
-	assertBIPConditionsEmpty(t, bipB)
+	// G15: alpha-first winner stays clean; alpha-last loser carries the
+	// advisory Synced=False/NameConflict referencing the winner. The
+	// loser's condition is reconciler-written, so poll for it.
+	assertBIPNoNameConflict(t, bipA)
+	assertBIPNameConflict(t, bipB, bipA, 30*time.Second)
 
 	// Drive the delete + assert finalizer-clean teardown. Use --wait=true
 	// here (the helper polls, but kubectl delete with default --wait=true
