@@ -48,6 +48,27 @@ exist. Fix is a rolling image update; no data migration.
 > kind/e2e cluster ships only RWO, so standalone is validated by
 > `helm template` + a real RWX cluster, not the local e2e suite.
 
+### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)
+```bash
+curl -X PATCH .../platform/objects/environments/demo -d '{"spec":{...}}'
+# HTTP 403 {"code":"immutable_via_ui", ...}
+```
+✅ Working as designed — **GitOps-wins (G2)**. The UI Objects API
+(`/platform/objects`, Environment only in v1) writes `origin='ui'` DRAFT rows.
+The operator is always authoritative: when a CR with the same `(namespace,name)`
+is applied it TAKES OVER the row (`origin` flips `ui`→`cr`, `locked=TRUE`) and
+the UI can no longer modify it — PATCH/DELETE return `403 immutable_via_ui`,
+POST returns `409 conflict_with_kubernetes_object`. Manage operator-owned
+(`origin='cr'`) objects via Git/`kubectl`, not the UI. A UI draft you exported
+(`GET /platform/objects/environments/<name>/yaml`) and applied is now
+operator-owned — that is the intended round-trip, not data loss. To re-open an
+object for UI editing, `kubectl delete` the CR (the operator removes the row);
+a fresh UI POST then creates a new `origin='ui'` draft.
+WHY: a UI draft has NULL status conditions (not `Available`), so hydrate will
+not serve it until the operator reconciles the applied CR. Set
+`ACH_DISABLE_UI_WRITES=true` to disable the write path entirely
+(every write → `403 ui_writes_disabled`).
+
 ### ❌ Forwarder Pod CrashLoopBackOff: `ach-jwt-signing-keys` Secret missing
 ```bash
 kubectl -n ach-system logs deploy/ach-forwarder -c forwarder

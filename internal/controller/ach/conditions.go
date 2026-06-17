@@ -153,15 +153,19 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 	})
 }
 
-// ReasonConflictWithUIRow is the canonical Reason emitted on any
-// projection-row conflict where a UI-origin row holds the same PK and
-// the operator declines to overwrite it. Shared by every reconciler that
-// dual-writes a projection table (plugin, prompt, artifact, BIP,
-// environment, litellmconnection) so the contract string cannot drift.
+// ReasonConflictWithUIRow is the canonical Reason once emitted when a
+// projection UPSERT was blocked by a UI-origin row holding the same PK.
 //
-// Reserved for the future UI write path (#34); the promotion half is unbuilt
-// and origin='ui' rows are never produced in v1alpha1, so this Reason is
-// dormant — the guard exists but never trips.
+// G2 reversed that model to GitOps-wins: the operator is always authoritative
+// and TAKES OVER a UI-owned row (origin 'ui'→'cr') rather than declining, so
+// this Reason never trips. The environment reconcile no longer references it
+// (the takeover SQL never returns ErrOriginConflict). It remains defined +
+// referenced by the external-ref/BIP/litellm controllers, whose origin gate is
+// unchanged and which produce no origin='ui' rows in v1 (the UI Objects API
+// writes Environment only) — so it is dormant there too. The UI side enforces
+// the inverse fence at the API: a UI write over an operator-owned row returns
+// 403 immutable_via_ui / 409 conflict_with_kubernetes_object (see
+// internal/platformapi/objects + internal/db/ui_objects.go), never this Reason.
 const ReasonConflictWithUIRow = "ConflictWithUIRow"
 
 // ConflictWithUIRowMessage is the canonical condition Message paired with
