@@ -75,8 +75,12 @@ non-operator service. The forwarder's only remaining k8s read is the
 `ach-jwt-signing-keys` Secret informer; the platform-api's only remaining k8s
 touchpoint is the Dex SSO flow.
 
-Content-service runs as a **sidecar in the operator Pod** (co-located because
-the artifact PVC is RWO) — there is no `ach-content-service` Deployment.
+Content-service runs **by default** as a **sidecar in the operator Pod**
+(co-located because the artifact PVC is RWO) — no `ach-content-service`
+Deployment. Set `contentService.standalone=true` + an RWX `operator.cache`
+(accessMode `ReadWriteMany` + a storageClassName) to split it into its own
+N-replica `ach-content-service` Deployment for HA (G16); the operator stays the
+sole cache writer, content-service mounts it readOnly.
 operator, platform-api, and forwarder are independent Deployments, each running
 the same `ach` image with `args: ["<mode>"]`. The `ach gateway` Deployment is an
 **optional** dumb edge reverse proxy fronting platform-api/content-service/

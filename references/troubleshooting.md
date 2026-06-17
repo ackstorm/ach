@@ -18,8 +18,9 @@ curl https://ach.local.test/content/prompt/foo
 ```
 ✅ Confirm the content-service sidecar in the operator Pod is on a
 build that includes `internal/contentservice` routes (not the Phase 1
-stub). The content-service runs as the second container of the
-`ach-operator` Deployment (RWO PVC forces co-location); there is NO
+stub). **By default** (`contentService.standalone=false`) the
+content-service runs as the second container of the `ach-operator`
+Deployment (RWO PVC forces co-location); there is NO
 `ach-content-service` Deployment. Use the operator Deployment + the
 `content-service` container name when exec'ing:
 ```bash
@@ -31,6 +32,21 @@ WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 `/healthz`-only stub. The Service is healthy, the Pod is Ready, the
 hydrate URLs look right — and every GET 404s because the route doesn't
 exist. Fix is a rolling image update; no data migration.
+
+> **HA / standalone split (G16).** The default single-replica content
+> path is co-located with the operator, so content availability is tied
+> to the operator Pod and cannot scale independently. To split it into
+> its own N-replica `ach-content-service` Deployment, set
+> `contentService.standalone=true` **and** give the cache an RWX class:
+> `operator.cache.accessMode=ReadWriteMany` +
+> `operator.cache.storageClassName=<efs-sc|nfs-client|cephfs>`. In that
+> mode the sidecar drops out, the `ach-content-service` Service selector
+> points at the new Deployment, and the operator Pod remains the sole
+> *writer* of the cache (content-service mounts it readOnly). Exec into
+> `deploy/ach-content-service` (not the operator Pod) when standalone.
+> RWX is required because both Pods mount the same PVC concurrently; the
+> kind/e2e cluster ships only RWO, so standalone is validated by
+> `helm template` + a real RWX cluster, not the local e2e suite.
 
 ### ❌ Forwarder Pod CrashLoopBackOff: `ach-jwt-signing-keys` Secret missing
 ```bash
