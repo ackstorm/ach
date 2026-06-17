@@ -41,6 +41,16 @@ func runInTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) err
 // ident column. ErrNoRows (the ON CONFLICT WHERE origin='cr' filtered the row
 // out → UI-owned) maps to ErrOriginConflict; transient pgconn 08/57 propagate
 // raw; other errors wrap with the non-secret label. args are the SQL params.
+//
+// Used by the UI-side write helpers (internal/db/ui_objects.go), whose UPSERTs
+// gate on origin='ui' so a CR-owned row blocks the write → ErrOriginConflict.
+//
+// The operator-side writers (UpsertEnvironment, UpsertExternalRef, …) are
+// UN-gated under the GitOps-wins model (G2): their ON CONFLICT DO UPDATE has no
+// origin WHERE clause and sets origin='cr', so a CR applied over a UI-owned row
+// TAKES IT OVER (origin flips 'ui'→'cr', locked=TRUE, primary key preserved).
+// The DO UPDATE therefore always fires and RETURNING always yields a row, so
+// the operator path never returns ErrOriginConflict.
 func upsertReturning(ctx context.Context, tx pgx.Tx, sql, label string, args ...any) error {
 	var col string
 	if err := tx.QueryRow(ctx, sql, args...).Scan(&col); err != nil {
