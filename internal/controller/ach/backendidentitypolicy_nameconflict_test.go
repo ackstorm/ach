@@ -22,7 +22,7 @@ import (
 )
 
 // TestBIPDuplicateTarget_ShadowedGetsNameConflict applies two BIPs ("aaa" and
-// "zzz") both targeting {kind:"mcp", name:"echo"} with forwardIdentityJWT=true.
+// "zzz") both targeting {kind:"MCPServer", name:"echo"} with forwardIdentityJWT=true.
 // The alpha-FIRST name "aaa" wins; "zzz" must surface
 // Synced=False/NameConflict referencing "BackendIdentityPolicy/aaa", and "aaa"
 // must NOT carry a NameConflict.
@@ -33,7 +33,7 @@ func TestBIPDuplicateTarget_ShadowedGetsNameConflict(t *testing.T) {
 		return &achv1alpha1.BackendIdentityPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
 			Spec: achv1alpha1.BackendIdentityPolicySpec{
-				Target:             achv1alpha1.BackendTargetRef{Kind: "mcp", Name: "echo"},
+				Target:             achv1alpha1.BackendTargetRef{Kind: "MCPServer", Name: "echo"},
 				ForwardIdentityJWT: true,
 			},
 		}
