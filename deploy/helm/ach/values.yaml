@@ -68,6 +68,15 @@ operator:
     - operator
     - --metrics-bind-address=:8080
     - --metrics-secure=false
+  # cache: the ach-operator-cache PVC backing the artifact cache shared with
+  # content-service. Default is RWO single-mounter co-location (sidecar). To
+  # split content-service into its own Deployment for HA (G16), set
+  # accessMode=ReadWriteMany + an RWX storageClassName (efs-sc / nfs-client /
+  # cephfs) AND contentService.standalone=true.
+  cache:
+    size: 10Gi
+    accessMode: ReadWriteOnce
+    storageClassName: ""
   # ─── orphan-cleanup loop (OP-15 / Hub §18.4) ───
   # The loop revokes ONLY ACH-minted LiteLLM keys (metadata.ach_key_id
   # present) that ACH no longer tracks as active; foreign keys (manual /
@@ -175,6 +184,12 @@ gateway:
 # contentService: serves agent-rendered content (assets, snapshots).
 contentService:
   enabled: true
+  # standalone: false (default) → content-service runs as a sidecar in the
+  # operator Pod (RWO cache PVC, co-located). true → run as its own
+  # Deployment with `replicas` replicas (G16 HA split). Requires an RWX
+  # cache: set operator.cache.accessMode=ReadWriteMany + a
+  # operator.cache.storageClassName so multiple Pods can mount the PVC.
+  standalone: false
   replicas: 1
   resources: {}
   args: ["content-service"]

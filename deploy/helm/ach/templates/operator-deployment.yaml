@@ -19,10 +19,13 @@ metadata:
     app.kubernetes.io/component: cache
 spec:
   accessModes:
-    - ReadWriteOnce
+    - {{ .Values.operator.cache.accessMode | default "ReadWriteOnce" }}
+  {{- with .Values.operator.cache.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
   resources:
     requests:
-      storage: {{ .Values.operator.cacheSize | default "10Gi" }}
+      storage: {{ .Values.operator.cache.size | default "10Gi" }}
 ---
 apiVersion: apps/v1
 kind: Deployment
