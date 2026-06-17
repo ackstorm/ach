@@ -162,23 +162,49 @@ func assertBIPFinalizerPresent(t *testing.T, name string) []string {
 	return strings.Fields(strings.Trim(out, "[]"))
 }
 
-// assertBIPConditionsEmpty asserts that status.conditions is
-// empty/missing on the BIP CR. Per memory feedback_bip_no_shadow_logic,
-// the operator stays dumb on BIPs — no DuplicateTarget condition, no
-// Synced churn. The Forwarder resolves duplicates at READ time.
-func assertBIPConditionsEmpty(t *testing.T, name string) {
+// assertBIPNoNameConflict asserts the BIP's Synced condition (if any)
+// does NOT carry the NameConflict reason. The alpha-FIRST winner of a
+// duplicate (target.kind, target.name) pair stays clean per G15 — the
+// runtime is forwarder-resolved and the winner owns the target.
+func assertBIPNoNameConflict(t *testing.T, name string) {
 	t.Helper()
 	out, err := runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
-		"-o", "jsonpath={.status.conditions}")
+		"-o", `jsonpath={.status.conditions[?(@.type=="Synced")].reason}`)
 	if err != nil {
-		t.Fatalf("§11b get bip/%s conditions: %v\n%s", name, err, out)
+		t.Fatalf("§11b get bip/%s Synced reason: %v\n%s", name, err, out)
 	}
-	trimmed := strings.TrimSpace(out)
-	if trimmed != "" && trimmed != "[]" && trimmed != "null" {
-		t.Fatalf("§11b bip/%s: status.conditions MUST stay empty by design "+
-			"(no DuplicateTarget reconciler — see feedback_bip_no_shadow_logic); "+
-			"got=%q", name, trimmed)
+	if strings.TrimSpace(out) == "NameConflict" {
+		t.Fatalf("§11b bip/%s (alpha-first winner) MUST NOT carry "+
+			"Synced/NameConflict (G15 — only the loser is shadowed)", name)
 	}
+}
+
+// assertBIPNameConflict polls until the BIP carries the advisory
+// Synced=False/NameConflict referencing winnerName, or fails after
+// timeout. The loser's condition is reconciler-written on the
+// sibling-create requeue, so it is eventually-consistent (G15).
+func assertBIPNameConflict(t *testing.T, name, winnerName string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastReason, lastStatus, lastMsg string
+	for time.Now().Before(deadline) {
+		lastReason, _ = runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+			"-o", `jsonpath={.status.conditions[?(@.type=="Synced")].reason}`)
+		lastStatus, _ = runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+			"-o", `jsonpath={.status.conditions[?(@.type=="Synced")].status}`)
+		lastMsg, _ = runCmd("kubectl", "get", "backendidentitypolicy", name, "-n", namespace,
+			"-o", `jsonpath={.status.conditions[?(@.type=="Synced")].message}`)
+		if strings.TrimSpace(lastReason) == "NameConflict" &&
+			strings.TrimSpace(lastStatus) == "False" &&
+			strings.Contains(lastMsg, winnerName) {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("§11b bip/%s never got Synced=False/NameConflict referencing %q "+
+		"within %s (G15 shadow loser); last reason=%q status=%q msg=%q",
+		name, winnerName, timeout, strings.TrimSpace(lastReason),
+		strings.TrimSpace(lastStatus), strings.TrimSpace(lastMsg))
 }
 
 // applyPhase4MarketplaceServer brings up the in-cluster nginx-backed
