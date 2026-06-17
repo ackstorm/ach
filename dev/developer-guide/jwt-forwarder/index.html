@@ -1558,6 +1558,11 @@ verify offline.</p>
 <td>FWD-07</td>
 </tr>
 <tr>
+<td><code>nbf</code></td>
+<td><strong>NOT emitted</strong> (deliberate; see note below)</td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
 <td><code>jti</code></td>
 <td><strong>NOT emitted</strong> (deliberate; Hub §9.1 + §20)</td>
 <td>Hub §9.1</td>
@@ -1568,7 +1573,13 @@ verify offline.</p>
 <p><code>sub</code> is the bare <code>&lt;owner-email&gt;</code> (no namespace prefix). The additive <code>email</code>
 claim mirrors it for backends that key their per-user token storage by email and
 read <code>email</code> first, falling back to <code>sub</code>. It is omitted entirely when the owner
-email is empty.</p>
+email is empty. The legacy <code>&lt;namespace&gt;/&lt;email&gt;</code> <code>sub</code> form is <strong>gone</strong>
+(pre-release hard-cut) — do not split <code>sub</code> on <code>/</code>; key on <code>iss</code> + <code>sub</code>.</p>
+<p><strong><code>nbf</code> is intentionally omitted.</strong> With a 120 s <code>exp</code> it would add only
+clock-skew risk for no security gain — <code>exp</code> is the sole time bound. The minted
+claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>):
+<strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> / <code>exp</code> only and MUST
+NOT require <code>nbf</code>.</p>
 <p>The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
 Forwarder and the backend MUST stay well under 120 s for the trust path
