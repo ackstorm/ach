@@ -288,10 +288,11 @@ metrics:
     # (kube-prometheus-stack commonly requires `release: <prometheus-release-name>`).
     labels: {}
     # includeP1Alerts: the two alerts on operator metrics
-    # (ACHExternalRefRefreshFailed, ACHEnvironmentUnavailable). The metrics
-    # ship on main; flip to true once `environment_available` is confirmed
-    # emitted by the operator.
-    includeP1Alerts: false
+    # (ACHExternalRefRefreshFailed, ACHEnvironmentUnavailable). Both metrics
+    # are exposed by the operator — operator_external_ref_refresh_total
+    # (external_ref_driver.go) and environment_available
+    # (environment_controller.go) — so these alerts are enabled by default.
+    includeP1Alerts: true
 
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.
