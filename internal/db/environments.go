@@ -91,10 +91,14 @@ type EnvironmentRow struct {
 // Returns raw error on pgconn class 08/57 (transient) so controller-runtime
 // applies exponential backoff. Other errors wrap with non-secret
 // (namespace, name) identifiers; pgErr.Message is never included.
-// upsertEnvironmentSQL inserts/updates CR-origin environment rows. The
-// ON CONFLICT WHERE clause filters by existing.origin='cr' so a UI-managed
-// row blocks the operator's UPDATE; the RETURNING + ErrNoRows mapping
-// converts that filter miss into ErrOriginConflict (issue #34).
+// upsertEnvironmentSQL inserts/updates the environment row from a CR reconcile.
+// GitOps-wins (G2): the operator is always authoritative, so the ON CONFLICT
+// DO UPDATE is UN-gated and force-sets origin='cr' — a CR applied over a
+// UI-managed row (origin='ui') TAKES IT OVER (origin flips to 'cr', locked=TRUE,
+// the (namespace,name) primary key preserved). The DO UPDATE therefore always
+// fires and RETURNING always yields a row, so this path never returns
+// ErrOriginConflict. The UI write path (internal/db/ui_objects.go) is gated the
+// other way (WHERE origin='ui') so it can never clobber an operator-owned row.
 const upsertEnvironmentSQL = `
 	INSERT INTO environments
 	    (namespace, name,
@@ -125,8 +129,8 @@ const upsertEnvironmentSQL = `
 	    resource_version                       = EXCLUDED.resource_version,
 	    updated_at                             = now(),
 	    deletion_timestamp                     = NULL,
+	    origin                                 = 'cr',
 	    locked                                 = TRUE
-	WHERE environments.origin = 'cr'
 	RETURNING namespace
 `
 
@@ -139,9 +143,9 @@ func UpsertEnvironment(ctx context.Context, pool *pgxpool.Pool, row EnvironmentR
 // UpsertEnvironmentTx is the tx-form helper that controllers use via
 // db.WithTxNotify so the projection write and the pg_notify call commit
 // atomically. The pool form above is retained for tests and callers without
-// an outer transaction. ErrOriginConflict on UI-row collision (the
-// ON CONFLICT WHERE existing.origin='cr' filtered the row out), transient
-// pgconn 08/57 propagated raw, other errors wrapped with (namespace, name).
+// an outer transaction. GitOps-wins: a CR takes over any UI-managed row, so
+// this never returns ErrOriginConflict. Transient pgconn 08/57 propagate raw;
+// other errors wrap with (namespace, name).
 func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {
 	return upsertReturning(ctx, tx, upsertEnvironmentSQL, "UpsertEnvironment("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name,
