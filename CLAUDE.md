@@ -65,13 +65,18 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
                                     │                       │                │
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
-**Source of truth (Phase D, #34)**: the operator is the only writer to Postgres
+**Source of truth (Phase D, #34)**: the operator writes Postgres
 (12 projection tables incl. `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
 `marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
-non-operator service. The forwarder's only remaining k8s read is the
+non-operator service. **GitOps-wins UI write path (G2)**: the platform-api UI
+Objects API (`/platform/objects`, Environment only in v1) also writes
+`origin='ui'` draft rows; the operator is always authoritative and TAKES OVER a
+matching `ui` row on CR apply (`origin` 'ui'→'cr', `locked=TRUE`), while the UI
+is fenced from operator-owned rows (`403 immutable_via_ui`). Round-trip: draft
+in UI → `GET …/yaml` export → commit + `kubectl apply` → operator takeover. The forwarder's only remaining k8s read is the
 `ach-jwt-signing-keys` Secret informer; the platform-api's only remaining k8s
 touchpoint is the Dex SSO flow.
 
@@ -101,7 +106,7 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle + admin object inventory (read) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |
