@@ -1,13 +1,16 @@
 {{- if .Values.contentService.enabled }}
 ---
-# Content-service is co-located with the operator in the same Pod
-# (operator-deployment.yaml ships the second container) because the
-# shared cache PVC is RWO. This file only exposes the cs-http port via
-# a Service whose selector points at the operator Pod labels. The
-# ServiceAccount + Deployment that lived here previously were removed
-# in the co-location refactor — both containers in the operator Pod
-# share the ach-operator SA, which already has a strict superset of
-# the read-only ACH-CRD verbs content-service needs.
+# Content-service topology is toggled by contentService.standalone:
+#   - false (default): co-located with the operator in the same Pod
+#     (operator-deployment.yaml ships the sidecar via the
+#     ach.contentServiceContainer helper) because the shared cache PVC is
+#     RWO. The Service below selects the operator Pod.
+#   - true (G16 RWX split): a dedicated ach-content-service Deployment +
+#     ServiceAccount (below) with its own replicas, mounting the
+#     ach-operator-cache PVC readOnly (requires operator.cache RWX). The
+#     Service selects the content-service Pods.
+# Either way the cs-http port (8082) is exposed by the one Service below;
+# the gateway routes /content/ → ach-content-service:8082 by DNS.
 apiVersion: v1
 kind: Service
 metadata:
@@ -18,22 +21,86 @@ metadata:
     app.kubernetes.io/component: content-service
   annotations:
     # Phase 5 OBS-03 + D-12 + drift flag #4 resolution.
-    # The CS container is co-located in the operator Pod (RWO PVC
-    # forces single-Pod). The operator Pod already carries scrape
-    # annotations for its own :8080 metrics port; CS's :8082 port
-    # gets a separate scrape target via this Service-level
-    # annotation. Both scrape targets are visible to the default
-    # Prometheus scrape config (kubernetes-pods + kubernetes-services
-    # roles).
+    # In sidecar mode the CS container is co-located in the operator Pod
+    # (RWO PVC forces single-Pod); the operator Pod already carries
+    # scrape annotations for its own :8080 metrics port, so CS's :8082
+    # port gets a separate scrape target via this Service-level
+    # annotation. In standalone mode the dedicated Pods carry their own
+    # Pod-level scrape annotation too. Both targets are visible to the
+    # default Prometheus scrape config (kubernetes-pods + kubernetes-services).
     prometheus.io/scrape: "true"
     prometheus.io/port: "8082"
     prometheus.io/path: "/metrics"
 spec:
   selector:
     app.kubernetes.io/name: ach
-    app.kubernetes.io/component: operator
+    app.kubernetes.io/component: {{ if .Values.contentService.standalone }}content-service{{ else }}operator{{ end }}
   ports:
     - name: http
       port: 8082
       targetPort: cs-http
+{{- if .Values.contentService.standalone }}
+---
+# Standalone content-service (G16 RWX split). Reads the ach-operator-cache
+# PVC readOnly via sendfile(2); the operator Pod remains the sole writer.
+# Needs an RWX cache (operator.cache.accessMode=ReadWriteMany + an RWX
+# storageClassName) so multiple Pods can mount the PVC concurrently.
+#
+# RBAC: content-service issues NO k8s API calls (cmd/ach/cmd/content_service.go
+# registers no controller-runtime manager — it reads ACH state only from
+# Postgres + Redis), so this ServiceAccount carries no Role/RoleBinding.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-content-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: content-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-content-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: content-service
+spec:
+  replicas: {{ .Values.contentService.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: content-service
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: content-service
+    spec:
+      serviceAccountName: ach-content-service
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup matches the operator Pod's writer so the readOnly cache
+        # mount (owned gid 65532 by the writer) is readable here.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: ach-operator-cache
+      containers:
+        {{- include "ach.contentServiceContainer" . | nindent 8 }}
+{{- end }}
 {{- end }}
