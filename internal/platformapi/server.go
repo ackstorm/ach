@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
+	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
@@ -23,6 +24,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/envkeys"
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/objects"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -193,6 +195,20 @@ func New(deps Deps) http.Handler {
 			Namespace: deps.Namespace,
 		}
 		r.Route("/platform/admin", admin.Mount(adminDeps))
+
+		// UI Objects API (G2) — GitOps-wins authoring surface, admin-gated and
+		// scoped to Environment only. ACH_DISABLE_UI_WRITES turns the write
+		// verbs into 403 ui_writes_disabled (reads still served).
+		r.Route("/platform/objects", func(r chi.Router) {
+			r.Use(admin.AdminOnly(deps.Allowlist, deps.Audit, deps.Namespace))
+			objects.Mount(objects.Deps{
+				Pool:            deps.Pool,
+				Namespace:       deps.Namespace,
+				Audit:           deps.Audit,
+				Logger:          deps.Logger,
+				DisableUIWrites: config.EnvBool("ACH_DISABLE_UI_WRITES", false),
+			})(r)
+		})
 	})
 
 	return r
