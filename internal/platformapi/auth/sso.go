@@ -25,6 +25,7 @@ import (
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	cli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
@@ -108,6 +109,10 @@ type Deps struct {
 	// round-trip. DERIVED from the ACH_BASE_URL scheme in
 	// cmd/ach/cmd/platform_api.go (https base ⇒ false ⇒ hardened cookie).
 	InsecureCookie bool
+
+	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
+	// increment platform_api_login_total{outcome} on the SSO login path.
+	Metrics *achmetrics.PlatformAPICollectors
 }
 
 // IDTokenVerifier abstracts oidc.IDTokenVerifier so unit tests can
@@ -235,6 +240,10 @@ func (deps Deps) fail(ctx context.Context, w http.ResponseWriter, actor, outcome
 		RequestID: reqID,
 		KeyID:     keyID,
 	})
+	// G7: single SSO-failure convergence point → platform_api_login_total.
+	if deps.Metrics != nil {
+		deps.Metrics.Login.WithLabelValues(outcome).Inc()
+	}
 	render.Error(w, status, outcome, msg, reqID)
 }
 
@@ -495,6 +504,10 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		RequestID: reqID,
 		KeyID:     keyID,
 	})
+	// G7: platform_api_login_total{outcome="created"} on successful mint.
+	if deps.Metrics != nil {
+		deps.Metrics.Login.WithLabelValues(audit.OutcomeCreated).Inc()
+	}
 
 	// Phase 6 D-20: when the OAuth2 state carried a session_id
 	// suffix AND Redis is wired, write the pk_ payload to

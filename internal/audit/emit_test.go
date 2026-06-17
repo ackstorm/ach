@@ -159,6 +159,38 @@ func TestEmitAuditEmptyKeyIDOmitted(t *testing.T) {
 	}
 }
 
+// TestEmitAudit_FirstClassFields asserts the G20 first-class governance/
+// forensics fields (Environment, SourceIP, UserAgent, Route) are emitted
+// under their canonical attribute keys when set.
+func TestEmitAudit_FirstClassFields(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := audit.NewLogger(buf)
+
+	audit.EmitAudit(context.Background(), logger, audit.Event{
+		Action:      audit.ActionHydrate,
+		Outcome:     audit.OutcomeCreated,
+		Actor:       "ns-a/user@x",
+		RequestID:   "req_g20",
+		Environment: "prod",
+		SourceIP:    "1.2.3.4",
+		UserAgent:   "ach-cli/1.0",
+		Route:       "/platform/hydrate",
+	})
+
+	m := decodeOne(t, buf)
+	for k, want := range map[string]string{
+		"environment":       "prod",
+		"source.ip":         "1.2.3.4",
+		"source.user_agent": "ach-cli/1.0",
+		"route":             "/platform/hydrate",
+	} {
+		got, _ := m[k].(string)
+		if got != want {
+			t.Fatalf("attr %q = %q, want %q (full record: %v)", k, got, want, m)
+		}
+	}
+}
+
 // TestEmitAuditPlaintextDisciplineDocumented asserts the helper does
 // NOT scrub Event.Extra — the documented audit-safety contract is
 // caller-side discipline (per audit/doc.go). This test verifies the

@@ -153,10 +153,10 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
 	}
-	if !strings.Contains(stderr, "hydrating with pk-") {
+	if !strings.Contains(stderr, "not Environment-scoped") {
 		t.Errorf("stderr missing §6.6 warning; stderr: %q", stderr)
 	}
-	if !strings.Contains(stderr, "use ek-") {
+	if !strings.Contains(stderr, "ek-") {
 		t.Errorf("stderr missing ek- hint; stderr: %q", stderr)
 	}
 }
@@ -179,7 +179,7 @@ func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
 	}
-	if strings.Contains(stderr, "hydrating with pk_") {
+	if strings.Contains(stderr, "not Environment-scoped") {
 		t.Errorf("stderr leaked §6.6 warning under --no-warnings: %q", stderr)
 	}
 }
@@ -283,7 +283,7 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 	if !strings.Contains(stdout, "schemaVersion") {
 		t.Errorf("stdout missing response payload: %q", stdout)
 	}
-	if strings.Contains(stderr, "hydrating with pk_") {
+	if strings.Contains(stderr, "not Environment-scoped") {
 		t.Errorf("stderr emitted pk_ warning for an ek_ run: %q", stderr)
 	}
 	if *mock.lastKey != "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij" {
@@ -915,7 +915,7 @@ func TestHydrateSummary(t *testing.T) {
 		// Tips footer (default project scope + pk- key → both hints).
 		"  Tips",
 		"    • pass --global to write under $HOME instead of ./.ach",
-		"    • pk- fits personal use; Environment workloads want an ek- key",
+		"    • pk- is not Environment-scoped; Environment workloads (CI/agents) want an ek- key",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q; got %q", want, got)

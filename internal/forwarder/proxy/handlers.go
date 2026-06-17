@@ -34,7 +34,7 @@ type HandlerDeps struct {
 	// Signer mints per-request ACH JWTs for /mcp + /a2a routes.
 	Signer jwt.Signer
 	// BIPResolver is the Postgres-backed BIP cache (C4). Resolve returns
-	// nil for "no policy" AND for explicit opt-out (alpha-LAST winner
+	// nil for "no policy" AND for explicit opt-out (alpha-FIRST winner
 	// has ForwardIdentityJWT=false).
 	BIPResolver BIPResolver
 	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.

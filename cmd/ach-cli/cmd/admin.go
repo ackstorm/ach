@@ -140,17 +140,27 @@ func swapAdminHTTPClientForTest(t interface {
 }
 
 // allowedRefreshKinds is the closed-set client-side allow-list per
-// D-CONTEXT W3b. The server-side handler additionally accepts
-// `pluginmarketplace` (with the canonical kind name) — we surface
-// the user-facing name `marketplace` and map it server-side via the
-// `kind` request body. For symmetry with the user-facing spec we
-// only accept the four names here; other kinds the server might
-// support are intentionally NOT exposed.
+// D-CONTEXT W3b. The user-facing names `marketplace` / `skill-marketplace`
+// map to the server kinds `pluginmarketplace` / `skillmarketplace` in
+// runAdminRefresh via refreshKindToServer; `plugin`/`prompt`/`artifact`/
+// `skill` pass through unchanged.
 var allowedRefreshKinds = map[string]struct{}{
-	"plugin":      {},
-	"prompt":      {},
-	"artifact":    {},
-	"marketplace": {},
+	"plugin":            {},
+	"prompt":            {},
+	"artifact":          {},
+	"skill":             {},
+	"marketplace":       {},
+	"skill-marketplace": {},
+}
+
+// refreshKindToServer maps a user-facing refresh kind to the canonical
+// server kind db.SetForceRefresh expects. Entries absent from the map pass
+// through verbatim (plugin/prompt/artifact/skill). The two marketplace
+// aliases MUST be mapped — sending `marketplace`/`skill-marketplace`
+// verbatim would 400 server-side (G8 fix).
+var refreshKindToServer = map[string]string{
+	"marketplace":       "pluginmarketplace",
+	"skill-marketplace": "skillmarketplace",
 }
 
 // adminRevokeKeyResponse mirrors admin.revokeKeyResponse on the wire.
@@ -193,7 +203,8 @@ Subcommands:
                                     Returns {revoked_count, errors}.
   refresh <kind> <name>            Force-refresh an external content
                                     resource. kind ∈ {plugin, prompt,
-                                    artifact, marketplace}.
+                                    artifact, skill, marketplace,
+                                    skill-marketplace}.
   list <kind|all>                  Read-only inventory of ACH objects
                                     (version + sync status). -o table|json|yaml.
 `,
@@ -701,8 +712,8 @@ func newAdminRefreshCmd() *cobra.Command {
 		Use: "refresh",
 		Short: "Force-refresh an external content resource. " +
 			"Usage: ach admin refresh <kind> <name>",
-		Long: "kind must be one of {plugin, prompt, artifact, marketplace}. " +
-			"No interactive confirmation (idempotent operation).",
+		Long: "kind must be one of {plugin, prompt, artifact, skill, marketplace, " +
+			"skill-marketplace}. No interactive confirmation (idempotent operation).",
 		Args:          cobra.ExactArgs(2),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -739,9 +750,17 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"kind must be one of: plugin, prompt, artifact, marketplace; got: %s",
+				"kind must be one of: plugin, prompt, artifact, skill, marketplace, skill-marketplace; got: %s",
 				kind),
 		}
+	}
+
+	// G8: map the user-facing kind to the canonical server kind. The two
+	// marketplace aliases differ from their server names; the rest pass
+	// through. Sending an alias verbatim would 400 server-side.
+	serverKind := kind
+	if mapped, ok := refreshKindToServer[kind]; ok {
+		serverKind = mapped
 	}
 
 	if strings.TrimSpace(name) == "" {
@@ -767,7 +786,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 	body := struct {
 		Kind string `json:"kind"`
 		Name string `json:"name"`
-	}{Kind: kind, Name: name}
+	}{Kind: serverKind, Name: name}
 	var resp adminRefreshResponse
 	if doErr := hc.Do(ctx, http.MethodPost, "/platform/admin/refresh", body, &resp); doErr != nil {
 		return doErr

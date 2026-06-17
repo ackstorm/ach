@@ -15,6 +15,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
 	authcli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
@@ -87,6 +88,10 @@ type Deps struct {
 	// cmd/ach/cmd/platform_api.go: a plain-http base (internal/dev) ⇒ true,
 	// an https base ⇒ false (hardened cookie).
 	InsecureCookie bool
+
+	// Metrics is the platform-api collector set (G7): hydrate duration +
+	// login total. Nil-tolerant — tests that don't scrape leave it unset.
+	Metrics *achmetrics.PlatformAPICollectors
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -120,6 +125,7 @@ func New(deps Deps) http.Handler {
 		Logger:           deps.Logger,
 		Namespace:        deps.Namespace,
 		InsecureCookie:   deps.InsecureCookie,
+		Metrics:          deps.Metrics,
 	}
 	r.Get("/platform/auth/login", auth.LoginHandler(authDeps))
 	r.Get("/platform/auth/sso/callback", auth.CallbackHandler(authDeps))
@@ -134,6 +140,7 @@ func New(deps Deps) http.Handler {
 		Logger:    deps.Logger,
 		Namespace: deps.Namespace,
 		BaseURL:   deps.BaseURL,
+		Metrics:   deps.Metrics,
 	}))
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
@@ -150,6 +157,7 @@ func New(deps Deps) http.Handler {
 			LiteLLM: deps.LiteLLM,
 			BaseURL: deps.BaseURL,
 			Audit:   deps.Audit,
+			Metrics: deps.Metrics,
 		}
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))
 

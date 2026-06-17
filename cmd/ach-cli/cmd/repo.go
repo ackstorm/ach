@@ -477,6 +477,4 @@ func formatProvides(caps []store.Capability) string {
 	return strings.Join(parts, " ")
 }
 
-func init() {
-	rootCmd.AddCommand(newRepoCmd())
-}
+// newRepoCmd is registered under the `local` parent (G9) — see local.go.

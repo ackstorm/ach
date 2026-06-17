@@ -78,14 +78,21 @@ touchpoint is the Dex SSO flow.
 Content-service runs as a **sidecar in the operator Pod** (co-located because
 the artifact PVC is RWO) — there is no `ach-content-service` Deployment.
 operator, platform-api, and forwarder are independent Deployments, each running
-the same `ach` image with `args: ["<mode>"]`. The `ach gateway` Deployment is a
-dumb edge reverse proxy fronting platform-api/content-service/forwarder behind
-one `ach-gateway` Service; the public Ingress targets it directly. In dev/e2e
+the same `ach` image with `args: ["<mode>"]`. The `ach gateway` Deployment is an
+**optional** dumb edge reverse proxy fronting platform-api/content-service/
+forwarder behind one `ach-gateway` Service; the public Ingress targets it
+directly. It is a logic-free packaging convenience — disable it with
+`gateway.enabled=false` and front the services with per-service Ingress instead.
+In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 `EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`
 (`api/` is authoritative).
+
+The architecture is **5 logic modes** (operator, platform-api, forwarder,
+content-service, migrate); `gateway` is an **optional, logic-free packaging
+convenience**, not a co-equal mode.
 
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
@@ -93,7 +100,7 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 | platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle + admin object inventory (read) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
-| gateway         | `ach gateway`         | Edge reverse proxy — single-origin front for all HTTP surfaces (no auth, no /metrics, no /dex) |
+| gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
@@ -125,6 +132,7 @@ independent collections.)
 |----------------------------------------|------------------------------------------|
 | Any `make` command / command organization | `references/makefile.md` (command list + 3-context model) |
 | Repo layout / synced fixtures / examples | `references/repo-layout.md` + `verify_all` in `scripts/cluster.sh` |
+| Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
 | New/changed SYNCED CR fixtures         | `test/e2e/cluster/{04-objects,05-environment}/` + `references/repo-layout.md` |
@@ -268,7 +276,8 @@ gates).
 
 Service-specific debugging (content-service 404, forwarder JWT 401,
 SourceReachable rate-limit, AccessGroupSynced, hydrate-golden diff, mcp-echo,
-ConflictWithUIRow, stale image roll) → **`references/troubleshooting.md`**. The
+ConflictWithUIRow (dormant/reserved — no UI write path in v1alpha1),
+stale image roll) → **`references/troubleshooting.md`**. The
 seven below are the cross-cutting workflow traps:
 
 ### ❌ Prefixing a `make` target with `./scripts/dev.sh`

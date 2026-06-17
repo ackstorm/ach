@@ -217,6 +217,12 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted.
 	out.metricsHandler = metrics.Handler(out.metricsReg)
 
+	// G7: typed platform-api collectors (hydrate duration + login total)
+	// + key-resolution cache hit/miss counters, registered on the same
+	// process-local Registry.
+	platformAPICollectors := metrics.NewPlatformAPICollectors(out.metricsReg)
+	keystoreCollectors := metrics.NewKeystoreCollectors(out.metricsReg)
+
 	pool, err := db.Open(ctx, cfg.DBURL)
 	if err != nil {
 		return nil, fmt.Errorf("db.Open: %w", err)
@@ -260,7 +266,8 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper)
+	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper,
+		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
@@ -281,6 +288,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
 		InsecureCookie:   cfg.InsecureCookie,
+		Metrics:          platformAPICollectors,
 	}
 	return out, nil
 }

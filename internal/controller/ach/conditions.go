@@ -158,11 +158,20 @@ func setExternalRefCondition(conds *[]metav1.Condition, condType string, status 
 // the operator declines to overwrite it. Shared by every reconciler that
 // dual-writes a projection table (plugin, prompt, artifact, BIP,
 // environment, litellmconnection) so the contract string cannot drift.
+//
+// Reserved for the future UI write path (#34); the promotion half is unbuilt
+// and origin='ui' rows are never produced in v1alpha1, so this Reason is
+// dormant — the guard exists but never trips.
 const ReasonConflictWithUIRow = "ConflictWithUIRow"
 
 // ConflictWithUIRowMessage is the canonical condition Message paired with
 // ReasonConflictWithUIRow. See [setConflictWithUIRowCondition].
 const ConflictWithUIRowMessage = "projection row owned by UI; operator declines to overwrite"
+
+// ReasonNameConflict is the canonical Reason on the Synced condition when
+// another CR of the same kind claims the same identity/target and loses the
+// deterministic tiebreak. Standardized across kinds (G15 / G10 checklist).
+const ReasonNameConflict = "NameConflict"
 
 // setConflictWithUIRowCondition writes the canonical ConflictWithUIRow
 // Status=False condition into a status conditions slice. condType varies

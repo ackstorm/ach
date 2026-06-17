@@ -74,6 +74,11 @@ Per-release flow (after the `chore(release): v0.1.0` push):
      - builds multi-arch manifest list at
        `ghcr.io/ackstorm/ach:vX.Y.Z` (+ `:latest` on
        stable).
+     - builds the **ach-cli** image (G4) — multi-arch manifest list at
+       `ghcr.io/ackstorm/ach-cli:vX.Y.Z` (+ `:latest` on stable) from
+       `Dockerfile.ach-cli` (distroless static, server-free: no git, no
+       migrations). Consumed by the `examples/ach-cli-initcontainer.yaml`
+       headless-agent bootstrap.
      - `sboms:` block generates the CycloneDX SBOM via cyclonedx-gomod.
      - `signs:` block signs the checksums file with cosign keyless OIDC.
      - `docker_signs:` block signs all image artifacts (per-arch +

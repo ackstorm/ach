@@ -47,8 +47,27 @@ func RequestID(next http.Handler) http.Handler {
 		id := newRequestID()
 		w.Header().Set("X-Request-Id", id)
 		ctx := WithRequestID(r.Context(), id)
+		// G20: capture forensics metadata once, at the outermost layer, so
+		// every downstream EmitAudit attaches source.ip + source.user_agent.
+		ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{
+			SourceIP:  clientIP(r),
+			UserAgent: r.Header.Get("User-Agent"),
+		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// clientIP returns the request's originating client address: the first
+// X-Forwarded-For hop when present (the gateway/Ingress prepends it), else
+// r.RemoteAddr. Used only for the audit source.ip attribute (G20).
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return r.RemoteAddr
 }
 
 // RecoverPanic wraps inner handlers so a panic becomes a 500
@@ -246,6 +265,12 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			}
 
 			ctx = WithKeyContext(ctx, info, isAdmin)
+			// G20: the key-bound Environment is the governance dimension for
+			// audit; handlers that operate on a different env (hydrate's
+			// requested env) override the typed Event field explicitly.
+			if info.Environment != "" {
+				ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: info.Environment})
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

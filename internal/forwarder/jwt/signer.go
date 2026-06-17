@@ -43,8 +43,8 @@ type Claims struct {
 	// sets this to ACH_BASE_URL verbatim (already validated as http(s)://
 	// at process start).
 	Iss string
-	// Sub is the JWT "sub" (subject) claim. Production forwarder code
-	// builds this as "<namespace>/<owner-email>" per Hub §9.1.
+	// Sub is the JWT "sub" (subject) claim — the bare owner email
+	// (no namespace prefix; G18 / commit 4c646d4). Hub §9.1.
 	Sub string
 	// Aud is the JWT "aud" (audience) claim. Production forwarder code
 	// sets "mcp:<name>" on /mcp/<name> and "a2a:<name>" on /a2a/<name>.
@@ -178,8 +178,8 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 		"iat": now,
 		"exp": now + 120, // FWD-07 / Hub §9.1: 120-second skew window. NO jti.
 	}
-	// "email" is additive (bare owner email, no namespace prefix) for consumers
-	// that key by email; sub stays namespace-qualified. Omitted when empty.
+	// "email" mirrors "sub" (both the bare owner email) for consumers that key
+	// by email. Additive; omitted when empty. (G18: sub is NOT namespace-qualified.)
 	if c.Email != "" {
 		claims["email"] = c.Email
 	}

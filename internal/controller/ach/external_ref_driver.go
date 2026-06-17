@@ -19,6 +19,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/sources"
 )
 
@@ -54,7 +55,11 @@ type externalRefDriverConfig[T any, PT externalRefCR[T]] struct {
 	namespace string
 	fetchers  FetcherFactory
 
-	kind      string // "plugin" / "prompt" / "artifact"
+	// metrics is the operator collector set (G7). Nil-tolerant: envtest and
+	// the per-kind unit reconcilers leave it unset and skip the increment.
+	metrics *achmetrics.OperatorCollectors
+
+	kind      string // "plugin" / "prompt" / "artifact" / "skill"
 	finalizer string // pluginFinalizer / promptFinalizer / artifactFinalizer
 
 	// specView projects cr.Spec → the driver's needed fields.
@@ -163,6 +168,22 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 		Log:           logger,
 	}
 	result := materializeExternalRef(ctx, deps)
+
+	// G7: operator_external_ref_refresh_total{kind,type,result}. result is
+	// the fetch-classification reason on failure, "not_modified" on a 304/
+	// SHA-match, else "synced".
+	if cfg.metrics != nil {
+		resultLabel := "synced"
+		switch {
+		case result.Err != nil:
+			reason, _ := classifyFetchError(result.Err, view.Refresh, lastRefresh)
+			resultLabel = reason
+		case result.NotModified:
+			resultLabel = "not_modified"
+		}
+		cfg.metrics.ExternalRefRefresh.
+			WithLabelValues(cfg.kind, view.SourceSpec.Type, resultLabel).Inc()
+	}
 
 	requeue := requeueDurationFromRefresh(view.Refresh)
 

@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -20,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -35,14 +38,16 @@ const backendIdentityPoliciesChannel = "ach_backend_identity_policies_changed"
 // object per CRD-06 (finalizer add/remove) and the issue-#34 projection
 // extension (write the row to backend_identity_policies + emit NOTIFY).
 //
-// DESIGN DECISION (TODO.md §6, feedback_bip_no_shadow_logic.md, 2026-05-26):
-// the Operator stays dumb on BIP duplicates. No Synced=DuplicateTarget
-// reason is ever emitted; no shadow flip; no Operator-side resolution of
-// (spec.target.kind, spec.target.name) duplicates. The Forwarder resolves
-// duplicates at READ time by selecting the alphabetically-LAST
-// metadata.name as the winner. Operators flip precedence by renaming
-// CRs (e.g. a "zz-" prefix). See internal/forwarder/bip/index.go
-// for the read-side resolver.
+// DESIGN DECISION (TODO.md §6, feedback_bip_no_shadow_logic.md, 2026-05-26;
+// revised G15 2026-06-16): the Operator does NOT resolve duplicates — runtime
+// stays forwarder-resolved. The Forwarder (internal/forwarder/bipcache) picks
+// the alphabetically-FIRST metadata.name as the winner at READ time; operators
+// flip precedence by renaming CRs (e.g. an "aaa-" prefix). The Operator now
+// emits one ADVISORY status on the loser(s): when ≥2 live BIPs name the same
+// (spec.target.kind, spec.target.name), every CR that is not the alpha-FIRST
+// winner gets Synced=False/NameConflict("shadowed by BackendIdentityPolicy/
+// <winner>"). This is informational only — it never changes which row the
+// forwarder mints from.
 //
 // CacheRoot is intentionally absent from the struct: this reconciler
 // has no filesystem cleanup body.
@@ -69,9 +74,10 @@ type BackendIdentityPolicyReconciler struct {
 
 // Reconcile implements the BackendIdentityPolicy lifecycle: finalizer
 // add/remove + projection write/soft-delete via the issue-#34 NOTIFY
-// helper. Per TODO.md §6 + OP-16 the Operator emits NO Synced=Duplicate*
-// reason; duplicates coexist and the Forwarder resolves alphabetically-
-// LAST at read time. The only Synced=False reason that can land here is
+// helper. Duplicates coexist and the Forwarder resolves alphabetically-
+// FIRST at read time; the operator additionally writes one advisory
+// Synced=False/NameConflict on the shadowed loser(s) (G15, see the type
+// doc). The other Synced=False reason that can land here is
 // ConflictWithUIRow (a UI-owned row already holds the PK), and it is
 // requeued after a minute so the operator does not hot-loop.
 func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -150,6 +156,48 @@ func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctr
 		}
 	}
 
+	// Duplicate-target advisory (G15): when ≥2 live BIPs name the same
+	// (target.kind, target.name), the alpha-FIRST metadata.name wins the
+	// forwarder tiebreak; the rest are advisory-flagged
+	// Synced=False/NameConflict. Runtime stays forwarder-resolved — this
+	// status is informational only and never changes the mint row.
+	winnerName, err := r.duplicateWinner(ctx, &cr)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("list BIPs for duplicate-target advisory: %w", err)
+	}
+	if winnerName != "" && winnerName != cr.Name {
+		// Idempotent: only write when the advisory condition is not already
+		// in its terminal shape. Without this guard the empty-predicate For()
+		// watch + enqueueSiblings would hot-loop on every status round-trip.
+		msg := "shadowed by BackendIdentityPolicy/" + winnerName
+		cond := apimeta.FindStatusCondition(cr.Status.Conditions, "Synced")
+		alreadySet := cond != nil &&
+			cond.Status == metav1.ConditionFalse &&
+			cond.Reason == ReasonNameConflict &&
+			cond.Message == msg &&
+			cr.Status.ObservedGeneration == cr.Generation
+		if !alreadySet {
+			if werr := r.writeNameConflictStatus(ctx, &cr, winnerName); werr != nil {
+				logger.Error(werr, "status update failed", "reason", ReasonNameConflict)
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+	// Winner or singleton: clear any stale NameConflict left from a prior
+	// reconcile where this CR lost the tiebreak (e.g. the previous winner
+	// was deleted). Leave a ConflictWithUIRow Synced condition untouched.
+	if cond := apimeta.FindStatusCondition(cr.Status.Conditions, "Synced"); cond != nil && cond.Reason == ReasonNameConflict {
+		apimeta.RemoveStatusCondition(&cr.Status.Conditions, "Synced")
+		cr.Status.ObservedGeneration = cr.Generation
+		desiredStatus := cr.Status
+		if err := retryStatusUpdate(ctx, r.Client, &cr, func(fresh *achv1alpha1.BackendIdentityPolicy) {
+			fresh.Status = desiredStatus
+		}); err != nil {
+			logger.Error(err, "status update failed", "reason", "clear-NameConflict")
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Steady state — no positive Synced condition is emitted (TODO.md §6 +
 	// OP-16 keep the closed condition set minimal). The bump of
 	// ObservedGeneration tells operators the reconciler has seen the
@@ -185,11 +233,94 @@ func (r *BackendIdentityPolicyReconciler) writeConflictStatus(
 	})
 }
 
+// duplicateWinner returns the alpha-FIRST metadata.name among all live BIPs
+// sharing this CR's (target.kind, target.name) when the group has >1 member,
+// else "". Mirrors bipcache.Resolve's tiebreak (rows[0] in name-ASC order is
+// the winner) but over the CR set rather than the projection rows — the
+// reconciler is Pool-nil under envtest, and the CRs are the source the
+// projection mirrors anyway. Soft-deleting CRs are excluded.
+func (r *BackendIdentityPolicyReconciler) duplicateWinner(
+	ctx context.Context,
+	cr *achv1alpha1.BackendIdentityPolicy,
+) (string, error) {
+	var list achv1alpha1.BackendIdentityPolicyList
+	if err := r.List(ctx, &list, client.InNamespace(cr.Namespace)); err != nil {
+		return "", err
+	}
+	winner := ""
+	count := 0
+	for i := range list.Items {
+		s := &list.Items[i]
+		if !s.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if s.Spec.Target.Kind != cr.Spec.Target.Kind || s.Spec.Target.Name != cr.Spec.Target.Name {
+			continue
+		}
+		count++
+		if winner == "" || s.Name < winner {
+			winner = s.Name
+		}
+	}
+	if count <= 1 {
+		return "", nil
+	}
+	return winner, nil
+}
+
+// writeNameConflictStatus emits the advisory Synced=False/NameConflict
+// condition on a shadowed (non-winner) BIP. See the type doc (G15).
+func (r *BackendIdentityPolicyReconciler) writeNameConflictStatus(
+	ctx context.Context,
+	cr *achv1alpha1.BackendIdentityPolicy,
+	winnerName string,
+) error {
+	setExternalRefCondition(
+		&cr.Status.Conditions, "Synced", metav1.ConditionFalse,
+		ReasonNameConflict, "shadowed by BackendIdentityPolicy/"+winnerName, cr.Generation,
+	)
+	cr.Status.ObservedGeneration = cr.Generation
+	desiredStatus := cr.Status
+	return retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.BackendIdentityPolicy) {
+		fresh.Status = desiredStatus
+	})
+}
+
+// enqueueSiblings maps a changed BIP to every other live BIP sharing its
+// (target.kind, target.name) so a pre-existing loser/winner recomputes its
+// advisory NameConflict when a sibling is created or deleted (the primary
+// For() watch only enqueues the changed object itself).
+func (r *BackendIdentityPolicyReconciler) enqueueSiblings(ctx context.Context, obj client.Object) []reconcile.Request {
+	changed, ok := obj.(*achv1alpha1.BackendIdentityPolicy)
+	if !ok {
+		return nil
+	}
+	var list achv1alpha1.BackendIdentityPolicyList
+	if err := r.List(ctx, &list, client.InNamespace(changed.Namespace)); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		s := &list.Items[i]
+		if s.Name == changed.Name {
+			continue
+		}
+		if s.Spec.Target.Kind == changed.Spec.Target.Kind && s.Spec.Target.Name == changed.Spec.Target.Name {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(s)})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *BackendIdentityPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.BackendIdentityPolicy{}, builder.WithPredicates()).
-		Named("ach-backendidentitypolicy")
+		Named("ach-backendidentitypolicy").
+		Watches(
+			&achv1alpha1.BackendIdentityPolicy{},
+			handler.EnqueueRequestsFromMapFunc(r.enqueueSiblings),
+		)
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(
 			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),

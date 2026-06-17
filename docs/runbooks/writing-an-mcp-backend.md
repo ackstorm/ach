@@ -21,6 +21,7 @@ operator implements the verifying side.
 | `sub` | `<owner-email>` | Hub §9.1 |
 | `aud` | `mcp:<bare-name>` on `/mcp/<bare-name>` | Hub §9.1 |
 | `exp - iat` | 120 seconds | FWD-07 |
+| `nbf` | Not emitted | Hub §9.1 |
 | `jti` | Not emitted | Hub §9.1 + §20 |
 | JWKS endpoint | `<iss>/.well-known/jwks.json` | Hub §9.2 |
 | JWKS `Content-Type` | `application/jwk-set+json` | RFC 7517 §8.5.1 |
@@ -39,9 +40,15 @@ operator implements the verifying side.
 3. **Validate `iss`, `aud`, `exp`.** `iss` is fixed per Forwarder
    install. `aud` is fixed per route (a backend that serves multiple
    `<name>`s accepts a small allowlist).
+
+   > ACH does NOT emit `nbf` (intentionally — with a 120 s `exp` it adds only
+   > clock-skew risk; `exp` is the sole time bound). Verify `iss`, `aud`, `exp`
+   > only — do NOT require `nbf`. ACH also emits no `jti`.
 4. **Do NOT trust `sub` as identity** unless your security model
-   matches ACH's. `sub` carries the bare `<owner-email>` — useful
-   for audit, NOT authorization.
+   matches ACH's. `sub` carries the bare `<owner-email>` (no namespace
+   prefix) — useful for audit, NOT authorization. The legacy
+   `<namespace>/<email>` form is gone (pre-release hard-cut); do not split
+   `sub` on `/`. Key on `iss` + `sub`.
 
 ## Reference implementation
 

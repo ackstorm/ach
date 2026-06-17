@@ -25,6 +25,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
 // promptsChannel is the NOTIFY channel emitted on every Prompt projection
@@ -51,6 +52,9 @@ type PromptReconciler struct {
 
 	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
 	ResyncSource chan event.GenericEvent
+
+	// Metrics is the operator collector set (G7). Nil-tolerant.
+	Metrics *achmetrics.OperatorCollectors
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=prompts,verbs=get;list;watch;create;update;patch;delete
@@ -66,6 +70,7 @@ func (r *PromptReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		cacheRoot: r.CacheRoot,
 		namespace: r.Namespace,
 		fetchers:  r.Fetchers,
+		metrics:   r.Metrics,
 		kind:      "prompt",
 		finalizer: promptFinalizer,
 		specView: func(cr *achv1alpha1.Prompt) externalRefSpecView {

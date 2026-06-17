@@ -504,6 +504,45 @@ func TestAdminRefresh_PluginFoo_Accepted(t *testing.T) {
 	}
 }
 
+// Test 12b: admin refresh accepts skill + the two marketplace aliases and
+// sends the canonical SERVER kind on the wire (G8). marketplace →
+// pluginmarketplace, skill-marketplace → skillmarketplace, skill passes through.
+func TestAdminRefresh_SkillAndMarketplaceKinds_Accepted(t *testing.T) {
+	cases := []struct {
+		userKind   string
+		serverKind string
+	}{
+		{"skill", "skill"},
+		{"marketplace", "pluginmarketplace"},
+		{"skill-marketplace", "skillmarketplace"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.userKind, func(t *testing.T) {
+			adminTestEnv(t)
+			srv := newAdminTestServer(t)
+			defer srv.Close()
+			srv.refreshBody = map[string]any{"status": "accepted"}
+			seedAdminConfig(t, srv.URL)
+
+			_, _, code, err := executeAdmin(t, "", "refresh", tc.userKind, "foo")
+			if err != nil {
+				t.Fatalf("kind=%s: refresh err = %v", tc.userKind, err)
+			}
+			if code != exit.OK {
+				t.Fatalf("kind=%s: exit code = %d; want 0", tc.userKind, code)
+			}
+			if atomic.LoadInt32(&srv.refreshCalls) != 1 {
+				t.Errorf("kind=%s: refreshCalls = %d; want 1", tc.userKind, srv.refreshCalls)
+			}
+			wantKind := `"kind":"` + tc.serverKind + `"`
+			if !strings.Contains(string(srv.lastRefreshBody), wantKind) {
+				t.Errorf("kind=%s: expected request body to carry %s; got: %s",
+					tc.userKind, wantKind, srv.lastRefreshBody)
+			}
+		})
+	}
+}
+
 // Test 13: admin refresh with invalid kind → exit 1 BEFORE HTTP.
 func TestAdminRefresh_InvalidKind_Rejected(t *testing.T) {
 	cases := []string{"team", "environment", "backendidentitypolicy", "garbage"}

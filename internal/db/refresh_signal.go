@@ -57,12 +57,16 @@ const refreshSignalChannel = "ach_refresh"
 // for reconcile.
 //
 // Kind discipline:
-//   - "plugin", "prompt", "artifact" → external_refs (kind, name) PK.
+//   - "plugin", "prompt", "artifact", "skill" → external_refs (kind, name) PK.
 //   - "pluginmarketplace"            → marketplace_plugins (marketplace_name, name)
 //     PK — the operator's marketplace reconciler
 //     sweeps every plugin under the named
 //     marketplace on the next pass, so the
 //     UPDATE sets every row's marker.
+//   - "skillmarketplace"             → skill_marketplace_skills (marketplace_name,
+//     name) PK — mirrors pluginmarketplace; the
+//     SkillMarketplace reconciler sweeps every
+//     discovered skill on the next pass.
 //
 // Behavioural contract:
 //   - Returns ErrUIOriginRefreshUnsupported when the row exists with
@@ -77,12 +81,16 @@ const refreshSignalChannel = "ach_refresh"
 // WithTxNotify). See package doc-comment for the no-transaction rationale.
 func SetForceRefresh(ctx context.Context, pool *pgxpool.Pool, ns, kind, name string) error {
 	switch kind {
-	case "plugin", "prompt", "artifact":
+	case "plugin", "prompt", "artifact", "skill":
 		if err := setForceRefreshExternalRef(ctx, pool, kind, name); err != nil {
 			return err
 		}
 	case "pluginmarketplace":
 		if err := setForceRefreshMarketplace(ctx, pool, name); err != nil {
+			return err
+		}
+	case "skillmarketplace":
+		if err := setForceRefreshSkillMarketplace(ctx, pool, name); err != nil {
 			return err
 		}
 	default:
@@ -184,6 +192,49 @@ func setForceRefreshMarketplace(ctx context.Context, pool *pgxpool.Pool, marketp
 			return err
 		}
 		return fmt.Errorf("db: SetForceRefresh(pluginmarketplace/%s): %w", marketplaceName, err)
+	}
+	return nil
+}
+
+// setForceRefreshSkillMarketplace sets force_refresh_requested_at = now() on
+// every skill_marketplace_skills row under marketplaceName iff origin='cr'.
+// Mirrors setForceRefreshMarketplace 1:1 (skill_marketplace_skills has the
+// same (marketplace_name, name) PK + origin column as marketplace_plugins);
+// the SkillMarketplace reconciler sweeps every discovered skill on the next
+// pass, so we mark all rows at once.
+//
+// Returns ErrUIOriginRefreshUnsupported when any row under the marketplace has
+// origin='ui'. Absent marketplace (no rows) returns pgx.ErrNoRows wrapped.
+func setForceRefreshSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, marketplaceName string) error {
+	const checkSQL = `
+		SELECT COUNT(*) FILTER (WHERE origin = 'cr'),
+		       COUNT(*) FILTER (WHERE origin <> 'cr')
+		  FROM skill_marketplace_skills
+		 WHERE marketplace_name = $1
+	`
+	var crCount, nonCrCount int
+	if err := pool.QueryRow(ctx, checkSQL, marketplaceName).Scan(&crCount, &nonCrCount); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, err)
+	}
+	if crCount == 0 && nonCrCount == 0 {
+		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, pgx.ErrNoRows)
+	}
+	if nonCrCount > 0 {
+		return ErrUIOriginRefreshUnsupported
+	}
+	const updateSQL = `
+		UPDATE skill_marketplace_skills
+		   SET force_refresh_requested_at = now()
+		 WHERE marketplace_name = $1 AND origin = 'cr'
+	`
+	if _, err := pool.Exec(ctx, updateSQL, marketplaceName); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, err)
 	}
 	return nil
 }
