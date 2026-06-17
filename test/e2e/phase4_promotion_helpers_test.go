@@ -359,6 +359,20 @@ func runCmdStdin(cmdline, stdin string) (string, error) {
 // ach-postgres pod and returns the integer. The whereClause MUST NOT
 // be user-tainted (this is a test helper, not a runtime path; SQL is
 // shell-quoted as-is).
+// execACHPostgres runs an arbitrary SQL statement against the ach Postgres via
+// `kubectl exec sts/ach-postgres -- psql`. Used by the §11g takeover test to
+// seed an origin='ui' draft row and to clean it up. The SQL must not contain a
+// double-quote (it is passed inside a double-quoted psql -c argument).
+func execACHPostgres(t *testing.T, sql string) {
+	t.Helper()
+	out, err := runCmd("kubectl", "exec", "-n", namespace,
+		"sts/ach-postgres", "--",
+		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
+	if err != nil {
+		t.Fatalf("execACHPostgres %q: %v\n%s", sql, err, out)
+	}
+}
+
 func queryACHPostgresCount(t *testing.T, table, whereClause string) int {
 	t.Helper()
 	sql := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, whereClause)

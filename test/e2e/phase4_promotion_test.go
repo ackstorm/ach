@@ -37,6 +37,65 @@ func TestPhase4Promotion(t *testing.T) {
 	// covered by TestPhase6CLI (CLI-driven), and its driver examples/hydrate-demo.sh
 	// was deleted. No coverage loss.
 	t.Run("SC11f_FinalizerCleanupMatrix", testSC11fFinalizerCleanup)
+	t.Run("SC11g_GitOpsWinsTakeover", testSC11gGitOpsWinsTakeover)
+}
+
+// testSC11gGitOpsWinsTakeover asserts the G2 GitOps-wins takeover end-to-end:
+// a UI-authored DRAFT row (origin='ui') is TAKEN OVER by the operator when the
+// matching CR is applied (origin flips 'ui'->'cr', primary key preserved), and
+// no ErrOriginConflict/ConflictWithUIRow is produced.
+//
+// Flow:
+//  1. Seed an origin='ui' environments row named ui-takeover-demo directly in
+//     Postgres (the UI write path's effect — no platform-api round-trip needed
+//     to exercise the operator side).
+//  2. Assert exactly one origin='ui' row exists.
+//  3. kubectl apply the matching Environment CR.
+//  4. Assert the row flips to origin='cr' within the timeout (takeover).
+//  5. Delete the CR; the finalizer drains the row.
+//
+// Wall clock: ~10s warm (seed + apply + first reconcile).
+func testSC11gGitOpsWinsTakeover(t *testing.T) {
+	t.Helper()
+
+	// Needs the synced execution resources (same set as §11f.Environment);
+	// scope out of focused dev runs via ACH_SKIP_PHASE4=1.
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§11g (phase4); opt out via ACH_SKIP_PHASE4=1.")
+	}
+
+	const name = "ui-takeover-demo"
+	const where = "namespace='ach-system' AND name='" + name + "'"
+
+	// Defensive pre-clean (a prior aborted run may have left the row).
+	execACHPostgres(t, "DELETE FROM environments WHERE "+where)
+
+	// 1. Seed the UI DRAFT row (origin='ui'). text[] columns default to '{}',
+	//    conditions default NULL, updated_at defaults now() — only the NOT NULL
+	//    no-default columns (resource_version) must be supplied.
+	execACHPostgres(t, "INSERT INTO environments (namespace, name, resource_version, origin, locked) "+
+		"VALUES ('ach-system', '"+name+"', '', 'ui', false)")
+	t.Cleanup(func() { execACHPostgres(t, "DELETE FROM environments WHERE "+where) })
+
+	// 2. Exactly one UI row, zero CR rows.
+	waitForACHPostgresCount(t, "environments", where+" AND origin='ui'", 1, 5*time.Second)
+
+	// 3. Apply the matching CR.
+	const fixture = "../../test/e2e/fixtures/phase4_takeover_environment.yaml"
+	if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
+		t.Fatalf("§11g apply takeover CR: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		_, _ = runCmdLonger(120*time.Second, "kubectl", "delete", "-f", fixture,
+			"--wait=true", "--ignore-not-found")
+	})
+
+	// 4. Operator takes over: origin flips 'ui'->'cr' (the row keeps its PK).
+	waitForACHPostgresCount(t, "environments", where+" AND origin='cr'", 1, 60*time.Second)
+
+	// Belt-and-suspenders: the CR must reach Synced (no ConflictWithUIRow) —
+	// AccessGroupSynced=True proves the projection write succeeded post-takeover.
+	waitForCondition(t, "environment", name, "AccessGroupSynced", "True", 120*time.Second)
 }
 
 // Stub bodies — implemented in later tasks. Each is t.Skipf'd so the
