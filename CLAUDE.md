@@ -140,7 +140,6 @@ independent collections.)
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI matrix below |
 | Pre-push gate logic                    | `scripts/pre-push-check.sh`              |
-| Publication / first-push procedure     | `PUBLISH.md`                             |
 | Helm chart values + defaults           | `deploy/helm/ach/values.yaml` (per-mode toggles) |
 | API reference rendering                | `docs/Makefile` + `docs/.crd-ref-docs.yaml` |
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |

@@ -61,7 +61,7 @@ ach/
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
-└── PROJECT, README.md, LICENSE, NOTICE, PUBLISH.md
+└── PROJECT, README.md, LICENSE, NOTICE
 ```
 
 ## Synced fixtures vs examples (independent collections)
