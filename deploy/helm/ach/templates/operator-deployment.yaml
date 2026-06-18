@@ -121,6 +121,11 @@ spec:
             - name: ACH_LITELLM_CONNECTION_SECRET_KEY
               value: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
             {{- end }}
+            # ACH_CREDENTIAL_HASH_PEPPER — required by the operator
+            # (pepperenv.Load); sourced from the security block, do NOT also
+            # set it in extraEnv (duplicate env entry). The DEK is not used by
+            # the operator, so it is intentionally not injected here.
+            {{- include "ach.pepperEnv" . | nindent 12 }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

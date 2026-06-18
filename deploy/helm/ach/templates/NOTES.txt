@@ -4,6 +4,20 @@ Namespace: {{ .Release.Namespace }}
 Watch namespace: {{ .Values.watchNamespace }}
 Image: {{ .Values.image.repo }}:{{ .Values.image.tag }}
 
+=== REQUIRED: at-rest crypto Secrets ===
+
+platform-api and the forwarder REFUSE TO START until these Secrets exist
+(they are referenced by the `security` values block; the chart never creates
+them, because they must stay STABLE across upgrades):
+
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.security.keyEncryptionKey.secretRef.name }} \
+    --from-literal={{ .Values.security.keyEncryptionKey.secretRef.key }}="$(openssl rand -base64 32)"   # AES-256 DEK: base64 of 32 bytes
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.security.credentialHashPepper.secretRef.name }} \
+    --from-literal={{ .Values.security.credentialHashPepper.secretRef.key }}="$(openssl rand -base64 32)"   # HMAC pepper
+
+⚠  Rotating the DEK orphans all sealed LiteLLM key material; rotating the
+   pepper invalidates every stored credential hash. Create once, keep stable.
+
 === IMPORTANT: CRD Upgrade Dance (D-03) ===
 
 The 7 LiteLLM operator CRDs are shipped in the chart's crds/ directory and

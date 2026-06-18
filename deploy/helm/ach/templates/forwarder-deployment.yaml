@@ -77,6 +77,11 @@ spec:
               value: ":8081"
             - name: ACH_JWT_SECRET_NAME
               value: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
+            # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
+            # rest (the forwarder opens sealed LiteLLM material with the DEK and
+            # resolves pk_ via the pepper). Sourced from the security.* Secret
+            # refs; do NOT also set them in extraEnv (duplicate env entries).
+            {{- include "ach.securityEnv" . | nindent 12 }}
             {{- with .Values.forwarder.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

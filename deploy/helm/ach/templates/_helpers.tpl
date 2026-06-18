@@ -89,6 +89,10 @@ container is the sole writer. Call with the root context and nindent 8:
       value: /var/cache/ach
     - name: CONTENT_SERVICE_HEALTH_BIND_ADDRESS
       value: ":8082"
+    # ACH_CREDENTIAL_HASH_PEPPER — required by content-service
+    # (pepperenv.Load); sourced from the security block, do NOT also
+    # set it in extraEnv (duplicate env entry).
+    {{- include "ach.pepperEnv" . | nindent 4 }}
     {{- with .Values.extraEnv }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -119,4 +123,37 @@ container is the sole writer. Call with the root context and nindent 8:
     capabilities:
       drop:
         - ALL
+{{- end -}}
+
+{{/*
+At-rest crypto material sourced by REFERENCE from operator-supplied Secrets
+(never inline, never chart-generated — rotating the DEK orphans sealed key
+material and rotating the pepper invalidates every stored credential hash, so
+both MUST stay stable across upgrades). `required` makes a blanked name fail
+render loudly rather than crashloop the pod. Who consumes what (the Go modes
+abort startup via dekenv.Load / pepperenv.Load otherwise):
+  - ACH_CREDENTIAL_HASH_PEPPER (HMAC-SHA256 pepper for pk_/ek_ hashing) —
+    operator, content-service, platform-api AND forwarder.
+  - ACH_KEY_ENCRYPTION_KEY (AES-256 DEK, base64 of 32 bytes; seals/opens
+    LiteLLM key material at rest) — platform-api + forwarder only.
+So pepper-only modes include "ach.pepperEnv"; the two seal/open modes include
+"ach.securityEnv" (DEK + pepper). Call with the root context.
+*/}}
+{{- define "ach.dekEnv" -}}
+- name: ACH_KEY_ENCRYPTION_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "security.keyEncryptionKey.secretRef.name is required" .Values.security.keyEncryptionKey.secretRef.name | quote }}
+      key: {{ required "security.keyEncryptionKey.secretRef.key is required" .Values.security.keyEncryptionKey.secretRef.key | quote }}
+{{- end -}}
+{{- define "ach.pepperEnv" -}}
+- name: ACH_CREDENTIAL_HASH_PEPPER
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "security.credentialHashPepper.secretRef.name is required" .Values.security.credentialHashPepper.secretRef.name | quote }}
+      key: {{ required "security.credentialHashPepper.secretRef.key is required" .Values.security.credentialHashPepper.secretRef.key | quote }}
+{{- end -}}
+{{- define "ach.securityEnv" -}}
+{{ include "ach.dekEnv" . }}
+{{ include "ach.pepperEnv" . }}
 {{- end -}}
