@@ -84,13 +84,20 @@ kubectl -n ach-system logs deploy/ach-platform-api
 ```
 ✅ Both platform-api and forwarder require the AES-256 DEK that seals
 LiteLLM virtual-key material at rest (G3 — same hard-requirement posture
-as the credential-hash pepper). Provision the `ach-key-encryption-key`
-Secret (key `dek`) with base64 of **exactly 32 bytes** wherever the pepper
-Secret lives: `openssl rand -base64 32`. The kind/e2e harness seeds a
-fixed dev value in `test/e2e/cluster/02-ach/secrets/`. WHY: `dekenv.Load`
-rejects an unset value, the `REPLACE-ME-WITH-RANDOM-` placeholder, and any
-value that does not decode to 32 bytes — encryption is always on, there is
-no plaintext fallback.
+as the credential-hash pepper, `ACH_CREDENTIAL_HASH_PEPPER`). The Helm chart
+injects BOTH env vars into platform-api + forwarder from the top-level
+`security` block (`security.keyEncryptionKey.secretRef` +
+`security.credentialHashPepper.secretRef`, via the `ach.securityEnv` helper) —
+but it never CREATES the Secrets, because they must stay stable across
+upgrades. Provision them out-of-band before install/upgrade (defaults:
+`ach-key-encryption-key`/`dek`, `ach-credential-hash-pepper`/`pepper`):
+`kubectl create secret generic ach-key-encryption-key --from-literal=dek="$(openssl rand -base64 32)"`
+(base64 of **exactly 32 bytes**) and likewise the pepper Secret. The kind/e2e
+harness seeds fixed dev values in `test/e2e/cluster/02-ach/secrets/`. WHY:
+`dekenv.Load` rejects an unset value, the `REPLACE-ME-WITH-RANDOM-`
+placeholder, and any value that does not decode to 32 bytes — encryption is
+always on, there is no plaintext fallback. (Do NOT also set these in
+`extraEnv` — the chart now sources them; a duplicate env entry results.)
 
 ### ❌ Upstream 401 + forwarder logs `key material decrypt failed` (G3)
 ```bash

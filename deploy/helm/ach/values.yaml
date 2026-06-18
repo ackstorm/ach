@@ -120,31 +120,18 @@ forwarder:
   # reinstall reuses the same key — no JWKS rotation. To force rotation,
   # delete the Secret and let the operator re-mint.
   jwtSecretName: ach-jwt-signing-keys
-  # litellmMasterSecretName MUST equal the Secret name in
-  # LiteLLMConnection/default's spec.masterKeySecretRef.name. Forwarder
-  # bootstrap reads this Secret to extract the LiteLLM master key per
-  # B2 refactor (replaces ACH_LITELLM_SHARED_KEY env var). RBAC carves
-  # the Role's secrets verbs to this name + jwtSecretName only.
+  # The LiteLLM master-key Secret the forwarder reads at boot is sourced
+  # from the single litellmConnection.masterKeySecretRef block (name + key,
+  # plus an optional cross-namespace `namespace`). The forwarder RBAC scopes
+  # to it automatically — there is no longer a per-forwarder master-key knob
+  # to keep in sync (the deprecated litellmMasterSecretName + litellmMasterKey
+  # were removed; set litellmConnection.masterKeySecretRef.namespace for the
+  # cross-namespace case, issue #34 C7).
   #
-  # DEPRECATED in favor of forwarder.litellmMasterKey.* (below); kept
-  # for backward compatibility with charts pinned pre-issue-#34.
-  litellmMasterSecretName: litellm-master-key
-  # litellmMasterKey carries the namespace/name/key triple matching the
-  # LiteLLMConnection/default projection row. Default namespace is empty,
-  # which resolves to .Release.Namespace via `default` in the RBAC template
-  # — matching the LiteLLMConnection resolver, which looks up the Secret
-  # in the connection CR's own namespace (no spec.masterKeySecretRef.namespace
-  # field today). Set a non-empty namespace to render a cross-namespace
-  # Role + RoleBinding (issue #34 C7).
-  litellmMasterKey:
-    namespace: ""
-    name: litellm-master-key
-    key: master_key
-  # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL,
-  # ACH_REDIS_ADDR, ACH_REDIS_PASSWORD via valueFrom,
-  # ACH_CREDENTIAL_HASH_PEPPER via valueFrom). The LiteLLM endpoint +
-  # master key are NOT env-sourced here — they flow from
-  # LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
+  # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL, ACH_REDIS_ADDR,
+  # ACH_REDIS_PASSWORD via valueFrom). The DEK + pepper are sourced from the
+  # top-level `security` block, NOT here; the LiteLLM endpoint + master key
+  # flow from LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
   # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
 
@@ -166,6 +153,38 @@ litellmConnection:
   masterKeySecretRef:
     name: litellm-master-key
     key: master_key
+    # namespace: optional cross-namespace override (issue #34 C7). Empty
+    # resolves to the release namespace. Set this only when the master-key
+    # Secret lives in a different namespace from the release — the forwarder
+    # RBAC then renders a cross-namespace Role + RoleBinding scoped to
+    # masterKeySecretRef.name. (Replaces the removed forwarder.litellmMasterKey.)
+    namespace: ""
+
+# security — at-rest crypto material that platform-api AND the forwarder
+# REQUIRE at startup (validateConfig aborts the process otherwise). Both are
+# referenced from operator-supplied Secrets — the chart never generates or
+# inlines them, because they MUST stay stable across upgrades:
+#   - rotating the DEK orphans all sealed LiteLLM key material;
+#   - rotating the pepper invalidates every stored credential hash.
+# Create the Secrets out-of-band BEFORE install/upgrade, e.g.:
+#   kubectl -n <ns> create secret generic ach-key-encryption-key \
+#     --from-literal=dek="$(openssl rand -base64 32)"      # 32 raw bytes, base64
+#   kubectl -n <ns> create secret generic ach-credential-hash-pepper \
+#     --from-literal=pepper="$(openssl rand -base64 32)"   # random, ≥32 bytes
+security:
+  # keyEncryptionKey → ACH_KEY_ENCRYPTION_KEY. The referenced value MUST be
+  # base64 of exactly 32 bytes (AES-256). Used by platform-api (seal) and the
+  # forwarder (open) for LiteLLM key material at rest.
+  keyEncryptionKey:
+    secretRef:
+      name: ach-key-encryption-key
+      key: dek
+  # credentialHashPepper → ACH_CREDENTIAL_HASH_PEPPER. Server-side
+  # HMAC-SHA256 pepper for pk_/ek_ credential hashing; never persisted.
+  credentialHashPepper:
+    secretRef:
+      name: ach-credential-hash-pepper
+      key: pepper
 
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one

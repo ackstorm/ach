@@ -17,18 +17,12 @@ extraEnv:
       secretKeyRef:
         name: ach-db-url
         key: url
-  - name: ACH_CREDENTIAL_HASH_PEPPER
-    valueFrom:
-      secretKeyRef:
-        name: ach-credential-hash-pepper
-        key: pepper
-  # G3: AES-256 DEK — platform-api seals / forwarder opens LiteLLM key
-  # material at rest. Both refuse to start without it (dekenv.Load).
-  - name: ACH_KEY_ENCRYPTION_KEY
-    valueFrom:
-      secretKeyRef:
-        name: ach-key-encryption-key
-        key: dek
+  # ACH_CREDENTIAL_HASH_PEPPER + ACH_KEY_ENCRYPTION_KEY are NOT set here
+  # anymore — they are injected into platform-api + forwarder by the chart's
+  # ach.securityEnv helper from the top-level `security` block, whose defaults
+  # (ach-credential-hash-pepper/pepper, ach-key-encryption-key/dek) match the
+  # Secrets seeded by 02-ach/secrets. Exercising the single-source path real
+  # deployments use; setting them in extraEnv too would duplicate the env vars.
   - name: ACH_BASE_URL
     value: "http://localhost:8080"
   # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY are NOT set here anymore.
