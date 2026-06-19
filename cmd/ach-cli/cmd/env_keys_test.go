@@ -373,7 +373,7 @@ func TestEnvKeys_Create_RequiresName(t *testing.T) {
 // list tests
 // ---------------------------------------------------------------------
 
-// Test 8: list renders via render.FormatEkList (per W7 — single SOT).
+// Test 8: list renders via render.FormatKeyList (per W7 — single SOT).
 func TestEnvKeys_List_RendersViaSharedFormatter(t *testing.T) {
 	envKeysTestEnv(t)
 	srv := newEnvKeysTestServer(t)

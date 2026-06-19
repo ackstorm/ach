@@ -228,17 +228,17 @@ func TestFormatEnvDescribe_Unavailable(t *testing.T) {
 	}
 }
 
-// TestFormatEkList asserts the table renders with the expected
+// TestFormatKeyList asserts the table renders with the expected
 // columns + deterministic ordering by KeyID ascending (per W7 — both
 // 06-05 env-keys list AND 06-08 admin keys list consume this).
-func TestFormatEkList(t *testing.T) {
-	rows := []EkRowView{
-		{KeyID: "ekid_b", OwnerEmail: "b@x", Environment: "demo", Name: "b-key", CreatedAt: "2026-05-01T00:00:00Z"},
-		{KeyID: "ekid_a", OwnerEmail: "a@x", Environment: "demo", Name: "a-key", CreatedAt: "2026-05-02T00:00:00Z"},
+func TestFormatKeyList(t *testing.T) {
+	rows := []KeyRowView{
+		{KeyID: "ekid_b", Type: "ek", OwnerEmail: "b@x", Environment: "demo", Name: "b-key", CreatedAt: "2026-05-01T00:00:00Z"},
+		{KeyID: "ekid_a", Type: "ek", OwnerEmail: "a@x", Environment: "demo", Name: "a-key", CreatedAt: "2026-05-02T00:00:00Z"},
 	}
-	got := FormatEkList(rows)
+	got := FormatKeyList(rows)
 	// Header.
-	for _, want := range []string{"KEY-ID", "OWNER", "ENVIRONMENT", "NAME", "CREATED"} {
+	for _, want := range []string{"KEY-ID", "TYPE", "OWNER", "ENVIRONMENT", "NAME", "CREATED"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing header column %q; got: %s", want, got)
 		}
@@ -258,9 +258,9 @@ func TestFormatEkList(t *testing.T) {
 	}
 }
 
-// TestFormatEkList_Empty moved to ek_test.go (06-05) — single source of
+// TestFormatKeyList_Empty moved to ek_test.go (06-05) — single source of
 // truth for the empty-slice marker assertion (now strict-matches
-// "No env-keys found").
+// "No keys found").
 
 // TestFormatEnvList_DescriptionTruncated asserts the list shows a truncated,
 // single-line description in the DESCRIPTION column.

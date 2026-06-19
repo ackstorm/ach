@@ -26,12 +26,8 @@ type EnvView struct {
 	Description string `json:"description,omitempty"`
 }
 
-// EkRowView + FormatEkList moved to ek.go (06-05) — single source of truth
-// for env-keys row shape and table formatter (richer schema with Status,
-// LastUsedAt, RevokedAt). render.go's stub removed in wave-3 merge to
-// resolve symbol collision; 06-04's FormatEkList tests in render_test.go
-// continue to pass because ek.go's superset table preserves the 5
-// columns the tests assert.
+// KeyRowView + FormatKeyList live in ek.go — single source of truth
+// for key row shape and table formatter (pk_ + ek_, with TYPE column).
 
 // HydrateView is the lean local copy of the server's HydrateResponse
 // that render needs to format a describe block. Defined here (NOT

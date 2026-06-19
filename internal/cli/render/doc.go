@@ -12,7 +12,7 @@
 // no-logger discipline.
 //
 // Tabular output uses stdlib text/tabwriter for deterministic spacing.
-// Lean wire-shape DTOs (EnvView, EkRowView, HydrateView, RuntimeItem,
+// Lean wire-shape DTOs (EnvView, KeyRowView, HydrateView, RuntimeItem,
 // ContextItem) live here so render does NOT pull internal/platformapi
 // (which transitively imports k8s.io/* + chi). The CLI binary stays
 // thin — render is consumed by `ach config show`, `ach env list`,
@@ -25,7 +25,7 @@
 // JSON tags on these structs match the server's HydrateResponse field
 // names so trivial json.Decoder round-trips work without re-mapping.
 //
-// W7 sharing contract: FormatEkList is the single source of truth for
-// the env-keys list table — both 06-05 `ach env-keys list` and 06-08
+// W7 sharing contract: FormatKeyList is the single source of truth for
+// the keys list table — both 06-05 `ach env-keys list` and 06-08
 // `ach admin keys list` call this function, NOT inline tabwriter code.
 package render

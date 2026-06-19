@@ -31,7 +31,7 @@
 // with a pointer to `ach admin keys revoke` (which W3-P2 / 06-08
 // will accept).
 //
-// Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatEkList`
+// Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatKeyList`
 // — a single source of truth shared with `ach admin keys list`
 // (06-08). NO inline tabwriter here.
 
@@ -90,8 +90,8 @@ type envKeysCreateResponse struct {
 
 // envKeysListResponse mirrors envkeys.ListResponse on the wire.
 type envKeysListResponse struct {
-	Items      []render.EkRowView `json:"items"`
-	NextCursor string             `json:"next_cursor,omitempty"`
+	Items      []render.KeyRowView `json:"items"`
+	NextCursor string              `json:"next_cursor,omitempty"`
 }
 
 // newEnvKeysCmd returns a fresh `ach env-keys` parent with its three
@@ -347,7 +347,7 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 	}
 
 	// Paginate until next_cursor empty. Accumulate items.
-	all := []render.EkRowView{}
+	all := []render.KeyRowView{}
 	currentCursor := cursor
 	for {
 		path := buildEnvKeysListPath(environment, ownerEmail, currentCursor, limit)
@@ -362,9 +362,9 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 		currentCursor = resp.NextCursor
 	}
 
-	// W7: single source of truth via render.FormatEkList. NO inline
+	// W7: single source of truth via render.FormatKeyList. NO inline
 	// tabwriter in this file.
-	_, _ = io.WriteString(stdout, render.FormatEkList(all))
+	_, _ = io.WriteString(stdout, render.FormatKeyList(all))
 	return nil
 }
 
