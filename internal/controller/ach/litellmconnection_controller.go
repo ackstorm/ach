@@ -48,7 +48,7 @@ const litellmConnectionFinalizer = "litellmconnections.ach.ackstorm.ai/finalizer
 type LiteLLMConnectionReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
-	Cache     connection.CacheReader
+	Cache     *connection.Cache
 	Namespace string
 	Log       logr.Logger
 	// Pool projects the LiteLLMConnection CR spec to the

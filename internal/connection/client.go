@@ -14,10 +14,10 @@ var ErrNotReady = errors.New("litellm connection not ready")
 
 // Client delegates litellm.Client calls to the current ready connection.
 type Client struct {
-	cache CacheReader
+	cache *Cache
 }
 
-func NewClient(cache CacheReader) *Client {
+func NewClient(cache *Cache) *Client {
 	return &Client{cache: cache}
 }
 

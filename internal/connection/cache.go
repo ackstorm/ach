@@ -23,5 +23,3 @@ func (c *Cache) Snapshot() Snapshot {
 func (c *Cache) Rebuild(snap Snapshot) {
 	c.snapshot.Store(&snap)
 }
-
-var _ CacheReader = (*Cache)(nil)
