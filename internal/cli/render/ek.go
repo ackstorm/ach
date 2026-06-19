@@ -63,9 +63,9 @@ func FormatKeyList(rows []KeyRowView) string {
 
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "KEY-ID\tTYPE\tOWNER\tENVIRONMENT\tNAME\tSTATUS\tCREATED")
+	_, _ = fmt.Fprintln(tw, "KEY-ID\tTYPE\tOWNER\tENVIRONMENT\tNAME\tSTATUS\tCREATED")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.KeyID, r.Type, r.OwnerEmail, r.Environment, r.Name, r.Status, r.CreatedAt)
 	}
 	_ = tw.Flush()

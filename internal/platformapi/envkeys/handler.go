@@ -125,6 +125,9 @@ type CreateResponse struct {
 // envelope code for malformed requests.
 const codeInvalidArgument = "invalid_argument"
 
+// statusActive is the canonical string value for a live, non-revoked key.
+const statusActive = "active"
+
 // defaultTeam is the LiteLLM Team alias every first-SSO user gets
 // enrolled into per Hub §17 (deployer concern). When LiteLLM rejects
 // the TeamMemberAdd because the default Team does not exist, the
@@ -665,7 +668,7 @@ func RevokeHandler(deps Deps) http.HandlerFunc {
 		}
 
 		// Step 4: already-revoked → 404 (idempotency without double audit).
-		if row.Status != "active" {
+		if row.Status != statusActive {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action: audit.ActionEkRevoke, Outcome: audit.OutcomeEnvironmentNotFound,
 				Actor: actor, RequestID: reqID, KeyID: keyID,
@@ -1040,7 +1043,7 @@ func normalizeKeyType(v string) string {
 // normalizeKeyStatus maps the ?status query value to a valid filter string.
 func normalizeKeyStatus(v string) string {
 	switch v {
-	case "active", "revoked", "expired":
+	case statusActive, "revoked", "expired":
 		return v
 	default:
 		return ""
