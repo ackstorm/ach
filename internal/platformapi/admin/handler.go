@@ -544,6 +544,129 @@ func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
+// --------------------------------------------------------------------------
+// ListKeysHandler — GET /platform/admin/keys
+// --------------------------------------------------------------------------
+
+// adminKeyListItem is the secret-free wire projection of one key returned by
+// ListKeysHandler. It mirrors keyListItemWire in the envkeys package to avoid
+// a cross-package import between sibling packages; the ~15 lines are duplicated
+// here intentionally (both packages own their own HTTP surface).
+type adminKeyListItem struct {
+	KeyID       string  `json:"key_id"`
+	Type        string  `json:"type"`
+	OwnerEmail  string  `json:"owner_email"`
+	Environment string  `json:"environment,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"created_at"`
+	LastUsedAt  *string `json:"last_used_at,omitempty"`
+	RevokedAt   *string `json:"revoked_at,omitempty"`
+}
+
+// adminDefaultLimit is the default page size for ListKeysHandler.
+const adminDefaultLimit = 100
+
+// adminMaxLimit is the hard cap for ListKeysHandler's ?limit parameter.
+const adminMaxLimit = 500
+
+// parseAdminLimit parses the ?limit query string into an integer between 1
+// and adminMaxLimit, defaulting to adminDefaultLimit on empty input.
+func parseAdminLimit(raw string) int {
+	if raw == "" {
+		return adminDefaultLimit
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return adminDefaultLimit
+	}
+	if n > adminMaxLimit {
+		return adminMaxLimit
+	}
+	return n
+}
+
+// normalizeAdminKeyType maps the ?type query value to a valid filter string.
+// Unknown values normalize to "" (no filter).
+func normalizeAdminKeyType(v string) string {
+	switch v {
+	case "pk", "ek":
+		return v
+	default:
+		return ""
+	}
+}
+
+// normalizeAdminKeyStatus maps the ?status query value to a valid filter string.
+// Unknown values normalize to "" (no filter).
+func normalizeAdminKeyStatus(v string) string {
+	switch v {
+	case "active", "revoked", "expired":
+		return v
+	default:
+		return ""
+	}
+}
+
+// writeAdminKeyListJSON encodes items + next_cursor as the paginated list envelope.
+func writeAdminKeyListJSON(w http.ResponseWriter, items []db.KeyListItem, next string) {
+	out := make([]adminKeyListItem, 0, len(items))
+	for _, it := range items {
+		row := adminKeyListItem{
+			KeyID:      it.KeyID,
+			Type:       it.Type,
+			OwnerEmail: it.OwnerEmail,
+			Status:     it.Status,
+			CreatedAt:  it.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		}
+		if it.Environment != nil {
+			row.Environment = *it.Environment
+		}
+		if it.Name != nil {
+			row.Name = *it.Name
+		}
+		if it.LastUsedAt != nil {
+			s := it.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+			row.LastUsedAt = &s
+		}
+		if it.RevokedAt != nil {
+			s := it.RevokedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+			row.RevokedAt = &s
+		}
+		out = append(out, row)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": out, "next_cursor": next})
+}
+
+// ListKeysHandler serves GET /platform/admin/keys — lists all keys across all
+// owners, optionally narrowed by ?owner_email. Gated by AdminOnly middleware.
+// Supports the same ?type, ?status, ?environment, ?limit, ?cursor filters as
+// the caller-scoped GET /platform/keys (Task 3), plus ?owner_email=<email>.
+func ListKeysHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var owner *string
+		if v := q.Get("owner_email"); v != "" {
+			owner = &v
+		}
+		f := db.KeyListFilter{
+			OwnerEmail:  owner,
+			Type:        normalizeAdminKeyType(q.Get("type")),
+			Status:      normalizeAdminKeyStatus(q.Get("status")),
+			Environment: q.Get("environment"),
+		}
+		limit := parseAdminLimit(q.Get("limit"))
+		items, next, err := db.ListKeys(r.Context(), deps.Pool, f, limit, q.Get("cursor"))
+		if err != nil {
+			reqID := middleware.RequestIDFromCtx(r.Context())
+			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
+			return
+		}
+		writeAdminKeyListJSON(w, items, next)
+	}
+}
+
 // isRefreshableKind gates the kinds Platform API may force-refresh.
 // Unknown kind resolves to a 400 at the bad-request gate before any DB
 // round trip — same closed set as the pre-issue-34 newACHObject helper.

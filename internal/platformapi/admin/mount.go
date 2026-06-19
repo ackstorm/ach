@@ -35,6 +35,7 @@ import (
 func Mount(deps Deps) func(r chi.Router) {
 	return func(r chi.Router) {
 		r.Use(AdminOnly(deps.Allowlist, deps.Audit, deps.Namespace))
+		r.Get("/keys", ListKeysHandler(deps))
 		r.Post("/keys/revoke", RevokeKeyHandler(deps))
 		r.Post("/users/{email}/revoke-keys", RevokeUserKeysHandler(deps))
 		r.Post("/refresh", ForceRefreshHandler(deps))

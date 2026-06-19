@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -366,6 +367,64 @@ func TestRevokeUserKeys_URLDecodePlusSign(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"revoked_count":1`) {
 		t.Fatalf("expected revoked_count=1; got %s", rec.Body.String())
+	}
+}
+
+// =========================== LK-1: admin list-keys (all owners + owner filter) ===========================
+
+// TestAdminListKeysHandler_AllOwnersWithOwnerFilter verifies that
+// GET /platform/admin/keys:
+//   - returns both owners' keys when no ?owner_email filter is supplied, and
+//   - narrows to the specified owner when ?owner_email= is set.
+func TestAdminListKeysHandler_AllOwnersWithOwnerFilter(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	// Insert a pk_ for owner A.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO personal_keys (key_id, credential_hash, owner_email, expires_at)
+		 VALUES ('pkid_admin1', 'h1', 'a@x.example', now()+interval '1 day')`); err != nil {
+		t.Fatalf("seed pk: %v", err)
+	}
+	// Insert an ek_ for owner B.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name)
+		 VALUES ('ekid_admin1', 'h2', 'env1', 'b@x.example', 'k')`); err != nil {
+		t.Fatalf("seed ek: %v", err)
+	}
+
+	deps := Deps{
+		Pool:      pool,
+		LiteLLM:   &fakeLitellm{},
+		Redis:     &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     discardLogger(),
+		Logger:    discardLogger(),
+	}
+	router := newAdminRouter(t, deps)
+
+	// No owner filter → both keys returned.
+	rec := adminGetRequest(t, router, "/platform/admin/keys")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("no-filter: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "pkid_admin1") || !strings.Contains(body, "ekid_admin1") {
+		t.Errorf("want both owners' keys; got %s", body)
+	}
+
+	// ?owner_email=a@x.example → only owner A's key.
+	rec = adminGetRequest(t, router, "/platform/admin/keys?owner_email=a@x.example")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("owner-filter: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body = rec.Body.String()
+	if !strings.Contains(body, "pkid_admin1") {
+		t.Errorf("owner filter: want pkid_admin1; got %s", body)
+	}
+	if strings.Contains(body, "ekid_admin1") {
+		t.Errorf("owner filter leaked other owner's key: %s", body)
 	}
 }
 
