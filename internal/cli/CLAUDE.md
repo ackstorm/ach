@@ -43,7 +43,7 @@ Four noun groups. `--target` is the platform selector everywhere.
 
 ```
 # governed remote object (CR-defined, server-mediated)
-ach-cli login | logout | whoami | config | admin | keys  # env-keys is a back-compat alias
+ach-cli login | logout | whoami | config | admin | keys
 ach-cli env list | describe <name> | hydrate <name> --target … [--global] | status | uninstall <name>
 
 # local-first serverless package manager (no k8s, no CRD)
@@ -51,6 +51,8 @@ ach-cli repo   add <source> --name <n> [--token] [--auth bearer|oauth2] [--path]
 ach-cli plugin list [--repo] | install <name@repo>… --target … [--global] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
 ach-cli skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
 ```
+
+`env-keys` is a back-compat alias for `keys`. `keys list` shows the caller's own pk_ AND ek_ keys (TYPE column); defaults to `--status active` — revoked keys are hidden; use `--status all` (also `revoked`/`expired`) to include them. `--type pk|ek` filters by key type. pk_ keys are not user-creatable; `keys create` / `keys revoke <ekid_…>` are env-key-only.
 
 `env*` = the governed path (platform-api → Dex → hydrate). `repo`/`plugin`/
 `skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,repo,plugin,skill}.go`
