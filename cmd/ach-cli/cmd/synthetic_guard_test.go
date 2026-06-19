@@ -64,7 +64,7 @@ func TestSyntheticGuard_ProfileFlagRejected(t *testing.T) {
 		{
 			name: "env-keys-create",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "create",
+				return executeKeys(t, "", "create",
 					"--environment", "demo", "--name", "x",
 					"--no-save", "--profile", "prod")
 			},
@@ -72,13 +72,13 @@ func TestSyntheticGuard_ProfileFlagRejected(t *testing.T) {
 		{
 			name: "env-keys-list",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "list", "--profile", "prod")
+				return executeKeys(t, "", "list", "--profile", "prod")
 			},
 		},
 		{
 			name: "env-keys-revoke",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "revoke", "ekid_abc",
+				return executeKeys(t, "", "revoke", "ekid_abc",
 					"--yes", "--profile", "prod")
 			},
 		},
@@ -140,13 +140,13 @@ func TestSyntheticGuard_EnvKeyFlagRejected(t *testing.T) {
 		{
 			name: "env-keys-list",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "list", "--env-key", "local-laptop")
+				return executeKeys(t, "", "list", "--env-key", "local-laptop")
 			},
 		},
 		{
 			name: "env-keys-revoke",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "revoke", "ekid_abc",
+				return executeKeys(t, "", "revoke", "ekid_abc",
 					"--yes", "--env-key", "local-laptop")
 			},
 		},
@@ -221,7 +221,7 @@ func TestSyntheticGuard_HalfSetRejected(t *testing.T) {
 		{
 			name: "env-keys-create",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnvKeys(t, "", "create",
+				return executeKeys(t, "", "create",
 					"--environment", "demo", "--name", "x", "--no-save")
 			},
 		},

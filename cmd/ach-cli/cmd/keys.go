@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach env-keys` is the ek- Environment Key lifecycle CLI surface:
-// three sub-subcommands (create / list / revoke) backed by the
-// `/platform/env-keys` REST endpoints already shipped by Phase 3
-// (internal/platformapi/envkeys/handler.go).
+// `ach keys` (alias: `env-keys`) manages the caller's API keys:
+// personal pk_ keys and environment ek_ keys. Three sub-subcommands:
+// create / list / revoke.
 //
 // D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
-// spec divergence): `ach env-keys create` ALWAYS persists the
+// spec divergence): `ach keys create` ALWAYS persists the
 // returned `ek-` plaintext to `profiles.<active>.ek.<server-name>`
 // in the active profile. The spec's `--save-as` flag is removed;
 // `--no-save` opts out of persist (ek- flows to stdout only — for
@@ -15,7 +14,7 @@
 //   - spec/ach_cli_spec_v20260515_FINALv4.md changelog (always-persist
 //     + --no-save entry).
 //
-// D-08: `ach env-keys create` in synthetic mode (ACH_BASE_URL +
+// D-08: `ach keys create` in synthetic mode (ACH_BASE_URL +
 // ACH_API_KEY) requires `--no-save` — without it, the CLI exits 1
 // because synthetic mode never has a writable config file.
 //
@@ -57,23 +56,23 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// envKeysHTTPClient is the test-only seam: when non-nil it replaces
+// keysHTTPClient is the test-only seam: when non-nil it replaces
 // the default *http.Client inside the httpclient.Client constructed by
-// each env-keys subcommand. Tests targeting httptest.NewTLSServer set
+// each keys subcommand. Tests targeting httptest.NewTLSServer set
 // this to the test server's TLS-trusting Client so the call reaches
 // the ephemeral cert. Mirrors the whoami/login pattern from 06-03.
-var envKeysHTTPClient *http.Client
+var keysHTTPClient *http.Client
 
-// swapEnvKeysHTTPClientForTest is the test helper that swaps
-// envKeysHTTPClient for the lifetime of t.
-func swapEnvKeysHTTPClientForTest(t interface {
+// swapKeysHTTPClientForTest is the test helper that swaps
+// keysHTTPClient for the lifetime of t.
+func swapKeysHTTPClientForTest(t interface {
 	Helper()
 	Cleanup(func())
 }, c *http.Client) {
 	t.Helper()
-	previous := envKeysHTTPClient
-	envKeysHTTPClient = c
-	t.Cleanup(func() { envKeysHTTPClient = previous })
+	previous := keysHTTPClient
+	keysHTTPClient = c
+	t.Cleanup(func() { keysHTTPClient = previous })
 }
 
 // envKeysCreateResponse mirrors envkeys.CreateResponse on the wire.
@@ -88,27 +87,28 @@ type envKeysCreateResponse struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-// envKeysListResponse mirrors envkeys.ListResponse on the wire.
-type envKeysListResponse struct {
+// keysListResponse mirrors the GET /platform/keys response on the wire.
+type keysListResponse struct {
 	Items      []render.KeyRowView `json:"items"`
-	NextCursor string              `json:"next_cursor,omitempty"`
+	NextCursor string              `json:"next_cursor"`
 }
 
-// newEnvKeysCmd returns a fresh `ach env-keys` parent with its three
-// children registered. Factory shape (mirrors 06-03 login/whoami/logout)
+// newKeysCmd returns a fresh `ach keys` parent (alias: env-keys) with its
+// three children registered. Factory shape (mirrors 06-03 login/whoami/logout)
 // lets tests construct a hermetic cobra subtree per t.Run without
 // cross-test global cobra state leaks.
-func newEnvKeysCmd() *cobra.Command {
+func newKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
-		Use:   "env-keys",
-		Short: "Manage ek- Environment Keys (create, list, revoke)",
-		Long: `Manage ek- Environment Keys. All three sub-subcommands require pk- auth.
+		Use:     "keys",
+		Aliases: []string{"env-keys"}, // back-compat
+		Short:   "Manage your API keys (personal pk_ and environment ek_)",
+		Long: `Manage your API keys — personal pk_ keys and environment ek_ keys.
+All three sub-subcommands require pk- auth.
 
 Sub-subcommands:
   create  Issue a new ek- for an Environment (D-07: always-persists to
           ~/.config/ach/config.yaml unless --no-save).
-  list    Paginate the env-keys visible to the caller (server-side
-          filters by owner email for non-admins).
+  list    Paginate your pk_ and ek_ keys (GET /platform/keys — caller-scoped).
   revoke  Delete an ek- by its ekid_ identifier.
 
 D-07 (spec deviation): ek- create ALWAYS persists the returned plaintext
@@ -123,7 +123,7 @@ without --no-save exits 1.
 			return cmd.Help()
 		},
 	}
-	parent.AddCommand(newEnvKeysCreateCmd(), newEnvKeysListCmd(), newEnvKeysRevokeCmd())
+	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd())
 	return parent
 }
 
@@ -211,7 +211,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 	hc := &httpclient.Client{
 		BaseURL:    baseURL,
 		APIKey:     bearer,
-		HTTPClient: envKeysHTTPClient,
+		HTTPClient: keysHTTPClient,
 		Verbose:    verbose,
 		Stderr:     stderr,
 	}
@@ -279,13 +279,14 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 }
 
 // ---------------------------------------------------------------------
-// list
+// list (GET /platform/keys — returns pk_ + ek_ for the caller)
 // ---------------------------------------------------------------------
 
-func newEnvKeysListCmd() *cobra.Command {
+func newKeysListCmd() *cobra.Command {
 	var (
 		flagEnvironment string
-		flagOwnerEmail  string
+		flagKeyType     string
+		flagStatus      string
 		flagCursor      string
 		flagLimit       int
 		flagProfile     string
@@ -295,16 +296,17 @@ func newEnvKeysListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:           "list",
-		Short:         "List ek- Environment Keys visible to the caller",
+		Short:         "List your pk_ and ek_ keys (caller-scoped)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runEnvKeysList(cmd, flagEnvironment, flagOwnerEmail, flagCursor, flagLimit,
-				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
+			return runKeysList(cmd, flagEnvironment, flagKeyType, flagStatus,
+				flagCursor, flagLimit, flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
-	cmd.Flags().StringVar(&flagOwnerEmail, "owner-email", "", "Filter by owner email (admin-only; server enforces)")
+	cmd.Flags().StringVar(&flagKeyType, "type", "", "Filter by type: pk|ek (default both)")
+	cmd.Flags().StringVar(&flagStatus, "status", "active", "Filter by status: active|revoked|expired|all (default active)")
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
@@ -314,7 +316,7 @@ func newEnvKeysListCmd() *cobra.Command {
 	return cmd
 }
 
-func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, limit int,
+func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string, limit int,
 	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stdout := cmd.OutOrStdout()
@@ -341,7 +343,7 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 	hc := &httpclient.Client{
 		BaseURL:    baseURL,
 		APIKey:     bearer,
-		HTTPClient: envKeysHTTPClient,
+		HTTPClient: keysHTTPClient,
 		Verbose:    verbose,
 		Stderr:     stderr,
 	}
@@ -350,8 +352,8 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 	all := []render.KeyRowView{}
 	currentCursor := cursor
 	for {
-		path := buildEnvKeysListPath(environment, ownerEmail, currentCursor, limit)
-		var resp envKeysListResponse
+		path := buildKeysListPath(environment, keyType, status, currentCursor, limit)
+		var resp keysListResponse
 		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
 			return doErr
 		}
@@ -368,13 +370,17 @@ func runEnvKeysList(cmd *cobra.Command, environment, ownerEmail, cursor string, 
 	return nil
 }
 
-func buildEnvKeysListPath(environment, ownerEmail, cursor string, limit int) string {
+func buildKeysListPath(environment, keyType, status, cursor string, limit int) string {
 	q := url.Values{}
 	if environment != "" {
 		q.Set("environment", environment)
 	}
-	if ownerEmail != "" {
-		q.Set("owner_email", ownerEmail)
+	// send status unless "" or "all" (server normalizes unknown to no filter)
+	if status != "" && status != "all" {
+		q.Set("status", status)
+	}
+	if keyType != "" {
+		q.Set("type", keyType)
 	}
 	if cursor != "" {
 		q.Set("cursor", cursor)
@@ -383,9 +389,9 @@ func buildEnvKeysListPath(environment, ownerEmail, cursor string, limit int) str
 		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
 	if len(q) == 0 {
-		return "/platform/env-keys"
+		return "/platform/keys"
 	}
-	return "/platform/env-keys?" + q.Encode()
+	return "/platform/keys?" + q.Encode()
 }
 
 // ---------------------------------------------------------------------
@@ -407,7 +413,7 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 		// Keeps the `grep -c '"revoke"'` count == 3 in the
 		// 06-05 plan acceptance text.
 		Use:           "revoke",
-		Short:         "Revoke an ek- by its ekid_ identifier (CLI-13). Usage: ach env-keys revoke <ekid_…>",
+		Short:         "Revoke an ek- by its ekid_ identifier (CLI-13). Usage: ach keys revoke <ekid_…>",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -458,7 +464,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"ach env-keys revoke accepts only %s ids; use `ach admin keys revoke` for %s ids",
+				"ach keys revoke accepts only %s ids; use `ach admin keys revoke` for %s ids",
 				keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
 		}
 	default:
@@ -495,7 +501,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 	hc := &httpclient.Client{
 		BaseURL:    baseURL,
 		APIKey:     bearer,
-		HTTPClient: envKeysHTTPClient,
+		HTTPClient: keysHTTPClient,
 		Verbose:    verbose,
 		Stderr:     stderr,
 	}
@@ -596,9 +602,9 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 // linker might trim the unused import.
 var _ = context.Background
 
-// Register `ach env-keys` on the root command. Mirrors the
+// Register `ach keys` (alias: env-keys) on the root command. Mirrors the
 // login/logout/whoami pattern from 06-03 — each subcommand owns its
 // own init() so cobra registration is local to the file.
 func init() {
-	rootCmd.AddCommand(newEnvKeysCmd())
+	rootCmd.AddCommand(newKeysCmd())
 }

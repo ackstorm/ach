@@ -15,13 +15,15 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// envKeysTestEnv stages an isolated XDG_CONFIG_HOME and clears every
+// keysTestEnv stages an isolated XDG_CONFIG_HOME and clears every
 // synthetic-mode env-var so each test runs hermetically.
-func envKeysTestEnv(t *testing.T) string {
+func keysTestEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -32,11 +34,11 @@ func envKeysTestEnv(t *testing.T) string {
 	return dir
 }
 
-// seedEnvKeysConfig writes a minimal config.yaml inside XDG_CONFIG_HOME
+// seedKeysConfig writes a minimal config.yaml inside XDG_CONFIG_HOME
 // with one active profile named "prod" carrying a pk_. Returns the
 // config file path. Distinct name from whoami_test.go/logout_test.go's
 // seedConfig to avoid the symbol clash.
-func seedEnvKeysConfig(t *testing.T, baseURL string) string {
+func seedKeysConfig(t *testing.T, baseURL string) string {
 	t.Helper()
 	cfgPath, err := config.Path()
 	if err != nil {
@@ -57,14 +59,14 @@ func seedEnvKeysConfig(t *testing.T, baseURL string) string {
 	return cfgPath
 }
 
-// envKeysTestServer wires httptest.NewTLSServer + the package-level
-// HTTP client seam so `ach env-keys *` can reach the ephemeral TLS
+// keysTestServer wires httptest.NewTLSServer + the package-level
+// HTTP client seam so `ach keys *` can reach the ephemeral TLS
 // cert. Routes:
 //
-//	POST   /platform/env-keys           — create
-//	GET    /platform/env-keys           — list (returns server.listBody)
-//	DELETE /platform/env-keys/{key_id}  — revoke (returns server.revokeStatus)
-type envKeysTestServer struct {
+//	POST   /platform/env-keys           — create (unchanged endpoint)
+//	GET    /platform/keys               — list (new combined endpoint)
+//	DELETE /platform/env-keys/{key_id}  — revoke (unchanged endpoint)
+type keysTestServer struct {
 	*httptest.Server
 	createBody   map[string]any
 	createStatus int
@@ -78,14 +80,15 @@ type envKeysTestServer struct {
 	lastQuery    string
 }
 
-func newEnvKeysTestServer(t *testing.T) *envKeysTestServer {
+func newKeysTestServer(t *testing.T) *keysTestServer {
 	t.Helper()
-	srv := &envKeysTestServer{
+	srv := &keysTestServer{
 		createStatus: 200,
 		listStatus:   200,
 		revokeStatus: 204,
 	}
 	mux := http.NewServeMux()
+	// create: POST /platform/env-keys (unchanged)
 	mux.HandleFunc("/platform/env-keys", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -93,6 +96,13 @@ func newEnvKeysTestServer(t *testing.T) *envKeysTestServer {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(srv.createStatus)
 			_ = json.NewEncoder(w).Encode(srv.createBody)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	// list: GET /platform/keys (new combined endpoint)
+	mux.HandleFunc("/platform/keys", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
 		case http.MethodGet:
 			atomic.AddInt32(&srv.listCalls, 1)
 			srv.lastQuery = r.URL.RawQuery
@@ -103,7 +113,7 @@ func newEnvKeysTestServer(t *testing.T) *envKeysTestServer {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	// DELETE /platform/env-keys/<id>
+	// revoke: DELETE /platform/env-keys/<id> (unchanged)
 	mux.HandleFunc("/platform/env-keys/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -124,18 +134,18 @@ func newEnvKeysTestServer(t *testing.T) *envKeysTestServer {
 	})
 	srv.Server = httptest.NewTLSServer(mux)
 	// Override the package-level *http.Client seam for the lifetime
-	// of the test so the TLS-trusting client wired through env_keys
+	// of the test so the TLS-trusting client wired through keys
 	// sees the ephemeral cert.
-	swapEnvKeysHTTPClientForTest(t, srv.Client())
+	swapKeysHTTPClientForTest(t, srv.Client())
 	return srv
 }
 
-// executeEnvKeys runs a fresh env-keys cobra subtree with args + stdin.
+// executeKeys runs a fresh keys cobra subtree with args + stdin.
 // Returns stdout, stderr, exit code, and the raw error (which the
 // caller is expected to inspect via errors.As for code mapping).
-func executeEnvKeys(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
+func executeKeys(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
 	t.Helper()
-	root := newEnvKeysCmd()
+	root := newKeysCmd()
 	var outBuf, errBuf bytes.Buffer
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
@@ -152,14 +162,49 @@ func executeEnvKeys(t *testing.T, stdin string, args ...string) (string, string,
 	return outBuf.String(), errBuf.String(), exit.General, err
 }
 
+// newRootCmdForTest builds a minimal root command with just the keys
+// subcommand registered, so alias resolution through the root can be
+// tested without pulling in the full package-level init() chain.
+func newRootCmdForTest() *cobra.Command {
+	root := &cobra.Command{
+		Use:           "ach-cli",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+	}
+	root.AddCommand(newKeysCmd())
+	return root
+}
+
+// executeRoot builds a minimal root command (with keys/env-keys registered)
+// and executes args through it. Required for alias testing since cobra
+// aliases only resolve when the parent command is registered on the root.
+func executeRoot(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	freshRoot := newRootCmdForTest()
+	var outBuf, errBuf bytes.Buffer
+	freshRoot.SetOut(&outBuf)
+	freshRoot.SetErr(&errBuf)
+	freshRoot.SetIn(strings.NewReader(stdin))
+	freshRoot.SetArgs(args)
+	err := freshRoot.ExecuteContext(context.Background())
+	if err == nil {
+		return outBuf.String(), errBuf.String(), exit.OK, nil
+	}
+	var cErr *exit.CodedError
+	if errors.As(err, &cErr) {
+		return outBuf.String(), errBuf.String(), cErr.Code, err
+	}
+	return outBuf.String(), errBuf.String(), exit.General, err
+}
+
 // ---------------------------------------------------------------------
 // create tests
 // ---------------------------------------------------------------------
 
 // Test 1: create persists ek_ plaintext into config.yaml + prints it once.
 func TestEnvKeys_Create_AlwaysPersists_D07(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.createBody = map[string]any{
 		"key_id":      "ekid_abc",
@@ -169,15 +214,15 @@ func TestEnvKeys_Create_AlwaysPersists_D07(t *testing.T) {
 		"owner_email": "u@example",
 		"created_at":  "2026-05-28T10:00:00Z",
 	}
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	stdout, _, code, err := executeEnvKeys(t, "",
+	stdout, _, code, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 		"--name", "local-laptop",
 	)
 	if err != nil {
-		t.Fatalf("env-keys create err = %v", err)
+		t.Fatalf("keys create err = %v", err)
 	}
 	if code != exit.OK {
 		t.Fatalf("exit code = %d; want 0", code)
@@ -204,8 +249,8 @@ func TestEnvKeys_Create_AlwaysPersists_D07(t *testing.T) {
 
 // Test 2: --no-save opts out of disk persist; still prints to stdout.
 func TestEnvKeys_Create_NoSave_OptsOut(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.createBody = map[string]any{
 		"key_id":      "ekid_abc",
@@ -215,17 +260,17 @@ func TestEnvKeys_Create_NoSave_OptsOut(t *testing.T) {
 		"owner_email": "u@example",
 		"created_at":  "2026-05-28T10:00:00Z",
 	}
-	cfgPath := seedEnvKeysConfig(t, srv.URL)
+	cfgPath := seedKeysConfig(t, srv.URL)
 	statBefore, _ := os.Stat(cfgPath)
 
-	stdout, _, code, err := executeEnvKeys(t, "",
+	stdout, _, code, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 		"--name", "local-laptop",
 		"--no-save",
 	)
 	if err != nil {
-		t.Fatalf("env-keys create --no-save err = %v", err)
+		t.Fatalf("keys create --no-save err = %v", err)
 	}
 	if code != exit.OK {
 		t.Fatalf("exit code = %d; want 0", code)
@@ -256,13 +301,13 @@ func TestEnvKeys_Create_NoSave_OptsOut(t *testing.T) {
 
 // Test 3: synthetic mode WITHOUT --no-save → exit 1 (D-08).
 func TestEnvKeys_Create_SyntheticWithoutNoSave_Exit1(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	t.Setenv("ACH_BASE_URL", srv.URL)
 	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
 
-	_, _, code, err := executeEnvKeys(t, "",
+	_, _, code, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 		"--name", "local-laptop",
@@ -277,8 +322,8 @@ func TestEnvKeys_Create_SyntheticWithoutNoSave_Exit1(t *testing.T) {
 
 // Test 4: synthetic mode WITH --no-save → exit 0, prints ek_ to stdout.
 func TestEnvKeys_Create_SyntheticWithNoSave_OK(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.createBody = map[string]any{
 		"key_id":      "ekid_abc",
@@ -291,7 +336,7 @@ func TestEnvKeys_Create_SyntheticWithNoSave_OK(t *testing.T) {
 	t.Setenv("ACH_BASE_URL", srv.URL)
 	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
 
-	stdout, _, code, err := executeEnvKeys(t, "",
+	stdout, _, code, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 		"--name", "local-laptop",
@@ -311,17 +356,17 @@ func TestEnvKeys_Create_SyntheticWithNoSave_OK(t *testing.T) {
 // Test 5: 503 from server → exit 6 via main.go's MapServerError; ek_
 // NOT printed (CLI-04 safety — partial response never leaks plaintext).
 func TestEnvKeys_Create_503_NoPlaintextLeak(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.createStatus = 503
 	srv.createBody = map[string]any{
 		"error":      map[string]string{"code": "litellm_unreachable", "message": "litellm down"},
 		"request_id": "req_test",
 	}
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	stdout, _, _, err := executeEnvKeys(t, "",
+	stdout, _, _, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 		"--name", "local-laptop",
@@ -339,12 +384,12 @@ func TestEnvKeys_Create_503_NoPlaintextLeak(t *testing.T) {
 
 // Test 6: --environment is required (cobra MarkFlagRequired).
 func TestEnvKeys_Create_RequiresEnvironment(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, _, err := executeEnvKeys(t, "",
+	_, _, _, err := executeKeys(t, "",
 		"create",
 		"--name", "local-laptop",
 	)
@@ -355,12 +400,12 @@ func TestEnvKeys_Create_RequiresEnvironment(t *testing.T) {
 
 // Test 7: --name is required.
 func TestEnvKeys_Create_RequiresName(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, _, err := executeEnvKeys(t, "",
+	_, _, _, err := executeKeys(t, "",
 		"create",
 		"--environment", "demo",
 	)
@@ -375,13 +420,14 @@ func TestEnvKeys_Create_RequiresName(t *testing.T) {
 
 // Test 8: list renders via render.FormatKeyList (per W7 — single SOT).
 func TestEnvKeys_List_RendersViaSharedFormatter(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.listBody = map[string]any{
 		"items": []map[string]any{
 			{
 				"key_id":      "ekid_abc",
+				"type":        "ek",
 				"environment": "demo",
 				"name":        "local-laptop",
 				"owner_email": "u@example",
@@ -390,9 +436,9 @@ func TestEnvKeys_List_RendersViaSharedFormatter(t *testing.T) {
 			},
 		},
 	}
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	stdout, _, code, err := executeEnvKeys(t, "", "list")
+	stdout, _, code, err := executeKeys(t, "", "list")
 	if err != nil {
 		t.Fatalf("list err = %v", err)
 	}
@@ -411,20 +457,69 @@ func TestEnvKeys_List_RendersViaSharedFormatter(t *testing.T) {
 
 // Test 9: --environment query filter is propagated.
 func TestEnvKeys_List_EnvironmentFilter(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.listBody = map[string]any{
 		"items": []map[string]any{},
 	}
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, _, err := executeEnvKeys(t, "", "list", "--environment", "demo")
+	_, _, _, err := executeKeys(t, "", "list", "--environment", "demo")
 	if err != nil {
 		t.Fatalf("list err = %v", err)
 	}
 	if !strings.Contains(srv.lastQuery, "environment=demo") {
 		t.Errorf("expected ?environment=demo in last query; got %q", srv.lastQuery)
+	}
+}
+
+// Test: list defaults to status=active and renders TYPE column.
+func TestKeys_List_DefaultsToActiveAndRendersType(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items": []map[string]any{
+			{
+				"key_id": "ekid_y", "type": "ek", "environment": "demo",
+				"name": "laptop", "owner_email": "u@x", "status": "active",
+				"created_at": "2026-06-01T00:00:00Z",
+			},
+			{
+				"key_id": "pkid_x", "type": "pk", "owner_email": "u@x",
+				"status": "active", "created_at": "2026-05-31T00:00:00Z",
+			},
+		},
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	out, _, _, err := executeKeys(t, "", "list")
+	if err != nil {
+		t.Fatalf("list err=%v", err)
+	}
+	if !strings.Contains(srv.lastQuery, "status=active") {
+		t.Errorf("default status=active not sent; query=%q", srv.lastQuery)
+	}
+	for _, want := range []string{"TYPE", "ekid_y", "ek", "pkid_x", "pk", "demo"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Test: env-keys alias resolves through the root command.
+func TestKeys_EnvKeysAliasStillWorks(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{"items": []map[string]any{}, "next_cursor": ""}
+	seedKeysConfig(t, srv.URL)
+	// Alias lives on the parent 'keys' command registered on a root.
+	// Invoke through executeRoot so cobra can resolve "env-keys" → "keys".
+	if _, _, _, err := executeRoot(t, "", "env-keys", "list"); err != nil {
+		t.Fatalf("env-keys alias failed: %v", err)
 	}
 }
 
@@ -434,12 +529,12 @@ func TestEnvKeys_List_EnvironmentFilter(t *testing.T) {
 
 // Test 10: revoke ekid_ with --yes → DELETE → exit 0.
 func TestEnvKeys_Revoke_WithYes(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, code, err := executeEnvKeys(t, "",
+	_, _, code, err := executeKeys(t, "",
 		"revoke", "ekid_abc", "--yes",
 	)
 	if err != nil {
@@ -458,12 +553,12 @@ func TestEnvKeys_Revoke_WithYes(t *testing.T) {
 
 // Test 11a: revoke without --yes + stdin "y" → DELETE → exit 0.
 func TestEnvKeys_Revoke_InteractiveConfirm_Yes(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, code, err := executeEnvKeys(t, "y\n",
+	_, _, code, err := executeKeys(t, "y\n",
 		"revoke", "ekid_abc",
 	)
 	if err != nil {
@@ -479,12 +574,12 @@ func TestEnvKeys_Revoke_InteractiveConfirm_Yes(t *testing.T) {
 
 // Test 11b: revoke without --yes + stdin "n" → exit 1 "cancelled".
 func TestEnvKeys_Revoke_InteractiveConfirm_No(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, stderr, code, err := executeEnvKeys(t, "n\n",
+	_, stderr, code, err := executeKeys(t, "n\n",
 		"revoke", "ekid_abc",
 	)
 	if err == nil {
@@ -504,12 +599,12 @@ func TestEnvKeys_Revoke_InteractiveConfirm_No(t *testing.T) {
 
 // Test 12: revoke with raw plaintext ek_ → exit 1 BEFORE any HTTP call (CLI-13).
 func TestEnvKeys_Revoke_RejectsRawPlaintextEk(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, stderr, code, err := executeEnvKeys(t, "",
+	_, stderr, code, err := executeKeys(t, "",
 		"revoke", "ek_aaaaaaaaaaaaaaaaaaaaaawxyz", "--yes",
 	)
 	if err == nil {
@@ -530,12 +625,12 @@ func TestEnvKeys_Revoke_RejectsRawPlaintextEk(t *testing.T) {
 
 // Test 13: revoke with pkid_ → exit 1 client-side reject (admin-only domain).
 func TestEnvKeys_Revoke_RejectsPkid(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, stderr, code, err := executeEnvKeys(t, "",
+	_, stderr, code, err := executeKeys(t, "",
 		"revoke", "pkid_abc", "--yes",
 	)
 	if err == nil {
@@ -555,13 +650,13 @@ func TestEnvKeys_Revoke_RejectsPkid(t *testing.T) {
 
 // Test 14: server 404 → exit 1 (not in {3,6} — not auth, not network).
 func TestEnvKeys_Revoke_Server404_Exit1(t *testing.T) {
-	envKeysTestEnv(t)
-	srv := newEnvKeysTestServer(t)
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
 	defer srv.Close()
 	srv.revokeStatus = 404
-	seedEnvKeysConfig(t, srv.URL)
+	seedKeysConfig(t, srv.URL)
 
-	_, _, code, err := executeEnvKeys(t, "",
+	_, _, code, err := executeKeys(t, "",
 		"revoke", "ekid_abc", "--yes",
 	)
 	if err == nil {
