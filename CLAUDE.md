@@ -395,7 +395,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 `make e2e-full` is the full-suite final gate (~10 min). It **keeps the cluster
 up** after the run — pass OR fail — so a red run can be diagnosed live; reclaim
-with `make cluster-down`. (`e2e-keep` is now just an alias of `e2e-full`.) **CI
+with `make cluster-down`. **CI
 does NOT run e2e at all** — the `e2e` job was removed from `ci.yml`, so e2e is a
 **local-only** gate now. Run `make e2e-full` on the host before merging any
 change to the controller/services/CRDs/Helm/e2e surfaces.

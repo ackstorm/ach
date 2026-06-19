@@ -49,7 +49,7 @@ work happens when you debug it.
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
 | **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-e2e`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
-| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full`/`e2e-keep` (orchestrate context-A children) |
+| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full` (orchestrates context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
 > **Why the split is explicit.** Context-A targets opt in to container
@@ -176,7 +176,6 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `e2e-full` | B | `cluster-up` → `e2e-run`; cluster **kept up** after the run (pass or fail). `make cluster-down` to reclaim. CI does NOT use this target (it tears down via its own `if: always()` step). |
-| `e2e-keep` | B | Alias of `e2e-full` (kept cluster — local iteration). |
 | `e2e-run` | A | Build e2e-tagged binaries, then run the e2e suite against an already-up cluster; executes `./test/e2e` first, then helper packages, so verbose output from the main suite streams sooner. |
 | `e2e-focus RUN=… / FOCUS=…` | A | Focused subtest (stdlib `-run` or ginkgo focus). |
 

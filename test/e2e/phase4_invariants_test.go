@@ -4,7 +4,7 @@
 
 // Phase 4 invariants e2e suite. Asserts the five Hub Phase 4 ROADMAP
 // Success Criteria SC#1..SC#5 against the running kind+Helm cluster
-// brought up by `make e2e-keep`. Mirrors phase3_invariants_test.go in
+// brought up by `make e2e-full`. Mirrors phase3_invariants_test.go in
 // shape: stdlib testing, kubectl orchestration, no Ginkgo.
 //
 // Engineer-pending verification debt: the suite is mechanically correct

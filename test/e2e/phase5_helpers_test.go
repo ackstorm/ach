@@ -13,7 +13,7 @@
 // CR fixture seeding, projection-row write-through latency) to
 // engineer action once the kind cluster is up. Run via
 // `ACH_E2E_PHASE5=1 make e2e-focus RUN='TestPhase5Invariants'` after
-// `make e2e-keep`.
+// `make e2e-full`.
 
 package e2e
 

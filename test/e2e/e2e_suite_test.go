@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 	operatorImage = envOr("OPERATOR_IMAGE", defaultOperatorImage)
 	keepCluster = os.Getenv("E2E_KEEP_CLUSTER") == "1"
 
-	// When invoked from scripts/cluster.sh (make e2e / e2e-full / e2e-keep),
+	// When invoked from scripts/cluster.sh (make e2e / e2e-full),
 	// the orchestrator has already created the cluster and applied
 	// config/e2e. Skip setupCluster()/teardownCluster() entirely so the
 	// overlay patches (replicas, env injection, Secret URL) survive — a

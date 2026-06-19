@@ -808,7 +808,7 @@ E2E_RUN_ENV = \
 	ACH_SKIP_PHASE4=$(ACH_SKIP_PHASE4) ACH_SKIP_PHASE5=$(ACH_SKIP_PHASE5) \
 	ACH_SKIP_PHASE6=$(ACH_SKIP_PHASE6) ACH_SKIP_PHASE7=$(ACH_SKIP_PHASE7)
 
-.PHONY: e2e-run e2e-focus e2e-full e2e-keep
+.PHONY: e2e-run e2e-focus e2e-full
 e2e-run: ## Build e2e binaries, then run e2e suite against an already-up cluster.
 	$(call container_target,_e2e-run)
 _e2e-run: _build-e2e
@@ -845,8 +845,3 @@ e2e-full: ## cluster-up → e2e-run (cluster KEPT up; run `make cluster-down` to
 	# `if: always()` teardown, so CI still never leaks a cluster.
 	$(MAKE) cluster-up
 	$(MAKE) e2e-run
-
-# Retained as an alias of e2e-full (both keep the cluster up) for muscle memory
-# and existing doc references.
-e2e-keep: e2e-full ## Alias of e2e-full (cluster kept for local iteration).
-	@:
