@@ -88,3 +88,104 @@ func TestListKeys_FiltersByTypeAndStatus(t *testing.T) {
 		t.Fatalf("type=ek/active got=%+v; want [ekid_act]", got)
 	}
 }
+
+func TestListKeys_CursorPaginatesAcrossPkAndEk(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	// Insert 3 keys for the same owner with strictly ordered created_at (DESC: ek1 > pk1 > ek2).
+	mustExec(t, ctx, pool, `
+		INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name, created_at)
+		VALUES
+		    ('ekid_cur1', 'h_cur_ek1', 'envA', 'cur@x.example', 'k1', now() - interval '1 minutes'),
+		    ('ekid_cur2', 'h_cur_ek2', 'envA', 'cur@x.example', 'k2', now() - interval '3 minutes')`)
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email, expires_at, created_at)
+		VALUES ('pkid_cur1', 'h_cur_pk1', 'cur@x.example', now() + interval '1 day', now() - interval '2 minutes')`)
+
+	owner := "cur@x.example"
+	filter := db.KeyListFilter{OwnerEmail: &owner}
+
+	// Page 1: limit=2, no cursor -> the two most-recent rows.
+	page1, next, err := db.ListKeys(ctx, pool, filter, 2, "")
+	if err != nil {
+		t.Fatalf("ListKeys page1: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("page1 len=%d; want 2", len(page1))
+	}
+	if next == "" {
+		t.Fatal("page1 nextCursor is empty; want a cursor for the remaining row")
+	}
+	// created_at DESC: ekid_cur1 (1m ago) then pkid_cur1 (2m ago).
+	if page1[0].KeyID != "ekid_cur1" {
+		t.Errorf("page1[0].KeyID=%q; want ekid_cur1", page1[0].KeyID)
+	}
+	if page1[1].KeyID != "pkid_cur1" {
+		t.Errorf("page1[1].KeyID=%q; want pkid_cur1", page1[1].KeyID)
+	}
+
+	// Page 2: use cursor -> the remaining row.
+	page2, next2, err := db.ListKeys(ctx, pool, filter, 2, next)
+	if err != nil {
+		t.Fatalf("ListKeys page2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page2 len=%d; want 1", len(page2))
+	}
+	if next2 != "" {
+		t.Errorf("page2 nextCursor=%q; want \"\" (exhausted)", next2)
+	}
+	if page2[0].KeyID != "ekid_cur2" {
+		t.Errorf("page2[0].KeyID=%q; want ekid_cur2", page2[0].KeyID)
+	}
+
+	// No overlap: page1 IDs and page2 IDs are disjoint.
+	seen := map[string]bool{}
+	for _, k := range page1 {
+		seen[k.KeyID] = true
+	}
+	for _, k := range page2 {
+		if seen[k.KeyID] {
+			t.Errorf("key %q appears on both pages (overlap)", k.KeyID)
+		}
+	}
+}
+
+func TestListKeys_FiltersByEnvironment(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	// Two ek_ rows for the same owner in different environments, plus one pk_.
+	mustExec(t, ctx, pool, `
+		INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name, created_at)
+		VALUES
+		    ('ekid_envf1', 'h_ef1', 'env1', 'envf@x.example', 'k-e1', now() - interval '1 minutes'),
+		    ('ekid_envf2', 'h_ef2', 'env2', 'envf@x.example', 'k-e2', now() - interval '2 minutes')`)
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email, expires_at, created_at)
+		VALUES ('pkid_envf1', 'h_pf1', 'envf@x.example', now() + interval '1 day', now() - interval '3 minutes')`)
+
+	owner := "envf@x.example"
+	// environment=env1 -> only the env1 ek_ row; env2 ek_ and pk_ (NULL environment) are excluded.
+	got, next, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner, Environment: "env1"}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys env1: %v", err)
+	}
+	if next != "" {
+		t.Errorf("nextCursor=%q; want \"\"", next)
+	}
+	if len(got) != 1 {
+		t.Fatalf("env1 len=%d; want 1 (only ekid_envf1)", len(got))
+	}
+	if got[0].KeyID != "ekid_envf1" {
+		t.Errorf("got[0].KeyID=%q; want ekid_envf1", got[0].KeyID)
+	}
+	if got[0].Environment == nil || *got[0].Environment != "env1" {
+		t.Errorf("got[0].Environment=%v; want env1", got[0].Environment)
+	}
+}

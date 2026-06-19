@@ -20,7 +20,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -186,8 +185,3 @@ func (r *recordingRedis) Del(_ context.Context, ks ...string) *redis.IntCmd {
 	return cmd
 }
 
-// discardAuditLogger returns an audit-tagged logger that discards output.
-// Use when the test does not inspect audit output.
-func discardAuditLogger() *slog.Logger {
-	return audit.NewLogger(io.Discard)
-}
