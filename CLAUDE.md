@@ -384,7 +384,9 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 - **SPDX-only license headers**: every `*.go` (outside `vendor/`,
   `zz_generated*.go`, `mock_*.go`) starts with
   `// SPDX-License-Identifier: Apache-2.0` (pre-push gate enforces;
-  `hack/boilerplate.go.txt` feeds controller-gen via `make gen-code`).
+  `hack/boilerplate.go.txt` feeds controller-gen via `make gen-code`). Run
+  `make fix-spdx` to auto-prepend the header to any file missing it (also runs
+  automatically at the end of `make gen-code`).
 - **govulncheck ack-list**: stdlib HIGH advisories awaiting upstream Go fixes
   live in `references/security/govulncheck-acknowledged.md`; the gate enforces a
   1:1 match (drift either way blocks push).

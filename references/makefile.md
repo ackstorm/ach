@@ -154,8 +154,9 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 ### Code generation (`gen-`)
 | Target | Ctx | Description |
 |--------|-----|-------------|
-| `gen-code` | A | controller-gen DeepCopy methods. |
+| `gen-code` | A | controller-gen DeepCopy methods; then runs `fix-spdx` to self-heal SPDX headers. |
 | `gen-manifests` | A | controller-gen CRDs + RBAC + webhook manifests. |
+| `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script; same scope as pre-push gate 15). Also auto-run by `gen-code`. |
 | `gen-crd-ref-docs` | A | Render `docs/api-reference/` from CRD Go types. |
 
 ### Tests (`test-`)

@@ -156,6 +156,11 @@ gen-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and 
 .PHONY: gen-code
 gen-code: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile=hack/boilerplate.go.txt paths="./api/..."
+	scripts/fix-spdx.sh
+
+.PHONY: fix-spdx
+fix-spdx: ## Prepend the SPDX header to any in-scope *.go file missing it.
+	scripts/fix-spdx.sh
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
