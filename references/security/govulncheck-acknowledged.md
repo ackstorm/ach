@@ -9,10 +9,13 @@
 
 This file lists reachable advisories that have been reviewed and
 explicitly acknowledged as accepted residual risk. The gate script
-`scripts/govulncheck-gate.sh` enforces a 1:1 match between actual
-reachable advisories and the rows below — any deviation (new advisory
-appearing or an acknowledged advisory clearing) blocks `make security`
-and `make pre-push`.
+`scripts/govulncheck-gate.sh` enforces a **one-directional** rule: every
+*reachable* advisory must have an acknowledged row below — a NEW
+(unacknowledged) reachable advisory blocks `make security` and `make pre-push`.
+A *cleared* advisory (an acknowledged row that no longer reaches) does NOT
+block; the gate emits a NOTE asking you to prune the stale row to keep this
+list honest. (With an empty list the behavior is identical to the old 1:1
+match: zero reachable passes, any new one blocks.)
 
 An empty list means the gate expects ZERO reachable advisories. Any
 new reachable advisory must be:
@@ -59,7 +62,8 @@ reviewer-approved row + justification before merge.
 ## Cross-references
 
 - `scripts/govulncheck-gate.sh` — the wrapper that enforces this list
-  1:1 as a pre-push gate (gate 13 in `scripts/pre-push-check.sh`).
+  one-directionally (new reachable advisories block; cleared rows only warn)
+  as a pre-push gate (gate 13 in `scripts/pre-push-check.sh`).
 - `Dockerfile.devtools` — pinned `GOVULNCHECK_VERSION` + base Go version.
 - `go.mod` — `toolchain go1.26.4` directive pins CI's Go runtime to
   match the devtools image.

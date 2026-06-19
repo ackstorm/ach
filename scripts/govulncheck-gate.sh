@@ -2,8 +2,11 @@
 # govulncheck-gate.sh — run govulncheck and compare its CALLED-set against
 # the acknowledged residuals in references/security/govulncheck-acknowledged.md.
 #
-# Exits 0 iff the reachable advisory set EXACTLY matches the acknowledged
-# list (no missing, no extra). Any deviation = block.
+# Exits 0 iff every reachable advisory has an acknowledged row. A NEW
+# (unacknowledged) reachable advisory blocks the push; an acknowledged
+# advisory that has cleared (no longer reachable) only emits a NOTE asking to
+# prune the stale row — it does NOT block. This is one-directional: new
+# advisories are the security signal; a cleared advisory is housekeeping.
 #
 # Used by `make security` (Phase 13 HRD-04). Invoked inside the devtools
 # container — relies on the bare `govulncheck` binary being on PATH.
@@ -39,24 +42,25 @@ set -e
 ACTUAL=$( { echo "$RAW" | grep -oE '^Vulnerability #[0-9]+: GO-[0-9]{4}-[0-9]+' || true; } \
   | awk '{print $NF}' | sort -u)
 
-if [[ "$EXPECTED" == "$ACTUAL" ]]; then
-  if [[ -z "$EXPECTED" ]]; then
-    echo "govulncheck-gate: PASS — 0 reachable advisories (ack-list is empty)."
-  else
-    COUNT=$(echo "$EXPECTED" | wc -l | tr -d ' ')
-    echo "govulncheck-gate: PASS — ${COUNT} reachable advisories match the acknowledged set."
-  fi
+# UNACKED = reachable advisories with no acknowledged row → hard block.
+UNACKED=$(comm -13 <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") | sed '/^$/d')
+# CLEARED = acknowledged rows that no longer reach → warn only (stale ack).
+CLEARED=$(comm -23 <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") | sed '/^$/d')
+
+if [[ -n "$CLEARED" ]]; then
+  echo "govulncheck-gate: NOTE — acknowledged advisories no longer reachable (remove their rows from $ACK_FILE to keep it honest):" >&2
+  echo "$CLEARED" >&2
+fi
+
+if [[ -z "$UNACKED" ]]; then
+  echo "govulncheck-gate: PASS — no unacknowledged reachable advisories."
   exit 0
 fi
 
-echo "govulncheck-gate: FAIL — reachable advisory set does not match acknowledged list." >&2
-echo "--- expected (from $ACK_FILE) ---" >&2
-echo "$EXPECTED" >&2
-echo "--- actual (from govulncheck) ---" >&2
-echo "$ACTUAL" >&2
+echo "govulncheck-gate: FAIL — NEW unacknowledged reachable advisories:" >&2
+echo "$UNACKED" >&2
 echo "" >&2
-echo "If a NEW advisory appeared: fix the underlying issue OR extend $ACK_FILE with a reviewer-approved row + justification, then re-run." >&2
-echo "If an EXISTING advisory cleared: REMOVE the row from $ACK_FILE so the gate stays honest." >&2
+echo "Fix the underlying issue OR add a reviewer-approved row to $ACK_FILE, then re-run." >&2
 echo "" >&2
 echo "Full govulncheck output (exit $GOVULN_EXIT):" >&2
 echo "$RAW" >&2
