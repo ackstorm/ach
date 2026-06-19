@@ -182,6 +182,69 @@ func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
+// TestListEnvironmentsIncludingDraining: a drain-mode row (deletion_timestamp
+// set) is returned by ListEnvironmentsIncludingDraining but NOT by
+// ListEnvironments. This preserves the CS-09 contract for the content-service
+// in-memory env cache (which must keep serving environments under finalizer
+// drain) while the steady-state ListEnvironments still excludes them.
+func TestListEnvironmentsIncludingDraining(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	const ns = "ach-system"
+	seed := func(name string) {
+		if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
+			Namespace: ns, Name: name, ResourceVersion: "1",
+			AuthorizedTeams: []string{}, ContextPrompts: []string{},
+			ContextPlugins: []string{}, ContextArtifacts: []string{},
+			ContextSkills: []string{},
+			RuntimeModels: []string{}, RuntimeMCPServers: []string{},
+			RuntimeA2AAgents: []string{},
+		}); err != nil {
+			t.Fatalf("seed Upsert(%s): %v", name, err)
+		}
+	}
+	names := func(rows []db.EnvironmentRow) []string {
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.Name)
+		}
+		return out
+	}
+	contains := func(xs []string, want string) bool {
+		for _, x := range xs {
+			if x == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	seed("live")
+	seed("draining")
+	if err := db.SoftDeleteEnvironment(ctx, pool, ns, "draining"); err != nil {
+		t.Fatalf("SoftDeleteEnvironment(draining): %v", err)
+	}
+
+	all, err := db.ListEnvironmentsIncludingDraining(ctx, pool, ns)
+	if err != nil {
+		t.Fatalf("list incl draining: %v", err)
+	}
+	if got := names(all); !contains(got, "live") || !contains(got, "draining") {
+		t.Fatalf("incl-draining = %v; want both live and draining", got)
+	}
+
+	live, err := db.ListEnvironments(ctx, pool, ns)
+	if err != nil {
+		t.Fatalf("list live: %v", err)
+	}
+	if contains(names(live), "draining") {
+		t.Fatalf("ListEnvironments leaked a draining row: %v", names(live))
+	}
+}
+
 // TestSoftDeleteEnvironment_PreservesRow: SoftDelete sets deletion_timestamp
 // but Get still returns the row (CS-09 — Content Service keeps serving until
 // hard-delete by finalizer drain). Re-SoftDelete is idempotent (no error).

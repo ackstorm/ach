@@ -96,7 +96,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 	}
 
 	// Gates 2 + 3 — env header + envcache row.
-	envRow, errR := resolveEnv(ctx, d, info, r.Header.Get("x-ach-environment"))
+	envRow, errR := resolveEnv(d, info, r.Header.Get("x-ach-environment"))
 	if errR != nil {
 		return nil, &pipelineErr{errResp: errR, keyInfo: info}
 	}

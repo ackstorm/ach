@@ -12,8 +12,8 @@
 //   TestPipeline_EmitsOneAuditEventPerRequest — audit emission shape on success + denial.
 //   TestPipeline_NoStoreHeader               — drift flag #3 lockdown.
 //
-// Harness: testcontainers Postgres (via setupPostgresIntegration) +
-// miniredis (in-memory) + an in-process mock LiteLLM TeamsResolver that
+// Harness: testcontainers Postgres (via setupPostgresIntegration) + an
+// in-memory envcache snapshot + an in-process mock LiteLLM TeamsResolver that
 // returns a configurable team list per email. No real LiteLLM client.
 
 package contentservice
@@ -35,11 +35,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -62,8 +61,7 @@ import (
 type testFixtures struct {
 	t            *testing.T
 	pool         *pgxpool.Pool
-	mr           *miniredis.Miniredis
-	rdb          *redis.Client
+	envCache     *envcache.Cache
 	cacheRoot    string
 	pepper       []byte
 	deps         Deps
@@ -173,8 +171,8 @@ func (f *fakeTeams) setTeams(email string, teams []string) {
 	f.teamsByEmail[email] = teams
 }
 
-// setupIntegration wires the harness: Postgres + miniredis + cache root
-// tempdir + Deps with all real implementations except the mock teams
+// setupIntegration wires the harness: Postgres + in-memory envcache + cache
+// root tempdir + Deps with all real implementations except the mock teams
 // resolver.
 func setupIntegration(t *testing.T) *testFixtures {
 	t.Helper()
@@ -182,8 +180,6 @@ func setupIntegration(t *testing.T) *testFixtures {
 	t.Cleanup(cancel)
 
 	pool, pgCleanup := setupPostgresIntegration(t, ctx)
-	mr := miniredis.RunT(t)
-	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	pepper := []byte("integration-test-pepper-32-bytes!")
 
 	// Resolver: real keystore.NewDBResolver wrapping the pool.
@@ -192,26 +188,11 @@ func setupIntegration(t *testing.T) *testFixtures {
 		t.Fatalf("NewDBResolver: %v", err)
 	}
 
-	// EnvCache: real envcache wrapping db.GetEnvironmentByName via a
-	// Loader closure that converts EnvironmentRow → EnvRow.
-	loader := func(ctx context.Context, ns, name string) (*envcache.EnvRow, error) {
-		row, err := db.GetEnvironmentByName(ctx, pool, ns, name)
-		if err != nil {
-			return nil, err
-		}
-		if row == nil {
-			return nil, nil //nolint:nilnil
-		}
-		return &envcache.EnvRow{
-			AuthorizedTeams:  row.AuthorizedTeams,
-			ContextPrompts:   row.ContextPrompts,
-			ContextPlugins:   row.ContextPlugins,
-			ContextArtifacts: row.ContextArtifacts,
-		}, nil
-	}
-	envCache, err := envcache.NewCachedEnvCache(loader, rdb)
-	if err != nil {
-		t.Fatalf("NewCachedEnvCache: %v", err)
+	// EnvCache: real in-memory snapshot refreshed from Postgres. seedEnvironment
+	// re-snapshots after each upsert so tests observe their seeded environments.
+	envCache := envcache.New(pool, "default", logr.Discard())
+	if err := envCache.Refresh(ctx); err != nil {
+		t.Fatalf("envcache initial Refresh: %v", err)
 	}
 
 	teams := &fakeTeams{}
@@ -243,15 +224,14 @@ func setupIntegration(t *testing.T) *testFixtures {
 	return &testFixtures{
 		t:            t,
 		pool:         pool,
-		mr:           mr,
-		rdb:          rdb,
+		envCache:     envCache,
 		cacheRoot:    cacheRoot,
 		pepper:       pepper,
 		deps:         deps,
 		auditBuf:     auditBuf,
 		teamsFake:    teams,
 		registry:     reg,
-		cleanupFuncs: []func(){pgCleanup, func() { _ = rdb.Close() }},
+		cleanupFuncs: []func(){pgCleanup},
 	}
 }
 
@@ -272,12 +252,16 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 		return s
 	}
 	row := db.EnvironmentRow{
-		Namespace:         "default",
-		Name:              name,
-		AuthorizedTeams:   defaultSlice(authorizedTeams),
-		ContextPrompts:    defaultSlice(prompts),
-		ContextPlugins:    defaultSlice(plugins),
-		ContextArtifacts:  defaultSlice(artifacts),
+		Namespace:        "default",
+		Name:             name,
+		AuthorizedTeams:  defaultSlice(authorizedTeams),
+		ContextPrompts:   defaultSlice(prompts),
+		ContextPlugins:   defaultSlice(plugins),
+		ContextArtifacts: defaultSlice(artifacts),
+		// context_skills is NOT NULL (migration 000009); bind an explicit empty
+		// slice so UpsertEnvironment does not send NULL. These cases do not
+		// exercise the skills allowlist.
+		ContextSkills:     []string{},
 		RuntimeModels:     []string{},
 		RuntimeMCPServers: []string{},
 		RuntimeA2AAgents:  []string{},
@@ -285,6 +269,11 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 	}
 	if err := db.UpsertEnvironment(ctx, f.pool, row); err != nil {
 		f.t.Fatalf("UpsertEnvironment(%s): %v", name, err)
+	}
+	// The env cache is an eager snapshot (not lazy load-through): re-snapshot
+	// so the just-seeded environment is visible to the next request.
+	if err := f.envCache.Refresh(ctx); err != nil {
+		f.t.Fatalf("envcache Refresh after seedEnvironment(%s): %v", name, err)
 	}
 }
 
@@ -593,8 +582,6 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	t.Run("403 unauthorized_team", func(t *testing.T) {
 		// Seed pk_ with mismatched team.
 		fx.seedPersonalKey("pkid_z", "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "alice-team-mismatch@x.com")
-		// Refresh envcache (just expire it; loader will re-fetch).
-		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
 			"x-ach-key":         "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
 			"x-ach-environment": "prod",
@@ -606,7 +593,6 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is bound to prod; request asks for staging.
 		fx.seedEnvironment("staging", []string{"team-a"},
 			[]string{"p1"}, []string{}, []string{})
-		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
 			"x-ach-key":         "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			"x-ach-environment": "staging",
@@ -781,7 +767,6 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 			[]string{"shared", "shared@a-marketplace"},
 			[]string{},
 		)
-		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/plugin/shared@a-marketplace", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
@@ -796,7 +781,6 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 			[]string{"shared"},
 			[]string{},
 		)
-		fx.mr.FlushAll()
 	})
 
 	t.Run("soft-deleted CRD bare ref returns 404", func(t *testing.T) {
@@ -823,7 +807,6 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 			[]string{"shared", "another-plugin"},
 			[]string{},
 		)
-		fx.mr.FlushAll()
 		rec := fx.doRequest("GET", "/content/plugin/another-plugin", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",

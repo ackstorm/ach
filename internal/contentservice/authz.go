@@ -117,15 +117,15 @@ func resolveAuthn(ctx context.Context, d Deps, r *http.Request) (*keystore.KeyIn
 //   - non-empty header AND header == info.Environment → use header (same as bound).
 //
 // After header resolution, the projection row is loaded via
-// EnvCache.Get(ctx, Namespace, resolvedEnv). EnvCache.Get returning
-// (nil, nil) → 404 environment_not_found; any non-nil err → 500
-// internal_error.
+// EnvCache.Get(Namespace, resolvedEnv). EnvCache.Get returning a miss
+// (ok == false) → 404 environment_not_found. The lookup is an in-memory
+// map read, so it cannot error — there is no 500 path here.
 //
-// CS-09: a row with DeletionTimestamp != nil is STILL returned — the
-// Content Service serves until full finalizer drain. Downstream gates
-// (resolveContent / checkStaleness) eventually short-circuit if the
-// underlying projection row is hard-deleted.
-func resolveEnv(ctx context.Context, d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.EnvRow, *errResp) {
+// CS-09: the cache snapshot includes drain-mode rows (deletion_timestamp
+// != nil) — the Content Service serves until full finalizer drain.
+// Downstream gates (resolveContent / checkStaleness) eventually
+// short-circuit if the underlying projection row is hard-deleted.
+func resolveEnv(d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.EnvRow, *errResp) {
 	var resolved string
 	switch info.KeyType {
 	case keys.PrefixPk:
@@ -142,11 +142,8 @@ func resolveEnv(ctx context.Context, d Deps, info *keystore.KeyInfo, headerEnv s
 		// Resolver guarantees PrefixPk or PrefixEk; defensive only.
 		return nil, errInvalidKeyFormat()
 	}
-	row, err := d.EnvCache.Get(ctx, d.Namespace, resolved)
-	if err != nil {
-		return nil, errInternal()
-	}
-	if row == nil {
+	row, ok := d.EnvCache.Get(d.Namespace, resolved)
+	if !ok {
 		return nil, errEnvironmentNotFound()
 	}
 	return row, nil

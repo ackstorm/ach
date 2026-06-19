@@ -42,13 +42,15 @@ func (m *mockTeams) Resolve(_ context.Context, _ string) ([]string, error) {
 	return m.teams, m.err
 }
 
-type mockEnvCache struct {
-	row *envcache.EnvRow
-	err error
-}
-
-func (m *mockEnvCache) Get(_ context.Context, _, _ string) (*envcache.EnvRow, error) {
-	return m.row, m.err
+// envCacheWith returns a real *envcache.Cache snapshot containing an empty
+// EnvRow for each named environment. The cache is an in-memory map read, so
+// there is no error path — a name not present is simply a miss.
+func envCacheWith(names ...string) *envcache.Cache {
+	m := map[string]envcache.EnvRow{}
+	for _, n := range names {
+		m[n] = envcache.EnvRow{}
+	}
+	return envcache.NewWithRows(m)
 }
 
 // authzTestDeps builds a Deps wired with mock interfaces. The caller can
@@ -121,12 +123,11 @@ func TestResolveAuthn(t *testing.T) {
 
 func TestResolveEnv_PK(t *testing.T) {
 	pkInfo := &keystore.KeyInfo{KeyID: "pkid_a", KeyType: keys.PrefixPk, OwnerEmail: "alice@x.com"}
-	envRow := &envcache.EnvRow{}
 
 	t.Run("missing header", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: envRow}
-		row, errR := resolveEnv(context.Background(), d, pkInfo, "")
+		d.EnvCache = envCacheWith("prod")
+		row, errR := resolveEnv(d, pkInfo, "")
 		if errR == nil || errR.Code != "missing_environment" {
 			t.Fatalf("got errR=%+v, want missing_environment", errR)
 		}
@@ -136,29 +137,21 @@ func TestResolveEnv_PK(t *testing.T) {
 	})
 	t.Run("env not found", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: nil}
-		_, errR := resolveEnv(context.Background(), d, pkInfo, "prod")
+		d.EnvCache = envCacheWith() // empty snapshot → miss
+		_, errR := resolveEnv(d, pkInfo, "prod")
 		if errR == nil || errR.Code != "environment_not_found" {
 			t.Fatalf("got errR=%+v, want environment_not_found", errR)
 		}
 	})
 	t.Run("happy path", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: envRow}
-		row, errR := resolveEnv(context.Background(), d, pkInfo, "prod")
+		d.EnvCache = envCacheWith("prod")
+		row, errR := resolveEnv(d, pkInfo, "prod")
 		if errR != nil {
 			t.Fatalf("unexpected err: %+v", errR)
 		}
-		if row != envRow {
-			t.Fatalf("got row=%v, want envRow", row)
-		}
-	})
-	t.Run("envcache internal error", func(t *testing.T) {
-		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{err: errors.New("redis down")}
-		_, errR := resolveEnv(context.Background(), d, pkInfo, "prod")
-		if errR == nil || errR.Code != "internal_error" {
-			t.Fatalf("got errR=%+v, want internal_error", errR)
+		if row == nil {
+			t.Fatalf("got nil row, want a hit")
 		}
 	})
 }
@@ -169,39 +162,38 @@ func TestResolveEnv_PK(t *testing.T) {
 
 func TestResolveEnv_EK(t *testing.T) {
 	ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk, OwnerEmail: "bob@x.com", Environment: "prod"}
-	envRow := &envcache.EnvRow{}
 
 	t.Run("header mismatch", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: envRow}
-		_, errR := resolveEnv(context.Background(), d, ekInfo, "staging")
+		d.EnvCache = envCacheWith("prod")
+		_, errR := resolveEnv(d, ekInfo, "staging")
 		if errR == nil || errR.Code != "wrong_environment" {
 			t.Fatalf("got errR=%+v, want wrong_environment", errR)
 		}
 	})
 	t.Run("header empty uses bound env", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: envRow}
-		row, errR := resolveEnv(context.Background(), d, ekInfo, "")
+		d.EnvCache = envCacheWith("prod")
+		row, errR := resolveEnv(d, ekInfo, "")
 		if errR != nil {
 			t.Fatalf("unexpected err: %+v", errR)
 		}
-		if row != envRow {
-			t.Fatalf("got row=%v", row)
+		if row == nil {
+			t.Fatalf("got nil row, want a hit")
 		}
 	})
 	t.Run("matching header", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: envRow}
-		_, errR := resolveEnv(context.Background(), d, ekInfo, "prod")
+		d.EnvCache = envCacheWith("prod")
+		_, errR := resolveEnv(d, ekInfo, "prod")
 		if errR != nil {
 			t.Fatalf("unexpected err: %+v", errR)
 		}
 	})
 	t.Run("env not found", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		d.EnvCache = &mockEnvCache{row: nil}
-		_, errR := resolveEnv(context.Background(), d, ekInfo, "prod")
+		d.EnvCache = envCacheWith() // empty snapshot → miss
+		_, errR := resolveEnv(d, ekInfo, "prod")
 		if errR == nil || errR.Code != "environment_not_found" {
 			t.Fatalf("got errR=%+v, want environment_not_found", errR)
 		}

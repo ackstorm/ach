@@ -316,8 +316,11 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 			// resolveContent returns nil → 404. We seed a ghost name into
 			// env-valid's context allowlist and ensure no plugins row backs
 			// it. The plugins table is read FRESH from Postgres (no cache);
-			// only the envcache (context_plugins) is Redis-cached at 60s TTL,
-			// so setup settles 65s after the UPDATE for the loader to rebuild.
+			// the content-service envcache (context_plugins) is an in-memory
+			// snapshot refreshed via the ach_environments_changed LISTEN/NOTIFY
+			// channel (no TTL — #34 S4). A direct SQL UPDATE emits no NOTIFY,
+			// so setup fires pg_notify manually and gives the listener a short
+			// bounded settle window to rebuild the snapshot.
 			name:       "ContentNotFound",
 			path:       "/content/plugin/ghost-content",
 			key:        pk,
@@ -338,10 +341,18 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 					_, _, _ = psqlExec(cctx,
 						`UPDATE environments SET context_plugins = array_remove(context_plugins, '`+ghost+`') WHERE name='env-valid';`)
 				})
-				// Wait out the 60s envcache TTL so the patched context_plugins
-				// loads (the direct UPDATE emits no NOTIFY). Bounded, mirrors
-				// StaleCacheExpired.
-				time.Sleep(65 * time.Second)
+				// Fire ach_environments_changed manually (the direct UPDATE emits
+				// none) so the content-service envcache rebuilds its snapshot
+				// promptly. Re-emit a few times over a bounded window to absorb a
+				// listener-reconnect race (NOTIFY is at-most-once on session loss;
+				// the 5-min periodic refresh is the backstop, but we don't wait
+				// for it here).
+				for i := 0; i < 5; i++ {
+					if _, _, err := psqlExec(ctx, `SELECT pg_notify('ach_environments_changed', 'env-valid');`); err != nil {
+						t.Skipf("psql pg_notify (engineer-pending): %v", err)
+					}
+					time.Sleep(2 * time.Second)
+				}
 			},
 		},
 	}

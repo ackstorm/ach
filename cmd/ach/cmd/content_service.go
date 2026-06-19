@@ -198,27 +198,23 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("keystore.NewCachedTeamsResolver: %w", err)
 	}
 
-	// ─── envcache loader (D-07): closure over db.GetEnvironmentByName ───
-	loader := func(loaderCtx context.Context, ns, name string) (*envcache.EnvRow, error) {
-		row, err := db.GetEnvironmentByName(loaderCtx, pool, ns, name)
-		if err != nil {
-			return nil, err
-		}
-		if row == nil {
-			return nil, nil
-		}
-		return &envcache.EnvRow{
-			AuthorizedTeams:  row.AuthorizedTeams,
-			ContextPrompts:   row.ContextPrompts,
-			ContextPlugins:   row.ContextPlugins,
-			ContextArtifacts: row.ContextArtifacts,
-			ContextSkills:    row.ContextSkills,
-		}, nil
+	// ─── envcache: in-memory Environment snapshot refreshed via
+	//     ach_environments_changed LISTEN/NOTIFY (mirrors forwarder envstore).
+	//     Replaces the prior Redis 60s-TTL cache; Redis is retained above for
+	//     the key/teams resolvers only. ───
+	envCacheLog := logr.FromSlogHandler(logger.Handler()).WithName("envcache")
+	envCache := envcache.New(pool, cfg.Namespace, envCacheLog)
+	// Synchronous initial load fails fast on a bad DB at startup and guarantees
+	// the cache is warm before the first request. Run re-refreshes once more
+	// (one redundant load, harmless) and then drives the LISTEN loop.
+	if err := envCache.Refresh(ctx); err != nil {
+		return fmt.Errorf("content-service: initial env cache load: %w", err)
 	}
-	envCache, err := envcache.NewCachedEnvCache(loader, redisClient)
-	if err != nil {
-		return fmt.Errorf("envcache.NewCachedEnvCache: %w", err)
-	}
+	go func() {
+		if err := envCache.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("env cache refresh loop exited", "err", err)
+		}
+	}()
 
 	// ─── metrics: process-local Registry + ContentServiceCollectors +
 	//     shared litellm_unreachable_total (caller="content_service" Inc

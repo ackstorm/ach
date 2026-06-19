@@ -52,7 +52,8 @@ import (
 //     (typically "ach-system"). Read on every
 //     envcache + db.* call.
 //   - Pool               — pgxpool.Pool for projection-row reads.
-//   - EnvCache           — Redis-backed envcache.Cache (Plan 05-03).
+//   - EnvCache           — in-memory envcache.Cache snapshot, refreshed via
+//     LISTEN/NOTIFY (replaces the prior Redis cache).
 //   - Resolver           — keystore.Resolver (Phase 3 D-08 reused).
 //   - Teams              — keystore.TeamsResolver (Phase 4 D-17 reused).
 //   - Metrics            — *metrics.ContentServiceCollectors (Plan 05-01).
@@ -77,7 +78,7 @@ type Deps struct {
 	CacheRoot          string
 	Namespace          string
 	Pool               *pgxpool.Pool
-	EnvCache           envcache.Cache
+	EnvCache           *envcache.Cache
 	Resolver           keystore.Resolver
 	Teams              keystore.TeamsResolver
 	Metrics            *metrics.ContentServiceCollectors
