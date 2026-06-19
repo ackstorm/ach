@@ -184,4 +184,3 @@ func (r *recordingRedis) Del(_ context.Context, ks ...string) *redis.IntCmd {
 	cmd.SetVal(int64(len(ks)))
 	return cmd
 }
-
