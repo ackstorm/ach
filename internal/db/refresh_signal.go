@@ -86,11 +86,11 @@ func SetForceRefresh(ctx context.Context, pool *pgxpool.Pool, ns, kind, name str
 			return err
 		}
 	case "pluginmarketplace":
-		if err := setForceRefreshMarketplace(ctx, pool, name); err != nil {
+		if err := setForceRefreshMarketplaceTable(ctx, pool, "marketplace_plugins", "pluginmarketplace", name); err != nil {
 			return err
 		}
 	case "skillmarketplace":
-		if err := setForceRefreshSkillMarketplace(ctx, pool, name); err != nil {
+		if err := setForceRefreshMarketplaceTable(ctx, pool, "skill_marketplace_skills", "skillmarketplace", name); err != nil {
 			return err
 		}
 	default:
@@ -147,94 +147,51 @@ func setForceRefreshExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, n
 	return nil
 }
 
-// setForceRefreshMarketplace sets force_refresh_requested_at = now() on every
-// marketplace_plugins row under marketplaceName iff origin='cr'. The
-// PluginMarketplace reconciler's three-stage refresh sweeps the whole
-// marketplace on the next pass, so we mark all rows at once rather than
-// per-plugin — the platform-api request is "refresh the marketplace as a
-// whole", not "refresh one plugin row".
+// setForceRefreshMarketplaceTable sets force_refresh_requested_at = now() on
+// every row of a marketplace projection table under marketplaceName iff
+// origin='cr'. table and errLabel are trusted compile-time constants (never
+// user input — only "marketplace_plugins"/"pluginmarketplace" and
+// "skill_marketplace_skills"/"skillmarketplace"), so the fmt.Sprintf into SQL
+// is safe. The Plugin/SkillMarketplace reconcilers sweep the whole marketplace
+// on the next pass, so we mark all rows at once rather than per-row — the
+// platform-api request is "refresh the marketplace as a whole".
 //
-// Returns ErrUIOriginRefreshUnsupported when any row under the marketplace
-// has origin='ui'. Absent marketplace (no rows) returns pgx.ErrNoRows wrapped.
+// Returns ErrUIOriginRefreshUnsupported when any row under the marketplace has
+// origin='ui'. Absent marketplace (no rows) returns pgx.ErrNoRows wrapped.
 //
 // Two-phase origin check + UPDATE; same rationale as setForceRefreshExternalRef.
-func setForceRefreshMarketplace(ctx context.Context, pool *pgxpool.Pool, marketplaceName string) error {
+func setForceRefreshMarketplaceTable(ctx context.Context, pool *pgxpool.Pool, table, errLabel, marketplaceName string) error {
 	// Pre-check origin: the marketplace is "all-cr" only if every row is cr.
 	// A mixed-origin marketplace (rare; would require UI-side row insertion
 	// against a CR-managed marketplace) refuses the refresh — the UI must
 	// decide what to do.
-	const checkSQL = `
+	checkSQL := fmt.Sprintf(`
 		SELECT COUNT(*) FILTER (WHERE origin = 'cr'),
 		       COUNT(*) FILTER (WHERE origin <> 'cr')
-		  FROM marketplace_plugins
-		 WHERE marketplace_name = $1
-	`
+		  FROM %s
+		 WHERE marketplace_name = $1`, table) // #nosec G201 -- table is a trusted constant
 	var crCount, nonCrCount int
 	if err := pool.QueryRow(ctx, checkSQL, marketplaceName).Scan(&crCount, &nonCrCount); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
-		return fmt.Errorf("db: SetForceRefresh(pluginmarketplace/%s): %w", marketplaceName, err)
+		return fmt.Errorf("db: SetForceRefresh(%s/%s): %w", errLabel, marketplaceName, err)
 	}
 	if crCount == 0 && nonCrCount == 0 {
-		return fmt.Errorf("db: SetForceRefresh(pluginmarketplace/%s): %w", marketplaceName, pgx.ErrNoRows)
+		return fmt.Errorf("db: SetForceRefresh(%s/%s): %w", errLabel, marketplaceName, pgx.ErrNoRows)
 	}
 	if nonCrCount > 0 {
 		return ErrUIOriginRefreshUnsupported
 	}
-	const updateSQL = `
-		UPDATE marketplace_plugins
+	updateSQL := fmt.Sprintf(`
+		UPDATE %s
 		   SET force_refresh_requested_at = now()
-		 WHERE marketplace_name = $1 AND origin = 'cr'
-	`
+		 WHERE marketplace_name = $1 AND origin = 'cr'`, table) // #nosec G201 -- table is a trusted constant
 	if _, err := pool.Exec(ctx, updateSQL, marketplaceName); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
-		return fmt.Errorf("db: SetForceRefresh(pluginmarketplace/%s): %w", marketplaceName, err)
-	}
-	return nil
-}
-
-// setForceRefreshSkillMarketplace sets force_refresh_requested_at = now() on
-// every skill_marketplace_skills row under marketplaceName iff origin='cr'.
-// Mirrors setForceRefreshMarketplace 1:1 (skill_marketplace_skills has the
-// same (marketplace_name, name) PK + origin column as marketplace_plugins);
-// the SkillMarketplace reconciler sweeps every discovered skill on the next
-// pass, so we mark all rows at once.
-//
-// Returns ErrUIOriginRefreshUnsupported when any row under the marketplace has
-// origin='ui'. Absent marketplace (no rows) returns pgx.ErrNoRows wrapped.
-func setForceRefreshSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, marketplaceName string) error {
-	const checkSQL = `
-		SELECT COUNT(*) FILTER (WHERE origin = 'cr'),
-		       COUNT(*) FILTER (WHERE origin <> 'cr')
-		  FROM skill_marketplace_skills
-		 WHERE marketplace_name = $1
-	`
-	var crCount, nonCrCount int
-	if err := pool.QueryRow(ctx, checkSQL, marketplaceName).Scan(&crCount, &nonCrCount); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, err)
-	}
-	if crCount == 0 && nonCrCount == 0 {
-		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, pgx.ErrNoRows)
-	}
-	if nonCrCount > 0 {
-		return ErrUIOriginRefreshUnsupported
-	}
-	const updateSQL = `
-		UPDATE skill_marketplace_skills
-		   SET force_refresh_requested_at = now()
-		 WHERE marketplace_name = $1 AND origin = 'cr'
-	`
-	if _, err := pool.Exec(ctx, updateSQL, marketplaceName); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SetForceRefresh(skillmarketplace/%s): %w", marketplaceName, err)
+		return fmt.Errorf("db: SetForceRefresh(%s/%s): %w", errLabel, marketplaceName, err)
 	}
 	return nil
 }
