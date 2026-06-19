@@ -11,6 +11,7 @@ import "github.com/go-chi/chi/v5"
 //	r.Group(func(r chi.Router) {
 //	    r.Use(middleware.Authn(deps.Resolver, deps.Allowlist, deps.Audit))
 //	    r.Route("/platform/env-keys", envkeys.Mount(deps))
+//	    envkeys.MountKeys(r, deps)
 //	})
 //
 // The four registered routes correspond to the §15.5 endpoint quartet:
@@ -29,4 +30,11 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/{key_id}", GetHandler(deps))
 		r.Delete("/{key_id}", RevokeHandler(deps))
 	}
+}
+
+// MountKeys registers GET /platform/keys on the router r at the same level
+// as /platform/env-keys (sibling, not child). server.go calls this alongside
+// r.Route("/platform/env-keys", Mount(deps)).
+func MountKeys(r chi.Router, deps Deps) {
+	r.Get("/platform/keys", ListAllHandler(deps))
 }

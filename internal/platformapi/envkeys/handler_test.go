@@ -182,7 +182,8 @@ func (s *fakeEnvStore) AccessGroupSyncedFromRow(_ *db.EnvironmentRow) bool { ret
 
 // fakeEkDB records the inserted ek_ row and returns no error on insert.
 type fakeEkDB struct {
-	inserted *db.EkInsertRow
+	inserted   *db.EkInsertRow
+	lastFilter db.KeyListFilter
 }
 
 func (d *fakeEkDB) InsertEnvironmentKey(_ context.Context, row db.EkInsertRow) error {
@@ -200,6 +201,15 @@ func (d *fakeEkDB) ListEnvironmentKeysByOwner(context.Context, string, int, stri
 }
 func (d *fakeEkDB) ListEnvironmentKeysByOwnerWithFilter(context.Context, *string, int, string) ([]db.EkKeyInfo, string, error) {
 	return nil, "", nil
+}
+func (d *fakeEkDB) ListKeys(_ context.Context, f db.KeyListFilter, _ int, _ string) ([]db.KeyListItem, string, error) {
+	d.lastFilter = f
+	env := "demo"
+	name := "laptop"
+	return []db.KeyListItem{
+		{KeyID: "pkid_x", Type: "pk", OwnerEmail: "user@example.com", Status: "active"},
+		{KeyID: "ekid_y", Type: "ek", OwnerEmail: "user@example.com", Environment: &env, Name: &name, Status: "active"},
+	}, "", nil
 }
 
 // TestCreateHandler_KeyAliasIsAchKeyID drives the §8.2 ek_ create happy path
@@ -418,5 +428,43 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 	}
 	if flm.lastKeyGenerateReq.UserID != "user@example.com" {
 		t.Errorf("KeyGenerate user_id: got %q, want %q", flm.lastKeyGenerateReq.UserID, "user@example.com")
+	}
+}
+
+// TestListAllHandler_CallerScopedAndDefaults asserts ListAllHandler
+// forces owner_email to the authenticated caller and honours the ?status filter.
+func TestListAllHandler_CallerScopedAndDefaults(t *testing.T) {
+	fdb := &fakeEkDB{}
+	deps := Deps{
+		DB:     fdb,
+		Audit:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/platform/keys?status=active", nil)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	ListAllHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fdb.lastFilter.OwnerEmail == nil || *fdb.lastFilter.OwnerEmail != "user@example.com" {
+		t.Errorf("owner filter not forced to caller; got %+v", fdb.lastFilter.OwnerEmail)
+	}
+	if fdb.lastFilter.Status != "active" {
+		t.Errorf("status filter=%q; want active", fdb.lastFilter.Status)
+	}
+	if !strings.Contains(rec.Body.String(), `"pkid_x"`) || !strings.Contains(rec.Body.String(), `"ekid_y"`) {
+		t.Errorf("body missing merged items: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "credential_hash") || strings.Contains(rec.Body.String(), "litellm") {
+		t.Errorf("response leaked secret material: %s", rec.Body.String())
 	}
 }

@@ -54,6 +54,7 @@ type dbOps interface {
 	RevokeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
 	ListEnvironmentKeysByOwner(ctx context.Context, ownerEmail string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
 	ListEnvironmentKeysByOwnerWithFilter(ctx context.Context, ownerEmailFilter *string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
+	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
 }
 
 // redisOps is the subset of go-redis the envkeys handlers exercise. The
@@ -968,6 +969,113 @@ func mapEkRow(r *db.EkKeyInfo) EkRowView {
 		v.RevokedAt = &t
 	}
 	return v
+}
+
+// --------------------------------------------------------------------------
+// ListAllHandler — GET /platform/keys (caller's own pk_ + ek_ keys)
+// --------------------------------------------------------------------------
+
+// keyListItemWire is the secret-free wire projection returned by ListAllHandler.
+// credential_hash and litellm_* columns are excluded by construction.
+type keyListItemWire struct {
+	KeyID       string  `json:"key_id"`
+	Type        string  `json:"type"`
+	Environment string  `json:"environment,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	OwnerEmail  string  `json:"owner_email"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"created_at"`
+	LastUsedAt  *string `json:"last_used_at,omitempty"`
+	RevokedAt   *string `json:"revoked_at,omitempty"`
+}
+
+// ListAllHandler serves GET /platform/keys — the caller's own pk_ + ek_ keys.
+// owner_email is ALWAYS forced to the authenticated caller; ?owner_email is
+// intentionally NOT honored (admins use /platform/admin/keys).
+func ListAllHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqID := middleware.RequestIDFromCtx(r.Context())
+		keyCtx, ok := middleware.KeyContextFromCtx(r.Context())
+		if !ok {
+			render.Error(w, http.StatusUnauthorized, "unauthenticated", "missing key context", reqID)
+			return
+		}
+		q := r.URL.Query()
+		limit, err := parseLimit(q.Get("limit"))
+		if err != nil {
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument, err.Error(), reqID)
+			return
+		}
+		cursor := q.Get("cursor")
+
+		owner := keyCtx.OwnerEmail // ALWAYS caller-scoped on this route
+		f := db.KeyListFilter{
+			OwnerEmail:  &owner,
+			Type:        normalizeKeyType(q.Get("type")),
+			Status:      normalizeKeyStatus(q.Get("status")),
+			Environment: q.Get("environment"),
+		}
+		items, next, err := deps.DB.ListKeys(r.Context(), f, limit, cursor)
+		if err != nil {
+			deps.Logger.Error("envkeys.listall: ListKeys failed", "err", err)
+			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
+			return
+		}
+		writeKeyListJSON(w, items, next)
+	}
+}
+
+// normalizeKeyType maps the ?type query value to a valid filter string.
+// Unknown values are silently normalized to "" (no filter) rather than 400
+// to mirror the existing ListHandler convention.
+func normalizeKeyType(v string) string {
+	switch v {
+	case "pk", "ek":
+		return v
+	default:
+		return ""
+	}
+}
+
+// normalizeKeyStatus maps the ?status query value to a valid filter string.
+func normalizeKeyStatus(v string) string {
+	switch v {
+	case "active", "revoked", "expired":
+		return v
+	default:
+		return ""
+	}
+}
+
+// writeKeyListJSON encodes items + next_cursor as the paginated list envelope.
+func writeKeyListJSON(w http.ResponseWriter, items []db.KeyListItem, next string) {
+	out := make([]keyListItemWire, 0, len(items))
+	for _, it := range items {
+		row := keyListItemWire{
+			KeyID:      it.KeyID,
+			Type:       it.Type,
+			OwnerEmail: it.OwnerEmail,
+			Status:     it.Status,
+			CreatedAt:  it.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		if it.Environment != nil {
+			row.Environment = *it.Environment
+		}
+		if it.Name != nil {
+			row.Name = *it.Name
+		}
+		if it.LastUsedAt != nil {
+			s := it.LastUsedAt.UTC().Format(time.RFC3339)
+			row.LastUsedAt = &s
+		}
+		if it.RevokedAt != nil {
+			s := it.RevokedAt.UTC().Format(time.RFC3339)
+			row.RevokedAt = &s
+		}
+		out = append(out, row)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": out, "next_cursor": next})
 }
 
 // isNotFound checks if a LiteLLM-side error represents a 404 (user-absent
