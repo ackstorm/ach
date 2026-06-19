@@ -129,7 +129,7 @@ func (f *fakeLitellm) RevokeKey(_ context.Context, keyID string) error {
 
 // Satisfy the full litellm.Client interface with no-ops.
 func (f *fakeLitellm) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
-func (f *fakeLitellm) DeleteTag(_ context.Context, _ string) error          { return nil }
+func (f *fakeLitellm) DeleteTag(_ context.Context, _ string) error         { return nil }
 func (f *fakeLitellm) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }
@@ -168,7 +168,7 @@ func (f *fakeLitellm) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 	return nil, nil
 }
 func (f *fakeLitellm) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
-func (f *fakeLitellm) EnsureDefaultTeam(_ context.Context) error                { return nil }
+func (f *fakeLitellm) EnsureDefaultTeam(_ context.Context) error               { return nil }
 
 // recordingRedis implements redisDeleter, recording Del calls.
 type recordingRedis struct {
