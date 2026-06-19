@@ -60,6 +60,7 @@ func seedAdminConfig(t *testing.T, baseURL string) string {
 //	POST /platform/admin/keys/revoke
 //	POST /platform/admin/users/{email}/revoke-keys
 //	POST /platform/admin/refresh
+//	GET  /platform/admin/keys
 type adminTestServer struct {
 	*httptest.Server
 	revokeKeyStatus   int
@@ -68,13 +69,17 @@ type adminTestServer struct {
 	revokeUserBody    map[string]any
 	refreshStatus     int
 	refreshBody       map[string]any
+	keysListStatus    int
+	keysListBody      map[string]any
 	revokeKeyCalls    int32
 	revokeUserCalls   int32
 	refreshCalls      int32
+	keysListCalls     int32
 	lastRevokeKeyBody []byte
 	lastRefreshBody   []byte
 	lastUserEmailPath string
 	lastAuthHeader    string
+	lastKeysQuery     string
 }
 
 func newAdminTestServer(t *testing.T) *adminTestServer {
@@ -83,6 +88,7 @@ func newAdminTestServer(t *testing.T) *adminTestServer {
 		revokeKeyStatus:  200,
 		revokeUserStatus: 200,
 		refreshStatus:    202,
+		keysListStatus:   200,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/admin/keys/revoke", func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +98,21 @@ func newAdminTestServer(t *testing.T) *adminTestServer {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(srv.revokeKeyStatus)
 		_ = json.NewEncoder(w).Encode(srv.revokeKeyBody)
+	})
+	mux.HandleFunc("/platform/admin/keys", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		atomic.AddInt32(&srv.keysListCalls, 1)
+		srv.lastKeysQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(srv.keysListStatus)
+		body := srv.keysListBody
+		if body == nil {
+			body = map[string]any{"items": []any{}, "next_cursor": ""}
+		}
+		_ = json.NewEncoder(w).Encode(body)
 	})
 	mux.HandleFunc("/platform/admin/users/", func(w http.ResponseWriter, r *http.Request) {
 		// Expected path: /platform/admin/users/{email}/revoke-keys
@@ -644,6 +665,44 @@ func TestAdminKeysRevoke_Verbose_RedactsAchKey(t *testing.T) {
 	}
 	if strings.Contains(stderr, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnxyz") {
 		t.Errorf("CLI-04/T-06-08-02 leak: unredacted pk- in stderr; got:\n%s", stderr)
+	}
+}
+
+// ---------------------------------------------------------------------
+// keys list tests
+// ---------------------------------------------------------------------
+
+// TestAdminKeys_List_SendsFiltersAndRenders verifies that
+// `ach admin keys list --owner-email a@x --type pk` sends the correct
+// query filters and renders the table output.
+func TestAdminKeys_List_SendsFiltersAndRenders(t *testing.T) {
+	adminTestEnv(t)
+	srv := newAdminTestServer(t)
+	defer srv.Close()
+	srv.keysListBody = map[string]any{
+		"items": []map[string]any{
+			{"key_id": "pkid_a", "type": "pk", "owner_email": "a@x", "status": "active", "created_at": "2026-06-01T00:00:00Z"},
+		},
+		"next_cursor": "",
+	}
+	seedAdminConfig(t, srv.URL)
+
+	out, _, _, err := executeAdmin(t, "", "keys", "list", "--owner-email", "a@x", "--type", "pk")
+	if err != nil {
+		t.Fatalf("admin keys list err=%v", err)
+	}
+	encodedEmail := strings.Contains(srv.lastKeysQuery, "owner_email=a%40x")
+	rawEmail := strings.Contains(srv.lastKeysQuery, "owner_email=a@x")
+	if !encodedEmail && !rawEmail {
+		t.Errorf("owner_email not sent; query=%q", srv.lastKeysQuery)
+	}
+	if !strings.Contains(srv.lastKeysQuery, "type=pk") || !strings.Contains(srv.lastKeysQuery, "status=active") {
+		t.Errorf("filters not sent; query=%q", srv.lastKeysQuery)
+	}
+	for _, want := range []string{"KEY-ID", "TYPE", "pkid_a", "pk"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 

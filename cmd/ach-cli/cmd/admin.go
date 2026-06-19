@@ -67,6 +67,11 @@ import (
 // happy.
 const adminConfirmYes = "yes"
 
+// statusAll is the sentinel value for "--status all" / kind "all" that
+// disables the filter (passes no value to the server). Hoisted to avoid
+// repeated "all" literals across runAdminList + buildAdminKeysListPath.
+const statusAll = "all"
+
 // adminCredFlags bundles the standard credential-set flags every
 // admin subcommand exposes. Hoisted into one type + one
 // registration helper so the per-subcommand cobra.Command struct
@@ -348,7 +353,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	}
 
 	kind = strings.TrimSpace(kind)
-	if kind != "all" && !isAdminListKind(kind) {
+	if kind != statusAll && !isAdminListKind(kind) {
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf("invalid kind %q; expected one of %s, or 'all'",
@@ -377,7 +382,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	}
 
 	grouped := map[string][]render.AdminObjectView{}
-	if kind == "all" {
+	if kind == statusAll {
 		results := make([][]render.AdminObjectView, len(adminListKinds))
 		g, gctx := errgroup.WithContext(ctx)
 		for i, k := range adminListKinds {
@@ -491,9 +496,9 @@ func renderAdminList(stdout io.Writer, grouped map[string][]render.AdminObjectVi
 // ---------------------------------------------------------------------
 
 // newAdminKeysCmd returns the intermediate `ach admin keys` parent
-// with its single child `revoke`. Two-level nesting per Pattern P3
-// because the spec surface is `ach admin keys revoke <key-id>` —
-// keys is a noun-grouping under admin, revoke is the verb.
+// with its children `revoke` and `list`. Two-level nesting per Pattern P3
+// because the spec surface is `ach admin keys revoke <key-id>` /
+// `ach admin keys list` — keys is a noun-grouping under admin.
 func newAdminKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "keys",
@@ -503,7 +508,116 @@ func newAdminKeysCmd() *cobra.Command {
 		},
 	}
 	parent.AddCommand(newAdminKeysRevokeCmd())
+	parent.AddCommand(newAdminKeysListCmd())
 	return parent
+}
+
+// newAdminKeysListCmd returns `ach admin keys list` — paginated listing of
+// ALL pk_ and ek_ keys across owners, optionally filtered by owner email,
+// type, status, or environment. Calls GET /platform/admin/keys.
+func newAdminKeysListCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	var ownerEmail, keyType, status, environment, cursor string
+	var limit int
+	cmd := &cobra.Command{
+		Use:           "list",
+		Short:         "List all API keys (pk_ and ek_) across owners",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAdminKeysList(cmd, f, ownerEmail, keyType, status, environment, cursor, limit)
+		},
+	}
+	cmd.Flags().StringVar(&ownerEmail, "owner-email", "", "Filter by owner email")
+	cmd.Flags().StringVar(&keyType, "type", "", "Filter by type: pk|ek")
+	cmd.Flags().StringVar(&status, "status", "active", "Filter by status: active|revoked|expired|all")
+	cmd.Flags().StringVar(&environment, "environment", "", "Filter by environment (ek_ only)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Pagination cursor")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Max rows per page")
+	// withYes=false — read-only, no confirmation prompt.
+	registerAdminCredFlags(cmd, f, false)
+	return cmd
+}
+
+func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
+	ownerEmail, keyType, status, environment, cursor string, limit int) error {
+
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+	ctx := cmd.Context()
+
+	// CLI-07 synthetic gate (admin allowed in synthetic).
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:        synthetic.GateAdmin,
+		APIKeyFlag:  f.APIKey,
+		EnvKeyFlag:  f.EnvKey,
+		ProfileFlag: f.Profile,
+	}); err != nil {
+		return err
+	}
+
+	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: adminHTTPClient,
+		Verbose:    f.Verbose,
+		Stderr:     stderr,
+	}
+
+	// Paginate until next_cursor empty. Accumulate items.
+	all := []render.KeyRowView{}
+	currentCursor := cursor
+	for {
+		path := buildAdminKeysListPath(ownerEmail, keyType, status, environment, currentCursor, limit)
+		var resp keysListResponse
+		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
+			return doErr
+		}
+		all = append(all, resp.Items...)
+		if resp.NextCursor == "" {
+			break
+		}
+		currentCursor = resp.NextCursor
+	}
+
+	// W7: single source of truth via render.FormatKeyList.
+	_, _ = io.WriteString(stdout, render.FormatKeyList(all))
+	return nil
+}
+
+// buildAdminKeysListPath returns GET /platform/admin/keys with optional
+// query parameters. Mirrors buildKeysListPath but adds owner_email and
+// targets the admin endpoint.
+func buildAdminKeysListPath(ownerEmail, keyType, status, environment, cursor string, limit int) string {
+	q := url.Values{}
+	if ownerEmail != "" {
+		q.Set("owner_email", ownerEmail)
+	}
+	if keyType != "" {
+		q.Set("type", keyType)
+	}
+	// send status unless "" or "all" (server normalizes unknown to no filter)
+	if status != "" && status != statusAll {
+		q.Set("status", status)
+	}
+	if environment != "" {
+		q.Set("environment", environment)
+	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	if len(q) == 0 {
+		return "/platform/admin/keys"
+	}
+	return "/platform/admin/keys?" + q.Encode()
 }
 
 func newAdminKeysRevokeCmd() *cobra.Command {
