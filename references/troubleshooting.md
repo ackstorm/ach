@@ -130,8 +130,8 @@ either a **DEK mismatch** (platform-api sealed under a different
 `ACH_KEY_ENCRYPTION_KEY` than the forwarder holds) or a **legacy/plaintext
 row** (a `pk_`/`ek_` minted before migration 000014, whose material was
 nulled). Fix: ensure platform-api and forwarder mount the SAME DEK Secret,
-then **re-mint** the affected key (`ach-cli login` / `ach-cli env-keys
-create`). The log never prints the material or the DEK.
+then **re-mint** the affected key (`ach-cli login` / `ach-cli keys
+create`, or the back-compat alias `ach-cli env-keys create`). The log never prints the material or the DEK.
 
 ### ❌ `helm install` aborts: `no matches for kind "LiteLLMConnection"`
 ```bash

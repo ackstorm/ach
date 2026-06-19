@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package admin implements the ACH Platform API admin endpoint group
-// mounted under /platform/admin/ (Hub §15.5 + §18). Three endpoints:
+// mounted under /platform/admin/ (Hub §15.5 + §18). Four endpoints:
+//
+//   - GET  /keys
+//     Query params: owner_email, type (pk|ek), status (active|revoked|expired|all),
+//     environment (ek_ filter). Lists all keys across all owners. Admin-only.
 //
 //   - POST /keys/revoke
 //     Body: {"key_id":"pkid_..."} or {"key_id":"ekid_..."}

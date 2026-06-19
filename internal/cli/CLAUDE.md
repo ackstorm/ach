@@ -43,7 +43,7 @@ Four noun groups. `--target` is the platform selector everywhere.
 
 ```
 # governed remote object (CR-defined, server-mediated)
-ach-cli login | logout | whoami | config | admin | env-keys
+ach-cli login | logout | whoami | config | admin | keys  # env-keys is a back-compat alias
 ach-cli env list | describe <name> | hydrate <name> --target … [--global] | status | uninstall <name>
 
 # local-first serverless package manager (no k8s, no CRD)

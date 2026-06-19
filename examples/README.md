@@ -80,7 +80,7 @@ profile from a credential you already minted instead:
 
 ```bash
 # 1. (on a human machine) mint a service key scoped to an environment:
-ach env-keys create --environment prod --name ci-bot      # prints ek_...
+ach keys create --environment prod --name ci-bot      # prints ek_... (env-keys is a back-compat alias)
 
 # 2. (on the agent) register a profile from that ek_ — no SSO:
 ach config add --profile prod --url https://ach.example --api-key ek_...

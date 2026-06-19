@@ -16,7 +16,7 @@
 // ContextItem) live here so render does NOT pull internal/platformapi
 // (which transitively imports k8s.io/* + chi). The CLI binary stays
 // thin — render is consumed by `ach config show`, `ach env list`,
-// `ach env describe`, `ach env-keys list` (06-05), and
+// `ach env describe`, `ach keys list` (06-05; `ach env-keys list` is a back-compat alias), and
 // `ach admin keys list` (06-08).
 //
 // W3 wire-shape contract: HydrateView.RuntimeItem.Endpoint surfaces
@@ -26,6 +26,6 @@
 // names so trivial json.Decoder round-trips work without re-mapping.
 //
 // W7 sharing contract: FormatKeyList is the single source of truth for
-// the keys list table — both 06-05 `ach env-keys list` and 06-08
+// the keys list table — both 06-05 `ach keys list` and 06-08
 // `ach admin keys list` call this function, NOT inline tabwriter code.
 package render

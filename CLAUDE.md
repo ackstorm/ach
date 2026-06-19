@@ -35,7 +35,7 @@ declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-env-keys/admin; hydrate/status/uninstall live under `env`; plus the serverless
+keys/admin; `env-keys` remains a back-compat alias for `keys`; hydrate/status/uninstall live under `env`; plus the serverless
 local package manager `repo`/`plugin`/`skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
@@ -106,14 +106,14 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
-`logout`/`whoami`/`config`/`env`/`env-keys`/`admin` (workspace verbs
+`logout`/`whoami`/`config`/`env`/`keys`/`admin` (`env-keys` is a back-compat alias for `keys`; workspace verbs
 `hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
 marketplace or direct plugin/skill source), `plugin` and `skill`

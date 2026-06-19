@@ -11,12 +11,13 @@
 //
 //   - `ach login`, `ach logout`, `ach config *` are unavailable
 //     (config-mutating; no disk registry to mutate). Exit 1.
-//   - `ach env-keys create` requires --no-save (D-08). Exit 1 without.
+//   - `ach keys create` requires --no-save (D-08). Exit 1 without.
+//     (`ach env-keys create` is a back-compat alias for `ach keys create`.)
 //   - --profile / ACH_PROFILE are rejected on every subcommand
 //     (the profile-resolution chain bypasses disk entirely; the
 //     conceptual profile is named "(env)"). Exit 1.
 //   - --env-key / ACH_ENV_KEY are rejected on every read-side command
-//     (hydrate, whoami, env list/describe, env-keys list/revoke) —
+//     (hydrate, whoami, env list/describe, keys list/revoke) —
 //     ek_ labels can only be dereferenced against the on-disk EK map,
 //     which synthetic mode has no access to (CLI-09). Exit 1.
 //
@@ -49,6 +50,6 @@
 //   - spec/ach_cli_spec_v20260515_FINALv4.md §3.3 (synthetic mode
 //     definitive contract).
 //   - .planning/REQUIREMENTS.md CLI-07 / CLI-08 / CLI-09.
-//   - 06-CONTEXT.md D-07 (env-keys-create always-persist), D-08
+//   - 06-CONTEXT.md D-07 (keys-create/env-keys-create always-persist), D-08
 //     (synthetic --no-save mandate), D-11 (mutex credentials).
 package synthetic

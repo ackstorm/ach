@@ -51,7 +51,7 @@ echo "EXIT=$?"
   whoami        Show current identity
   config        Inspect / mutate local config
   env           List + switch environments
-  env-keys      Create / list / revoke environment keys
+  keys          List pk_ + ek_ keys; create / revoke environment keys (env-keys is a back-compat alias)
   hydrate       Materialize workspace artifacts
   admin         Admin subcommands (keys revoke, users revoke-keys, refresh)
 ```
