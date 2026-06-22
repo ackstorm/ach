@@ -70,19 +70,19 @@ func seedKeysConfig(t *testing.T, baseURL string) string {
 //	DELETE /platform/keys/{key_id}      — revoke pk_ (self-revoke, task-6)
 type keysTestServer struct {
 	*httptest.Server
-	createBody    map[string]any
-	createStatus  int
-	listBody      map[string]any
-	listStatus    int
-	revokeStatus  int
+	createBody     map[string]any
+	createStatus   int
+	listBody       map[string]any
+	listStatus     int
+	revokeStatus   int
 	pkRevokeStatus int // status for DELETE /platform/keys/{id}; 0 → use revokeStatus
-	createCalls   int32
-	listCalls     int32
-	revokeCalls   int32 // ekid_ revokes
-	pkRevokeCalls int32 // pkid_ revokes
-	lastDeleteID  string
+	createCalls    int32
+	listCalls      int32
+	revokeCalls    int32 // ekid_ revokes
+	pkRevokeCalls  int32 // pkid_ revokes
+	lastDeleteID   string
 	lastDeletePath string // full path of last DELETE
-	lastQuery     string
+	lastQuery      string
 }
 
 func newKeysTestServer(t *testing.T) *keysTestServer {
@@ -1196,10 +1196,10 @@ func buildPkKeyRows(n int) []map[string]any {
 	rows := make([]map[string]any, n)
 	for i := 0; i < n; i++ {
 		rows[i] = map[string]any{
-			"key_id":     fmt.Sprintf("pkid_%02d", i),
-			"type":       "pk",
+			"key_id":      fmt.Sprintf("pkid_%02d", i),
+			"type":        "pk",
 			"owner_email": "u@example",
-			"status":     "active",
+			"status":      "active",
 			// Newest-first: timestamp decreases with i.
 			"created_at": fmt.Sprintf("2026-06-20T10:00:%02dZ", 59-i),
 		}

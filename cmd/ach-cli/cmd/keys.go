@@ -414,7 +414,7 @@ func newKeysListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
-	cmd.Flags().StringVar(&flagKeyType, "type", "all", "Filter by key type: pk|ek|all (default all)")
+	cmd.Flags().StringVar(&flagKeyType, "type", statusAll, "Filter by key type: pk|ek|all (default all)")
 	cmd.Flags().StringVar(&flagStatus, "status", "active", "Filter by status: active|revoked|expired|all (default active)")
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
@@ -434,7 +434,7 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 
 	// Validate --type before any network call.
 	switch keyType {
-	case "pk", "ek", "all", "":
+	case "pk", "ek", statusAll, "":
 		// ok
 	default:
 		return &exit.CodedError{
@@ -496,11 +496,11 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 		q.Set("environment", environment)
 	}
 	// send status unless "" or "all" (server normalizes unknown to no filter)
-	if status != "" && status != "all" {
+	if status != "" && status != statusAll {
 		q.Set("status", status)
 	}
 	// send type unless "" or "all" (mirrors status handling above)
-	if keyType != "" && keyType != "all" {
+	if keyType != "" && keyType != statusAll {
 		q.Set("type", keyType)
 	}
 	if cursor != "" {
@@ -518,6 +518,11 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 // ---------------------------------------------------------------------
 // revoke
 // ---------------------------------------------------------------------
+
+// codeCannotRevokeActiveKey is the wire error code the platform-api returns
+// when the caller tries to revoke the pk_ key authenticating the current
+// session without ?force=true.
+const codeCannotRevokeActiveKey = "cannot_revoke_active_key"
 
 func newEnvKeysRevokeCmd() *cobra.Command {
 	var (
@@ -564,7 +569,8 @@ invalidate the current session (e.g. rotating credentials).
 		},
 	}
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
-	cmd.Flags().BoolVar(&flagForce, "force", false, "Allow revoking the key that authenticates your current session (pkid_ only; re-login required afterward)")
+	cmd.Flags().BoolVar(&flagForce, "force", false,
+		"Allow revoking your current session's key (pkid_ only; re-login after)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
@@ -663,7 +669,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	if doErr != nil {
 		// On 409 cannot_revoke_active_key: surface a friendly message.
 		var sErr *httpclient.ServerError
-		if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == "cannot_revoke_active_key" {
+		if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == codeCannotRevokeActiveKey {
 			return &exit.CodedError{
 				Code:    exit.General,
 				Msg:     "this is the key your current session authenticates with; re-run with --force, then re-login afterward",
@@ -828,7 +834,7 @@ func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
 		doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
 		if doErr != nil {
 			var sErr *httpclient.ServerError
-			if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == "cannot_revoke_active_key" {
+			if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == codeCannotRevokeActiveKey {
 				skipped++
 				_, _ = fmt.Fprintf(stdout, "  skipped %s (active key)\n", k.KeyID)
 				continue

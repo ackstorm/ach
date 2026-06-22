@@ -26,10 +26,10 @@ import (
 // captures the key_id passed to RevokePersonalKeyByOwner for assertion.
 type revokePersonalDB struct {
 	// RevokePersonalKeyByOwner controls
-	revokeToken    *string // returned litellmToken on success
-	revokeErr      error   // returned error (nil = success)
-	revokeCallKeyID string // records the last key_id argument
-	revokeCallOwner string // records the last owner argument
+	revokeToken     *string // returned litellmToken on success
+	revokeErr       error   // returned error (nil = success)
+	revokeCallKeyID string  // records the last key_id argument
+	revokeCallOwner string  // records the last owner argument
 }
 
 func (d *revokePersonalDB) RevokePersonalKeyByOwner(_ context.Context, keyID, owner string) (*string, error) {
@@ -120,7 +120,7 @@ func TestRevokePersonalHandler(t *testing.T) {
 		query        string // raw query string (e.g. "force=true")
 		dbErr        error  // error returned by RevokePersonalKeyByOwner
 		dbToken      *string
-		llmErr       error  // error returned by litellm.RevokeKey
+		llmErr       error // error returned by litellm.RevokeKey
 		wantStatus   int
 		wantBodyPart string // substring that must appear in the response body
 		wantDBCalled bool   // RevokePersonalKeyByOwner must have been called
@@ -136,21 +136,21 @@ func TestRevokePersonalHandler(t *testing.T) {
 			wantDBCalled: true,
 		},
 		{
-			name:        "wrong owner → 404 no existence leak",
-			callerKeyID: "pkid_caller00000000000000000",
-			callerOwner: "mallory@example.com",
-			targetKeyID: "pkid_target00000000000000001",
-			dbErr:       db.ErrKeyNotFoundOrNotOwner,
-			wantStatus:  http.StatusNotFound,
+			name:         "wrong owner → 404 no existence leak",
+			callerKeyID:  "pkid_caller00000000000000000",
+			callerOwner:  "mallory@example.com",
+			targetKeyID:  "pkid_target00000000000000001",
+			dbErr:        db.ErrKeyNotFoundOrNotOwner,
+			wantStatus:   http.StatusNotFound,
 			wantBodyPart: "key_not_found",
 			wantDBCalled: true,
 		},
 		{
-			name:        "active key without force → 409",
-			callerKeyID: "pkid_active00000000000000000",
-			callerOwner: "alice@example.com",
-			targetKeyID: "pkid_active00000000000000000", // same as callerKeyID
-			wantStatus:  http.StatusConflict,
+			name:         "active key without force → 409",
+			callerKeyID:  "pkid_active00000000000000000",
+			callerOwner:  "alice@example.com",
+			targetKeyID:  "pkid_active00000000000000000", // same as callerKeyID
+			wantStatus:   http.StatusConflict,
 			wantBodyPart: codeCannotRevokeActiveKey,
 			wantDBCalled: false, // DB must NOT be called before the guard fires
 		},
