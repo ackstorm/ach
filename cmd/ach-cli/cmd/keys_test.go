@@ -674,6 +674,157 @@ func TestKeys_List_DefaultsToActiveAndRendersType(t *testing.T) {
 	}
 }
 
+// Test: --type ek sends type=ek to the server and returns only ek rows.
+func TestKeys_List_TypeEkFilter(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items": []map[string]any{
+			{
+				"key_id": "ekid_y", "type": "ek", "environment": "demo",
+				"name": "laptop", "owner_email": "u@x", "status": "active",
+				"created_at": "2026-06-01T00:00:00Z",
+			},
+		},
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	out, _, code, err := executeKeys(t, "", "list", "--type", "ek")
+	if err != nil {
+		t.Fatalf("list --type ek err=%v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Server must receive the type=ek query param.
+	if !strings.Contains(srv.lastQuery, "type=ek") {
+		t.Errorf("expected type=ek in query; got %q", srv.lastQuery)
+	}
+	// Output must contain the ek row.
+	if !strings.Contains(out, "ekid_y") {
+		t.Errorf("expected ekid_y in output; got:\n%s", out)
+	}
+}
+
+// Test: --type pk sends type=pk to the server.
+func TestKeys_List_TypePkFilter(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items": []map[string]any{
+			{
+				"key_id": "pkid_x", "type": "pk", "owner_email": "u@x",
+				"status": "active", "created_at": "2026-05-31T00:00:00Z",
+			},
+		},
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	out, _, code, err := executeKeys(t, "", "list", "--type", "pk")
+	if err != nil {
+		t.Fatalf("list --type pk err=%v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Server must receive type=pk.
+	if !strings.Contains(srv.lastQuery, "type=pk") {
+		t.Errorf("expected type=pk in query; got %q", srv.lastQuery)
+	}
+	if !strings.Contains(out, "pkid_x") {
+		t.Errorf("expected pkid_x in output; got:\n%s", out)
+	}
+}
+
+// Test: --type all sends NO type query param (no filter).
+func TestKeys_List_TypeAllSendsNoFilter(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items":       []map[string]any{},
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, _, err := executeKeys(t, "", "list", "--type", "all")
+	if err != nil {
+		t.Fatalf("list --type all err=%v", err)
+	}
+	if strings.Contains(srv.lastQuery, "type=") {
+		t.Errorf("expected no type= query param for --type all; got %q", srv.lastQuery)
+	}
+}
+
+// Test: invalid --type xyz returns an error BEFORE any network call.
+func TestKeys_List_InvalidTypeFlagErrors(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{"items": []map[string]any{}}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "list", "--type", "xyz")
+	if err == nil {
+		t.Fatal("expected error for --type xyz")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	// Must not have hit the server.
+	if srv.listCalls != 0 {
+		t.Errorf("expected 0 server calls for invalid type; got %d", srv.listCalls)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "xyz") {
+		t.Errorf("error should mention the invalid value; got: %q", msg)
+	}
+}
+
+// Test: default --type (all) sends no type= param and returns both pk and ek rows.
+func TestKeys_List_DefaultTypeAll(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items": []map[string]any{
+			{
+				"key_id": "ekid_y", "type": "ek", "environment": "demo",
+				"name": "laptop", "owner_email": "u@x", "status": "active",
+				"created_at": "2026-06-01T00:00:00Z",
+			},
+			{
+				"key_id": "pkid_x", "type": "pk", "owner_email": "u@x",
+				"status": "active", "created_at": "2026-05-31T00:00:00Z",
+			},
+		},
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	out, _, code, err := executeKeys(t, "", "list")
+	if err != nil {
+		t.Fatalf("list (default type) err=%v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Default: no type= param sent.
+	if strings.Contains(srv.lastQuery, "type=") {
+		t.Errorf("expected no type= in default query; got %q", srv.lastQuery)
+	}
+	// Both rows should appear.
+	for _, want := range []string{"ekid_y", "pkid_x"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output; got:\n%s", want, out)
+		}
+	}
+}
+
 // Test: env-keys alias resolves through the root command.
 func TestKeys_EnvKeysAliasStillWorks(t *testing.T) {
 	keysTestEnv(t)

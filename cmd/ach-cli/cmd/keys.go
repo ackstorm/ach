@@ -411,7 +411,7 @@ func newKeysListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
-	cmd.Flags().StringVar(&flagKeyType, "type", "", "Filter by type: pk|ek (default both)")
+	cmd.Flags().StringVar(&flagKeyType, "type", "all", "Filter by key type: pk|ek|all (default all)")
 	cmd.Flags().StringVar(&flagStatus, "status", "active", "Filter by status: active|revoked|expired|all (default active)")
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
@@ -428,6 +428,17 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
+
+	// Validate --type before any network call.
+	switch keyType {
+	case "pk", "ek", "all", "":
+		// ok
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --type %q: must be pk, ek, or all", keyType),
+		}
+	}
 
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
 	// --profile, --env-key) — runs BEFORE resolveEnvKeysBearer so
@@ -485,7 +496,8 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 	if status != "" && status != "all" {
 		q.Set("status", status)
 	}
-	if keyType != "" {
+	// send type unless "" or "all" (mirrors status handling above)
+	if keyType != "" && keyType != "all" {
 		q.Set("type", keyType)
 	}
 	if cursor != "" {
