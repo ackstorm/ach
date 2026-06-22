@@ -80,7 +80,7 @@ profile from a credential you already minted instead:
 
 ```bash
 # 1. (on a human machine) mint a service key scoped to an environment:
-ach keys create --environment prod --name ci-bot      # prints ek_... (env-keys is a back-compat alias)
+ach keys create prod --name ci-bot      # prints ek_... (env is positional; --name optional, defaults to env)
 
 # 2. (on the agent) register a profile from that ek_ — no SSO:
 ach config add --profile prod --url https://ach.example --api-key ek_...
@@ -96,6 +96,22 @@ export ACH_BASE_URL=https://ach.example
 export ACH_API_KEY=ek_...
 ach env hydrate prod   # repeat per env, no --api-key
 ```
+
+## Rotating / cleaning up your own keys
+
+`login` mints a fresh `pk_` each time, so personal keys accumulate. You can
+revoke your OWN keys (no admin needed) and bulk-prune the stale ones:
+
+```bash
+ach keys list --type pk                 # see your personal keys (newest first)
+ach keys revoke pkid_01kt6fe0...        # revoke one (your own pk_ or ek_)
+ach keys prune --dry-run                # preview: keeps the newest, lists the rest
+ach keys prune --yes                    # revoke all but the newest pk_ (active key is auto-skipped)
+```
+
+Revoking the key your current session authenticates with is refused unless you
+pass `--force` (then re-login). `prune` never force-revokes, so your active key
+is always preserved.
 
 Note: an `ek_` is scoped to ONE Environment; a `pk_` (from `ach login`)
 spans every environment you can access but expires on a 7-day sliding
