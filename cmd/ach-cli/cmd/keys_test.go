@@ -890,6 +890,65 @@ func TestEnvKeys_SpecCarriesChangelogNote(t *testing.T) {
 		"(gitignored — change persists in main repo only)")
 }
 
+// ---------------------------------------------------------------------
+// help-text jargon tests (task-2)
+// ---------------------------------------------------------------------
+
+// TestKeysHelpJargonFree asserts that the user-visible help strings for the
+// `keys` parent, `create`, and `list` commands contain no internal jargon
+// (D-07, D-08, GET /platform). It also asserts that `create`'s Example
+// block contains the expected usage snippet.
+func TestKeysHelpJargonFree(t *testing.T) {
+	parent := newKeysCmd()
+
+	// Collect the create and list children by name for direct inspection.
+	var createCmd, listCmd *cobra.Command
+	for _, sub := range parent.Commands() {
+		switch sub.Name() {
+		case "create":
+			createCmd = sub
+		case "list":
+			listCmd = sub
+		}
+	}
+	if createCmd == nil {
+		t.Fatal("create subcommand not found")
+	}
+	if listCmd == nil {
+		t.Fatal("list subcommand not found")
+	}
+
+	forbidden := []string{"D-07", "D-08", "GET /platform"}
+
+	// -- parent keys --
+	parentText := parent.Long + " " + parent.Short
+	for _, bad := range forbidden {
+		if strings.Contains(parentText, bad) {
+			t.Errorf("keys parent help contains forbidden jargon %q", bad)
+		}
+	}
+
+	// -- create --
+	createText := createCmd.Short + " " + createCmd.Long + " " + createCmd.Example
+	for _, bad := range forbidden {
+		if strings.Contains(createText, bad) {
+			t.Errorf("keys create help contains forbidden jargon %q", bad)
+		}
+	}
+	// Example block must include the positional form.
+	if !strings.Contains(createCmd.Example, "ach keys create frontend-dev") {
+		t.Errorf("keys create Example missing 'ach keys create frontend-dev'; got:\n%s", createCmd.Example)
+	}
+
+	// -- list --
+	listText := listCmd.Short + " " + listCmd.Long
+	for _, bad := range forbidden {
+		if strings.Contains(listText, bad) {
+			t.Errorf("keys list help contains forbidden jargon %q", bad)
+		}
+	}
+}
+
 // findUpwards walks ancestor directories of os.Getwd() looking for
 // `rel`. Returns the absolute path on first hit; "" if not found
 // within 8 levels. Used to locate gitignored docs (.planning/, spec/)

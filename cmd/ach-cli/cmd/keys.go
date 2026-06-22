@@ -103,22 +103,22 @@ func newKeysCmd() *cobra.Command {
 		Use:     "keys",
 		Aliases: []string{"env-keys"}, // back-compat
 		Short:   "Manage your API keys (personal pk_ and environment ek_)",
-		Long: `Manage your API keys — personal pk_ keys and environment ek_ keys.
-All three sub-subcommands require pk- auth.
+		Long: `Manage your API keys.
 
-Sub-subcommands:
-  create  Issue a new ek- for an Environment (D-07: always-persists to
-          ~/.config/ach/config.yaml unless --no-save).
-  list    Paginate your pk_ and ek_ keys (GET /platform/keys — caller-scoped).
-  revoke  Delete an ek- by its ekid_ identifier.
+There are two kinds of key:
+  pk_   Your personal key — issued at login and stored in your active profile.
+        Used to authenticate all ach-cli commands.
+  ek_   An environment key — scoped to one Environment. Lets an agent runtime
+        (or a CI job) call the ACH forwarder without using your personal key.
 
-D-07 (spec deviation): ek- create ALWAYS persists the returned plaintext
-to profiles.<active>.ek.<server-name> in the active profile. The
-spec's --save-as flag is REMOVED; --no-save opts out (ek- flows to stdout
-only — useful for CI scripts piping ek- into a vault).
+All subcommands authenticate with your personal key (pk_) from the active
+profile. You can override it with --api-key or the ACH_API_KEY environment
+variable.
 
-D-08: In synthetic mode (ACH_BASE_URL + ACH_API_KEY both set), create
-without --no-save exits 1.
+Subcommands:
+  create  Issue a new environment key (ek_) and save it to your profile.
+  list    Show your pk_ and ek_ keys.
+  revoke  Permanently delete an environment key by its key ID (ekid_…).
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -130,6 +130,21 @@ without --no-save exits 1.
 
 // ---------------------------------------------------------------------
 // create
+//
+// Engineering notes (not user-visible):
+//
+// D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6 spec divergence):
+// `ach keys create` ALWAYS persists the returned ek- plaintext to
+// profiles.<active>.ek.<server-name> in the active profile. The spec's
+// --save-as flag is removed; --no-save opts out of persist (ek- flows to
+// stdout only — for CI/vault-piping workflows). See:
+//   - .planning/REQUIREMENTS.md CLI-09 row (marked DEVIATED, D-07).
+//   - spec/ach_cli_spec_v20260515_FINALv4.md changelog (always-persist
+//     + --no-save entry).
+//
+// D-08: `ach keys create` in synthetic mode (ACH_BASE_URL + ACH_API_KEY)
+// requires --no-save — without it, the CLI exits 1 because synthetic mode
+// never has a writable config file.
 // ---------------------------------------------------------------------
 
 func newEnvKeysCreateCmd() *cobra.Command {
@@ -143,9 +158,31 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		flagVerbose     bool
 	)
 	cmd := &cobra.Command{
-		Use:  "create <environment>",
-		Args: cobra.MaximumNArgs(1),
-		Short: "Issue a new ek- for an Environment (D-07 always-persists)",
+		Use:   "create <environment>",
+		Args:  cobra.MaximumNArgs(1),
+		Short: "Issue a new environment key (ek_) for an Environment",
+		Long: `Issue a new environment key (ek_) for the named Environment and save it to
+your active config profile.
+
+The key is printed to stdout exactly once. By default it is also stored under
+profiles.<active>.ek.<name> in ~/.config/ach/config.yaml so you can reference
+it later with --env-key <name>.
+
+Use --no-save to skip writing to the config file — the key is printed to stdout
+only. This is the right choice for CI pipelines and secrets managers that read
+from stdout.
+
+The --name flag sets a local label for the saved key. It defaults to the
+environment name, so in the common case you only need to pass the environment.
+`,
+		Example: `  # Issue a key for the frontend-dev environment (name defaults to "frontend-dev")
+  ach keys create frontend-dev
+
+  # Issue a key and store it under a custom label for easy reference later
+  ach keys create frontend-dev --name laptop
+
+  # Issue a key for CI — print to stdout only, do not write to config
+  ach keys create staging --no-save`,
 		// SilenceUsage + SilenceErrors: cobra otherwise echoes its
 		// Usage block (containing the "ek-" flag descriptions) to
 		// the writer attached via SetOut when a RunE returns
@@ -201,7 +238,7 @@ func newEnvKeysCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name")
 	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (defaults to environment name)")
 	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
-		"Do NOT persist ek- to ~/.config/ach/config.yaml (D-07 escape hatch)")
+		"Print the key to stdout only; do not save it to the config file")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label (rare for create)")
@@ -365,7 +402,7 @@ func newKeysListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:           "list",
-		Short:         "List your pk_ and ek_ keys (caller-scoped)",
+		Short:         "List your pk_ and ek_ keys",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
