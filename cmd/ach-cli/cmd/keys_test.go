@@ -398,19 +398,184 @@ func TestEnvKeys_Create_RequiresEnvironment(t *testing.T) {
 	}
 }
 
-// Test 7: --name is required.
+// Test 7: --name is required — now defaults to env when absent, so
+// `create demo` must succeed (name defaults to "demo"). Bare `create`
+// still errors with the guided message.
 func TestEnvKeys_Create_RequiresName(t *testing.T) {
 	keysTestEnv(t)
 	srv := newKeysTestServer(t)
 	defer srv.Close()
 	seedKeysConfig(t, srv.URL)
 
-	_, _, _, err := executeKeys(t, "",
-		"create",
-		"--environment", "demo",
-	)
+	// After task-1: --name is no longer required; it defaults to the
+	// resolved environment. A bare `create` (no env, no name) must
+	// return the guided error (not cobra's "required flag(s) ... not set").
+	_, errStr, _, err := executeKeys(t, "", "create")
 	if err == nil {
-		t.Fatal("expected error when --name missing")
+		t.Fatal("expected error when both environment and name are missing")
+	}
+	msg := err.Error() + errStr
+	// The guided error must talk about the missing environment, not a missing flag.
+	if strings.Contains(msg, "required flag") {
+		t.Errorf("error must be guided (not cobra's required-flag message); got: %q", msg)
+	}
+	if !strings.Contains(msg, "missing environment") {
+		t.Errorf("error should mention 'missing environment'; got: %q", msg)
+	}
+}
+
+// ---------------------------------------------------------------------
+// TestKeysCreate — new positional-arg + guided-error tests (task-1)
+// ---------------------------------------------------------------------
+
+// Bare `create` → guided error containing Usage + Example.
+func TestKeysCreate_MissingEnv_GuidedError(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "create")
+	if err == nil {
+		t.Fatal("expected error for bare 'create'")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"missing environment",
+		"ach keys create <environment>",
+		"ach keys create frontend-dev",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("guided error missing %q; full msg:\n%s", want, msg)
+		}
+	}
+}
+
+// `create frontend-dev` (positional) → env resolved, name defaults to "frontend-dev".
+func TestKeysCreate_PositionalEnv_NameDefaults(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.createBody = map[string]any{
+		"key_id":      "ekid_abc",
+		"plaintext":   "ek_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"environment": "frontend-dev",
+		"name":        "frontend-dev",
+		"owner_email": "u@example",
+		"created_at":  "2026-05-28T10:00:00Z",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "create", "frontend-dev", "--no-save")
+	if err != nil {
+		t.Fatalf("keys create frontend-dev err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "ek_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+		t.Errorf("expected ek_ in stdout; got:\n%s", stdout)
+	}
+}
+
+// `create frontend-dev --name laptop` → name override wins.
+func TestKeysCreate_PositionalEnv_NameFlagOverride(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.createBody = map[string]any{
+		"key_id":      "ekid_abc",
+		"plaintext":   "ek_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"environment": "frontend-dev",
+		"name":        "laptop",
+		"owner_email": "u@example",
+		"created_at":  "2026-05-28T10:00:00Z",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "create", "frontend-dev", "--name", "laptop", "--no-save")
+	if err != nil {
+		t.Fatalf("keys create frontend-dev --name laptop err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "ek_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+		t.Errorf("expected ek_ in stdout; got:\n%s", stdout)
+	}
+}
+
+// `create x --environment y` (both differ) → conflict error.
+func TestKeysCreate_BothEnvDiffer_ConflictError(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "create", "x", "--environment", "y")
+	if err == nil {
+		t.Fatal("expected error when positional and --environment differ")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "environment given twice") {
+		t.Errorf("expected 'environment given twice' in error; got: %q", msg)
+	}
+}
+
+// `create x --environment x` (same) → accepted.
+func TestKeysCreate_BothEnvSame_Accepted(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.createBody = map[string]any{
+		"key_id":      "ekid_abc",
+		"plaintext":   "ek_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"environment": "x",
+		"name":        "x",
+		"owner_email": "u@example",
+		"created_at":  "2026-05-28T10:00:00Z",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "create", "x", "--environment", "x", "--no-save")
+	if err != nil {
+		t.Fatalf("create x --environment x err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+}
+
+// `create --environment demo` (flag only, no positional) → still works.
+func TestKeysCreate_FlagOnlyEnv_Works(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.createBody = map[string]any{
+		"key_id":      "ekid_abc",
+		"plaintext":   "ek_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"environment": "demo",
+		"name":        "demo",
+		"owner_email": "u@example",
+		"created_at":  "2026-05-28T10:00:00Z",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "create", "--environment", "demo", "--no-save")
+	if err != nil {
+		t.Fatalf("create --environment demo err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "ek_aaaaaaaaaaaaaaaaaaaaaawxyz") {
+		t.Errorf("expected ek_ in stdout; got:\n%s", stdout)
 	}
 }
 

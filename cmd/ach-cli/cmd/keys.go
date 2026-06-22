@@ -45,6 +45,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -142,7 +143,8 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		flagVerbose     bool
 	)
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:  "create <environment>",
+		Args: cobra.MaximumNArgs(1),
 		Short: "Issue a new ek- for an Environment (D-07 always-persists)",
 		// SilenceUsage + SilenceErrors: cobra otherwise echoes its
 		// Usage block (containing the "ek-" flag descriptions) to
@@ -153,22 +155,89 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		// (Pattern P12); the cobra-side echo is redundant.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// Resolve environment: positional wins; flag is fallback.
+			positional := ""
+			if len(args) > 0 {
+				positional = strings.TrimSpace(args[0])
+			}
+			flagEnv := strings.TrimSpace(flagEnvironment)
+
+			var resolvedEnv string
+			switch {
+			case positional != "" && flagEnv != "" && positional != flagEnv:
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  fmt.Sprintf("environment given twice (positional %q vs --environment %q)", positional, flagEnv),
+				}
+			case positional != "":
+				resolvedEnv = positional
+				flagEnvironment = positional
+			case flagEnv != "":
+				resolvedEnv = flagEnv
+			default:
+				// Neither positional nor flag provided: emit guided error.
+				msg := "missing environment.\n" +
+					"  Usage: ach keys create <environment> [--name <label>]\n" +
+					"  Example: ach keys create frontend-dev"
+				// Best-effort: append environment list (swallow any error).
+				if envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey); len(envNames) > 0 {
+					msg += "\n  Your environments:\n    " + strings.Join(envNames, ", ")
+				}
+				return &exit.CodedError{Code: exit.General, Msg: msg}
+			}
+
+			// Default --name to the resolved environment when unset.
+			if strings.TrimSpace(flagName) == "" {
+				flagName = resolvedEnv
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnvKeysCreate(cmd, flagEnvironment, flagName, flagNoSave,
 				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
-	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (required)")
-	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (required)")
+	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name")
+	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (defaults to environment name)")
 	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
 		"Do NOT persist ek- to ~/.config/ach/config.yaml (D-07 escape hatch)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label (rare for create)")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	_ = cmd.MarkFlagRequired("environment")
-	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+// fetchEnvNamesBestEffort attempts GET /platform/environments with a 5s
+// timeout and returns the list of environment names. Any failure
+// (no credentials, offline, non-200, timeout) is swallowed and an
+// empty slice is returned so callers can safely omit the list line.
+func fetchEnvNamesBestEffort(ctx context.Context, flagProfile, flagAPIKey, flagEnvKey string) []string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// resolveEnvKeysBearer reuses the existing credential resolution path.
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
+	if err != nil || baseURL == "" || bearer == "" {
+		return nil
+	}
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: keysHTTPClient,
+	}
+	var resp envListResponse
+	if doErr := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, ""), nil, &resp); doErr != nil {
+		return nil
+	}
+	names := make([]string, 0, len(resp.Items))
+	for _, e := range resp.Items {
+		if e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }
 
 func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
