@@ -212,6 +212,10 @@ func (d *fakeEkDB) ListKeys(_ context.Context, f db.KeyListFilter, _ int, _ stri
 	}, "", nil
 }
 
+func (d *fakeEkDB) RevokePersonalKeyByOwner(_ context.Context, _ string, _ string) (*string, error) {
+	return nil, nil
+}
+
 // TestCreateHandler_KeyAliasIsAchKeyID drives the §8.2 ek_ create happy path
 // end-to-end and asserts the LiteLLM KeyGenerate request carried KeyAlias set
 // to the minted ekid_ — i.e. KeyAlias != "" AND KeyAlias == ach_key_id
