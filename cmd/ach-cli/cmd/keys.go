@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach keys` (alias: `env-keys`) manages the caller's API keys:
-// personal pk_ keys and environment ek_ keys. Three sub-subcommands:
-// create / list / revoke.
+// personal pk_ keys and environment ek_ keys. Four sub-subcommands:
+// create / list / revoke / prune.
 //
 // D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
 // spec divergence): `ach keys create` ALWAYS persists the
@@ -24,11 +24,11 @@
 // envelope decoder in `httpclient` — no path leaks plaintext on
 // failure.
 //
-// CLI-13: `revoke` enforces the `ekid_…` key-id prefix CLIENT-side
-// BEFORE any HTTP call. Raw plaintext (`ek-…`) is rejected with a
-// message that surfaces the mistake to stderr; `pkid_…` is rejected
-// with a pointer to `ach admin keys revoke` (which W3-P2 / 06-08
-// will accept).
+// CLI-13: `revoke` enforces the `ekid_…` or `pkid_…` key-id prefix
+// CLIENT-side BEFORE any HTTP call. Raw plaintext (`ek-…`/`pk-…`) is
+// rejected with a message that surfaces the mistake to stderr.
+// `pkid_…` routes to DELETE /platform/keys/{id} (self-revoke of your
+// own personal key); `ekid_…` routes to DELETE /platform/env-keys/{id}.
 //
 // Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatKeyList`
 // — a single source of truth shared with `ach admin keys list`
@@ -39,11 +39,13 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -118,13 +120,14 @@ variable.
 Subcommands:
   create  Issue a new environment key (ek_) and save it to your profile.
   list    Show your pk_ and ek_ keys.
-  revoke  Permanently delete an environment key by its key ID (ekid_…).
+  revoke  Permanently delete one of your own keys by its key ID (ekid_… or pkid_…).
+  prune   Bulk-delete old personal keys, keeping the N most recent.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
-	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd())
+	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd(), newKeysPruneCmd())
 	return parent
 }
 
@@ -519,28 +522,49 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 func newEnvKeysRevokeCmd() *cobra.Command {
 	var (
 		flagYes     bool
+		flagForce   bool
 		flagProfile string
 		flagAPIKey  string
 		flagEnvKey  string
 		flagVerbose bool
 	)
 	cmd := &cobra.Command{
-		// Bare `revoke` (no inline arg hint in `Use:`) so the
-		// `<key-id>` arg shape is documented purely via the
-		// Short/Long help text + the cobra.ExactArgs(1) gate.
-		// Keeps the `grep -c '"revoke"'` count == 3 in the
-		// 06-05 plan acceptance text.
-		Use:           "revoke",
-		Short:         "Revoke an ek- by its ekid_ identifier (CLI-13). Usage: ach keys revoke <ekid_…>",
+		Use:   "revoke",
+		Short: "Permanently revoke one of your own keys by its key ID (ekid_… or pkid_…)",
+		Long: `Permanently revoke one of your own API keys.
+
+Pass the key ID — either a personal key ID (pkid_…) or an environment key ID
+(ekid_…). The key ID is shown in the output of 'ach keys list'.
+
+  pkid_…  Your personal key. Revoking it invalidates the session token your
+           CLI currently uses. After revoking with --force, run 'ach login'
+           to obtain a new personal key.
+
+  ekid_…  An environment key scoped to one Environment. Safe to revoke at
+           any time; the Environment remains unaffected.
+
+The server rejects revoking the personal key that authenticates the current
+request unless you pass --force. Use --force only when you intend to
+invalidate the current session (e.g. rotating credentials).
+`,
+		Example: `  # Revoke an environment key
+  ach keys revoke ekid_01j0zxyz…
+
+  # Revoke an old personal key (not your current session key)
+  ach keys revoke pkid_01j0zabc…
+
+  # Revoke your current session key (forces invalidation; re-login required)
+  ach keys revoke pkid_01j0zabc… --force`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runEnvKeysRevoke(cmd, args[0], flagYes,
+			return runEnvKeysRevoke(cmd, args[0], flagYes, flagForce,
 				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
+	cmd.Flags().BoolVar(&flagForce, "force", false, "Allow revoking the key that authenticates your current session (pkid_ only; re-login required afterward)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
@@ -548,7 +572,7 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 	return cmd
 }
 
-func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
+func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stderr := cmd.ErrOrStderr()
@@ -567,28 +591,40 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 	}
 
 	// CLI-13: client-side key-id classification BEFORE any HTTP.
+	// pkid_ → DELETE /platform/keys/{id} (self-revoke personal key)
+	// ekid_ → DELETE /platform/env-keys/{id}
+	// raw plaintext (pk-/ek-) → reject immediately.
+	var deletePath string
 	switch {
 	case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
-		// ok — proceed.
+		// ekid_ → env-keys endpoint.
+		deletePath = "/platform/env-keys/" + keyID
+	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+		// pkid_ → personal keys self-revoke endpoint.
+		deletePath = "/platform/keys/" + keyID
+		if force {
+			deletePath += "?force=true"
+		}
 	case strings.HasPrefix(keyID, keys.EkBearerPrefix):
-		// Raw plaintext rejected.
+		// Raw ek- plaintext rejected.
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
 				"key id must be in %s form, got %s (raw plaintext rejected — CLI-13)",
 				keys.EkidKeyIDPrefix, keys.EkBearerPrefix),
 		}
-	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+	case strings.HasPrefix(keyID, keys.PkBearerPrefix):
+		// Raw pk- plaintext rejected.
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"ach keys revoke accepts only %s ids; use `ach admin keys revoke` for %s ids",
-				keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
+				"key id must be in %s form, got %s (raw plaintext rejected — CLI-13)",
+				keys.PkidKeyIDPrefix, keys.PkBearerPrefix),
 		}
 	default:
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("invalid key id %q; expected %s prefix", keyID, keys.EkidKeyIDPrefix),
+			Msg:  fmt.Sprintf("invalid key id %q; expected %s or %s prefix", keyID, keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
 		}
 	}
 
@@ -623,9 +659,195 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 		Verbose:    verbose,
 		Stderr:     stderr,
 	}
-	if doErr := hc.Do(ctx, http.MethodDelete, "/platform/env-keys/"+keyID, nil, nil); doErr != nil {
+	doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
+	if doErr != nil {
+		// On 409 cannot_revoke_active_key: surface a friendly message.
+		var sErr *httpclient.ServerError
+		if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == "cannot_revoke_active_key" {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     "this is the key your current session authenticates with; re-run with --force, then re-login afterward",
+				Wrapped: doErr,
+			}
+		}
 		return doErr
 	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// prune
+// ---------------------------------------------------------------------
+
+func newKeysPruneCmd() *cobra.Command {
+	var (
+		flagKeep    int
+		flagDryRun  bool
+		flagYes     bool
+		flagProfile string
+		flagAPIKey  string
+		flagEnvKey  string
+		flagVerbose bool
+	)
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Delete old personal keys, keeping the N most recent",
+		Long: `Fetch all your personal keys (pk_), sort newest-first, and permanently
+revoke all but the N most recent (--keep N, default 1).
+
+This is a safe way to clean up stale personal keys that accumulate over time
+(one per login session). The server protects your current active key: if a
+prune target happens to be the key that authenticates this very request the
+server returns a 409 and prune skips it (counts as "skipped"), so the run
+never invalidates your current session.
+
+Use --dry-run to preview which keys would be revoked without making any
+changes. Without --yes you will be prompted for confirmation before
+revoking.
+`,
+		Example: `  # Preview which keys would be pruned (keeps the newest 1)
+  ach keys prune --dry-run
+
+  # Prune, keep the 2 most recent, skip confirmation prompt
+  ach keys prune --keep 2 --yes`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runKeysPrune(cmd, flagKeep, flagDryRun, flagYes,
+				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
+		},
+	}
+	cmd.Flags().IntVar(&flagKeep, "keep", 1, "Number of most-recent personal keys to keep")
+	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "Print what would be revoked; make no changes")
+	cmd.Flags().BoolVar(&flagYes, "yes", false, "Skip interactive confirmation")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
+	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
+	return cmd
+}
+
+func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
+	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
+
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+	stdin := cmd.InOrStdin()
+	ctx := cmd.Context()
+
+	if keep < 0 {
+		return &exit.CodedError{Code: exit.General, Msg: "--keep must be >= 0"}
+	}
+
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:        synthetic.GateEnvKeysList,
+		APIKeyFlag:  flagAPIKey,
+		EnvKeyFlag:  flagEnvKey,
+		ProfileFlag: flagProfile,
+	}); err != nil {
+		return err
+	}
+
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: keysHTTPClient,
+		Verbose:    verbose,
+		Stderr:     stderr,
+	}
+
+	// Fetch all active pk_ keys (paginate).
+	var pkKeys []render.KeyRowView
+	currentCursor := ""
+	for {
+		path := buildKeysListPath("", "pk", "active", currentCursor, 0)
+		var resp keysListResponse
+		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
+			return doErr
+		}
+		pkKeys = append(pkKeys, resp.Items...)
+		if resp.NextCursor == "" {
+			break
+		}
+		currentCursor = resp.NextCursor
+	}
+
+	// Sort newest-first (CreatedAt lexicographic descending = chronological descending).
+	sort.Slice(pkKeys, func(i, j int) bool {
+		return pkKeys[i].CreatedAt > pkKeys[j].CreatedAt
+	})
+
+	// Targets are all keys beyond the first `keep` in the sorted list.
+	var targets []render.KeyRowView
+	if len(pkKeys) > keep {
+		targets = pkKeys[keep:]
+	}
+
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintf(stdout, "Nothing to prune: %d personal key(s), keeping %d.\n", len(pkKeys), keep)
+		return nil
+	}
+
+	// Print the plan.
+	_, _ = fmt.Fprintf(stdout, "Personal keys to revoke (%d of %d, keeping %d newest):\n", len(targets), len(pkKeys), keep)
+	for _, k := range targets {
+		_, _ = fmt.Fprintf(stdout, "  %s  created %s\n", k.KeyID, k.CreatedAt)
+	}
+
+	if dryRun {
+		_, _ = fmt.Fprintln(stdout, "(dry-run: no changes made)")
+		return nil
+	}
+
+	// Interactive confirmation unless --yes.
+	if !yes {
+		_, _ = fmt.Fprintf(stderr, "Revoke %d key(s)? [y/N]: ", len(targets))
+		scanner := bufio.NewScanner(stdin)
+		answer := ""
+		if scanner.Scan() {
+			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
+		}
+		switch answer {
+		case "y", "yes":
+			// proceed.
+		default:
+			return &exit.CodedError{Code: exit.General, Msg: "cancelled"}
+		}
+	}
+
+	var revoked, skipped int
+	var errs []string
+	for _, k := range targets {
+		deletePath := "/platform/keys/" + k.KeyID
+		// Never pass force from prune — the server 409 guard is the backstop.
+		doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
+		if doErr != nil {
+			var sErr *httpclient.ServerError
+			if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == "cannot_revoke_active_key" {
+				skipped++
+				_, _ = fmt.Fprintf(stdout, "  skipped %s (active key)\n", k.KeyID)
+				continue
+			}
+			errs = append(errs, fmt.Sprintf("%s: %v", k.KeyID, doErr))
+			continue
+		}
+		revoked++
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Done: %d revoked, %d skipped (active key)", revoked, skipped)
+	if len(errs) > 0 {
+		_, _ = fmt.Fprintf(stdout, ", %d error(s):\n", len(errs))
+		for _, e := range errs {
+			_, _ = fmt.Fprintf(stdout, "  %s\n", e)
+		}
+		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("%d revoke error(s)", len(errs))}
+	}
+	_, _ = fmt.Fprintln(stdout, ".")
 	return nil
 }
 

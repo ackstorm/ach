@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -65,19 +66,23 @@ func seedKeysConfig(t *testing.T, baseURL string) string {
 //
 //	POST   /platform/env-keys           — create (unchanged endpoint)
 //	GET    /platform/keys               — list (new combined endpoint)
-//	DELETE /platform/env-keys/{key_id}  — revoke (unchanged endpoint)
+//	DELETE /platform/env-keys/{key_id}  — revoke ek_ (unchanged endpoint)
+//	DELETE /platform/keys/{key_id}      — revoke pk_ (self-revoke, task-6)
 type keysTestServer struct {
 	*httptest.Server
-	createBody   map[string]any
-	createStatus int
-	listBody     map[string]any
-	listStatus   int
-	revokeStatus int
-	createCalls  int32
-	listCalls    int32
-	revokeCalls  int32
-	lastDeleteID string
-	lastQuery    string
+	createBody    map[string]any
+	createStatus  int
+	listBody      map[string]any
+	listStatus    int
+	revokeStatus  int
+	pkRevokeStatus int // status for DELETE /platform/keys/{id}; 0 → use revokeStatus
+	createCalls   int32
+	listCalls     int32
+	revokeCalls   int32 // ekid_ revokes
+	pkRevokeCalls int32 // pkid_ revokes
+	lastDeleteID  string
+	lastDeletePath string // full path of last DELETE
+	lastQuery     string
 }
 
 func newKeysTestServer(t *testing.T) *keysTestServer {
@@ -101,6 +106,38 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 		}
 	})
 	// list: GET /platform/keys (new combined endpoint)
+	// pk self-revoke: DELETE /platform/keys/{id} (task-6)
+	// Note: /platform/keys/ (trailing slash) handles sub-paths for DELETE.
+	mux.HandleFunc("/platform/keys/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		atomic.AddInt32(&srv.pkRevokeCalls, 1)
+		srv.lastDeleteID = strings.TrimPrefix(r.URL.Path, "/platform/keys/")
+		srv.lastDeletePath = r.URL.Path
+		srv.lastQuery = r.URL.RawQuery
+		status := srv.pkRevokeStatus
+		if status == 0 {
+			status = 204
+		}
+		if status >= 400 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			code := "not_found"
+			msg := "key not found"
+			if status == 409 {
+				code = "cannot_revoke_active_key"
+				msg = "cannot revoke the active key without force"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":      map[string]string{"code": code, "message": msg},
+				"request_id": "req_test",
+			})
+			return
+		}
+		w.WriteHeader(status)
+	})
 	mux.HandleFunc("/platform/keys", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -121,6 +158,7 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 		}
 		atomic.AddInt32(&srv.revokeCalls, 1)
 		srv.lastDeleteID = strings.TrimPrefix(r.URL.Path, "/platform/env-keys/")
+		srv.lastDeletePath = r.URL.Path
 		if srv.revokeStatus >= 400 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(srv.revokeStatus)
@@ -939,28 +977,32 @@ func TestEnvKeys_Revoke_RejectsRawPlaintextEk(t *testing.T) {
 	}
 }
 
-// Test 13: revoke with pkid_ → exit 1 client-side reject (admin-only domain).
-func TestEnvKeys_Revoke_RejectsPkid(t *testing.T) {
+// Test 13: revoke with pkid_ → routes to DELETE /platform/keys/<id> (self-revoke).
+// The old client-side rejection of pkid_ is replaced by routing.
+func TestEnvKeys_Revoke_PkidRoutesToPlatformKeys(t *testing.T) {
 	keysTestEnv(t)
 	srv := newKeysTestServer(t)
 	defer srv.Close()
 	seedKeysConfig(t, srv.URL)
 
-	_, stderr, code, err := executeKeys(t, "",
+	_, _, code, err := executeKeys(t, "",
 		"revoke", "pkid_abc", "--yes",
 	)
-	if err == nil {
-		t.Fatal("expected error for pkid_")
+	if err != nil {
+		t.Fatalf("revoke pkid_ --yes err = %v", err)
 	}
-	if code != exit.General {
-		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Must hit /platform/keys/<id>, NOT /platform/env-keys/<id>.
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 1 {
+		t.Errorf("pkRevokeCalls = %d; want 1", srv.pkRevokeCalls)
 	}
 	if atomic.LoadInt32(&srv.revokeCalls) != 0 {
-		t.Errorf("revoke calls = %d; want 0 (rejected before HTTP)", srv.revokeCalls)
+		t.Errorf("revokeCalls (env-keys) = %d; want 0", srv.revokeCalls)
 	}
-	msg := err.Error() + stderr
-	if !strings.Contains(msg, "ekid_") && !strings.Contains(msg, "admin") {
-		t.Errorf("expected message mentioning 'ekid_' or 'admin'; got: %q", msg)
+	if srv.lastDeleteID != "pkid_abc" {
+		t.Errorf("lastDeleteID = %q; want pkid_abc", srv.lastDeleteID)
 	}
 }
 
@@ -980,6 +1022,367 @@ func TestEnvKeys_Revoke_Server404_Exit1(t *testing.T) {
 	}
 	if code != exit.General {
 		t.Errorf("exit code = %d; want %d (General — state error, not auth/network)", code, exit.General)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Task 6: revoke self-revoke routing + --force tests
+// ---------------------------------------------------------------------
+
+// TestRevoke_EkidRoutesToEnvKeys: ekid_ → DELETE /platform/env-keys/<id>.
+func TestRevoke_EkidRoutesToEnvKeys(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "ekid_xyz", "--yes")
+	if err != nil {
+		t.Fatalf("revoke ekid_ err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if atomic.LoadInt32(&srv.revokeCalls) != 1 {
+		t.Errorf("revokeCalls = %d; want 1", srv.revokeCalls)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 {
+		t.Errorf("pkRevokeCalls = %d; want 0", srv.pkRevokeCalls)
+	}
+	if srv.lastDeleteID != "ekid_xyz" {
+		t.Errorf("lastDeleteID = %q; want ekid_xyz", srv.lastDeleteID)
+	}
+}
+
+// TestRevoke_PkidWithForce: pkid_ + --force → query param ?force=true.
+func TestRevoke_PkidWithForce(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "pkid_abc", "--yes", "--force")
+	if err != nil {
+		t.Fatalf("revoke pkid_ --force err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 1 {
+		t.Errorf("pkRevokeCalls = %d; want 1", srv.pkRevokeCalls)
+	}
+	if !strings.Contains(srv.lastQuery, "force=true") {
+		t.Errorf("expected force=true in query; got %q", srv.lastQuery)
+	}
+}
+
+// TestRevoke_PkidNoForce: pkid_ without --force → no ?force=true param.
+func TestRevoke_PkidNoForce(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "pkid_abc", "--yes")
+	if err != nil {
+		t.Fatalf("revoke pkid_ (no force) err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if strings.Contains(srv.lastQuery, "force") {
+		t.Errorf("expected no force param in query; got %q", srv.lastQuery)
+	}
+}
+
+// TestRevoke_409CannotRevokeActiveKey: 409 cannot_revoke_active_key → friendly message + non-zero exit.
+func TestRevoke_409CannotRevokeActiveKey(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.pkRevokeStatus = 409
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "revoke", "pkid_abc", "--yes")
+	if err == nil {
+		t.Fatal("expected error on 409 cannot_revoke_active_key")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	msg := err.Error() + stdout
+	if !strings.Contains(msg, "--force") {
+		t.Errorf("expected message mentioning '--force'; got: %q", msg)
+	}
+	if !strings.Contains(msg, "re-login") {
+		t.Errorf("expected message mentioning 're-login'; got: %q", msg)
+	}
+}
+
+// TestRevoke_PlaintextPkRejected: raw pk- plaintext → rejected before any HTTP call.
+func TestRevoke_PlaintextPkRejected(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "pk-aaaaaaaaaaaaaaaaaaaaaawxyz", "--yes")
+	if err == nil {
+		t.Fatal("expected error for raw pk- plaintext")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 {
+		t.Errorf("pkRevokeCalls = %d; want 0 (rejected before HTTP)", srv.pkRevokeCalls)
+	}
+	if atomic.LoadInt32(&srv.revokeCalls) != 0 {
+		t.Errorf("revokeCalls = %d; want 0 (rejected before HTTP)", srv.revokeCalls)
+	}
+}
+
+// TestRevoke_UnknownPrefix: unknown prefix → rejected with helpful message.
+func TestRevoke_UnknownPrefix(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "weirdprefix_abc", "--yes")
+	if err == nil {
+		t.Fatal("expected error for unknown prefix")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 || atomic.LoadInt32(&srv.revokeCalls) != 0 {
+		t.Errorf("expected 0 server calls for unknown prefix")
+	}
+}
+
+// TestRevoke_RevokeHasExampleBlock: revoke command has an Example block.
+func TestRevoke_RevokeHasExampleBlock(t *testing.T) {
+	parent := newKeysCmd()
+	var revokeCmd *cobra.Command
+	for _, sub := range parent.Commands() {
+		if sub.Name() == "revoke" {
+			revokeCmd = sub
+			break
+		}
+	}
+	if revokeCmd == nil {
+		t.Fatal("revoke subcommand not found")
+	}
+	if revokeCmd.Example == "" {
+		t.Error("revoke command has no Example block")
+	}
+	// Must document both ekid_ and pkid_ forms.
+	for _, want := range []string{"ekid_", "pkid_"} {
+		if !strings.Contains(revokeCmd.Example, want) {
+			t.Errorf("revoke Example missing %q; got:\n%s", want, revokeCmd.Example)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// Task 7: keys prune tests
+// ---------------------------------------------------------------------
+
+// buildPkKeyRows returns a slice of synthetic pk_ KeyRowViews with
+// createdAt timestamps spaced 1 second apart (newest first by default).
+// They are named pkid_00, pkid_01, … in descending-time order so
+// index 0 is always the "newest".
+func buildPkKeyRows(n int) []map[string]any {
+	rows := make([]map[string]any, n)
+	for i := 0; i < n; i++ {
+		rows[i] = map[string]any{
+			"key_id":     fmt.Sprintf("pkid_%02d", i),
+			"type":       "pk",
+			"owner_email": "u@example",
+			"status":     "active",
+			// Newest-first: timestamp decreases with i.
+			"created_at": fmt.Sprintf("2026-06-20T10:00:%02dZ", 59-i),
+		}
+	}
+	return rows
+}
+
+// TestPrune_DryRun: --dry-run lists targets and makes ZERO revoke calls.
+func TestPrune_DryRun(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	// 3 keys total; default --keep 1 → 2 targets.
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(3),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "prune", "--dry-run")
+	if err != nil {
+		t.Fatalf("prune --dry-run err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Zero revoke calls.
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 {
+		t.Errorf("pkRevokeCalls = %d; want 0 for --dry-run", srv.pkRevokeCalls)
+	}
+	// Output must list both targets.
+	if !strings.Contains(stdout, "pkid_01") || !strings.Contains(stdout, "pkid_02") {
+		t.Errorf("dry-run output should list revoke targets; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "dry-run") {
+		t.Errorf("dry-run output should mention 'dry-run'; got:\n%s", stdout)
+	}
+}
+
+// TestPrune_DefaultKeep1_RevokesAllButNewest: real run with --yes, default keep=1.
+func TestPrune_DefaultKeep1_RevokesAllButNewest(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	// 3 keys; keep 1 → revoke pkid_01 and pkid_02.
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(3),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "prune", "--yes")
+	if err != nil {
+		t.Fatalf("prune --yes err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// 2 DELETE /platform/keys/<id> calls.
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 2 {
+		t.Errorf("pkRevokeCalls = %d; want 2", srv.pkRevokeCalls)
+	}
+}
+
+// TestPrune_Keep2_RevokesCorrectCount: --keep 2 keeps two, revokes the rest.
+func TestPrune_Keep2_RevokesCorrectCount(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	// 5 keys; keep 2 → revoke 3.
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(5),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "prune", "--keep", "2", "--yes")
+	if err != nil {
+		t.Fatalf("prune --keep 2 err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 3 {
+		t.Errorf("pkRevokeCalls = %d; want 3 (5 keys, keep 2)", srv.pkRevokeCalls)
+	}
+}
+
+// TestPrune_409OnOneTarget_SkippedRunSucceeds: a 409 on one target is counted as
+// "skipped" and the overall run still exits 0.
+func TestPrune_409OnOneTarget_SkippedRunSucceeds(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	// 3 keys; keep 1 → 2 targets. The pk revoke endpoint returns 409 for all.
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(3),
+		"next_cursor": "",
+	}
+	// 409 for all pkid_ DELETE calls — both targets are skipped.
+	srv.pkRevokeStatus = 409
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "prune", "--yes")
+	if err != nil {
+		t.Fatalf("prune with all-409 err = %v (want success)", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0 (skipped-active is not a failure)", code)
+	}
+	if !strings.Contains(stdout, "skipped") {
+		t.Errorf("output should mention 'skipped'; got:\n%s", stdout)
+	}
+}
+
+// TestPrune_NothingToPrune: when keep >= total keys, print nothing-to-prune message.
+func TestPrune_NothingToPrune(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(1),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "prune", "--yes")
+	if err != nil {
+		t.Fatalf("prune (nothing to do) err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 {
+		t.Errorf("pkRevokeCalls = %d; want 0 when nothing to prune", srv.pkRevokeCalls)
+	}
+	if !strings.Contains(stdout, "Nothing to prune") {
+		t.Errorf("expected 'Nothing to prune' in output; got:\n%s", stdout)
+	}
+}
+
+// TestPrune_InteractiveConfirmCancel: without --yes + stdin "n" → no revokes.
+func TestPrune_InteractiveConfirmCancel(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(3),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, _, err := executeKeys(t, "n\n", "prune")
+	if err == nil {
+		t.Fatal("expected error on interactive cancel")
+	}
+	if atomic.LoadInt32(&srv.pkRevokeCalls) != 0 {
+		t.Errorf("pkRevokeCalls = %d; want 0 after cancel", srv.pkRevokeCalls)
+	}
+}
+
+// TestPrune_NeverPassesForce: prune uses DELETE without ?force=true, even if a
+// target is the active key (the server 409 is the backstop).
+func TestPrune_NeverPassesForce(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{
+		"items":       buildPkKeyRows(2),
+		"next_cursor": "",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "prune", "--yes")
+	if err != nil {
+		t.Fatalf("prune err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// Query must NOT contain "force".
+	if strings.Contains(srv.lastQuery, "force") {
+		t.Errorf("prune must not pass ?force=true; got query=%q", srv.lastQuery)
 	}
 }
 
