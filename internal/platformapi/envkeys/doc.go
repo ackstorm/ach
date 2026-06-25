@@ -7,7 +7,7 @@
 //   - GET    /platform/keys           — caller-scoped list (pk_ + ek_; admin
 //     override via ?owner_email=).
 //   - GET    /platform/keys/{key_id}  — single-row read with ekid_ prefix gate
-//   - owner check.
+//     and owner check.
 //   - DELETE /platform/keys/{key_id}  — prefix-dispatched revoke: ekid_ →
 //     LiteLLM-first 204 No Content (KEY-08); pkid_ → DB-first 200 JSON with
 //     active-key 409 guard (KEY-07).

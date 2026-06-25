@@ -18,7 +18,7 @@ import (
 //
 // pk- / ek-  : plaintext bearer prefixes (returned exactly once on
 //
-//	POST /platform/auth/sso/callback and POST /platform/env-keys).
+//	POST /platform/auth/sso/callback and POST /platform/keys).
 //
 // pkid_ / ekid_ : opaque key_id prefixes stored in the
 //

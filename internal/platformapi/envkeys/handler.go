@@ -66,7 +66,7 @@ type redisOps interface {
 
 // Deps is the dependency bag every envkeys handler accepts. Plan 03-11's
 // server.go constructs it once and passes the same value to each handler
-// constructor via Mount(deps).
+// constructor via MountKeys(deps).
 //
 // Field semantics:
 //
@@ -100,7 +100,7 @@ type Deps struct {
 	Namespace        string
 }
 
-// CreateRequest is the POST /platform/env-keys request body shape (D-16
+// CreateRequest is the POST /platform/keys request body shape (D-16
 // idiom — DisallowUnknownFields rejects any extra field with 400
 // invalid_argument before the §8.2 flow runs).
 type CreateRequest struct {
@@ -579,7 +579,7 @@ func classifyInsertError(err error) insertErrClass {
 }
 
 // --------------------------------------------------------------------------
-// RevokeHandler — DELETE /platform/env-keys/{key_id} (§8.5, API-07, D-15)
+// RevokeHandler — DELETE /platform/keys/{key_id} (§8.5, API-07, D-15)
 // --------------------------------------------------------------------------
 
 // RevokeHandler implements Hub §8.5 LiteLLM-first ek_ revocation per D-15.
@@ -745,14 +745,15 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 }
 
 // --------------------------------------------------------------------------
-// ListHandler — GET /platform/env-keys (API-06)
+// Shared read types — EkRowView and pagination helpers used by GetHandler
+// and ListAllHandler.
 // --------------------------------------------------------------------------
 
 // EkRowView is the read-only JSON projection of an environment_keys row
-// returned by ListHandler + GetHandler. Plaintext and credential_hash
-// MUST NOT appear here — only stable identifiers and metadata. litellm_*
-// columns are also omitted: they're internal cross-references for the
-// orphan-cleanup loop and have no consumer outside the Hub.
+// returned by GetHandler. Plaintext and credential_hash MUST NOT appear
+// here — only stable identifiers and metadata. litellm_* columns are also
+// omitted: they're internal cross-references for the orphan-cleanup loop
+// and have no consumer outside the Hub.
 type EkRowView struct {
 	KeyID       string  `json:"key_id"`
 	Environment string  `json:"environment"`
@@ -764,12 +765,6 @@ type EkRowView struct {
 	RevokedAt   *string `json:"revoked_at,omitempty"`
 }
 
-// ListResponse is the §15.5 paginated list envelope.
-type ListResponse struct {
-	Items      []EkRowView `json:"items"`
-	NextCursor string      `json:"next_cursor,omitempty"`
-}
-
 // defaultListLimit + maxListLimit clamp the ?limit query parameter per
 // §15.5 pagination contract. Mirrors the db.clampLimit invariant from
 // Plan 03-03 (default 100, hard cap 500).
@@ -777,73 +772,6 @@ const (
 	defaultListLimit = 100
 	maxListLimit     = 500
 )
-
-// ListHandler returns the GET /platform/env-keys list handler.
-//
-// Caller-scoped non-admin: each pk_ caller sees only their own env-keys.
-// Admin override: pk_ callers with KeyContext.IsAdmin=true see every row
-// in the deployment, optionally narrowed by ?owner_email=<email>.
-// Non-admin callers passing ?owner_email are rejected with 400
-// invalid_argument (no silent fallback to caller-scoped — explicit
-// rejection prevents UI bugs that quietly leak the wrong scope).
-//
-// ek_ callers receive 401 invalid_key_type (management endpoint per
-// API-11). pk_ only.
-func ListHandler(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		reqID := middleware.RequestIDFromCtx(ctx)
-		keyCtx, _ := middleware.KeyContextFromCtx(ctx)
-
-		// Caller-type guard.
-		if keyCtx.KeyType != keys.PrefixPk {
-			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "ek_ may not list env-keys", reqID)
-			return
-		}
-
-		// Parse query parameters.
-		q := r.URL.Query()
-		limit, err := parseLimit(q.Get("limit"))
-		if err != nil {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument, err.Error(), reqID)
-			return
-		}
-		cursor := q.Get("cursor")
-		ownerFilter := q.Get("owner_email")
-
-		// Non-admin callers may NOT supply ?owner_email — explicit
-		// rejection per the plan (T-03-08-05 mitigation; prevents
-		// scope-mixing UI bugs).
-		if ownerFilter != "" && !keyCtx.IsAdmin {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
-				"owner_email filter requires admin privileges", reqID)
-			return
-		}
-
-		// Dispatch to the appropriate DB helper.
-		var rows []db.EkKeyInfo
-		var nextCursor string
-		if keyCtx.IsAdmin {
-			var filter *string
-			if ownerFilter != "" {
-				filter = &ownerFilter
-			}
-			rows, nextCursor, err = deps.DB.ListEnvironmentKeysByOwnerWithFilter(ctx, filter, limit, cursor)
-		} else {
-			rows, nextCursor, err = deps.DB.ListEnvironmentKeysByOwner(ctx, keyCtx.OwnerEmail, limit, cursor)
-		}
-		if err != nil {
-			deps.Logger.Error("envkeys.list: DB query failed", "err", err)
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-
-		render.JSON(w, http.StatusOK, ListResponse{
-			Items:      mapEkRows(rows),
-			NextCursor: nextCursor,
-		})
-	}
-}
 
 // parseLimit parses the ?limit query string into an integer between 1
 // and maxListLimit, defaulting to defaultListLimit on empty input. A
@@ -866,38 +794,11 @@ func parseLimit(raw string) (int, error) {
 	return n, nil
 }
 
-// mapEkRows projects a slice of db.EkKeyInfo rows to the read-only
-// EkRowView wire shape; plaintext, credential_hash, and litellm_* fields
-// are NEVER carried into the response.
-func mapEkRows(rows []db.EkKeyInfo) []EkRowView {
-	out := make([]EkRowView, 0, len(rows))
-	for _, r := range rows {
-		v := EkRowView{
-			KeyID:       r.KeyID,
-			Environment: r.Environment,
-			Name:        r.Name,
-			OwnerEmail:  r.OwnerEmail,
-			Status:      r.Status,
-			CreatedAt:   r.CreatedAt.UTC().Format(time.RFC3339),
-		}
-		if r.LastUsedAt != nil {
-			t := r.LastUsedAt.UTC().Format(time.RFC3339)
-			v.LastUsedAt = &t
-		}
-		if r.RevokedAt != nil {
-			t := r.RevokedAt.UTC().Format(time.RFC3339)
-			v.RevokedAt = &t
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
 // --------------------------------------------------------------------------
-// GetHandler — GET /platform/env-keys/{key_id} (API-07 single-row read)
+// GetHandler — GET /platform/keys/{key_id} (API-07 single-row read)
 // --------------------------------------------------------------------------
 
-// GetHandler returns the GET /platform/env-keys/{key_id} handler.
+// GetHandler returns the GET /platform/keys/{key_id} handler.
 //
 // Strict ekid_ prefix gate runs BEFORE the DB lookup so a caller probing
 // with a pkid_/ek_/pk_/random string never costs a DB roundtrip (T-03-08-03
@@ -956,7 +857,7 @@ func GetHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// mapEkRow is the single-row analog of mapEkRows.
+// mapEkRow projects a single db.EkKeyInfo row to the EkRowView wire shape.
 func mapEkRow(r *db.EkKeyInfo) EkRowView {
 	v := EkRowView{
 		KeyID:       r.KeyID,
@@ -1033,7 +934,7 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 
 // normalizeKeyType maps the ?type query value to a valid filter string.
 // Unknown values are silently normalized to "" (no filter) rather than 400
-// to mirror the existing ListHandler convention.
+// to mirror the existing ListAllHandler convention.
 func normalizeKeyType(v string) string {
 	switch v {
 	case "pk", "ek":
