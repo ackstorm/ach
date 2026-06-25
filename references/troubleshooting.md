@@ -452,6 +452,22 @@ seed in `scripts/cluster.sh` now `DELETE`s every existing row for the name
 (`jq` over the `GET /v1/mcp/server` array) before re-creating it. If you see
 stale duplicates from an older run, delete them by `server_id` and re-sync.
 
+### ❌ Transient MCP `tools/call` 200 `isError: Tool '<tool>' not found`
+A proxied `tools/call` returns **HTTP 200** with an `isError` result body
+`{"content":[{"type":"text","text":"Error: Tool 'echo' not found"}],"isError":true}`
+for a tool that demonstrably exists (mcp-echo registers `echo` statically at
+boot). Not the `tools=[]` auth-drop misconfig above — the SAME call succeeds a
+few seconds later. ✅ It is LiteLLM's **MCP tool-discovery warmup window**: right
+after `cluster-up` rolls the litellm chart, LiteLLM has not yet run `tools/list`
+against a freshly-(re)registered MCP server, so its tool registry can't resolve
+the (server-prefix-stripped) tool name. The error string is LiteLLM's, not
+mcp-go's. Drive the echo through a bounded retry that re-issues the whole
+`tools/call` until it round-trips — `callEchoViaForwarderEventually`
+(`test/e2e/phase4_bip_loop_test.go`) is the canonical helper; a single-shot
+forwarder→LiteLLM echo (e.g. `TestPhase4JWTValidate/ViaForwarder_PkRoundTrip`)
+is exposed to the same race. WHY: discovery is async/periodic, so the very first
+`tools/call` after a roll races it; it is NOT a JWT/BIP-precedence signal.
+
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
 **Dormant / unreachable in v1alpha1.** The v1alpha1 write path is **GitOps/CRD
 only** — there is no UI write path, so `origin='ui'` rows are never produced and
