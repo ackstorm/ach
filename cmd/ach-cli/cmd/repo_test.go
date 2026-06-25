@@ -14,6 +14,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
+	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/sourceserr"
 )
 
@@ -99,6 +100,13 @@ func initFixtureRepo(t *testing.T) string {
 }
 
 func TestRepo(t *testing.T) {
+	// The fixture marketplace.json contains only plugins, so every assertion
+	// here (repo add / list / remove of a plugin-marketplace:2 repo) is
+	// plugin-specific. Skip while plugins are gated off; re-activates with the
+	// flag.
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled")
+	}
 	// Isolate store writes to a temp config dir
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 

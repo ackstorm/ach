@@ -10,6 +10,16 @@
 > Add a new `### ❌ ... ✅ ...` entry here when you hit a new
 > **service/domain** failure mode; add generic workflow ones to `CLAUDE.md`
 > (Documentation-hygiene rule).
+>
+> **⚠ Plugin / PluginMarketplace failure modes are INACTIVE** in the current
+> build: `featuregate.PluginsEnabled = false` (`internal/featuregate`) gates off
+> the plugin CRDs, reconcilers, content-service `/content/plugin/{name}` serve,
+> and admin inventory. So the plugin-specific entries below — content-service
+> 404 for plugins, `SourceReachable=False` on a `plugin/...`, the
+> `UpstreamInvalid` marketplace stage-2 summary, and the `NameConflict` /
+> marketplace-scoped-ref notes — **cannot fire** as shipped; they document the
+> re-enabled (`PluginsEnabled=true` + `make helm-sync`) build. **`Skill` /
+> `SkillMarketplace` troubleshooting is fully live and unaffected.**
 
 ### ❌ `downloadUrl` from /platform/hydrate returns 404
 ```bash

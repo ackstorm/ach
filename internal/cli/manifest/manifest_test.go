@@ -103,12 +103,12 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 				m.Context.Prompts[0].Endpoint)
 		}
 	}
-	// Plugins: the demo env declares caveman + the marketplace-sourced
-	// feature-dev@conflict-mkt-a (see examples/hydrate.json).
-	if got, want := len(m.Context.Plugins), 2; got != want {
+	// Plugins: DISABLED via featuregate.PluginsEnabled — the demo env no
+	// longer declares context.plugins, so the golden carries none. The
+	// Context.Skills round-trip below exercises the identical decoder path,
+	// so plugin-field decode coverage is not lost.
+	if got, want := len(m.Context.Plugins), 0; got != want {
 		t.Errorf("len(Context.Plugins) = %d, want %d", got, want)
-	} else if m.Context.Plugins[0].DownloadURL == "" {
-		t.Error("Context.Plugins[0].DownloadURL is empty — must round-trip")
 	}
 	if got, want := len(m.Context.Artifacts), 1; got != want {
 		t.Errorf("len(Context.Artifacts) = %d, want %d", got, want)

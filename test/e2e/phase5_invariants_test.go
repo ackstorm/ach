@@ -7,7 +7,9 @@
 // Live-cluster verification of ROADMAP Phase 5 SC#1..#5:
 //   SC1 ContentSendfile        — sendfile(2) + identity transfer + header invariants
 //   SC2 ErrorMatrix            — 9 §15.5 error envelopes (drift flag #2 lock-in)
-//   SC3 PluginPrecedence       — §12.3 CTE (CRD wins, alphabetically-lowest mkt)
+//   SC3 PluginPrecedence       — REMOVED (Plugin/PluginMarketplace disabled behind
+//                                featuregate.PluginsEnabled=false; §12.3 CTE stays
+//                                covered by envtest)
 //   SC4 StalenessAndRename     — D-04 step 7 staleness + D-02 in-flight rename
 //   SC5 MetricsTopology        — §18.5 metric set across operator/forwarder/CS/PAPI
 //
@@ -56,16 +58,21 @@ func TestPhase5Invariants(t *testing.T) {
 	phase5SuiteGuard(t)
 	t.Run("SC1_ContentSendfile", testPhase5SC1ContentSendfile)
 	t.Run("SC2_ErrorMatrix", testPhase5SC2ErrorMatrix)
-	t.Run("SC3_PluginPrecedence", testPhase5SC3PluginPrecedence)
+	// SC3 (PluginPrecedence) removed: the Plugin / PluginMarketplace kinds are
+	// disabled behind featuregate.PluginsEnabled=false and their CRDs are no
+	// longer shipped in the chart, so the §12.3 CRD-vs-marketplace precedence
+	// CTE cannot be exercised through the content-service here. It stays covered
+	// by envtest.
 	t.Run("SC4_StalenessAndRename", testPhase5SC4StalenessAndInFlightRename)
 	t.Run("SC5_MetricsTopology", testPhase5SC5MetricsTopology)
 	t.Run("SC6_InvalidSyncedFixtures", testPhase5SC6InvalidSyncedFixtures)
 }
 
 // testPhase5SC6InvalidSyncedFixtures asserts the negative-path half of the
-// synced content-service matrix: plugin-invalid / prompt-invalid /
-// artifact-invalid each settle at SourceReachable=False (their git source
-// is a nonexistent repo). They are pre-synced by cluster.sh and gated to
+// synced content-service matrix: prompt-invalid / artifact-invalid each settle
+// at SourceReachable=False (their git source is a nonexistent repo). (The
+// plugin-invalid row was dropped — the Plugin kind is disabled behind
+// featuregate.PluginsEnabled=false.) They are pre-synced by cluster.sh and gated to
 // this failure state by verify_all, so the live condition is already
 // settled; the suite asserts both the CR condition AND that the Postgres
 // projection reflects the failure (no successful refresh recorded).
@@ -74,7 +81,6 @@ func testPhase5SC6InvalidSyncedFixtures(t *testing.T) {
 	defer cancel()
 
 	invalid := []struct{ kind, name, table string }{
-		{"plugin", "plugin-invalid", "plugins"},
 		{"prompt", "prompt-invalid", "prompts"},
 		{"artifact", "artifact-invalid", "artifacts"},
 	}
@@ -121,14 +127,14 @@ func testPhase5SC1ContentSendfile(t *testing.T) {
 	pk, _, env := seedPhase5Fixtures(t, ctx)
 
 	// Sendfile syscall assertion (live via strace under kubectl debug).
-	if !straceCSSendfile(t, ctx, "/content/plugin/plugin-valid", pk, env) {
+	if !straceCSSendfile(t, ctx, "/content/prompt/prompt-valid", pk, env) {
 		t.Fatalf("expected ≥1 sendfile/sendfile64 syscall during CS GET — none observed (CS-06 zero-copy violated)")
 	}
 
 	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
 	baseReq := func(t *testing.T, extraHeaders map[string]string) *http.Response {
 		t.Helper()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/prompt/prompt-valid", nil)
 		if err != nil {
 			t.Fatalf("NewRequest: %v", err)
 		}
@@ -230,7 +236,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 	calls := []call{
 		{
 			name:       "MissingEnvironment",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        pk,
 			envHeader:  "", // explicit empty — header NOT set below
 			wantStatus: http.StatusBadRequest,
@@ -238,7 +244,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "InvalidKeyFormat_NoPrefix",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        "garbage-no-prefix",
 			envHeader:  env,
 			wantStatus: http.StatusBadRequest,
@@ -246,7 +252,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "InvalidKeyFormat_Empty",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        "",
 			envHeader:  env,
 			wantStatus: http.StatusBadRequest,
@@ -254,7 +260,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name: "ExpiredOrRevoked",
-			path: "/content/plugin/plugin-valid",
+			path: "/content/prompt/prompt-valid",
 			// Format-valid (pk- + 64 base64url chars) but absent from the
 			// keystore → passes the format gate, resolver returns nil → 401
 			// expired_or_revoked (NOT 400 invalid_key_format).
@@ -273,7 +279,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 			// membership mutation needed (the prior skip's premise was stale).
 			// ek_ would short-circuit this gate, so the key MUST be pk_.
 			name:       "UnauthorizedTeam",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        pk,
 			envHeader:  "env-team-denied",
 			wantStatus: http.StatusForbidden,
@@ -281,7 +287,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "WrongEnvironment",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        ek, // ek bound to env=env-valid
 			envHeader:  "staging",
 			wantStatus: http.StatusForbidden,
@@ -289,13 +295,13 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			// Drift flag #2 lock-in: the name "forbidden-name" does NOT
-			// exist as a Plugin CRD AND is NOT in env.context.plugins.
+			// exist as a Prompt CRD AND is NOT in env.context.prompts.
 			// The cheaper authz check (env.context membership) fires
 			// FIRST and returns 403 unauthorized_content. A naive
 			// implementation would resolve-then-authz and return 404
 			// content_not_found, which would leak existence.
 			name:       "UnauthorizedContent",
-			path:       "/content/plugin/forbidden-name",
+			path:       "/content/prompt/forbidden-name",
 			key:        pk,
 			envHeader:  env,
 			wantStatus: http.StatusForbidden,
@@ -303,7 +309,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			name:       "EnvironmentNotFound",
-			path:       "/content/plugin/plugin-valid",
+			path:       "/content/prompt/prompt-valid",
 			key:        pk,
 			envHeader:  "nonexistent-env",
 			wantStatus: http.StatusNotFound,
@@ -311,27 +317,27 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 		},
 		{
 			// content_not_found is the LAST gate (§15.5): a name that IS
-			// in env.context.plugins (passes the cheaper unauthorized_content
-			// allowlist gate) but has NO backing plugins projection row →
+			// in env.context.prompts (passes the cheaper unauthorized_content
+			// allowlist gate) but has NO backing prompts projection row →
 			// resolveContent returns nil → 404. We seed a ghost name into
-			// env-valid's context allowlist and ensure no plugins row backs
-			// it. The plugins table is read FRESH from Postgres (no cache);
-			// the content-service envcache (context_plugins) is an in-memory
+			// env-valid's context allowlist and ensure no prompts row backs
+			// it. The prompts table is read FRESH from Postgres (no cache);
+			// the content-service envcache (context_prompts) is an in-memory
 			// snapshot refreshed via the ach_environments_changed LISTEN/NOTIFY
 			// channel (no TTL — #34 S4). A direct SQL UPDATE emits no NOTIFY,
 			// so setup fires pg_notify manually and gives the listener a short
 			// bounded settle window to rebuild the snapshot.
 			name:       "ContentNotFound",
-			path:       "/content/plugin/ghost-content",
+			path:       "/content/prompt/ghost-content",
 			key:        pk,
 			envHeader:  env,
 			wantStatus: http.StatusNotFound,
 			wantCode:   "content_not_found",
 			setup: func(t *testing.T, ctx context.Context) {
 				const ghost = "ghost-content"
-				patch := `UPDATE environments SET context_plugins = array_append(context_plugins, '` + ghost + `') ` +
-					`WHERE name='env-valid' AND NOT ('` + ghost + `' = ANY(context_plugins)); ` +
-					`DELETE FROM plugins WHERE name='` + ghost + `';`
+				patch := `UPDATE environments SET context_prompts = array_append(context_prompts, '` + ghost + `') ` +
+					`WHERE name='env-valid' AND NOT ('` + ghost + `' = ANY(context_prompts)); ` +
+					`DELETE FROM prompts WHERE name='` + ghost + `';`
 				if _, stderr, err := psqlExec(ctx, patch); err != nil {
 					t.Skipf("psql ghost-content patch (engineer-pending): %v stderr=%s", err, strings.TrimSpace(stderr))
 				}
@@ -339,7 +345,7 @@ func testPhase5SC2ErrorMatrix(t *testing.T) {
 					cctx, ccancel := context.WithTimeout(context.Background(), 30*time.Second)
 					defer ccancel()
 					_, _, _ = psqlExec(cctx,
-						`UPDATE environments SET context_plugins = array_remove(context_plugins, '`+ghost+`') WHERE name='env-valid';`)
+						`UPDATE environments SET context_prompts = array_remove(context_prompts, '`+ghost+`') WHERE name='env-valid';`)
 				})
 				// Fire ach_environments_changed manually (the direct UPDATE emits
 				// none) so the content-service envcache rebuilds its snapshot
@@ -414,181 +420,15 @@ func envOrSkip(t *testing.T, key string) string {
 	return v
 }
 
-// testPhase5SC3PluginPrecedence — §12.3 CTE precedence (CRD wins;
-// alphabetically-lowest marketplace fallback; deletion-drain).
-// CS-08 + CS-09 + drift flag #5 lock-in.
-func testPhase5SC3PluginPrecedence(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	pk, _, env := seedPhase5Fixtures(t, ctx)
-	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
-
-	// CS-08 §12.3: when a Plugin CRD row exists for a given name, it
-	// wins over any marketplace_plugins row with the same name.
-	t.Run("CRDWinsOverMarketplace", func(t *testing.T) {
-		// Pre-seed a marketplace_plugins row with the same name as the
-		// existing Plugin CRD (plugin-valid) but distinct marketplace_name.
-		query := `INSERT INTO marketplace_plugins ` +
-			`(marketplace_name, name, storage_location, max_staleness_seconds, origin, locked) ` +
-			`VALUES ('aaa-precedence-test-mkt', 'plugin-valid', ` +
-			`'/var/cache/ach/plugin/plugin-valid.precedence-test', 86400, 'cr', true) ` +
-			`ON CONFLICT DO NOTHING;`
-		if _, stderr, err := psqlExec(ctx, query); err != nil {
-			t.Skipf("psql seed (engineer-pending postgres harness): %v stderr=%s", err, strings.TrimSpace(stderr))
-		}
-		t.Cleanup(func() {
-			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cleanCancel()
-			_, _, _ = psqlExec(cleanCtx,
-				`DELETE FROM marketplace_plugins WHERE marketplace_name='aaa-precedence-test-mkt' AND name='plugin-valid';`)
-		})
-		// Bare name "plugin-valid" resolves the Plugin CRD ONLY — marketplace rows
-		// with the same name are unreachable without an explicit @marketplace qualifier
-		// (B2 scoping semantics). The seeded aaa-precedence-test-mkt row is therefore
-		// irrelevant; the CRD serves and the 200 status confirms the CRD path is active.
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
-		req.Header.Set("x-ach-key", pk)
-		req.Header.Set("x-ach-environment", env)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("Do: %v", err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d want=200 (bare name must resolve Plugin CRD only)", resp.StatusCode)
-		}
-		// Engineer-pending byte-comparison: the storage_location of the
-		// CRD-row vs the marketplace-row differ, so a byte-comparison
-		// against a known fixture would distinguish which path served.
-		// In live testing, attach a Service-side handler that returns
-		// distinct content per path and assert; here we only verify
-		// the CRD path compiled + returned a row (200 OK).
-	})
-
-	// ScopedMarketplacePlugin200 exercises the name@marketplace scoped
-	// resolution path end-to-end: the demo Environment fixture includes
-	// `feature-dev@conflict-mkt-a` in context.plugins (no Plugin CRD backs
-	// this name), so the content-service must resolve via the marketplace
-	// branch of the §12.3 CTE. A 200 response confirms the scoped ref was
-	// parsed, resolved, and served. The `demo` environment is used here
-	// because `env-valid` does not include the scoped ref.
-	t.Run("ScopedMarketplacePlugin200", func(t *testing.T) {
-		// Acquire a pk_ bound to the demo environment (the Environment fixture
-		// that includes feature-dev@conflict-mkt-a in context.plugins).
-		demoPK := mustAcquirePk(t)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-			csURL+"/content/plugin/feature-dev@conflict-mkt-a", nil)
-		req.Header.Set("x-ach-key", demoPK)
-		req.Header.Set("x-ach-environment", "demo")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("Do: %v", err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			dumpOperatorLogs(t)
-			t.Fatalf("scoped plugin fetch: status=%d want=200 "+
-				"(feature-dev@conflict-mkt-a must resolve via §12.3 marketplace branch)", resp.StatusCode)
-		}
-	})
-
-	t.Run("DeletionDrainStillServes", func(t *testing.T) {
-		// Apply a transient Plugin "drainable", wait Ready, delete it,
-		// then immediately curl. Expect either 200 (envcache hit during
-		// grace) OR 503 stale_cache_expired (after grace expiry). CS-09.
-		applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-")
-		applyCmd.Stdin = strings.NewReader(`---
-apiVersion: ach.ackstorm.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: drainable
-  namespace: ach-system
-spec:
-  type: github
-  refresh:
-    interval: 1h
-    maxStaleness: 24h
-  github:
-    repo: JuliusBrussee/caveman
-    ref: main
-`)
-		if out, err := applyCmd.CombinedOutput(); err != nil {
-			t.Skipf("kubectl apply drainable (engineer-pending): %v output=%s", err, strings.TrimSpace(string(out)))
-		}
-		t.Cleanup(func() {
-			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cleanCancel()
-			_, _ = exec.CommandContext(cleanCtx, "kubectl", "delete", "plugin", "drainable",
-				"-n", phase5Namespace, "--ignore-not-found").CombinedOutput()
-		})
-		// Best-effort wait for the projection row (the reconciler writes
-		// it once the Plugin reaches SourceReachable). kubectl wait
-		// directly — see seedPhase5Fixtures for why `make wait-cr-ready`
-		// is not usable from the test binary's cwd.
-		_, _ = exec.CommandContext(ctx, "kubectl", "-n", phase5Namespace,
-			"wait", "--for=condition=SourceReachable", "plugin/drainable",
-			"--timeout=120s").CombinedOutput()
-		// Now delete and probe.
-		if out, err := exec.CommandContext(ctx, "kubectl", "delete", "plugin", "drainable",
-			"-n", phase5Namespace).CombinedOutput(); err != nil {
-			t.Fatalf("kubectl delete: %v output=%s", err, strings.TrimSpace(string(out)))
-		}
-		// Engineer-pending: a CS GET here requires drainable in
-		// env.context.plugins (Environment "env-valid" doesn't include it).
-		// SC#9 grace window coverage at integration-test layer.
-		t.Logf("DeletionDrainStillServes: CRD delete issued; CS-09 grace verification deferred to Plan 05-05 integration test (Environment fixture omits drainable from context.plugins)")
-	})
-}
-
 // testPhase5SC4StalenessAndInFlightRename — D-04 step 7 staleness +
 // D-02 in-flight rename (the latter is plan-permitted to t.Skipf).
 func testPhase5SC4StalenessAndInFlightRename(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	pk, _, env := seedPhase5Fixtures(t, ctx)
-	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
-
-	t.Run("StaleCacheExpired", func(t *testing.T) {
-		// Force the foo plugin's projection row into stale-expired by
-		// setting last_successful_refresh 24h ago + max_staleness=300s.
-		q := `UPDATE plugins SET last_successful_refresh = NOW() - INTERVAL '24 hours', ` +
-			`max_staleness_seconds = 300 WHERE name='plugin-valid';`
-		if _, stderr, err := psqlExec(ctx, q); err != nil {
-			t.Skipf("psql staleness patch (engineer-pending): %v stderr=%s", err, strings.TrimSpace(stderr))
-		}
-		t.Cleanup(func() {
-			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cleanCancel()
-			_, _, _ = psqlExec(cleanCtx,
-				`UPDATE plugins SET last_successful_refresh = NOW(), max_staleness_seconds = 86400 WHERE name='plugin-valid';`)
-		})
-		// Invalidate envcache so the loader rebuilds from the patched row.
-		// 60s TTL means we may need to wait or trigger eviction — for
-		// the E2E run, sleep 60s+ to ensure cache miss. Bounded.
-		time.Sleep(65 * time.Second)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
-		req.Header.Set("x-ach-key", pk)
-		req.Header.Set("x-ach-environment", env)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("Do: %v", err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusServiceUnavailable {
-			t.Fatalf("status=%d want=503 (CS-10 stale_cache_expired) body=%s",
-				resp.StatusCode, strings.TrimSpace(string(body)))
-		}
-		var envBody errEnvelope
-		if err := json.Unmarshal(body, &envBody); err != nil {
-			t.Fatalf("json.Unmarshal: %v body=%s", err, strings.TrimSpace(string(body)))
-		}
-		if envBody.Error.Code != "stale_cache_expired" {
-			t.Errorf("error.code=%q want=stale_cache_expired (CS-10)", envBody.Error.Code)
-		}
-	})
+	// StaleCacheExpired (CS-10 stale_cache_expired 503) was removed: only the
+	// `plugins` projection is content-gated on staleness — prompts/artifacts
+	// track name resolution, not content presence, so the 503 staleness path
+	// cannot be exercised through a surviving (non-plugin) fixture. The Plugin
+	// kind is disabled behind featuregate.PluginsEnabled=false; CS-10 stays
+	// covered by the content-service unit/integration tests.
 
 	t.Run("InFlightReadSurvivesRename", func(t *testing.T) {
 		// D-02 in-flight inode pin: a slowly-streaming GET should

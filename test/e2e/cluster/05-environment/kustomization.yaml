@@ -1,14 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Stage 05 — Environments LAST. demo references the 04-objects (plugins/prompts/
-# artifacts) + LiteLLM-seeded models/mcp/agents; it can only resolve once those
-# exist. demo-unresolved is the intentional negative-path fixture.
+# Stage 05 — Environments LAST. demo references the 04-objects (prompts/
+# artifacts/skills) + LiteLLM-seeded models/mcp/agents; it can only resolve
+# once those exist. demo-unresolved is the intentional negative-path fixture.
 resources:
   - demo.yaml
   - demo-unresolved.yaml
   # Phase 5 content-service exercise Environment (empty runtime; context
-  # references the valid plugin/prompt/artifact from stage 04).
+  # references the valid prompt/artifact from stage 04).
   - env-valid.yaml
   # Phase 5 SC2 unauthorized_team negative fixture — same context as env-valid
   # but authorizedTeams names a sentinel team absent from LiteLLM + the e2e

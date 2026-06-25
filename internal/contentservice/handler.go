@@ -38,6 +38,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/contentservice/envcache"
+	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
@@ -100,7 +101,9 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		w.WriteHeader(http.StatusOK)
 	})
 	r.Get("/content/prompt/{name}", d.serve(kindPrompt))
-	r.Get("/content/plugin/{name}", d.serve(kindPlugin))
+	if featuregate.PluginsEnabled {
+		r.Get("/content/plugin/{name}", d.serve(kindPlugin))
+	}
 	r.Get("/content/artifact/{name}", d.serve(kindArtifact))
 	r.Get("/content/skill/{name}", d.serve(kindSkill))
 }

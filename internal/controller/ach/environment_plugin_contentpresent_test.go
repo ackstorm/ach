@@ -47,6 +47,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -156,6 +157,9 @@ func buildPluginTestReconciler(t *testing.T, ns string, pool *pgxpool.Pool) *Env
 // operator wrote it) but the artifact was never fetched. Before this fix,
 // the condition was unconditionally True → hydrate would 404 at runtime.
 func TestEnvPluginContentPresent_NotSynced(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled — context.plugins no longer gates ExecutionResourcesResolved")
+	}
 	pool, cleanup := setupPluginContentPresentDB(t)
 	defer cleanup()
 
@@ -264,6 +268,9 @@ func TestEnvPluginContentPresent_NotSynced(t *testing.T) {
 // last_successful_refresh → ExecutionResourcesResolved=True and
 // UnresolvedContextPlugins=[].
 func TestEnvPluginContentPresent_Synced(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled — context.plugins no longer gates ExecutionResourcesResolved")
+	}
 	pool, cleanup := setupPluginContentPresentDB(t)
 	defer cleanup()
 

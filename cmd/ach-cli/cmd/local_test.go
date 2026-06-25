@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 func hasChild(parent *cobra.Command, name string) bool {
@@ -18,14 +20,20 @@ func hasChild(parent *cobra.Command, name string) bool {
 	return false
 }
 
-// TestLocalCmd_ParentsRepoPluginSkill — newLocalCmd() owns repo/plugin/skill,
-// and its help carries the "ungoverned" framing (G9).
+// TestLocalCmd_ParentsRepoPluginSkill — newLocalCmd() always owns repo/skill,
+// and owns plugin IFF featuregate.PluginsEnabled. Its help carries the
+// "ungoverned" framing (G9).
 func TestLocalCmd_ParentsRepoPluginSkill(t *testing.T) {
 	local := newLocalCmd()
-	for _, child := range []string{"repo", "plugin", "skill"} {
+	// repo + skill are always present (skill is a supported content kind).
+	for _, child := range []string{"repo", "skill"} {
 		if !hasChild(local, child) {
 			t.Errorf("local is missing child %q", child)
 		}
+	}
+	// plugin is registered IFF plugins are enabled via the feature gate.
+	if got := hasChild(local, "plugin"); got != featuregate.PluginsEnabled {
+		t.Errorf("local has plugin child = %v; want %v (featuregate.PluginsEnabled)", got, featuregate.PluginsEnabled)
 	}
 	if !strings.Contains(local.Long, "ungoverned") {
 		t.Errorf("local Long should explain the ungoverned tradeoff; got:\n%s", local.Long)

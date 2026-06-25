@@ -9,8 +9,11 @@ resources:
   # LiteLLMConnection/default is no longer a stage-04 fixture — the ach chart
   # (stage 02) renders it from the litellmConnection values block. The operator
   # reconciles it; verify_all still gates on litellmconnection/default Ready.
-  - marketplace-anthropic.yaml
-  - marketplace-caveman.yaml
+  #
+  # Plugin / PluginMarketplace fixtures are no longer applied: the Plugin and
+  # PluginMarketplace kinds are disabled behind featuregate.PluginsEnabled=false
+  # and their CRDs are not shipped in the Helm chart, so applying them here would
+  # fail `no matches for kind`. Reconciler logic stays covered by envtest.
   # SkillMarketplace (anthropics/skills, path=skills) — convention discovery,
   # no marketplace.json. Demo references pdf@anthropic-skills.
   - skill-marketplace-anthropic.yaml
@@ -18,25 +21,16 @@ resources:
   # (skills/pdf, skills/docx) — the no-marketplace skill resolution arm.
   - skill-pdf.yaml
   - skill-docx.yaml
-  # Phase 02 SC#3 same-plugin-name pair — both point at the real
-  # anthropic catalogue filtered to `feature-dev`; under the scoped grammar
-  # both settle Synced=True (feature-dev@conflict-mkt-a and
-  # feature-dev@conflict-mkt-b are independent scoped references).
-  - marketplace-conflict-a.yaml
-  - marketplace-conflict-b.yaml
-  - plugin-caveman.yaml
   - prompt-claude-code.yaml
   - artifact-openclaw.yaml
   - bip-context7.yaml
   - bip-duplicate.yaml
   - bip-demo-mcp-jwt.yaml
   - bip-demo-mcp-nojwt.yaml
-  # Phase 5 content-service exercise matrix — valid + invalid of each CR
-  # kind (referenced by Environment env-valid in stage 05). The e2e suite
-  # asserts against these; it no longer applies its own copies. The
-  # *-invalid fixtures settle at SourceReachable=False (negative path).
-  - plugin-valid.yaml
-  - plugin-invalid.yaml
+  # Phase 5 content-service exercise matrix — valid + invalid of prompt/artifact
+  # (referenced by Environment env-valid in stage 05). The e2e suite asserts
+  # against these; it no longer applies its own copies. The *-invalid fixtures
+  # settle at SourceReachable=False (negative path).
   - prompt-valid.yaml
   - prompt-invalid.yaml
   - artifact-valid.yaml
