@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
@@ -80,6 +82,12 @@ type Snapshotter struct {
 	snap                    atomic.Pointer[LiteLLMSnapshot]
 	log                     logr.Logger
 	litellmUnreachableCount atomic.Int64
+
+	// Catalog persistence (runtime catalog). When pool is nil the
+	// Snapshotter does not persist — single-binary unit tests stay inert.
+	pool          *pgxpool.Pool
+	catalogNS     string
+	connectorName string
 }
 
 // NewSnapshotter constructs a Snapshotter wired to a litellm.Client.
@@ -92,6 +100,16 @@ func NewSnapshotter(c litellm.Client, log logr.Logger) *Snapshotter {
 		interval: DefaultRefreshInterval,
 		log:      log,
 	}
+}
+
+// EnableCatalog wires Postgres persistence of each successful refresh into
+// runtime_catalog_entries, keyed by (namespace, connector). Chainable. A nil
+// pool leaves persistence disabled.
+func (s *Snapshotter) EnableCatalog(pool *pgxpool.Pool, namespace, connector string) *Snapshotter {
+	s.pool = pool
+	s.catalogNS = namespace
+	s.connectorName = connector
+	return s
 }
 
 // Snapshot returns the most recent LiteLLMSnapshot value (a shallow
@@ -261,6 +279,16 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		Stale:       false,
 	}
 	s.snap.Store(next)
+	if s.pool != nil {
+		if err := achdb.ReplaceRuntimeCatalog(ctx, s.pool, s.catalogNS, s.connectorName,
+			next.Models, next.MCPServers, next.A2AAgents, next.RefreshedAt); err != nil {
+			// Non-fatal: the in-memory snapshot is already published and the
+			// EnvironmentReconciler reads that, not the table. Log and move on;
+			// the next refresh retries the projection.
+			s.log.Error(err, "litellm snapshot: catalog persistence failed",
+				"connector", s.connectorName)
+		}
+	}
 	s.log.Info("litellm snapshot refreshed",
 		"models", len(next.Models),
 		"mcpServers", len(next.MCPServers),

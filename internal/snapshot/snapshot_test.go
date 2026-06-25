@@ -429,6 +429,26 @@ func TestSnapshotter_FailureFollowedBySuccess_FastRetry(t *testing.T) {
 		2500*time.Millisecond, snap.Stale, len(snap.Models))
 }
 
+// TestEnableCatalog_NilPoolIsInert asserts that EnableCatalog records
+// the connector identity and is chainable, but that a nil pool leaves
+// refresh behaviour completely unchanged (existing unit tests stay green
+// and the snapshot is published normally).
+func TestEnableCatalog_NilPoolIsInert(t *testing.T) {
+	f := &fakeLiteLLM{models: []litellm.ModelInfoResponse{{ModelName: "gpt-4o"}}}
+	s := NewSnapshotter(f, logr.Discard()).EnableCatalog(nil, "ach-system", "default")
+
+	if s.catalogNS != "ach-system" || s.connectorName != "default" {
+		t.Fatalf("EnableCatalog did not record connector identity: %+v", s)
+	}
+	// refresh must still succeed and publish the snapshot with a nil pool.
+	if ok := s.refresh(context.Background()); !ok {
+		t.Fatalf("refresh returned false on healthy fake client")
+	}
+	if _, ok := s.Snapshot().Models["gpt-4o"]; !ok {
+		t.Fatalf("snapshot missing gpt-4o after refresh")
+	}
+}
+
 // ListTeamsByAlias is a no-op shim — Client interface compliance.
 func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
