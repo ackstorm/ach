@@ -226,13 +226,13 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tENDPOINT")
 	for _, m := range h.Runtime.Models {
-		_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", m.Name, orEM(m.ID), orEM(m.Endpoint))
+		_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", orEM(m.Name), orEM(m.ID), orEM(m.Endpoint))
 	}
 	for _, s := range h.Runtime.MCPServers {
-		_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", s.Name, orEM(s.ID), orEM(s.Endpoint))
+		_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", orEM(s.Name), orEM(s.ID), orEM(s.Endpoint))
 	}
 	for _, a := range h.Runtime.A2AAgents {
-		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", a.Name, orEM(a.ID), orEM(a.Endpoint))
+		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", orEM(a.Name), orEM(a.ID), orEM(a.Endpoint))
 	}
 	_ = tw.Flush()
 

@@ -282,11 +282,15 @@ func TestFormatEnvList_DescriptionTruncated(t *testing.T) {
 
 // TestFormatEnvDescribe_ContextHasNoIDColumn_RuntimeEmptyDashed asserts that
 // the Context table no longer carries an ID column (it always duplicated NAME)
-// and that empty Runtime ID/Endpoint cells render as an em dash.
+// and that EVERY empty Runtime cell renders as an em dash. The mcpServer row
+// mirrors the real /platform/hydrate shape: the server emits `id` + `endpoint`
+// for an mcpServer and leaves `name` EMPTY — so the em dash must fall on the
+// NAME cell (the bug v0.5.5 missed: only id/endpoint were dashed, never name).
 func TestFormatEnvDescribe_ContextHasNoIDColumn_RuntimeEmptyDashed(t *testing.T) {
 	env := EnvView{Name: "demo", Namespace: "ach", Status: "Available"}
 	h := &HydrateView{}
-	h.Runtime.MCPServers = []RuntimeItem{{Name: "mcp-x", ID: "", Endpoint: "https://h/mcp/mcp-x"}}
+	// Real-world mcpServer shape: name empty, id populated, endpoint populated.
+	h.Runtime.MCPServers = []RuntimeItem{{Name: "", ID: "mcp-x", Endpoint: "https://h/mcp/mcp-x"}}
 	h.Context.Plugins = []ContextItem{{Name: "p@repo", ID: "p@repo", DownloadURL: "https://h/content/plugin/p@repo"}}
 
 	out := FormatEnvDescribe(env, h, true)
@@ -295,9 +299,13 @@ func TestFormatEnvDescribe_ContextHasNoIDColumn_RuntimeEmptyDashed(t *testing.T)
 	if strings.Contains(out, "KIND\tNAME\tID\tDOWNLOADURL") {
 		t.Errorf("context table still has ID column:\n%s", out)
 	}
-	// Runtime empty ID renders as em dash, not blank.
-	if !strings.Contains(out, "mcp-x") || !strings.Contains(out, "—") {
-		t.Errorf("runtime empty ID not em-dashed:\n%s", out)
+	// The populated id/endpoint render verbatim; the EMPTY name renders as an
+	// em dash (em dash present + populated id present ⇒ the dash is the name).
+	if !strings.Contains(out, "mcp-x") {
+		t.Errorf("runtime populated id missing:\n%s", out)
+	}
+	if !strings.Contains(out, "—") {
+		t.Errorf("runtime empty name not em-dashed:\n%s", out)
 	}
 }
 
