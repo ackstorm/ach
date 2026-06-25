@@ -60,12 +60,8 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
 
 	t.Run("jwt_route_attaches_jwt", func(t *testing.T) {
-		resetMcpEchoCapture(t, mcpEchoLocal)
 		echoed := "hola-bip-jwt"
-		resp := callEchoViaForwarder(t, gatewayLocal, pk, bipJWTRouteName, echoed)
-		if !strings.Contains(resp, echoed) {
-			t.Fatalf("jwt route: tools/call did not echo %q: %s", echoed, resp)
-		}
+		callEchoViaForwarderEventually(t, gatewayLocal, mcpEchoLocal, pk, bipJWTRouteName, echoed)
 		snap := readMcpEchoCapture(t, mcpEchoLocal)
 		if !snap.JWTPresent {
 			t.Fatalf("jwt route: jwt_present=false, want true — forwardIdentityJWT:true "+
@@ -84,12 +80,8 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 	})
 
 	t.Run("nojwt_route_omits_jwt", func(t *testing.T) {
-		resetMcpEchoCapture(t, mcpEchoLocal)
 		echoed := "hola-bip-nojwt"
-		resp := callEchoViaForwarder(t, gatewayLocal, pk, bipNoJWTRouteName, echoed)
-		if !strings.Contains(resp, echoed) {
-			t.Fatalf("nojwt route: tools/call did not echo %q: %s", echoed, resp)
-		}
+		callEchoViaForwarderEventually(t, gatewayLocal, mcpEchoLocal, pk, bipNoJWTRouteName, echoed)
 		snap := readMcpEchoCapture(t, mcpEchoLocal)
 		if snap.JWTPresent {
 			t.Fatalf("nojwt route: jwt_present=true, want false — forwardIdentityJWT:false "+
@@ -114,4 +106,36 @@ func callEchoViaForwarder(t *testing.T, gatewayLocal, pk, serverName, text strin
 			`{"name":"%s.echo","arguments":{"text":%q}}}`,
 		serverName, text)
 	return postMCPViaForwarder(t, url, pk, body)
+}
+
+// callEchoViaForwarderEventually drives the echo tool through the forwarder,
+// retrying the whole tools/call on the transient LiteLLM MCP tool-discovery
+// warmup window. Right after cluster-up rolls the litellm chart, LiteLLM has
+// not yet run tools/list against a freshly-(re)registered MCP server, so the
+// proxied tools/call returns a 200 isError result — `Tool '<tool>' not found`
+// — instead of the echoed text. That is a warmup race, NOT a JWT/BIP-precedence
+// signal, and it clears within a few seconds (the same call succeeds moments
+// later, e.g. once SC3 runs). postMCPViaForwarder still t.Fatals on a non-200,
+// so a genuine transport/auth failure is not silently retried.
+//
+// Bounded retry with an explicit failure path (no-naked-loop rule). The
+// mcp-echo capture is reset before EVERY attempt, including the winning one, so
+// a subsequent readMcpEchoCapture reflects the successful echo and never a
+// discarded not-found attempt. Returns the winning response body.
+func callEchoViaForwarderEventually(t *testing.T, gatewayLocal, mcpEchoLocal, pk, serverName, text string) string {
+	t.Helper()
+	const attempts = 20
+	var resp string
+	for i := 0; i < attempts; i++ {
+		resetMcpEchoCapture(t, mcpEchoLocal)
+		resp = callEchoViaForwarder(t, gatewayLocal, pk, serverName, text)
+		if strings.Contains(resp, text) {
+			return resp
+		}
+		time.Sleep(1 * time.Second)
+	}
+	t.Fatalf("echo never round-tripped %q on /mcp/%s within %ds "+
+		"(LiteLLM MCP tool-discovery warmup window?); last resp=%s",
+		text, serverName, attempts, resp)
+	return resp
 }
