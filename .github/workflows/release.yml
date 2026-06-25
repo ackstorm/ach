@@ -58,8 +58,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected release version: v$VERSION"
 
-  run-tests:
-    name: Run tests
+  # Unit and envtest run as two parallel jobs, both gating build-and-release.
+  # Splitting the former single run-tests job takes the test phase off the
+  # critical path at max(unit, envtest) instead of unit + envtest — envtest-fast
+  # (~3m, etcd+apiserver) dominates, so unit overlaps it for free. Either job
+  # failing stops the pipeline before any manifest mutation, build, or tag.
+  test-unit:
+    name: Unit tests
     needs: parse
     runs-on: ubuntu-latest
     steps:
@@ -74,18 +79,32 @@ jobs:
       - name: Set up devtools (pull or build)
         uses: ./.github/actions/setup-devtools
 
-      - name: Run tests
-        # ci.yml uses envtest-fast (no -race) because the race detector
-        # adds 2-5x overhead and inflates AC_CF2b adoption-recognition's
-        # reconciler-converge time past the in-test poll budget. release.yml
-        # mirrors ci.yml here to avoid CI/release skew on the same commit.
-        run: |
-          make test-unit
-          make test-envtest-fast
+      - name: Run unit tests
+        run: make test-unit
+
+  test-envtest:
+    name: Envtest
+    needs: parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Same pre-baked devtools image as the unit job (envtest assets baked in).
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
+
+      - name: Run envtest
+        # envtest-fast (no -race): the race detector adds 2-5x overhead and
+        # inflates AC_CF2b adoption-recognition's reconciler-converge time past
+        # the in-test poll budget. Mirrors ci.yml to avoid CI/release skew on
+        # the same commit.
+        run: make test-envtest-fast
 
   build-and-release:
     name: Build + release
-    needs: [parse, run-tests]
+    needs: [parse, test-unit, test-envtest]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

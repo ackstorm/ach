@@ -45,8 +45,11 @@ Per-release flow (after the `chore(release): v0.1.0` push):
 
 1. **parse** job (job-level `if` skips non-release pushes): pulls
    `X.Y.Z` from the head commit message via regex.
-2. **run-tests** job: `make test-unit` + `make test-envtest-fast`.
-   Failures stop the pipeline here — no manifest mutation, no tag.
+2. **test-unit** + **test-envtest** jobs (parallel): `make test-unit` and
+   `make test-envtest-fast` run as two concurrent jobs, both gating
+   build-and-release — the test phase costs `max(unit, envtest)` (envtest-fast
+   dominates) instead of their sum. Either failing stops the pipeline here —
+   no manifest mutation, no tag.
 3. **build-and-release** job:
    - Configures the github-actions[bot] identity.
    - Runs `make release-bump VERSION=X.Y.Z`, commits the four bumped manifests
