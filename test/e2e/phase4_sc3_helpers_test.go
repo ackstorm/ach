@@ -11,18 +11,19 @@ import (
 	"time"
 )
 
-// --- Phase 4 SC3 (BIP alpha-last JWT mint) helpers ------------------------
+// --- Phase 4 SC3 (BIP alpha-first JWT mint) helpers ------------------------
 //
 // The forwarder bipcache resolves the winning BackendIdentityPolicy for a
 // (targetKind, targetName) by sorting matches on metadata.name ASC and taking
-// the alpha-LAST row; if that row's forwardIdentityJWT is false it is an
+// the alpha-FIRST row; if that row's forwardIdentityJWT is false it is an
 // explicit opt-out and NO JWT is minted (internal/forwarder/bipcache/cache.go
-// Resolve). These helpers apply/delete throwaway BIPs on a shared target and
-// assert which one won by reading the ach-mcp-echo /__capture/last endpoint.
+// Resolve, frozen alpha-FIRST tiebreak per G15). These helpers apply/delete
+// throwaway BIPs on a shared target and assert which one won by reading the
+// ach-mcp-echo /__capture/last endpoint.
 
 // sc3ApplyBIP applies a BackendIdentityPolicy targeting the given MCPServer
 // route with the given forwardIdentityJWT value, and registers a t.Cleanup
-// that deletes it. The name is chosen by the caller so the alpha-last tiebreak
+// that deletes it. The name is chosen by the caller so the alpha-first tiebreak
 // is unambiguous.
 func sc3ApplyBIP(t *testing.T, name, route string, forwardJWT bool) {
 	t.Helper()

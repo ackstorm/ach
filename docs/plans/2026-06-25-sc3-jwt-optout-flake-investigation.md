@@ -1,9 +1,49 @@
 # SC3 JWT alpha-last opt-out flake — investigation handoff
 
-**Status:** OPEN — needs root-cause + fix by a follow-up agent.
+**Status:** ✅ RESOLVED 2026-06-25 — root cause + fix below.
 **Discovered:** 2026-06-25, during the `feat/keys-cli-ux` pre-release e2e gate.
 **Owner of this report:** keys-cli-ux release work (the failure is orthogonal to
 that change — see "Why this is not the keys change" below).
+
+---
+
+## Resolution (2026-06-25)
+
+**Root cause: a STALE e2e test, not a forwarder logic / propagation bug.** None
+of the four leading hypotheses held — LISTEN/NOTIFY, coalescing, projection
+latency, and the 30s budget were all red herrings. The actual contract is
+**alpha-FIRST**, frozen under G15 on 2026-06-16 (commit `22db2cc`
+"restore alpha-FIRST BIP tiebreaker (G15)"): the forwarder picks the
+alphabetically-**FIRST** `metadata.name` as the winner per
+(targetKind, targetName), and an alpha-FIRST `forwardIdentityJWT: false` row is
+the opt-out (`internal/forwarder/bipcache/cache.go` `Resolve` → `rows[0]`;
+`internal/controller/ach/backendidentitypolicy_controller.go` :41-50; `internal/db/backend_identity_policies.go` :8-11).
+
+The SC3 e2e test was written against the **earlier alpha-LAST** contract and was
+never inverted when G15 flipped it. The G15 commit updated the *unit* test
+(`internal/forwarder/bipcache/cache_test.go`, per `docs/plans/2026-06-16-p1-code-gaps.md`)
+but missed this *e2e* test. So the test applied throwaway BIPs that all sorted
+**after** the synced `bip-demo-mcp-jwt` (true), making that synced row the
+alpha-FIRST winner — JWT therefore *always* minted. That fully explains the
+"asymmetry": the opt-out (disappear) subtest could never pass, while the flip
+(appear) subtest passed trivially because the baseline was already minting.
+
+**Fix (test-only — no production code touched):** invert the SC3 test to the
+alpha-FIRST contract so the throwaway BIPs sort **before** the synced baseline
+and the alpha-FIRST one owns the tiebreak.
+- `test/e2e/phase4_invariants_test.go` — renamed
+  `testPhase4SC3JwtMintAndBipAlphaLast` → `…AlphaFirst` (+ `t.Run` label
+  `SC3_JwtMintAndBipAlphaFirst`); BIP names now `aaa-sc3-aaa-jwt-off` (false,
+  alpha-first of the pair), `aaa-sc3-mmm-jwt-on` (true, later), and the flip
+  `aaa-sc3-000-jwt-on` (true, sorts before the opt-out). Subtest
+  `alpha_first_optout_suppresses_mint`.
+- `test/e2e/phase4_sc3_helpers_test.go` — corrected the alpha-LAST doc comments
+  to alpha-FIRST.
+
+**Verified:** `make e2e-focus RUN='TestPhase4Invariants/SC3_JwtMintAndBipAlphaFirst'`
+→ both orientations PASS in **3.45s** (opt-out 0.34s, flip 0.12s) against the
+live forwarder. (Previously the opt-out subtest failed deterministically after
+37s.)
 
 ---
 
