@@ -535,6 +535,7 @@ Create `internal/platformapi/admin/runtime/handler_test.go`:
 package runtime
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -551,7 +552,7 @@ type fakeCatalog struct {
 	err     error
 }
 
-func (f fakeCatalog) List(_ any, _, _, kind string) ([]db.RuntimeCatalogRow, error) {
+func (f fakeCatalog) List(_ context.Context, _, _, kind string) ([]db.RuntimeCatalogRow, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -563,7 +564,7 @@ func (f fakeCatalog) List(_ any, _, _, kind string) ([]db.RuntimeCatalogRow, err
 	}
 	return out, nil
 }
-func (f fakeCatalog) MaxSync(_ any, _, _ string) (time.Time, bool, error) {
+func (f fakeCatalog) MaxSync(_ context.Context, _, _ string) (time.Time, bool, error) {
 	return f.maxSync, f.hasSync, f.err
 }
 
@@ -647,11 +648,10 @@ import (
 )
 
 // CatalogReader is the read surface this package needs. The concrete impl is
-// poolCatalog (backed by *pgxpool.Pool); tests inject a fake. The first arg is
-// context.Context (typed as any to keep the test fake import-light).
+// poolCatalog (backed by *pgxpool.Pool); tests inject a fake.
 type CatalogReader interface {
-	List(ctx any, ns, connector, kind string) ([]db.RuntimeCatalogRow, error)
-	MaxSync(ctx any, ns, connector string) (time.Time, bool, error)
+	List(ctx context.Context, ns, connector, kind string) ([]db.RuntimeCatalogRow, error)
+	MaxSync(ctx context.Context, ns, connector string) (time.Time, bool, error)
 }
 
 // Deps configures the runtime catalog handlers.
@@ -666,11 +666,11 @@ func NewPoolCatalog(pool *pgxpool.Pool) CatalogReader { return poolCatalog{pool:
 
 type poolCatalog struct{ pool *pgxpool.Pool }
 
-func (p poolCatalog) List(ctx any, ns, connector, kind string) ([]db.RuntimeCatalogRow, error) {
-	return db.ListRuntimeCatalog(ctx.(context.Context), p.pool, ns, connector, kind)
+func (p poolCatalog) List(ctx context.Context, ns, connector, kind string) ([]db.RuntimeCatalogRow, error) {
+	return db.ListRuntimeCatalog(ctx, p.pool, ns, connector, kind)
 }
-func (p poolCatalog) MaxSync(ctx any, ns, connector string) (time.Time, bool, error) {
-	return db.MaxRuntimeCatalogSync(ctx.(context.Context), p.pool, ns, connector)
+func (p poolCatalog) MaxSync(ctx context.Context, ns, connector string) (time.Time, bool, error) {
+	return db.MaxRuntimeCatalogSync(ctx, p.pool, ns, connector)
 }
 
 type itemView struct {
