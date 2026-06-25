@@ -148,19 +148,6 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	check(filepath.Join(root, ".codex", "config.toml"), "found .codex/config.toml")
 	check(filepath.Join(root, ".codex", "agents"), "found .codex/agents/ directory")
 
-	// Global-mode hint: $HOME/.codex/ contributes a Low-confidence signal
-	// even when the local cwd has no codex artifacts. Skipped when HOME
-	// is unset (defensive — os.UserHomeDir errors on unset HOME).
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		// Avoid double-counting when root == $HOME (the .codex check
-		// above already covered it).
-		homeCodex := filepath.Join(home, ".codex")
-		absRoot, _ := filepath.Abs(root)
-		if absRoot != home {
-			check(homeCodex, "found $HOME/.codex/ directory (global-mode hint)")
-		}
-	}
-
 	if signals == 0 {
 		return adapter.Match{}, nil
 	}

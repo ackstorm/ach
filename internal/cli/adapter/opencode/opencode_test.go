@@ -58,28 +58,44 @@ func TestOpencode_Detect_NoSignals_ZeroMatch(t *testing.T) {
 	}
 }
 
-// TestOpencode_Detect_GlobalOnly_LowConfidence proves WR-06: a global-only
-// install whose ONLY footprint is the XDG dir $HOME/.config/opencode/ still
-// matches (Low), mirroring codex's $HOME/.codex/ global-mode hint.
+// TestOpencode_Detect_GlobalOnly_LowConfidence proves WR-06: in --global mode
+// the caller passes root=$HOME, and a root-relative .config/opencode/ probe
+// finds the XDG global install.
 func TestOpencode_Detect_GlobalOnly_LowConfidence(t *testing.T) {
 	a := &Adapter{}
-	// root has no project-relative opencode artifacts.
-	root := t.TempDir()
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".config", "opencode"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	t.Setenv("HOME", home)
 
-	got, err := a.Detect(root)
+	got, err := a.Detect(home) // --global passes root=$HOME
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
 	if got.ID != "opencode" {
-		t.Errorf("global-only Detect ID=%q, want opencode", got.ID)
+		t.Errorf("global Detect ID=%q, want opencode", got.ID)
 	}
 	if got.Confidence != adapter.ConfidenceLow {
-		t.Errorf("global-only Detect Confidence=%v, want ConfidenceLow", got.Confidence)
+		t.Errorf("global Detect Confidence=%v, want ConfidenceLow", got.Confidence)
+	}
+}
+
+func TestOpencode_Detect_ProjectScope_IgnoresHome(t *testing.T) {
+	a := &Adapter{}
+	project := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".config", "opencode"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	got, err := a.Detect(project)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "" || got.Confidence != 0 {
+		t.Errorf("project-scope Detect leaked $HOME: got ID=%q Confidence=%v, want zero-match", got.ID, got.Confidence)
 	}
 }
 

@@ -58,29 +58,24 @@ func TestCodex_Detect_NoCodexDir_Zero(t *testing.T) {
 	}
 }
 
-func TestCodex_Detect_NoCodexDir_Low_GlobalHint(t *testing.T) {
-	// Spoof $HOME to a dir containing a .codex/ subdir → low-confidence
-	// global-mode hint even with no local artifacts.
+// TestCodex_Detect_ProjectScope_IgnoresHome pins finding #4: a project-scope
+// Detect (root = an empty cwd) must NOT match just because the user has a
+// ~/.codex/ on this machine. Detection is root-relative only.
+func TestCodex_Detect_ProjectScope_IgnoresHome(t *testing.T) {
+	a := &Adapter{}
+	project := t.TempDir() // empty — no .codex artifacts
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	t.Setenv("HOME", home)
 
-	a := &Adapter{}
-	tmp := t.TempDir()
-	got, err := a.Detect(tmp)
+	got, err := a.Detect(project)
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	if got.ID != "codex" {
-		t.Errorf("Detect with global hint returned ID=%q, want %q", got.ID, "codex")
-	}
-	if got.Confidence != adapter.ConfidenceLow {
-		t.Errorf("Detect with global hint only returned Confidence=%v, want ConfidenceLow", got.Confidence)
-	}
-	if len(got.Reasons) != 1 {
-		t.Errorf("Detect with global hint returned %d Reasons, want 1", len(got.Reasons))
+	if got.ID != "" || got.Confidence != 0 {
+		t.Errorf("project-scope Detect leaked $HOME: got ID=%q Confidence=%v, want zero-match", got.ID, got.Confidence)
 	}
 }
 
