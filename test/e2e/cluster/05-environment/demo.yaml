@@ -7,13 +7,6 @@
 #   - A2A:     demo-agent
 #   - Team:    default (created by LiteLLMConnection.EnsureDefaultTeam)
 #
-# context.plugins carries both a bare CRD-backed plugin (caveman) and a
-# scoped marketplace plugin (feature-dev@conflict-mkt-a). The scoped ref
-# exercises the name@marketplace resolution path end-to-end: conflict-mkt-a
-# is a synced PluginMarketplace fixture that materializes `feature-dev`
-# from anthropics/claude-plugins-official. No Plugin CRD backs that name,
-# so the scoped reference is the only way to resolve it.
-#
 # The two MCP servers are BOTH registered against the single ach-mcp-echo
 # backend, but each carries a different BackendIdentityPolicy so the demo
 # exercises the full forwardIdentityJWT toggle end-to-end:
@@ -48,16 +41,13 @@ spec:
   context:
     prompts:
       - claude-code-system-prompt
-    plugins:
-      - caveman
-      - feature-dev@conflict-mkt-a
     artifacts:
       - openclaw-templates
     # Skills carries both bare (CRD-backed) standalone Skills (pdf, docx —
     # pulled from anthropics/skills via spec.github.path) and a scoped
     # marketplace skill (pdf@anthropic-skills, discovered by the
     # SkillMarketplace). The scoped ref exercises the name@marketplace skill
-    # resolution path end-to-end, mirroring feature-dev@conflict-mkt-a above.
+    # resolution path end-to-end.
     skills:
       - pdf
       - docx

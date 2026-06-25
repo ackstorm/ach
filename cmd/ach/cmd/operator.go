@@ -48,6 +48,7 @@ import (
 	achcontroller "github.com/ackstorm/ach/internal/controller/ach"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
@@ -474,32 +475,34 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Environment: %w", err)
 	}
-	if err = (&achcontroller.PluginReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Namespace:        watchNS,
-		Log:              ctrl.Log.WithName("controller").WithName("Plugin"),
-		CacheRoot:        cacheRoot,
-		DB:               dbPool,
-		PluginMaxSizeMiB: pluginMaxSizeMiB,
-		Fetchers:         nil,
-		ResyncSource:     pluginCh,
-		Metrics:          opMetrics,
-	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create controller Plugin: %w", err)
-	}
-	if err = (&achcontroller.PluginMarketplaceReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Namespace:        watchNS,
-		Log:              ctrl.Log.WithName("controller").WithName("PluginMarketplace"),
-		CacheRoot:        cacheRoot,
-		DB:               dbPool,
-		PluginMaxSizeMiB: pluginMaxSizeMiB,
-		Fetchers:         nil,
-		ResyncSource:     mpCh,
-	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create controller PluginMarketplace: %w", err)
+	if featuregate.PluginsEnabled {
+		if err = (&achcontroller.PluginReconciler{
+			Client:           mgr.GetClient(),
+			Scheme:           mgr.GetScheme(),
+			Namespace:        watchNS,
+			Log:              ctrl.Log.WithName("controller").WithName("Plugin"),
+			CacheRoot:        cacheRoot,
+			DB:               dbPool,
+			PluginMaxSizeMiB: pluginMaxSizeMiB,
+			Fetchers:         nil,
+			ResyncSource:     pluginCh,
+			Metrics:          opMetrics,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller Plugin: %w", err)
+		}
+		if err = (&achcontroller.PluginMarketplaceReconciler{
+			Client:           mgr.GetClient(),
+			Scheme:           mgr.GetScheme(),
+			Namespace:        watchNS,
+			Log:              ctrl.Log.WithName("controller").WithName("PluginMarketplace"),
+			CacheRoot:        cacheRoot,
+			DB:               dbPool,
+			PluginMaxSizeMiB: pluginMaxSizeMiB,
+			Fetchers:         nil,
+			ResyncSource:     mpCh,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller PluginMarketplace: %w", err)
+		}
 	}
 	if err = (&achcontroller.ArtifactReconciler{
 		Client:       mgr.GetClient(),

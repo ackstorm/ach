@@ -11,6 +11,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/localpkg/discover"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // mkTarGz builds a gzipped tar from a map[path]content.
@@ -72,6 +73,9 @@ func sortCaps(caps []store.Capability) []store.Capability {
 
 // (a) plugin-marketplace: tar contains .claude-plugin/marketplace.json with 2 plugins.
 func TestDetect_PluginMarketplace(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled")
+	}
 	marketplaceJSON := `{"name":"m","owner":{"name":"o"},"plugins":[{"name":"p1","source":{"source":"github","repo":"a/b"}},{"name":"p2","source":{"source":"github","repo":"c/d"}}]}`
 	tarball := mkTarGz(map[string]string{
 		".claude-plugin/marketplace.json": marketplaceJSON,
@@ -106,6 +110,9 @@ func TestDetect_SkillMarketplace(t *testing.T) {
 
 // (c) plugin (direct): tar with commands/x.md (no marketplace.json).
 func TestDetect_Plugin(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled")
+	}
 	tarball := mkTarGz(map[string]string{
 		"commands/x.md": "# x",
 	})
@@ -205,6 +212,9 @@ func TestDetect_SkillMarketplaceAutodetectRoot(t *testing.T) {
 
 // TestDetect_MarketplaceAtRoot verifies marketplace.json at root (not under .claude-plugin/).
 func TestDetect_MarketplaceAtRoot(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled")
+	}
 	marketplaceJSON := `{"name":"m","owner":{"name":"o"},"plugins":[{"name":"p1","source":{"source":"github","repo":"a/b"}}]}`
 	tarball := mkTarGz(map[string]string{
 		"marketplace.json": marketplaceJSON,

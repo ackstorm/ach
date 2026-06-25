@@ -31,7 +31,10 @@ import (
 func TestPhase4Promotion(t *testing.T) {
 	t.Run("SC11a_ForceRefreshAnnotationCycle", testSC11aForceRefreshCycle)
 	t.Run("SC11b_BIPAdmissionFinalizerDuplicate", testSC11bBIPAdmissionFinalizer)
-	t.Run("SC11c_PluginMarketplaceInternalSchema", testSC11cMarketplaceInternalSchema)
+	// SC11c (PluginMarketplaceInternalSchema) removed: the PluginMarketplace
+	// kind is disabled behind featuregate.PluginsEnabled=false and its CRD is no
+	// longer shipped in the Helm chart, so the e2e suite cannot apply the CR.
+	// The marketplace parser + Stage-2 fetch stay covered by envtest.
 	t.Run("SC11d_OperatorRestartInformerResync", testSC11dOperatorRestart)
 	// SC11e (HydrateGoldenJSON) removed (#58): the hydrate wire-path golden is
 	// covered by TestPhase6CLI (CLI-driven), and its driver examples/hydrate-demo.sh
@@ -114,10 +117,12 @@ func testSC11gGitOpsWinsTakeover(t *testing.T) {
 func testSC11aForceRefreshCycle(t *testing.T) {
 	t.Helper()
 
-	// The LiteLLMConnection + plugin/prompt/artifact are pre-synced by
-	// cluster.sh (stage 04-objects) and verified healthy by the 06-verify gate.
-	// This subtest asserts against that synced state — it does NOT apply its own
+	// The LiteLLMConnection + prompt/artifact are pre-synced by cluster.sh
+	// (stage 04-objects) and verified healthy by the 06-verify gate. This
+	// subtest asserts against that synced state — it does NOT apply its own
 	// copies (that would mutate shared cluster state other specs depend on).
+	// (Plugin force-refresh coverage dropped — the Plugin kind is disabled
+	// behind featuregate.PluginsEnabled=false.)
 
 	// Wait for each kind's first successful reconcile. Tolerant of
 	// GitHub anonymous-quota rate-limiting (60 req/h/IP): a freshly
@@ -127,7 +132,6 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	// force-refresh against. Engineer must either wait an hour OR
 	// provision a GitHub PAT Secret (see TODO entry "examples/* need
 	// optional auth refs" filed by this suite's PR).
-	skipIfRateLimited(t, "plugin", "caveman", 120*time.Second)
 	skipIfRateLimited(t, "prompt", "claude-code-system-prompt", 120*time.Second)
 	skipIfRateLimited(t, "artifact", "openclaw-templates", 120*time.Second)
 
@@ -135,7 +139,6 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	cases := []struct {
 		kind, name string
 	}{
-		{"plugin", "caveman"},
 		{"prompt", "claude-code-system-prompt"},
 		{"artifact", "openclaw-templates"},
 	}
@@ -215,107 +218,28 @@ func testSC11bBIPAdmissionFinalizer(t *testing.T) {
 	waitForBIPDeleted(t, bipB, 30*time.Second)
 }
 
-// testSC11cMarketplaceInternalSchema drives examples/05b end-to-end:
-//
-//  1. applyPhase4MarketplaceServer: ConfigMap + nginx Deployment+Service.
-//  2. Apply examples/05b PluginMarketplace CR.
-//  3. waitForCondition Synced=True (60s).
-//  4. Assert the DB row exists: marketplace_plugins WHERE
-//     marketplace_name='internal-test' AND name='phase4-mkt-plugin'.
-//  5. Delete the CR; assert the DB row disappears within 30s
-//     (finalizer cleanup contract per §10.3).
-//
-// Regression contract for the OUTER fetch + parser + Stage-2 git
-// fetcher of the real-schema (post-§5) format. Stage-2 clones
-// github.com/JuliusBrussee/caveman at the pinned SHA; the kind cluster
-// must have outbound HTTPS to github.com.
-func testSC11cMarketplaceInternalSchema(t *testing.T) {
-	t.Helper()
-
-	// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`). Stage-2
-	// dispatches the per-entry fetch via internal/gitfetch, which
-	// exec's the system `git` binary. The operator runtime image now
-	// ships git (Dockerfile: alpine + `apk add git`), so the former
-	// git-gap is closed; the gate now only scopes the
-	// GitHub-reachability-dependent marketplace fetch out of focused
-	// dev runs.
-	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
-		t.Skip("§11c (phase4); opt out via ACH_SKIP_PHASE4=1.")
-	}
-
-	applyPhase4MarketplaceServer(t)
-
-	const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
-	if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
-		t.Fatalf("§11c apply marketplace CR: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "-f", fixture, "--wait=false", "--ignore-not-found")
-	})
-
-	// Replace ConfigMap with our phase4 fixture (the 05b example points
-	// at mkt-test-server which we just brought up; the ConfigMap key
-	// `marketplace.json` is what the parser fetches).
-	waitForCondition(t, "pluginmarketplace", "internal-test", "Synced", "True", 120*time.Second)
-
-	// Assert DB row.
-	const sql = `SELECT count(*) FROM marketplace_plugins ` +
-		`WHERE marketplace_name='internal-test' AND name='phase4-mkt-plugin'`
-	out, err := runCmd("kubectl", "exec", "-n", namespace,
-		"sts/ach-postgres", "--",
-		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
-	if err != nil {
-		t.Fatalf("§11c DB query: %v\n%s", err, out)
-	}
-	count := strings.TrimSpace(out)
-	if count != "1" {
-		t.Fatalf("§11c: marketplace_plugins row count = %q, want %q.\n"+
-			"Marketplace parser may not be accepting the fixture shape — "+
-			"re-anchor fixture against the live parser, do NOT change the parser.",
-			count, "1")
-	}
-
-	// Drive delete; assert DB row gone.
-	if out, err := runCmd("kubectl", "delete", "-f", fixture, "--wait=true"); err != nil {
-		t.Fatalf("§11c delete marketplace CR: %v\n%s", err, out)
-	}
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		out, err := runCmd("kubectl", "exec", "-n", namespace,
-			"sts/ach-postgres", "--",
-			"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
-		if err == nil && strings.TrimSpace(out) == "0" {
-			return
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	out, _ = runCmd("kubectl", "exec", "-n", namespace,
-		"sts/ach-postgres", "--",
-		"sh", "-c", `PGPASSWORD=ach psql -U ach -d ach -t -A -c "`+sql+`"`)
-	t.Fatalf("§11c: marketplace_plugins row not cleaned up within 30s; row count still=%q",
-		strings.TrimSpace(out))
-}
-
 // testSC11dOperatorRestart catches "wires-only-on-startup" bugs:
 //
 //  1. Snapshot the operator Pod's metadata.uid.
 //  2. kubectl delete pod (no wait) — kube restarts the Pod.
 //  3. Wait for a NEW Pod (different uid) to become Ready (90s).
-//  4. Annotate plugin/caveman force-refresh=now.
+//  4. Annotate prompt/claude-code-system-prompt force-refresh=now.
 //  5. Assert reconciliation fires within 30s (annotation cleared,
 //     lastSuccessfulRefresh advanced).
 //
-// Pre-req: §11a has already applied plugin/caveman and waited for
-// first SourceReachable=True. We re-apply defensively here (idempotent).
+// Pre-req: the prompt is pre-synced by cluster.sh and at first
+// SourceReachable=True. (Originally drove plugin/caveman; the Plugin kind is
+// now disabled behind featuregate.PluginsEnabled=false, so the post-restart
+// reconcile is asserted on a surviving external-reference kind instead.)
 //
 // Wall clock: 30s pod restart + 5s force-refresh round-trip ≈ 35s.
 func testSC11dOperatorRestart(t *testing.T) {
 	t.Helper()
 
-	// plugin/caveman + LiteLLMConnection are pre-synced by cluster.sh (stage 04);
-	// assert against that synced state, do not re-apply.
+	// prompt/claude-code-system-prompt + LiteLLMConnection are pre-synced by
+	// cluster.sh (stage 04); assert against that synced state, do not re-apply.
 	// Tolerant of GitHub rate-limit (see §11a comment).
-	skipIfRateLimited(t, "plugin", "caveman", 120*time.Second)
+	skipIfRateLimited(t, "prompt", "claude-code-system-prompt", 120*time.Second)
 
 	prevUID := getOperatorPodUID(t)
 
@@ -332,7 +256,7 @@ func testSC11dOperatorRestart(t *testing.T) {
 	}
 
 	// Reconciliation MUST fire after restart.
-	forceRefreshAndAssert(t, "plugin", "caveman", 30*time.Second)
+	forceRefreshAndAssert(t, "prompt", "claude-code-system-prompt", 30*time.Second)
 }
 
 // SC11e (testSC11eHydrateGolden) was removed in #58. The full /platform/hydrate
@@ -345,15 +269,17 @@ func testSC11dOperatorRestart(t *testing.T) {
 //   - Environment delete drives the §6.5 LiteLLM DeleteAccessGroup +
 //     DeleteTag calls (assert by side-effect on the Environment CR
 //     itself going NotFound + no orphaned ach-access-groups row).
-//   - PluginMarketplace delete drives §10.3 cache cleanup + the
-//     marketplace_plugins DELETE (covered structurally by §11c, but
-//     re-asserted here in matrix form for completeness).
 //   - BIP delete is finalizer-only (no PVC, no DB); already covered
 //     structurally by §11b — re-asserted via the matrix sub-runner
 //     for one-stop visibility.
 //
+// (The PluginMarketplace finalizer/cache-cleanup row was removed: the
+// PluginMarketplace kind is disabled behind featuregate.PluginsEnabled=false
+// and its CRD is no longer shipped in the chart. §10.3 cleanup stays covered
+// by envtest.)
+//
 // Each kind is a t.Run sub-sub-test so a failure on Environment doesn't
-// abort the PluginMarketplace assertion.
+// abort the BIP assertion.
 func testSC11fFinalizerCleanup(t *testing.T) {
 	t.Helper()
 
@@ -382,32 +308,6 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 			"--wait=true"); err != nil {
 			t.Fatalf("§11f.Env finalizer drain: %v\n%s", err, out)
 		}
-	})
-
-	t.Run("PluginMarketplace", func(t *testing.T) {
-		// opt out via ACH_SKIP_PHASE4=1 (set by `make e2e-run`), same as
-		// §11c. The operator image now ships git, so the former git-gap
-		// is closed; the gate only scopes the GitHub-dependent fetch out
-		// of focused dev runs.
-		if os.Getenv("ACH_SKIP_PHASE4") == "1" {
-			t.Skip("§11f.PluginMarketplace (phase4); opt out via ACH_SKIP_PHASE4=1.")
-		}
-		// Same flow as §11c but bare-minimum (skip the count-1 assert
-		// — that's §11c's job; we only assert count-after-delete).
-		applyPhase4MarketplaceServer(t)
-		const fixture = "../../test/e2e/fixtures/phase4_marketplace_internal_cr.yaml"
-		if out, err := runCmd("kubectl", "apply", "-f", fixture); err != nil {
-			t.Fatalf("§11f.Mkt apply: %v\n%s", err, out)
-		}
-		waitForCondition(t, "pluginmarketplace", "internal-test",
-			"Synced", "True", 120*time.Second)
-
-		if out, err := runCmd("kubectl", "delete", "-f", fixture,
-			"--wait=true"); err != nil {
-			t.Fatalf("§11f.Mkt delete: %v\n%s", err, out)
-		}
-		waitForACHPostgresCount(t, "marketplace_plugins",
-			"marketplace_name='internal-test'", 0, 30*time.Second)
 	})
 
 	t.Run("BIP", func(t *testing.T) {

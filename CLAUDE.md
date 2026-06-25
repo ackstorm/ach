@@ -36,7 +36,8 @@ declarative agent configuration management: operator + platform API + forwarder
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
 keys/admin; `env-keys` remains a back-compat alias for `keys`; hydrate/status/uninstall live under `env`; plus the serverless
-local package manager `repo`/`plugin`/`skill`) that drops the
+local package manager `repo`/`skill` — `plugin` is **disabled** (see
+`featuregate.PluginsEnabled` below)) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
@@ -44,6 +45,20 @@ Release plumbing + CI scaffolding grafted from
 [ackstorm/alitellm-operator](https://github.com/ackstorm/alitellm-operator)
 (Apache-2.0; see `NOTICE` + `references/upstream-sync.md`) — non-code surfaces
 only. All Go code, CRDs, and Helm values are original ackstorm material.
+
+> **⚠ Plugin & PluginMarketplace are currently DISABLED** via the compile-time
+> const `featuregate.PluginsEnabled = false` (`internal/featuregate`). In the
+> shipped build their CRDs are not in the Helm chart (`kubectl apply` → `no
+> matches for kind`), the operator does not wire their reconcilers,
+> content-service does not serve `/content/plugin/{name}`, admin inventory hides
+> plugin/marketplace rows, an Environment's `context.plugins` refs are SKIPPED
+> (not failed — they no longer gate `ExecutionResourcesResolved`), and
+> `ach-cli local plugin` is unregistered. The Go types, reconcilers, DB
+> tables/migrations, and `config/crd/bases/` plugin CRDs REMAIN in the tree
+> (gated, not deleted). **`Skill` / `SkillMarketplace` are the supported content
+> kinds and are unaffected.** Flip the const to `true` + `make helm-sync` to
+> re-enable everything. Plugin mechanics described below stay accurate for the
+> re-enabled build, but read them as DORMANT in the current one.
 
 ## Architecture
 
@@ -68,7 +83,10 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
 **Source of truth (Phase D, #34)**: the operator writes Postgres
 (12 projection tables incl. `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
-`marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
+`marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`; the
+`plugins`/`marketplace_plugins`/`marketplaces` tables + migrations REMAIN but
+are **unused** while `featuregate.PluginsEnabled=false` — nothing writes them);
+platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
 non-operator service. **GitOps-wins UI write path (G2)**: the platform-api UI
@@ -97,7 +115,8 @@ the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<sv
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 `EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`
-(`api/` is authoritative).
+(`api/` is authoritative). `Plugin` / `PluginMarketplace` types also exist in
+`api/` but their CRDs are NOT shipped (gated off, see above).
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging
@@ -106,7 +125,7 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; caller-scoped pk self-revoke `DELETE /platform/keys/{id}` (owner==caller, NOT admin-gated; `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; caller-scoped pk self-revoke `DELETE /platform/keys/{id}` (owner==caller, NOT admin-gated; `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |
@@ -116,10 +135,12 @@ User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
 `logout`/`whoami`/`config`/`env`/`keys`/`admin` (`env-keys` is a back-compat alias for `keys`; workspace verbs
 `hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
-marketplace or direct plugin/skill source), `plugin` and `skill`
+marketplace or direct skill source) and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs
 via `--target`, no Environment/CRD ceremony). `env` is the governed remote
-object; `repo`/`plugin`/`skill` are the local-first quick path.
+object; `repo`/`skill` are the local-first quick path. The `plugin` subcommand
+and `repo`'s plugin/plugin-marketplace lenses are **NOT registered** while
+`featuregate.PluginsEnabled=false` (only `repo` + `skill` ship under `local`).
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
@@ -364,12 +385,13 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   topology via `deploy/helm/ach/values.yaml` `*.enabled` flags. Each Deployment
   carries `args: ["<mode>"]`.
 - **Environment two-axis status**: `ExecutionResourcesResolved`
-  (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
-  content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
+  (Prompt/Artifact/**Skill** closed-set — `Plugin` is gated off, so
+  `context.plugins` refs are SKIPPED, not failed, and no longer gate this
+  condition; `context.skills` is content-gated) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`). Composite `Available=True`
   rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
 - **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
-  mirrors **Plugin** end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
+  mirrors the (now-gated-off) **Plugin** pipeline end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
   `skill/<name>.tar.gz` → `skills` projection → content-service
   `/content/skill/{name}` gzip). On hydrate it rides the plugin-mirrored stage
   root: extract to `<tmp>/skill/<name>`, nest under a synthetic `skills/<name>/`,
@@ -424,7 +446,9 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
 - **Dex SSO**: WebFetch `https://dexidp.io/docs/` (OIDC connector/discovery).
 - **goreleaser v2**: https://goreleaser.com — watch the `dockers` → `dockers_v2`
   migration (deferred; configs validate today).
-- **Claude Code plugin / marketplace schemas**: JSON Schemas at schemastore.org
+- **Claude Code plugin / marketplace schemas** (DORMANT —
+  `featuregate.PluginsEnabled=false`; mechanics below apply only to the
+  re-enabled build): JSON Schemas at schemastore.org
   (narrative: code.claude.com/docs/en/plugin-marketplaces). The parser
   (`internal/controller/ach/marketplace_parse.go`) follows the real schema with
   one drift ack: `url`-Kind entries carry an optional `path` (→ `git-subdir`).
@@ -457,7 +481,9 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   subtree's contents (git on-disk via `git.tarSubtree`; legacy REST via
   `sources.NarrowArchiveSubtree`), a single **file** returns its raw bytes
   (Prompt, Artifact `scope=object`). Applies to the served/hydrated objects:
-  `Plugin`, `Skill`, `Artifact`, `Prompt`. The fetcher infers file-vs-dir from
+  `Skill`, `Artifact`, `Prompt` (and `Plugin` when re-enabled —
+  `featuregate.PluginsEnabled` is currently false, so its fetch/serve path is
+  dormant). The fetcher infers file-vs-dir from
   the path shape (Artifact `scope` is orthogonal — it only drives cache-file
   naming; a CR's `scope` should match its path target). DISCOVERY kinds
   (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and

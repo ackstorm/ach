@@ -5,7 +5,19 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ackstorm/ach/internal/featuregate"
 )
+
+// localHelpLine is the rootCmd help-text summary for the `local` parent. The
+// `plugin` child is gated behind featuregate.PluginsEnabled, so the noun list
+// drops "plugin" when the flag is off.
+func localHelpLine() string {
+	if featuregate.PluginsEnabled {
+		return "  local        Local, ungoverned package path (repo/plugin/skill)"
+	}
+	return "  local        Local, ungoverned package path (repo/skill)"
+}
 
 // Version is overridden via -ldflags at build time (see Makefile build target).
 var Version = "dev"
@@ -23,7 +35,7 @@ control plane. Subcommands:
   env          Inspect environments; hydrate/status/uninstall workspace
   env-keys     Create / list / revoke environment keys
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
-  local        Local, ungoverned package path (repo/plugin/skill)
+` + localHelpLine() + `
 
 For service-mode commands (operator, platform-api, forwarder,
 content-service, migrate), use the 'ach' binary instead.`,

@@ -19,7 +19,7 @@ import (
 )
 
 // forceRefreshAndAssert drives one §11a-shape round trip for an
-// external-reference CR (Plugin / Prompt / Artifact / PluginMarketplace):
+// external-reference CR (Prompt / Artifact / Skill):
 //
 //  1. Snapshot status.upstreamRev and status.lastSuccessfulRefresh.
 //  2. kubectl annotate <kind>/<name> ach.ackstorm.ai/force-refresh=now --overwrite
@@ -207,91 +207,10 @@ func assertBIPNameConflict(t *testing.T, name, winnerName string, timeout time.D
 		strings.TrimSpace(lastStatus), strings.TrimSpace(lastMsg))
 }
 
-// applyPhase4MarketplaceServer brings up the in-cluster nginx-backed
-// fixture server for §11c:
-//  1. Create ConfigMap mkt-phase4-fixture with marketplace.json keyed
-//     off the file at test/e2e/fixtures/phase4_marketplace_internal.json.
-//  2. Apply Deployment + Service mkt-test-server (nginx:alpine, ports 80).
-//  3. Wait for the Deployment Ready.
-//
-// Registers t.Cleanup to tear everything down. Idempotent — if the
-// ConfigMap/Deployment already exists from a previous run, re-apply
-// updates them in place.
-//
-// The namespace (E2E_NAMESPACE, default ach-system) MUST already exist
-// (created by scripts/cluster.sh during cluster-up).
-func applyPhase4MarketplaceServer(t *testing.T) {
-	t.Helper()
-
-	// Create-from-file pattern: kubectl create configmap with
-	// --dry-run=client -o yaml | kubectl apply is the idempotent
-	// pattern (plain `kubectl create` errors on AlreadyExists).
-	cmYAML, err := runCmd("kubectl", "create", "configmap", "mkt-phase4-fixture",
-		"-n", namespace,
-		"--from-file=marketplace.json=../../test/e2e/fixtures/phase4_marketplace_internal.json",
-		"--dry-run=client", "-o", "yaml",
-	)
-	if err != nil {
-		t.Fatalf("§11c configmap dry-run: %v\n%s", err, cmYAML)
-	}
-	if out, err := runCmdStdin("kubectl apply -f -", cmYAML); err != nil {
-		t.Fatalf("§11c configmap apply: %v\n%s", err, out)
-	}
-
-	// Deployment + Service yaml inline (avoids a second fixture file).
-	srvYAML := `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mkt-test-server
-  namespace: ` + namespace + `
-spec:
-  replicas: 1
-  selector:
-    matchLabels: { app: mkt-test-server }
-  template:
-    metadata:
-      labels: { app: mkt-test-server }
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:alpine
-        ports: [{ containerPort: 80 }]
-        volumeMounts:
-        - { name: fixture, mountPath: /usr/share/nginx/html }
-      volumes:
-      - name: fixture
-        configMap:
-          name: mkt-phase4-fixture
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mkt-test-server
-  namespace: ` + namespace + `
-spec:
-  selector: { app: mkt-test-server }
-  ports: [{ port: 80, targetPort: 80 }]
-`
-	if out, err := runCmdStdin("kubectl apply -f -", srvYAML); err != nil {
-		t.Fatalf("§11c server apply: %v\n%s", err, out)
-	}
-
-	if out, err := runCmdLonger(60*time.Second,
-		"kubectl", "rollout", "status", "-n", namespace,
-		"deployment/mkt-test-server", "--timeout=60s",
-	); err != nil {
-		t.Fatalf("§11c server rollout: %v\n%s", err, out)
-	}
-
-	t.Cleanup(func() {
-		_, _ = runCmd("kubectl", "delete", "deployment", "mkt-test-server",
-			"-n", namespace, "--wait=false", "--ignore-not-found")
-		_, _ = runCmd("kubectl", "delete", "service", "mkt-test-server",
-			"-n", namespace, "--wait=false", "--ignore-not-found")
-		_, _ = runCmd("kubectl", "delete", "configmap", "mkt-phase4-fixture",
-			"-n", namespace, "--wait=false", "--ignore-not-found")
-	})
-}
+// (applyPhase4MarketplaceServer was removed alongside the SC11c / SC11f
+// PluginMarketplace subtests: the PluginMarketplace kind is disabled behind
+// featuregate.PluginsEnabled=false and its CRD is no longer shipped in the
+// chart, so the in-cluster marketplace fixture-server has no consumer.)
 
 // getOperatorPodUID returns the metadata.uid of the running ach-operator
 // Pod. The Helm chart installs deploy/ach-operator into the release

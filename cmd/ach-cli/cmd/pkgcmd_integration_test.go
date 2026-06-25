@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // makeWorkingPluginRepo creates a NON-bare git working repo whose root is a
@@ -251,6 +252,9 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 // update reports a SHA change, the new file appears, the changed file content is
 // updated, and installed.json's resolvedSHA changed.
 func TestPluginCmd_Update_SHADrift(t *testing.T) {
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled")
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not on PATH")
 	}

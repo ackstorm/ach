@@ -51,6 +51,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // allPlatformExpect is the per-adapter projection contract this suite
@@ -144,6 +146,17 @@ var demoMCPServerIDs = []string{"demo-mcp-jwt", "demo-mcp-nojwt"}
 // config + skills + agents + commands — landed in each adapter's native
 // locations. Self-mints a pk_ when ACH_E2E_PHASE7_PK is unset.
 func TestPhase7AllPlatformsProjection(t *testing.T) {
+	// Every assertion in this suite is derived from the demo Environment's
+	// `caveman` PLUGIN (its bundled skills, agents, and commands —
+	// demoPluginSkills, cavecrew-builder, caveman.toml). With plugins disabled
+	// the demo env projects no plugin, so there is nothing to assert here. The
+	// standalone Skill-CR projection path (pdf/docx/pdf@anthropic-skills) stays
+	// covered LIVE by TestPhase7CLIEngine/sc5_skill_projection
+	// (cli_hydrate_engine_test.go), which does not depend on caveman. Flip
+	// featuregate.PluginsEnabled to re-activate this suite.
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled (caveman plugin projection); Skill-CR projection stays covered by sc5_skill_projection")
+	}
 	phase7SuiteGuard(t)
 	phase7DemoEnvironmentReady(t)
 

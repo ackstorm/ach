@@ -12,6 +12,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
 	"github.com/ackstorm/ach/internal/contentkit"
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // Lens string values.
@@ -47,7 +48,12 @@ func Detect(tarball []byte, skillsRootHint string) (caps []store.Capability, ski
 	if found {
 		mkt, err := contentkit.ParseClaudeCodeMarketplace(mktBytes)
 		if err == nil {
-			caps = append(caps, store.Capability{Lens: LensPluginMarketplace, Count: len(mkt.Plugins)})
+			// A parsed marketplace still drives skill-marketplace detection
+			// (Step 2 reads the same tree); only the plugin-marketplace lens
+			// is gated behind featuregate.PluginsEnabled.
+			if featuregate.PluginsEnabled {
+				caps = append(caps, store.Capability{Lens: LensPluginMarketplace, Count: len(mkt.Plugins)})
+			}
 			hasMarketplace = true
 		}
 	}
@@ -69,7 +75,9 @@ func Detect(tarball []byte, skillsRootHint string) (caps []store.Capability, ski
 	}
 
 	// Step 3: plugin (direct) — only if no marketplace.json was found.
-	if !hasMarketplace {
+	// Gated behind featuregate.PluginsEnabled so a registered repo never
+	// advertises a plugin lens that has no install path.
+	if featuregate.PluginsEnabled && !hasMarketplace {
 		if err := contentkit.VerifyPluginContents(bytes.NewReader(tarball)); err == nil {
 			caps = append(caps, store.Capability{Lens: LensPlugin, Count: 1})
 		}

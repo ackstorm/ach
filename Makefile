@@ -576,6 +576,10 @@ helm-sync: gen-manifests ## Sync generated CRDs into the Helm chart's crd-source
 	# CRDs and the user's CR data.
 	cp -f config/crd/bases/ach.ackstorm.ai_*.yaml deploy/helm/ach/crd-sources/
 	python3 scripts/helm-inject-crd-annotation.py deploy/helm/ach/crd-sources/*.yaml
+	# Plugin/PluginMarketplace are gated off via featuregate.PluginsEnabled —
+	# the chart must not ship their CRDs (they remain in config/crd/bases for
+	# envtest + codegen). rm-after-copy yields a deterministic excluded set.
+	rm -f deploy/helm/ach/crd-sources/ach.ackstorm.ai_plugins.yaml deploy/helm/ach/crd-sources/ach.ackstorm.ai_pluginmarketplaces.yaml
 
 .PHONY: helm-sync-check
 helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD drift in the chart.

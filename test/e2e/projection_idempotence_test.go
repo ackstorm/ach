@@ -56,12 +56,23 @@ import (
 	"encoding/hex"
 	"os"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // TestProjectionIdempotence is the single top-level umbrella for the per-adapter
 // re-hydrate idempotence + auto-claim matrix. One subtest per canonical adapter
 // id; order mirrors the 06-02 projectionDescriptors table / TestProjectionLifecycle.
 func TestProjectionIdempotence(t *testing.T) {
+	// Idempotence is proven over the demo Environment's `caveman` PLUGIN
+	// projection (the snapshotProjectedFiles byte-no-op + Plugins[] state). With
+	// plugins disabled there is no plugin projection to re-hydrate. The Skill-CR
+	// projection path stays covered LIVE by
+	// TestPhase7CLIEngine/sc5_skill_projection. Flip featuregate.PluginsEnabled
+	// to re-activate.
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled (caveman plugin projection idempotence); Skill-CR projection stays covered by sc5_skill_projection")
+	}
 	for _, d := range projectionDescriptors {
 		d := d
 		t.Run(d.platformID, func(t *testing.T) {

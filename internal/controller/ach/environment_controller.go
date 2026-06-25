@@ -29,6 +29,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/litellm"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/pluginref"
@@ -393,6 +394,11 @@ const pluginUnresolvedRequeueAfter = 30 * time.Second
 // Guarded on r.DB != nil so nil-DB unit/envtest paths are unaffected;
 // production reconciles always have DB wired.
 func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
+	if !featuregate.PluginsEnabled {
+		// Plugins are disabled at compile time: context.plugins refs never
+		// gate ExecutionResourcesResolved.
+		return nil, nil
+	}
 	if r.DB == nil {
 		return nil, nil
 	}

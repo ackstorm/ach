@@ -19,12 +19,24 @@ first, then walk the matrix.
 
 ## Archetypes
 
+> **Note — `Plugin` / `PluginMarketplace` are currently DISABLED** via the
+> compile-time const `featuregate.PluginsEnabled = false` (`internal/featuregate`):
+> their CRDs are not shipped, the operator does not wire their reconcilers, and
+> the surfaces below are dead-code-eliminated. They REMAIN in the tree (types,
+> reconcilers, DB tables) and are still the canonical reference examples for the
+> **object** and **discovery** archetypes — the archetype guidance applies
+> unchanged when the flag is flipped back on (+ `make helm-sync`). `Skill` /
+> `SkillMarketplace` are the live twins.
+
 | Archetype | Kinds | One-line shape |
 |-----------|-------|----------------|
-| **object** | `Plugin`, `Skill`, `Artifact`, `Prompt` | Fetched, validated, cached, served, hydrated. Path **narrows at fetch** (F1). |
-| **discovery** | `PluginMarketplace`, `SkillMarketplace` | Fetches the **whole repo**, tree-walks it, slices each discovered item into its own tarball + inventory entry. Opts OUT of fetch-narrowing (`withoutGitPath`). |
+| **object** | `Plugin`† , `Skill`, `Artifact`, `Prompt` | Fetched, validated, cached, served, hydrated. Path **narrows at fetch** (F1). |
+| **discovery** | `PluginMarketplace`† , `SkillMarketplace` | Fetches the **whole repo**, tree-walks it, slices each discovered item into its own tarball + inventory entry. Opts OUT of fetch-narrowing (`withoutGitPath`). |
 | **governance** | `Environment`, `BackendIdentityPolicy` | No content of its own; resolves/gates references and drives downstream state (LiteLLM access-groups, forwarder RBAC/JWT mint). |
 | **config singleton** | `LiteLLMConnection` | Cluster-level configuration the operator reads; not served, not hydrated, not inventoried. |
+
+† Disabled in the current build (`featuregate.PluginsEnabled = false`) — retained
+as the archetype reference example; re-enable with the const flip + `make helm-sync`.
 
 ## The 11 surfaces
 

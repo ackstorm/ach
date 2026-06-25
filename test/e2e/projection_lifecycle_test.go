@@ -52,11 +52,22 @@ package e2e
 
 import (
 	"testing"
+
+	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // TestProjectionLifecycle is the single top-level umbrella for the per-adapter
 // projection + lifecycle e2e matrix. One subtest per canonical adapter id.
 func TestProjectionLifecycle(t *testing.T) {
+	// The whole matrix projects the demo Environment's `caveman` PLUGIN
+	// (agents/commands/skills + state.json Plugins[]). With plugins disabled the
+	// demo env projects no plugin, so every assertion here is inapplicable. The
+	// standalone Skill-CR projection stays covered LIVE by
+	// TestPhase7CLIEngine/sc5_skill_projection. Flip featuregate.PluginsEnabled
+	// to re-activate.
+	if !featuregate.PluginsEnabled {
+		t.Skip("plugins disabled via featuregate.PluginsEnabled (caveman plugin projection lifecycle); Skill-CR projection stays covered by sc5_skill_projection")
+	}
 	for _, d := range projectionDescriptors {
 		d := d
 		t.Run(d.platformID, func(t *testing.T) {

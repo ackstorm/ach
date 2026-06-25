@@ -57,7 +57,9 @@ ach/
 │       │      ach-gateway pod; it is NOT the primary router anymore)
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
-│       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
+│       │                    matrix: {prompt,artifact}-{valid,invalid};
+│       │                    the plugin/marketplace fixtures were REMOVED —
+│       │                    plugins are gated off via featuregate.PluginsEnabled)
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
@@ -71,9 +73,11 @@ fixtures** — the complete demo-ready ACH object set `scripts/cluster.sh`
 applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
 step). The e2e suite **asserts** against this synced state; tests do NOT apply
 their own copies of these objects. The set includes a **valid/invalid matrix**
-for the content-service exercise (`plugin-valid`/`plugin-invalid`,
-`prompt-valid`/`prompt-invalid`, `artifact-valid`/`artifact-invalid`,
-`env-valid`): `verify_all` gates the valid half to its healthy condition
+for the content-service exercise (`prompt-valid`/`prompt-invalid`,
+`artifact-valid`/`artifact-invalid`, `env-valid`; the former
+`plugin-valid`/`plugin-invalid` fixtures were removed — `Plugin` is gated off
+via `featuregate.PluginsEnabled`, and the plugin CRDs are no longer shipped in
+the chart's `crd-sources/`): `verify_all` gates the valid half to its healthy condition
 (`SourceReachable`/`Available`) and the invalid half to its **expected failure
 state** (`SourceReachable=False`, nonexistent upstream), so "everything is in
 its known state" before tests run. `env-team-denied` is a third Environment
