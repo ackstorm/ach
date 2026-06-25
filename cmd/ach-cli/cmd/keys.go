@@ -581,6 +581,7 @@ invalidate the current session (e.g. rotating credentials).
 func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
+	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
@@ -678,6 +679,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 		}
 		return doErr
 	}
+	_, _ = fmt.Fprintf(stdout, "Revoked %s\n", keyID)
 	return nil
 }
 
