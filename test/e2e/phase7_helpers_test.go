@@ -39,7 +39,7 @@
 //   - phase7RunAchCliEnv:      env-augmented variant (sc2 SIGKILL seam,
 //                              sc4 bomb ACH_MAX_EXTRACTED_PLUGIN_MIB).
 //   - phase7SeedXdgConfig:     write the synthetic config + return paths.
-//   - phase7CreateEkKey:       mint an ek_ via `ach-cli env-keys create`.
+//   - phase7CreateEkKey:       mint an ek_ via `ach-cli keys create`.
 //   - phase7DemoEnvironmentReady: kubectl wait for the demo Environment.
 //   - phase7Workspace:         t.TempDir + .claude/ scaffold.
 //   - phase7BaseURL:           ACH_E2E_PHASE7_BASE_URL or localhost:8080.
@@ -263,7 +263,7 @@ func phase7SeedXdgConfig(t *testing.T, baseURL, pk string) string {
 	return tmp
 }
 
-// phase7CreateEkKey runs `ach-cli env-keys create --environment demo
+// phase7CreateEkKey runs `ach-cli keys create --environment demo
 // --name <label>` against the seeded XDG_CONFIG_HOME and returns the
 // minted ek_ plaintext. Used by the sc1_*_ek subtests to exercise the
 // ek_ credential path — pk_-only subtests do NOT call this helper.
@@ -284,7 +284,7 @@ func phase7CreateEkKey(t *testing.T, xdgHome, label string) string {
 		t.Fatalf("phase7CreateEkKey: label must be non-empty")
 	}
 	stdout, stderr, err := phase7RunAchCli(t, xdgHome,
-		"env-keys", "create",
+		"keys", "create",
 		"--environment", phase7DemoEnvironment,
 		"--name", label,
 	)
@@ -294,7 +294,7 @@ func phase7CreateEkKey(t *testing.T, xdgHome, label string) string {
 			runErr, stdout, stderr)
 	}
 	if code != 0 {
-		t.Fatalf("phase7CreateEkKey: ach-cli env-keys create exit %d (want 0)\n"+
+		t.Fatalf("phase7CreateEkKey: ach-cli keys create exit %d (want 0)\n"+
 			"stdout=%s\nstderr=%s", code, stdout, stderr)
 	}
 	ek := phase7ParseEkPlaintext(stdout)
@@ -306,7 +306,7 @@ func phase7CreateEkKey(t *testing.T, xdgHome, label string) string {
 }
 
 // phase7ParseEkPlaintext extracts the ek_<...> token from `ach-cli
-// env-keys create` stdout. The CLI prints a multi-line block including
+// keys create` stdout. The CLI prints a multi-line block including
 // a freshly-minted ek_ plaintext; this helper locates the first
 // whitespace-delimited token starting with "ek_" and returns it.
 // Returns "" when no token is found — the caller fails the subtest.

@@ -44,7 +44,7 @@ import (
 
 // TestPhase6CLI is the single top-level umbrella for the Phase 6 CLI
 // e2e suite. Each subtest maps to one of the load-bearing CLI flows
-// the Phase 6 plans landed (login → whoami → env list → env-keys
+// the Phase 6 plans landed (login → whoami → env list → keys
 // create → hydrate). The hydrate-golden-diff subtest is the headline
 // invariant — the byte-for-byte assertion vs examples/hydrate.json
 // (normalized for cluster host) is what the demo collapse hangs on.
@@ -156,7 +156,7 @@ func testPhase6EnvList(t *testing.T) {
 	}
 }
 
-// testPhase6EnvKeysCreate asserts `ach env-keys create --environment
+// testPhase6EnvKeysCreate asserts `ach keys create --environment
 // demo --name e2e-test-key` exits 0 and stdout includes a freshly-minted
 // ek_ plaintext (the one-time return per CLI-04 / D-07).
 //
@@ -180,22 +180,22 @@ func testPhase6EnvKeysCreate(t *testing.T) {
 	xdg := phase6WriteTempConfig(t, baseURL, pk)
 
 	stdout, stderr, err := phase6RunAch(t, xdg,
-		"env-keys", "create",
+		"keys", "create",
 		"--environment", phase6DemoEnvironment,
 		"--name", "e2e-test-key",
 	)
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
-		t.Fatalf("ach env-keys create: exec error: %v\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach keys create: exec error: %v\nstdout=%s\nstderr=%s",
 			runErr, stdout, stderr)
 	}
 	if code != 0 {
-		t.Fatalf("ach env-keys create: exit %d (want 0)\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach keys create: exit %d (want 0)\nstdout=%s\nstderr=%s",
 			code, stdout, stderr)
 	}
 	// Mint must surface the ek_ plaintext exactly once per CLI-04.
 	if !phase6Contains(stdout, "ek-") {
-		t.Errorf("ach env-keys create: stdout missing minted ek_ plaintext; got=%s", stdout)
+		t.Errorf("ach keys create: stdout missing minted ek_ plaintext; got=%s", stdout)
 	}
 }
 

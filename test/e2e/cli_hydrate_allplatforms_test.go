@@ -197,7 +197,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		})
 	}
 
-	// ek_ credential path: prove `env-keys create` mints an ek_ and that
+	// ek_ credential path: prove `keys create` mints an ek_ and that
 	// `hydrate --env-key <label>` projects with it. --environment is required
 	// (D1: engine state is namespaced by environment) even for ek_. One
 	// platform is enough to exercise the credential branch.
@@ -206,7 +206,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		xdg := phase7SeedXdgConfig(t, baseURL, pk)
 		ek := phase7CreateEkKey(t, xdg, "allplatforms-ek")
 		if !strings.HasPrefix(ek, "ek-") {
-			t.Fatalf("ek_path: env-keys create returned %q (want ek_ prefix)", ek)
+			t.Fatalf("ek_path: keys create returned %q (want ek_ prefix)", ek)
 		}
 		output := t.TempDir()
 		// --environment is now required for any engine run (D1: the engine

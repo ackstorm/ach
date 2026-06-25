@@ -32,7 +32,7 @@
 // + Redis + Dex via scripts/cluster.sh, then runs
 // scripts/uat-phase3.sh which spawns an in-binary `go run
 // ./cmd/platform-api` against the live cluster's services with the
-// Phase 3 env-var set, drives the SSO → env-keys → revoke →
+// Phase 3 env-var set, drives the SSO → keys → revoke →
 // admin-refresh round-trip, and asserts the OBS-02 audit-line shape.
 // `scripts/uat-phase3.sh` is the canonical live UAT runner.
 
@@ -181,9 +181,9 @@ func testPhase3SC2Hydrate(t *testing.T) {
 	phase3AssertNoPlaintextInLine(t, string(body))
 }
 
-// ─── SC#3: env-keys §8.2 8-step + Phase 02.2 D-02 closure ────────────
+// ─── SC#3: keys §8.2 8-step + Phase 02.2 D-02 closure ────────────
 //
-// POST /platform/env-keys verifies Environment non-terminating (else
+// POST /platform/keys verifies Environment non-terminating (else
 // `404 environment_not_found`), waits for `AccessGroupSynced=True`
 // (else `503 not_ready`), idempotent verify-or-create LiteLLM user,
 // create-then-insert with rollback. Returns `key_id=ekid_…` +
@@ -195,7 +195,7 @@ func testPhase3SC2Hydrate(t *testing.T) {
 // directly from the DB.
 //
 // e2e probe shape (engineer-pending):
-//  1. Drive SSO + env-keys create via scripts/uat-phase3.sh OR
+//  1. Drive SSO + keys create via scripts/uat-phase3.sh OR
 //     assume a prior live UAT run populated the DB.
 //  2. Query db.ListActiveACHKeyTokens via kubectl exec against the
 //     ach-postgres Pod using the migrate binary as a psql proxy:
@@ -277,15 +277,15 @@ func testPhase3SC3EnvKeysCreate(t *testing.T) {
 // `pk_` via `/platform/admin/keys/revoke` → Postgres flip FIRST then
 // LiteLLM then Redis (DB is visible barrier per KEY-07 + WARN-04).
 // `ek_` revoke calls LiteLLM FIRST then DB flip then Redis (LiteLLM
-// is runtime barrier per KEY-08). `DELETE /platform/env-keys/{key_id}`
+// is runtime barrier per KEY-08). `DELETE /platform/keys/{key_id}`
 // returns 204 only after LiteLLM ack.
 //
 // e2e probe shape (engineer-pending):
-//  1. Drive SSO + env-keys create (via uat-phase3.sh) to mint a pk_
+//  1. Drive SSO + keys create (via uat-phase3.sh) to mint a pk_
 //     + an ek_.
 //  2. Drive `/platform/admin/keys/revoke` with the pk_; query DB
 //     directly: status='revoked' on the row.
-//  3. Drive `DELETE /platform/env-keys/{ekid_}` with the pk_; assert
+//  3. Drive `DELETE /platform/keys/{ekid_}` with the pk_; assert
 //     204.
 //
 // The static line-ordering assertion (Plan 03-10's awk gate proving
@@ -399,7 +399,7 @@ func testPhase3SC6AuditCrossCutting(t *testing.T) {
 			"SC#6 OBS-02: zero audit records captured from the deployed " +
 				"Platform API. This is expected when no Phase 3 state-" +
 				"changing operations have been driven against the cluster. " +
-				"Run scripts/uat-phase3.sh to drive an SSO → env-keys → " +
+				"Run scripts/uat-phase3.sh to drive an SSO → keys → " +
 				"revoke → admin/refresh sequence and re-run this subtest " +
 				"to assert audit-line shapes end-to-end.")
 		return
