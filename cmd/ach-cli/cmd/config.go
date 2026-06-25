@@ -73,6 +73,7 @@ env, so the on-disk registry has no role.
 		newConfigUseCmd(),
 		newConfigRemoveCmd(),
 		newConfigRenameCmd(),
+		newConfigRmEKCmd(),
 	)
 	return parent
 }
@@ -459,6 +460,55 @@ func runConfigAdd(
 	}
 	_, _ = fmt.Fprintf(stdout, "added profile %s (%s)\n", name, config.Mask(apiKey))
 	return nil
+}
+
+// newConfigRmEKCmd returns the `ach config rm-ek <label>` leaf — removes a
+// single ek_ label from the active (or --profile) profile's saved key map.
+// Use after `keys revoke <ekid_…>` to drop the now-dead local entry (the
+// profile stores the ek_ plaintext, not the key id, so revoke can't match it).
+func newConfigRmEKCmd() *cobra.Command {
+	var flagProfile string
+	cmd := &cobra.Command{
+		Use:   "rm-ek <label>",
+		Short: "Remove one saved environment-key (ek_) label from a profile",
+		Long: `Delete a single ek_ label from the active profile's saved keys.
+
+Use this after 'keys revoke <ekid_…>' to drop the now-dead local label
+(the server revoke cannot match the local label automatically, since the
+profile stores the ek_ plaintext, not its key id).`,
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			label := args[0]
+			cfgPath, err := config.Path()
+			if err != nil {
+				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+			}
+			file, err := config.Load(cfgPath)
+			if err != nil {
+				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+			}
+			name, prof, err := config.ResolveActive(file, flagProfile, "")
+			if err != nil {
+				return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+			}
+			if _, ok := prof.EK[label]; !ok {
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  fmt.Sprintf("no ek label %q in profile %s", label, name),
+				}
+			}
+			delete(prof.EK, label)
+			if err := config.Save(cfgPath, file); err != nil {
+				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Removed ek label %q from profile %s\n", label, name)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
+	return cmd
 }
 
 // loadConfigForCmd loads the config file via the canonical Path +

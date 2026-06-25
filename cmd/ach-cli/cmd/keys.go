@@ -680,6 +680,9 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 		return doErr
 	}
 	_, _ = fmt.Fprintf(stdout, "Revoked %s\n", keyID)
+	if strings.HasPrefix(keyID, keys.EkidKeyIDPrefix) {
+		_, _ = fmt.Fprintln(stdout, "  If you saved this key under a profile label, drop it with: ach config rm-ek <label>")
+	}
 	return nil
 }
 
