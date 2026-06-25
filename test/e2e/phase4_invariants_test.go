@@ -47,7 +47,7 @@ func TestPhase4Invariants(t *testing.T) {
 	t.Run("SC1_HeaderRewrite", testPhase4SC1HeaderRewrite)
 	t.Run("SC2_McpA2aPrecheck", testPhase4SC2McpA2aPrecheck)
 	t.Run("SC2_EkTagInjection", testPhase4SC2EkTagInjection)
-	t.Run("SC3_JwtMintAndBipAlphaLast", testPhase4SC3JwtMintAndBipAlphaLast)
+	t.Run("SC3_JwtMintAndBipAlphaFirst", testPhase4SC3JwtMintAndBipAlphaFirst)
 	t.Run("SC4_JwksAndSecretRbac", testPhase4SC4JwksAndSecretRbac)
 }
 
@@ -289,16 +289,18 @@ func driveV1ToBackend(t *testing.T, forwarderURL, key, marker, mockLocal string)
 	return snap
 }
 
-// testPhase4SC3JwtMintAndBipAlphaLast — two throwaway BIPs targeting the SAME
+// testPhase4SC3JwtMintAndBipAlphaFirst — two throwaway BIPs targeting the SAME
 // MCPServer route with different forwardIdentityJWT values; the forwarder mints
-// (or not) for the alphabetically-LAST metadata.name, and the ach-mcp-echo
-// /__capture/last endpoint proves which won via jwt_present/jwt_claims. Adding
-// an even-later opt-out BIP flips the winner — the "alpha-last lock-in".
+// (or not) for the alphabetically-FIRST metadata.name (frozen alpha-FIRST
+// tiebreak, G15 — internal/forwarder/bipcache/cache.go Resolve), and the
+// ach-mcp-echo /__capture/last endpoint proves which won via
+// jwt_present/jwt_claims. Adding an even-EARLIER opt-in BIP flips the winner —
+// precedence is purely metadata.name ordering.
 //
 // Both BIPs target demo-mcp-jwt (the synced JWT route, mcp-echo backend with
-// requireJwt=false) and sort AFTER the synced bip-demo-mcp-jwt, so they own the
+// requireJwt=false) and sort BEFORE the synced bip-demo-mcp-jwt, so they own the
 // tiebreak. t.Cleanup removes them, restoring the route to its synced baseline.
-func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
+func testPhase4SC3JwtMintAndBipAlphaFirst(t *testing.T) {
 	phase4SuiteGuard(t)
 
 	if err := waitDeploymentReady(t, phase4Namespace, mcpEchoDeployment, 15*time.Second); err != nil {
@@ -314,30 +316,30 @@ func testPhase4SC3JwtMintAndBipAlphaLast(t *testing.T) {
 	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
 
 	const route = bipJWTRouteName // demo-mcp-jwt
-	// Names sort after the synced bip-demo-mcp-jwt ('b' < 'z'); among the
-	// throwaways, "aaa" < "zzz" so zzz is alpha-last.
+	// Names sort before the synced bip-demo-mcp-jwt ('a' < 'b'); among the
+	// throwaways, "000" < "aaa" < "mmm" ('0' < 'a' < 'm') so "000" is alpha-first.
 	const (
-		bipAaaOn  = "zz-sc3-aaa-jwt-on"  // forwardIdentityJWT: true  (earlier name)
-		bipZzzOff = "zz-sc3-zzz-jwt-off" // forwardIdentityJWT: false (alpha-last)
-		bipZ2On   = "zz-sc3-zzz2-jwt-on" // sorts AFTER zzz-off; the flip
+		bipOff   = "aaa-sc3-aaa-jwt-off" // forwardIdentityJWT: false (alpha-first of the pair)
+		bipMmmOn = "aaa-sc3-mmm-jwt-on"  // forwardIdentityJWT: true  (later name)
+		bip0On   = "aaa-sc3-000-jwt-on"  // sorts BEFORE bipOff; the flip
 	)
 
-	// Orientation 1 — alpha-last is bipZzzOff (false): explicit opt-out wins
-	// over the earlier true BIPs (bip-demo-mcp-jwt + bipAaaOn) → NO mint.
-	sc3ApplyBIP(t, bipAaaOn, route, true)
-	sc3ApplyBIP(t, bipZzzOff, route, false)
-	t.Run("alpha_last_optout_suppresses_mint", func(t *testing.T) {
+	// Orientation 1 — alpha-first is bipOff (false): explicit opt-out wins
+	// over the later true BIPs (bipMmmOn + the synced bip-demo-mcp-jwt) → NO mint.
+	sc3ApplyBIP(t, bipMmmOn, route, true)
+	sc3ApplyBIP(t, bipOff, route, false)
+	t.Run("alpha_first_optout_suppresses_mint", func(t *testing.T) {
 		snap := sc3AssertJWTPresentEventually(t, gatewayLocal, mcpEchoLocal, pk, route, false)
 		if snap.AuthorizationSeen != "" {
-			t.Fatalf("alpha-last opt-out: authorization_seen=%q, want empty (no JWT forwarded)",
+			t.Fatalf("alpha-first opt-out: authorization_seen=%q, want empty (no JWT forwarded)",
 				snap.AuthorizationSeen)
 		}
 	})
 
-	// Orientation 2 — add bipZ2On, which sorts AFTER bipZzzOff and is true:
-	// the alpha-last winner flips back to mint. Proves the tiebreak is purely
-	// metadata.name ordering, not the value of any earlier policy.
-	sc3ApplyBIP(t, bipZ2On, route, true)
+	// Orientation 2 — add bip0On, which sorts BEFORE bipOff and is true:
+	// the alpha-first winner flips back to mint. Proves the tiebreak is purely
+	// metadata.name ordering, not the value of any later policy.
+	sc3ApplyBIP(t, bip0On, route, true)
 	t.Run("later_name_flips_winner_to_mint", func(t *testing.T) {
 		snap := sc3AssertJWTPresentEventually(t, gatewayLocal, mcpEchoLocal, pk, route, true)
 		if !strings.HasPrefix(snap.AuthorizationSeen, "Bearer ey") {

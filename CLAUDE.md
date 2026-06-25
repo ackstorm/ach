@@ -106,7 +106,7 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; caller-scoped pk self-revoke `DELETE /platform/keys/{id}` (owner==caller, NOT admin-gated; `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |

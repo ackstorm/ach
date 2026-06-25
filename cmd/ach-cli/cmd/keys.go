@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach keys` (alias: `env-keys`) manages the caller's API keys:
-// personal pk_ keys and environment ek_ keys. Three sub-subcommands:
-// create / list / revoke.
+// personal pk_ keys and environment ek_ keys. Four sub-subcommands:
+// create / list / revoke / prune.
 //
 // D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6
 // spec divergence): `ach keys create` ALWAYS persists the
@@ -24,11 +24,11 @@
 // envelope decoder in `httpclient` — no path leaks plaintext on
 // failure.
 //
-// CLI-13: `revoke` enforces the `ekid_…` key-id prefix CLIENT-side
-// BEFORE any HTTP call. Raw plaintext (`ek-…`) is rejected with a
-// message that surfaces the mistake to stderr; `pkid_…` is rejected
-// with a pointer to `ach admin keys revoke` (which W3-P2 / 06-08
-// will accept).
+// CLI-13: `revoke` enforces the `ekid_…` or `pkid_…` key-id prefix
+// CLIENT-side BEFORE any HTTP call. Raw plaintext (`ek-…`/`pk-…`) is
+// rejected with a message that surfaces the mistake to stderr.
+// `pkid_…` routes to DELETE /platform/keys/{id} (self-revoke of your
+// own personal key); `ekid_…` routes to DELETE /platform/env-keys/{id}.
 //
 // Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatKeyList`
 // — a single source of truth shared with `ach admin keys list`
@@ -39,12 +39,15 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -102,33 +105,49 @@ func newKeysCmd() *cobra.Command {
 		Use:     "keys",
 		Aliases: []string{"env-keys"}, // back-compat
 		Short:   "Manage your API keys (personal pk_ and environment ek_)",
-		Long: `Manage your API keys — personal pk_ keys and environment ek_ keys.
-All three sub-subcommands require pk- auth.
+		Long: `Manage your API keys.
 
-Sub-subcommands:
-  create  Issue a new ek- for an Environment (D-07: always-persists to
-          ~/.config/ach/config.yaml unless --no-save).
-  list    Paginate your pk_ and ek_ keys (GET /platform/keys — caller-scoped).
-  revoke  Delete an ek- by its ekid_ identifier.
+There are two kinds of key:
+  pk_   Your personal key — issued at login and stored in your active profile.
+        Used to authenticate all ach-cli commands.
+  ek_   An environment key — scoped to one Environment. Lets an agent runtime
+        (or a CI job) call the ACH forwarder without using your personal key.
 
-D-07 (spec deviation): ek- create ALWAYS persists the returned plaintext
-to profiles.<active>.ek.<server-name> in the active profile. The
-spec's --save-as flag is REMOVED; --no-save opts out (ek- flows to stdout
-only — useful for CI scripts piping ek- into a vault).
+All subcommands authenticate with your personal key (pk_) from the active
+profile. You can override it with --api-key or the ACH_API_KEY environment
+variable.
 
-D-08: In synthetic mode (ACH_BASE_URL + ACH_API_KEY both set), create
-without --no-save exits 1.
+Subcommands:
+  create  Issue a new environment key (ek_) and save it to your profile.
+  list    Show your pk_ and ek_ keys.
+  revoke  Permanently delete one of your own keys by its key ID (ekid_… or pkid_…).
+  prune   Bulk-delete old personal keys, keeping the N most recent.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
-	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd())
+	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd(), newKeysPruneCmd())
 	return parent
 }
 
 // ---------------------------------------------------------------------
 // create
+//
+// Engineering notes (not user-visible):
+//
+// D-07 DEVIATION FROM SPEC §5.6 (intentional, the ONLY Phase 6 spec divergence):
+// `ach keys create` ALWAYS persists the returned ek- plaintext to
+// profiles.<active>.ek.<server-name> in the active profile. The spec's
+// --save-as flag is removed; --no-save opts out of persist (ek- flows to
+// stdout only — for CI/vault-piping workflows). See:
+//   - .planning/REQUIREMENTS.md CLI-09 row (marked DEVIATED, D-07).
+//   - spec/ach_cli_spec_v20260515_FINALv4.md changelog (always-persist
+//     + --no-save entry).
+//
+// D-08: `ach keys create` in synthetic mode (ACH_BASE_URL + ACH_API_KEY)
+// requires --no-save — without it, the CLI exits 1 because synthetic mode
+// never has a writable config file.
 // ---------------------------------------------------------------------
 
 func newEnvKeysCreateCmd() *cobra.Command {
@@ -142,8 +161,31 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		flagVerbose     bool
 	)
 	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Issue a new ek- for an Environment (D-07 always-persists)",
+		Use:   "create <environment>",
+		Args:  cobra.MaximumNArgs(1),
+		Short: "Issue a new environment key (ek_) for an Environment",
+		Long: `Issue a new environment key (ek_) for the named Environment and save it to
+your active config profile.
+
+The key is printed to stdout exactly once. By default it is also stored under
+profiles.<active>.ek.<name> in ~/.config/ach/config.yaml so you can reference
+it later with --env-key <name>.
+
+Use --no-save to skip writing to the config file — the key is printed to stdout
+only. This is the right choice for CI pipelines and secrets managers that read
+from stdout.
+
+The --name flag sets a local label for the saved key. It defaults to the
+environment name, so in the common case you only need to pass the environment.
+`,
+		Example: `  # Issue a key for the frontend-dev environment (name defaults to "frontend-dev")
+  ach keys create frontend-dev
+
+  # Issue a key and store it under a custom label for easy reference later
+  ach keys create frontend-dev --name laptop
+
+  # Issue a key for CI — print to stdout only, do not write to config
+  ach keys create staging --no-save`,
 		// SilenceUsage + SilenceErrors: cobra otherwise echoes its
 		// Usage block (containing the "ek-" flag descriptions) to
 		// the writer attached via SetOut when a RunE returns
@@ -153,22 +195,89 @@ func newEnvKeysCreateCmd() *cobra.Command {
 		// (Pattern P12); the cobra-side echo is redundant.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// Resolve environment: positional wins; flag is fallback.
+			positional := ""
+			if len(args) > 0 {
+				positional = strings.TrimSpace(args[0])
+			}
+			flagEnv := strings.TrimSpace(flagEnvironment)
+
+			var resolvedEnv string
+			switch {
+			case positional != "" && flagEnv != "" && positional != flagEnv:
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  fmt.Sprintf("environment given twice (positional %q vs --environment %q)", positional, flagEnv),
+				}
+			case positional != "":
+				resolvedEnv = positional
+				flagEnvironment = positional
+			case flagEnv != "":
+				resolvedEnv = flagEnv
+			default:
+				// Neither positional nor flag provided: emit guided error.
+				msg := "missing environment.\n" +
+					"  Usage: ach keys create <environment> [--name <label>]\n" +
+					"  Example: ach keys create frontend-dev"
+				// Best-effort: append environment list (swallow any error).
+				if envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey); len(envNames) > 0 {
+					msg += "\n  Your environments:\n    " + strings.Join(envNames, ", ")
+				}
+				return &exit.CodedError{Code: exit.General, Msg: msg}
+			}
+
+			// Default --name to the resolved environment when unset.
+			if strings.TrimSpace(flagName) == "" {
+				flagName = resolvedEnv
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnvKeysCreate(cmd, flagEnvironment, flagName, flagNoSave,
 				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
-	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name (required)")
-	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (required)")
+	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Environment name")
+	cmd.Flags().StringVar(&flagName, "name", "", "Local label for the new ek- (defaults to environment name)")
 	cmd.Flags().BoolVar(&flagNoSave, "no-save", false,
-		"Do NOT persist ek- to ~/.config/ach/config.yaml (D-07 escape hatch)")
+		"Print the key to stdout only; do not save it to the config file")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label (rare for create)")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	_ = cmd.MarkFlagRequired("environment")
-	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+// fetchEnvNamesBestEffort attempts GET /platform/environments with a 5s
+// timeout and returns the list of environment names. Any failure
+// (no credentials, offline, non-200, timeout) is swallowed and an
+// empty slice is returned so callers can safely omit the list line.
+func fetchEnvNamesBestEffort(ctx context.Context, flagProfile, flagAPIKey, flagEnvKey string) []string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// resolveEnvKeysBearer reuses the existing credential resolution path.
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
+	if err != nil || baseURL == "" || bearer == "" {
+		return nil
+	}
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: keysHTTPClient,
+	}
+	var resp envListResponse
+	if doErr := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, ""), nil, &resp); doErr != nil {
+		return nil
+	}
+	names := make([]string, 0, len(resp.Items))
+	for _, e := range resp.Items {
+		if e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }
 
 func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
@@ -296,7 +405,7 @@ func newKeysListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:           "list",
-		Short:         "List your pk_ and ek_ keys (caller-scoped)",
+		Short:         "List your pk_ and ek_ keys",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -305,7 +414,7 @@ func newKeysListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&flagEnvironment, "environment", "", "Filter by environment name")
-	cmd.Flags().StringVar(&flagKeyType, "type", "", "Filter by type: pk|ek (default both)")
+	cmd.Flags().StringVar(&flagKeyType, "type", statusAll, "Filter by key type: pk|ek|all (default all)")
 	cmd.Flags().StringVar(&flagStatus, "status", "active", "Filter by status: active|revoked|expired|all (default active)")
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Opaque pagination cursor (auto-followed)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Per-page limit (server clamps; default 100, max 500)")
@@ -322,6 +431,17 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
+
+	// Validate --type before any network call.
+	switch keyType {
+	case "pk", "ek", statusAll, "":
+		// ok
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --type %q: must be pk, ek, or all", keyType),
+		}
+	}
 
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
 	// --profile, --env-key) — runs BEFORE resolveEnvKeysBearer so
@@ -376,10 +496,11 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 		q.Set("environment", environment)
 	}
 	// send status unless "" or "all" (server normalizes unknown to no filter)
-	if status != "" && status != "all" {
+	if status != "" && status != statusAll {
 		q.Set("status", status)
 	}
-	if keyType != "" {
+	// send type unless "" or "all" (mirrors status handling above)
+	if keyType != "" && keyType != statusAll {
 		q.Set("type", keyType)
 	}
 	if cursor != "" {
@@ -398,31 +519,58 @@ func buildKeysListPath(environment, keyType, status, cursor string, limit int) s
 // revoke
 // ---------------------------------------------------------------------
 
+// codeCannotRevokeActiveKey is the wire error code the platform-api returns
+// when the caller tries to revoke the pk_ key authenticating the current
+// session without ?force=true.
+const codeCannotRevokeActiveKey = "cannot_revoke_active_key"
+
 func newEnvKeysRevokeCmd() *cobra.Command {
 	var (
 		flagYes     bool
+		flagForce   bool
 		flagProfile string
 		flagAPIKey  string
 		flagEnvKey  string
 		flagVerbose bool
 	)
 	cmd := &cobra.Command{
-		// Bare `revoke` (no inline arg hint in `Use:`) so the
-		// `<key-id>` arg shape is documented purely via the
-		// Short/Long help text + the cobra.ExactArgs(1) gate.
-		// Keeps the `grep -c '"revoke"'` count == 3 in the
-		// 06-05 plan acceptance text.
-		Use:           "revoke",
-		Short:         "Revoke an ek- by its ekid_ identifier (CLI-13). Usage: ach keys revoke <ekid_…>",
+		Use:   "revoke",
+		Short: "Permanently revoke one of your own keys by its key ID (ekid_… or pkid_…)",
+		Long: `Permanently revoke one of your own API keys.
+
+Pass the key ID — either a personal key ID (pkid_…) or an environment key ID
+(ekid_…). The key ID is shown in the output of 'ach keys list'.
+
+  pkid_…  Your personal key. Revoking it invalidates the session token your
+           CLI currently uses. After revoking with --force, run 'ach login'
+           to obtain a new personal key.
+
+  ekid_…  An environment key scoped to one Environment. Safe to revoke at
+           any time; the Environment remains unaffected.
+
+The server rejects revoking the personal key that authenticates the current
+request unless you pass --force. Use --force only when you intend to
+invalidate the current session (e.g. rotating credentials).
+`,
+		Example: `  # Revoke an environment key
+  ach keys revoke ekid_01j0zxyz…
+
+  # Revoke an old personal key (not your current session key)
+  ach keys revoke pkid_01j0zabc…
+
+  # Revoke your current session key (forces invalidation; re-login required)
+  ach keys revoke pkid_01j0zabc… --force`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runEnvKeysRevoke(cmd, args[0], flagYes,
+			return runEnvKeysRevoke(cmd, args[0], flagYes, flagForce,
 				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
 	}
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "Bypass interactive confirmation")
+	cmd.Flags().BoolVar(&flagForce, "force", false,
+		"Allow revoking your current session's key (pkid_ only; re-login after)")
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
 	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
 	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
@@ -430,7 +578,7 @@ func newEnvKeysRevokeCmd() *cobra.Command {
 	return cmd
 }
 
-func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
+func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
 
 	stderr := cmd.ErrOrStderr()
@@ -449,28 +597,40 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 	}
 
 	// CLI-13: client-side key-id classification BEFORE any HTTP.
+	// pkid_ → DELETE /platform/keys/{id} (self-revoke personal key)
+	// ekid_ → DELETE /platform/env-keys/{id}
+	// raw plaintext (pk-/ek-) → reject immediately.
+	var deletePath string
 	switch {
 	case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
-		// ok — proceed.
+		// ekid_ → env-keys endpoint.
+		deletePath = "/platform/env-keys/" + keyID
+	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+		// pkid_ → personal keys self-revoke endpoint.
+		deletePath = "/platform/keys/" + keyID
+		if force {
+			deletePath += "?force=true"
+		}
 	case strings.HasPrefix(keyID, keys.EkBearerPrefix):
-		// Raw plaintext rejected.
+		// Raw ek- plaintext rejected.
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
 				"key id must be in %s form, got %s (raw plaintext rejected — CLI-13)",
 				keys.EkidKeyIDPrefix, keys.EkBearerPrefix),
 		}
-	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+	case strings.HasPrefix(keyID, keys.PkBearerPrefix):
+		// Raw pk- plaintext rejected.
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"ach keys revoke accepts only %s ids; use `ach admin keys revoke` for %s ids",
-				keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
+				"key id must be in %s form, got %s (raw plaintext rejected — CLI-13)",
+				keys.PkidKeyIDPrefix, keys.PkBearerPrefix),
 		}
 	default:
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("invalid key id %q; expected %s prefix", keyID, keys.EkidKeyIDPrefix),
+			Msg:  fmt.Sprintf("invalid key id %q; expected %s or %s prefix", keyID, keys.EkidKeyIDPrefix, keys.PkidKeyIDPrefix),
 		}
 	}
 
@@ -505,9 +665,195 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes bool,
 		Verbose:    verbose,
 		Stderr:     stderr,
 	}
-	if doErr := hc.Do(ctx, http.MethodDelete, "/platform/env-keys/"+keyID, nil, nil); doErr != nil {
+	doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
+	if doErr != nil {
+		// On 409 cannot_revoke_active_key: surface a friendly message.
+		var sErr *httpclient.ServerError
+		if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == codeCannotRevokeActiveKey {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     "this is the key your current session authenticates with; re-run with --force, then re-login afterward",
+				Wrapped: doErr,
+			}
+		}
 		return doErr
 	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+// prune
+// ---------------------------------------------------------------------
+
+func newKeysPruneCmd() *cobra.Command {
+	var (
+		flagKeep    int
+		flagDryRun  bool
+		flagYes     bool
+		flagProfile string
+		flagAPIKey  string
+		flagEnvKey  string
+		flagVerbose bool
+	)
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Delete old personal keys, keeping the N most recent",
+		Long: `Fetch all your personal keys (pk_), sort newest-first, and permanently
+revoke all but the N most recent (--keep N, default 1).
+
+This is a safe way to clean up stale personal keys that accumulate over time
+(one per login session). The server protects your current active key: if a
+prune target happens to be the key that authenticates this very request the
+server returns a 409 and prune skips it (counts as "skipped"), so the run
+never invalidates your current session.
+
+Use --dry-run to preview which keys would be revoked without making any
+changes. Without --yes you will be prompted for confirmation before
+revoking.
+`,
+		Example: `  # Preview which keys would be pruned (keeps the newest 1)
+  ach keys prune --dry-run
+
+  # Prune, keep the 2 most recent, skip confirmation prompt
+  ach keys prune --keep 2 --yes`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runKeysPrune(cmd, flagKeep, flagDryRun, flagYes,
+				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
+		},
+	}
+	cmd.Flags().IntVar(&flagKeep, "keep", 1, "Number of most-recent personal keys to keep")
+	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "Print what would be revoked; make no changes")
+	cmd.Flags().BoolVar(&flagYes, "yes", false, "Skip interactive confirmation")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
+	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
+	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "Override with stored ek- label")
+	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
+	return cmd
+}
+
+func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
+	flagProfile, flagAPIKey, flagEnvKey string, verbose bool) error {
+
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+	stdin := cmd.InOrStdin()
+	ctx := cmd.Context()
+
+	if keep < 0 {
+		return &exit.CodedError{Code: exit.General, Msg: "--keep must be >= 0"}
+	}
+
+	if err := synthetic.GuardCommand(synthetic.Params{
+		Gate:        synthetic.GateEnvKeysList,
+		APIKeyFlag:  flagAPIKey,
+		EnvKeyFlag:  flagEnvKey,
+		ProfileFlag: flagProfile,
+	}); err != nil {
+		return err
+	}
+
+	baseURL, bearer, err := resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
+	if err != nil {
+		return err
+	}
+
+	hc := &httpclient.Client{
+		BaseURL:    baseURL,
+		APIKey:     bearer,
+		HTTPClient: keysHTTPClient,
+		Verbose:    verbose,
+		Stderr:     stderr,
+	}
+
+	// Fetch all active pk_ keys (paginate).
+	var pkKeys []render.KeyRowView
+	currentCursor := ""
+	for {
+		path := buildKeysListPath("", "pk", "active", currentCursor, 0)
+		var resp keysListResponse
+		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
+			return doErr
+		}
+		pkKeys = append(pkKeys, resp.Items...)
+		if resp.NextCursor == "" {
+			break
+		}
+		currentCursor = resp.NextCursor
+	}
+
+	// Sort newest-first (CreatedAt lexicographic descending = chronological descending).
+	sort.Slice(pkKeys, func(i, j int) bool {
+		return pkKeys[i].CreatedAt > pkKeys[j].CreatedAt
+	})
+
+	// Targets are all keys beyond the first `keep` in the sorted list.
+	var targets []render.KeyRowView
+	if len(pkKeys) > keep {
+		targets = pkKeys[keep:]
+	}
+
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintf(stdout, "Nothing to prune: %d personal key(s), keeping %d.\n", len(pkKeys), keep)
+		return nil
+	}
+
+	// Print the plan.
+	_, _ = fmt.Fprintf(stdout, "Personal keys to revoke (%d of %d, keeping %d newest):\n", len(targets), len(pkKeys), keep)
+	for _, k := range targets {
+		_, _ = fmt.Fprintf(stdout, "  %s  created %s\n", k.KeyID, k.CreatedAt)
+	}
+
+	if dryRun {
+		_, _ = fmt.Fprintln(stdout, "(dry-run: no changes made)")
+		return nil
+	}
+
+	// Interactive confirmation unless --yes.
+	if !yes {
+		_, _ = fmt.Fprintf(stderr, "Revoke %d key(s)? [y/N]: ", len(targets))
+		scanner := bufio.NewScanner(stdin)
+		answer := ""
+		if scanner.Scan() {
+			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
+		}
+		switch answer {
+		case "y", "yes":
+			// proceed.
+		default:
+			return &exit.CodedError{Code: exit.General, Msg: "cancelled"}
+		}
+	}
+
+	var revoked, skipped int
+	var errs []string
+	for _, k := range targets {
+		deletePath := "/platform/keys/" + k.KeyID
+		// Never pass force from prune — the server 409 guard is the backstop.
+		doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
+		if doErr != nil {
+			var sErr *httpclient.ServerError
+			if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == codeCannotRevokeActiveKey {
+				skipped++
+				_, _ = fmt.Fprintf(stdout, "  skipped %s (active key)\n", k.KeyID)
+				continue
+			}
+			errs = append(errs, fmt.Sprintf("%s: %v", k.KeyID, doErr))
+			continue
+		}
+		revoked++
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Done: %d revoked, %d skipped (active key)", revoked, skipped)
+	if len(errs) > 0 {
+		_, _ = fmt.Fprintf(stdout, ", %d error(s):\n", len(errs))
+		for _, e := range errs {
+			_, _ = fmt.Fprintf(stdout, "  %s\n", e)
+		}
+		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("%d revoke error(s)", len(errs))}
+	}
+	_, _ = fmt.Fprintln(stdout, ".")
 	return nil
 }
 

@@ -32,9 +32,17 @@ func Mount(deps Deps) func(r chi.Router) {
 	}
 }
 
-// MountKeys registers GET /platform/keys on the router r at the same level
-// as /platform/env-keys (sibling, not child). server.go calls this alongside
-// r.Route("/platform/env-keys", Mount(deps)).
+// MountKeys registers the /platform/keys routes on the router r at the same
+// level as /platform/env-keys (sibling, not child). server.go calls this
+// alongside r.Route("/platform/env-keys", Mount(deps)).
+//
+// Routes:
+//
+//   - GET    /platform/keys           — ListAllHandler  (caller-scoped list).
+//   - DELETE /platform/keys/{key_id}  — RevokePersonalHandler (owner-scoped pk_ revoke).
 func MountKeys(r chi.Router, deps Deps) {
-	r.Get("/platform/keys", ListAllHandler(deps))
+	r.Route("/platform/keys", func(r chi.Router) {
+		r.Get("/", ListAllHandler(deps))
+		r.Delete("/{key_id}", RevokePersonalHandler(deps))
+	})
 }

@@ -54,6 +54,12 @@ func (a *envkeysDBAdapter) ListKeys(
 	return db.ListKeys(ctx, a.pool, f, limit, cursor)
 }
 
+func (a *envkeysDBAdapter) RevokePersonalKeyByOwner(
+	ctx context.Context, keyID, owner string,
+) (*string, error) {
+	return db.RevokePersonalKeyByOwner(ctx, a.pool, keyID, owner)
+}
+
 // redisDelAdapter wraps *redis.Client.Del to satisfy the envkeys.redisOps
 // interface (`Del(ctx, key) error`). The wrapper translates the
 // IntCmd's .Err() into a plain error for the handler's best-effort

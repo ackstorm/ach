@@ -55,6 +55,7 @@ type dbOps interface {
 	ListEnvironmentKeysByOwner(ctx context.Context, ownerEmail string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
 	ListEnvironmentKeysByOwnerWithFilter(ctx context.Context, ownerEmailFilter *string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
 	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
+	RevokePersonalKeyByOwner(ctx context.Context, keyID, owner string) (litellmToken *string, err error)
 }
 
 // redisOps is the subset of go-redis the envkeys handlers exercise. The
