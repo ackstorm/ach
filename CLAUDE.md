@@ -35,7 +35,7 @@ declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-keys/admin; hydrate/status/uninstall live under `env`; plus the serverless
+keys/admin/runtime; hydrate/status/uninstall live under `env`; plus the serverless
 local package manager `repo`/`skill` — `plugin` is **disabled** (see
 `featuregate.PluginsEnabled` below)) that drops the
 k8s.io/* + controller-runtime deps. Both
@@ -138,7 +138,7 @@ convenience**, not a co-equal mode.
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
-`logout`/`whoami`/`config`/`env`/`keys`/`admin` (workspace verbs
+`logout`/`whoami`/`config`/`env`/`keys`/`admin`/`runtime` (workspace verbs
 `hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
 marketplace or direct skill source) and `skill`
