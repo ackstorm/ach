@@ -157,8 +157,11 @@ func testPhase5SC1ContentSendfile(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d want=200", resp.StatusCode)
 		}
-		if ct := resp.Header.Get("Content-Type"); ct != "application/gzip" {
-			t.Errorf("Content-Type=%q want=application/gzip", ct)
+		// prompt-valid sets spec.contentType=text/markdown (the SC1 probe was
+		// repointed from the gzip plugin to a prompt when plugins were gated
+		// off — content-service serves the prompt's declared Content-Type).
+		if ct := resp.Header.Get("Content-Type"); ct != "text/markdown" {
+			t.Errorf("Content-Type=%q want=text/markdown", ct)
 		}
 		if cl := resp.Header.Get("Content-Length"); cl == "" {
 			t.Errorf("Content-Length missing")

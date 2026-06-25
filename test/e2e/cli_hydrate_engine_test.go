@@ -26,8 +26,8 @@
 //     test/fixtures/malicious-archives/ BuildAll set (from 07-W2-01)
 //     via an httptest content server and asserts every fixture
 //     rejects with exit non-zero + no files written under output.
-//   - sc4_safe_extract_bomb — ACH_MAX_EXTRACTED_PLUGIN_MIB=1 + a
-//     10MiB synthetic bomb tarball; asserts exit non-zero + partial
+//   - sc4_safe_extract_bomb — ACH_MAX_EXTRACTED_{PLUGIN,SKILL,ARTIFACT}_MIB=1
+//     + a 10MiB synthetic bomb tarball; asserts exit non-zero + partial
 //     output discarded (SAFE-03 bomb cap).
 //   - sc4_autoclaim_three_tier_match / _differ — SAFE-04 auto-claim
 //     cascade: matching pre-existing bytes auto-claim; differing bytes
@@ -1177,8 +1177,16 @@ func testPhase7Sc4SafeExtractBomb(t *testing.T) {
 	xdg := phase7SeedXdgConfig(t, srv.URL, pk)
 
 	stdout, stderr, err := phase7RunAchCliEnv(t, xdg,
+		// Cap every extracted kind to 1 MiB. The poisoned content server
+		// serves the 10 MiB bomb for ANY /content/ path; with plugins gated
+		// off (featuregate.PluginsEnabled) the demo env delivers the bomb via
+		// the skill/artifact path, so capping only PLUGIN would let it
+		// through. Capping all three keeps the SAFE-03 bomb cap exercised
+		// regardless of which kind carries the bomb.
 		[]string{
 			"ACH_MAX_EXTRACTED_PLUGIN_MIB=1",
+			"ACH_MAX_EXTRACTED_SKILL_MIB=1",
+			"ACH_MAX_EXTRACTED_ARTIFACT_MIB=1",
 		},
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
