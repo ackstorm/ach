@@ -339,6 +339,21 @@ func TestConfig_Rename_TargetExists(t *testing.T) {
 	}
 }
 
+// TestConfigShow_HasGetAlias asserts that `config show` carries a `get`
+// alias so that the common guess `config get <profile>` is accepted.
+func TestConfigShow_HasGetAlias(t *testing.T) {
+	cmd := newConfigShowCmd()
+	found := false
+	for _, a := range cmd.Aliases {
+		if a == "get" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("config show missing `get` alias; aliases=%v", cmd.Aliases)
+	}
+}
+
 // TestConfig_SyntheticMode_Exit1 asserts every config sub exits 1
 // when synthetic-mode env vars are set (ACH_BASE_URL + ACH_API_KEY).
 func TestConfig_SyntheticMode_Exit1(t *testing.T) {

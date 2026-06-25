@@ -101,9 +101,10 @@ func newConfigListCmd() *cobra.Command {
 func newConfigShowCmd() *cobra.Command {
 	var reveal bool
 	c := &cobra.Command{
-		Use:   "show [profile]",
-		Short: "Print one profile (pk-/ek- masked unless --reveal)",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "show [profile]",
+		Aliases: []string{"get"},
+		Short:   "Print one profile (pk-/ek- masked unless --reveal)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := configSyntheticGuard("show"); err != nil {
 				return err
