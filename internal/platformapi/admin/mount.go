@@ -14,10 +14,17 @@ import (
 //  1. Applies the AdminOnly middleware to the entire subtree so every
 //     descendant route is gated by the allowlist + key-type checks per
 //     Hub §15.5 + §18 + API-12.
-//  2. Registers the three admin endpoints:
+//  2. Registers key-management endpoints:
+//     - GET  /keys                     → ListKeysHandler
 //     - POST /keys/revoke              → RevokeKeyHandler
 //     - POST /users/{email}/revoke-keys → RevokeUserKeysHandler
 //     - POST /refresh                  → ForceRefreshHandler
+//  3. Registers read-only object inventory endpoints (GET):
+//     /plugins, /prompts, /artifacts, /skills, /marketplaces,
+//     /skill-marketplaces, /bips, /litellm-connections, /external-refs.
+//  4. Registers read-only runtime catalog endpoints (GET):
+//     /runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
+//     /runtime/catalog.
 //
 // The caller wires this under the authenticated chi.Group (Plan 03-11
 // cmd/platform-api/main.go):

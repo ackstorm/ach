@@ -113,7 +113,7 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 				"failed to read runtime catalog", reqID)
 			return
 		}
-		var models, mcps, agents []itemView
+		models, mcps, agents := make([]itemView, 0), make([]itemView, 0), make([]itemView, 0)
 		for _, it := range toItems(all) {
 			switch it.Kind {
 			case "model":

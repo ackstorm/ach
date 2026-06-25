@@ -77,9 +77,15 @@ func TestCatalogHandler_EmptyConnectorIsActiveEmpty(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d want 200", rec.Code)
 	}
-	var body map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if _, ok := body["models"]; !ok {
-		t.Fatalf("catalog body missing models key: %s", rec.Body.String())
+	var body struct {
+		Models     []map[string]any `json:"models"`
+		MCPServers []map[string]any `json:"mcpServers"`
+		A2AAgents  []map[string]any `json:"a2aAgents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Models == nil || body.MCPServers == nil || body.A2AAgents == nil {
+		t.Fatalf("empty categories must serialize as [] not null: %s", rec.Body.String())
 	}
 }
