@@ -83,12 +83,12 @@ func newRevokePersonalDeps(fdb *revokePersonalDB, fll *revokePersonalLiteLLM) De
 	}
 }
 
-// serveRevokePersonal drives RevokePersonalHandler through a chi router
+// serveRevokePersonal drives revokePersonalKey through a chi router
 // (to enable chi.URLParam extraction) with the given key_id path segment
 // and query string.
 func serveRevokePersonal(deps Deps, callerKeyID, callerOwner, targetKeyID, query string) *httptest.ResponseRecorder {
 	r := chi.NewRouter()
-	r.Delete("/{key_id}", RevokePersonalHandler(deps))
+	r.Delete("/{key_id}", revokePersonalKey(deps))
 
 	path := "/" + targetKeyID
 	if query != "" {
@@ -166,12 +166,12 @@ func TestRevokePersonalHandler(t *testing.T) {
 			wantDBCalled: true,
 		},
 		{
-			name:         "ekid_ prefix → 400 redirect message",
+			name:         "ekid_ prefix → 400 (not a pkid_ key)",
 			callerKeyID:  "pkid_caller00000000000000000",
 			callerOwner:  "alice@example.com",
 			targetKeyID:  "ekid_target00000000000000001",
 			wantStatus:   http.StatusBadRequest,
-			wantBodyPart: "env-keys",
+			wantBodyPart: keys.PkidKeyIDPrefix,
 			wantDBCalled: false,
 		},
 		{

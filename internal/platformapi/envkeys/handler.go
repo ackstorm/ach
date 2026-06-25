@@ -612,8 +612,10 @@ func classifyInsertError(err error) insertErrClass {
 //     log a warning; the 60s TTL ceiling caps the worst case.
 //  8. 204 No Content (no body); audit ActionEkRevoke / OutcomeRevoked.
 //
-// pk_-only caller-type guard at the top — ek_ may not revoke env-keys.
-func RevokeHandler(deps Deps) http.HandlerFunc {
+// revokeEnvironmentKey is the ekid_ branch of the unified DELETE
+// /platform/keys/{key_id}. LiteLLM-FIRST (KEY-08): the deps.LiteLLM.RevokeKey
+// call MUST stay textually before deps.DB.RevokeEnvironmentKey. Returns 204.
+func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		reqID := middleware.RequestIDFromCtx(ctx)
