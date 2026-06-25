@@ -92,6 +92,25 @@ func TestFormatStateListJSON_Deterministic(t *testing.T) {
 	}
 }
 
+// TestFormatStateList_DedupesIdenticalRows asserts that rows identical across
+// (Kind, Target, Environment) are collapsed to a single display row while
+// preserving first-seen order and leaving unique rows untouched.
+func TestFormatStateList_DedupesIdenticalRows(t *testing.T) {
+	entries := []render.StateEntryView{
+		{Kind: "plugin", Target: ".mcp.json", Environment: "demo"},
+		{Kind: "plugin", Target: ".mcp.json", Environment: "demo"},
+		{Kind: "plugin", Target: "CLAUDE.md", Environment: "demo"},
+		{Kind: "plugin", Target: ".mcp.json", Environment: "demo"},
+	}
+	out := render.FormatStateList(entries)
+	if got := strings.Count(out, ".mcp.json"); got != 1 {
+		t.Errorf(".mcp.json appears %d times, want 1:\n%s", got, out)
+	}
+	if got := strings.Count(out, "CLAUDE.md"); got != 1 {
+		t.Errorf("CLAUDE.md appears %d times, want 1:\n%s", got, out)
+	}
+}
+
 // TestFormatStateListJSON_EmptyIsArray asserts nil input yields a stable
 // empty JSON array (never "null").
 func TestFormatStateListJSON_EmptyIsArray(t *testing.T) {

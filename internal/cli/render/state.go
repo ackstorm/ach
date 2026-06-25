@@ -40,7 +40,13 @@ func FormatStateList(entries []StateEntryView) string {
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "KIND\tTARGET\tENVIRONMENT")
+	seen := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
+		key := e.Kind + "\x00" + e.Target + "\x00" + e.Environment
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Kind, e.Target, e.Environment)
 	}
 	_ = tw.Flush()

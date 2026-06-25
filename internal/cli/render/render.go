@@ -184,6 +184,15 @@ func FormatEnvList(envs []EnvView) string {
 	return sb.String()
 }
 
+// orEM returns s unchanged when non-empty, or emDash when empty — matches the
+// keys list empty-cell convention so env describe looks consistent.
+func orEM(s string) string {
+	if s == "" {
+		return emDash
+	}
+	return s
+}
+
 // FormatEnvDescribe returns the full describe block for `ach env
 // describe <name>`. When hydrateAvailable=false (CLI-12 graceful
 // admin-403 fallback), the body prints `Runtime: (unavailable)\n
@@ -217,13 +226,13 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tENDPOINT")
 	for _, m := range h.Runtime.Models {
-		_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", m.Name, m.ID, m.Endpoint)
+		_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", m.Name, orEM(m.ID), orEM(m.Endpoint))
 	}
 	for _, s := range h.Runtime.MCPServers {
-		_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", s.Name, s.ID, s.Endpoint)
+		_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", s.Name, orEM(s.ID), orEM(s.Endpoint))
 	}
 	for _, a := range h.Runtime.A2AAgents {
-		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", a.Name, a.ID, a.Endpoint)
+		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", a.Name, orEM(a.ID), orEM(a.Endpoint))
 	}
 	_ = tw.Flush()
 
@@ -231,18 +240,18 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	// `downloadUrl` per W3 phase-goal sentence).
 	_, _ = fmt.Fprintln(&sb, "Context:")
 	tw = tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tDOWNLOADURL")
+	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tDOWNLOADURL")
 	for _, p := range h.Context.Prompts {
-		_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\t%s\n", p.Name, p.ID, p.DownloadURL)
+		_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
 	}
 	for _, pl := range h.Context.Plugins {
-		_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\t%s\n", pl.Name, pl.ID, pl.DownloadURL)
+		_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\n", pl.Name, orEM(pl.DownloadURL))
 	}
 	for _, ar := range h.Context.Artifacts {
-		_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\t%s\n", ar.Name, ar.ID, ar.DownloadURL)
+		_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\n", ar.Name, orEM(ar.DownloadURL))
 	}
 	for _, sk := range h.Context.Skills {
-		_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\t%s\n", sk.Name, sk.ID, sk.DownloadURL)
+		_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\n", sk.Name, orEM(sk.DownloadURL))
 	}
 	_ = tw.Flush()
 

@@ -339,6 +339,84 @@ func TestConfig_Rename_TargetExists(t *testing.T) {
 	}
 }
 
+// TestConfigRmEK_RemovesLabel asserts `ach config rm-ek <label>` removes
+// exactly the named ek label and leaves others intact.
+func TestConfigRmEK_RemovesLabel(t *testing.T) {
+	dir := configTestEnv(t)
+	seedConfigFile(t, dir, &config.File{
+		Default: "default",
+		Profiles: map[string]*config.Profile{
+			"default": {
+				URL: "https://h",
+				PK:  "pk-x",
+				EK: map[string]string{
+					"frontend": "ek-a",
+					"platform": "ek-b",
+				},
+			},
+		},
+	})
+
+	cmd := newConfigRmEKCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"frontend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("rm-ek: %v", err)
+	}
+
+	path := filepath.Join(dir, "ach", "config.yaml")
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	prof := f.Profiles["default"]
+	if _, ok := prof.EK["frontend"]; ok {
+		t.Errorf("frontend label not removed; EK=%v", prof.EK)
+	}
+	if prof.EK["platform"] != "ek-b" {
+		t.Errorf("platform label wrongly removed; EK=%v", prof.EK)
+	}
+	if !strings.Contains(out.String(), `"frontend"`) {
+		t.Errorf("success message missing label name; stdout=%q", out.String())
+	}
+}
+
+// TestConfigRmEK_MissingLabel asserts `ach config rm-ek <label>` exits 1
+// when the label does not exist in the profile.
+func TestConfigRmEK_MissingLabel(t *testing.T) {
+	dir := configTestEnv(t)
+	seedConfigFile(t, dir, &config.File{
+		Default: "default",
+		Profiles: map[string]*config.Profile{
+			"default": {URL: "https://h", PK: "pk-x"},
+		},
+	})
+
+	_, _, code, err := executeConfig(t, "rm-ek", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing label")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+}
+
+// TestConfigShow_HasGetAlias asserts that `config show` carries a `get`
+// alias so that the common guess `config get <profile>` is accepted.
+func TestConfigShow_HasGetAlias(t *testing.T) {
+	cmd := newConfigShowCmd()
+	found := false
+	for _, a := range cmd.Aliases {
+		if a == "get" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("config show missing `get` alias; aliases=%v", cmd.Aliases)
+	}
+}
+
 // TestConfig_SyntheticMode_Exit1 asserts every config sub exits 1
 // when synthetic-mode env vars are set (ACH_BASE_URL + ACH_API_KEY).
 func TestConfig_SyntheticMode_Exit1(t *testing.T) {

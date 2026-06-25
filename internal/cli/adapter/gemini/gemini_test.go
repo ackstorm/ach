@@ -138,6 +138,27 @@ func TestGemini_Detect_HighConfidence_AllSignals(t *testing.T) {
 	}
 }
 
+func TestGemini_Detect_ProjectScope_IgnoresHome(t *testing.T) {
+	a := &Adapter{}
+	project := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	got, err := a.Detect(project)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "" || got.Confidence != 0 {
+		t.Errorf("project-scope Detect leaked $HOME: got ID=%q Confidence=%v, want zero-match", got.ID, got.Confidence)
+	}
+}
+
 // buildManifest constructs a non-nil Manifest with 2 MCP servers + 1
 // A2A agent — same shape as the claudecode tests use.
 func buildManifest() *manifest.Manifest {

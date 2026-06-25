@@ -280,6 +280,27 @@ func TestFormatEnvList_DescriptionTruncated(t *testing.T) {
 	}
 }
 
+// TestFormatEnvDescribe_ContextHasNoIDColumn_RuntimeEmptyDashed asserts that
+// the Context table no longer carries an ID column (it always duplicated NAME)
+// and that empty Runtime ID/Endpoint cells render as an em dash.
+func TestFormatEnvDescribe_ContextHasNoIDColumn_RuntimeEmptyDashed(t *testing.T) {
+	env := EnvView{Name: "demo", Namespace: "ach", Status: "Available"}
+	h := &HydrateView{}
+	h.Runtime.MCPServers = []RuntimeItem{{Name: "mcp-x", ID: "", Endpoint: "https://h/mcp/mcp-x"}}
+	h.Context.Plugins = []ContextItem{{Name: "p@repo", ID: "p@repo", DownloadURL: "https://h/content/plugin/p@repo"}}
+
+	out := FormatEnvDescribe(env, h, true)
+
+	// Context header must NOT carry an ID column anymore.
+	if strings.Contains(out, "KIND\tNAME\tID\tDOWNLOADURL") {
+		t.Errorf("context table still has ID column:\n%s", out)
+	}
+	// Runtime empty ID renders as em dash, not blank.
+	if !strings.Contains(out, "mcp-x") || !strings.Contains(out, "—") {
+		t.Errorf("runtime empty ID not em-dashed:\n%s", out)
+	}
+}
+
 // TestFormatEnvDescribe_DescriptionFull asserts describe renders the full
 // description in a dedicated block.
 func TestFormatEnvDescribe_DescriptionFull(t *testing.T) {

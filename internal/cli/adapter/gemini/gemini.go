@@ -102,21 +102,6 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	check(".gemini/settings.json", "found .gemini/settings.json")
 	check(".gemini/extensions", "found .gemini/extensions/ directory")
 
-	// Global-mode hint: $HOME/.gemini/settings.json. This is checked
-	// independently of `root` because the spec §7.5 algorithm scans
-	// $HOME for global mode separately. The presence of a global
-	// settings file is a Low-confidence signal that the user has
-	// gemini-cli installed somewhere on this machine; we surface it
-	// the same way as local signals so the autodetection layer
-	// (plan 07-W3-05) can rank candidates consistently.
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		full := filepath.Join(home, ".gemini", "settings.json")
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, "found ~/.gemini/settings.json (global mode)")
-		}
-	}
-
 	if signals == 0 {
 		return adapter.Match{}, nil
 	}

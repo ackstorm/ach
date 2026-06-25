@@ -1025,6 +1025,25 @@ func TestEnvKeys_Revoke_Server404_Exit1(t *testing.T) {
 	}
 }
 
+// Test 15: revoke success → prints "Revoked <keyID>" to stdout.
+func TestKeysRevoke_PrintsConfirmationOnSuccess(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	stdout, _, code, err := executeKeys(t, "", "revoke", "ekid_01test", "--yes")
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "Revoked ekid_01test") {
+		t.Errorf("missing confirmation line; got %q", stdout)
+	}
+}
+
 // ---------------------------------------------------------------------
 // Task 6: revoke self-revoke routing + --force tests
 // ---------------------------------------------------------------------

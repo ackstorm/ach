@@ -108,23 +108,12 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	check(".opencode/opencode.json", "found .opencode/opencode.json")
 	check(".opencode/plugins", "found .opencode/plugins/ directory")
 	check("opencode.json", "found opencode.json at root")
-
-	// Global-mode hint (WR-06): opencode's global config lives at the XDG path
-	// $HOME/.config/opencode/ (remapGlobalPath, wiring.go), so a global-only
-	// install with no project-relative .opencode/ footprint still matches —
-	// mirroring codex's $HOME/.codex/ probe. Skipped when HOME is unset
-	// (defensive — os.UserHomeDir errors on unset HOME) and when root == $HOME
-	// to avoid double-counting an already-checked dir.
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		absRoot, _ := filepath.Abs(root)
-		if absRoot != home {
-			full := filepath.Join(home, ".config", "opencode")
-			if _, err := os.Stat(full); err == nil {
-				signals++
-				reasons = append(reasons, "found $HOME/.config/opencode/ directory (global-mode hint)")
-			}
-		}
-	}
+	// XDG global config: in --global mode the caller passes root=$HOME, so a
+	// root-relative .config/opencode/ probe finds the global install
+	// ($HOME/.config/opencode) WITHOUT bleeding into project scope (a project
+	// almost never has a literal ./.config/opencode/). Replaces the old
+	// $HOME cross-probe that fired in project scope (UX finding #4).
+	check(".config/opencode", "found .config/opencode/ directory (XDG global)")
 
 	if signals == 0 {
 		return adapter.Match{}, nil
