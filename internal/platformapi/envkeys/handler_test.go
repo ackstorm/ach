@@ -239,7 +239,7 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
-	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", body)
 	// Authenticate as a pk_ caller (only pk_ may create ek_).
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
 		KeyID:      "pkid_00000000000000000000000000",
@@ -352,7 +352,7 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
-	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", body)
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
 		KeyID:      "pkid_00000000000000000000000000",
 		KeyType:    keys.PrefixPk,
@@ -412,7 +412,7 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
-	req := httptest.NewRequest(http.MethodPost, "/platform/env-keys", body)
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", body)
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
 		KeyID:      "pkid_00000000000000000000000000",
 		KeyType:    keys.PrefixPk,

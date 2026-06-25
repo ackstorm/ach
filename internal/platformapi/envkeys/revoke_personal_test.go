@@ -108,6 +108,115 @@ func serveRevokePersonal(deps Deps, callerKeyID, callerOwner, targetKeyID, query
 	return rec
 }
 
+// noopRedis is a minimal redisOps fake that always succeeds.
+type noopRedis struct{}
+
+func (r *noopRedis) Del(_ context.Context, _ string) error { return nil }
+
+// dispatchDB is a combined dbOps fake for TestRevokeHandler_DispatchesByPrefix.
+// It satisfies the full dbOps interface while providing controllable outcomes
+// for both the ekid_ (GetEnvironmentKey / RevokeEnvironmentKey) and pkid_
+// (RevokePersonalKeyByOwner) branches.
+type dispatchDB struct {
+	ekRow   *db.EkKeyInfo // returned by GetEnvironmentKey
+	pkToken *string       // returned by RevokePersonalKeyByOwner
+}
+
+func (d *dispatchDB) InsertEnvironmentKey(_ context.Context, _ db.EkInsertRow) error { return nil }
+
+func (d *dispatchDB) GetEnvironmentKey(_ context.Context, _ string) (*db.EkKeyInfo, error) {
+	return d.ekRow, nil
+}
+
+func (d *dispatchDB) RevokeEnvironmentKey(_ context.Context, _ string) (*db.EkKeyInfo, error) {
+	return d.ekRow, nil
+}
+
+func (d *dispatchDB) ListEnvironmentKeysByOwner(_ context.Context, _ string, _ int, _ string) ([]db.EkKeyInfo, string, error) {
+	return nil, "", nil
+}
+
+func (d *dispatchDB) ListEnvironmentKeysByOwnerWithFilter(_ context.Context, _ *string, _ int, _ string) ([]db.EkKeyInfo, string, error) {
+	return nil, "", nil
+}
+
+func (d *dispatchDB) ListKeys(_ context.Context, _ db.KeyListFilter, _ int, _ string) ([]db.KeyListItem, string, error) {
+	return nil, "", nil
+}
+
+func (d *dispatchDB) RevokePersonalKeyByOwner(_ context.Context, _ string, _ string) (*string, error) {
+	return d.pkToken, nil
+}
+
+// TestRevokeHandler_DispatchesByPrefix asserts the unified DELETE
+// /platform/keys/{key_id} routes ekid_ to the ek path (204) and pkid_ to the
+// personal path (200), and rejects a bare/unknown prefix with 400.
+func TestRevokeHandler_DispatchesByPrefix(t *testing.T) {
+	ekToken := "sk-llt-ek-token"
+	credHash := "abc123credHash"
+	pkToken := "sk-llt-pk-token"
+
+	// Combined deps that can service both the ekid_ and pkid_ revoke branches.
+	fdb := &dispatchDB{
+		ekRow: &db.EkKeyInfo{
+			KeyID:          "ekid_target00000000000000001",
+			OwnerEmail:     "alice@example.com",
+			Environment:    "prod",
+			Status:         statusActive,
+			CredentialHash: credHash,
+			LiteLLMToken:   &ekToken,
+		},
+		pkToken: &pkToken,
+	}
+	fll := &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}}
+	deps := Deps{
+		DB:      fdb,
+		LiteLLM: fll,
+		Redis:   &noopRedis{},
+		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	// serve drives a DELETE /platform/keys/{key_id} through a chi router that
+	// mounts the full /platform/keys family via MountKeys.
+	serve := func(callerKeyID, callerOwner, targetKeyID string) *httptest.ResponseRecorder {
+		r := chi.NewRouter()
+		MountKeys(r, deps)
+
+		path := "/platform/keys/" + targetKeyID
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+			KeyID:      callerKeyID,
+			KeyType:    keys.PrefixPk,
+			OwnerEmail: callerOwner,
+		}, false)
+		ctx = middleware.WithRequestID(ctx, "req_test")
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// ekid_ → 204 No Content (LiteLLM-first ek revoke path).
+	rec := serve("pkid_caller00000000000000000", "alice@example.com", "ekid_target00000000000000001")
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("ekid_ branch: status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// pkid_ → 200 JSON (DB-first pk revoke path; caller != target so no 409 guard).
+	rec = serve("pkid_caller00000000000000000", "alice@example.com", "pkid_target00000000000000001")
+	if rec.Code != http.StatusOK {
+		t.Errorf("pkid_ branch: status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// garbage/unknown prefix → 400 invalid_argument (dispatcher default branch).
+	rec = serve("pkid_caller00000000000000000", "alice@example.com", "garbage_key_id")
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("garbage prefix: status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestRevokePersonalHandler drives the table of expected outcomes.
 func TestRevokePersonalHandler(t *testing.T) {
 	tok := "sk-litellm-abc"
