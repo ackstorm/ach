@@ -33,7 +33,7 @@ control plane. Subcommands:
   whoami       Show current identity
   config       Inspect / mutate local config
   env          Inspect environments; hydrate/status/uninstall workspace
-  keys         Manage your API keys (create/list/revoke/prune; alias: env-keys)
+  keys         Manage your API keys (create/list/revoke/prune)
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
 ` + localHelpLine() + `
 
