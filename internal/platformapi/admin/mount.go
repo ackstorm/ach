@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ackstorm/ach/internal/platformapi/admin/inventory"
+	runtimecatalog "github.com/ackstorm/ach/internal/platformapi/admin/runtime"
 )
 
 // Mount returns a chi.Router subtree configurator that:
@@ -54,5 +55,15 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/bips", inventory.BIPsHandler(inv))
 		r.Get("/litellm-connections", inventory.LitellmConnectionsHandler(inv))
 		r.Get("/external-refs", inventory.ExternalRefsHandler(inv))
+
+		rcDeps := runtimecatalog.Deps{
+			Catalog:   runtimecatalog.NewPoolCatalog(deps.Pool),
+			Namespace: deps.Namespace,
+			Connector: "default",
+		}
+		r.Get("/runtime/models", runtimecatalog.ModelsHandler(rcDeps))
+		r.Get("/runtime/mcp-servers", runtimecatalog.MCPServersHandler(rcDeps))
+		r.Get("/runtime/a2a-agents", runtimecatalog.A2AAgentsHandler(rcDeps))
+		r.Get("/runtime/catalog", runtimecatalog.CatalogHandler(rcDeps))
 	}
 }
