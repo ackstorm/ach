@@ -132,7 +132,7 @@ func (s *Snapshotter) Snapshot() LiteLLMSnapshot {
 
 // LiteLLMUnreachableCount returns the cumulative number of refresh
 // attempts that failed because LiteLLM was unreachable (i.e. any of
-// the three list calls returned a non-ErrNotFound error). Phase 5
+// the four list calls returned a non-ErrNotFound error). Phase 5
 // wires this counter into the litellm_unreachable_total{caller="operator"}
 // Prometheus counter per Hub §18.5.
 func (s *Snapshotter) LiteLLMUnreachableCount() int64 {
@@ -226,7 +226,7 @@ func (s *Snapshotter) RefreshForTest(ctx context.Context) {
 // refresh is invoked only from Start's single-writer goroutine, so no
 // internal lock is required against itself. The atomic.Pointer.Store
 // guarantees publication-safety against concurrent Snapshot() readers.
-// Returns true on a fully successful refresh (all three list calls OK
+// Returns true on a fully successful refresh (all four list calls OK
 // or ErrNotFound), false otherwise. Start uses the return value to
 // pick the next-tick interval (issue #30).
 func (s *Snapshotter) refresh(ctx context.Context) bool {
