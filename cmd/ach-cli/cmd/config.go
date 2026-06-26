@@ -61,9 +61,7 @@ All children exit 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY
 both set) per CLI spec §3.3 — synthetic-mode credentials live in
 env, so the on-disk registry has no role.
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 
 	parent.AddCommand(

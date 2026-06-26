@@ -325,9 +325,7 @@ Children:
 <name@repo> identifies a %s by name and the registered repo it came from.
 Use 'ach-cli local repo add' to register a repo first.
 `, kindStr, kindStr, kindStr, kindStr, kindStr, kindStr),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newPkgInstallCmd(kind),

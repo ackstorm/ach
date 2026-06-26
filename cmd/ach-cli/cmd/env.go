@@ -93,9 +93,7 @@ env list + describe are read-only and synthetic-mode friendly.
 describe gracefully degrades on 403 unauthorized_team — printing
 '(unavailable)' for runtime + context and exiting 0 (CLI-12).
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newEnvListCmd(),

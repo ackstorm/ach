@@ -56,9 +56,7 @@ Children:
 Sources use the github: or git: URI schemes. Local paths are not yet
 supported. When no #ref fragment is given the default branch is "main".
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newRepoAddCmd(),

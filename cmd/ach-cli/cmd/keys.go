@@ -122,9 +122,7 @@ Subcommands:
   revoke  Permanently delete one of your own keys by its key ID (ekid_… or pkid_…).
   prune   Bulk-delete old personal keys, keeping the N most recent.
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newEnvKeysCreateCmd(), newKeysListCmd(), newEnvKeysRevokeCmd(), newKeysPruneCmd())
 	return parent
