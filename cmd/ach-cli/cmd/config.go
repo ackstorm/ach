@@ -115,6 +115,13 @@ func newConfigShowCmd() *cobra.Command {
 			}
 			resolved, dep, resErr := config.ResolveActive(f, name, "")
 			if resErr != nil {
+				if name != "" {
+					return &exit.CodedError{
+						Code:    exit.General,
+						Msg:     fmt.Sprintf("profile %q not found; available: %s", name, strings.Join(f.ProfileNames(), ", ")),
+						Wrapped: resErr,
+					}
+				}
 				return &exit.CodedError{
 					Code:    exit.General,
 					Msg:     resErr.Error(),
@@ -157,7 +164,7 @@ func newConfigUseCmd() *cobra.Command {
 			if _, ok := f.Profiles[name]; !ok {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("profile %q not found", name),
+					Msg:  fmt.Sprintf("profile %q not found; available: %s", name, strings.Join(f.ProfileNames(), ", ")),
 				}
 			}
 			f.Default = name
