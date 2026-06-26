@@ -54,6 +54,7 @@ func newEnvStatusCmd() *cobra.Command {
 		flagGlobal      bool
 		flagTarget      string
 		flagEnvironment string
+		flagFiles       bool
 	)
 	c := &cobra.Command{
 		Use:   "status",
@@ -140,7 +141,7 @@ empty JSON array under --json) and exits 0.`,
 				return nil
 			}
 
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries))
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries, flagFiles))
 			return nil
 		},
 	}
@@ -149,6 +150,7 @@ empty JSON array under --json) and exits 0.`,
 	c.Flags().StringVar(&flagEnvironment, "environment", "",
 		"Environment name (REQUIRED with --global; omit in project scope to list ALL envs)")
 	c.Flags().StringVar(&flagTarget, "target", "", "Override platform scope resolution")
+	c.Flags().BoolVarP(&flagFiles, "files", "f", false, "List every projected file instead of a per-resource summary")
 	return c
 }
 
@@ -208,6 +210,7 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 				Kind:        kind,
 				Target:      e.Target,
 				Environment: env,
+				Source:      e.Source,
 			})
 		}
 	}

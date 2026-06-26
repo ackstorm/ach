@@ -26,28 +26,66 @@ type StateEntryView struct {
 	Kind        string `json:"kind"`
 	Target      string `json:"target"`
 	Environment string `json:"environment"`
+	Source      string `json:"source,omitempty"`
 }
 
-// FormatStateList renders the per-resource inventory table for
-// `ach-cli list`. Empty input → stable "No resources installed\n" stub
-// (mirrors FormatEnvList's empty-state convention). Otherwise a
-// text/tabwriter table with the D-31 columns KIND / TARGET / ENVIRONMENT
-// and one row per entry, in the caller-provided order.
-func FormatStateList(entries []StateEntryView) string {
+// FormatStateList renders the installed-resource inventory table for
+// `ach-cli env status`. Empty input → stable "No resources installed\n" stub
+// (mirrors FormatEnvList's empty-state convention).
+//
+// detailed=false (the default) groups by (KIND, SOURCE, ENVIRONMENT) with a
+// file COUNT so a many-file skill/artifact doesn't flood the table. Each group
+// row shows the resource name (Source) or an em-dash when Source is empty
+// (adapter/runtime files). Stable sort: kind → source → env.
+//
+// detailed=true (--files) restores the flat one-row-per-file listing with
+// KIND / TARGET / ENVIRONMENT columns, deduplicating identical rows.
+func FormatStateList(entries []StateEntryView, detailed bool) string {
 	if len(entries) == 0 {
 		return "No resources installed\n"
 	}
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "KIND\tTARGET\tENVIRONMENT")
-	seen := make(map[string]struct{}, len(entries))
-	for _, e := range entries {
-		key := e.Kind + "\x00" + e.Target + "\x00" + e.Environment
-		if _, dup := seen[key]; dup {
-			continue
+
+	if detailed {
+		_, _ = fmt.Fprintln(tw, "KIND\tTARGET\tENVIRONMENT")
+		seen := make(map[string]struct{}, len(entries))
+		for _, e := range entries {
+			key := e.Kind + "\x00" + e.Target + "\x00" + e.Environment
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Kind, e.Target, e.Environment)
 		}
-		seen[key] = struct{}{}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Kind, e.Target, e.Environment)
+		_ = tw.Flush()
+		return sb.String()
+	}
+
+	// Grouped: count unique targets per (kind, source, environment), stable order.
+	type grp struct{ kind, source, env string }
+	counts := map[grp]map[string]struct{}{}
+	var order []grp
+	for _, e := range entries {
+		g := grp{e.Kind, e.Source, e.Environment}
+		if counts[g] == nil {
+			counts[g] = map[string]struct{}{}
+			order = append(order, g)
+		}
+		counts[g][e.Target] = struct{}{}
+	}
+	sort.Slice(order, func(i, j int) bool {
+		if order[i].kind != order[j].kind {
+			return order[i].kind < order[j].kind
+		}
+		if order[i].source != order[j].source {
+			return order[i].source < order[j].source
+		}
+		return order[i].env < order[j].env
+	})
+	_, _ = fmt.Fprintln(tw, "KIND\tNAME\tFILES\tENVIRONMENT")
+	for _, g := range order {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", g.kind, orEM(g.source), len(counts[g]), g.env)
 	}
 	_ = tw.Flush()
 	return sb.String()

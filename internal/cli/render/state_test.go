@@ -13,23 +13,23 @@ import (
 // TestFormatStateList_Empty asserts the stable empty-state stub for
 // nil/empty input (LIFE-03 empty/missing-state path).
 func TestFormatStateList_Empty(t *testing.T) {
-	if got := render.FormatStateList(nil); got != "No resources installed\n" {
+	if got := render.FormatStateList(nil, false); got != "No resources installed\n" {
 		t.Fatalf("nil input: want %q, got %q", "No resources installed\n", got)
 	}
-	if got := render.FormatStateList([]render.StateEntryView{}); got != "No resources installed\n" {
+	if got := render.FormatStateList([]render.StateEntryView{}, false); got != "No resources installed\n" {
 		t.Fatalf("empty slice: want %q, got %q", "No resources installed\n", got)
 	}
 }
 
 // TestFormatStateList_Table asserts the multi-row table carries the D-31
-// header KIND / TARGET / ENVIRONMENT and one line per entry.
+// header KIND / TARGET / ENVIRONMENT and one line per entry (detailed=true).
 func TestFormatStateList_Table(t *testing.T) {
 	entries := []render.StateEntryView{
 		{Kind: "prompt", Target: ".claude/prompts/a.md", Environment: "prod"},
 		{Kind: "plugin", Target: ".claude/plugins/p", Environment: "prod"},
 		{Kind: "artifact", Target: ".ach/artifacts/x", Environment: "prod"},
 	}
-	out := render.FormatStateList(entries)
+	out := render.FormatStateList(entries, true)
 
 	// Header columns present (D-31).
 	for _, col := range []string{"KIND", "TARGET", "ENVIRONMENT"} {
@@ -94,7 +94,7 @@ func TestFormatStateListJSON_Deterministic(t *testing.T) {
 
 // TestFormatStateList_DedupesIdenticalRows asserts that rows identical across
 // (Kind, Target, Environment) are collapsed to a single display row while
-// preserving first-seen order and leaving unique rows untouched.
+// preserving first-seen order and leaving unique rows untouched (detailed=true).
 func TestFormatStateList_DedupesIdenticalRows(t *testing.T) {
 	entries := []render.StateEntryView{
 		{Kind: "plugin", Target: ".mcp.json", Environment: "demo"},
@@ -102,7 +102,7 @@ func TestFormatStateList_DedupesIdenticalRows(t *testing.T) {
 		{Kind: "plugin", Target: "CLAUDE.md", Environment: "demo"},
 		{Kind: "plugin", Target: ".mcp.json", Environment: "demo"},
 	}
-	out := render.FormatStateList(entries)
+	out := render.FormatStateList(entries, true)
 	if got := strings.Count(out, ".mcp.json"); got != 1 {
 		t.Errorf(".mcp.json appears %d times, want 1:\n%s", got, out)
 	}
@@ -120,5 +120,41 @@ func TestFormatStateListJSON_EmptyIsArray(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("nil input: want %q, got %q", "[]", strings.TrimSpace(out))
+	}
+}
+
+// TestFormatStateList_GroupedByResource asserts that detailed=false groups
+// entries by (kind, source, env) and emits one row per group with a file
+// count — not one row per file (U5 per-resource grouping).
+func TestFormatStateList_GroupedByResource(t *testing.T) {
+	entries := []render.StateEntryView{
+		{Kind: "skill", Source: "docx", Target: ".claude/skills/docx/SKILL.md", Environment: "demo"},
+		{Kind: "skill", Source: "docx", Target: ".claude/skills/docx/scripts/x.py", Environment: "demo"},
+		{Kind: "skill", Source: "pdf", Target: ".claude/skills/pdf/SKILL.md", Environment: "demo"},
+	}
+	out := render.FormatStateList(entries, false)
+	// One row per (kind, source, env) with a file count — NOT one row per file.
+	if !strings.Contains(out, "docx") || !strings.Contains(out, "2") {
+		t.Errorf("expected grouped 'skill docx 2 ... demo' row:\n%s", out)
+	}
+	if !strings.Contains(out, "pdf") || !strings.Contains(out, "1") {
+		t.Errorf("expected grouped 'skill pdf 1 ... demo' row:\n%s", out)
+	}
+	if strings.Contains(out, "SKILL.md") {
+		t.Errorf("grouped view must not list individual files:\n%s", out)
+	}
+	// Header should be KIND/NAME/FILES/ENVIRONMENT.
+	if !strings.Contains(out, "NAME") || !strings.Contains(out, "FILES") {
+		t.Errorf("grouped view missing NAME/FILES header columns:\n%s", out)
+	}
+}
+
+// TestFormatStateList_DetailedListsFiles asserts that detailed=true shows
+// individual file paths (the --files mode).
+func TestFormatStateList_DetailedListsFiles(t *testing.T) {
+	entries := []render.StateEntryView{{Kind: "skill", Source: "pdf", Target: ".claude/skills/pdf/SKILL.md", Environment: "demo"}}
+	out := render.FormatStateList(entries, true)
+	if !strings.Contains(out, "SKILL.md") {
+		t.Errorf("--files view must list individual files:\n%s", out)
 	}
 }

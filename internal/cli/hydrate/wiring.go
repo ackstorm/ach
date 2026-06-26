@@ -702,6 +702,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		if err != nil {
 			return err
 		}
+		entry.Source = plugin
 		result.ProjectedFiles = append(result.ProjectedFiles, entry)
 	}
 
@@ -811,9 +812,29 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		if err != nil {
 			return err
 		}
+		// Source carries the skill name for per-resource grouping in 'env status'
+		// (U5). The adapter destination path always contains a /skills/<name>/
+		// segment, so we extract it regardless of adapter prefix depth.
+		entry.Source = skillNameFromPath(entry.Target)
 		result.ProjectedSkillFiles = append(result.ProjectedSkillFiles, entry)
 	}
 	return nil
+}
+
+// skillNameFromPath extracts the skill name from an adapter destination path.
+// All adapters route skills to paths of the form <prefix>/skills/<name>/…
+// (e.g. ".claude/skills/docx/SKILL.md", ".pi/agent/skills/docx/SKILL.md"),
+// so the skill name is always the segment that follows "skills". Returns ""
+// when the path does not contain a "skills" segment (should not occur in
+// practice, but handled defensively so a routing change never panics).
+func skillNameFromPath(path string) string {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	for i, p := range parts {
+		if p == "skills" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // MCP server-key prefixes per adapter config format (D-17). The projected

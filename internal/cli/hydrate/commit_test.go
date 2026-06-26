@@ -1653,3 +1653,34 @@ func TestStep12bGitignore(t *testing.T) {
 		}
 	})
 }
+
+// TestCommit_Step12_SkillSourcePropagates asserts that Source set on a
+// ProjectedSkillFile FileWrite flows through skillsSectionFromRender into the
+// saved state.File.Skills[] entry (U5 per-resource grouping contract).
+func TestCommit_Step12_SkillSourcePropagates(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{
+			ProjectedSkillFiles: []FileWrite{{
+				Target:     ".claude/skills/myskill/SKILL.md",
+				Hash:       "xxh3:abc",
+				SourceHash: "xxh3:abc",
+				Source:     "myskill",
+			}},
+		},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v, want nil", err)
+	}
+	if store.savedFile == nil {
+		t.Fatal("savedFile = nil; expected step 12 to save")
+	}
+	if got := len(store.savedFile.Skills); got != 1 {
+		t.Fatalf("Skills len = %d, want 1 (composed from ProjectedSkillFiles)", got)
+	}
+	if got := store.savedFile.Skills[0].Source; got != "myskill" {
+		t.Errorf("Skills[0].Source = %q; want %q (U5 per-resource grouping)", got, "myskill")
+	}
+}

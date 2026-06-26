@@ -148,6 +148,12 @@ type FileWrite struct {
 	Merge      string
 	Keys       []string
 
+	// Source is the resource name (skill/plugin name) this file was
+	// projected from, for per-resource grouping in 'env status'. Set by
+	// projectPlugins/projectSkills in wiring.go; empty for adapter runtime
+	// and extractor-produced files.
+	Source string
+
 	// Preserved is true when publishFile skipped the write because the
 	// on-disk file was already byte-identical to the rendered output (D-05
 	// no-op skip). The entry still flows to state composition (the file is

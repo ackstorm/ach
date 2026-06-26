@@ -1290,6 +1290,7 @@ func pluginsSectionFromRender(render RenderResult) []state.FileEntry {
 			SourceHash: fw.SourceHash,
 			Merge:      fw.Merge,
 			Keys:       fw.Keys,
+			Source:     fw.Source,
 		})
 	}
 	return out
@@ -1312,6 +1313,7 @@ func skillsSectionFromRender(render RenderResult) []state.FileEntry {
 			SourceHash: fw.SourceHash,
 			Merge:      fw.Merge,
 			Keys:       fw.Keys,
+			Source:     fw.Source,
 		})
 	}
 	return out
