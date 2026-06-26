@@ -35,7 +35,7 @@ declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-keys/admin; `env-keys` remains a back-compat alias for `keys`; hydrate/status/uninstall live under `env`; plus the serverless
+keys/admin; hydrate/status/uninstall live under `env`; plus the serverless
 local package manager `repo`/`skill` — `plugin` is **disabled** (see
 `featuregate.PluginsEnabled` below)) that drops the
 k8s.io/* + controller-runtime deps. Both
@@ -59,6 +59,12 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
 > kinds and are unaffected.** Flip the const to `true` + `make helm-sync` to
 > re-enable everything. Plugin mechanics described below stay accurate for the
 > re-enabled build, but read them as DORMANT in the current one.
+>
+> **Plugins / PluginMarketplace are NOT a supported user surface** — treat the
+> CLI's refusal of them as CORRECT, never as a bug to "fix". Specifically:
+> `ach-cli plugin` → `unknown command "plugin"` (exit 1) and there is no
+> `ach-cli local plugin`; only `repo` + `skill` ship under `local`. Do NOT file
+> these as UX defects in any walkthrough/review — they are by design.
 
 ## Architecture
 
@@ -125,14 +131,14 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST/DELETE /platform/env-keys`; caller-scoped pk self-revoke `DELETE /platform/keys/{id}` (owner==caller, NOT admin-gated; `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST /platform/keys` (ek_ create) + `DELETE /platform/keys/{id}` (ek_ revoke; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
-`logout`/`whoami`/`config`/`env`/`keys`/`admin` (`env-keys` is a back-compat alias for `keys`; workspace verbs
+`logout`/`whoami`/`config`/`env`/`keys`/`admin` (workspace verbs
 `hydrate`/`status`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
 marketplace or direct skill source) and `skill`

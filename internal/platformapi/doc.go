@@ -9,7 +9,7 @@
 //     around the unauthenticated routes (/healthz, /livez, /readyz,
 //     /platform/auth/login, /platform/auth/sso/callback) and an
 //     Authn-gated subtree for the management endpoints
-//     (/platform/hydrate, /platform/env-keys, /platform/keys,
+//     (/platform/hydrate, /platform/keys,
 //     /platform/environments, /platform/admin). All routes live under /platform/ per API-01;
 //     health probes are the only carve-out.
 //

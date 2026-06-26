@@ -21,7 +21,31 @@ import (
 // the force=true override.
 const codeCannotRevokeActiveKey = "cannot_revoke_active_key"
 
-// RevokePersonalHandler handles DELETE /platform/keys/{key_id}.
+// RevokeHandler is the unified DELETE /platform/keys/{key_id}. It dispatches on
+// the key-id prefix, preserving each key type's distinct revoke semantics:
+//   - ekid_ → revokeEnvironmentKey (LiteLLM-first, 204 No Content)
+//   - pkid_ → revokePersonalKey    (DB-first, 200 JSON, active-key 409 guard)
+//
+// Any other prefix → 400 invalid_argument.
+func RevokeHandler(deps Deps) http.HandlerFunc {
+	ek := revokeEnvironmentKey(deps)
+	pk := revokePersonalKey(deps)
+	return func(w http.ResponseWriter, r *http.Request) {
+		keyID := chi.URLParam(r, "key_id")
+		switch {
+		case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
+			ek(w, r)
+		case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
+			pk(w, r)
+		default:
+			reqID := middleware.RequestIDFromCtx(r.Context())
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
+				"key_id must start with "+keys.PkidKeyIDPrefix+" or "+keys.EkidKeyIDPrefix, reqID)
+		}
+	}
+}
+
+// revokePersonalKey handles the pkid_ branch of DELETE /platform/keys/{key_id}.
 //
 // Owner-scoped (NOT admin-gated): the handler revokes only the caller's own
 // pk_ key. The DB function (db.RevokePersonalKeyByOwner) enforces ownership;
@@ -35,7 +59,7 @@ const codeCannotRevokeActiveKey = "cannot_revoke_active_key"
 // DB-first ordering (KEY-07): the DB row is flipped before the best-effort
 // LiteLLM RevokeKey call. LiteLLM-unreachable still returns 200 — the DB flip
 // is the caller-observable revocation barrier.
-func RevokePersonalHandler(deps Deps) http.HandlerFunc {
+func revokePersonalKey(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		reqID := middleware.RequestIDFromCtx(ctx)
@@ -43,13 +67,6 @@ func RevokePersonalHandler(deps Deps) http.HandlerFunc {
 		keyCtx, _ := middleware.KeyContextFromCtx(ctx)
 
 		keyID := chi.URLParam(r, "key_id")
-
-		// ekid_ prefix → tell the caller to use the ek_ revoke endpoint.
-		if strings.HasPrefix(keyID, keys.EkidKeyIDPrefix) {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
-				"use DELETE /platform/env-keys/{key_id} to revoke ek_ keys", reqID)
-			return
-		}
 
 		// pkid_ prefix guard — reject anything that is not a pk_ key ID.
 		if !strings.HasPrefix(keyID, keys.PkidKeyIDPrefix) {

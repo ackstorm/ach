@@ -132,7 +132,7 @@ func gateName(g Gate) string {
 	case GateConfig:
 		return "config"
 	case GateEnvKeysCreate:
-		return "env-keys create"
+		return "keys create"
 	case GateHydrate:
 		return "hydrate"
 	case GateWhoami:
@@ -142,9 +142,9 @@ func gateName(g Gate) string {
 	case GateEnvDescribe:
 		return "env describe"
 	case GateEnvKeysList:
-		return "env-keys list"
+		return "keys list"
 	case GateEnvKeysRevoke:
-		return "env-keys revoke"
+		return "keys revoke"
 	case GateAdmin:
 		return "admin"
 	default:
@@ -223,7 +223,7 @@ func GuardCommand(p Params) error {
 		if !p.NoSaveFlag {
 			return &exit.CodedError{
 				Code: exit.General,
-				Msg: "ach env-keys create requires --no-save in synthetic mode " +
+				Msg: "ach keys create requires --no-save in synthetic mode " +
 					"(ACH_BASE_URL + credential set; no writable config file — D-08)",
 			}
 		}

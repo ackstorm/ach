@@ -1,6 +1,6 @@
 # Phase 3 e2e fixture — production Environment CR.
 #
-# Plan 03-12. Used by SC#2 (hydrate), SC#3 (env-keys create), SC#5
+# Plan 03-12. Used by SC#2 (hydrate), SC#3 (keys create), SC#5
 # (admin force-refresh). The Operator (Phase 02) reconciles authorized
 # Teams + LiteLLM access groups; phase3_invariants_test.go waits for
 # AccessGroupSynced=True via the kubectl jsonpath poller.

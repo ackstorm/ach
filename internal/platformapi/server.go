@@ -174,7 +174,6 @@ func New(deps Deps) http.Handler {
 			Logger:           deps.Logger,
 			Namespace:        deps.Namespace,
 		}
-		r.Route("/platform/env-keys", envkeys.Mount(envkeysDeps))
 		envkeys.MountKeys(r, envkeysDeps)
 
 		// WARN-06: environments.Deps now carries LiteLLM (for

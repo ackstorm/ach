@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach keys` (alias: `env-keys`) manages the caller's API keys:
+// `ach keys` manages the caller's API keys:
 // personal pk_ keys and environment ek_ keys. Four sub-subcommands:
 // create / list / revoke / prune.
 //
@@ -28,7 +28,7 @@
 // CLIENT-side BEFORE any HTTP call. Raw plaintext (`ek-…`/`pk-…`) is
 // rejected with a message that surfaces the mistake to stderr.
 // `pkid_…` routes to DELETE /platform/keys/{id} (self-revoke of your
-// own personal key); `ekid_…` routes to DELETE /platform/env-keys/{id}.
+// own personal key); `ekid_…` routes to DELETE /platform/keys/{id}.
 //
 // Per W7 (06-04 SUMMARY): the `list` formatter is `render.FormatKeyList`
 // — a single source of truth shared with `ach admin keys list`
@@ -96,15 +96,14 @@ type keysListResponse struct {
 	NextCursor string              `json:"next_cursor"`
 }
 
-// newKeysCmd returns a fresh `ach keys` parent (alias: env-keys) with its
+// newKeysCmd returns a fresh `ach keys` parent with its
 // three children registered. Factory shape (mirrors 06-03 login/whoami/logout)
 // lets tests construct a hermetic cobra subtree per t.Run without
 // cross-test global cobra state leaks.
 func newKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
-		Use:     "keys",
-		Aliases: []string{"env-keys"}, // back-compat
-		Short:   "Manage your API keys (personal pk_ and environment ek_)",
+		Use:   "keys",
+		Short: "Manage your API keys (personal pk_ and environment ek_)",
 		Long: `Manage your API keys.
 
 There are two kinds of key:
@@ -330,7 +329,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 		Name        string `json:"name"`
 	}{Environment: environment, Name: name}
 	var resp envKeysCreateResponse
-	if doErr := hc.Do(ctx, http.MethodPost, "/platform/env-keys", body, &resp); doErr != nil {
+	if doErr := hc.Do(ctx, http.MethodPost, "/platform/keys", body, &resp); doErr != nil {
 		// On non-2xx, do NOT echo any fragment — main.go's
 		// errors.As branch will map *ServerError to the right exit
 		// code via exit.MapServerError. The Do() decode path drains
@@ -598,16 +597,13 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	}
 
 	// CLI-13: client-side key-id classification BEFORE any HTTP.
-	// pkid_ → DELETE /platform/keys/{id} (self-revoke personal key)
-	// ekid_ → DELETE /platform/env-keys/{id}
-	// raw plaintext (pk-/ek-) → reject immediately.
+	// Both pkid_ and ekid_ self-revoke through DELETE /platform/keys/{id}
+	// (the server dispatches by prefix). Raw plaintext (pk-/ek-) → reject.
 	var deletePath string
 	switch {
 	case strings.HasPrefix(keyID, keys.EkidKeyIDPrefix):
-		// ekid_ → env-keys endpoint.
-		deletePath = "/platform/env-keys/" + keyID
+		deletePath = "/platform/keys/" + keyID
 	case strings.HasPrefix(keyID, keys.PkidKeyIDPrefix):
-		// pkid_ → personal keys self-revoke endpoint.
 		deletePath = "/platform/keys/" + keyID
 		if force {
 			deletePath += "?force=true"
@@ -953,7 +949,7 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 // linker might trim the unused import.
 var _ = context.Background
 
-// Register `ach keys` (alias: env-keys) on the root command. Mirrors the
+// Register `ach keys` on the root command. Mirrors the
 // login/logout/whoami pattern from 06-03 — each subcommand owns its
 // own init() so cobra registration is local to the file.
 func init() {

@@ -374,7 +374,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 }
 
 // phase7Sc1RunEk drives a single sc1_*_ek subtest. The ek_ is minted
-// via `ach-cli env-keys create` against the seeded XDG; per CLI-04 the
+// via `ach-cli keys create` against the seeded XDG; per CLI-04 the
 // ek_ binds the environment, so the hydrate call omits --environment
 // and passes --env-key <label>.
 func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {

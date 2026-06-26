@@ -294,26 +294,26 @@ func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, localPort, pk, env str
 		"name":        "demo-ek",
 	})
 
-	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:%s/platform/env-keys", localPort), bytes.NewReader(payload))
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:%s/platform/keys", localPort), bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-ach-key", pk)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("POST /platform/env-keys failed: %w", err)
+		return "", fmt.Errorf("POST /platform/keys failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("POST /platform/env-keys status = %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("POST /platform/keys status = %d: %s", resp.StatusCode, string(body))
 	}
 
 	var data struct {
 		Plaintext string `json:"plaintext"`
 	}
 	if err := json.Unmarshal(body, &data); err != nil {
-		return "", fmt.Errorf("failed to decode env-keys JSON: %w, body: %s", err, string(body))
+		return "", fmt.Errorf("failed to decode keys JSON: %w, body: %s", err, string(body))
 	}
 
 	return data.Plaintext, nil

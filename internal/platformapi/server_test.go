@@ -100,7 +100,7 @@ func TestServer_S1_UnauthenticatedRoutesNotRejectedByAuthn(t *testing.T) {
 }
 
 // TestServer_S2_AuthenticatedRoutesRejected401WithoutKey asserts that
-// /platform/hydrate, /platform/env-keys, /platform/environments, and
+// /platform/hydrate, /platform/keys, /platform/environments, and
 // /platform/admin/* are gated by Authn and return 401 when invoked
 // without an x-ach-key header.
 func TestServer_S2_AuthenticatedRoutesRejected401WithoutKey(t *testing.T) {
@@ -111,8 +111,8 @@ func TestServer_S2_AuthenticatedRoutesRejected401WithoutKey(t *testing.T) {
 		method, path string
 	}{
 		{http.MethodPost, "/platform/hydrate"},
-		{http.MethodPost, "/platform/env-keys"},
-		{http.MethodGet, "/platform/env-keys"},
+		{http.MethodPost, "/platform/keys"},
+		{http.MethodGet, "/platform/keys"},
 		{http.MethodGet, "/platform/environments"},
 		{http.MethodPost, "/platform/admin/keys/revoke"},
 	}

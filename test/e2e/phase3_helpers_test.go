@@ -291,7 +291,7 @@ func phase3WaitForPlatformAPIReady(t *testing.T, timeout time.Duration) {
 
 // phase3ApplyEnvironment applies a Phase 3 fixture Environment CR via
 // `kubectl apply -f`. Registers t.Cleanup to delete the CR on subtest
-// end. Used by SC#2 (hydrate), SC#3 (env-keys create), and SC#5 (admin).
+// end. Used by SC#2 (hydrate), SC#3 (keys create), and SC#5 (admin).
 func phase3ApplyEnvironment(t *testing.T, fixturePath string) {
 	t.Helper()
 	if out, err := runCmd("kubectl", "apply", "-f", fixturePath); err != nil {

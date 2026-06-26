@@ -4,7 +4,7 @@ Multi-service Kubernetes control plane for managing AI agent configurations:
 operator + platform API + forwarder + content service + CLI. The long-running
 services ship as a single Go binary (`ach`) with cobra subcommands; the
 user-facing CLI ships as a separate `ach-cli` binary (login/whoami/logout/
-config/env/env-keys/hydrate/admin).
+config/env/keys/hydrate/admin).
 
 ## Quick start
 

@@ -23,7 +23,7 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, DB-count helpers     |
 | `phase5_invariants_test.go`           | Phase 05 SCs (content-service sendfile path, env-cache observability, hydrate URL surface)                            |
 | `phase5_helpers_test.go`              | Phase 05 helpers (port-forward, kubectl exec into pods, strace seam)                                                  |
-| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — login (env-var-injected pk_) + whoami --verify + env list + env-keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
+| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — login (env-var-injected pk_) + whoami --verify + env list + keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
 | `phase6_helpers_test.go`              | Phase 06 helpers (`phase6SuiteGuard`, `phase6WriteTempConfig`, `phase6NormalizeHydrate`, `phase6RunAch`)                |
 
 ## Focused dev loop

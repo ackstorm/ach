@@ -50,3 +50,6 @@ spec/
 
 # Git worktrees (local-only, never committed)
 .worktrees/
+
+# SDD/superpowers session scratch — never commit
+.superpowers/

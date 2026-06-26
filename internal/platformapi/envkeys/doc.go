@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package envkeys ships the four HTTP handlers + chi router subtree
-// for the /platform/env-keys endpoint family per Hub §15.5:
+// Package envkeys ships the HTTP handlers + chi router subtree for the
+// /platform/keys endpoint family:
 //
-//   - POST   /platform/env-keys           — §8.2 8-step ek- create flow.
-//   - GET    /platform/env-keys           — paginated list (caller-scoped
-//     non-admin; admin override via ?owner_email=).
-//   - GET    /platform/env-keys/{key_id}  — single-row read with ekid_
-//     prefix gate + owner check.
-//   - DELETE /platform/env-keys/{key_id}  — §8.5 LiteLLM-first revoke;
-//     204 No Content only after LiteLLM ack.
+//   - POST   /platform/keys           — §8.2 8-step ek_ create flow.
+//   - GET    /platform/keys           — caller-scoped list (pk_ + ek_; admin
+//     override via ?owner_email=).
+//   - GET    /platform/keys/{key_id}  — single-row read with ekid_ prefix gate
+//     and owner check.
+//   - DELETE /platform/keys/{key_id}  — prefix-dispatched revoke: ekid_ →
+//     LiteLLM-first 204 No Content (KEY-08); pkid_ → DB-first 200 JSON with
+//     active-key 409 guard (KEY-07).
+//
+// The former /platform/env-keys family was folded into /platform/keys in
+// 2026-06; the route was removed and the revoke handlers unified into a
+// single prefix-dispatched RevokeHandler.
 //
 // Discipline:
 //
@@ -18,11 +23,11 @@
 //     and returned EXACTLY ONCE in the POST response body. It is NEVER
 //     written to the DB (only the credhash hex), NEVER logged, NEVER
 //     emitted in audit records, NEVER cached, and NEVER returned by
-//     ListHandler / GetHandler / RevokeHandler. The only other handler
+//     ListAllHandler / GetHandler / RevokeHandler. The only other handler
 //     in the codebase that emits plaintext is the SSO callback (Plan
-//     03-07 — pk-); this package is the second and final emitter.
+//     03-07 — pk_); this package is the second and final emitter.
 //
-//   - Asymmetric revocation (KEY-08, D-15). RevokeHandler runs §8.5
+//   - Asymmetric revocation (KEY-08, D-15). revokeEnvironmentKey runs §8.5
 //     verbatim: read row → call litellm.RevokeKey FIRST → flip DB row
 //     → DEL Redis. LiteLLM is the load-bearing barrier; the DB row
 //     stays 'active' until LiteLLM acks so a retry retries cleanly.
@@ -55,15 +60,15 @@
 //     matches here by design.
 //
 //   - Caller-type discipline. Every handler in this file gates on
-//     keyCtx.KeyType == keys.PrefixPk before doing any other work; ek-
+//     keyCtx.KeyType == keys.PrefixPk before doing any other work; ek_
 //     callers receive 401 invalid_key_type without further side
 //     effects (no DB, no LiteLLM, no Redis). Management endpoints are
-//     pk--only per API-11.
+//     pk_-only per API-11.
 //
 //   - DisallowUnknownFields. POST request bodies are parsed via
 //     json.Decoder with DisallowUnknownFields() set; any unknown field
 //     yields 400 invalid_argument BEFORE the §8.2 flow runs (D-16).
 //
-// External callers wire this package via Mount(deps) inside the chi
-// route setup in Plan 03-11's cmd/platform-api/server.go.
+// External callers wire this package via MountKeys(r, deps) inside the chi
+// route setup in internal/platformapi/server.go.
 package envkeys

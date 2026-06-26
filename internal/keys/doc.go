@@ -24,7 +24,7 @@
 //   - the one-time return body of POST /platform/auth/sso/callback
 //     (Phase 3 plan 03-07)
 //
-//   - the one-time return body of POST /platform/env-keys
+//   - the one-time return body of POST /platform/keys
 //     (Phase 3 plan 03-08)
 //     A static-analysis grep gate in CI scans handler files for these
 //     patterns outside the two allowed emission sites.

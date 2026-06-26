@@ -64,10 +64,9 @@ func seedKeysConfig(t *testing.T, baseURL string) string {
 // HTTP client seam so `ach keys *` can reach the ephemeral TLS
 // cert. Routes:
 //
-//	POST   /platform/env-keys           — create (unchanged endpoint)
-//	GET    /platform/keys               — list (new combined endpoint)
-//	DELETE /platform/env-keys/{key_id}  — revoke ek_ (unchanged endpoint)
-//	DELETE /platform/keys/{key_id}      — revoke pk_ (self-revoke, task-6)
+//	POST   /platform/keys               — create
+//	GET    /platform/keys               — list (combined endpoint)
+//	DELETE /platform/keys/{key_id}      — revoke ekid_ and pkid_ (unified)
 type keysTestServer struct {
 	*httptest.Server
 	createBody     map[string]any
@@ -93,53 +92,14 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 		revokeStatus: 204,
 	}
 	mux := http.NewServeMux()
-	// create: POST /platform/env-keys (unchanged)
-	mux.HandleFunc("/platform/env-keys", func(w http.ResponseWriter, r *http.Request) {
+	// create: POST /platform/keys; list: GET /platform/keys
+	mux.HandleFunc("/platform/keys", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			atomic.AddInt32(&srv.createCalls, 1)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(srv.createStatus)
 			_ = json.NewEncoder(w).Encode(srv.createBody)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-	// list: GET /platform/keys (new combined endpoint)
-	// pk self-revoke: DELETE /platform/keys/{id} (task-6)
-	// Note: /platform/keys/ (trailing slash) handles sub-paths for DELETE.
-	mux.HandleFunc("/platform/keys/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		atomic.AddInt32(&srv.pkRevokeCalls, 1)
-		srv.lastDeleteID = strings.TrimPrefix(r.URL.Path, "/platform/keys/")
-		srv.lastDeletePath = r.URL.Path
-		srv.lastQuery = r.URL.RawQuery
-		status := srv.pkRevokeStatus
-		if status == 0 {
-			status = 204
-		}
-		if status >= 400 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			code := "not_found"
-			msg := "key not found"
-			if status == 409 {
-				code = "cannot_revoke_active_key"
-				msg = "cannot revoke the active key without force"
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error":      map[string]string{"code": code, "message": msg},
-				"request_id": "req_test",
-			})
-			return
-		}
-		w.WriteHeader(status)
-	})
-	mux.HandleFunc("/platform/keys", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
 		case http.MethodGet:
 			atomic.AddInt32(&srv.listCalls, 1)
 			srv.lastQuery = r.URL.RawQuery
@@ -150,25 +110,54 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	// revoke: DELETE /platform/env-keys/<id> (unchanged)
-	mux.HandleFunc("/platform/env-keys/", func(w http.ResponseWriter, r *http.Request) {
+	// revoke: DELETE /platform/keys/<id> — both ekid_ and pkid_ route here.
+	// Branch on id prefix to count ekid_ in revokeCalls and pkid_ in pkRevokeCalls,
+	// mirroring the real dispatcher so per-type assertions still work.
+	mux.HandleFunc("/platform/keys/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		atomic.AddInt32(&srv.revokeCalls, 1)
-		srv.lastDeleteID = strings.TrimPrefix(r.URL.Path, "/platform/env-keys/")
+		id := strings.TrimPrefix(r.URL.Path, "/platform/keys/")
+		srv.lastDeleteID = id
 		srv.lastDeletePath = r.URL.Path
-		if srv.revokeStatus >= 400 {
-			w.Header().Set("Content-Type", "application/json")
+		srv.lastQuery = r.URL.RawQuery
+		if strings.HasPrefix(id, "pkid_") {
+			atomic.AddInt32(&srv.pkRevokeCalls, 1)
+			status := srv.pkRevokeStatus
+			if status == 0 {
+				status = 204
+			}
+			if status >= 400 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				code := "not_found"
+				msg := "key not found"
+				if status == 409 {
+					code = "cannot_revoke_active_key"
+					msg = "cannot revoke the active key without force"
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":      map[string]string{"code": code, "message": msg},
+					"request_id": "req_test",
+				})
+				return
+			}
+			w.WriteHeader(status)
+		} else {
+			// ekid_ (or other)
+			atomic.AddInt32(&srv.revokeCalls, 1)
+			if srv.revokeStatus >= 400 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(srv.revokeStatus)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":      map[string]string{"code": "not_found", "message": "key not found"},
+					"request_id": "req_test",
+				})
+				return
+			}
 			w.WriteHeader(srv.revokeStatus)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error":      map[string]string{"code": "not_found", "message": "key not found"},
-				"request_id": "req_test",
-			})
-			return
 		}
-		w.WriteHeader(srv.revokeStatus)
 	})
 	srv.Server = httptest.NewTLSServer(mux)
 	// Override the package-level *http.Client seam for the lifetime
@@ -213,9 +202,9 @@ func newRootCmdForTest() *cobra.Command {
 	return root
 }
 
-// executeRoot builds a minimal root command (with keys/env-keys registered)
-// and executes args through it. Required for alias testing since cobra
-// aliases only resolve when the parent command is registered on the root.
+// executeRoot builds a minimal root command (with keys registered)
+// and executes args through it. Used to verify alias absence — cobra only
+// resolves registered commands/aliases when the root is present.
 func executeRoot(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
 	t.Helper()
 	freshRoot := newRootCmdForTest()
@@ -863,17 +852,11 @@ func TestKeys_List_DefaultTypeAll(t *testing.T) {
 	}
 }
 
-// Test: env-keys alias resolves through the root command.
-func TestKeys_EnvKeysAliasStillWorks(t *testing.T) {
-	keysTestEnv(t)
-	srv := newKeysTestServer(t)
-	defer srv.Close()
-	srv.listBody = map[string]any{"items": []map[string]any{}, "next_cursor": ""}
-	seedKeysConfig(t, srv.URL)
-	// Alias lives on the parent 'keys' command registered on a root.
-	// Invoke through executeRoot so cobra can resolve "env-keys" → "keys".
-	if _, _, _, err := executeRoot(t, "", "env-keys", "list"); err != nil {
-		t.Fatalf("env-keys alias failed: %v", err)
+// TestEnvKeysAliasRemoved confirms `env-keys` is no longer a registered alias.
+func TestEnvKeysAliasRemoved(t *testing.T) {
+	_, _, code, err := executeRoot(t, "", "env-keys", "list")
+	if err == nil && code == 0 {
+		t.Fatal("`env-keys` still resolves; the back-compat alias must be gone")
 	}
 }
 
@@ -1048,8 +1031,8 @@ func TestKeysRevoke_PrintsConfirmationOnSuccess(t *testing.T) {
 // Task 6: revoke self-revoke routing + --force tests
 // ---------------------------------------------------------------------
 
-// TestRevoke_EkidRoutesToEnvKeys: ekid_ → DELETE /platform/env-keys/<id>.
-func TestRevoke_EkidRoutesToEnvKeys(t *testing.T) {
+// TestRevoke_EkidRoutesToKeys: ekid_ → DELETE /platform/keys/<id>.
+func TestRevoke_EkidRoutesToKeys(t *testing.T) {
 	keysTestEnv(t)
 	srv := newKeysTestServer(t)
 	defer srv.Close()
