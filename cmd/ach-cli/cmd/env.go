@@ -155,8 +155,15 @@ func newEnvDescribeCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "describe <name>",
 		Short: "Show one environment's runtime + context manifest",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// C4: friendly missing-arg hint before any credential resolution.
+			if len(args) == 0 {
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  "missing environment.\n  Usage: ach env describe <name>\n  Run 'ach env list' to see available environments.",
+				}
+			}
 			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
 			// half-set, --profile, --env-key).
 			if err := synthetic.GuardCommand(synthetic.Params{

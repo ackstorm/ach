@@ -74,7 +74,8 @@ type keysTestServer struct {
 	listBody       map[string]any
 	listStatus     int
 	revokeStatus   int
-	pkRevokeStatus int // status for DELETE /platform/keys/{id}; 0 → use revokeStatus
+	pkRevokeStatus int            // status for DELETE /platform/keys/{id}; 0 → use revokeStatus
+	envListBody    map[string]any // C3: served at GET /platform/environments
 	createCalls    int32
 	listCalls      int32
 	revokeCalls    int32 // ekid_ revokes
@@ -109,6 +110,16 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+	// env list: GET /platform/environments — serves envListBody (C3 test seam).
+	// Returns an empty list by default so existing tests are unaffected.
+	mux.HandleFunc("/platform/environments", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body := srv.envListBody
+		if body == nil {
+			body = map[string]any{"items": []map[string]any{}, "next_cursor": nil}
+		}
+		_ = json.NewEncoder(w).Encode(body)
 	})
 	// revoke: DELETE /platform/keys/<id> — both ekid_ and pkid_ route here.
 	// Branch on id prefix to count ekid_ in revokeCalls and pkid_ in pkRevokeCalls,
@@ -164,6 +175,24 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 	// of the test so the TLS-trusting client wired through keys
 	// sees the ephemeral cert.
 	swapKeysHTTPClientForTest(t, srv.Client())
+	return srv
+}
+
+// newKeysMockServerWithEnvs is like newKeysTestServer but pre-populates the
+// GET /platform/environments endpoint with the supplied environment names.
+// Used by C3 tests that verify client-side env-name validation in
+// `keys create <env>`.
+func newKeysMockServerWithEnvs(t *testing.T, names ...string) *keysTestServer {
+	t.Helper()
+	srv := newKeysTestServer(t)
+	items := make([]map[string]any, len(names))
+	for i, n := range names {
+		items[i] = map[string]any{"name": n}
+	}
+	srv.envListBody = map[string]any{
+		"items":       items,
+		"next_cursor": nil,
+	}
 	return srv
 }
 
@@ -1527,6 +1556,66 @@ func TestKeysHelpJargonFree(t *testing.T) {
 		if strings.Contains(listText, bad) {
 			t.Errorf("keys list help contains forbidden jargon %q", bad)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// C3 / C4 / C6 — friendly error paths (task-8)
+// ---------------------------------------------------------------------
+
+// TestKeysCreate_BadEnv_ClientSideFriendly verifies that `keys create <bad-env>`
+// is rejected CLIENT-SIDE (no server POST) when the env-list fetch returns a
+// non-empty list that does not contain the requested env name.
+func TestKeysCreate_BadEnv_ClientSideFriendly(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysMockServerWithEnvs(t, "frontend-dev", "platform")
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "create", "ghost-env", "--no-save")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 for bad env; got code=%d err=%v", code, err)
+	}
+	if !strings.Contains(err.Error(), "frontend-dev") {
+		t.Errorf("bad-env error should list available environments; got %q", err.Error())
+	}
+	if atomic.LoadInt32(&srv.createCalls) != 0 {
+		t.Errorf("must not POST for a known-bad env name; got %d create calls", srv.createCalls)
+	}
+}
+
+// TestKeysRevoke_NoArg_Friendly verifies that `keys revoke` with no argument
+// returns a friendly usage hint (C4), not cobra's terse "accepts 1 arg(s)".
+func TestKeysRevoke_NoArg_Friendly(t *testing.T) {
+	keysTestEnv(t)
+	_, _, code, err := executeKeys(t, "", "revoke")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 for missing key id; got code=%d err=%v", code, err)
+	}
+	if !strings.Contains(err.Error(), "ach keys revoke") {
+		t.Errorf("want usage hint mentioning 'ach keys revoke'; got %q", err.Error())
+	}
+}
+
+// TestKeysRevoke_NotFound_Friendly verifies that a server 404 on DELETE
+// produces a friendly "not found, or not owned by you" message (C6), not
+// the raw server-error envelope (which contains "request_id=").
+func TestKeysRevoke_NotFound_Friendly(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	srv.revokeStatus = 404
+	defer srv.Close()
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "revoke", "ekid_missing", "--yes")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 for not-found revoke; got code=%d err=%v", code, err)
+	}
+	if strings.Contains(err.Error(), "request_id=") {
+		t.Errorf("revoke not-found should be friendly, not the raw server envelope; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("revoke not-found message should say 'not found'; got %q", err.Error())
 	}
 }
 

@@ -218,6 +218,17 @@ environment name, so in the common case you only need to pass the environment.
 				return &exit.CodedError{Code: exit.General, Msg: msg}
 			}
 
+			// C3: best-effort client-side env validation. If the env list is
+			// non-empty and the requested env is not in it, error before any
+			// server POST. Falls through when the list is empty (offline / no
+			// credentials) so the server can provide its own error.
+			if envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey); len(envNames) > 0 && !contains(envNames, resolvedEnv) {
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  fmt.Sprintf("environment %q not found.\n  Your environments:\n    %s", resolvedEnv, strings.Join(envNames, ", ")),
+				}
+			}
+
 			// Default --name to the resolved environment when unset.
 			if strings.TrimSpace(flagName) == "" {
 				flagName = resolvedEnv
@@ -562,10 +573,16 @@ invalidate the current session (e.g. rotating credentials).
 
   # Revoke your current session key (forces invalidation; re-login required)
   ach keys revoke pkid_01j0zabc… --force`,
-		Args:          cobra.ExactArgs(1),
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  "missing key id.\n  Usage: ach keys revoke <ekid_…|pkid_…>\n  Run 'ach keys list' to see your key ids.",
+				}
+			}
 			return runEnvKeysRevoke(cmd, args[0], flagYes, flagForce,
 				flagProfile, flagAPIKey, flagEnvKey, flagVerbose)
 		},
@@ -667,12 +684,20 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 	}
 	doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
 	if doErr != nil {
-		// On 409 cannot_revoke_active_key: surface a friendly message.
 		var sErr *httpclient.ServerError
+		// On 409 cannot_revoke_active_key: surface a friendly message.
 		if errors.As(doErr, &sErr) && sErr.Status == http.StatusConflict && sErr.Code == codeCannotRevokeActiveKey {
 			return &exit.CodedError{
 				Code:    exit.General,
 				Msg:     "this is the key your current session authenticates with; re-run with --force, then re-login afterward",
+				Wrapped: doErr,
+			}
+		}
+		// C6: on 404 surface a friendly not-found message instead of the raw envelope.
+		if errors.As(doErr, &sErr) && sErr.Status == http.StatusNotFound {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("key %q not found, or not owned by you", keyID),
 				Wrapped: doErr,
 			}
 		}
@@ -946,6 +971,16 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 		Code: exit.General,
 		Msg:  fmt.Sprintf("no bearer for profile %q; run `ach login`", name),
 	}
+}
+
+// contains reports whether s is present in slice.
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Defensive: keep context import used even on platforms where the
