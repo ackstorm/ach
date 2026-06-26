@@ -1331,3 +1331,71 @@ Expected: green. Add/extend an e2e assertion that, after `cluster-up`, `GET /pla
 **Placeholder scan:** every code step contains full code; every run step has an exact command + expected result. Two `grep`-and-match notes (Task 4 Step 3, Task 5 Step 3) hedge identifier names the explorers reported but I did not open line-by-line — they are verification instructions, not placeholders.
 
 **Type consistency:** `RuntimeCatalogRow`, `ReplaceRuntimeCatalog`, `ListRuntimeCatalog`, `MaxRuntimeCatalogSync`, `RuntimeCatalogChannel` are defined in Task 2 and consumed verbatim in Tasks 3–4. `EnableCatalog`/`Trigger` defined in Tasks 3/6 and consumed in operator wiring. Endpoint paths and the `{connector,items}` envelope are consistent between Task 4 (server) and Task 5 (client).
+
+---
+
+### Task 7: Teams as a fourth catalog kind (`kind='team'`)
+
+**Why:** `Environment.spec.authorizedTeams` (required, `api/ach/v1alpha1/environment_types.go:132`) is a LiteLLM-owned reference axis the UI must also drag-and-drop, but it has no DB read-model. This task mirrors the models/mcp/a2a pipeline for teams. The Environment authorizes teams by **alias**, so the catalog `name` stores `TeamListEntry.TeamAlias` (NOT the team ID). Scope is the catalog read-model ONLY — do NOT touch the operator's live `authorizedTeams` resolution (`ListTeamsByAlias` in `environment_controller.go`).
+
+**Files:**
+- Create: `db/migrations/000016_runtime_catalog_team_kind.{up,down}.sql`
+- Modify: `internal/snapshot/snapshot.go` (add `Teams` to `LiteLLMSnapshot`, `toTeamSet`, `ListAllTeams` in `refresh`, pass `next.Teams` to persist)
+- Modify: `internal/db/runtime_catalog.go` (`ReplaceRuntimeCatalog` gains a `teams` param; kind map gains `"team"`)
+- Modify: `internal/db/runtime_catalog_test.go` (update the two `ReplaceRuntimeCatalog` calls with a teams set; add a team-tombstone assertion)
+- Modify: `internal/platformapi/admin/runtime/handler.go` (`TeamsHandler` + `CatalogHandler` includes `teams`)
+- Modify: `internal/platformapi/admin/mount.go` (`r.Get("/runtime/teams", …)`)
+- Modify: `cmd/ach-cli/cmd/runtime.go` (a `teams` child + catalog response gains teams) + `cmd/ach-cli/cmd/runtime_test.go`
+- Modify: `test/e2e/runtime_catalog_test.go` (a `teams_listed` subtest asserting the seeded `default` alias)
+- Modify: `CLAUDE.md` (platform-api row: add `teams` to the runtime endpoint list)
+
+**Interfaces:**
+- Consumes: `litellm.ListAllTeams(ctx) ([]litellm.TeamListEntry, error)` (already in `litellm.Client`); `TeamListEntry.TeamAlias` is the alias.
+- Produces: `db.ReplaceRuntimeCatalog(ctx, pool, ns, connector, models, mcpServers, a2aAgents, teams map[string]struct{}, syncedAt time.Time) error` (teams added before syncedAt); `runtimecatalog.TeamsHandler(Deps) http.HandlerFunc`; `GET /platform/admin/runtime/teams`; `ach-cli runtime teams list`.
+
+**MATCH EXISTING NAMES:** Task 5's committed `cmd/ach-cli/cmd/runtime.go` uses `newRuntimeKindCmd`, `runtimeCatalogResp`, `writeRuntimeJSON`/`writeRuntimeTable` — extend those, don't reintroduce the plan's earlier example names. Likewise the committed `handler.go` has `kindHandler`, `toItems`, `itemView`, `CatalogHandler` — reuse them.
+
+- [ ] **Step 1: Migration 000016** — extend the `kind` CHECK to include `'team'`.
+
+`db/migrations/000016_runtime_catalog_team_kind.up.sql`:
+```sql
+-- Add 'team' to the runtime_catalog_entries kind set (authorizedTeams axis).
+ALTER TABLE runtime_catalog_entries DROP CONSTRAINT runtime_catalog_entries_kind_check;
+ALTER TABLE runtime_catalog_entries ADD CONSTRAINT runtime_catalog_entries_kind_check
+    CHECK (kind IN ('model','mcp_server','a2a_agent','team'));
+```
+`db/migrations/000016_runtime_catalog_team_kind.down.sql`:
+```sql
+DELETE FROM runtime_catalog_entries WHERE kind = 'team';
+ALTER TABLE runtime_catalog_entries DROP CONSTRAINT runtime_catalog_entries_kind_check;
+ALTER TABLE runtime_catalog_entries ADD CONSTRAINT runtime_catalog_entries_kind_check
+    CHECK (kind IN ('model','mcp_server','a2a_agent'));
+```
+(The inline column CHECK from 000015 is auto-named `runtime_catalog_entries_kind_check`.)
+
+- [ ] **Step 2: Snapshot** — add `Teams map[string]struct{}` to `LiteLLMSnapshot`, a `toTeamSet`, the `ListAllTeams` call in `refresh` (mirroring the models/mcp/a2a error handling incl. `ErrNotFound`→empty), set `Teams: toTeamSet(teams)` in the success snapshot, add `len(next.Teams)` to the "refreshed" log, and pass `next.Teams` to `ReplaceRuntimeCatalog`. `toTeamSet` skips empty aliases:
+```go
+func toTeamSet(ts []litellm.TeamListEntry) map[string]struct{} {
+	out := make(map[string]struct{}, len(ts))
+	for _, t := range ts {
+		if t.TeamAlias == "" {
+			continue
+		}
+		out[t.TeamAlias] = struct{}{}
+	}
+	return out
+}
+```
+Add a snapshot unit test asserting a team alias lands in `Snapshot().Teams`. Run `./scripts/dev.sh go test ./internal/snapshot/ -count=1`.
+
+- [ ] **Step 3: DB layer** — `ReplaceRuntimeCatalog` gains `teams map[string]struct{}` (before `syncedAt`); its internal kind map gains `"team": teams`. Update `internal/db/runtime_catalog_test.go`'s two calls with a teams set and add an assertion that a team tombstones like the others. Run `./scripts/dev.sh go test -tags=integration ./internal/db/ -run TestReplaceRuntimeCatalog -count=1`.
+
+- [ ] **Step 4: Platform-API** — `TeamsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "team") }`; `CatalogHandler` adds a `case "team"` bucket and a `"teams"` array (a non-nil `make([]itemView,0)` like the others); `mount.go` adds `r.Get("/runtime/teams", runtimecatalog.TeamsHandler(rcDeps))`. Extend `handler_test.go` to cover teams. Run `./scripts/dev.sh go test ./internal/platformapi/admin/runtime/ -count=1`.
+
+- [ ] **Step 5: CLI** — add a `teams` child to `newRuntimeCmd` via the existing `newRuntimeKindCmd("teams", "/platform/admin/runtime/teams", "List available teams")`; add `Teams []runtimeItem` (json `teams`) to the catalog response struct so `runtime catalog` renders them. Extend `runtime_test.go`. Run `./scripts/dev.sh go test ./cmd/ach-cli/cmd/ -count=1` and `make build-cli`.
+
+- [ ] **Step 6: E2E** — add a `t.Run("teams_listed", …)` subtest in `test/e2e/runtime_catalog_test.go` (admin pk_ GET `/platform/admin/runtime/teams` → 200, items include the seeded `default` alias the demo Environment authorizes). Compile-check: `./scripts/dev.sh go vet -tags=e2e ./test/e2e/`.
+
+- [ ] **Step 7: Verify, doc, commit** — `make build-server build-cli`; `make qa-lint-changed`; update `CLAUDE.md` platform-api row to add `teams` to the runtime endpoint list. Stage explicit files only. Commit `feat: add teams as a fourth runtime catalog kind`.
+
+---
