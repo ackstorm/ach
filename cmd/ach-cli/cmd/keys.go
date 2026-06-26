@@ -442,6 +442,17 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 		}
 	}
 
+	// Validate --status before any network call (mirrors --type above).
+	switch status {
+	case "active", "revoked", "expired", statusAll, "":
+		// ok
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --status %q: must be active, revoked, expired, or all", status),
+		}
+	}
+
 	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
 	// --profile, --env-key) — runs BEFORE resolveEnvKeysBearer so
 	// the half-set message wins over any disk-config error.

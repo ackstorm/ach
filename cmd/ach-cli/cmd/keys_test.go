@@ -812,6 +812,31 @@ func TestKeys_List_InvalidTypeFlagErrors(t *testing.T) {
 	}
 }
 
+// TestKeys_List_InvalidStatusFlagErrors: invalid --status returns error BEFORE any network call.
+func TestKeys_List_InvalidStatusFlagErrors(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.listBody = map[string]any{"items": []map[string]any{}}
+	seedKeysConfig(t, srv.URL)
+
+	_, _, code, err := executeKeys(t, "", "list", "--status", "bogus")
+	if err == nil {
+		t.Fatal("expected error for --status bogus")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	// Must not have hit the server.
+	if srv.listCalls != 0 {
+		t.Errorf("expected 0 server calls for invalid status; got %d", srv.listCalls)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "bogus") {
+		t.Errorf("error should mention the invalid value; got: %q", msg)
+	}
+}
+
 // Test: default --type (all) sends no type= param and returns both pk and ek rows.
 func TestKeys_List_DefaultTypeAll(t *testing.T) {
 	keysTestEnv(t)

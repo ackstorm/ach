@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
 )
 
@@ -425,6 +426,22 @@ func TestPluginCmd_Uninstall_Idempotent(t *testing.T) {
 	cmd.SetArgs([]string{"uninstall", "ghost@repo", "--dest", t.TempDir()})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin uninstall (idempotent): expected exit 0, got: %v", err)
+	}
+}
+
+// TestSkillInstall_UnregisteredRepo_Exit1 is a B2 regression guard: installing
+// from a repo name that is not registered must exit non-zero (exit.General).
+// No production change needed — this locks the already-correct behaviour in findRepo.
+func TestSkillInstall_UnregisteredRepo_Exit1(t *testing.T) {
+	// Fresh XDG_CONFIG_HOME, NO repo seeded → store.LoadRepos returns empty.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	_, _, code, err := executeCommand(t, newSkillCmd(), "install", "foo@norepo", "--target", "claude-code")
+	if err == nil {
+		t.Fatal("expected error installing from unregistered repo")
+	}
+	if code != exit.General {
+		t.Errorf("exit code = %d; want %d (General)", code, exit.General)
 	}
 }
 

@@ -546,6 +546,17 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
 
+	// Validate --status before any network call (mirrors runKeysList).
+	switch status {
+	case "active", "revoked", "expired", statusAll, "":
+		// ok
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --status %q: must be active, revoked, expired, or all", status),
+		}
+	}
+
 	// CLI-07 synthetic gate (admin allowed in synthetic).
 	if err := synthetic.GuardCommand(synthetic.Params{
 		Gate:        synthetic.GateAdmin,
