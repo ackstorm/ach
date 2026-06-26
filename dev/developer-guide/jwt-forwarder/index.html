@@ -1685,8 +1685,15 @@ shared master key.</p>
   into the new <code>litellm_key_material</code> column (reversing FIX01 §A.6 — plaintext,
   deliberate for this testing phase).</li>
 <li>The resolver carries it through <code>KeyInfo</code> → <code>KeyContext</code>; the Director writes
-  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/gemini</code>/<code>/a2a</code>, <code>Bearer</code>-
-  prefixed on <code>/mcp</code> (LiteLLM's MCP key parser requires the prefix).</li>
+  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/a2a</code>, <code>Bearer</code>-prefixed on
+  <code>/mcp</code> (LiteLLM's MCP key parser requires the prefix).</li>
+<li><strong><code>/gemini</code> is the exception:</strong> LiteLLM's native Google AI Studio passthrough
+  authenticates the virtual key ONLY via <code>x-goog-api-key</code> (or <code>?key=</code>) — it does
+  NOT read <code>x-litellm-api-key</code> (that is the <code>/v1</code> OpenAI-compat proxy); sending
+  it yields a <code>Virtual Key expected … 'sk-'</code> 401. So on <code>/gemini</code> the Director
+  sets the caller's material as <strong>bare <code>x-goog-api-key</code></strong> and DROPS
+  <code>x-litellm-api-key</code> so exactly one auth header is sent. Any client-supplied
+  <code>x-goog-api-key</code> is stripped first (§2 strip pass — no credential smuggling).</li>
 <li>LiteLLM therefore attributes the request <strong>1:1 to the user</strong> (their own key,
   their own budget/tags), and the master key never enters the data path — so it
   can no longer leak to an MCP backend that echoes inbound headers.</li>
