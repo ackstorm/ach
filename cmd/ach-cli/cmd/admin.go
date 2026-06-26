@@ -200,9 +200,7 @@ owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + 
 or the equivalent Helm value). Non-allowlisted callers receive
 ` + "`403 not_admin`" + ` and the CLI exits 3.
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newAdminKeysCmd(),
@@ -490,9 +488,7 @@ func newAdminKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "keys",
 		Short: "Admin key operations",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newAdminKeysRevokeCmd())
 	parent.AddCommand(newAdminKeysListCmd())
@@ -727,9 +723,7 @@ func newAdminUsersCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "users",
 		Short: "Admin user operations",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newAdminUsersRevokeKeysCmd())
 	return parent

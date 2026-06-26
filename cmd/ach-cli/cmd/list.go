@@ -62,9 +62,10 @@ func newEnvStatusCmd() *cobra.Command {
 		Long: `Show the installed/projected resources recorded in state.json.
 
 env status is a STATIC read of the workspace (or global) state.json — no
-network call, no re-derivation, no drift detection. It prints one row
-per projected resource with its KIND, on-disk TARGET path, and source
-ENVIRONMENT. Use --json for machine-readable output.
+network call, no re-derivation, no drift detection. By default it prints
+one row per resource (KIND, NAME, FILES count, ENVIRONMENT), grouping a
+resource's files together. Use --files (-f) to list every projected file
+with its on-disk TARGET path, or --json for machine-readable output.
 
 An empty or missing state.json prints "No resources installed" (or an
 empty JSON array under --json) and exits 0.`,

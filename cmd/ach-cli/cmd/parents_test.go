@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -20,7 +21,8 @@ func executeAllRoot(t *testing.T, args ...string) (string, string, exit.Code, er
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	root.AddCommand(newKeysCmd(), newConfigCmd(), newEnvCmd(), newLocalCmd())
+	root.AddCommand(newKeysCmd(), newConfigCmd(), newEnvCmd(), newLocalCmd(),
+		newAdminCmd(), newContentCmd())
 	return executeCommand(t, root, args...)
 }
 
@@ -34,6 +36,10 @@ func TestParents_UnknownSubcommand_Exit1(t *testing.T) {
 		{"local", "frobnicate"},
 		{"local", "repo", "frobnicate"},
 		{"local", "skill", "frobnicate"},
+		{"admin", "frobnicate"},
+		{"admin", "keys", "frobnicate"},
+		{"admin", "users", "frobnicate"},
+		{"content", "frobnicate"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -45,5 +51,25 @@ func TestParents_UnknownSubcommand_Exit1(t *testing.T) {
 				t.Errorf("%v: exit code = %d; want %d", args, code, exit.General)
 			}
 		})
+	}
+}
+
+// TestRoot_UnknownSubcommand_Exit1 asserts the real rootCmd errors on a typo'd
+// top-level command. Unlike the child parents (B3), root needs no RunE guard —
+// cobra's legacyArgs already rejects an unknown command at the root level. This
+// locks that behavior so `ach-cli <typo>` never silently exits 0.
+func TestRoot_UnknownSubcommand_Exit1(t *testing.T) {
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"frobnicate"})
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("ach-cli frobnicate: expected error for unknown command")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Errorf("ach-cli frobnicate: error = %q; want it to mention unknown command", err.Error())
 	}
 }
