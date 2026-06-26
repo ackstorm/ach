@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
@@ -46,6 +48,10 @@ type LiteLLMSnapshot struct {
 	// AgentEntry.AgentName field — D-13).
 	A2AAgents map[string]struct{}
 
+	// Teams is the set of LiteLLM team_alias strings (the
+	// TeamListEntry.TeamAlias field). Empty-alias entries are skipped.
+	Teams map[string]struct{}
+
 	// RefreshedAt is the wall-clock instant at which the most recent
 	// successful refresh (or stale-marker-only update) completed.
 	RefreshedAt time.Time
@@ -80,6 +86,12 @@ type Snapshotter struct {
 	snap                    atomic.Pointer[LiteLLMSnapshot]
 	log                     logr.Logger
 	litellmUnreachableCount atomic.Int64
+
+	// Catalog persistence (runtime catalog). When pool is nil the
+	// Snapshotter does not persist — single-binary unit tests stay inert.
+	pool          *pgxpool.Pool
+	catalogNS     string
+	connectorName string
 }
 
 // NewSnapshotter constructs a Snapshotter wired to a litellm.Client.
@@ -92,6 +104,16 @@ func NewSnapshotter(c litellm.Client, log logr.Logger) *Snapshotter {
 		interval: DefaultRefreshInterval,
 		log:      log,
 	}
+}
+
+// EnableCatalog wires Postgres persistence of each successful refresh into
+// runtime_catalog_entries, keyed by (namespace, connector). Chainable. A nil
+// pool leaves persistence disabled.
+func (s *Snapshotter) EnableCatalog(pool *pgxpool.Pool, namespace, connector string) *Snapshotter {
+	s.pool = pool
+	s.catalogNS = namespace
+	s.connectorName = connector
+	return s
 }
 
 // Snapshot returns the most recent LiteLLMSnapshot value (a shallow
@@ -110,7 +132,7 @@ func (s *Snapshotter) Snapshot() LiteLLMSnapshot {
 
 // LiteLLMUnreachableCount returns the cumulative number of refresh
 // attempts that failed because LiteLLM was unreachable (i.e. any of
-// the three list calls returned a non-ErrNotFound error). Phase 5
+// the four list calls returned a non-ErrNotFound error). Phase 5
 // wires this counter into the litellm_unreachable_total{caller="operator"}
 // Prometheus counter per Hub §18.5.
 func (s *Snapshotter) LiteLLMUnreachableCount() int64 {
@@ -204,13 +226,14 @@ func (s *Snapshotter) RefreshForTest(ctx context.Context) {
 // refresh is invoked only from Start's single-writer goroutine, so no
 // internal lock is required against itself. The atomic.Pointer.Store
 // guarantees publication-safety against concurrent Snapshot() readers.
-// Returns true on a fully successful refresh (all three list calls OK
+// Returns true on a fully successful refresh (all four list calls OK
 // or ErrNotFound), false otherwise. Start uses the return value to
 // pick the next-tick interval (issue #30).
 func (s *Snapshotter) refresh(ctx context.Context) bool {
 	models, errM := s.client.ListModels(ctx)
 	mcps, errC := s.client.ListMCPServers(ctx)
 	agents, errA := s.client.ListA2AAgents(ctx)
+	teams, errT := s.client.ListAllTeams(ctx)
 
 	// ErrNotFound → empty set, NOT an error (D-13 / Plan 02-01 contract).
 	if errors.Is(errM, litellm.ErrNotFound) {
@@ -222,8 +245,11 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	if errors.Is(errA, litellm.ErrNotFound) {
 		agents, errA = nil, nil
 	}
+	if errors.Is(errT, litellm.ErrNotFound) {
+		teams, errT = nil, nil
+	}
 
-	if errM != nil || errC != nil || errA != nil {
+	if errM != nil || errC != nil || errA != nil || errT != nil {
 		s.litellmUnreachableCount.Add(1)
 		if cur := s.snap.Load(); cur != nil {
 			// Preserve prior snapshot with Stale flipped.
@@ -234,6 +260,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 				"modelsErr", errM,
 				"mcpErr", errC,
 				"a2aErr", errA,
+				"teamsErr", errT,
 				"priorRefreshedAt", cur.RefreshedAt,
 			)
 			return false
@@ -249,6 +276,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 			"modelsErr", errM,
 			"mcpErr", errC,
 			"a2aErr", errA,
+			"teamsErr", errT,
 		)
 		return false
 	}
@@ -257,14 +285,26 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		Models:      toModelSet(models),
 		MCPServers:  toMCPSet(mcps),
 		A2AAgents:   toAgentSet(agents),
+		Teams:       toTeamSet(teams),
 		RefreshedAt: time.Now(),
 		Stale:       false,
 	}
 	s.snap.Store(next)
+	if s.pool != nil {
+		if err := achdb.ReplaceRuntimeCatalog(ctx, s.pool, s.catalogNS, s.connectorName,
+			next.Models, next.MCPServers, next.A2AAgents, next.Teams, next.RefreshedAt); err != nil {
+			// Non-fatal: the in-memory snapshot is already published and the
+			// EnvironmentReconciler reads that, not the table. Log and move on;
+			// the next refresh retries the projection.
+			s.log.Error(err, "litellm snapshot: catalog persistence failed",
+				"connector", s.connectorName)
+		}
+	}
 	s.log.Info("litellm snapshot refreshed",
 		"models", len(next.Models),
 		"mcpServers", len(next.MCPServers),
 		"a2aAgents", len(next.A2AAgents),
+		"teams", len(next.Teams),
 	)
 	return true
 }
@@ -298,6 +338,20 @@ func toAgentSet(as []litellm.AgentEntry) map[string]struct{} {
 	out := make(map[string]struct{}, len(as))
 	for _, a := range as {
 		out[a.AgentName] = struct{}{}
+	}
+	return out
+}
+
+// toTeamSet projects a TeamListEntry slice into a name set keyed on
+// .TeamAlias. Entries with an empty alias are skipped (teams without
+// aliases cannot be referenced in Environment.spec.authorizedTeams).
+func toTeamSet(ts []litellm.TeamListEntry) map[string]struct{} {
+	out := make(map[string]struct{}, len(ts))
+	for _, t := range ts {
+		if t.TeamAlias == "" {
+			continue
+		}
+		out[t.TeamAlias] = struct{}{}
 	}
 	return out
 }

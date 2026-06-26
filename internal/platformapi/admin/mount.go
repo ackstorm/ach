@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ackstorm/ach/internal/platformapi/admin/inventory"
+	runtimecatalog "github.com/ackstorm/ach/internal/platformapi/admin/runtime"
 )
 
 // Mount returns a chi.Router subtree configurator that:
@@ -13,10 +14,17 @@ import (
 //  1. Applies the AdminOnly middleware to the entire subtree so every
 //     descendant route is gated by the allowlist + key-type checks per
 //     Hub §15.5 + §18 + API-12.
-//  2. Registers the three admin endpoints:
+//  2. Registers key-management endpoints:
+//     - GET  /keys                     → ListKeysHandler
 //     - POST /keys/revoke              → RevokeKeyHandler
 //     - POST /users/{email}/revoke-keys → RevokeUserKeysHandler
 //     - POST /refresh                  → ForceRefreshHandler
+//  3. Registers read-only object inventory endpoints (GET):
+//     /plugins, /prompts, /artifacts, /skills, /marketplaces,
+//     /skill-marketplaces, /bips, /litellm-connections, /external-refs.
+//  4. Registers read-only runtime catalog endpoints (GET):
+//     /runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
+//     /runtime/teams, /runtime/catalog.
 //
 // The caller wires this under the authenticated chi.Group (Plan 03-11
 // cmd/platform-api/main.go):
@@ -54,5 +62,16 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/bips", inventory.BIPsHandler(inv))
 		r.Get("/litellm-connections", inventory.LitellmConnectionsHandler(inv))
 		r.Get("/external-refs", inventory.ExternalRefsHandler(inv))
+
+		rcDeps := runtimecatalog.Deps{
+			Catalog:   runtimecatalog.NewPoolCatalog(deps.Pool),
+			Namespace: deps.Namespace,
+			Connector: "default",
+		}
+		r.Get("/runtime/models", runtimecatalog.ModelsHandler(rcDeps))
+		r.Get("/runtime/mcp-servers", runtimecatalog.MCPServersHandler(rcDeps))
+		r.Get("/runtime/a2a-agents", runtimecatalog.A2AAgentsHandler(rcDeps))
+		r.Get("/runtime/teams", runtimecatalog.TeamsHandler(rcDeps))
+		r.Get("/runtime/catalog", runtimecatalog.CatalogHandler(rcDeps))
 	}
 }
