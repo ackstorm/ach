@@ -161,7 +161,8 @@ func newEnvDescribeCmd() *cobra.Command {
 			if len(args) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  "missing environment.\n  Usage: ach env describe <name>\n  Run 'ach env list' to see available environments.",
+					Msg: "missing environment.\n  Usage: ach env describe <name>\n" +
+						"  Run 'ach env list' to see available environments.",
 				}
 			}
 			// CLI-07 synthetic gate (allowed-in-synthetic; rejects

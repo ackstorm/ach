@@ -330,12 +330,19 @@ Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
 			name := flagProfile
 			if len(args) == 1 && strings.TrimSpace(args[0]) != "" {
 				if flagProfile != "" && flagProfile != args[0] {
-					return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("profile name given twice (positional %q vs --profile %q)", args[0], flagProfile)}
+					return &exit.CodedError{
+						Code: exit.General,
+						Msg: fmt.Sprintf("profile name given twice (positional %q vs --profile %q)",
+							args[0], flagProfile),
+					}
 				}
 				name = strings.TrimSpace(args[0])
 			}
 			if name == "" {
-				return &exit.CodedError{Code: exit.General, Msg: "missing profile name: pass it positionally (config add <name>) or via --profile"}
+				return &exit.CodedError{
+					Code: exit.General,
+					Msg:  "missing profile name: pass it positionally (config add <name>) or via --profile",
+				}
 			}
 			return runConfigAdd(cmd, name, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce, flagInsecure)
 		},

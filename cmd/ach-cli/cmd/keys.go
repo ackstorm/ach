@@ -222,10 +222,12 @@ environment name, so in the common case you only need to pass the environment.
 			// non-empty and the requested env is not in it, error before any
 			// server POST. Falls through when the list is empty (offline / no
 			// credentials) so the server can provide its own error.
-			if envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey); len(envNames) > 0 && !contains(envNames, resolvedEnv) {
+			envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey)
+			if len(envNames) > 0 && !contains(envNames, resolvedEnv) {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg:  fmt.Sprintf("environment %q not found.\n  Your environments:\n    %s", resolvedEnv, strings.Join(envNames, ", ")),
+					Msg: fmt.Sprintf("environment %q not found.\n  Your environments:\n    %s",
+						resolvedEnv, strings.Join(envNames, ", ")),
 				}
 			}
 
