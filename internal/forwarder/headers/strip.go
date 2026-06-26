@@ -40,6 +40,12 @@ var hopByHopSet = map[string]struct{}{
 // the forwarder unconditionally strips per D-06 (T-04-01-03 mitigation).
 const authHeader = "Authorization"
 
+// googAPIKeyHeader is the native-Gemini credential header (canonical case).
+// Clients authenticate to the forwarder via x-ach-key, never x-goog-api-key,
+// so any incoming value is stripped on every route; the proxy Director re-sets
+// it with the caller's own LiteLLM virtual key for the /gemini route only.
+const googAPIKeyHeader = "X-Goog-Api-Key" //nolint:gosec // G101 false positive: HTTP header name, not a credential value
+
 // StripAndRewrite mutates h in place per the D-06 (strip) + D-07 (write)
 // contract:
 //
@@ -49,6 +55,8 @@ const authHeader = "Authorization"
 //     canonical-case keys http.Header stores.
 //  2. STRIP PASS — iterate h and delete every key matching any of:
 //     - canonical "Authorization"
+//     - canonical "X-Goog-Api-Key" (native-Gemini credential; the /gemini
+//     Director re-sets it with the caller's own key)
 //     - case-insensitive prefix "x-litellm-"
 //     - case-insensitive prefix "x-ach-"
 //     - canonical-case form is in the static hopByHopSet
@@ -89,6 +97,10 @@ func StripAndRewrite(h http.Header, litellmAPIKey string) {
 	// 2. Strip pass.
 	for k := range h {
 		if k == authHeader {
+			delete(h, k)
+			continue
+		}
+		if k == googAPIKeyHeader {
 			delete(h, k)
 			continue
 		}
