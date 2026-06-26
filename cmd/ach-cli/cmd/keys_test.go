@@ -376,6 +376,53 @@ func TestEnvKeys_Create_SyntheticWithoutNoSave_Exit1(t *testing.T) {
 	}
 }
 
+// Test 2b: the key id is surfaced on STDERR (copy-paste revoke hint), and
+// stdout stays the secret only (CLI-04 pipe-safety). The id is what
+// `ach keys revoke` consumes, so showing it at create time removes the need
+// for a later `ach keys list`.
+func TestEnvKeys_Create_KeyIDOnStderr(t *testing.T) {
+	keysTestEnv(t)
+	srv := newKeysTestServer(t)
+	defer srv.Close()
+	srv.createBody = map[string]any{
+		"key_id":      "ekid_abc",
+		"plaintext":   "ek_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		"environment": "demo",
+		"name":        "local-laptop",
+		"owner_email": "u@example",
+		"created_at":  "2026-05-28T10:00:00Z",
+	}
+	seedKeysConfig(t, srv.URL)
+
+	stdout, stderr, code, err := executeKeys(t, "",
+		"create",
+		"--environment", "demo",
+		"--name", "local-laptop",
+		"--no-save",
+	)
+	if err != nil {
+		t.Fatalf("keys create err = %v", err)
+	}
+	if code != exit.OK {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// stderr carries the key id + a ready-to-run revoke hint.
+	if !strings.Contains(stderr, "ekid_abc") {
+		t.Errorf("expected key id ekid_abc on stderr; got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "ach keys revoke ekid_abc") {
+		t.Errorf("expected revoke hint on stderr; got:\n%s", stderr)
+	}
+	// CLI-04: stdout is the secret ONLY — the id must NOT leak there (else a
+	// `TOKEN=$(ach keys create …)` pipe captures two lines).
+	if strings.Contains(stdout, "ekid_abc") {
+		t.Errorf("key id leaked into stdout (breaks pipe contract); got:\n%s", stdout)
+	}
+	if strings.Count(stdout, "ek_aaaaaaaaaaaaaaaaaaaaaawxyz") != 1 {
+		t.Errorf("expected plaintext exactly once on stdout; got:\n%s", stdout)
+	}
+}
+
 // Test 4: synthetic mode WITH --no-save → exit 0, prints ek_ to stdout.
 func TestEnvKeys_Create_SyntheticWithNoSave_OK(t *testing.T) {
 	keysTestEnv(t)

@@ -346,6 +346,13 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 	// CLI-04: print plaintext exactly once.
 	_, _ = fmt.Fprintln(stdout, resp.Plaintext)
 
+	// UX: surface the key id on stderr (NOT stdout — CLI-04 keeps stdout the
+	// secret only, pipe-safe). The id is what `ach keys revoke` consumes, so
+	// emit a copy-paste revoke hint instead of forcing a later `ach keys list`.
+	if resp.KeyID != "" {
+		_, _ = fmt.Fprintf(stderr, "Key ID: %s (revoke with: ach keys revoke %s)\n", resp.KeyID, resp.KeyID)
+	}
+
 	if noSave {
 		// Disk untouched. Done.
 		return nil
