@@ -70,6 +70,16 @@ litellmConnection:
     name: litellm-master-key
     key: masterKey
 
+# Admin allowlist for the e2e suite. The mock SSO user (kilgore@kilgore.trout,
+# minted by the phase4/phase6 login helpers) must be an admin to exercise the
+# admin-only runtime catalog endpoints (GET /platform/admin/runtime/*). Without
+# this the chart parses zero admins and every admin route 403s (safe default).
+# The existing phase3 SC#5 admin-gate test only probes the UNAUTHENTICATED path
+# (401 at Authn, before the allowlist check), so populating this is inert for it.
+platformApi:
+  admins:
+    - kilgore@kilgore.trout
+
 # NOTE: the e2e test backends are NO LONGER chart toggles. They moved out of
 # the Helm chart into test/e2e/cluster/03-test-backends/ (applied by cluster.sh
 # post-ach):

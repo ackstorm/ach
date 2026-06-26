@@ -72,6 +72,11 @@ const adminConfirmYes = "yes"
 // repeated "all" literals across runAdminList + buildAdminKeysListPath.
 const statusAll = "all"
 
+// outputJSON is the string value for the -o/--output flag that selects
+// JSON output. Hoisted to a constant so goconst stays happy across the
+// admin + runtime subcommands that share this flag.
+const outputJSON = "json"
+
 // adminCredFlags bundles the standard credential-set flags every
 // admin subcommand exposes. Hoisted into one type + one
 // registration helper so the per-subcommand cobra.Command struct
@@ -346,7 +351,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 		}
 	}
 	switch output {
-	case "table", "json", "yaml":
+	case "table", outputJSON, "yaml":
 	default:
 		return &exit.CodedError{
 			Code: exit.General,
@@ -457,7 +462,7 @@ func buildAdminListPath(kind, cursor string) string {
 // json/yaml marshal the map directly so machine consumers get the full DTO.
 func renderAdminList(stdout io.Writer, grouped map[string][]render.AdminObjectView, output string) error {
 	switch output {
-	case "json":
+	case outputJSON:
 		b, err := json.MarshalIndent(grouped, "", "  ")
 		if err != nil {
 			return &exit.CodedError{Code: exit.General, Msg: "marshal json: " + err.Error()}

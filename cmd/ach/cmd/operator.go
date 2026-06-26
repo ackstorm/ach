@@ -443,7 +443,8 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create controller LiteLLMConnection: %w", err)
 	}
 
-	snapshotter := snapshot.NewSnapshotter(realLiteLLM, ctrl.Log.WithName("litellm-snapshot"))
+	snapshotter := snapshot.NewSnapshotter(realLiteLLM, ctrl.Log.WithName("litellm-snapshot")).
+		EnableCatalog(dbPool, watchNS, "default")
 	if err := mgr.Add(snapshotter); err != nil {
 		return fmt.Errorf("unable to add LiteLLM snapshot Runnable: %w", err)
 	}
