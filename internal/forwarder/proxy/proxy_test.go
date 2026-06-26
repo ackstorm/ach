@@ -165,6 +165,44 @@ func TestDirector_McpBearerPrefix(t *testing.T) {
 	}
 }
 
+// Gemini route: LiteLLM's native Google AI Studio passthrough reads the
+// virtual key from x-goog-api-key (NOT x-litellm-api-key — that's the /v1
+// proxy). The Director must move the caller's key to x-goog-api-key and drop
+// the ignored x-litellm-api-key so LiteLLM does not 401 with
+// "Virtual Key expected ... 'sk-'". Verified empirically against LiteLLM
+// v1.83.10: x-litellm-api-key → 401, x-goog-api-key → auth OK.
+func TestDirector_GeminiGoogAPIKey(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
+	}
+	rp := New(deps)
+
+	material := "sk-user-1"
+	sealed := sealMaterial(t, material)
+	kc := middleware.KeyContext{
+		KeyType:            keys.PrefixPk,
+		OwnerEmail:         "u@example.com",
+		LiteLLMKeyMaterial: &sealed,
+	}
+	req := httptest.NewRequest(http.MethodPost,
+		"/gemini/v1beta/models/gemini-flash-latest:generateContent", strings.NewReader("{}"))
+	// Adversary tries to smuggle their own goog key — must be stripped, then
+	// re-set with the caller's material.
+	req.Header.Set("x-goog-api-key", "evil-client-key")
+	req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
+
+	rp.Director(req)
+
+	if got := req.Header.Get("x-goog-api-key"); got != material {
+		t.Errorf("x-goog-api-key on /gemini = %q; want caller material %q", got, material)
+	}
+	if _, ok := req.Header["X-Litellm-Api-Key"]; ok {
+		t.Errorf("x-litellm-api-key must be absent on /gemini (LiteLLM ignores it there → 401)")
+	}
+}
+
 // Issue #41 (B): LiteLLM v1.87.1's MCP gateway grants non-admin virtual
 // keys ONLY on the exact single-segment /mcp/{server} route
 // (mcp_inference_routes lists "/mcp/{subpath}", one segment); a trailing

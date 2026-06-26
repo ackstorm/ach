@@ -111,6 +111,17 @@ func New(deps Deps) *httputil.ReverseProxy {
 				req.URL.RawPath = ""
 				req.Header.Set("X-Litellm-Api-Key", "Bearer "+material)
 			}
+			// Gemini route only: LiteLLM's native Google AI Studio passthrough
+			// authenticates the virtual key ONLY via the x-goog-api-key header
+			// (or ?key= query param) — it does NOT read x-litellm-api-key (that
+			// is the /v1 OpenAI-compat proxy). Sending x-litellm-api-key here
+			// yields LiteLLM's "Virtual Key expected ... 'sk-'" 401. Move the
+			// caller's key to the header the gemini gateway reads and drop the
+			// ignored x-litellm-api-key so exactly one auth header is sent.
+			if routeFor(req.URL.Path) == "/gemini" {
+				req.Header.Del("X-Litellm-Api-Key")
+				req.Header.Set("X-Goog-Api-Key", material)
+			}
 
 			// JWT write LAST — strip just cleared any client Authorization.
 			if token, present := jwtFromCtx(req.Context()); present {

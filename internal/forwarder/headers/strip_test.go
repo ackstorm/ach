@@ -605,6 +605,21 @@ func TestStripAndRewrite_EmptyMaterial(t *testing.T) {
 	}
 }
 
+// TestStripAndRewrite_StripsGoogAPIKey asserts a client-supplied native-Gemini
+// credential (x-goog-api-key) is stripped on every route — callers authenticate
+// to the forwarder via x-ach-key, never x-goog-api-key. The /gemini Director
+// re-sets it with the caller's own LiteLLM virtual key after this transform.
+func TestStripAndRewrite_StripsGoogAPIKey(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Goog-Api-Key", "client-smuggled-key")
+
+	headers.StripAndRewrite(h, "sk-user-material")
+
+	if _, ok := h["X-Goog-Api-Key"]; ok {
+		t.Errorf("x-goog-api-key must be stripped (client cannot smuggle a Gemini credential)")
+	}
+}
+
 // cloneHeader returns a deep copy of h so each subtest mutates its own
 // instance — http.Header is a map[string][]string and shares the underlying
 // slice references when copied shallow.
