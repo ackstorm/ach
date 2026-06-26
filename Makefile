@@ -827,10 +827,23 @@ _e2e-run: _build-e2e
 	# image name from ach-old that does not exist under the single-binary
 	# `ach` layout. cluster-up handles the actual image load. The synced
 	# cluster is reached entirely through the gateway — zero port-forwards.
+	#
+	# Both go-test groups run unconditionally (set +e captures each exit
+	# instead of -ec aborting after the first), then a single ">>> E2E RESULT:"
+	# marker is printed as the LAST line and the real failure is propagated as
+	# a non-zero exit. The marker survives lossy capture (`| tail`, truncation)
+	# so a piped run can never silently read as green — grep for the marker, not
+	# the (pipe-masked) exit code.
+	@set +e; \
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
-		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e
+		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e; suite=$$?; \
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
-		go test -tags=e2e -v -count=1 ./test/e2e/mcp-echo ./test/e2e/mcp-echo/jwt ./test/e2e/mock ./test/e2e/utils
+		go test -tags=e2e -v -count=1 ./test/e2e/mcp-echo ./test/e2e/mcp-echo/jwt ./test/e2e/mock ./test/e2e/utils; backends=$$?; \
+	if [ $$suite -eq 0 ] && [ $$backends -eq 0 ]; then \
+		echo ">>> E2E RESULT: PASS"; exit 0; \
+	else \
+		echo ">>> E2E RESULT: FAIL (suite=$$suite backends=$$backends)" >&2; exit 1; \
+	fi
 
 e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
 	$(call container_target,_e2e-focus)
