@@ -46,6 +46,10 @@ type FileEntry struct {
 	SourceHash string   `json:"sourceHash"`
 	Merge      string   `json:"merge,omitempty"`
 	Keys       []string `json:"keys,omitempty"`
+	// Source is the resource (skill/artifact/prompt) name this file came
+	// from, for per-resource grouping in 'env status'; empty for
+	// adapter/runtime files.
+	Source string `json:"source,omitempty"`
 }
 
 // AdapterSection records the platform adapter id used at last

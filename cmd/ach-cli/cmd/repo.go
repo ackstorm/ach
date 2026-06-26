@@ -47,18 +47,10 @@ func newRepoCmd() *cobra.Command {
 		Short: "Manage local package repositories",
 		Long: `Manage local package repositories.
 
-Children:
-  add     Register a remote git repo and detect its capabilities
-  list    Print all registered repos in a table
-  remove  Unregister a repo (idempotent)
-  update  Re-resolve HEAD and refresh capabilities
-
 Sources use the github: or git: URI schemes. Local paths are not yet
 supported. When no #ref fragment is given the default branch is "main".
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newRepoAddCmd(),

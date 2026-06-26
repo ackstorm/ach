@@ -514,6 +514,19 @@ func TestEnv_Describe_NotFound(t *testing.T) {
 	}
 }
 
+// TestEnvDescribe_NoArg_Friendly verifies that `env describe` with no argument
+// returns a friendly usage hint (C4), not cobra's terse "accepts 1 arg(s)".
+func TestEnvDescribe_NoArg_Friendly(t *testing.T) {
+	envTestEnv(t)
+	_, _, code, err := executeEnv(t, "describe")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 for missing env name; got code=%d err=%v", code, err)
+	}
+	if !strings.Contains(err.Error(), "ach env describe <name>") {
+		t.Errorf("want usage hint; got %q", err.Error())
+	}
+}
+
 // TestEnv_Describe_UnknownFlag asserts --output-format json is not
 // supported in Phase 6 (deferred per CONTEXT §"Phase 6 explicitly
 // excludes" — cobra rejects unknown flag with exit 1).

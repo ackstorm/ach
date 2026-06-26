@@ -203,24 +203,9 @@ func newAdminCmd() *cobra.Command {
 		Long: `Operator-facing admin surface. Every subcommand requires a pk- whose
 owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + `
 or the equivalent Helm value). Non-allowlisted callers receive
-` + "`403 not_admin`" + ` and the CLI exits 3 (CLI-10).
-
-Subcommands:
-  keys revoke <key-id>             Revoke a key by ID (pkid_… or ekid_…).
-                                    Raw pk-…/ek-… plaintext is rejected
-                                    client-side (CLI-13).
-  users revoke-keys <email>        Revoke ALL keys owned by <email>.
-                                    Returns {revoked_count, errors}.
-  refresh <kind> <name>            Force-refresh an external content
-                                    resource. kind ∈ {plugin, prompt,
-                                    artifact, skill, marketplace,
-                                    skill-marketplace}.
-  list <kind|all>                  Read-only inventory of ACH objects
-                                    (version + sync status). -o table|json|yaml.
+` + "`403 not_admin`" + ` and the CLI exits 3.
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newAdminKeysCmd(),
@@ -508,9 +493,7 @@ func newAdminKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "keys",
 		Short: "Admin key operations",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newAdminKeysRevokeCmd())
 	parent.AddCommand(newAdminKeysListCmd())
@@ -550,6 +533,17 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 	ctx := cmd.Context()
+
+	// Validate --status before any network call (mirrors runKeysList).
+	switch status {
+	case "active", "revoked", "expired", statusAll, "":
+		// ok
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --status %q: must be active, revoked, expired, or all", status),
+		}
+	}
 
 	// CLI-07 synthetic gate (admin allowed in synthetic).
 	if err := synthetic.GuardCommand(synthetic.Params{
@@ -734,9 +728,7 @@ func newAdminUsersCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "users",
 		Short: "Admin user operations",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newAdminUsersRevokeKeysCmd())
 	return parent

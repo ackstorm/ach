@@ -402,6 +402,29 @@ func TestConfigRmEK_MissingLabel(t *testing.T) {
 	}
 }
 
+// TestConfig_NotFound_ListsAvailable asserts that both `config show <ghost>`
+// and `config use <ghost>` produce an error message that names all configured
+// profiles so the user can pick a valid one (C2).
+func TestConfig_NotFound_ListsAvailable(t *testing.T) {
+	dir := configTestEnv(t)
+	seedConfigFile(t, dir, &config.File{
+		Profiles: map[string]*config.Profile{
+			"alpha": {URL: "https://alpha.example", PK: validPK},
+			"beta":  {URL: "https://beta.example", PK: validPK},
+		},
+	})
+	for _, verb := range []string{"show", "use"} {
+		_, stderr, code, err := executeConfig(t, verb, "ghost")
+		if err == nil || code != exit.General {
+			t.Fatalf("%s ghost: want exit 1; code=%d", verb, code)
+		}
+		msg := err.Error() + stderr
+		if !strings.Contains(msg, "alpha") || !strings.Contains(msg, "beta") {
+			t.Errorf("%s ghost: error should list available profiles; got %q", verb, msg)
+		}
+	}
+}
+
 // TestConfigShow_HasGetAlias asserts that `config show` carries a `get`
 // alias so that the common guess `config get <profile>` is accepted.
 func TestConfigShow_HasGetAlias(t *testing.T) {

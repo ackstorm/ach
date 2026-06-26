@@ -29,7 +29,7 @@ func newLocalCmd() *cobra.Command {
 adapter dirs. NOT governed by the ACH Hub (no Environment, no authorization,
 no audit, no central reproducibility). For governed/reproducible distribution
 use 'ach-cli env hydrate'.`,
-		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE: helpOrUnknownSubcommand,
 	}
 	children := []*cobra.Command{newRepoCmd()}
 	if featuregate.PluginsEnabled {

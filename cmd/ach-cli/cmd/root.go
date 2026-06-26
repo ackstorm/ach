@@ -46,6 +46,10 @@ content-service, migrate), use the 'ach' binary instead.`,
 	// plain user error (e.g. "login canceled").
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	// An unknown top-level token (typo'd command) already errors via cobra's
+	// legacyArgs (a root WITH subcommands + leftover args → "unknown command"),
+	// so — unlike the child parents (B3) — root needs no RunE guard. Bare
+	// `ach-cli` (no args) reaches this RunE and shows the banner + help.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runRoot(cmd)
 	},

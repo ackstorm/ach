@@ -54,6 +54,7 @@ func newEnvStatusCmd() *cobra.Command {
 		flagGlobal      bool
 		flagTarget      string
 		flagEnvironment string
+		flagFiles       bool
 	)
 	c := &cobra.Command{
 		Use:   "status",
@@ -61,9 +62,10 @@ func newEnvStatusCmd() *cobra.Command {
 		Long: `Show the installed/projected resources recorded in state.json.
 
 env status is a STATIC read of the workspace (or global) state.json — no
-network call, no re-derivation, no drift detection. It prints one row
-per projected resource with its KIND, on-disk TARGET path, and source
-ENVIRONMENT. Use --json for machine-readable output.
+network call, no re-derivation, no drift detection. By default it prints
+one row per resource (KIND, NAME, FILES count, ENVIRONMENT), grouping a
+resource's files together. Use --files (-f) to list every projected file
+with its on-disk TARGET path, or --json for machine-readable output.
 
 An empty or missing state.json prints "No resources installed" (or an
 empty JSON array under --json) and exits 0.`,
@@ -140,7 +142,7 @@ empty JSON array under --json) and exits 0.`,
 				return nil
 			}
 
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries))
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries, flagFiles))
 			return nil
 		},
 	}
@@ -149,6 +151,7 @@ empty JSON array under --json) and exits 0.`,
 	c.Flags().StringVar(&flagEnvironment, "environment", "",
 		"Environment name (REQUIRED with --global; omit in project scope to list ALL envs)")
 	c.Flags().StringVar(&flagTarget, "target", "", "Override platform scope resolution")
+	c.Flags().BoolVarP(&flagFiles, "files", "f", false, "List every projected file instead of a per-resource summary")
 	return c
 }
 
@@ -208,6 +211,7 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 				Kind:        kind,
 				Target:      e.Target,
 				Environment: env,
+				Source:      e.Source,
 			})
 		}
 	}

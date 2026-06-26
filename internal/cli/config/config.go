@@ -32,6 +32,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -50,6 +51,17 @@ type Profile struct {
 	URL string            `yaml:"url"`
 	PK  string            `yaml:"pk,omitempty"`
 	EK  map[string]string `yaml:"ek,omitempty"`
+}
+
+// ProfileNames returns the configured profile names in sorted order (for
+// not-found error messages).
+func (f *File) ProfileNames() []string {
+	names := make([]string, 0, len(f.Profiles))
+	for n := range f.Profiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Sentinel errors. Callers gate behavior via errors.Is.

@@ -11,6 +11,17 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 )
 
+// ConditionView is a k8s-free mirror of one metav1.Condition as serialized by
+// the platform-api environments handler (json keys match the wire shape). The
+// CLI decodes conditions into this so `env describe` can explain WHY an
+// environment is not ready, without importing k8s.io/apimachinery.
+type ConditionView struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 // EnvView is the per-row shape rendered by FormatEnvList +
 // FormatEnvDescribe. Matches the per-row projection of the server's
 // /platform/environments handler (internal/platformapi/store.EnvironmentView's
@@ -20,10 +31,11 @@ import (
 // json tags are present so callers can decode the wire payload
 // directly into []EnvView when convenient.
 type EnvView struct {
-	Name        string `json:"name"`
-	Namespace   string `json:"namespace,omitempty"`
-	Status      string `json:"status,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name        string          `json:"name"`
+	Namespace   string          `json:"namespace,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Conditions  []ConditionView `json:"conditions,omitempty"`
 }
 
 // KeyRowView + FormatKeyList live in ek.go — single source of truth
@@ -209,6 +221,23 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	}
 	if env.Status != "" {
 		_, _ = fmt.Fprintf(&sb, "Status: %s\n", env.Status)
+	}
+	// Surface WHY when not all conditions are satisfied (U4). Only non-True
+	// conditions are listed — a healthy env prints nothing extra here.
+	var problems []ConditionView
+	for _, c := range env.Conditions {
+		if c.Status != "True" {
+			problems = append(problems, c)
+		}
+	}
+	if len(problems) > 0 {
+		_, _ = fmt.Fprintln(&sb, "Not ready:")
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  CONDITION\tREASON\tMESSAGE")
+		for _, c := range problems {
+			_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\n", c.Type, orEM(c.Reason), orEM(c.Message))
+		}
+		_ = tw.Flush()
 	}
 	if env.Description != "" {
 		_, _ = fmt.Fprintf(&sb, "Description:\n  %s\n", strings.ReplaceAll(env.Description, "\n", "\n  "))

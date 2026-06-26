@@ -50,7 +50,7 @@ func newContentCmd() *cobra.Command {
 
 These are debug tools — they bypass adapter projection and write raw bytes.
 For normal workspace setup use 'ach-cli env hydrate'.`,
-		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newContentFetchCmd())
 	return parent

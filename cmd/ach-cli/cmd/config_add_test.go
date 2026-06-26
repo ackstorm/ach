@@ -268,6 +268,43 @@ func TestConfigAdd_ForceEnvKey_OverridesMatchingLabel(t *testing.T) {
 	}
 }
 
+func TestConfigAdd_PkFlagAlias(t *testing.T) {
+	dir := configTestEnv(t)
+	pk := "pk-" + strings.Repeat("a", 64)
+	_, _, code, err := executeConfig(t, "add", "--profile", "demo",
+		"--url", "https://h.example", "--pk", pk)
+	if err != nil || code != 0 {
+		t.Fatalf("--pk alias should work: code=%d err=%v", code, err)
+	}
+	f, lerr := config.Load(filepath.Join(dir, "ach", "config.yaml"))
+	if lerr != nil {
+		t.Fatalf("load: %v", lerr)
+	}
+	dep, ok := f.Profiles["demo"]
+	if !ok {
+		t.Fatalf("profile 'demo' not written; file: %+v", f)
+	}
+	if dep.PK != pk {
+		t.Errorf("stored PK = %q; want %q", dep.PK, pk)
+	}
+}
+
+func TestConfigAdd_PositionalName(t *testing.T) {
+	dir := configTestEnv(t)
+	_, _, code, err := executeConfig(t, "add", "demo",
+		"--url", "https://h.example", "--api-key", "pk-"+strings.Repeat("a", 64))
+	if err != nil || code != 0 {
+		t.Fatalf("positional name should work: code=%d err=%v", code, err)
+	}
+	f, lerr := config.Load(filepath.Join(dir, "ach", "config.yaml"))
+	if lerr != nil {
+		t.Fatalf("load: %v", lerr)
+	}
+	if _, ok := f.Profiles["demo"]; !ok {
+		t.Errorf("positional name 'demo' not stored as profile key; file: %+v", f)
+	}
+}
+
 func TestConfigParentHelp_MentionsAdd(t *testing.T) {
 	configTestEnv(t)
 	stdout, _, _, _ := executeConfig(t) // bare `config` prints help

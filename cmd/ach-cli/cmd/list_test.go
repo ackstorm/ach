@@ -64,6 +64,7 @@ func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exi
 
 // TestList_Table asserts a state.json with Plugins + Prompts entries
 // renders a table containing each Target and the correct derived KIND.
+// Uses --files to get the flat per-file view (the default is grouped).
 func TestList_Table(t *testing.T) {
 	body := `{
   "schemaVersion": "3",
@@ -77,7 +78,7 @@ func TestList_Table(t *testing.T) {
   ]
 }`
 	dir := writeListState(t, body)
-	out, code, err := executeList(t, dir)
+	out, code, err := executeList(t, dir, "--files")
 	if err != nil {
 		t.Fatalf("list: unexpected error: %v", err)
 	}
@@ -161,7 +162,9 @@ func TestList_JSON(t *testing.T) {
 }
 
 // TestList_OutToBuffer asserts list writes to cmd.OutOrStdout() (the
-// injected buffer), never directly to os.Stdout.
+// injected buffer), never directly to os.Stdout. Uses --files to verify the
+// individual path is present (the default grouped view shows KIND/NAME/FILES
+// rather than per-file paths).
 func TestList_OutToBuffer(t *testing.T) {
 	body := `{
   "schemaVersion": "3",
@@ -180,10 +183,8 @@ func TestList_OutToBuffer(t *testing.T) {
 	cmd := newEnvStatusCmd()
 	var outBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
-	// Empty slice, NOT nil: cobra falls back to os.Args[1:] when args is
-	// nil, which would leak go-test flags (-test.v, -test.run) into the
-	// list command's flag parser and fail with an unknown-flag error.
-	cmd.SetArgs([]string{})
+	// --files: use detailed view so the individual path appears.
+	cmd.SetArgs([]string{"--files"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("list: %v", err)
 	}
