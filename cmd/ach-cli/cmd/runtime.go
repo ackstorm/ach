@@ -57,7 +57,7 @@ func newRuntimeCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "runtime",
 		Short: "Inspect the admin runtime catalog (models, MCP servers, A2A agents, teams)",
-		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
 		newRuntimeKindCmd("models", "/platform/admin/runtime/models", "List available models"),
@@ -75,7 +75,7 @@ func newRuntimeKindCmd(use, path, short string) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   use,
 		Short: short,
-		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE:  helpOrUnknownSubcommand,
 	}
 	var f adminCredFlags
 	var output string
