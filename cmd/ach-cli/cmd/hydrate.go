@@ -136,90 +136,45 @@ func newHydrateCmd() *cobra.Command {
 		Use:   "hydrate <name>",
 		Args:  cobra.MaximumNArgs(1),
 		Short: "Materialize workspace artifacts (engine) or stream raw manifest (--raw)",
-		Long: `Materialize workspace artifacts via the Phase 7 hydrate engine.
+		Long: `Download an environment's content (prompts, skills, artifacts) into your
+agent tool's config directory, and wire up its runtime (models / MCP / A2A).
 
-The engine performs the full 14-step commit sequence under a workspace
-lock: state.json v2 reconciliation, drift detection, manifest fetch,
-safe tar extraction with bomb-defense caps, three-tier auto-claim
-collision cascade, adapter dispatch (5-platform closed set), atomic
-state write.
+Scope:
+  --include-runtime   Also project the environment's runtime entries
+                      (models / mcpServers / a2aAgents), not just context.
+  --only-runtime      Project ONLY runtime entries (excludes context).
+                      Default: context only (prompts / artifacts / skills).
 
-Scope filters (CLI spec §6.3 / STATE-10):
-  --include-runtime   Reconcile the Environment's DIRECT runtime entries
-                      (models / mcpServers / a2aAgents) alongside context,
-                      projecting them into the adapter config + the
-                      <ach-dir> runtime mirror.
-  --only-runtime      Reconcile ONLY runtime entries (mutually
-                      exclusive with --include-runtime).
-                      Default: context only (prompts / plugins /
-                      artifacts).
-
-  Note: plugin-contributed MCP servers are part of CONTEXT and always
-  project (default). --include-runtime governs the Environment's directly
-  attached mcp/a2a/models, NOT plugin MCPs.
-
-Behavior toggles:
-  --sync              STATE-05 inverse-merge deletion of state entries
-                      missing from the fresh manifest (deepest-first;
-                      drift-bearing files preserved unless --force).
-  --force             Bypass drift refusal, environment guard, and
-                      schema mismatch (CLI spec §6.7).
-  --dry-run           Run every read+diff step but skip state write
-                      and content extract.
-  --allow-symlinks    Relax SAFE-01 tar policy's symlink reject
-                      (unsafe escape hatch).
+Behavior:
+  --sync              Remove files no longer in the environment.
+  --force             Overwrite local edits and bypass safety refusals.
+  --dry-run           Show what would change without writing anything.
+  --allow-symlinks    Permit symlinks in downloaded archives (unsafe).
 
 Locking:
-  --wait              Block indefinitely on workspace lock contention.
-  --lock-timeout <d>  Wait up to <d> for the lock (e.g. 30s, 5m).
-                      Mutually exclusive with --wait.
+  --wait              Wait indefinitely if another hydrate holds the lock.
+  --lock-timeout <d>  Wait up to <d> (e.g. 30s, 5m). Conflicts with --wait.
 
-I/O:
-  --output <dir>      Workspace root override (default: cwd).
-  --global            Use $HOME/.ach/<env> scope instead of cwd/.ach.
-                      When neither --global nor --output is set, hydration
-                      defaults to the project (cwd) scope and prints a note.
-  --target <id[,id…]> Override agent-target autodetection (claude-code /
-                      codex / gemini-cli / opencode / pimono +
-                      case-folded aliases). Accepts a comma-separated list to
-                      hydrate several targets in one run (e.g.
-                      --target codex,opencode). When omitted, the engine scans
-                      cwd (or $HOME under --global) and picks the
-                      single match; zero or multiple matches → exit 1.
+Location:
+  --output <dir>      Workspace root (default: current directory).
+  --global            Hydrate under $HOME/.ach/<env> instead of ./.ach.
+  --target <id[,id…]> Agent target(s): claude-code / codex / gemini-cli /
+                      opencode / pimono (comma-separated for several).
+                      Omitted: autodetected from the workspace.
 
-Credential resolution (D-11 mutex — all four sources mutually
-exclusive; >1 set → exit 1):
-  --api-key <pk-|ek->      Override credential (raw plaintext)
-  --env-key <label>        Reference profiles.<active>.ek.<label>
-  ACH_API_KEY=<pk-|ek->    Env var equivalent of --api-key
-  ACH_ENV_KEY=<label>      Env var equivalent of --env-key
+Credentials (pick one; more than one is an error):
+  --api-key <pk-|ek->   Use this key directly.
+  --env-key <label>     Use a saved ek- from the active profile.
+  ACH_API_KEY / ACH_ENV_KEY   Environment-variable equivalents.
+  Otherwise the active profile's pk- (from ach login) is used.
 
-If none of the above is set, the CLI uses the active profile's pk: field
-from ~/.config/ach/config.yaml. Seed that profile with ach login (SSO) or,
-on a headless box, ach config add --api-key <pk-|ek->. To skip disk config
-entirely, export ACH_BASE_URL + ACH_API_KEY (synthetic mode) — every
-command then uses them with no per-command --api-key.
+The positional <name> is the environment. It is required with a pk- key;
+with an ek- key it is optional (the key is already environment-scoped).
 
-The positional <name> is the target Environment. It is REQUIRED when the
-resolved credential is a pk- (D-12); OPTIONAL for ek- (server-side
-mismatch yields 403 wrong_environment → exit 1). When omitted, the
-ACH_ENVIRONMENT env var supplies it.
-
-A stderr warning is emitted when the resolved credential is a pk-
-(spec §6.6); suppress with --no-warnings.
-
-Exit codes (spec §9.3):
-  0  success
-  1  client-side gate (mutex creds, missing <name>, autodetect
-     ambiguity, scope-flag conflict, etc.)
-  2  drift refused (STATE-04 four-outcome truth table)
-  3  401 / 403 not_admin / unauthorized_team
-  4  environment guard mismatch (STATE-03)
-  5  schema mismatch (state.json or manifest)
-  6  503 / 504 / transport error
-  7  collision refuse (SAFE-04 auto-claim)
-  8  config file parse or write error
-`,
+Exit codes:
+  0 success   1 usage/credential error   2 local edits would be lost
+  3 not authorized   4 wrong environment for this key   5 state mismatch
+  6 network error   7 file-name collision   8 config read/write error`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			conflict, err := hydrate.ParseConflictPolicy(flagConflict)
 			if err != nil {
@@ -256,7 +211,7 @@ Exit codes (spec §9.3):
 
 	// Phase 6 surface flags — preserved.
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
-		"Suppress the §6.6 pk- stderr warning")
+		"Suppress the pk- credential warning")
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false,
 		"Dump redacted request headers to stderr")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
@@ -274,7 +229,7 @@ Exit codes (spec §9.3):
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
 		"Reconcile ONLY runtime entries (mutually exclusive with --include-runtime)")
 	cmd.Flags().BoolVar(&flagSync, "sync", false,
-		"STATE-05 inverse-merge deletion of stale state entries (deepest-first)")
+		"Delete state entries no longer in the environment (deepest-first)")
 	cmd.Flags().BoolVar(&flagForce, "force", false,
 		"Bypass drift refusal, environment guard, and schema mismatch")
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,
@@ -286,7 +241,7 @@ Exit codes (spec §9.3):
 	cmd.Flags().StringVar(&flagOutput, "output", "",
 		"Workspace root override (default: cwd)")
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
-		"Relax SAFE-01 tar policy's symlink reject (unsafe escape hatch)")
+		"Permit symlinks in downloaded archives (unsafe)")
 	cmd.Flags().StringVar(&flagTarget, "target", "",
 		"Override platform autodetection; comma-separated for several targets, e.g. codex,opencode "+
 			"(claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")

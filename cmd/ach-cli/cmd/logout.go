@@ -40,11 +40,10 @@ URL and EK map are preserved; the profile entry stays and
 default: is untouched. A subsequent ach login resumes against the
 same profile without re-prompting for the URL.
 
-Server-side, the pk- remains valid for its sliding-window TTL (Hub
-§7.1). For immediate revocation, use ach admin keys revoke pkid_….
+Server-side, the pk- remains valid for its sliding-window TTL.
+For immediate revocation, use ach admin keys revoke pkid_….
 
-Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) exits 1 per
-CLI spec §3.3.
+Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) exits 1.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return doLogout(cmd, flagProfile)

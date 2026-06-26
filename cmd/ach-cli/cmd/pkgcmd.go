@@ -315,16 +315,9 @@ func newPkgCmd(kind pkgKind) *cobra.Command {
 		Short: fmt.Sprintf("Manage locally installed %ss", kindStr),
 		Long: fmt.Sprintf(`Manage locally installed %ss.
 
-Children:
-  install    Fetch and install a %s from a registered repo
-  uninstall  Remove an installed %s
-  update     Re-resolve and re-install (or all if no args given)
-  outdated   Check installed %ss against their source (read-only)
-  list       Show installed %ss (from installed.json; not remote catalog)
-
 <name@repo> identifies a %s by name and the registered repo it came from.
 Use 'ach-cli local repo add' to register a repo first.
-`, kindStr, kindStr, kindStr, kindStr, kindStr, kindStr),
+`, kindStr, kindStr),
 		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(

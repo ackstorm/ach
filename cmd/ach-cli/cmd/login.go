@@ -86,10 +86,10 @@ Interactive prompts (skipped when --profile / --base-url are set):
 The URL prompt is also pre-filled from ACH_PLATFORM_URL when set
 (precedence: --base-url flag → ACH_PLATFORM_URL env → prompt).
 ACH_PLATFORM_URL is a login-only convenience, distinct from ACH_BASE_URL
-(the synthetic-mode trigger) — it never enables synthetic mode.
+(which activates synthetic mode) — it never enables synthetic mode.
 
 Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run
-with exit 1 per CLI spec §3.3.
+with exit 1.
 
 Flags:
   --profile <name>   Skip the profile-name prompt

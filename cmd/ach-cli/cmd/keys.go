@@ -115,12 +115,6 @@ There are two kinds of key:
 All subcommands authenticate with your personal key (pk_) from the active
 profile. You can override it with --api-key or the ACH_API_KEY environment
 variable.
-
-Subcommands:
-  create  Issue a new environment key (ek_) and save it to your profile.
-  list    Show your pk_ and ek_ keys.
-  revoke  Permanently delete one of your own keys by its key ID (ekid_… or pkid_…).
-  prune   Bulk-delete old personal keys, keeping the N most recent.
 `,
 		RunE: helpOrUnknownSubcommand,
 	}

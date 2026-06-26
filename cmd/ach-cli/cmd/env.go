@@ -82,16 +82,9 @@ func newEnvCmd() *cobra.Command {
 		Short: "Inspect environments visible to the active credential",
 		Long: `Inspect environments visible to the active credential.
 
-Children:
-  list       List environments (paginates next_cursor automatically)
-  describe   Show one environment's runtime + context manifest
-  hydrate    Materialize an environment's workspace artifacts
-  status     Show installed/projected resources from state.json
-  uninstall  Remove the projected resource set for an environment
-
 env list + describe are read-only and synthetic-mode friendly.
 describe gracefully degrades on 403 unauthorized_team — printing
-'(unavailable)' for runtime + context and exiting 0 (CLI-12).
+'(unavailable)' for runtime + context and exiting 0.
 `,
 		RunE: helpOrUnknownSubcommand,
 	}

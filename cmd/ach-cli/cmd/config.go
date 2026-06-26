@@ -49,17 +49,8 @@ func newConfigCmd() *cobra.Command {
 		Short: "Manage ~/.config/ach/config.yaml (profiles registry)",
 		Long: `Manage the local CLI configuration at ~/.config/ach/config.yaml.
 
-Children:
-  add       Register a profile from an existing pk-/ek- (no SSO)
-  list      Print the profiles table
-  show      Print one profile (--reveal unmasks pk-/ek-)
-  use       Set default: to <name>
-  remove    Delete a profile (--force required for active default)
-  rename    Rename a map key (preserves PK + EK map)
-
-All children exit 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY
-both set) per CLI spec §3.3 — synthetic-mode credentials live in
-env, so the on-disk registry has no role.
+In synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) the on-disk
+registry is unused and all children exit 1.
 `,
 		RunE: helpOrUnknownSubcommand,
 	}
@@ -134,7 +125,7 @@ func newConfigShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk-/ek- for the named profile only (D-05)")
+	c.Flags().BoolVar(&reveal, "reveal", false, "Unmask pk-/ek- for the named profile only")
 	return c
 }
 

@@ -74,11 +74,11 @@ Default (no --verify) reads ~/.config/ach/config.yaml and prints:
   Key:         <prefix>_****<last-4>
   (no remote check)
 
-With --verify, performs an asymmetric remote check per CLI spec §5.3:
+With --verify, performs a remote check against the platform API:
   pk-  → GET  /platform/environments?limit=1
   ek-  → POST /platform/hydrate {}  (Accept-Encoding: gzip; body discarded)
 
-Exit codes (D-14):
+Exit codes:
   0  success
   3  401 invalid_key / 403 not_admin
   6  network failure
