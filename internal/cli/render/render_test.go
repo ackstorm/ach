@@ -323,3 +323,28 @@ func TestFormatEnvDescribe_DescriptionFull(t *testing.T) {
 		t.Errorf("describe dropped description content:\n%s", out)
 	}
 }
+
+// TestFormatEnvDescribe_NotReady_ShowsConditionReasons asserts that non-True
+// conditions surface with their reason + message in a "Not ready:" block,
+// and that True conditions (e.g. "Synced") are suppressed (U4).
+func TestFormatEnvDescribe_NotReady_ShowsConditionReasons(t *testing.T) {
+	env := EnvView{
+		Name: "demo-unresolved", Namespace: "ach", Status: "SubConditionsNotReady",
+		Conditions: []ConditionView{
+			{Type: "Available", Status: "False", Reason: "SubConditionsNotReady", Message: "one or more sub-conditions are not ready"},
+			{Type: "ExecutionResourcesResolved", Status: "False", Reason: "UnresolvedReferences", Message: "model \"nonexistent-model\" not found"},
+			{Type: "AccessGroupSynced", Status: "True", Reason: "Synced", Message: ""},
+		},
+	}
+	out := FormatEnvDescribe(env, nil, false)
+	// The two non-True conditions must surface reason + message.
+	for _, want := range []string{"ExecutionResourcesResolved", "UnresolvedReferences", "nonexistent-model"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("describe output missing %q:\n%s", want, out)
+		}
+	}
+	// A healthy (True) condition should NOT clutter the not-ready summary.
+	if strings.Contains(out, "Synced") {
+		t.Errorf("describe should not list True conditions in the problem summary:\n%s", out)
+	}
+}
