@@ -95,6 +95,65 @@ func TestRuntimeCatalogAdminOnly(t *testing.T) {
 		}
 	})
 
+	t.Run("teams_listed", func(t *testing.T) {
+		teamsURL := baseURL + "/platform/admin/runtime/teams"
+		client := &http.Client{Timeout: 10 * time.Second}
+
+		// The catalog is populated by the operator's 5-min Snapshotter; the
+		// demo Environment authorizes team "default" (created by EnsureDefaultTeam).
+		// Bounded retry absorbs any residual first-refresh lag.
+		const maxAttempts = 20
+		var items []catalogItem
+		var lastStatus int
+		var lastBody string
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			req, err := http.NewRequest(http.MethodGet, teamsURL, nil)
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			req.Header.Set("x-ach-key", pk)
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("GET %s: %v", teamsURL, err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastStatus, lastBody = resp.StatusCode, string(body)
+
+			if resp.StatusCode == http.StatusOK {
+				var decoded struct {
+					Items []catalogItem `json:"items"`
+				}
+				if err := json.Unmarshal(body, &decoded); err != nil {
+					t.Fatalf("decode teams response: %v; body=%s", err, lastBody)
+				}
+				if len(decoded.Items) > 0 {
+					items = decoded.Items
+					break
+				}
+			}
+			time.Sleep(3 * time.Second)
+		}
+
+		if len(items) == 0 {
+			t.Fatalf("admin runtime catalog never returned teams after %d attempts; last status=%d body=%s",
+				maxAttempts, lastStatus, lastBody)
+		}
+
+		found := false
+		for _, it := range items {
+			if it.Kind != "team" {
+				t.Errorf("non-team entry under /runtime/teams: %+v", it)
+			}
+			if it.Name == "default" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected seeded team %q in catalog; got %+v", "default", items)
+		}
+	})
+
 	t.Run("ek_rejected_invalid_key_type", func(t *testing.T) {
 		// A VALID ek_ is required so the request passes Authn (key resolves)
 		// and reaches the AdminOnly key-type gate; a garbage key would 401 at

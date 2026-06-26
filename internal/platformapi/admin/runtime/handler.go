@@ -102,7 +102,10 @@ func MCPServersHandler(d Deps) http.HandlerFunc { return kindHandler(d, "mcp_ser
 // A2AAgentsHandler serves GET /platform/admin/runtime/a2a-agents.
 func A2AAgentsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "a2a_agent") }
 
-// CatalogHandler serves GET /platform/admin/runtime/catalog (all three kinds).
+// TeamsHandler serves GET /platform/admin/runtime/teams.
+func TeamsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "team") }
+
+// CatalogHandler serves GET /platform/admin/runtime/catalog (all kinds).
 func CatalogHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -113,7 +116,7 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 				"failed to read runtime catalog", reqID)
 			return
 		}
-		models, mcps, agents := make([]itemView, 0), make([]itemView, 0), make([]itemView, 0)
+		models, mcps, agents, teams := make([]itemView, 0), make([]itemView, 0), make([]itemView, 0), make([]itemView, 0)
 		for _, it := range toItems(all) {
 			switch it.Kind {
 			case "model":
@@ -122,6 +125,8 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 				mcps = append(mcps, it)
 			case "a2a_agent":
 				agents = append(agents, it)
+			case "team":
+				teams = append(teams, it)
 			}
 		}
 		render.JSON(w, http.StatusOK, map[string]any{
@@ -129,6 +134,7 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 			"models":     models,
 			"mcpServers": mcps,
 			"a2aAgents":  agents,
+			"teams":      teams,
 		})
 	}
 }

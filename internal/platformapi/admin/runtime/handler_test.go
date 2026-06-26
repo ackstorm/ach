@@ -81,11 +81,43 @@ func TestCatalogHandler_EmptyConnectorIsActiveEmpty(t *testing.T) {
 		Models     []map[string]any `json:"models"`
 		MCPServers []map[string]any `json:"mcpServers"`
 		A2AAgents  []map[string]any `json:"a2aAgents"`
+		Teams      []map[string]any `json:"teams"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Models == nil || body.MCPServers == nil || body.A2AAgents == nil {
+	if body.Models == nil || body.MCPServers == nil || body.A2AAgents == nil || body.Teams == nil {
 		t.Fatalf("empty categories must serialize as [] not null: %s", rec.Body.String())
+	}
+}
+
+func TestTeamsHandler_ShapesEnvelope(t *testing.T) {
+	now := time.Now()
+	cat := fakeCatalog{
+		rows: []db.RuntimeCatalogRow{
+			{Kind: "team", Name: "default", Status: "active"},
+			{Kind: "team", Name: "old-team", Status: "missing"},
+			{Kind: "model", Name: "gpt-4o", Status: "active"},
+		},
+		maxSync: now, hasSync: true,
+	}
+	h := TeamsHandler(Deps{Catalog: cat, Namespace: "ach-system", Connector: "default"})
+
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/platform/admin/runtime/teams", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", rec.Code)
+	}
+
+	var body struct {
+		Items []struct {
+			Name, Kind, Status string
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items: got %d want 2 (teams only)", len(body.Items))
 	}
 }

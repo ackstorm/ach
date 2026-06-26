@@ -20,7 +20,7 @@ const RuntimeCatalogChannel = "ach_runtime_catalog_changed"
 type RuntimeCatalogRow struct {
 	Namespace          string
 	ConnectorName      string
-	Kind               string // "model" | "mcp_server" | "a2a_agent"
+	Kind               string // "model" | "mcp_server" | "a2a_agent" | "team"
 	Name               string
 	Status             string // "active" | "missing"
 	FirstSeenAt        time.Time
@@ -59,7 +59,7 @@ func ReplaceRuntimeCatalog(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	ns, connector string,
-	models, mcpServers, a2aAgents map[string]struct{},
+	models, mcpServers, a2aAgents, teams map[string]struct{},
 	syncedAt time.Time,
 ) error {
 	return WithTxNotify(ctx, pool, RuntimeCatalogChannel, connector, func(tx pgx.Tx) error {
@@ -67,6 +67,7 @@ func ReplaceRuntimeCatalog(
 			"model":      models,
 			"mcp_server": mcpServers,
 			"a2a_agent":  a2aAgents,
+			"team":       teams,
 		} {
 			for name := range names {
 				if _, err := tx.Exec(ctx, upsertRuntimeCatalogSQL, ns, connector, kind, name, syncedAt); err != nil {
@@ -98,7 +99,7 @@ SELECT namespace, connector_name, kind, name, status,
 `
 
 // ListRuntimeCatalog returns catalog rows for one connector. kind=="" returns
-// all three kinds; otherwise filters to that kind.
+// all kinds; otherwise filters to that kind.
 func ListRuntimeCatalog(ctx context.Context, pool *pgxpool.Pool, ns, connector, kind string) ([]RuntimeCatalogRow, error) {
 	rows, err := pool.Query(ctx, listRuntimeCatalogSQL, ns, connector, kind)
 	if err != nil {

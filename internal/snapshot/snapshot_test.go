@@ -28,9 +28,11 @@ type fakeLiteLLM struct {
 	models     []litellm.ModelInfoResponse
 	mcps       []litellm.MCPServerEntry
 	agents     []litellm.AgentEntry
+	teams      []litellm.TeamListEntry
 	modelsErr  error
 	mcpsErr    error
 	agentsErr  error
+	teamsErr   error
 	modelCalls atomic.Int64
 }
 
@@ -71,7 +73,7 @@ func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateReque
 	return nil, nil
 }
 
-// setErr atomically mutates all three error returns to the same value.
+// setErr atomically mutates all four error returns to the same value.
 // Used by tests that want to drive every list call into the unreachable
 // branch simultaneously.
 func (f *fakeLiteLLM) setErr(err error) {
@@ -80,6 +82,7 @@ func (f *fakeLiteLLM) setErr(err error) {
 	f.modelsErr = err
 	f.mcpsErr = err
 	f.agentsErr = err
+	f.teamsErr = err
 }
 
 // TestSnapshotter_ColdStart_ReturnsEmpty asserts that calling Snapshot()
@@ -429,6 +432,37 @@ func TestSnapshotter_FailureFollowedBySuccess_FastRetry(t *testing.T) {
 		2500*time.Millisecond, snap.Stale, len(snap.Models))
 }
 
+// TestSnapshotter_TeamsLandInSnapshot asserts that team aliases from
+// ListAllTeams are stored in LiteLLMSnapshot.Teams after a successful
+// refresh. Empty-alias entries must be skipped (toTeamSet contract).
+func TestSnapshotter_TeamsLandInSnapshot(t *testing.T) {
+	fake := &fakeLiteLLM{
+		teams: []litellm.TeamListEntry{
+			{TeamAlias: "default"},
+			{TeamAlias: ""}, // empty alias — must be skipped
+			{TeamAlias: "alpha"},
+		},
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	if ok := s.refresh(context.Background()); !ok {
+		t.Fatalf("refresh returned false on healthy fake client")
+	}
+	snap := s.Snapshot()
+
+	if got := len(snap.Teams); got != 2 {
+		t.Fatalf("Teams length = %d; want 2 (empty alias skipped)", got)
+	}
+	if _, ok := snap.Teams["default"]; !ok {
+		t.Error("Teams missing 'default'")
+	}
+	if _, ok := snap.Teams["alpha"]; !ok {
+		t.Error("Teams missing 'alpha'")
+	}
+	if _, ok := snap.Teams[""]; ok {
+		t.Error("Teams contains empty alias; toTeamSet must skip it")
+	}
+}
+
 // TestEnableCatalog_NilPoolIsInert asserts that EnableCatalog records
 // the connector identity and is chainable, but that a nil pool leaves
 // refresh behaviour completely unchanged (existing unit tests stay green
@@ -454,9 +488,11 @@ func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.T
 	return nil, nil
 }
 
-// ListAllTeams is a no-op shim — Client interface compliance.
+// ListAllTeams returns the configured teams slice (or error).
 func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.teams, f.teamsErr
 }
 
 // EnsureDefaultTeam is a no-op shim — Client interface compliance.

@@ -30,7 +30,7 @@ func TestReplaceRuntimeCatalog_TombstonesVanishedEntries(t *testing.T) {
 
 	t1 := time.Now().Truncate(time.Microsecond)
 	if err := db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default",
-		set("gpt-4o", "sonnet"), set("github"), set("vendor-research"), t1); err != nil {
+		set("gpt-4o", "sonnet"), set("github"), set("vendor-research"), set("default"), t1); err != nil {
 		t.Fatalf("ReplaceRuntimeCatalog #1: %v", err)
 	}
 
@@ -42,10 +42,10 @@ func TestReplaceRuntimeCatalog_TombstonesVanishedEntries(t *testing.T) {
 		t.Fatalf("models after #1: got %d, want 2", len(models))
 	}
 
-	// Second sync: "sonnet" is gone.
+	// Second sync: "sonnet" model is gone; "default" team is also gone.
 	t2 := t1.Add(5 * time.Minute)
 	if err := db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default",
-		set("gpt-4o"), set("github"), set("vendor-research"), t2); err != nil {
+		set("gpt-4o"), set("github"), set("vendor-research"), nil, t2); err != nil {
 		t.Fatalf("ReplaceRuntimeCatalog #2: %v", err)
 	}
 
@@ -66,6 +66,19 @@ func TestReplaceRuntimeCatalog_TombstonesVanishedEntries(t *testing.T) {
 	if !byName["sonnet"].FirstSeenAt.Equal(t1) {
 		t.Fatalf("sonnet first_seen_at drifted: got %v, want %v", byName["sonnet"].FirstSeenAt, t1)
 	}
+
+	// Team "default" should be tombstoned in the second sync.
+	teamRows, _ := db.ListRuntimeCatalog(ctx, pool, "ach-system", "default", "team")
+	byTeamName := map[string]db.RuntimeCatalogRow{}
+	for _, r := range teamRows {
+		byTeamName[r.Name] = r
+	}
+	if got := byTeamName["default"].Status; got != "missing" {
+		t.Fatalf("team 'default' status: got %q, want missing", got)
+	}
+	if byTeamName["default"].DeletedAt == nil {
+		t.Fatalf("team 'default' deleted_at should be set when tombstoned")
+	}
 }
 
 // A tombstoned entry that reappears flips back to active and clears deleted_at.
@@ -76,9 +89,9 @@ func TestReplaceRuntimeCatalog_ReappearReactivates(t *testing.T) {
 	defer cleanup()
 
 	t1 := time.Now().Truncate(time.Microsecond)
-	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", set("sonnet"), nil, nil, t1)
-	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", nil, nil, nil, t1.Add(time.Minute))      // sonnet → missing
-	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", set("sonnet"), nil, nil, t1.Add(2*time.Minute)) // back
+	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", set("sonnet"), nil, nil, nil, t1)
+	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", nil, nil, nil, nil, t1.Add(time.Minute))             // sonnet → missing
+	_ = db.ReplaceRuntimeCatalog(ctx, pool, "ach-system", "default", set("sonnet"), nil, nil, nil, t1.Add(2*time.Minute)) // back
 
 	models, _ := db.ListRuntimeCatalog(ctx, pool, "ach-system", "default", "model")
 	if len(models) != 1 || models[0].Status != "active" || models[0].DeletedAt != nil {

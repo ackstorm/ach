@@ -48,6 +48,10 @@ type LiteLLMSnapshot struct {
 	// AgentEntry.AgentName field — D-13).
 	A2AAgents map[string]struct{}
 
+	// Teams is the set of LiteLLM team_alias strings (the
+	// TeamListEntry.TeamAlias field). Empty-alias entries are skipped.
+	Teams map[string]struct{}
+
 	// RefreshedAt is the wall-clock instant at which the most recent
 	// successful refresh (or stale-marker-only update) completed.
 	RefreshedAt time.Time
@@ -229,6 +233,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	models, errM := s.client.ListModels(ctx)
 	mcps, errC := s.client.ListMCPServers(ctx)
 	agents, errA := s.client.ListA2AAgents(ctx)
+	teams, errT := s.client.ListAllTeams(ctx)
 
 	// ErrNotFound → empty set, NOT an error (D-13 / Plan 02-01 contract).
 	if errors.Is(errM, litellm.ErrNotFound) {
@@ -240,8 +245,11 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	if errors.Is(errA, litellm.ErrNotFound) {
 		agents, errA = nil, nil
 	}
+	if errors.Is(errT, litellm.ErrNotFound) {
+		teams, errT = nil, nil
+	}
 
-	if errM != nil || errC != nil || errA != nil {
+	if errM != nil || errC != nil || errA != nil || errT != nil {
 		s.litellmUnreachableCount.Add(1)
 		if cur := s.snap.Load(); cur != nil {
 			// Preserve prior snapshot with Stale flipped.
@@ -252,6 +260,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 				"modelsErr", errM,
 				"mcpErr", errC,
 				"a2aErr", errA,
+				"teamsErr", errT,
 				"priorRefreshedAt", cur.RefreshedAt,
 			)
 			return false
@@ -267,6 +276,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 			"modelsErr", errM,
 			"mcpErr", errC,
 			"a2aErr", errA,
+			"teamsErr", errT,
 		)
 		return false
 	}
@@ -275,13 +285,14 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		Models:      toModelSet(models),
 		MCPServers:  toMCPSet(mcps),
 		A2AAgents:   toAgentSet(agents),
+		Teams:       toTeamSet(teams),
 		RefreshedAt: time.Now(),
 		Stale:       false,
 	}
 	s.snap.Store(next)
 	if s.pool != nil {
 		if err := achdb.ReplaceRuntimeCatalog(ctx, s.pool, s.catalogNS, s.connectorName,
-			next.Models, next.MCPServers, next.A2AAgents, next.RefreshedAt); err != nil {
+			next.Models, next.MCPServers, next.A2AAgents, next.Teams, next.RefreshedAt); err != nil {
 			// Non-fatal: the in-memory snapshot is already published and the
 			// EnvironmentReconciler reads that, not the table. Log and move on;
 			// the next refresh retries the projection.
@@ -293,6 +304,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		"models", len(next.Models),
 		"mcpServers", len(next.MCPServers),
 		"a2aAgents", len(next.A2AAgents),
+		"teams", len(next.Teams),
 	)
 	return true
 }
@@ -326,6 +338,20 @@ func toAgentSet(as []litellm.AgentEntry) map[string]struct{} {
 	out := make(map[string]struct{}, len(as))
 	for _, a := range as {
 		out[a.AgentName] = struct{}{}
+	}
+	return out
+}
+
+// toTeamSet projects a TeamListEntry slice into a name set keyed on
+// .TeamAlias. Entries with an empty alias are skipped (teams without
+// aliases cannot be referenced in Environment.spec.authorizedTeams).
+func toTeamSet(ts []litellm.TeamListEntry) map[string]struct{} {
+	out := make(map[string]struct{}, len(ts))
+	for _, t := range ts {
+		if t.TeamAlias == "" {
+			continue
+		}
+		out[t.TeamAlias] = struct{}{}
 	}
 	return out
 }

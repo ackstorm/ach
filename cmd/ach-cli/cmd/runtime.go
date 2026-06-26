@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach-cli runtime` surfaces the admin runtime catalog — the set of
-// models, MCP servers, and A2A agents known to the ACH platform API.
-// Three single-kind list views plus a combined catalog view:
+// models, MCP servers, A2A agents, and teams known to the ACH platform API.
+// Four single-kind list views plus a combined catalog view:
 //
 //   - ach-cli runtime models list   → GET /platform/admin/runtime/models
 //   - ach-cli runtime mcp list      → GET /platform/admin/runtime/mcp-servers
 //   - ach-cli runtime a2a list      → GET /platform/admin/runtime/a2a-agents
+//   - ach-cli runtime teams list    → GET /platform/admin/runtime/teams
 //   - ach-cli runtime catalog       → GET /platform/admin/runtime/catalog
 //
 // Each command accepts -o table|json and the standard admin credential
@@ -47,20 +48,22 @@ type runtimeCatalogResp struct {
 	Models     []runtimeItem `json:"models"`
 	MCPServers []runtimeItem `json:"mcpServers"`
 	A2AAgents  []runtimeItem `json:"a2aAgents"`
+	Teams      []runtimeItem `json:"teams"`
 }
 
-// newRuntimeCmd returns the `ach-cli runtime` parent command with its four
-// children: models, mcp, a2a (each with a `list` leaf), and catalog.
+// newRuntimeCmd returns the `ach-cli runtime` parent command with its five
+// children: models, mcp, a2a, teams (each with a `list` leaf), and catalog.
 func newRuntimeCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "runtime",
-		Short: "Inspect the admin runtime catalog (models, MCP servers, A2A agents)",
+		Short: "Inspect the admin runtime catalog (models, MCP servers, A2A agents, teams)",
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	parent.AddCommand(
 		newRuntimeKindCmd("models", "/platform/admin/runtime/models", "List available models"),
 		newRuntimeKindCmd("mcp", "/platform/admin/runtime/mcp-servers", "List available MCP servers"),
 		newRuntimeKindCmd("a2a", "/platform/admin/runtime/a2a-agents", "List available A2A agents"),
+		newRuntimeKindCmd("teams", "/platform/admin/runtime/teams", "List available teams"),
 		newRuntimeCatalogCmd(),
 	)
 	return parent
@@ -169,10 +172,11 @@ func runRuntimeCatalog(ctx context.Context, cmd *cobra.Command, output string, f
 	if output == outputJSON {
 		return writeRuntimeJSON(cmd.OutOrStdout(), resp)
 	}
-	all := make([]runtimeItem, 0, len(resp.Models)+len(resp.MCPServers)+len(resp.A2AAgents))
+	all := make([]runtimeItem, 0, len(resp.Models)+len(resp.MCPServers)+len(resp.A2AAgents)+len(resp.Teams))
 	all = append(all, resp.Models...)
 	all = append(all, resp.MCPServers...)
 	all = append(all, resp.A2AAgents...)
+	all = append(all, resp.Teams...)
 	return writeRuntimeTable(cmd.OutOrStdout(), all)
 }
 

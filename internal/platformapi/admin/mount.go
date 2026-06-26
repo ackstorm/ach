@@ -24,7 +24,7 @@ import (
 //     /skill-marketplaces, /bips, /litellm-connections, /external-refs.
 //  4. Registers read-only runtime catalog endpoints (GET):
 //     /runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
-//     /runtime/catalog.
+//     /runtime/teams, /runtime/catalog.
 //
 // The caller wires this under the authenticated chi.Group (Plan 03-11
 // cmd/platform-api/main.go):
@@ -71,6 +71,7 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/runtime/models", runtimecatalog.ModelsHandler(rcDeps))
 		r.Get("/runtime/mcp-servers", runtimecatalog.MCPServersHandler(rcDeps))
 		r.Get("/runtime/a2a-agents", runtimecatalog.A2AAgentsHandler(rcDeps))
+		r.Get("/runtime/teams", runtimecatalog.TeamsHandler(rcDeps))
 		r.Get("/runtime/catalog", runtimecatalog.CatalogHandler(rcDeps))
 	}
 }
