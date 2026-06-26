@@ -302,7 +302,7 @@ func newConfigAddCmd() *cobra.Command {
 		flagInsecure bool
 	)
 	c := &cobra.Command{
-		Use:   "add --profile <name> --url <url> --api-key <pk-|ek->",
+		Use:   "add [name] --url <url> (--pk|--api-key) <key>",
 		Short: "Register a profile from an existing pk-/ek- (no SSO)",
 		Long: `Register a profile from a credential you already hold — the headless
 counterpart to ach login (which needs a browser SSO round-trip).
@@ -315,23 +315,35 @@ copy a pk- from a login elsewhere), then seed a working profile here.
 The credential is written to Profile.PK (the default bearer used by
 ach hydrate when no --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY is set).
 Exits 1 in synthetic mode (ACH_BASE_URL + ACH_API_KEY both set).`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runConfigAdd(cmd, flagProfile, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce, flagInsecure)
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if flagAPIKey == "" {
+				return &exit.CodedError{Code: exit.General, Msg: "missing credential: pass --api-key (or --pk) <pk-|ek->"}
+			}
+			name := flagProfile
+			if len(args) == 1 && strings.TrimSpace(args[0]) != "" {
+				if flagProfile != "" && flagProfile != args[0] {
+					return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("profile name given twice (positional %q vs --profile %q)", args[0], flagProfile)}
+				}
+				name = strings.TrimSpace(args[0])
+			}
+			if name == "" {
+				return &exit.CodedError{Code: exit.General, Msg: "missing profile name: pass it positionally (config add <name>) or via --profile"}
+			}
+			return runConfigAdd(cmd, name, flagURL, flagAPIKey, flagEnvKeys, flagDefault, flagForce, flagInsecure)
 		},
 	}
 	c.Flags().StringVar(&flagProfile, "profile", "", "Profile name to create (DNS-1123 label)")
 	c.Flags().StringVar(&flagURL, "url", "", "Hub URL (http:// or https://)")
 	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Existing pk- or ek- plaintext to store")
+	c.Flags().StringVar(&flagAPIKey, "pk", "", "Alias of --api-key (the field is shown as PK in config show/list)")
 	c.Flags().BoolVar(&flagDefault, "default", false, "Set this profile as the default")
 	c.Flags().BoolVar(&flagForce, "force", false, "Overwrite an existing profile of the same name")
 	c.Flags().BoolVar(&flagInsecure, "insecure", false,
 		"Allow a plaintext http:// Hub URL (credentials stored/used unencrypted; localhost still requires this)")
 	c.Flags().StringArrayVar(&flagEnvKeys, "env-key", nil,
 		"Seed a labelled ek- into profiles.<name>.ek (label=ek-...); repeatable")
-	_ = c.MarkFlagRequired("profile")
 	_ = c.MarkFlagRequired("url")
-	_ = c.MarkFlagRequired("api-key")
 	return c
 }
 
