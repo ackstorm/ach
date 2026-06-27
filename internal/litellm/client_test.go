@@ -219,7 +219,7 @@ func TestNon2xxNon401IsGenericError(t *testing.T) {
 	// Body content "validation failed: model_name required" must NOT
 	// appear in the error string (§9.1 — bodies never in error
 	// surfacing because they bubble into Events / Status conditions).
-	if got := err.Error(); contains(got, "model_name required") {
+	if got := err.Error(); strings.Contains(got, "model_name required") {
 		t.Errorf("error string leaked body content: %q", got)
 	}
 }
@@ -242,17 +242,6 @@ func TestDelete404IsSuccess(t *testing.T) {
 	if err != nil {
 		t.Errorf("DELETE 404 should be success, got: %v", err)
 	}
-}
-
-// contains is a small substring helper. Avoids pulling strings into the
-// test package import list when not otherwise needed.
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 // float64Ptr is a small constructor helper used by the Phase 3 type tests
@@ -280,10 +269,10 @@ func TestPhase3TypesJSON(t *testing.T) {
 			t.Fatalf("Marshal: %v", err)
 		}
 		got := string(raw)
-		if !contains(got, `"key":"pk_xyz"`) {
+		if !strings.Contains(got, `"key":"pk_xyz"`) {
 			t.Errorf("want key field present, got: %s", got)
 		}
-		if contains(got, `"max_budget"`) {
+		if strings.Contains(got, `"max_budget"`) {
 			t.Errorf("KEY-10 violation: max_budget should be absent when nil, got: %s", got)
 		}
 	})
@@ -295,7 +284,7 @@ func TestPhase3TypesJSON(t *testing.T) {
 			t.Fatalf("Marshal: %v", err)
 		}
 		got := string(raw)
-		if !contains(got, `"max_budget":0`) {
+		if !strings.Contains(got, `"max_budget":0`) {
 			t.Errorf("pointer-to-zero must serialize max_budget:0, got: %s", got)
 		}
 	})
@@ -338,7 +327,7 @@ func TestPhase3TypesJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Re-marshal: %v", err)
 		}
-		if !contains(string(raw), `"teams":["default","ops"]`) {
+		if !strings.Contains(string(raw), `"teams":["default","ops"]`) {
 			t.Errorf("teams round-trip failed: %s", raw)
 		}
 
@@ -349,7 +338,7 @@ func TestPhase3TypesJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal empty: %v", err)
 		}
-		if contains(string(raw2), `"teams"`) {
+		if strings.Contains(string(raw2), `"teams"`) {
 			t.Errorf("empty Teams should be omitted, got: %s", raw2)
 		}
 	})
