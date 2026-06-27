@@ -18,6 +18,7 @@ package db_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -213,14 +214,6 @@ func TestListEnvironmentsIncludingDraining(t *testing.T) {
 		}
 		return out
 	}
-	contains := func(xs []string, want string) bool {
-		for _, x := range xs {
-			if x == want {
-				return true
-			}
-		}
-		return false
-	}
 
 	seed("live")
 	seed("draining")
@@ -232,7 +225,7 @@ func TestListEnvironmentsIncludingDraining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list incl draining: %v", err)
 	}
-	if got := names(all); !contains(got, "live") || !contains(got, "draining") {
+	if got := names(all); !slices.Contains(got, "live") || !slices.Contains(got, "draining") {
 		t.Fatalf("incl-draining = %v; want both live and draining", got)
 	}
 
@@ -240,7 +233,7 @@ func TestListEnvironmentsIncludingDraining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live: %v", err)
 	}
-	if contains(names(live), "draining") {
+	if slices.Contains(names(live), "draining") {
 		t.Fatalf("ListEnvironments leaked a draining row: %v", names(live))
 	}
 }
