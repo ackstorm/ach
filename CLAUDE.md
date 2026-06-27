@@ -141,7 +141,9 @@ User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
 `logout`/`whoami`/`config`/`env`/`keys`/`admin`/`runtime` (workspace verbs
 `hydrate`/`status`/`save`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
 `env save` writes a committed `ach.yaml` (env names + targets) so a teammate's
-bare `ach-cli env hydrate` reproduces the workspace.
+bare `ach-cli env hydrate` reproduces the workspace. Bare `ach-cli env hydrate`
+(no `<name>`, no `ACH_ENVIRONMENT`) reads that `ach.yaml` and hydrates each
+listed Environment best-effort (exit ≠0 if any fails).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
 marketplace or direct skill source) and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs

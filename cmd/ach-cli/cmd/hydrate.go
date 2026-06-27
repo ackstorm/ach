@@ -45,6 +45,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,6 +56,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ackstorm/ach/internal/cli/achfile"
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
@@ -371,22 +373,18 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	if effectiveEnv == "" {
 		effectiveEnv = in.envEnvironment
 	}
-	if prefix == keys.PrefixPk && effectiveEnv == "" {
+	// --raw has no ach.yaml manifest path and no per-env state namespacing;
+	// a pk- key additionally needs the env name to scope the verbatim stream
+	// (an ek- binds its own Environment, so ek-/--raw/empty stays allowed).
+	// The non-raw (engine) path no longer errors on an empty env here: when
+	// BOTH the positional <name> and ACH_ENVIRONMENT are absent it falls
+	// through to the ach.yaml manifest dispatch (runHydrateManifest), which
+	// supplies a non-empty env per listed entry — and emits its own
+	// required-arg error when no manifest exists.
+	if in.raw && prefix == keys.PrefixPk && effectiveEnv == "" {
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg:  "<name> positional argument is required when using a pk- key (CLI-06 / spec §5.7)",
-		}
-	}
-	// The hydrate ENGINE namespaces state by environment
-	// (.ach/<name>/ in both project and --global scope per spec §8.1),
-	// so the <name> positional argument is required for any engine run
-	// regardless of credential kind (D1). --raw is exempt: it short-circuits
-	// before the engine/state path (Phase 6 verbatim POST+stream).
-	if !in.raw && effectiveEnv == "" {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: "<name> positional argument is required: the hydrate engine namespaces state by " +
-				"environment (.ach/<name>/); pass the <name> positional argument or set ACH_ENVIRONMENT",
 		}
 	}
 
@@ -409,8 +407,10 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		if runErr == nil && prefix == keys.PrefixPk && !in.noWarnings {
 			_, _ = fmt.Fprint(cmd.ErrOrStderr(), pkWarning)
 		}
-	} else {
+	} else if effectiveEnv != "" {
 		runErr = runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
+	} else {
+		runErr = runHydrateManifest(cmd, in, baseURL, bearer)
 	}
 	return runErr
 }
@@ -557,6 +557,69 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 			noWarnings: in.noWarnings,
 		}
 		_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHydrateSummary(results, meta))
+	}
+	return nil
+}
+
+// runHydrateManifest drives the manifest path: with no positional <name> and
+// no ACH_ENVIRONMENT, it loads ach.yaml from the workspace root and hydrates
+// each listed environment best-effort (a failing env is recorded and the run
+// continues). It reuses runHydrateEngine per env, so each env hydrates exactly
+// as a standalone `env hydrate <name>` would. Exits non-zero if any env failed.
+func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
+	root := in.output
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+		}
+		root = wd
+	}
+	m, err := achfile.Load(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: "<name> positional argument is required: the hydrate engine " +
+				"namespaces state by environment (.ach/<name>/); pass <name>, set " +
+				"ACH_ENVIRONMENT, or create ach.yaml with `ach-cli env save`",
+		}
+	}
+	if err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+	}
+
+	type envResult struct {
+		name string
+		err  error
+	}
+	results := make([]envResult, 0, len(m.Environments))
+	for _, e := range m.Environments {
+		perEnv := in
+		// Target precedence: --target flag and ACH_PLATFORM both override the
+		// manifest entry; the entry only fills in when neither is set.
+		if perEnv.platform == "" && perEnv.envPlatform == "" && len(e.Targets) > 0 {
+			perEnv.platform = strings.Join(e.Targets, ",")
+		}
+		runErr := runHydrateEngine(cmd, perEnv, baseURL, bearer, e.Name)
+		results = append(results, envResult{name: e.Name, err: runErr})
+	}
+
+	failed := 0
+	stderr := cmd.ErrOrStderr()
+	_, _ = fmt.Fprintf(stderr, "\nHydrated %d environment(s) from ach.yaml:\n", len(results))
+	for _, r := range results {
+		if r.err != nil {
+			failed++
+			_, _ = fmt.Fprintf(stderr, "  - %s → FAIL: %v\n", r.name, r.err)
+		} else {
+			_, _ = fmt.Fprintf(stderr, "  - %s → OK\n", r.name)
+		}
+	}
+	if failed > 0 {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("%d of %d environment(s) failed to hydrate", failed, len(results)),
+		}
 	}
 	return nil
 }

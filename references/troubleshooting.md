@@ -348,8 +348,11 @@ phantom regression.
 The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
 (`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under
 `--global`) per CLI spec §8.1. So the positional `<name>` (or `ACH_ENVIRONMENT`) is
-REQUIRED for any engine run — including the `ek_` credential path, which used to
-treat it as optional. `--raw` is exempt (it short-circuits before the engine).
+REQUIRED for any single-env engine run — including the `ek_` credential path, which
+used to treat it as optional. Two exemptions: `--raw` (it short-circuits before the
+engine), and a committed `ach.yaml` — a **bare** `ach-cli env hydrate` (no `<name>`,
+no `ACH_ENVIRONMENT`) reads `ach.yaml` and hydrates each listed Environment
+best-effort (exit ≠0 if any fails). Create it with `ach-cli env save`.
 
 Two Environments hydrated into ONE project therefore get isolated caches +
 state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
@@ -368,6 +371,36 @@ Environment's runtime block (the bearer is injected ONLY into the adapter
 config, never the cache) — recorded in `state.runtimeFiles` so `--sync` /
 uninstall and drift cover runtime entries (incl. models, which have no adapter
 destination).
+
+### ❌ `ach-cli env hydrate` (bare, via ach.yaml) → an env "not found" though it exists
+`ach.yaml` is **hub-agnostic** — it lists Environment names only, never which
+hub they live on. Bare `env hydrate` resolves the hub from your **active
+profile**. If your active profile points at a different hub than the one where
+those Environments live, the names won't resolve and you get a per-env
+`FAIL: … not found` in the summary (best-effort: other envs still hydrate).
+Fix: point your active profile at the right hub (`ach-cli config use <profile>`
+or `ach-cli login` against the correct hub), then re-run `ach-cli env hydrate`.
+
+### ❌ `ach-cli login` fails `synthetic mode is half-set` after `export ACH_BASE_URL=…` ✅ use ACH_PLATFORM_URL to pre-fill the URL prompt
+`ACH_BASE_URL` is NOT a login-URL prefill — it is the **synthetic/headless mode
+switch** (CLI spec §3.3). Set it WITH a credential (`ACH_API_KEY` or
+`--api-key`) and the CLI runs server-mediated commands off env vars, no disk
+config — but `login` is REFUSED in synthetic mode regardless. Set it ALONE (URL,
+no credential) and you hit the half-set hard-error before any command runs:
+```
+synthetic mode is half-set: ACH_BASE_URL is set but no credential resolved …
+```
+To pre-fill the interactive `ach login` URL prompt, use **`ACH_PLATFORM_URL`** —
+a login-only convenience (precedence: `--base-url` flag → `ACH_PLATFORM_URL` env
+→ prompt). The two are deliberately distinct vars:
+
+| Var | Job | Effect on `login` |
+|-----|-----|-------------------|
+| `ACH_PLATFORM_URL` | pre-fill the login URL prompt | prompt suggests the URL; profile saved to disk |
+| `ACH_BASE_URL` (+ `ACH_API_KEY`) | synthetic/headless mode (no disk config) | REFUSED (`not available in synthetic mode`) |
+| `ACH_BASE_URL` alone | — (misconfiguration) | half-set hard error, exit 1 |
+
+Fix: `unset ACH_BASE_URL; export ACH_PLATFORM_URL=https://hub.example.com; ach-cli login`.
 
 ### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
 ```bash
