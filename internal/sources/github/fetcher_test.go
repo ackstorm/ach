@@ -5,6 +5,7 @@ package github
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -100,7 +101,7 @@ func TestFetch_MissingAuthKey(t *testing.T) {
 	// Threat T-02-02-01: error string must mention the key NAME
 	// (operator-readable) but the (absent) value cannot leak — there is
 	// no value to begin with, so this is the easy case.
-	if !contains(err.Error(), "token") {
+	if !strings.Contains(err.Error(), "token") {
 		t.Errorf("error should mention key name 'token'; got %q", err.Error())
 	}
 }
@@ -128,10 +129,10 @@ func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
 	if !errors.Is(err, sources.ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized; got %v", err)
 	}
-	if !contains(err.Error(), "GITHUB_TOKEN") {
+	if !strings.Contains(err.Error(), "GITHUB_TOKEN") {
 		t.Errorf("error should still mention the resolved key name; got %q", err.Error())
 	}
-	if !contains(err.Error(), "default") {
+	if !strings.Contains(err.Error(), "default") {
 		t.Errorf("error should hint that GITHUB_TOKEN was the default-key fallback; got %q", err.Error())
 	}
 }
@@ -199,13 +200,4 @@ func TestNew_RejectsMetacharRef(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
 }
