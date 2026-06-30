@@ -194,32 +194,16 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 // Pure function — pipeline.go gate 8 calls this once after the file is
 // open and the stat has succeeded.
 //
-//   - prompt:   *row.ContentType if non-nil-and-non-empty else
-//     application/octet-stream. (The pre-Plan-05-05 prompt
-//     default was text/markdown; Plan 05-05 / CS-06 changes
-//     the fallback to application/octet-stream so the
-//     policy is uniform across kinds when the override is
-//     absent. Existing prompt CRs that need text/markdown
-//     must set spec.contentType.)
-//   - plugin:   application/gzip (plugins are always .tar.gz on disk).
-//   - artifact: application/gzip when row.Scope == "directory" else
-//     application/octet-stream.
-func contentTypeFor(kind string, row *contentRow) string {
+// Every context kind is now served as a gzip tarball (uniform context
+// format): prompt + artifact-object are wrapped into a 1-entry gzip-tar
+// at ingestion, plugin/skill/artifact-directory are already gzip tars.
+// So all known kinds advertise application/gzip. Prompt's
+// spec.contentType override is no longer applied to the wire — the file
+// keeps its real MIME via its extension INSIDE the tar.
+func contentTypeFor(kind string, _ *contentRow) string {
 	switch kind {
-	case kindPrompt:
-		if row.ContentType != nil && *row.ContentType != "" {
-			return *row.ContentType
-		}
-		return contentTypeOctet
-	case kindPlugin:
+	case kindPrompt, kindPlugin, kindSkill, kindArtifact:
 		return contentTypeGzip
-	case kindSkill:
-		return contentTypeGzip
-	case kindArtifact:
-		if row.Scope == "directory" {
-			return contentTypeGzip
-		}
-		return contentTypeOctet
 	}
 	return contentTypeOctet
 }
