@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Prompt finalizer add/remove + OP-12 cached-file cleanup test —
-// Plan 01-11 Task 4. Cache path: prompt/<name> (raw bytes, no archive
-// extension — §10.3).
+// Plan 01-11 Task 4. Cache path: prompt/<name>.tar.gz (uniform context
+// format — single upstream file wrapped into a 1-entry gzip-tar at
+// ingestion — §10.3).
 
 package ach
 
@@ -23,11 +24,11 @@ import (
 )
 
 // TestPromptFinalizerAddRemove mirrors the Plugin pattern but with the
-// §10.3 prompt cache path (raw bytes; no `.tar.gz` extension).
+// §10.3 prompt cache path (prompt/<name>.tar.gz — uniform context format).
 func TestPromptFinalizerAddRemove(t *testing.T) {
 	ctx := context.Background()
 	name := "test-prompt-finalizer"
-	cachedFile := filepath.Join(testCacheRoot, "prompt", name)
+	cachedFile := filepath.Join(testCacheRoot, "prompt", name+".tar.gz")
 
 	if err := os.WriteFile(cachedFile, []byte("dummy-prompt-body"), 0o644); err != nil {
 		t.Fatalf("seed cached file: %v", err)

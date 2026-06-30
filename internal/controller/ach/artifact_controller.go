@@ -35,8 +35,9 @@ const artifactsChannel = "ach_artifacts_changed"
 
 // ArtifactReconciler reconciles an Artifact object. Phase 2 implements
 // the §10.3 steady-state refresh via materializeExternalRef. Cache path
-// depends on spec.scope: object → artifact/<name>; directory →
-// artifact/<name>.tar.gz. No size cap.
+// (uniform context format): object and directory both publish
+// artifact/<name>.tar.gz (object = 1-entry gzip-tar wrapped at ingestion;
+// directory = multi-file tar from the fetcher). No size cap.
 //
 // Phase 2 directory-scope note: the fetcher returns whatever the upstream
 // produces — Artifact spec.scope=directory currently relies on the source

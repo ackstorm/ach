@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Artifact finalizer add/remove + OP-12 cached-file cleanup test —
-// Plan 01-11 Task 4. Cache paths: artifact/<name> (object scope) AND
-// artifact/<name>.tar.gz (directory scope). The reconciler attempts both
-// and tolerates IsNotExist on either (Plan 01-05 decision). This test
-// seeds BOTH paths to prove both attempt sites run.
+// Plan 01-11 Task 4. Cache paths: object AND directory both now publish
+// artifact/<name>.tar.gz (uniform context format); artifact/<name> is
+// the legacy pre-uniform bare object path the finalizer still sweeps for
+// cleanup. The reconciler attempts both and tolerates IsNotExist on
+// either (Plan 01-05 decision). This test seeds BOTH paths to prove both
+// attempt sites run.
 
 package ach
 
@@ -31,14 +33,14 @@ import (
 func TestArtifactFinalizerAddRemove(t *testing.T) {
 	ctx := context.Background()
 	name := "test-artifact-finalizer"
-	objectPath := filepath.Join(testCacheRoot, "artifact", name)
-	dirPath := filepath.Join(testCacheRoot, "artifact", name+".tar.gz")
+	legacyBarePath := filepath.Join(testCacheRoot, "artifact", name)
+	tarGzPath := filepath.Join(testCacheRoot, "artifact", name+".tar.gz")
 
-	if err := os.WriteFile(objectPath, []byte("dummy-artifact-object"), 0o644); err != nil {
-		t.Fatalf("seed object-scope cached file: %v", err)
+	if err := os.WriteFile(legacyBarePath, []byte("dummy-artifact-legacy-bare"), 0o644); err != nil {
+		t.Fatalf("seed legacy bare cached file: %v", err)
 	}
-	if err := os.WriteFile(dirPath, []byte("dummy-artifact-archive"), 0o644); err != nil {
-		t.Fatalf("seed directory-scope cached file: %v", err)
+	if err := os.WriteFile(tarGzPath, []byte("dummy-artifact-archive"), 0o644); err != nil {
+		t.Fatalf("seed .tar.gz cached file: %v", err)
 	}
 
 	cr := &achv1alpha1.Artifact{
@@ -69,8 +71,8 @@ func TestArtifactFinalizerAddRemove(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = k8sClient.Delete(context.Background(), cr)
-		_ = os.Remove(objectPath)
-		_ = os.Remove(dirPath)
+		_ = os.Remove(legacyBarePath)
+		_ = os.Remove(tarGzPath)
 	})
 
 	if !Eventually(func() bool {
@@ -100,7 +102,7 @@ func TestArtifactFinalizerAddRemove(t *testing.T) {
 
 	// Both seeded paths MUST be gone (the reconciler attempts both with
 	// IsNotExist tolerance).
-	for _, p := range []string{objectPath, dirPath} {
+	for _, p := range []string{legacyBarePath, tarGzPath} {
 		if _, err := os.Stat(p); err == nil {
 			t.Errorf("OP-12 FAIL: cached file %s still exists after CR deletion", p)
 		} else if !errors.Is(err, fs.ErrNotExist) {

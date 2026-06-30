@@ -96,7 +96,12 @@ func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.P
 	if !controllerutil.ContainsFinalizer(cr, promptFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	// §10.3 cache layout: prompt/<name>
+	// §10.3 cache layout: prompt/<name>.tar.gz (uniform context format —
+	// single upstream file wrapped into a 1-entry gzip-tar at ingestion).
+	if err := os.Remove(filepath.Join(r.CacheRoot, "prompt", cr.Name+".tar.gz")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return ctrl.Result{}, err
+	}
+	// Legacy pre-uniform bare file (best-effort cleanup; tolerate absence).
 	if err := os.Remove(filepath.Join(r.CacheRoot, "prompt", cr.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return ctrl.Result{}, err
 	}
