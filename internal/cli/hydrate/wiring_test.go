@@ -3,7 +3,9 @@
 package hydrate_test
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,9 +45,25 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	body := []byte("hello world")
+	// The operator now publishes prompts as a 1-entry gzip tar (uniform
+	// context format), served as application/gzip — ach-cli untars it into
+	// a directory at <achDir>/prompt/<name>/<entry>.
+	const entryName = "demo.md"
+	const entryBody = "hello world"
+	var gzTar bytes.Buffer
+	gzw := gzip.NewWriter(&gzTar)
+	tw := tar.NewWriter(gzw)
+	if err := tw.WriteHeader(&tar.Header{Name: entryName, Mode: 0o644, Size: int64(len(entryBody)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte(entryBody)); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	_ = tw.Close()
+	_ = gzw.Close()
+	body := gzTar.Bytes()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Type", "application/gzip")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}))
@@ -69,10 +87,13 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	if res.SourceHash == "" || !strings.HasPrefix(res.SourceHash, "xxh3:") {
 		t.Errorf("SourceHash = %q; want xxh3: prefix", res.SourceHash)
 	}
-	// The verbatim file lands at <achDir>/prompt/demo-prompt.
-	final := filepath.Join(achDir, "prompt", "demo-prompt")
-	if _, err := os.Stat(final); err != nil {
+	// The gzip tar untars into a directory: <achDir>/prompt/demo-prompt/demo.md.
+	final := filepath.Join(achDir, "prompt", "demo-prompt", entryName)
+	got, err := os.ReadFile(final)
+	if err != nil {
 		t.Errorf("final path %s missing: %v", final, err)
+	} else if string(got) != entryBody {
+		t.Errorf("extracted body=%q, want %q", got, entryBody)
 	}
 }
 
