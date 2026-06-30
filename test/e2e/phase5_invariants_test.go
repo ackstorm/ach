@@ -157,11 +157,13 @@ func testPhase5SC1ContentSendfile(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d want=200", resp.StatusCode)
 		}
-		// prompt-valid sets spec.contentType=text/markdown (the SC1 probe was
-		// repointed from the gzip plugin to a prompt when plugins were gated
-		// off — content-service serves the prompt's declared Content-Type).
-		if ct := resp.Header.Get("Content-Type"); ct != "text/markdown" {
-			t.Errorf("Content-Type=%q want=text/markdown", ct)
+		// Uniform context format: every context kind (incl. prompt) is now
+		// served as a 1-entry gzip tarball, so the wire Content-Type is
+		// application/gzip. prompt-valid's spec.contentType=text/markdown is
+		// no longer reflected on the wire — the real MIME rides via the file
+		// extension INSIDE the tar.
+		if ct := resp.Header.Get("Content-Type"); ct != "application/gzip" {
+			t.Errorf("Content-Type=%q want=application/gzip", ct)
 		}
 		if cl := resp.Header.Get("Content-Length"); cl == "" {
 			t.Errorf("Content-Length missing")
