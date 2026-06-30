@@ -455,12 +455,16 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 	case "plugin":
 		return filepath.Join(cacheRoot, "plugin", name+".tar.gz")
 	case "prompt":
-		return filepath.Join(cacheRoot, "prompt", name)
+		// Single upstream file, wrapped into a 1-entry gzip-tar at ingestion
+		// (uniform context format).
+		return filepath.Join(cacheRoot, "prompt", name+".tar.gz")
 	case "artifact":
+		// Both object and directory now publish as .tar.gz. object = 1-entry
+		// tar (wrapped at ingestion); directory = multi-file tar (from the
+		// fetcher). scope no longer changes the suffix, but an unknown scope
+		// is still rejected (returns "").
 		switch scope {
-		case "object":
-			return filepath.Join(cacheRoot, "artifact", name)
-		case "directory":
+		case "object", "directory":
 			return filepath.Join(cacheRoot, "artifact", name+".tar.gz")
 		}
 	case "skill":

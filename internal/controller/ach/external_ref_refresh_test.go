@@ -137,8 +137,8 @@ func TestComputeFinalPath(t *testing.T) {
 		want              string
 	}{
 		{"plugin", "p1", "", "/cache/plugin/p1.tar.gz"},
-		{"prompt", "pr1", "", "/cache/prompt/pr1"},
-		{"artifact", "a1", "object", "/cache/artifact/a1"},
+		{"prompt", "pr1", "", "/cache/prompt/pr1.tar.gz"},
+		{"artifact", "a1", "object", "/cache/artifact/a1.tar.gz"},
 		{"artifact", "a1", "directory", "/cache/artifact/a1.tar.gz"},
 		{"unknown", "x", "", ""},
 		{"artifact", "x", "bogus", ""},
