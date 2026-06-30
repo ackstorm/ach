@@ -17,11 +17,11 @@ func TestResolvePath_HappyPath(t *testing.T) {
 		wantPath string
 	}{
 		{
-			name:     "prompt resolves to bare name under prompt/",
+			name:     "prompt resolves to .tar.gz under prompt/",
 			kind:     "prompt",
 			resource: "claude-code-system-prompt",
 			scope:    "",
-			wantPath: filepath.Join("/c", "prompt", "claude-code-system-prompt"),
+			wantPath: filepath.Join("/c", "prompt", "claude-code-system-prompt"+gzipSuffix),
 		},
 		{
 			name:     "plugin resolves to .tar.gz under plugin/",
@@ -38,11 +38,11 @@ func TestResolvePath_HappyPath(t *testing.T) {
 			wantPath: filepath.Join("/c", "artifact", "openclaw-templates.tar.gz"),
 		},
 		{
-			name:     "artifact scope=object uses bare name",
+			name:     "artifact scope=object uses .tar.gz",
 			kind:     "artifact",
 			resource: "single-file",
 			scope:    "object",
-			wantPath: filepath.Join("/c", "artifact", "single-file"),
+			wantPath: filepath.Join("/c", "artifact", "single-file"+gzipSuffix),
 		},
 	}
 	for _, tc := range cases {
@@ -74,7 +74,7 @@ func TestResolvePath_Artifact_ObjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := filepath.Join("/c", "artifact", "foo")
+	want := filepath.Join("/c", "artifact", "foo"+gzipSuffix)
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

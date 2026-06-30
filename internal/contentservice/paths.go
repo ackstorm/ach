@@ -47,10 +47,12 @@ func PluginStoragePathWithinRoot(cacheRoot, storageLocation string) (string, boo
 }
 
 // ResolvePath returns the single on-disk filename for a (kind, name,
-// scope) tuple under cacheRoot. Scope is consumed only for
-// kind=artifact: scope="object" → bare name, scope="directory" →
-// name + ".tar.gz". For prompt/plugin scope is ignored — plugin always
-// uses .tar.gz, prompt always uses the bare name.
+// scope) tuple under cacheRoot. Every context kind now resolves to
+// name + ".tar.gz" (uniform context format): prompt, plugin, and skill
+// always use .tar.gz; for kind=artifact both scope="object" (1-entry
+// tar) and scope="directory" (subtree tar) resolve to name + ".tar.gz".
+// Scope is still consumed for artifact only — an unknown scope is
+// rejected with ErrInvalidScope.
 //
 // Returns ErrInvalidKind for unknown kinds, ErrInvalidName for any
 // name that would traverse outside the kind subdirectory, and
@@ -67,16 +69,14 @@ func ResolvePath(cacheRoot, kind, name, scope string) (string, error) {
 	}
 	switch kind {
 	case kindPrompt:
-		return filepath.Join(cacheRoot, kindPrompt, name), nil
+		return filepath.Join(cacheRoot, kindPrompt, name+gzipSuffix), nil
 	case kindPlugin:
 		return filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix), nil
 	case kindSkill:
 		return filepath.Join(cacheRoot, kindSkill, name+gzipSuffix), nil
 	case kindArtifact:
 		switch scope {
-		case "object":
-			return filepath.Join(cacheRoot, kindArtifact, name), nil
-		case "directory":
+		case "object", "directory":
 			return filepath.Join(cacheRoot, kindArtifact, name+gzipSuffix), nil
 		default:
 			return "", ErrInvalidScope
