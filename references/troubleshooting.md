@@ -58,6 +58,36 @@ exist. Fix is a rolling image update; no data migration.
 > kind/e2e cluster ships only RWO, so standalone is validated by
 > `helm template` + a real RWX cluster, not the local e2e suite.
 
+### ❌ `/content/{prompt,artifact}/…` 404s right after deploying the uniform-`.tar.gz` build
+```bash
+curl .../content/prompt/foo   # HTTP 404 content_not_found
+ls $ACH_CACHE_ROOT/prompt/    # foo  (bare, no .tar.gz)
+```
+✅ Force a re-reconcile of each Prompt/Artifact so the operator rewrites
+the cache file as `<name>.tar.gz`. As of the uniform-context-format
+change, Prompt and Artifact `scope=object` are published as a 1-entry
+gzip tar (`prompt/<name>.tar.gz`, `artifact/<name>.tar.gz`) — the same
+shape as skill/plugin/directory-artifact — and `ResolvePath` /
+`contentTypeFor` serve them as `application/gzip`. The harness and
+`ach-cli` already untar every kind with `mode="r:gz"`, so they extract
+into a directory `<kind>/<name>/<source-basename>`.
+```bash
+# bump spec or annotate to force a refresh, then verify on the PVC:
+kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
+  ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
+```
+WHY IT FAILS: between the rollout and the re-reconcile, `ResolvePath`
+looks for `<name>.tar.gz` while the old **bare** file still sits there →
+404 `content_not_found` until the re-fetch completes (the operator
+reconciles on resync; force-refresh shortens the window). **Orphan bare
+files**: a live CR's old bare `prompt/<name>` / `artifact/<name>` is NOT
+auto-removed (the name changed) — the finalizer's legacy-bare cleanup
+only fires on CR *delete*. One-time housekeeping after all CRs
+re-reconcile (optional; NOT scripted into the operator — YAGNI):
+```bash
+find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
+```
+
 ### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)
 ```bash
 curl -X PATCH .../platform/objects/environments/demo -d '{"spec":{...}}'
