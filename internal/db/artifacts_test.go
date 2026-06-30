@@ -58,7 +58,7 @@ func TestUpsertArtifact_InsertThenUpdate(t *testing.T) {
 	// Mutate scope + storage_location; round-trip.
 	time.Sleep(50 * time.Millisecond)
 	row.Scope = "object"
-	row.StorageLocation = "/var/cache/ach/artifact/templates"
+	row.StorageLocation = "/var/cache/ach/artifact/templates.tar.gz"
 	row.ResourceVersion = "2"
 	if err := db.UpsertArtifact(ctx, pool, row); err != nil {
 		t.Fatalf("second UpsertArtifact: %v", err)
@@ -70,7 +70,7 @@ func TestUpsertArtifact_InsertThenUpdate(t *testing.T) {
 	if got2.Scope != "object" {
 		t.Errorf("after Upsert: Scope got %q, want object", got2.Scope)
 	}
-	if got2.StorageLocation != "/var/cache/ach/artifact/templates" {
+	if got2.StorageLocation != "/var/cache/ach/artifact/templates.tar.gz" {
 		t.Errorf("after Upsert: StorageLocation got %q", got2.StorageLocation)
 	}
 	if !got2.UpdatedAt.After(firstUpdatedAt) {

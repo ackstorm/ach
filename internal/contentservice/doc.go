@@ -4,16 +4,18 @@
 // surface (Hub §15.2 / §15.6). Post-Plan-05-05 (D-16 rewrite) it
 // serves three authenticated routes plus health:
 //
+// Every context kind is served as a gzip tarball (uniform context
+// format) — prompt + artifact-object are wrapped into a 1-entry
+// gzip-tar at ingestion; plugin/skill/artifact-directory are already
+// gzip tars:
+//
 //	GET /healthz
-//	GET /content/prompt/{name}     -> bytes from prompts.content_type
-//	                                  projection column (else
-//	                                  application/octet-stream)
-//	GET /content/plugin/{name}     -> .tar.gz, Content-Type:
+//	GET /content/prompt/{name}     -> .tar.gz (1-entry), Content-Type:
 //	                                  application/gzip
-//	GET /content/artifact/{name}   -> scope-dispatched: object → bare
-//	                                  bytes with application/octet-
-//	                                  stream; directory → .tar.gz
-//	                                  with application/gzip
+//	GET /content/plugin/{name}     -> .tar.gz, application/gzip
+//	GET /content/artifact/{name}   -> .tar.gz (object: 1-entry; directory:
+//	                                  subtree), application/gzip
+//	GET /content/skill/{name}      -> .tar.gz, application/gzip
 //
 // Files live under ACH_CACHE_ROOT (default /var/cache/ach) on the RWO
 // PVC mounted by the operator Pod that this container shares.
