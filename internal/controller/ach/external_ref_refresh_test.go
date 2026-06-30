@@ -270,12 +270,22 @@ func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	if res.UpstreamRev != "sha-abc" {
 		t.Errorf("UpstreamRev = %q; want %q", res.UpstreamRev, "sha-abc")
 	}
-	got, err := os.ReadFile(finalPath)
+	// The published prompt is now a 1-entry gzip tar, NOT raw bytes.
+	published, err := os.ReadFile(finalPath)
 	if err != nil {
 		t.Fatalf("read finalPath: %v", err)
 	}
-	if !bytes.Equal(got, []byte("hello")) {
-		t.Errorf("finalPath body = %q; want %q", got, "hello")
+	gz, err := gzip.NewReader(bytes.NewReader(published))
+	if err != nil {
+		t.Fatalf("published file is not gzip: %v", err)
+	}
+	tr := tar.NewReader(gz)
+	if _, err := tr.Next(); err != nil {
+		t.Fatalf("tar next: %v", err)
+	}
+	gotBody, _ := io.ReadAll(tr)
+	if string(gotBody) != "hello" {
+		t.Errorf("tar entry body=%q, want hello", gotBody)
 	}
 	// No orphan staging files left under .tmp/.
 	tmpEntries, _ := os.ReadDir(filepath.Join(root, ".tmp"))

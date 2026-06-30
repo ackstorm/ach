@@ -16,6 +16,7 @@
 package ach
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -295,6 +296,40 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 			return MaterializeResult{Err: serr}
 		}
 		result.Body = io.NopCloser(bytes.NewReader(raw)) // re-feed staged bytes (no filter)
+	}
+
+	// ─── Step 5.7: single-file → 1-entry gzip-tar (uniform context format). ───
+	// Prompt and Artifact scope=object arrive as RAW single-file bytes; skill /
+	// plugin / directory-artifact arrive as gzip tarballs. Wrap the raw single
+	// file in a 1-entry gzip-tar so every context kind is a gzip tar on disk
+	// (the harness/ach-cli untar uniformly and the real source filename is
+	// preserved INSIDE the tar). A body that is ALREADY gzip (a directory
+	// fetch, or a mis-authored directory-path prompt) passes through untouched
+	// — the magic-byte sniff prevents double-tarring.
+	if deps.Kind == "prompt" || deps.Kind == "artifact" {
+		const objectIngressCap = 512 << 20 // mirror pluginRawIngressCap
+		br := bufio.NewReader(result.Body)
+		magic, _ := br.Peek(2)
+		if isGzipMagic(magic) {
+			result.Body = io.NopCloser(br) // already a tar.gz (directory) → stream as-is
+		} else {
+			raw, rerr := io.ReadAll(io.LimitReader(br, objectIngressCap+1))
+			if rerr != nil {
+				return MaterializeResult{Err: fmt.Errorf("read %s body: %w", deps.Kind, rerr)}
+			}
+			if int64(len(raw)) > objectIngressCap {
+				return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: objectIngressCap}}
+			}
+			entry := sourceBasename(deps.SourceSpec)
+			if entry == "" {
+				entry = deps.Name
+			}
+			wrapped, werr := wrapSingleFileTarGz(raw, entry)
+			if werr != nil {
+				return MaterializeResult{Err: fmt.Errorf("tar-wrap %s/%s: %w", deps.Kind, deps.Name, werr)}
+			}
+			result.Body = io.NopCloser(bytes.NewReader(wrapped))
+		}
 	}
 
 	tmpFile, err := os.CreateTemp(filepath.Join(deps.CacheRoot, ".tmp"), "stg-")
