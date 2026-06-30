@@ -4,13 +4,60 @@ package ach
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
+	"fmt"
+	"io"
 	"net/url"
 	"path"
 
 	"github.com/ackstorm/ach/internal/sources"
 )
+
+// objectIngressCap bounds the raw single-file read on the wrap path
+// (mirrors pluginRawIngressCap). Over-cap → *OversizeError.
+const objectIngressCap = 512 << 20
+
+// wrapContextBody applies the uniform-context-format wrap to a
+// prompt/artifact body: a RAW single file becomes a 1-entry gzip-tar
+// (entry name = the real source basename, or the CR name when the source
+// names no concrete file); an already-gzip body (a directory fetch, or a
+// mis-authored directory-path prompt) streams through untouched — the
+// magic-byte sniff prevents double-tarring. Wrapping at this single
+// ingestion chokepoint gives every context kind the same gzip-tar shape
+// on disk, so the harness/ach-cli untar uniformly and the real source
+// filename survives INSIDE the archive.
+//
+// Only kind ∈ {prompt, artifact} is wrapped; every other kind (skill /
+// plugin / directory-artifact, already gzip tarballs) is returned
+// untouched, so the caller can invoke this unconditionally.
+func wrapContextBody(kind, name string, spec sources.SourceSpec, body io.ReadCloser) (io.ReadCloser, error) {
+	if kind != "prompt" && kind != "artifact" {
+		return body, nil
+	}
+	br := bufio.NewReader(body)
+	magic, _ := br.Peek(2)
+	if isGzipMagic(magic) {
+		return io.NopCloser(br), nil // already a tar.gz (directory) → stream as-is
+	}
+	raw, err := io.ReadAll(io.LimitReader(br, objectIngressCap+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s body: %w", kind, err)
+	}
+	if int64(len(raw)) > objectIngressCap {
+		return nil, &OversizeError{Bytes: int64(len(raw)), Cap: objectIngressCap}
+	}
+	entry := sourceBasename(spec)
+	if entry == "" {
+		entry = name
+	}
+	wrapped, err := wrapSingleFileTarGz(raw, entry)
+	if err != nil {
+		return nil, fmt.Errorf("tar-wrap %s/%s: %w", kind, name, err)
+	}
+	return io.NopCloser(bytes.NewReader(wrapped)), nil
+}
 
 // wrapSingleFileTarGz returns a gzip-compressed tar archive containing exactly
 // one regular-file entry named entryName with the given bytes. Used at
