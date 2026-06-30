@@ -63,27 +63,42 @@ exist. Fix is a rolling image update; no data migration.
 curl .../content/prompt/foo   # HTTP 404 content_not_found
 ls $ACH_CACHE_ROOT/prompt/    # foo  (bare, no .tar.gz)
 ```
-✅ Force a re-reconcile of each Prompt/Artifact so the operator rewrites
-the cache file as `<name>.tar.gz`. As of the uniform-context-format
-change, Prompt and Artifact `scope=object` are published as a 1-entry
-gzip tar (`prompt/<name>.tar.gz`, `artifact/<name>.tar.gz`) — the same
-shape as skill/plugin/directory-artifact — and `ResolvePath` /
-`contentTypeFor` serve them as `application/gzip`. The harness and
-`ach-cli` already untar every kind with `mode="r:gz"`, so they extract
-into a directory `<kind>/<name>/<source-basename>`.
+✅ Force a FULL re-fetch of each Prompt/Artifact (`scope=object`) so the
+operator rewrites the cache file as `<name>.tar.gz`. As of the
+uniform-context-format change, Prompt and Artifact `scope=object` are
+published as a 1-entry gzip tar (`prompt/<name>.tar.gz`,
+`artifact/<name>.tar.gz`) — the same shape as skill/plugin/directory-
+artifact — and `ResolvePath` / `contentTypeFor` serve them as
+`application/gzip`. The harness and `ach-cli` already untar every kind
+with `mode="r:gz"`, so they extract into a directory
+`<kind>/<name>/<source-basename>`. (skills + directory-artifacts already
+ship `.tar.gz`, so they need NO migration.)
+
+⚠ **A force-refresh annotation / Admin-API refresh / plain resync does
+NOT migrate it.** Those re-run the fetch but still send the stored
+upstream SHA as `PriorRev`, so the fetcher returns `NotModified`
+(`external_ref_refresh.go` Step 4) and the helper returns BEFORE staging
+— the bare file is never rewritten. `PriorRev` is cleared (forcing a real
+body) ONLY on a **`metadata.generation` bump**
+(`external_ref_driver.go` — the F1 spec-change clause) or a
+delete/recreate. So the migration needs a real spec change:
 ```bash
-# bump spec or annotate to force a refresh, then verify on the PVC:
+# generation bump → clears PriorRev → full re-fetch → writes <name>.tar.gz
+kubectl -n ach patch prompt   <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'
+kubectl -n ach patch artifact <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'  # scope=object only
+# (or kubectl delete + re-apply the CR). Then verify on the PVC:
 kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
   ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
 ```
-WHY IT FAILS: between the rollout and the re-reconcile, `ResolvePath`
-looks for `<name>.tar.gz` while the old **bare** file still sits there →
-404 `content_not_found` until the re-fetch completes (the operator
-reconciles on resync; force-refresh shortens the window). **Orphan bare
-files**: a live CR's old bare `prompt/<name>` / `artifact/<name>` is NOT
-auto-removed (the name changed) — the finalizer's legacy-bare cleanup
-only fires on CR *delete*. One-time housekeeping after all CRs
-re-reconcile (optional; NOT scripted into the operator — YAGNI):
+WHY IT FAILS: after the rollout, `ResolvePath` looks for `<name>.tar.gz`
+while the old **bare** file still sits there → 404 `content_not_found`.
+It does NOT self-heal on resync — the conditional-fetch `NotModified`
+shortcut skips the rewrite until a generation bump forces a full
+re-fetch. **Orphan bare files**: a live CR's old bare `prompt/<name>` /
+`artifact/<name>` is NOT auto-removed (the name changed) — the
+finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
+housekeeping after all CRs re-fetch (optional; NOT scripted into the
+operator — YAGNI):
 ```bash
 find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
 ```
