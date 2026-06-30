@@ -200,7 +200,9 @@ func GuardCommand(p Params) error {
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: "synthetic mode is half-set: ACH_BASE_URL is set but no credential resolved " +
-				"(set ACH_API_KEY or pass --api-key; or `unset ACH_BASE_URL` to use the disk config)",
+				"(set ACH_API_KEY or pass --api-key; or `unset ACH_BASE_URL` to use the disk config). " +
+				"To pre-fill the `ach login` URL prompt instead, use ACH_PLATFORM_URL — not ACH_BASE_URL " +
+				"(ACH_BASE_URL switches on synthetic/headless mode, which refuses `login`)",
 		}
 	}
 
