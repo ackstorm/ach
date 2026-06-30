@@ -19,7 +19,9 @@
 package contentservice
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -277,11 +279,30 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 	}
 }
 
+// tarGzFixture returns a 1-entry gzip tar (entry "f", given content) — the
+// on-disk shape the operator now publishes for prompt + artifact-object.
+func tarGzFixture(t *testing.T, content []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "f", Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
+}
+
 func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int64, contentType *string, body []byte) {
 	f.t.Helper()
 	ctx := context.Background()
-	path := filepath.Join(f.cacheRoot, "prompt", name)
-	if err := os.WriteFile(path, body, 0o600); err != nil {
+	// Operator now publishes prompts as a 1-entry gzip tar at <name>.tar.gz.
+	path := filepath.Join(f.cacheRoot, "prompt", name+".tar.gz")
+	if err := os.WriteFile(path, tarGzFixture(f.t, body), 0o600); err != nil {
 		f.t.Fatalf("write prompt file: %v", err)
 	}
 	row := db.PromptRow{
@@ -375,12 +396,19 @@ func (f *testFixtures) seedArtifact(name, scope string, lsr *time.Time, maxStale
 	f.t.Helper()
 	ctx := context.Background()
 	var path string
+	var fileBody []byte
 	if scope == "directory" {
+		// Directory artifacts are already a (multi-file) gzip tar from the
+		// fetcher — write the caller's body verbatim.
 		path = filepath.Join(f.cacheRoot, "artifact", name+".tar.gz")
+		fileBody = body
 	} else {
-		path = filepath.Join(f.cacheRoot, "artifact", name)
+		// Object artifacts are now wrapped into a 1-entry gzip tar at
+		// ingestion, published at <name>.tar.gz (uniform context format).
+		path = filepath.Join(f.cacheRoot, "artifact", name+".tar.gz")
+		fileBody = tarGzFixture(f.t, body)
 	}
-	if err := os.WriteFile(path, body, 0o600); err != nil {
+	if err := os.WriteFile(path, fileBody, 0o600); err != nil {
 		f.t.Fatalf("write artifact file: %v", err)
 	}
 	row := db.ArtifactRow{
