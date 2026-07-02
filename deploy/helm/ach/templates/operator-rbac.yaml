@@ -16,11 +16,19 @@ metadata:
     app.kubernetes.io/component: operator
 rules:
 - apiGroups: [""]
-  resources: ["secrets"]
+  resources: ["pods", "secrets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
+# ACHAgent workload children (Deployment/ConfigMap/Service/ServiceAccount/PVC).
+# The ACHAgentReconciler is the operator's only workload-creating controller.
+- apiGroups: [""]
+  resources: ["configmaps", "persistentvolumeclaims", "serviceaccounts", "services"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
   - artifacts
@@ -33,6 +41,14 @@ rules:
   - skills
   - skillmarketplaces
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# ACHAgent is user-owned: the operator watches + patches status, never
+# creates/deletes it. AgentProfile is read-only (no reconciler).
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["achagents"]
+  verbs: ["get", "list", "patch", "update", "watch"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["agentprofiles"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
   - artifacts/finalizers
@@ -47,6 +63,7 @@ rules:
   verbs: ["update"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
+  - achagents/status
   - artifacts/status
   - backendidentitypolicies/status
   - environments/status
