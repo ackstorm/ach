@@ -420,6 +420,29 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
+              security:
+                description: |-
+                  Security sets the pod run-as identity (runAsUser/runAsGroup/fsGroup).
+                  RunAsNonRoot is always enforced regardless.
+                properties:
+                  fsGroup:
+                    description: |-
+                      FSGroup owns mounted volumes and joins the process supplementary groups so
+                      the non-root harness can read 0440 channel-secret files and write the PVC.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  runAsGroup:
+                    description: RunAsGroup is the container primary gid.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  runAsUser:
+                    description: RunAsUser is the container uid. Must be non-root.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                type: object
               terminationGracePeriodSeconds:
                 format: int64
                 minimum: 0

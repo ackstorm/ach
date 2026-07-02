@@ -117,3 +117,41 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 		t.Error("config-hash annotation missing")
 	}
 }
+
+func TestBuildDeployment_ChannelSecretVolumeModeAndFSGroup(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Image = "img"
+	p.Spec.Ach.BaseURL = "https://ach"
+	fsg := int64(10001)
+	p.Spec.Security = &achv1alpha1.PodSecuritySpec{FSGroup: &fsg}
+
+	dep := buildDeployment(a, p, "h", buildAgentEnv(a, p), map[string][]string{"gitlab-webhook": {"secret"}})
+
+	// fsGroup (from the profile) must own the secret files so the non-root
+	// harness can read them via the group bit. RunAsNonRoot stays enforced.
+	sc := dep.Spec.Template.Spec.SecurityContext
+	if sc == nil || sc.FSGroup == nil || *sc.FSGroup != 10001 {
+		t.Errorf("pod fsGroup not propagated from profile (securityContext=%+v)", sc)
+	}
+	if sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("RunAsNonRoot must stay enforced")
+	}
+
+	var found bool
+	for _, v := range dep.Spec.Template.Spec.Volumes {
+		if v.Secret == nil || v.Secret.SecretName != "gitlab-webhook" {
+			continue
+		}
+		found = true
+		// 0440 = owner+group read, no world/other. Group is fsGroup (harness).
+		if v.Secret.DefaultMode == nil || *v.Secret.DefaultMode != 0o440 {
+			t.Errorf("channel secret DefaultMode = %v, want 0440", v.Secret.DefaultMode)
+		}
+	}
+	if !found {
+		t.Fatal("channel secret volume not built")
+	}
+}

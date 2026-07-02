@@ -32,6 +32,16 @@ const (
 	defaultHealthPort    = int32(8080) // harness HealthBlock default
 )
 
+// secretFileMode is the permission mask for projected channel-secret files
+// (webhook/a2a): 0440 = owner+group read, NO world/other bits. Secret-volume
+// files are owned by root, so a plain 0400 would be unreadable by the non-root
+// harness. Pairing 0440 with the profile's securityContext.fsGroup makes the
+// files root:<fsGroup> and adds fsGroup to the harness process's supplementary
+// groups, so it reads via the group bit while nothing outside that group can.
+// This is the least-privilege setting that actually works for a non-root harness
+// (the operator no longer hardcodes a gid — it comes from AgentProfile.spec.security).
+var secretFileMode = int32(0o440)
+
 var (
 	defaultCPURequest    = resource.MustParse("100m")
 	defaultMemoryRequest = resource.MustParse("128Mi")
@@ -171,7 +181,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 			items = append(items, corev1.KeyToPath{Key: k, Path: k})
 		}
 		volName := "secret-" + name
-		volumes = append(volumes, corev1.Volume{Name: volName, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, Items: items}}})
+		volumes = append(volumes, corev1.Volume{Name: volName, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, Items: items, DefaultMode: &secretFileMode}}})
 		mounts = append(mounts, corev1.VolumeMount{Name: volName, MountPath: agentrender.SecretMountRoot + "/" + name, ReadOnly: true})
 	}
 
@@ -191,6 +201,19 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 	}
 	if p.Spec.Resources != nil {
 		resources = *p.Spec.Resources.DeepCopy()
+	}
+
+	// Pod run-as identity. RunAsNonRoot is an invariant; runAsUser/runAsGroup/
+	// fsGroup come from the profile (fsGroup is what lets the non-root harness
+	// read the 0440 channel-secret files + write the PVC).
+	podSecurity := &corev1.PodSecurityContext{
+		RunAsNonRoot:   &trueVal,
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}
+	if s := p.Spec.Security; s != nil {
+		podSecurity.RunAsUser = s.RunAsUser
+		podSecurity.RunAsGroup = s.RunAsGroup
+		podSecurity.FSGroup = s.FSGroup
 	}
 
 	port := resolveHealthPort(p)
@@ -222,7 +245,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,
 					Tolerations:                   p.Spec.Tolerations,
-					SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &trueVal, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+					SecurityContext:               podSecurity,
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
 						Name:           agentContainerName,

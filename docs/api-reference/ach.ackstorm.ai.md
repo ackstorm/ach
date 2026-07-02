@@ -226,6 +226,7 @@ _Appears in:_
 | `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN). |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
+| `security` _[PodSecuritySpec](#podsecurityspec)_ | Security sets the pod run-as identity (runAsUser/runAsGroup/fsGroup).<br />RunAsNonRoot is always enforced regardless. |  |  |
 | `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  | Required: \{\} <br /> |
 | `model` _[ModelSpec](#modelspec)_ |  |  |  |
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
@@ -1351,6 +1352,29 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+
+
+#### PodSecuritySpec
+
+
+
+PodSecuritySpec sets the agent pod's run-as identity. RunAsNonRoot is always
+enforced by the operator regardless of these fields. FSGroup is what lets a
+non-root harness read the 0440-mode channel-secret files (webhook/a2a): it
+owns the mounted secrets + state PVC and joins the process's supplementary
+groups. Set it (matching the image's runtime gid) whenever the agent has a
+webhook/a2a channel or persistence.
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `runAsUser` _integer_ | RunAsUser is the container uid. Must be non-root. |  | Minimum: 1 <br /> |
+| `runAsGroup` _integer_ | RunAsGroup is the container primary gid. |  | Minimum: 1 <br /> |
+| `fsGroup` _integer_ | FSGroup owns mounted volumes and joins the process supplementary groups so<br />the non-root harness can read 0440 channel-secret files and write the PVC. |  | Minimum: 1 <br /> |
 
 
 #### Prompt

@@ -108,6 +108,28 @@ type PersistenceSpec struct {
 	RetainPolicy *string `json:"retainPolicy,omitempty"`
 }
 
+// PodSecuritySpec sets the agent pod's run-as identity. RunAsNonRoot is always
+// enforced by the operator regardless of these fields. FSGroup is what lets a
+// non-root harness read the 0440-mode channel-secret files (webhook/a2a): it
+// owns the mounted secrets + state PVC and joins the process's supplementary
+// groups. Set it (matching the image's runtime gid) whenever the agent has a
+// webhook/a2a channel or persistence.
+type PodSecuritySpec struct {
+	// RunAsUser is the container uid. Must be non-root.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	RunAsUser *int64 `json:"runAsUser,omitempty"`
+	// RunAsGroup is the container primary gid.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	RunAsGroup *int64 `json:"runAsGroup,omitempty"`
+	// FSGroup owns mounted volumes and joins the process supplementary groups so
+	// the non-root harness can read 0440 channel-secret files and write the PVC.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	FSGroup *int64 `json:"fsGroup,omitempty"`
+}
+
 // AgentProfileSpec is the reusable infra + defaults half.
 type AgentProfileSpec struct {
 	// +kubebuilder:validation:Required
@@ -126,6 +148,10 @@ type AgentProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// Security sets the pod run-as identity (runAsUser/runAsGroup/fsGroup).
+	// RunAsNonRoot is always enforced regardless.
+	// +optional
+	Security *PodSecuritySpec `json:"security,omitempty"`
 	// +kubebuilder:validation:Required
 	Ach AchEndpointSpec `json:"ach"`
 	// +optional
