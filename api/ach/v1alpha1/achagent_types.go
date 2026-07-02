@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// IdentitySpec carries the ACH ek_ (config: injected as ACH_TOKEN env via secretKeyRef).
+type IdentitySpec struct {
+	// SecretRef points at a Secret holding the ek_ (create it yourself, e.g. `ach-cli keys create`).
+	// +kubebuilder:validation:Required
+	SecretRef SecretKeyRef `json:"secretRef"`
+}
+
+// ExcludeSpec is the governance gate ABOVE the model (config: capability.filter.exclude).
+type ExcludeSpec struct {
+	// +optional
+	Tools []string `json:"tools,omitempty"`
+	// +optional
+	McpServers []string `json:"mcpServers,omitempty"`
+	// +optional
+	Skills []string `json:"skills,omitempty"`
+}
+
+// FilterSpec wraps the exclude gate.
+type FilterSpec struct {
+	// +optional
+	Exclude *ExcludeSpec `json:"exclude,omitempty"`
+}
+
+// CapabilitySpec is the per-agent capability block (config: capability{type:ach,ach.environment,filter}).
+type CapabilitySpec struct {
+	// Environment is the ACH Hub Environment name this agent runs against.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Environment string `json:"environment"`
+	// +optional
+	Filter *FilterSpec `json:"filter,omitempty"`
+}
+
+// PromptSystemSpec is a discriminated persona source (config: prompt.system).
+// The ach form MAY carry an optional achFile (rendered as system.file — the schema's SystemAch
+// allows `file` as an optional subpath within the named prompt).
+// +kubebuilder:validation:XValidation:rule="(self.type=='text' && has(self.text)) || (self.type=='file' && has(self.file)) || (self.type=='ach' && has(self.ach))",message="prompt.system: the block matching type is required"
+type PromptSystemSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=text;file;ach
+	Type string `json:"type"`
+	// +optional
+	Text string `json:"text,omitempty"`
+	// +optional
+	File string `json:"file,omitempty"`
+	// +optional
+	Ach string `json:"ach,omitempty"`
+	// AchFile is an optional subpath within an `ach` prompt (rendered as prompt.system.file).
+	// +optional
+	AchFile string `json:"achFile,omitempty"`
+}
+
+// AgentPromptSpec configures the system prompt (config: prompt).
+type AgentPromptSpec struct {
+	// +kubebuilder:validation:Required
+	System PromptSystemSpec `json:"system"`
+	// +optional
+	// +kubebuilder:default=append
+	Compose string `json:"compose,omitempty"`
+}
+
+// HindsightSpec is the hindsight memory backend (config: memory.hindsight).
+type HindsightSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Endpoint string `json:"endpoint"`
+	// +optional
+	Bank string `json:"bank,omitempty"`
+	// +optional
+	MentalModels []string `json:"mentalModels,omitempty"`
+}
+
+// CodememSpec is the codemem memory backend (config: memory.codemem). All fields optional.
+type CodememSpec struct {
+	// +optional
+	DBPath string `json:"dbPath,omitempty"`
+	// +optional
+	Project string `json:"project,omitempty"`
+}
+
+// MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
+// Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+// (endpoint has no default); CodememMemory requires only `type` — {"type":"codemem"} is valid
+// (dbPath/project are derived/defaulted by the harness).
+// +kubebuilder:validation:XValidation:rule="(self.type=='hindsight' && has(self.hindsight)) || (self.type=='codemem')",message="memory.hindsight is required when type=hindsight"
+type MemorySpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=hindsight;codemem
+	Type string `json:"type"`
+	// +optional
+	Hindsight *HindsightSpec `json:"hindsight,omitempty"`
+	// +optional
+	Codemem *CodememSpec `json:"codemem,omitempty"`
+}
+
+// WebhookAuthSpec configures webhook auth (config: channels[].webhook.auth; secretRef → secretPath).
+// +kubebuilder:validation:XValidation:rule="self.type=='none' || has(self.secretRef)",message="webhook.auth.secretRef is required unless type=none"
+// +kubebuilder:validation:XValidation:rule="self.type!='header_token' || (has(self.header) && size(self.header)>0)",message="webhook.auth.header is required when type=header_token"
+type WebhookAuthSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=gitlab_token;hmac;header_token;none
+	Type string `json:"type"`
+	// +optional
+	Header string `json:"header,omitempty"`
+	// +optional
+	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
+}
+
+// WebhookSpec configures a webhook channel (config: channels[].webhook + channels[].source).
+type WebhookSpec struct {
+	// +kubebuilder:validation:Required
+	Auth WebhookAuthSpec `json:"auth"`
+	// +optional
+	// +kubebuilder:validation:items:Enum=merge_request;issue;note
+	GitlabEvents []string `json:"gitlabEvents,omitempty"`
+}
+
+// CronSpec configures a cron channel (config: channels[].cron).
+type CronSpec struct {
+	// +kubebuilder:validation:Required
+	Schedule string `json:"schedule"`
+	// +optional
+	// +kubebuilder:default=UTC
+	Timezone string `json:"timezone,omitempty"`
+}
+
+// QueueSpec configures a redis queue channel (config: channels[].queue; type/ackMode are constants).
+type QueueSpec struct {
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+}
+
+// A2AAuthSpec configures a2a inbound auth (config: channels[].a2a.auth; secretRef → secretPath).
+type A2AAuthSpec struct {
+	// +optional
+	// +kubebuilder:default=x-a2a-custom-api-key
+	Header string `json:"header,omitempty"`
+	// +kubebuilder:validation:Required
+	SecretRef SecretKeyRef `json:"secretRef"`
+}
+
+// A2ASpec configures an a2a channel (config: channels[].a2a; mode async-only in v1).
+type A2ASpec struct {
+	// +kubebuilder:validation:Required
+	Auth A2AAuthSpec `json:"auth"`
+}
+
+// ChannelSpec is one inbound channel (config: channels[]).
+// +kubebuilder:validation:XValidation:rule="(self.type=='webhook' && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
+// +kubebuilder:validation:XValidation:rule="self.type=='webhook' || !has(self.source)",message="channels.source is only valid for webhook channels"
+type ChannelSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=webhook;cron;queue;a2a
+	Type string `json:"type"`
+	// +optional
+	// +kubebuilder:validation:Enum=gitlab;github;generic
+	Source string `json:"source,omitempty"`
+	// +optional
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Concurrency *int64 `json:"concurrency,omitempty"`
+	// +optional
+	// +kubebuilder:default=auto
+	// +kubebuilder:validation:Enum=auto;none
+	Session string `json:"session,omitempty"`
+	// +optional
+	Prompt string `json:"prompt,omitempty"`
+	// +optional
+	Webhook *WebhookSpec `json:"webhook,omitempty"`
+	// +optional
+	Cron *CronSpec `json:"cron,omitempty"`
+	// +optional
+	Queue *QueueSpec `json:"queue,omitempty"`
+	// +optional
+	A2A *A2ASpec `json:"a2a,omitempty"`
+}
+
+// ACHAgentSpec defines the desired state of an agent instance.
+type ACHAgentSpec struct {
+	// +kubebuilder:validation:Required
+	ProfileRef LocalObjectRef `json:"profileRef"`
+	// +kubebuilder:validation:Required
+	Identity IdentitySpec `json:"identity"`
+	// +kubebuilder:validation:Required
+	Capability CapabilitySpec `json:"capability"`
+	// Model overrides the profile's default model.
+	// +optional
+	Model *ModelSpec `json:"model,omitempty"`
+	// Limits overrides the profile's default limits.
+	// +optional
+	Limits *LimitsSpec `json:"limits,omitempty"`
+	// +optional
+	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
+	// +optional
+	Memory *MemorySpec `json:"memory,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=name
+	Channels []ChannelSpec `json:"channels"`
+}
+
+// ACHAgentStatus is the observed state.
+type ACHAgentStatus struct {
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,shortName=agent
+// +kubebuilder:printcolumn:name="Profile",type=string,JSONPath=".spec.profileRef.name"
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="ACHAgent name must be <= 50 chars (operator derives <=63-char child names)"
+
+// ACHAgent is a running agent instance.
+type ACHAgent struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   ACHAgentSpec   `json:"spec,omitempty"`
+	Status ACHAgentStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// ACHAgentList contains a list of ACHAgent.
+type ACHAgentList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ACHAgent `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&ACHAgent{}, &ACHAgentList{})
+}
