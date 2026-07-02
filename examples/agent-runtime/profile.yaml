@@ -5,13 +5,6 @@ metadata:
   namespace: engineering
 spec:
   image: ghcr.io/ackstorm/ach-agent:latest
-  # Run-as identity. RunAsNonRoot is always enforced; fsGroup owns the mounted
-  # channel secrets (0440) + the state PVC so the non-root harness can read/write
-  # them. Match your image's runtime uid/gid.
-  security:
-    runAsUser: 10001
-    runAsGroup: 10001
-    fsGroup: 10001
   ach:
     baseUrl: https://ach.ackstorm.ai
   model:

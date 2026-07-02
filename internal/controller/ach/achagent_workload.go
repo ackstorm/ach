@@ -5,7 +5,6 @@ package ach
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"sort"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -31,16 +30,6 @@ const (
 	defaultGraceSeconds  = int64(120)
 	defaultHealthPort    = int32(8080) // harness HealthBlock default
 )
-
-// secretFileMode is the permission mask for projected channel-secret files
-// (webhook/a2a): 0440 = owner+group read, NO world/other bits. Secret-volume
-// files are owned by root, so a plain 0400 would be unreadable by the non-root
-// harness. Pairing 0440 with the profile's securityContext.fsGroup makes the
-// files root:<fsGroup> and adds fsGroup to the harness process's supplementary
-// groups, so it reads via the group bit while nothing outside that group can.
-// This is the least-privilege setting that actually works for a non-root harness
-// (the operator no longer hardcodes a gid — it comes from AgentProfile.spec.security).
-var secretFileMode = int32(0o440)
 
 var (
 	defaultCPURequest    = resource.MustParse("100m")
@@ -98,6 +87,16 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) []corev
 			continue // reserved — defense-in-depth behind the CEL marker
 		}
 		env = append(env, e)
+	}
+	// Inbound channel-auth secrets (webhook/a2a) are injected as env vars, NOT
+	// mounted files: the agent runs same-uid as the harness and can read mounted
+	// secret files, but not the harness process env (PR_SET_DUMPABLE=0). Value via
+	// secretKeyRef only — never an inline literal in the PodSpec.
+	for _, ref := range agentrender.ChannelSecretEnv(*a) {
+		env = append(env, corev1.EnvVar{Name: ref.EnvName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretName},
+			Key:                  ref.Key,
+		}}})
 	}
 	return env
 }
@@ -158,8 +157,9 @@ func needsService(a *achv1alpha1.ACHAgent) bool {
 }
 
 // buildDeployment builds the single-replica agent Deployment. env is built once by the caller
-// (buildAgentEnv) so what's hashed equals what's deployed. refSecrets = channel secret name→keys.
-func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar, refSecrets map[string][]string) *appsv1.Deployment {
+// (buildAgentEnv) so what's hashed equals what's deployed. Inbound channel-auth secrets ride in
+// env (secretKeyRef), never as mounted files.
+func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar) *appsv1.Deployment {
 	one := int32(1)
 	falseVal, trueVal := false, true
 
@@ -168,22 +168,6 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: agentResourceName(a.Name)}}},
 	}}
 	mounts := []corev1.VolumeMount{{Name: configVolumeName, MountPath: configFilePath, SubPath: configFileName, ReadOnly: true}}
-
-	// Per-channel secret volumes at /etc/ach-agent/secrets/<name>, projecting only referenced keys.
-	names := make([]string, 0, len(refSecrets))
-	for n := range refSecrets {
-		names = append(names, n)
-	}
-	sort.Strings(names) // deterministic volume order
-	for _, name := range names {
-		items := make([]corev1.KeyToPath, 0, len(refSecrets[name]))
-		for _, k := range refSecrets[name] {
-			items = append(items, corev1.KeyToPath{Key: k, Path: k})
-		}
-		volName := "secret-" + name
-		volumes = append(volumes, corev1.Volume{Name: volName, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, Items: items, DefaultMode: &secretFileMode}}})
-		mounts = append(mounts, corev1.VolumeMount{Name: volName, MountPath: agentrender.SecretMountRoot + "/" + name, ReadOnly: true})
-	}
 
 	if p.Spec.Persistence != nil && p.Spec.Persistence.Enabled {
 		volumes = append(volumes, corev1.Volume{Name: pvcVolumeName, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: agentResourceName(a.Name)}}})
@@ -201,19 +185,6 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 	}
 	if p.Spec.Resources != nil {
 		resources = *p.Spec.Resources.DeepCopy()
-	}
-
-	// Pod run-as identity. RunAsNonRoot is an invariant; runAsUser/runAsGroup/
-	// fsGroup come from the profile (fsGroup is what lets the non-root harness
-	// read the 0440 channel-secret files + write the PVC).
-	podSecurity := &corev1.PodSecurityContext{
-		RunAsNonRoot:   &trueVal,
-		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
-	}
-	if s := p.Spec.Security; s != nil {
-		podSecurity.RunAsUser = s.RunAsUser
-		podSecurity.RunAsGroup = s.RunAsGroup
-		podSecurity.FSGroup = s.FSGroup
 	}
 
 	port := resolveHealthPort(p)
@@ -245,7 +216,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,
 					Tolerations:                   p.Spec.Tolerations,
-					SecurityContext:               podSecurity,
+					SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &trueVal, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
 						Name:           agentContainerName,

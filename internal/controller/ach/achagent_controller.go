@@ -151,7 +151,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.applyFail(ctx, &agent, conds, "PVC", err)
 		}
 	}
-	if err := r.apply(ctx, &agent, buildDeployment(&agent, &profile, configHash, env, refSecrets)); err != nil {
+	if err := r.apply(ctx, &agent, buildDeployment(&agent, &profile, configHash, env)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Deployment", err)
 	}
 	if needsService(&agent) {

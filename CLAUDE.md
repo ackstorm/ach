@@ -126,8 +126,10 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 (gated off, see above). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
 (an agent instance)** render into the single `agent-config-v1` config the
 `ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a
-`config.json` ConfigMap + a single-replica Deployment (probes, key-projected
-channel-secret volumes, salted config-hash roll) — the harness **self-hydrates**
+`config.json` ConfigMap + a single-replica Deployment (probes, inbound
+channel-auth secrets injected as `ACH_SECRET_*` env vars via `secretKeyRef` —
+never file-mounted, since a same-uid agent could read mounted files — salted
+config-hash roll) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
 probe-backed `pod.status` only.
 

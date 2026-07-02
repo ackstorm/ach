@@ -80,11 +80,18 @@ func TestRender_FullGolden(t *testing.T) {
 		t.Errorf("capability.ach = %v", achBlock)
 	}
 	ch0auth := m["channels"].([]any)[0].(map[string]any)["webhook"].(map[string]any)["auth"].(map[string]any)
-	if ch0auth["secretPath"] != "/etc/ach-agent/secrets/gitlab-webhook/secret" {
-		t.Errorf("webhook secretPath = %v", ch0auth["secretPath"])
+	ch0secret, ok := ch0auth["secret"].(map[string]any)
+	if !ok || ch0secret["env"] != "ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK" {
+		t.Errorf("webhook auth.secret.env = %v (want ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK)", ch0auth["secret"])
+	}
+	if _, leaked := ch0auth["secretPath"]; leaked {
+		t.Errorf("secretPath leaked (auth secrets are env-injected now)")
 	}
 	if _, leaked := ch0auth["secretRef"]; leaked {
 		t.Errorf("secretRef leaked into rendered config")
+	}
+	if _, hasFile := ch0secret["file"]; hasFile {
+		t.Errorf("auth.secret.file set; operator defaults to env")
 	}
 }
 
@@ -134,5 +141,48 @@ func TestReferencedSecrets_NameToKeys(t *testing.T) {
 	got := ReferencedSecrets(a)
 	if len(got) != 1 || len(got["s1"]) != 2 || got["s1"][0] != "ka" || got["s1"][1] != "kb" {
 		t.Errorf("ReferencedSecrets = %v, want {s1:[ka kb]}", got)
+	}
+}
+
+func TestChannelSecretEnv_NamesAndRefs(t *testing.T) {
+	a := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{
+		{Name: "gitlab-mr-review", Type: "webhook", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gl", Key: "secret"}}}},
+		{Name: "peer-intake", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "peer", Key: "apikey"}}}},
+		{Name: "daily", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}, // no secret
+	}}}
+	got := ChannelSecretEnv(a)
+	if len(got) != 2 {
+		t.Fatalf("ChannelSecretEnv len = %d, want 2", len(got))
+	}
+	if got[0].EnvName != "ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK" || got[0].SecretName != "gl" || got[0].Key != "secret" {
+		t.Errorf("webhook ref = %+v", got[0])
+	}
+	if got[1].EnvName != "ACH_SECRET_PEER_INTAKE_A2A" || got[1].SecretName != "peer" || got[1].Key != "apikey" {
+		t.Errorf("a2a ref = %+v", got[1])
+	}
+}
+
+func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
+		Image: "x", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		Engine: &achv1alpha1.EngineSpec{ForwardEnv: []string{"HTTPS_PROXY", "ACH_SECRET_X_WEBHOOK", "ACH_TOKEN"}},
+	}}
+	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: achv1alpha1.ACHAgentSpec{
+		ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
+		Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+		Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
+		Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+	}}
+	cfg, err := Render(p, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range cfg.Engine.ForwardEnv {
+		if len(n) >= 4 && n[:4] == "ACH_" {
+			t.Errorf("forwardEnv leaked reserved var %q (harness hard-fails on secret env in forwardEnv)", n)
+		}
+	}
+	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
+		t.Errorf("forwardEnv = %v, want [HTTPS_PROXY]", cfg.Engine.ForwardEnv)
 	}
 }

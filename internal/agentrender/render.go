@@ -6,10 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+)
+
+// Inbound channel types that carry an auth secret.
+const (
+	channelTypeWebhook = "webhook"
+	channelTypeA2A     = "a2a"
 )
 
 // Render collapses profile + agent into an AgentConfig. Agent fields override profile
@@ -53,7 +60,56 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, er
 // Marshal serializes an AgentConfig (Go struct field order is stable).
 func Marshal(cfg AgentConfig) ([]byte, error) { return json.Marshal(cfg) }
 
-func secretPath(name, key string) string { return SecretMountRoot + "/" + name + "/" + key }
+// channelSecretEnvName is the deterministic env var name carrying a channel's
+// inbound-auth secret (webhook/a2a). Named ACH_SECRET_<CHANNEL>_<TYPE> (upper-
+// snake, non-alnum → _). The name is NOT sensitive (only the value is, and the
+// agent can't read the harness env); it just has to be a valid C identifier,
+// unique (channel name is unique via listMapKey), and never collide with the
+// reserved ACH_* vars (the ACH_SECRET_ prefix guarantees that).
+func channelSecretEnvName(ch *achv1alpha1.ChannelSpec) string {
+	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_" + sanitizeEnvSegment(ch.Type)
+}
+
+func sanitizeEnvSegment(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// ChannelSecretEnvRef is one inbound-auth secret → container env var (secretKeyRef).
+type ChannelSecretEnvRef struct {
+	EnvName    string
+	SecretName string
+	Key        string
+}
+
+// ChannelSecretEnv returns the per-channel inbound-auth secrets to inject as env
+// vars (webhook/a2a with a secretRef). The operator wires each via secretKeyRef;
+// the rendered config's auth.secret.env matches EnvName. Env injection (not file
+// mounts) so a same-uid agent cannot read the value.
+func ChannelSecretEnv(a achv1alpha1.ACHAgent) []ChannelSecretEnvRef {
+	var out []ChannelSecretEnvRef
+	for i := range a.Spec.Channels {
+		ch := &a.Spec.Channels[i]
+		switch ch.Type {
+		case channelTypeWebhook:
+			if ch.Webhook != nil && ch.Webhook.Auth.SecretRef != nil {
+				out = append(out, ChannelSecretEnvRef{EnvName: channelSecretEnvName(ch), SecretName: ch.Webhook.Auth.SecretRef.Name, Key: ch.Webhook.Auth.SecretRef.Key})
+			}
+		case channelTypeA2A:
+			if ch.A2A != nil {
+				out = append(out, ChannelSecretEnvRef{EnvName: channelSecretEnvName(ch), SecretName: ch.A2A.Auth.SecretRef.Name, Key: ch.A2A.Auth.SecretRef.Key})
+			}
+		}
+	}
+	return out
+}
 
 func decodeParams(raw *apiextensionsv1.JSON) (map[string]any, error) {
 	if raw == nil || len(raw.Raw) == 0 {
@@ -81,7 +137,28 @@ func renderEngine(e *achv1alpha1.EngineSpec) *EngineBlock {
 	if e == nil {
 		return nil
 	}
-	return &EngineBlock{Home: e.Home, WorkDir: e.WorkDir, ForwardEnv: e.ForwardEnv, IdleTTLSeconds: e.IdleTTLSeconds, StartupTimeoutSeconds: e.StartupTimeoutSeconds, MaxToolCalls: e.MaxToolCalls}
+	return &EngineBlock{Home: e.Home, WorkDir: e.WorkDir, ForwardEnv: sanitizeForwardEnv(e.ForwardEnv), IdleTTLSeconds: e.IdleTTLSeconds, StartupTimeoutSeconds: e.StartupTimeoutSeconds, MaxToolCalls: e.MaxToolCalls}
+}
+
+// sanitizeForwardEnv drops any ACH_*-named var from the harness→engine forward
+// allowlist. The operator owns the ACH_* namespace, incl. the ACH_SECRET_*
+// inbound-auth env vars; the harness hard-fails at boot if a secret env name
+// appears in forwardEnv, so this keeps them out defensively.
+func sanitizeForwardEnv(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, n := range in {
+		if strings.HasPrefix(n, "ACH_") {
+			continue
+		}
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func renderPrompt(p *achv1alpha1.AgentPromptSpec) *PromptBlock {
@@ -152,11 +229,11 @@ func renderHealth(h *achv1alpha1.HealthSpec) *HealthBlock {
 func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {
 	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: ch.Session, Prompt: ch.Prompt}
 	switch ch.Type {
-	case "webhook":
+	case channelTypeWebhook:
 		if ch.Webhook != nil {
 			w := &WebhookBlock{Auth: WebhookAuthBlock{Type: ch.Webhook.Auth.Type, Header: ch.Webhook.Auth.Header}, GitlabEvents: ch.Webhook.GitlabEvents}
 			if ch.Webhook.Auth.SecretRef != nil {
-				w.Auth.SecretPath = secretPath(ch.Webhook.Auth.SecretRef.Name, ch.Webhook.Auth.SecretRef.Key)
+				w.Auth.Secret = &SecretSourceBlock{Env: channelSecretEnvName(ch)}
 			}
 			cb.Webhook = w
 		}
@@ -168,17 +245,17 @@ func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {
 		if ch.Queue != nil {
 			cb.Queue = &QueueBlock{Type: "redis", Key: ch.Queue.Key, AckMode: "onComplete"}
 		}
-	case "a2a":
+	case channelTypeA2A:
 		if ch.A2A != nil {
-			cb.A2A = &A2ABlock{Mode: "async", Auth: A2AAuthBlock{Header: ch.A2A.Auth.Header, SecretPath: secretPath(ch.A2A.Auth.SecretRef.Name, ch.A2A.Auth.SecretRef.Key)}}
+			cb.A2A = &A2ABlock{Mode: "async", Auth: A2AAuthBlock{Header: ch.A2A.Auth.Header, Secret: &SecretSourceBlock{Env: channelSecretEnvName(ch)}}}
 		}
 	}
 	return cb
 }
 
-// ReferencedSecrets returns channel-secret NAME → sorted KEYS (for key-projected volume mounts
-// and key-existence checks). The ek identity secret is injected as ACH_TOKEN via secretKeyRef —
-// NOT included here.
+// ReferencedSecrets returns channel-secret NAME → sorted KEYS (for the reconciler's
+// key-existence check + the salted secret-content hash). The ek identity secret is injected as
+// ACH_TOKEN via secretKeyRef — NOT included here.
 func ReferencedSecrets(a achv1alpha1.ACHAgent) map[string][]string {
 	set := map[string]map[string]struct{}{}
 	add := func(name, key string) {
@@ -190,11 +267,11 @@ func ReferencedSecrets(a achv1alpha1.ACHAgent) map[string][]string {
 	for i := range a.Spec.Channels {
 		ch := &a.Spec.Channels[i]
 		switch ch.Type {
-		case "webhook":
+		case channelTypeWebhook:
 			if ch.Webhook != nil && ch.Webhook.Auth.SecretRef != nil {
 				add(ch.Webhook.Auth.SecretRef.Name, ch.Webhook.Auth.SecretRef.Key)
 			}
-		case "a2a":
+		case channelTypeA2A:
 			if ch.A2A != nil {
 				add(ch.A2A.Auth.SecretRef.Name, ch.A2A.Auth.SecretRef.Key)
 			}

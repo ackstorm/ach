@@ -86,7 +86,7 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	p.Spec.Ach.BaseURL = "https://ach"
 
 	env := buildAgentEnv(a, p)
-	dep := buildDeployment(a, p, "cfghash", env, nil)
+	dep := buildDeployment(a, p, "cfghash", env)
 
 	if *dep.Spec.Replicas != 1 {
 		t.Errorf("replicas = %d", *dep.Spec.Replicas)
@@ -118,40 +118,42 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	}
 }
 
-func TestBuildDeployment_ChannelSecretVolumeModeAndFSGroup(t *testing.T) {
+func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
+		Name: "gitlab-mr-review", Type: "webhook",
+		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gl-hook", Key: "secret"}}},
+	}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Image = "img"
 	p.Spec.Ach.BaseURL = "https://ach"
-	fsg := int64(10001)
-	p.Spec.Security = &achv1alpha1.PodSecuritySpec{FSGroup: &fsg}
 
-	dep := buildDeployment(a, p, "h", buildAgentEnv(a, p), map[string][]string{"gitlab-webhook": {"secret"}})
-
-	// fsGroup (from the profile) must own the secret files so the non-root
-	// harness can read them via the group bit. RunAsNonRoot stays enforced.
-	sc := dep.Spec.Template.Spec.SecurityContext
-	if sc == nil || sc.FSGroup == nil || *sc.FSGroup != 10001 {
-		t.Errorf("pod fsGroup not propagated from profile (securityContext=%+v)", sc)
-	}
-	if sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
-		t.Error("RunAsNonRoot must stay enforced")
-	}
-
+	// Auth secret must be a secretKeyRef env var, never an inline value.
 	var found bool
-	for _, v := range dep.Spec.Template.Spec.Volumes {
-		if v.Secret == nil || v.Secret.SecretName != "gitlab-webhook" {
+	for _, e := range buildAgentEnv(a, p) {
+		if e.Name != "ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK" {
 			continue
 		}
 		found = true
-		// 0440 = owner+group read, no world/other. Group is fsGroup (harness).
-		if v.Secret.DefaultMode == nil || *v.Secret.DefaultMode != 0o440 {
-			t.Errorf("channel secret DefaultMode = %v, want 0440", v.Secret.DefaultMode)
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+			e.ValueFrom.SecretKeyRef.Name != "gl-hook" || e.ValueFrom.SecretKeyRef.Key != "secret" {
+			t.Errorf("channel secret env must be a secretKeyRef to gl-hook/secret, got %+v", e)
 		}
 	}
 	if !found {
-		t.Fatal("channel secret volume not built")
+		t.Fatal("channel auth secret not injected as env var")
+	}
+
+	// And it must NOT be mounted as a file, nor pull in fsGroup (uid/perms reverted).
+	dep := buildDeployment(a, p, "h", buildAgentEnv(a, p))
+	for _, v := range dep.Spec.Template.Spec.Volumes {
+		if v.Secret != nil {
+			t.Errorf("secret volume present; auth secrets are env-injected now: %+v", v)
+		}
+	}
+	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup != nil {
+		t.Errorf("fsGroup should be unset (uid/perms reverted); securityContext=%+v", sc)
 	}
 }

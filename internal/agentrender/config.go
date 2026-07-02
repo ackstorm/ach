@@ -6,10 +6,6 @@
 // ../ach-agent/docs/schemas/agent-config-v1.schema.json (validated by schema_test.go).
 package agentrender
 
-// SecretMountRoot is the frozen container dir under which channel secrets mount.
-// secretPath = <SecretMountRoot>/<secretName>/<key>.
-const SecretMountRoot = "/etc/ach-agent/secrets" //nolint:gosec // G101 false positive: filesystem mount path, not a credential value
-
 // AgentConfig is the top-level rendered config (schema $id agent-config-v1).
 type AgentConfig struct {
 	SchemaVersion string          `json:"schemaVersion"`
@@ -134,9 +130,18 @@ type WebhookBlock struct {
 }
 
 type WebhookAuthBlock struct {
-	Type       string `json:"type"`
-	Header     string `json:"header,omitempty"`
-	SecretPath string `json:"secretPath,omitempty"`
+	Type   string             `json:"type"`
+	Header string             `json:"header,omitempty"`
+	Secret *SecretSourceBlock `json:"secret,omitempty"`
+}
+
+// SecretSourceBlock is a discriminated inbound-auth secret source (schema
+// SecretSource): exactly one of env|file. The operator defaults to env — the
+// value lives in the harness process env (unreadable by the same-uid agent under
+// PR_SET_DUMPABLE=0), never on a same-uid-readable mounted file.
+type SecretSourceBlock struct {
+	Env  string `json:"env,omitempty"`
+	File string `json:"file,omitempty"`
 }
 
 type CronBlock struct {
@@ -156,6 +161,6 @@ type A2ABlock struct {
 }
 
 type A2AAuthBlock struct {
-	Header     string `json:"header,omitempty"`
-	SecretPath string `json:"secretPath,omitempty"`
+	Header string             `json:"header,omitempty"`
+	Secret *SecretSourceBlock `json:"secret,omitempty"`
 }
