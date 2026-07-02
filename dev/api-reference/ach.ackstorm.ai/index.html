@@ -4161,9 +4161,9 @@ condition is written.</p>
 <tbody>
 <tr>
 <td><code>environment</code> <em>string</em></td>
-<td>Environment is the ACH Hub Environment name this agent runs against.</td>
+<td>Environment is the ACH Hub Environment name, for documentation/intent only.<br />The ek already scopes the environment server-side, and the harness reads the<br />hydrated environment (manifest.environment) — NOT this field. Optional: omit<br />to let the ek decide; when set it is rendered but never authoritative.</td>
 <td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
+<td></td>
 </tr>
 <tr>
 <td><code>filter</code> <em><a href="#filterspec">FilterSpec</a></em></td>
