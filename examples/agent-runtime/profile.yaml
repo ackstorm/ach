@@ -1,0 +1,27 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: AgentProfile
+metadata:
+  name: standard
+  namespace: engineering
+spec:
+  image: ghcr.io/ackstorm/ach-agent:latest
+  ach:
+    baseUrl: https://ach.ackstorm.ai
+  model:
+    name: openai.gpt-5
+    type: openai
+  engine:
+    forwardEnv: [HTTPS_PROXY, SSL_CERT_FILE]
+    idleTtlSeconds: 30
+  limits:
+    maxConcurrentInvocations: 8
+    maxInvocationSeconds: 1800
+    maxSteps: 50
+  health:
+    host: 0.0.0.0
+    port: 8000
+  persistence:
+    enabled: true
+    size: 10Gi
+    mountPath: /var/lib/ach-agent
+    retainPolicy: Retain

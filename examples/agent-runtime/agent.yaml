@@ -1,0 +1,34 @@
+# Prereq: create the ek secret, e.g.
+#   kubectl -n engineering create secret generic ops-ek --from-literal=ek=<ek_...>
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: gitlab-reviewer
+  namespace: engineering
+spec:
+  profileRef: { name: standard }
+  identity:
+    secretRef: { name: ops-ek, key: ek }
+  capability:
+    environment: engineering-prod
+    filter:
+      exclude:
+        skills: [send-email]
+        mcpServers: [dangerous-admin]
+  prompt:
+    system: { type: text, text: "You are a senior code reviewer for the platform team." }
+    compose: append
+  channels:
+    - name: gitlab-mr-review
+      type: webhook
+      source: gitlab
+      concurrency: 4
+      prompt: "Review this merge request: {{ payload.object_attributes.url }}"
+      webhook:
+        auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
+        gitlabEvents: [merge_request, note]
+    - name: daily-security
+      type: cron
+      session: none
+      cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
+      prompt: "Scan main for new CVEs; open an issue if any are critical."
