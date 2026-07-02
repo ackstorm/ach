@@ -7,7 +7,58 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - persistentvolumeclaims
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
   - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - achagents
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - achagents/status
+  - artifacts/status
+  - backendidentitypolicies/status
+  - environments/status
+  - litellmconnections/status
+  - pluginmarketplaces/status
+  - plugins/status
+  - prompts/status
+  - skillmarketplaces/status
+  - skills/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - agentprofiles
   verbs:
   - get
   - list
@@ -47,18 +98,14 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - ach.ackstorm.ai
+  - apps
   resources:
-  - artifacts/status
-  - backendidentitypolicies/status
-  - environments/status
-  - litellmconnections/status
-  - pluginmarketplaces/status
-  - plugins/status
-  - prompts/status
-  - skillmarketplaces/status
-  - skills/status
+  - deployments
   verbs:
+  - create
+  - delete
   - get
+  - list
   - patch
   - update
+  - watch

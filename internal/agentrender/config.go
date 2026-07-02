@@ -8,7 +8,7 @@ package agentrender
 
 // SecretMountRoot is the frozen container dir under which channel secrets mount.
 // secretPath = <SecretMountRoot>/<secretName>/<key>.
-const SecretMountRoot = "/etc/ach-agent/secrets"
+const SecretMountRoot = "/etc/ach-agent/secrets" //nolint:gosec // G101 false positive: filesystem mount path, not a credential value
 
 // AgentConfig is the top-level rendered config (schema $id agent-config-v1).
 type AgentConfig struct {
@@ -145,7 +145,7 @@ type CronBlock struct {
 }
 
 type QueueBlock struct {
-	Type    string `json:"type"`    // always "redis"
+	Type    string `json:"type"` // always "redis"
 	Key     string `json:"key"`
 	AckMode string `json:"ackMode"` // always "onComplete"
 }

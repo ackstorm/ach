@@ -12,7 +12,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
 
-func ptr[T any](v T) *T { return &v }
+func ptr[T any](v T) *T                      { return &v }
 func rawJSON(s string) *apiextensionsv1.JSON { return &apiextensionsv1.JSON{Raw: []byte(s)} }
 
 func TestRender_FullGolden(t *testing.T) {

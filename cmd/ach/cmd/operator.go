@@ -568,6 +568,13 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
 	}
+	if err = (&achcontroller.ACHAgentReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller ACHAgent: %w", err)
+	}
 	// +kubebuilder:scaffold:builder
 
 	// ─── Issue #34 A10: periodic full resync runnable. ───
