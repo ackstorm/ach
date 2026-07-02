@@ -344,6 +344,14 @@ func setupAndRun(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(BackendIdentityPolicy): %v\n", err)
 		return 1
 	}
+	if err := (&ACHAgentReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		fmt.Fprintf(os.Stderr, "SetupWithManager(ACHAgent): %v\n", err)
+		return 1
+	}
 
 	// Start the manager in a goroutine and wait for the cache to sync —
 	// MULTI-03 readiness gate: no Reconcile is observed until the
