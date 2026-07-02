@@ -19,6 +19,16 @@ const (
 	channelTypeA2A     = "a2a"
 )
 
+// Health-server defaults. The operator OWNS the probe port: it always pins
+// health.host/port in the rendered config so the harness binds exactly what the
+// Deployment probes — never falling back to the harness's own default (which
+// would silently drift). Kept in this package (the config-contract owner) so the
+// controller's probe port and the config agree by construction.
+const (
+	DefaultHealthHost = "0.0.0.0"
+	DefaultHealthPort = int32(8000)
+)
+
 // Render collapses profile + agent into an AgentConfig. Agent fields override profile
 // defaults (model, limits). Errors only on structurally impossible states (defense in depth
 // behind admission CEL).
@@ -219,11 +229,20 @@ func renderPersistence(p *achv1alpha1.PersistenceSpec) *PersistBlock {
 	return pb
 }
 
+// renderHealth ALWAYS emits a health block so the config pins the port the
+// operator probes (no reliance on the harness default). Profile fields override
+// the defaults; a zero/unset host or port falls back to DefaultHealthHost/Port.
 func renderHealth(h *achv1alpha1.HealthSpec) *HealthBlock {
-	if h == nil {
-		return nil
+	host, port := DefaultHealthHost, DefaultHealthPort
+	if h != nil {
+		if h.Host != "" {
+			host = h.Host
+		}
+		if h.Port != 0 {
+			port = h.Port
+		}
 	}
-	return &HealthBlock{Host: h.Host, Port: h.Port}
+	return &HealthBlock{Host: host, Port: port}
 }
 
 func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {

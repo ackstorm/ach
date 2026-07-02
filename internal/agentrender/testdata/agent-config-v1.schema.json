@@ -9,10 +9,16 @@
           "title": "Header",
           "type": "string"
         },
-        "secretPath": {
-          "default": "",
-          "title": "Secretpath",
-          "type": "string"
+        "secret": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "A2AAuthBlock",
@@ -571,6 +577,24 @@
       "title": "QueueBlock",
       "type": "object"
     },
+    "SecretSource": {
+      "additionalProperties": false,
+      "description": "CONTRACT_v3 §2 secret source — exactly one of {env, file}.\n\nenv  → the harness reads the value from os.environ[NAME] at use time (hardened default:\n       dumpable=0 hides it from the co-resident agent; the NAME must NOT be in\n       engine.forwardEnv — the harness strips it from the forwarded set + WARNs).\nfile → the harness reads the value from PATH at use time (volume-mount deployments;\n       same-uid readable by the agent — weaker).",
+      "properties": {
+        "env": {
+          "default": "",
+          "title": "Env",
+          "type": "string"
+        },
+        "file": {
+          "default": "",
+          "title": "File",
+          "type": "string"
+        }
+      },
+      "title": "SecretSource",
+      "type": "object"
+    },
     "SystemAch": {
       "additionalProperties": false,
       "description": "Persona sourced from a hydrated prompt by ACH name (harness resolves the file).\n\n``ach`` is the hydrated prompt name → ``<home>/.ach-state/prompts/<ach>/``. ``file`` is\nan optional subpath within it; when empty the harness uses the prompt dir's sole file\n(and errors if the dir has 0 or >1 files). Convenience over ``file`` — the operator\nnames the prompt, not its on-disk path.",
@@ -648,10 +672,16 @@
           "title": "Header",
           "type": "string"
         },
-        "secretPath": {
-          "default": "",
-          "title": "Secretpath",
-          "type": "string"
+        "secret": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "type": {
           "default": "hmac",

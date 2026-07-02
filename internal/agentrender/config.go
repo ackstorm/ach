@@ -135,13 +135,13 @@ type WebhookAuthBlock struct {
 	Secret *SecretSourceBlock `json:"secret,omitempty"`
 }
 
-// SecretSourceBlock is a discriminated inbound-auth secret source (schema
-// SecretSource): exactly one of env|file. The operator defaults to env — the
-// value lives in the harness process env (unreadable by the same-uid agent under
-// PR_SET_DUMPABLE=0), never on a same-uid-readable mounted file.
+// SecretSourceBlock is an inbound-auth secret source (schema SecretSource). The
+// operator only ever emits env: the value lives in the harness process env
+// (unreadable by the same-uid agent under PR_SET_DUMPABLE=0), never on a
+// same-uid-readable mounted file. The contract's file variant was dropped as the
+// weaker path, so the operator has no file to render.
 type SecretSourceBlock struct {
-	Env  string `json:"env,omitempty"`
-	File string `json:"file,omitempty"`
+	Env string `json:"env,omitempty"`
 }
 
 type CronBlock struct {

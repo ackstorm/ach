@@ -28,7 +28,6 @@ const (
 	configHashAnnotation = "ach.ackstorm.ai/config-hash"
 	agentLabelKey        = "ach.ackstorm.ai/agent"
 	defaultGraceSeconds  = int64(120)
-	defaultHealthPort    = int32(8080) // harness HealthBlock default
 )
 
 var (
@@ -56,7 +55,7 @@ func resolveHealthPort(p *achv1alpha1.AgentProfile) int32 {
 	if p.Spec.Health != nil && p.Spec.Health.Port != 0 {
 		return p.Spec.Health.Port
 	}
-	return defaultHealthPort
+	return agentrender.DefaultHealthPort
 }
 
 // computeConfigHash digests every pod-template input so any change rolls the pod. secretHash is
