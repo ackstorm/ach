@@ -514,7 +514,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `environment` _string_ | Environment is the ACH Hub Environment name this agent runs against. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `environment` _string_ | Environment is the ACH Hub Environment name, for documentation/intent only.<br />The ek already scopes the environment server-side, and the harness reads the<br />hydrated environment (manifest.environment) — NOT this field. Optional: omit<br />to let the ek decide; when set it is rendered but never authoritative. |  |  |
 | `filter` _[FilterSpec](#filterspec)_ |  |  |  |
 
 

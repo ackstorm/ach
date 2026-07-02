@@ -31,10 +31,12 @@ type FilterSpec struct {
 
 // CapabilitySpec is the per-agent capability block (config: capability{type:ach,ach.environment,filter}).
 type CapabilitySpec struct {
-	// Environment is the ACH Hub Environment name this agent runs against.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Environment string `json:"environment"`
+	// Environment is the ACH Hub Environment name, for documentation/intent only.
+	// The ek already scopes the environment server-side, and the harness reads the
+	// hydrated environment (manifest.environment) — NOT this field. Optional: omit
+	// to let the ek decide; when set it is rendered but never authoritative.
+	// +optional
+	Environment string `json:"environment,omitempty"`
 	// +optional
 	Filter *FilterSpec `json:"filter,omitempty"`
 }

@@ -56,9 +56,11 @@ spec:
                   capability{type:ach,ach.environment,filter}).'
                 properties:
                   environment:
-                    description: Environment is the ACH Hub Environment name this
-                      agent runs against.
-                    minLength: 1
+                    description: |-
+                      Environment is the ACH Hub Environment name, for documentation/intent only.
+                      The ek already scopes the environment server-side, and the harness reads the
+                      hydrated environment (manifest.environment) — NOT this field. Optional: omit
+                      to let the ek decide; when set it is rendered but never authoritative.
                     type: string
                   filter:
                     description: FilterSpec wraps the exclude gate.
@@ -81,8 +83,6 @@ spec:
                             type: array
                         type: object
                     type: object
-                required:
-                - environment
                 type: object
               channels:
                 items:
