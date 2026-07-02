@@ -1,0 +1,25 @@
+# Cron-only ACHAgent → no channel secrets, no webhook/a2a Service. References the
+# e2e-profile + the placeholder ek Secret. capability.environment is NOT validated
+# by the operator (M7 not implemented), so it need not resolve to reach
+# WorkloadApplied=True.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: e2e-agent
+  namespace: ach-system
+spec:
+  profileRef:
+    name: e2e-profile
+  identity:
+    secretRef:
+      name: e2e-agent-ek
+      key: ek
+  capability:
+    environment: demo
+  channels:
+    - name: daily
+      type: cron
+      session: none
+      cron:
+        schedule: "0 8 * * 1-5"
+      prompt: "Scan for CVEs."

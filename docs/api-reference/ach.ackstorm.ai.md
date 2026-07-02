@@ -9,6 +9,10 @@
 Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 
 ### Resource Types
+- [ACHAgent](#achagent)
+- [ACHAgentList](#achagentlist)
+- [AgentProfile](#agentprofile)
+- [AgentProfileList](#agentprofilelist)
 - [Artifact](#artifact)
 - [ArtifactList](#artifactlist)
 - [BackendIdentityPolicy](#backendidentitypolicy)
@@ -28,6 +32,240 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [SkillMarketplace](#skillmarketplace)
 - [SkillMarketplaceList](#skillmarketplacelist)
 
+
+
+#### A2AAuthSpec
+
+
+
+A2AAuthSpec configures a2a inbound auth (config: channels[].a2a.auth; secretRef → secretPath).
+
+
+
+_Appears in:_
+- [A2ASpec](#a2aspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `header` _string_ |  | x-a2a-custom-api-key |  |
+| `secretRef` _[SecretKeyRef](#secretkeyref)_ |  |  | Required: \{\} <br /> |
+
+
+#### A2ASpec
+
+
+
+A2ASpec configures an a2a channel (config: channels[].a2a; mode async-only in v1).
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `auth` _[A2AAuthSpec](#a2aauthspec)_ |  |  | Required: \{\} <br /> |
+
+
+#### ACHAgent
+
+
+
+ACHAgent is a running agent instance.
+
+
+
+_Appears in:_
+- [ACHAgentList](#achagentlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `ACHAgent` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[ACHAgentSpec](#achagentspec)_ |  |  |  |
+| `status` _[ACHAgentStatus](#achagentstatus)_ |  |  |  |
+
+
+#### ACHAgentList
+
+
+
+ACHAgentList contains a list of ACHAgent.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `ACHAgentList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[ACHAgent](#achagent) array_ |  |  |  |
+
+
+#### ACHAgentSpec
+
+
+
+ACHAgentSpec defines the desired state of an agent instance.
+
+
+
+_Appears in:_
+- [ACHAgent](#achagent)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `profileRef` _[LocalObjectRef](#localobjectref)_ |  |  | Required: \{\} <br /> |
+| `identity` _[IdentitySpec](#identityspec)_ |  |  | Required: \{\} <br /> |
+| `capability` _[CapabilitySpec](#capabilityspec)_ |  |  | Required: \{\} <br /> |
+| `model` _[ModelSpec](#modelspec)_ | Model overrides the profile's default model. |  |  |
+| `limits` _[LimitsSpec](#limitsspec)_ | Limits overrides the profile's default limits. |  |  |
+| `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
+| `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
+| `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
+
+
+#### ACHAgentStatus
+
+
+
+ACHAgentStatus is the observed state.
+
+
+
+_Appears in:_
+- [ACHAgent](#achagent)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ |  |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
+
+
+#### AchEndpointSpec
+
+
+
+AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `baseUrl` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
+#### AgentProfile
+
+
+
+AgentProfile is the reusable infra + defaults for a class of agents.
+
+
+
+_Appears in:_
+- [AgentProfileList](#agentprofilelist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `AgentProfile` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[AgentProfileSpec](#agentprofilespec)_ |  |  |  |
+| `status` _[AgentProfileStatus](#agentprofilestatus)_ |  |  |  |
+
+
+#### AgentProfileList
+
+
+
+AgentProfileList contains a list of AgentProfile.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `AgentProfileList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[AgentProfile](#agentprofile) array_ |  |  |  |
+
+
+#### AgentProfileSpec
+
+
+
+AgentProfileSpec is the reusable infra + defaults half.
+
+
+
+_Appears in:_
+- [AgentProfile](#agentprofile)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
+| `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN). |  |  |
+| `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
+| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  | Required: \{\} <br /> |
+| `model` _[ModelSpec](#modelspec)_ |  |  |  |
+| `engine` _[EngineSpec](#enginespec)_ |  |  |  |
+| `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
+| `health` _[HealthSpec](#healthspec)_ |  |  |  |
+| `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
+| `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+
+
+#### AgentProfileStatus
+
+
+
+AgentProfileStatus is minimal — profiles are read by ACHAgent; they have no side effects.
+
+
+
+_Appears in:_
+- [AgentProfile](#agentprofile)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ |  |  |  |
+
+
+#### AgentPromptSpec
+
+
+
+AgentPromptSpec configures the system prompt (config: prompt).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `system` _[PromptSystemSpec](#promptsystemspec)_ |  |  | Required: \{\} <br /> |
+| `compose` _string_ |  | append |  |
 
 
 #### Artifact
@@ -263,6 +501,65 @@ _Appears in:_
 | `transport` _string_ | Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed. | git | Enum: [git rest] <br /> |
 
 
+#### CapabilitySpec
+
+
+
+CapabilitySpec is the per-agent capability block (config: capability{type:ach,ach.environment,filter}).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `environment` _string_ | Environment is the ACH Hub Environment name this agent runs against. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `filter` _[FilterSpec](#filterspec)_ |  |  |  |
+
+
+#### ChannelSpec
+
+
+
+ChannelSpec is one inbound channel (config: channels[]).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `type` _string_ |  |  | Enum: [webhook cron queue a2a] <br />Required: \{\} <br /> |
+| `source` _string_ |  |  | Enum: [gitlab github generic] <br /> |
+| `concurrency` _integer_ |  | 1 | Minimum: 1 <br /> |
+| `session` _string_ |  | auto | Enum: [auto none] <br /> |
+| `prompt` _string_ |  |  |  |
+| `webhook` _[WebhookSpec](#webhookspec)_ |  |  |  |
+| `cron` _[CronSpec](#cronspec)_ |  |  |  |
+| `queue` _[QueueSpec](#queuespec)_ |  |  |  |
+| `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
+
+
+#### CodememSpec
+
+
+
+CodememSpec is the codemem memory backend (config: memory.codemem). All fields optional.
+
+
+
+_Appears in:_
+- [MemorySpec](#memoryspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `dbPath` _string_ |  |  |  |
+| `project` _string_ |  |  |  |
+
+
 #### ContextBlock
 
 
@@ -282,6 +579,45 @@ _Appears in:_
 | `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+
+
+#### CronSpec
+
+
+
+CronSpec configures a cron channel (config: channels[].cron).
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `schedule` _string_ |  |  | Required: \{\} <br /> |
+| `timezone` _string_ |  | UTC |  |
+
+
+#### EngineSpec
+
+
+
+EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
+(the harness defaults them).
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `home` _string_ |  |  |  |
+| `workDir` _string_ |  |  |  |
+| `forwardEnv` _string array_ |  |  |  |
+| `idleTtlSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `startupTimeoutSeconds` _integer_ |  |  | Minimum: 1 <br /> |
+| `maxToolCalls` _integer_ |  |  | Minimum: 0 <br /> |
 
 
 #### Environment
@@ -374,6 +710,24 @@ _Appears in:_
 | `litellmAccessGroup` _string_ | LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set. |  |  |
 
 
+#### ExcludeSpec
+
+
+
+ExcludeSpec is the governance gate ABOVE the model (config: capability.filter.exclude).
+
+
+
+_Appears in:_
+- [FilterSpec](#filterspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `tools` _string array_ |  |  |  |
+| `mcpServers` _string array_ |  |  |  |
+| `skills` _string array_ |  |  |  |
+
+
 #### ExternalRefStatus
 
 
@@ -398,6 +752,22 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+
+
+#### FilterSpec
+
+
+
+FilterSpec wraps the exclude gate.
+
+
+
+_Appears in:_
+- [CapabilitySpec](#capabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `exclude` _[ExcludeSpec](#excludespec)_ |  |  |  |
 
 
 #### GCSSource
@@ -505,6 +875,80 @@ _Appears in:_
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef optionally attaches an authentication header<br />(e.g. Authorization: Bearer ...). The data key named via<br />.headerValueKey supplies the header value at request time. |  |  |
 
 
+#### HealthSpec
+
+
+
+HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
+Service targetPort and the container probes. Harness default port is 8080.
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `host` _string_ |  |  |  |
+| `port` _integer_ |  |  | Maximum: 65535 <br />Minimum: 1 <br /> |
+
+
+#### HindsightSpec
+
+
+
+HindsightSpec is the hindsight memory backend (config: memory.hindsight).
+
+
+
+_Appears in:_
+- [MemorySpec](#memoryspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `endpoint` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `bank` _string_ |  |  |  |
+| `mentalModels` _string array_ |  |  |  |
+
+
+#### IdentitySpec
+
+
+
+IdentitySpec carries the ACH ek_ (config: injected as ACH_TOKEN env via secretKeyRef).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `secretRef` _[SecretKeyRef](#secretkeyref)_ | SecretRef points at a Secret holding the ek_ (create it yourself, e.g. `ach-cli keys create`). |  | Required: \{\} <br /> |
+
+
+#### LimitsSpec
+
+
+
+LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `maxConcurrentInvocations` _integer_ |  |  | Minimum: 1 <br /> |
+| `maxInvocationSeconds` _integer_ |  |  | Minimum: 1 <br /> |
+| `maxQueuedTotal` _integer_ |  |  | Minimum: 1 <br /> |
+| `idempotencyWindowSeconds` _integer_ |  |  | Minimum: 1 <br /> |
+| `maxSteps` _integer_ |  |  | Minimum: 1 <br /> |
+| `terminalOutputRetries` _integer_ |  |  | Minimum: 0 <br /> |
+
+
 #### LiteLLMConnection
 
 
@@ -582,6 +1026,22 @@ _Appears in:_
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
 
 
+#### LocalObjectRef
+
+
+
+LocalObjectRef references a resource by name in the CR's namespace.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
 #### MarketplaceFilters
 
 
@@ -628,6 +1088,66 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the plugin's identifier within the catalog<br />(marketplace.json plugins[].name). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision for this entry. |  |  |
+
+
+#### MemorySpec
+
+
+
+MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
+Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+(endpoint has no default); CodememMemory requires only `type` — {"type":"codemem"} is valid
+(dbPath/project are derived/defaulted by the harness).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ |  |  | Enum: [hindsight codemem] <br />Required: \{\} <br /> |
+| `hindsight` _[HindsightSpec](#hindsightspec)_ |  |  |  |
+| `codemem` _[CodememSpec](#codememspec)_ |  |  |  |
+
+
+#### ModelSpec
+
+
+
+ModelSpec selects the ACH-served model (config: model{name,type,params}).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `type` _string_ |  |  | Enum: [openai gemini anthropic] <br />Required: \{\} <br /> |
+| `params` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | Params is an open, unvalidated dict splatted to the model client. |  |  |
+
+
+#### PersistenceSpec
+
+
+
+PersistenceSpec configures PVC-backed durable state (config: persistence{enabled,mountPath}).
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ |  |  | Required: \{\} <br /> |
+| `size` _string_ |  |  |  |
+| `storageClassName` _string_ |  |  |  |
+| `mountPath` _string_ |  | /var/lib/ach-agent |  |
+| `retainPolicy` _string_ | RetainPolicy controls PVC lifecycle on ACHAgent deletion. Retain → the PVC is created<br />WITHOUT a controller owner-ref, so it survives agent deletion (operator-managed cleanup). |  | Enum: [Retain Delete] <br /> |
 
 
 #### Plugin
@@ -923,6 +1443,44 @@ _Appears in:_
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
 
 
+#### PromptSystemSpec
+
+
+
+PromptSystemSpec is a discriminated persona source (config: prompt.system).
+The ach form MAY carry an optional achFile (rendered as system.file — the schema's SystemAch
+allows `file` as an optional subpath within the named prompt).
+
+
+
+_Appears in:_
+- [AgentPromptSpec](#agentpromptspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ |  |  | Enum: [text file ach] <br />Required: \{\} <br /> |
+| `text` _string_ |  |  |  |
+| `file` _string_ |  |  |  |
+| `ach` _string_ |  |  |  |
+| `achFile` _string_ | AchFile is an optional subpath within an `ach` prompt (rendered as prompt.system.file). |  |  |
+
+
+#### QueueSpec
+
+
+
+QueueSpec configures a redis queue channel (config: channels[].queue; type/ackMode are constants).
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `key` _string_ |  |  | Required: \{\} <br /> |
+
+
 #### RefreshBlock
 
 
@@ -1012,7 +1570,10 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 
 
 _Appears in:_
+- [A2AAuthSpec](#a2aauthspec)
+- [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
+- [WebhookAuthSpec](#webhookauthspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1293,5 +1854,40 @@ _Appears in:_
 | `models` _string array_ |  | \{  \} |  |
 | `mcpServers` _string array_ |  | \{  \} |  |
 | `a2aAgents` _string array_ |  | \{  \} |  |
+
+
+#### WebhookAuthSpec
+
+
+
+WebhookAuthSpec configures webhook auth (config: channels[].webhook.auth; secretRef → secretPath).
+
+
+
+_Appears in:_
+- [WebhookSpec](#webhookspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ |  |  | Enum: [gitlab_token hmac header_token none] <br />Required: \{\} <br /> |
+| `header` _string_ |  |  |  |
+| `secretRef` _[SecretKeyRef](#secretkeyref)_ |  |  |  |
+
+
+#### WebhookSpec
+
+
+
+WebhookSpec configures a webhook channel (config: channels[].webhook + channels[].source).
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `auth` _[WebhookAuthSpec](#webhookauthspec)_ |  |  | Required: \{\} <br /> |
+| `gitlabEvents` _string array_ |  |  | items:Enum: [merge_request issue note] <br /> |
 
 

@@ -37,7 +37,9 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #                   post-ach; prompts/artifacts/skills/skillmarketplaces/BIPs)
 #                   sourced from their real upstreams (option B)
 #   05-environment/ kustomize base — the demo Environments LAST (reference 04)
-#   06-verify       NOT a directory — the verify_all step that blocks until
+#   06-agent/       kustomize base — AgentProfile + cron-only ACHAgent + ek
+#                   Secret (apply -k, post-CRDs); gated on WorkloadApplied
+#   07-verify       NOT a directory — the verify_all step that blocks until
 #                   every synced object reaches its healthy condition
 # Each values file carries its own `chartVersion:` pin (single source of
 # truth for chart version + image tag + chart config). cluster.sh ONLY reads
@@ -565,6 +567,14 @@ reconcile_environments() {
   kubectl apply -k "${CLUSTER_DIR}/05-environment"
 }
 
+reconcile_agent() {
+  # Stage 06 — a minimal AgentProfile + cron-only ACHAgent + its ek Secret.
+  # Gated in verify_all on WorkloadApplied=True (not pod-Ready; see the fixture
+  # DEFERRED note). CRDs from the 02 chart exist by now.
+  echo "[cluster.sh] applying agent-runtime fixture (stage 06)..."
+  kubectl apply -k "${CLUSTER_DIR}/06-agent"
+}
+
 # Wait for a BackendIdentityPolicy to be reconciled. The BIP controller emits
 # NO positive condition on the happy path (TODO.md §6 / OP-16 keep the closed
 # condition set minimal) — `status.observedGeneration == metadata.generation`
@@ -628,6 +638,18 @@ verify_all() {
   # has fetched + failed). kubectl wait supports condition=<type>=false.
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
+  # Stage 06 agent-runtime — operator OUTPUT gate. WorkloadApplied=True (NOT
+  # WorkloadReady: the ach-agent image is not loaded into kind, so the pod never
+  # goes Ready — see the 06-agent DEFERRED note). Then assert the rendered
+  # config.json is schema-shaped and the ek arrives as a secretKeyRef, never
+  # inline.
+  kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent
+  kubectl -n ach-system get configmap achagent-e2e-agent \
+    -o jsonpath='{.data.config\.json}' \
+    | jq -e '.schemaVersion=="1" and .capability.type=="ach"' >/dev/null
+  kubectl -n ach-system get deploy achagent-e2e-agent \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_TOKEN")].valueFrom.secretKeyRef.name}' \
+    | grep -q .
   echo "[cluster.sh] all synced objects healthy."
 }
 
@@ -641,8 +663,9 @@ reconcile_all() {
   reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a, stage 03)
   reconcile_objects      # stage 04
   reconcile_environments # stage 05
+  reconcile_agent        # stage 06 — agent-runtime fixture
   wait_ach
-  verify_all             # stage 06 (Task 6)
+  verify_all             # stage 07 — block until every synced object is healthy
 }
 
 print_status() (

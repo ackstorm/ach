@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only
+# ACHAgent + its ek Secret. Applied after the CRDs (stage 02) exist. Order
+# within the stage does not matter — the operator re-reconciles on the profile
+# and secret watches until both resolve.
+#
+# DEFERRED: this fixture asserts operator OUTPUT only — WorkloadApplied=True,
+# a schema-valid config.json ConfigMap, and the ACH_TOKEN secretKeyRef on the
+# Deployment. Asserting WorkloadReady=True (pod-Ready) needs the real ach-agent
+# image loaded into kind + a live ACH Environment + a valid ek to hydrate
+# against; envtest cannot flip pod-Ready (no kubelet) either. Follow-up once the
+# ach-agent image is loadable into kind. Do NOT read this fixture as full
+# runtime coverage.
+resources:
+  - ek-secret.yaml
+  - profile.yaml
+  - agent.yaml

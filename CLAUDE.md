@@ -120,9 +120,16 @@ In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
-`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`
-(`api/` is authoritative). `Plugin` / `PluginMarketplace` types also exist in
-`api/` but their CRDs are NOT shipped (gated off, see above).
+`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`,
+`AgentProfile`, `ACHAgent` (`api/` is authoritative). `Plugin` /
+`PluginMarketplace` types also exist in `api/` but their CRDs are NOT shipped
+(gated off, see above). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
+(an agent instance)** render into the single `agent-config-v1` config the
+`ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a
+`config.json` ConfigMap + a single-replica Deployment (probes, key-projected
+channel-secret volumes, salted config-hash roll) — the harness **self-hydrates**
+against ACH at boot (no init container, no CLI), so operator status derives from
+probe-backed `pod.status` only.
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging

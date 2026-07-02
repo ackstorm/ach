@@ -1,0 +1,15 @@
+# Minimal AgentProfile — no persistence (no PVC), no health override (harness
+# default 8080). Image need not be pullable in kind: the fixture gates on
+# WorkloadApplied, not pod-Ready (see DEFERRED note).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: AgentProfile
+metadata:
+  name: e2e-profile
+  namespace: ach-system
+spec:
+  image: ghcr.io/ackstorm/ach-agent:latest
+  ach:
+    baseUrl: http://ach-gateway.ach-system.svc:8080
+  model:
+    name: openai.gpt-5
+    type: openai
