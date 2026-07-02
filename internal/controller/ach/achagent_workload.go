@@ -218,8 +218,12 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 					SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &trueVal, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
-						Name:           agentContainerName,
-						Image:          p.Spec.Image,
+						Name:  agentContainerName,
+						Image: p.Spec.Image,
+						// The health port doubles as the harness /metrics port (same server as
+						// /healthz + /readyz). Declared named so the PodMonitor
+						// (monitoring.coreos.com/v1) can reference it by name for scraping.
+						Ports:          []corev1.ContainerPort{{Name: "health", ContainerPort: port, Protocol: corev1.ProtocolTCP}},
 						Env:            env,
 						VolumeMounts:   mounts,
 						Resources:      resources,

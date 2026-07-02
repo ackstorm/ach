@@ -104,6 +104,17 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	if c.StartupProbe == nil {
 		t.Error("startupProbe missing")
 	}
+	// Named health port (8000) — the PodMonitor scrapes /metrics on it BY NAME,
+	// so a rename here silently breaks agent metrics collection.
+	var hp *corev1.ContainerPort
+	for i := range c.Ports {
+		if c.Ports[i].Name == "health" {
+			hp = &c.Ports[i]
+		}
+	}
+	if hp == nil || hp.ContainerPort != 8000 {
+		t.Errorf("container must declare named health port 8000, got %+v", c.Ports)
+	}
 	found := false
 	for _, mnt := range c.VolumeMounts {
 		if mnt.MountPath == "/etc/ach-agent/config.json" && mnt.SubPath == "config.json" {

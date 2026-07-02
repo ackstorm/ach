@@ -1,0 +1,45 @@
+{{- if .Values.metrics.podMonitor.enabled }}
+# Prometheus Operator PodMonitor (monitoring.coreos.com/v1) — opt-in via
+# metrics.podMonitor.enabled. Scrapes /metrics on every ach-agent Pod.
+#
+# ach-agent Pods are created dynamically by the operator (one Deployment per
+# ACHAgent) and share the stable label app.kubernetes.io/name=ach-agent, so a
+# single PodMonitor covers all agents. They expose /metrics on their health
+# port (default :8000, same server as /healthz + /readyz — the container's
+# named "health" port). A plain agent has NO Service (one is created only for
+# webhook/a2a channels), so a PodMonitor (pod-direct) is the fit here, not a
+# ServiceMonitor.
+#
+# namespaceSelector = release namespace (agents co-located with the operator).
+# ponytail: single-namespace default; widen matchNames or use `any: true` here
+# if agents are deployed into other namespaces.
+#
+# REQUIRES the Prometheus Operator CRDs; enabling this without them makes
+# `helm install` fail with `no matches for kind "PodMonitor"`.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ach-agents
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach-agent
+  podMetricsEndpoints:
+    - port: health
+      path: /metrics
+      {{- with .Values.metrics.podMonitor.interval }}
+      interval: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.metrics.podMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . | quote }}
+      {{- end }}
+{{- end }}

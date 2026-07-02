@@ -279,6 +279,11 @@ ingress:
 #   - forwarder + platform-api → Pod-level annotations on their own
 #     Pod templates.
 #
+# ach-agent Pods (dynamic — one Deployment per ACHAgent) expose /metrics on
+# their health port (default :8000, same server as /healthz + /readyz). They
+# have no dedicated Service, so scrape them via a PodMonitor: set
+# metrics.podMonitor.enabled=true (selector app.kubernetes.io/name=ach-agent).
+#
 # Prometheus Operator users: set metrics.serviceMonitor.enabled=true
 # (below) to render a ServiceMonitor as an alternative to the default
 # pod-scrape annotations. examples/prometheus-servicemonitor.yaml is the
@@ -310,6 +315,25 @@ metrics:
     # labels: extra labels on the ServiceMonitor so your Prometheus's
     # serviceMonitorSelector matches it (kube-prometheus-stack commonly
     # requires `release: <prometheus-release-name>`).
+    labels: {}
+  # metrics.podMonitor: render a prometheus-operator PodMonitor
+  # (templates/podmonitor.yaml) scraping /metrics on every ach-agent Pod
+  # (selector app.kubernetes.io/name=ach-agent) via its named health port.
+  # Agent Pods are created dynamically by the operator (one Deployment per
+  # ACHAgent) and — unlike the four services — a plain agent has no Service, so
+  # a PodMonitor (pod-direct) is the fit, not a ServiceMonitor. enabled=false
+  # (default) → render nothing. Set enabled=true ONLY when the Prometheus
+  # Operator CRDs are installed — otherwise `helm install` fails with `no matches
+  # for kind "PodMonitor"`. namespaceSelector defaults to the release namespace
+  # (widen it in templates/podmonitor.yaml if agents run elsewhere).
+  podMonitor:
+    enabled: false
+    # interval: scrape interval; empty → Prometheus global default.
+    interval: 30s
+    # scrapeTimeout: per-scrape timeout (must be ≤ interval); empty → default.
+    scrapeTimeout: ""
+    # labels: extra labels so your Prometheus's podMonitorSelector matches it
+    # (kube-prometheus-stack commonly requires `release: <prometheus-release-name>`).
     labels: {}
   # metrics.prometheusRule: render a prometheus-operator PrometheusRule
   # (templates/prometheusrule.yaml) with the recommended ACH alert rules.
