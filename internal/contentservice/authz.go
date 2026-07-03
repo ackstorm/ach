@@ -39,6 +39,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/platformapi/teams"
 	"github.com/ackstorm/ach/internal/pluginref"
 	"github.com/ackstorm/ach/internal/skillref"
 )
@@ -184,24 +185,10 @@ func enforceTeams(ctx context.Context, d Deps, info *keystore.KeyInfo, envRow *e
 			return errLitellmUnreachable()
 		}
 	}
-	if !intersectsAny(userTeams, envRow.AuthorizedTeams) {
+	if !teams.HasIntersect(userTeams, envRow.AuthorizedTeams) {
 		return errUnauthorizedTeam()
 	}
 	return nil
-}
-
-// intersectsAny returns true when a and b share at least one element.
-// Linear scan — both lists are small (≤ 50 elements typical) so the
-// map-allocation overhead of a set-based intersection is not worth it.
-func intersectsAny(a, b []string) bool {
-	for _, x := range a {
-		for _, y := range b {
-			if x == y {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // enforceAllowlist (gate 5 per D-04 — cheaper-first divergence). Pure
