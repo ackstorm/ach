@@ -126,3 +126,37 @@ func TestResolveSkillByName_MarketplaceArm(t *testing.T) {
 		t.Errorf("bare arm (no skills row) = %+v err=%v, want (nil,nil)", bare, err)
 	}
 }
+
+// TestResetSkillMarketplaceSkillsRefreshOnEmptyCache: OP-11 reset (mirrors
+// TestResetMarketplacePluginsRefreshOnEmptyCache in marketplace_plugins_test.go).
+func TestResetSkillMarketplaceSkillsRefreshOnEmptyCache(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	rows := []db.SkillMarketplaceSkill{
+		{MarketplaceName: "m", Name: "s1", StorageLocation: "/s1", UpstreamRev: "r1",
+			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
+		{MarketplaceName: "m", Name: "s2", StorageLocation: "/s2", UpstreamRev: "r2",
+			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
+	}
+	for _, r := range rows {
+		if err := db.UpsertSkillMarketplaceSkill(ctx, pool, r); err != nil {
+			t.Fatalf("seed upsert: %v", err)
+		}
+	}
+	if err := db.ResetSkillMarketplaceSkillsRefreshOnEmptyCache(ctx, pool); err != nil {
+		t.Fatalf("ResetSkillMarketplaceSkillsRefreshOnEmptyCache: %v", err)
+	}
+	var nonNullCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM skill_marketplace_skills WHERE last_successful_refresh IS NOT NULL`,
+	).Scan(&nonNullCount); err != nil {
+		t.Fatalf("count non-NULL rows: %v", err)
+	}
+	if nonNullCount != 0 {
+		t.Errorf("after reset: %d rows still have non-NULL last_successful_refresh; want 0", nonNullCount)
+	}
+}

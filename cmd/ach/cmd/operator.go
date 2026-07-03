@@ -254,7 +254,10 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		if err := db.ResetMarketplacePluginsRefreshOnEmptyCache(context.Background(), dbPool); err != nil {
 			return fmt.Errorf("ResetMarketplacePluginsRefreshOnEmptyCache failed (OP-11): %w", err)
 		}
-		operatorSetupLog.Info("PVC was empty on startup — external_refs + marketplace_plugins last_successful_refresh reset (OP-11)")
+		if err := db.ResetSkillMarketplaceSkillsRefreshOnEmptyCache(context.Background(), dbPool); err != nil {
+			return fmt.Errorf("ResetSkillMarketplaceSkillsRefreshOnEmptyCache failed (OP-11): %w", err)
+		}
+		operatorSetupLog.Info("PVC was empty on startup — external_refs + marketplace_plugins + skill_marketplace_skills last_successful_refresh reset (OP-11)")
 	}
 
 	// ─── Phase 2: LiteLLMConnection-backed client ───
