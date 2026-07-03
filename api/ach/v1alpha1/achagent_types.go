@@ -155,6 +155,37 @@ type A2ASpec struct {
 	Auth A2AAuthSpec `json:"auth"`
 }
 
+// SessionSpec selects which opencode conversation a channel turn reuses and
+// bounds its growth (config: channels[].session). type is the discriminator;
+// key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
+// block lets the harness apply its own default (type: none). This changes only
+// which session a turn reuses — the router lane key (event.session_key) is
+// unaffected.
+// +kubebuilder:validation:XValidation:rule="self.type != 'custom' ? !has(self.key) : (has(self.key) && size(self.key) > 0)",message="session.key is required (non-empty) iff type is custom, forbidden otherwise"
+type SessionSpec struct {
+	// none: fresh session per event, deleted post-turn. auto: reuse the
+	// channel-derived session_key. custom: reuse the session named by key.
+	// +optional
+	// +kubebuilder:default=none
+	// +kubebuilder:validation:Enum=auto;none;custom
+	Type string `json:"type,omitempty"`
+	// Key is the {{ }} session template (payload.* / internal.*). REQUIRED iff
+	// type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN.
+	// +optional
+	Key *string `json:"key,omitempty"`
+	// MaxTokens caps growth: once the previous turn's input_tokens exceed it,
+	// apply overflow (auto/custom only; ignored for none).
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxTokens *int64 `json:"maxTokens,omitempty"`
+	// Overflow: compact summarizes the session in place; rotate starts a fresh
+	// session and deletes the old one.
+	// +optional
+	// +kubebuilder:default=compact
+	// +kubebuilder:validation:Enum=compact;rotate
+	Overflow string `json:"overflow,omitempty"`
+}
+
 // ChannelSpec is one inbound channel (config: channels[]).
 // +kubebuilder:validation:XValidation:rule="(self.type=='webhook' && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook' || !has(self.source)",message="channels.source is only valid for webhook channels"
@@ -173,9 +204,7 @@ type ChannelSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Concurrency *int64 `json:"concurrency,omitempty"`
 	// +optional
-	// +kubebuilder:default=auto
-	// +kubebuilder:validation:Enum=auto;none
-	Session string `json:"session,omitempty"`
+	Session *SessionSpec `json:"session,omitempty"`
 	// +optional
 	Prompt string `json:"prompt,omitempty"`
 	// +optional

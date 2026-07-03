@@ -44,10 +44,10 @@ func TestRender_FullGolden(t *testing.T) {
 			Channels: []achv1alpha1.ChannelSpec{
 				{
 					Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
-					Concurrency: ptr(int64(4)), Session: "auto", Prompt: "Review: {{ payload.object_attributes.url }}",
+					Concurrency: ptr(int64(4)), Session: &achv1alpha1.SessionSpec{Type: "auto"}, Prompt: "Review: {{ payload.object_attributes.url }}",
 					Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gitlab-webhook", Key: "secret"}}},
 				},
-				{Name: "daily", Type: "cron", Concurrency: ptr(int64(1)), Session: "none", Prompt: "Scan for CVEs.", Cron: &achv1alpha1.CronSpec{Schedule: "0 8 * * 1-5", Timezone: "Europe/Madrid"}},
+				{Name: "daily", Type: "cron", Concurrency: ptr(int64(1)), Session: &achv1alpha1.SessionSpec{Type: "none"}, Prompt: "Scan for CVEs.", Cron: &achv1alpha1.CronSpec{Schedule: "0 8 * * 1-5", Timezone: "Europe/Madrid"}},
 			},
 		},
 	}
@@ -92,6 +92,10 @@ func TestRender_FullGolden(t *testing.T) {
 	}
 	if _, hasFile := ch0secret["file"]; hasFile {
 		t.Errorf("auth.secret.file set; operator defaults to env")
+	}
+	ch0sess, ok := m["channels"].([]any)[0].(map[string]any)["session"].(map[string]any)
+	if !ok || ch0sess["type"] != "auto" {
+		t.Errorf("channel[0].session = %v (want {type: auto})", m["channels"].([]any)[0].(map[string]any)["session"])
 	}
 }
 

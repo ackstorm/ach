@@ -245,8 +245,19 @@ func renderHealth(h *achv1alpha1.HealthSpec) *HealthBlock {
 	return &HealthBlock{Host: host, Port: port}
 }
 
+func renderSession(s *achv1alpha1.SessionSpec) *SessionBlock {
+	if s == nil {
+		return nil
+	}
+	sb := &SessionBlock{Type: s.Type, MaxTokens: s.MaxTokens, Overflow: s.Overflow}
+	if s.Key != nil {
+		sb.Key = *s.Key
+	}
+	return sb
+}
+
 func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: ch.Session, Prompt: ch.Prompt}
+	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt}
 	switch ch.Type {
 	case channelTypeWebhook:
 		if ch.Webhook != nil {

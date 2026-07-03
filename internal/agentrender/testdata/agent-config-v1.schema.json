@@ -196,13 +196,7 @@
           "default": null
         },
         "session": {
-          "default": "auto",
-          "enum": [
-            "auto",
-            "none"
-          ],
-          "title": "Session",
-          "type": "string"
+          "$ref": "#/$defs/SessionBlock"
         },
         "source": {
           "anyOf": [
@@ -588,6 +582,58 @@
         }
       },
       "title": "SecretSource",
+      "type": "object"
+    },
+    "SessionBlock": {
+      "additionalProperties": false,
+      "description": "channel.session — conversation identity + growth bounds.\n\ntype: 'none'   → fresh opencode session per event, DELETEd post-turn (no residue);\n      'auto'   → reuse the channel-derived session_key (per-MR for gitlab, name for cron…);\n      'custom' → reuse the session under `key` ({{ }} template rendered per event).\nkey: the {{ }} template (payload.* / internal.*). REQUIRED iff type=='custom',\n     FORBIDDEN otherwise. An empty render falls back to 'none' behavior + WARN.\nmax_tokens: when the previous turn's input_tokens exceed this, apply `overflow`\n            (applies to 'auto'/'custom'; ignored for 'none').\noverflow: 'compact' → POST /session/{id}/compact in place (keeps memory);\n          'rotate' → drop the LRU entry + DELETE the old session (fresh start).\nThe router lane key (event.session_key) is NOT affected by any of this.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "maxTokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxtokens"
+        },
+        "overflow": {
+          "default": "compact",
+          "enum": [
+            "compact",
+            "rotate"
+          ],
+          "title": "Overflow",
+          "type": "string"
+        },
+        "type": {
+          "default": "none",
+          "enum": [
+            "auto",
+            "none",
+            "custom"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "SessionBlock",
       "type": "object"
     },
     "SystemAch": {

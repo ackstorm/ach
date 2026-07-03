@@ -116,12 +116,21 @@ type ChannelBlock struct {
 	Type        string        `json:"type"`
 	Source      string        `json:"source,omitempty"`
 	Concurrency *int64        `json:"concurrency,omitempty"`
-	Session     string        `json:"session,omitempty"`
+	Session     *SessionBlock `json:"session,omitempty"`
 	Prompt      string        `json:"prompt,omitempty"`
 	Webhook     *WebhookBlock `json:"webhook,omitempty"`
 	Cron        *CronBlock    `json:"cron,omitempty"`
 	Queue       *QueueBlock   `json:"queue,omitempty"`
 	A2A         *A2ABlock     `json:"a2a,omitempty"`
+}
+
+// SessionBlock is the rendered channels[].session (schema $defs/SessionBlock).
+// Key is emitted only for type==custom (empty otherwise → omitempty drops it).
+type SessionBlock struct {
+	Type      string `json:"type,omitempty"`
+	Key       string `json:"key,omitempty"`
+	MaxTokens *int64 `json:"maxTokens,omitempty"`
+	Overflow  string `json:"overflow,omitempty"`
 }
 
 type WebhookBlock struct {

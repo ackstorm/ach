@@ -103,6 +103,11 @@ func renderMatrix() map[string]renderCase {
 	full.profile.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, MountPath: "/var/lib/ach-agent"}
 	full.agent.Spec.Capability.Filter = &achv1alpha1.FilterSpec{Exclude: &achv1alpha1.ExcludeSpec{Skills: []string{"send-email"}}}
 	m["full"] = full
+	sess := base("cs", []achv1alpha1.ChannelSpec{{
+		Name: "cs", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+		Session: &achv1alpha1.SessionSpec{Type: "custom", Key: ptr("{{ payload.thread }}"), MaxTokens: ptr(int64(8000)), Overflow: "rotate"},
+	}})
+	m["session-custom"] = sess
 	return m
 }
 
