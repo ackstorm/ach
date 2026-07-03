@@ -198,6 +198,9 @@ gateway:
   args: ["gateway"]
   # extraEnv supplies optional overrides (e.g. ACH_GATEWAY_BIND_ADDRESS).
   # POD_NAMESPACE is injected via the downward API in the template.
+  # Set ACH_DB_URL here (or top-level extraEnv) to enable webhook routing —
+  # the gateway then serves /hook/{ns}/{name}/... to per-agent Services.
+  # Unset => dumb proxy with no /hook route (default).
   extraEnv: []
 
 # contentService: serves agent-rendered content (assets, snapshots).
