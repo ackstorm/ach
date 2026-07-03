@@ -85,11 +85,10 @@ func Migrate(url string, migrationsPath string) error {
 		return ErrEmptyURL
 	}
 	migrateURL := url
-	switch {
-	case strings.HasPrefix(url, "postgres://"):
-		migrateURL = "pgx5://" + strings.TrimPrefix(url, "postgres://")
-	case strings.HasPrefix(url, "postgresql://"):
-		migrateURL = "pgx5://" + strings.TrimPrefix(url, "postgresql://")
+	if rest, ok := strings.CutPrefix(url, "postgres://"); ok {
+		migrateURL = "pgx5://" + rest
+	} else if rest, ok := strings.CutPrefix(url, "postgresql://"); ok {
+		migrateURL = "pgx5://" + rest
 	}
 	m, err := migrate.New("file://"+migrationsPath, migrateURL)
 	if err != nil {
