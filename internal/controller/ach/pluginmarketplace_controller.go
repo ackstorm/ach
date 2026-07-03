@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -771,7 +770,7 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PluginMarketplaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.PluginMarketplace{}, builder.WithPredicates()).
+		For(&achv1alpha1.PluginMarketplace{}).
 		Named("ach-pluginmarketplace")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

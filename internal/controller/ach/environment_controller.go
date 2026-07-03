@@ -19,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -1041,7 +1040,7 @@ func classifyDrainErr(label string, err error) error {
 // fast-path watches when they exist.
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Environment{}, builder.WithPredicates()).
+		For(&achv1alpha1.Environment{}).
 		Named("ach-environment")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

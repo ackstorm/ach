@@ -162,15 +162,6 @@ func (r *Resync) push(ctx context.Context, ch chan<- event.GenericEvent, obj cli
 	}
 }
 
-// assert manager.Runnable contract at compile time. The interface is
-// satisfied by Start(ctx) error — repeated here to surface the contract
-// nominal in the package.
-var _ runnable = (*Resync)(nil)
-
-type runnable interface {
-	Start(context.Context) error
-}
-
 // Describe returns a human-readable summary of which channels are wired.
 // Currently unused at runtime but handy in tests.
 func (r *Resync) Describe() string {
