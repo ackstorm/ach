@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +46,8 @@ const (
 	condChannelSecretsResolved = "ChannelSecretsResolved"
 	condWorkloadApplied        = "WorkloadApplied"
 	condWorkloadReady          = "WorkloadReady"
+
+	channelTypeWebhook = "webhook"
 )
 
 var requiredConds = []string{condProfileResolved, condIdentityResolved, condChannelSecretsResolved, condWorkloadApplied, condWorkloadReady}
@@ -70,6 +73,11 @@ type ACHAgentReconciler struct {
 	// DB is the Postgres pool for the achagents projection. Nil in envtest
 	// (k8s-only suite) — every projection call is nil-gated.
 	DB *pgxpool.Pool
+
+	// PublicBaseURL is the externally reachable gateway origin (e.g.
+	// https://ach.example.com), used to render status.webhookURL as a full
+	// URL. Empty => status.webhookURL is the path-only form.
+	PublicBaseURL string
 }
 
 //nolint:gocyclo // Single linear resolve→render→apply→status flow; splitting scatters status ordering.
@@ -353,6 +361,7 @@ func (r *ACHAgentReconciler) finish(ctx context.Context, a *achv1alpha1.ACHAgent
 		setCond(&fresh.Status.Conditions, condReady, metav1.ConditionFalse, reason, msg, a.Generation)
 	}
 	fresh.Status.ObservedGeneration = fresh.Generation
+	fresh.Status.WebhookURL = agentWebhookURL(&fresh, r.PublicBaseURL)
 
 	// Dual-write the achagents projection (read model for gateway + UI).
 	ready := apimeta.IsStatusConditionTrue(fresh.Status.Conditions, condReady)
@@ -430,6 +439,29 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 	return reqs
 }
 
+// agentWebhookURL returns the inbound webhook URL for an agent, or "" when
+// the agent has no webhook channel. baseURL (from PublicBaseURL) is optional:
+// when set, the result is a full URL; when empty, the result is the
+// path-only form the caller prefixes with their own ingress host. Pure (no
+// I/O) so it is unit-tested directly.
+func agentWebhookURL(a *achv1alpha1.ACHAgent, baseURL string) string {
+	hasWebhook := false
+	for _, ch := range a.Spec.Channels {
+		if ch.Type == channelTypeWebhook {
+			hasWebhook = true
+			break
+		}
+	}
+	if !hasWebhook {
+		return ""
+	}
+	path := fmt.Sprintf("/hook/%s/%s", a.Namespace, a.Name)
+	if baseURL == "" {
+		return path
+	}
+	return strings.TrimRight(baseURL, "/") + path
+}
+
 // agentProjectionRow builds the achagents projection row from an ACHAgent's
 // spec + its aggregate Ready status. Pure (no I/O) so it is unit-tested
 // without a DB. Service coords are derived from the same helpers the
@@ -444,7 +476,7 @@ func agentProjectionRow(a *achv1alpha1.ACHAgent, ready bool) achdb.AgentRow {
 	}
 	for _, ch := range a.Spec.Channels {
 		row.Channels = append(row.Channels, achdb.ChannelSummary{Name: ch.Name, Type: ch.Type, Source: ch.Source})
-		if ch.Type == "webhook" {
+		if ch.Type == channelTypeWebhook {
 			row.HasWebhook = true
 		}
 	}

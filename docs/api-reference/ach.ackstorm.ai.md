@@ -147,6 +147,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ |  |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
+| `webhookURL` _string_ | WebhookURL is the inbound URL for this agent's webhook channel(s),<br />e.g. https://ach.example.com/hook/ach-system/gh. Paste this into the<br />GitHub/GitLab webhook config, appending /channels/\{name\}/events for the<br />specific channel. Set only when the agent has >=1 webhook channel.<br />The host segment is only populated when the operator has<br />ACH_PUBLIC_BASE_URL configured; otherwise this is the path-only form<br />(/hook/\{ns\}/\{name\}) for the caller to prefix with their own ingress host. |  |  |
 
 
 #### AchEndpointSpec

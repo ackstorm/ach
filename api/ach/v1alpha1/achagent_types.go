@@ -250,6 +250,15 @@ type ACHAgentStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// WebhookURL is the inbound URL for this agent's webhook channel(s),
+	// e.g. https://ach.example.com/hook/ach-system/gh. Paste this into the
+	// GitHub/GitLab webhook config, appending /channels/{name}/events for the
+	// specific channel. Set only when the agent has >=1 webhook channel.
+	// The host segment is only populated when the operator has
+	// ACH_PUBLIC_BASE_URL configured; otherwise this is the path-only form
+	// (/hook/{ns}/{name}) for the caller to prefix with their own ingress host.
+	// +optional
+	WebhookURL string `json:"webhookURL,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -257,6 +266,7 @@ type ACHAgentStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=agent
 // +kubebuilder:printcolumn:name="Profile",type=string,JSONPath=".spec.profileRef.name"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Webhook",type=string,JSONPath=".status.webhookURL",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="ACHAgent name must be <= 50 chars (operator derives <=63-char child names)"
 

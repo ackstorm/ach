@@ -58,3 +58,27 @@ func TestAgentProjectionRow_CronOnly_NoServiceCoords(t *testing.T) {
 		t.Fatalf("cron-only agent must have no Service coords, got %q %d", row.ServiceName, row.ServicePort)
 	}
 }
+
+func TestAgentWebhookURL(t *testing.T) {
+	withWebhook := &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ach-system", Name: "gh"},
+		Spec:       achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook"}}},
+	}
+	cronOnly := &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "c"},
+		Spec:       achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{{Name: "n", Type: "cron"}}},
+	}
+
+	if got := agentWebhookURL(withWebhook, ""); got != "/hook/ach-system/gh" {
+		t.Fatalf("path-only = %q, want /hook/ach-system/gh", got)
+	}
+	if got := agentWebhookURL(withWebhook, "https://ach.example.com"); got != "https://ach.example.com/hook/ach-system/gh" {
+		t.Fatalf("full URL = %q, want https://ach.example.com/hook/ach-system/gh", got)
+	}
+	if got := agentWebhookURL(withWebhook, "https://ach.example.com/"); got != "https://ach.example.com/hook/ach-system/gh" {
+		t.Fatalf("trailing-slash baseURL not trimmed: %q", got)
+	}
+	if got := agentWebhookURL(cronOnly, "https://ach.example.com"); got != "" {
+		t.Fatalf("cron-only agent must have no webhook URL, got %q", got)
+	}
+}

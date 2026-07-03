@@ -148,7 +148,7 @@ func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.
 func needsService(a *achv1alpha1.ACHAgent) bool {
 	for i := range a.Spec.Channels {
 		switch a.Spec.Channels[i].Type {
-		case "webhook", "a2a":
+		case channelTypeWebhook, "a2a":
 			return true
 		}
 	}

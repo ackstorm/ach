@@ -94,6 +94,11 @@ operator:
   #       with more true-orphan candidates than this aborts revocation entirely.
   # Observability: /metrics exposes ach_orphan_cleanup_{candidates,revoked}_total
   # and ach_orphan_cleanup_skipped_total{reason}.
+  #
+  # ACH_PUBLIC_BASE_URL (also top-level `extraEnv`, operator-only): the
+  # externally reachable gateway origin (e.g. https://ach.example.com). When
+  # set, the operator renders ACHAgent status.webhookURL as a full URL;
+  # unset => status.webhookURL is the path-only form (/hook/{ns}/{name}).
 
 # platformApi: HTTP API surface for agent registry, config serving.
 platformApi:
