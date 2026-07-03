@@ -604,7 +604,7 @@ func classifyInsertError(err error) insertErrClass {
 //  6. **DB flip**: db.RevokeEnvironmentKey post-LiteLLM-ack. On error
 //     → 500 internal_error + audit; the LiteLLM-side key is revoked
 //     but the DB row is in a partial state. Operator's orphan-cleanup
-//     Runnable will eventually reconcile via ListActiveACHKeyTokens
+//     Runnable will eventually reconcile via ListActiveACHKeyIDs
 //     (Phase 02.2 D-02). Redis NOT DEL'd here either — without the
 //     DB flip a Redis DEL would let the next resolver populate the
 //     cache from the stale 'active' row.
