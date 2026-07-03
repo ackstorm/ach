@@ -53,7 +53,7 @@ type accessGroupFakeImpl struct {
 
 func newAccessGroupFake() *accessGroupFakeImpl {
 	return &accessGroupFakeImpl{
-		NoopClient:      litellm.NewNoopClient(logr.Discard()),
+		NoopClient:      &litellm.NoopClient{Log: logr.Discard()},
 		createCalls:     map[string]int{},
 		updateCalls:     map[string]int{},
 		deleteCalls:     map[string]int{},

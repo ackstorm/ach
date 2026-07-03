@@ -29,7 +29,7 @@ func TestListAgentsLengthCheck(t *testing.T) {
 			defer srv.Close()
 
 			c := newTestClient(t, srv.URL)
-			got, err := c.ListAgents(context.Background())
+			got, err := c.ListA2AAgents(context.Background())
 			if !errors.Is(err, ErrNotFound) {
 				t.Errorf("err: want ErrNotFound, got %v", err)
 			}
@@ -50,7 +50,7 @@ func TestListAgentsPath(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	_, _ = c.ListAgents(context.Background())
+	_, _ = c.ListA2AAgents(context.Background())
 	if len(captured) != 1 || captured[0].Method != "GET" {
 		t.Fatalf("ListAgents: want GET, got %+v", captured)
 	}
@@ -79,6 +79,6 @@ func TestAgentsHelpers401Propagation(t *testing.T) {
 		}
 	}
 
-	_, err := c.ListAgents(context.Background())
+	_, err := c.ListA2AAgents(context.Background())
 	check("ListAgents", err)
 }
