@@ -13,9 +13,7 @@
 //     runs AFTER litellm.RevokeKey ack (the handler ordering enforces
 //     KEY-08; this helper is the DB step only).
 //   - ListEnvironmentKeysByOwner: paginated lister for the user-visible
-//     §15.6 endpoint.
-//   - ListEnvironmentKeysByOwnerWithFilter: admin variant where nil
-//     filter returns all rows for the deployment.
+//     §15.6 endpoint; also used by the admin bulk-revoke path.
 
 package db
 
@@ -130,14 +128,6 @@ func RevokeEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string)
 // Same limit clamping + opaque base64 cursor as ListPersonalKeysByOwner.
 func ListEnvironmentKeysByOwner(ctx context.Context, pool *pgxpool.Pool, ownerEmail string, limit int, cursor string) ([]EkKeyInfo, string, error) {
 	return listEnvironmentKeys(ctx, pool, &ownerEmail, limit, cursor)
-}
-
-// ListEnvironmentKeysByOwnerWithFilter is the admin variant. When
-// ownerEmailFilter is nil the helper returns ALL environment_keys rows for
-// the deployment (paginated); when non-nil it behaves identically to
-// ListEnvironmentKeysByOwner.
-func ListEnvironmentKeysByOwnerWithFilter(ctx context.Context, pool *pgxpool.Pool, ownerEmailFilter *string, limit int, cursor string) ([]EkKeyInfo, string, error) {
-	return listEnvironmentKeys(ctx, pool, ownerEmailFilter, limit, cursor)
 }
 
 // listEnvironmentKeys is the shared paginated-list implementation; the

@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -203,7 +204,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	//     IncLiteLLMUnreachable call sites in
 	//     internal/forwarder/{proxy,bip} start emitting real samples
 	//     without any signature change (D-19 thin-shim invariant).
-	reg := metrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	registerRuntimeCollectors(reg)
 	fwdCollectors := metrics.NewForwarderCollectors(reg)
 	fwdCollectors.PreInitZeroSeries()

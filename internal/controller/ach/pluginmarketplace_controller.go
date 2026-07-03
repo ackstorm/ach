@@ -23,9 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -317,7 +315,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// ─── Stage 2: serial per-plugin materialization (D-09). ───
 
-	var failures []pluginFailure
+	var failures []stageFailure
 	// successful collects the per-entry (name, upstreamRev) pairs that
 	// passed Stage-2 — feeds status.plugins[] so operators can `kubectl
 	// get pluginmarketplace -o yaml` to see exactly what materialized.
@@ -332,12 +330,12 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	deduped := make([]contentkit.ClaudeCodeMarketplacePlugin, 0, len(filtered))
 	for _, entry := range filtered {
 		if strings.TrimSpace(entry.Name) == "" {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(entry.Name))
 		if _, dup := seen[key]; dup {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonDuplicateName})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonDuplicateName})
 			continue
 		}
 		seen[key] = struct{}{}
@@ -349,7 +347,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// an old npm-shaped entry). Short-circuit before the fetcher so
 		// no live git remote is touched.
 		if entry.Source.Kind == "" {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUnsupportedPluginSource})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonUnsupportedPluginSource})
 			continue
 		}
 		// Per-plugin auth Secret: marketplace plugin entries do NOT carry
@@ -359,8 +357,10 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// hosted by the same identity that hosts the marketplace.json.
 		upstreamRev, perr := r.materializeMarketplacePlugin(ctx, &cr, entry, marketplaceSecret)
 		if perr != nil {
-			reason, _ := classifyFetchErrorMarketplace(perr, spec.Refresh, time.Time{})
-			failures = append(failures, pluginFailure{name: entry.Name, reason: reason})
+			// errUnsupportedPluginSource is intercepted in the Reconcile
+			// body before dispatch; classifyFetchError handles the rest.
+			reason, _ := classifyFetchError(perr, spec.Refresh, time.Time{})
+			failures = append(failures, stageFailure{name: entry.Name, reason: reason})
 			continue
 		}
 		successful = append(successful, achv1alpha1.MarketplacePluginRef{
@@ -415,7 +415,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// ─── Status + RequeueAfter. ───
 
 	// Format the partial-failure message regardless of overall outcome.
-	msg := formatStage2Message(failures)
+	msg := formatStageFailures(failures, "plugin")
 	if msg != "" {
 		logger.Info("stage-2 partial failures", "summary", msg)
 	}
@@ -466,7 +466,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 //     marketplace-sourced plugins observe the same cap as Plugin CRDs).
 //
 // Returns the error from the underlying §10.3 step; callers use
-// classifyFetchErrorMarketplace to map to a §12.4 reason string.
+// classifyFetchError to map to a §12.4 reason string.
 func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	ctx context.Context,
 	mp *achv1alpha1.PluginMarketplace,
@@ -580,72 +580,6 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	return upstreamRev, nil
 }
 
-// classifyFetchErrorMarketplace is the marketplace-side fork of
-// classifyFetchError: it understands errUnsupportedPluginSource (npm) and
-// OversizeError in addition to the standard sources.Err* sentinels.
-//
-// Returned reason is one of the marketplace status enum:
-// {Synced, Unreachable, Unauthorized, NotFound, UpstreamInvalid,
-//
-//	InvalidConfig, PluginTooLarge, UnsupportedPluginSource, StaleCacheExpired}.
-func classifyFetchErrorMarketplace(err error, refresh achv1alpha1.RefreshBlock, lastRefresh time.Time) (reason, message string) {
-	if err == nil {
-		return ReasonSynced, ""
-	}
-	// errUnsupportedPluginSource is now intercepted in the Reconcile body
-	// before dispatchMarketplacePlugin runs — the explicit Kind=="" gate
-	// short-circuits there. This function still handles all other
-	// sources.Err* sentinels via classifyFetchError.
-	return classifyFetchError(err, refresh, lastRefresh)
-}
-
-// formatStage2Message renders the D-10 structured one-line summary of
-// per-plugin failures:
-//
-//	"stage-2: <N> plugin(s) failed: <n1>: <r1>, <n2>: <r2>, ... [, +<M> more]"
-//
-// First 5 failures listed verbatim; if more, append ", +<M> more". Returns
-// the empty string on zero failures.
-//
-// Bounded to ~500 chars typical (5 entries × ~80 chars + suffix) — well
-// under Kubernetes' 4096-char status.message limit. Plugin names are
-// pre-validated as DNS-1123 subdomains (~63 chars max) by
-// contentkit.ParseClaudeCodeMarketplace; reason strings are bounded by the §12.4
-// enum (max ~24 chars). T-02-06-08 mitigation: no adversarial-name
-// content in the message because contentkit.ParseClaudeCodeMarketplace rejected
-// path-traversal names.
-func formatStage2Message(failures []pluginFailure) string {
-	if len(failures) == 0 {
-		return ""
-	}
-	const verbatim = 5
-	var b strings.Builder
-	fmt.Fprintf(&b, "stage-2: %d plugin(s) failed: ", len(failures))
-	n := len(failures)
-	max := n
-	if max > verbatim {
-		max = verbatim
-	}
-	for i := 0; i < max; i++ {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%s: %s", failures[i].name, failures[i].reason)
-	}
-	if n > verbatim {
-		fmt.Fprintf(&b, ", +%d more", n-verbatim)
-	}
-	return b.String()
-}
-
-// pluginFailure is the per-plugin failure record aggregated into the
-// status.message via formatStage2Message. Declared at package level so
-// formatStage2Message can be tested independently of Reconcile.
-type pluginFailure struct {
-	name   string
-	reason string
-}
-
 // buildMarketplaceRow assembles the marketplaces projection row from the CR's
 // terminal status. syncedStatus is the metav1.Condition.Status string
 // ("True"/"False"); syncedReason is the condition Reason on a non-Synced
@@ -683,37 +617,19 @@ func (r *PluginMarketplaceReconciler) projectMarketplace(ctx context.Context, cr
 func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *achv1alpha1.PluginMarketplace, message string, requeue time.Duration) (ctrl.Result, error) {
 	// Record successful catalog refresh (including 304 NotModified) so the
 	// §10.3 within-interval gate can skip the next reconcile within the
-	// refresh window. Mirrors the Plugin/Prompt/Artifact reconciler
-	// semantics where LastSuccessfulRefresh advances on both fresh
-	// fetches and NotModified shortcuts.
+	// refresh window. LastSuccessfulRefresh advances on both fresh fetches
+	// and NotModified shortcuts.
 	now := metav1.Now()
-	// Issue #18: retry on apiserver 409 conflicts. Without the retry the
-	// suite-level reconciler and the per-test reconciler race on the same
-	// CR's resourceVersion under envtest; the loser sees
-	// "object has been modified" and the corresponding status condition
-	// never lands → TestPMR_Stage1_* envtest flake. Mirror the
-	// retry-on-conflict pattern used by sister project alitellm-operator's
-	// writeStatus helpers.
 	desiredGen := cr.Generation
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.PluginMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	// Issue #18: retryStatusUpdate retries on apiserver 409 conflicts. The
+	// apply closure carries the caller-computed discovery set onto the
+	// fresh copy (issue #53 regression: c28eeff).
+	err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.PluginMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, ReasonSynced, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		fresh.Status.LastSuccessfulRefresh = &now
-		// Carry the caller-computed discovery set onto the fresh copy —
-		// the Reconcile body set these on `cr` and the fresh Get would
-		// otherwise drop them (issue #53 regression introduced by c28eeff).
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
@@ -736,33 +652,14 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 //     (Result{}, originalErr) so controller-runtime's workqueue applies
 //     exponential backoff.
 func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *achv1alpha1.PluginMarketplace, reason, message string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
-	// Issue #18: retry on apiserver 409 conflicts. See markSyncedTrue for
-	// rationale — the suite + per-test reconciler race under envtest, and
-	// without the retry the failure-classification status (UpstreamInvalid,
-	// Unauthorized, Unreachable, …) never lands; drainReconcileUntil then
-	// times out → flake.
 	desiredGen := cr.Generation
-	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.PluginMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.PluginMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, reason, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		// Carry the caller's discovery set (issue #53 regression: c28eeff).
-		// Failure paths pass through the prior value loaded at the top of
-		// Reconcile.
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	}); err != nil {
-		// Status update failure is logged by the controller-runtime
-		// recorder via the Reconcile return; surface it directly.
 		return ctrl.Result{}, err
 	}
 	if perr := r.projectMarketplace(ctx, cr, "False", reason); perr != nil {
@@ -788,7 +685,7 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PluginMarketplaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.PluginMarketplace{}, builder.WithPredicates()).
+		For(&achv1alpha1.PluginMarketplace{}).
 		Named("ach-pluginmarketplace")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

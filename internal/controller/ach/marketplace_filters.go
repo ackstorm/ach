@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/ackstorm/ach/internal/contentkit"
 )
@@ -115,10 +116,5 @@ func applyFilters(plugins []contentkit.ClaudeCodeMarketplacePlugin, include, exc
 
 // matchAny returns true when any pattern in res matches s.
 func matchAny(res []*regexp.Regexp, s string) bool {
-	for _, r := range res {
-		if r.MatchString(s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(res, func(r *regexp.Regexp) bool { return r.MatchString(s) })
 }

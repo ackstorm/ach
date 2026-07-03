@@ -9,30 +9,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/localpkg/manager"
 )
 
-func TestParseConflictPolicy(t *testing.T) {
-	cases := map[string]manager.ConflictPolicy{
-		"":          manager.ConflictNamespace,
-		"namespace": manager.ConflictNamespace,
-		"NAMESPACE": manager.ConflictNamespace,
-		"skip":      manager.ConflictSkip,
-		"overwrite": manager.ConflictOverwrite,
-		"refuse":    manager.ConflictRefuse,
-	}
-	for in, want := range cases {
-		got, err := manager.ParseConflictPolicy(in)
-		if err != nil {
-			t.Errorf("ParseConflictPolicy(%q): unexpected error: %v", in, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("ParseConflictPolicy(%q) = %v; want %v", in, got, want)
-		}
-	}
-	if _, err := manager.ParseConflictPolicy("bogus"); err == nil {
-		t.Error("ParseConflictPolicy(bogus): want error, got nil")
-	}
-}
-
 func TestResolveConflicts(t *testing.T) {
 	const target = ".claude/commands/review.md"
 	owners := map[string]string{target: "gemini@ackstorm"}

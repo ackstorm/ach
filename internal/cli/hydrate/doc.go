@@ -83,7 +83,6 @@
 //   - fetcher     (manifestFetcher)   — defaults to manifest.Fetch
 //   - extractor   (Extractor)         — nil in W1; 07-W2-01 supplies
 //   - adapter     (AdapterDispatcher) — nil in W1; 07-W3-05 supplies
-//   - differ      (Differ)            — drift.NewDiffer concrete here
 //
 // Concrete extractor + adapter are wired in by the caller layer
 // (07-W3-05 cobra adaptation of cmd/ach-cli/cmd/hydrate.go) without
@@ -122,9 +121,10 @@
 //   - doc.go     — this file (package contract).
 //   - flags.go   — Opts struct (every engine flag from D-03).
 //   - result.go  — Result struct + Extractor / AdapterDispatcher /
-//     Differ / StateStore interfaces.
+//     StateStore interfaces.
 //   - commit.go  — Run entry point + 14-step orchestrator + SIGKILL seam.
-//   - drift.go   — STATE-04 four-outcome truth table + WrapDriftError.
+//   - drift.go   — STATE-04 four-outcome truth table + compareDrift +
+//     WrapDriftError.
 //
 // Sibling packages this package imports:
 //

@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -184,7 +183,7 @@ func (r *PluginReconciler) writePluginProjection(
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Plugin{}, builder.WithPredicates()).
+		For(&achv1alpha1.Plugin{}).
 		Named("ach-plugin")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

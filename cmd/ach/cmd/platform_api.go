@@ -208,7 +208,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	//     litellm_unreachable counter (registered-but-unused at end of
 	//     Phase 5; see Plan 05-06 spec_divergence) and any future
 	//     additive metrics that land here.
-	out.metricsReg = metrics.NewRegistry()
+	out.metricsReg = prometheus.NewRegistry()
 	registerRuntimeCollectors(out.metricsReg)
 	out.litellmUnreachable = metrics.MustRegisterLitellmUnreachable(out.metricsReg)
 	out.litellmUnreachable.WithLabelValues("platform_api").Add(0) // expose family at 0 (§18.5)

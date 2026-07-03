@@ -147,7 +147,7 @@ func RevokeKeyHandler(deps Deps) http.HandlerFunc {
 // caller-observable revocation barrier; a 503 would mislead the caller
 // into retrying (against an already-revoked DB row). A stderr WARN log
 // captures the partial-completion signal; the orphan-cleanup loop
-// reconciles via ListActiveACHKeyTokens.
+// reconciles via ListActiveACHKeyIDs.
 //
 // Audit (reachability-aware, per D-14): OutcomeLitellmUnreachable when
 // the best-effort LiteLLM call failed, else OutcomeRevoked. This is the

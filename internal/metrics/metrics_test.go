@@ -62,15 +62,15 @@ func familyNames(t *testing.T, gather prometheus.Gatherer) []string {
 }
 
 // TestNewRegistry_IsolatedFromDefault — registers a sentinel counter
-// on a fresh metrics.NewRegistry() and asserts the default global
+// on a fresh prometheus.NewRegistry() and asserts the default global
 // registerer remains free of it. Proves D-09's process-local isolation
 // invariant: controller-runtime's default-registry collectors will
 // never appear on the chi /metrics mux, and unit tests can build
 // isolated Registries without re-register panics.
 func TestNewRegistry_IsolatedFromDefault(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	if reg == nil {
-		t.Fatal("NewRegistry returned nil")
+		t.Fatal("prometheus.NewRegistry returned nil")
 	}
 	const sentinel = "ach_test_isolation_sentinel_total"
 	c := prometheus.NewCounter(prometheus.CounterOpts{Name: sentinel, Help: "test"})
@@ -98,7 +98,7 @@ func TestNewRegistry_IsolatedFromDefault(t *testing.T) {
 	}
 
 	// Twin registries — register on a second one, first does not see it.
-	reg2 := NewRegistry()
+	reg2 := prometheus.NewRegistry()
 	const sentinel2 = "ach_test_isolation_sentinel_two_total"
 	c2 := prometheus.NewCounter(prometheus.CounterOpts{Name: sentinel2, Help: "test"})
 	reg2.MustRegister(c2)
@@ -114,7 +114,7 @@ func TestNewRegistry_IsolatedFromDefault(t *testing.T) {
 // successfully without re-register panic, yielding exactly four
 // caller series each at value 1.
 func TestLitellmUnreachable_AllCallers(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := MustRegisterLitellmUnreachable(reg)
 	if c == nil {
 		t.Fatal("MustRegisterLitellmUnreachable returned nil")
@@ -166,7 +166,7 @@ func TestLitellmUnreachable_AllCallers(t *testing.T) {
 // bugs from silently shipping two collectors with the same fully-
 // qualified name.
 func TestLitellmUnreachable_DoubleRegisterPanics(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	MustRegisterLitellmUnreachable(reg)
 
 	defer func() {
@@ -181,8 +181,8 @@ func TestLitellmUnreachable_DoubleRegisterPanics(t *testing.T) {
 // TWO different Registries succeeds. Proves the collector has no
 // process-global state; each Registry is independent.
 func TestLitellmUnreachable_TwoRegistriesNoPanic(t *testing.T) {
-	reg1 := NewRegistry()
-	reg2 := NewRegistry()
+	reg1 := prometheus.NewRegistry()
+	reg2 := prometheus.NewRegistry()
 	c1 := MustRegisterLitellmUnreachable(reg1)
 	c2 := MustRegisterLitellmUnreachable(reg2)
 	if c1 == nil || c2 == nil {
@@ -197,7 +197,7 @@ func TestLitellmUnreachable_TwoRegistriesNoPanic(t *testing.T) {
 // forwarder metric families is registered with the exact normative
 // label-key set, no more, no less.
 func TestForwarderCollectors_LabelKeys(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewForwarderCollectors(reg)
 	if c == nil {
 		t.Fatal("NewForwarderCollectors returned nil")
@@ -231,7 +231,7 @@ func TestForwarderCollectors_LabelKeys(t *testing.T) {
 // §18.5 CS metric families is registered with the exact normative
 // label-key set.
 func TestContentServiceCollectors_LabelKeys(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewContentServiceCollectors(reg)
 	if c == nil {
 		t.Fatal("NewContentServiceCollectors returned nil")
@@ -263,7 +263,7 @@ func TestContentServiceCollectors_LabelKeys(t *testing.T) {
 // refactor adds either label, this test fails LOUD before the offending
 // metric ships and explodes Prometheus's TSDB.
 func TestContentServiceCollectors_NoForbiddenLabels(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewContentServiceCollectors(reg)
 	c.IncRequest("plugin", "ok")
 	c.ObserveRequestDuration("plugin", 0.01)
@@ -292,7 +292,7 @@ func TestContentServiceCollectors_NoForbiddenLabels(t *testing.T) {
 // environment_available gauge registers with the {name} label and records
 // the set value (G7).
 func TestOperatorCollectors_EnvironmentAvailableLabels(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewOperatorCollectors(reg)
 	if c == nil {
 		t.Fatal("NewOperatorCollectors returned nil")
@@ -311,7 +311,7 @@ func TestOperatorCollectors_EnvironmentAvailableLabels(t *testing.T) {
 // operator_external_ref_refresh_total counter registers with the
 // {kind,result,type} label set and increments (G7).
 func TestOperatorCollectors_ExternalRefRefreshLabels(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewOperatorCollectors(reg)
 	c.ExternalRefRefresh.WithLabelValues("plugin", "github", "synced").Inc()
 
@@ -327,7 +327,7 @@ func TestOperatorCollectors_ExternalRefRefreshLabels(t *testing.T) {
 // and record (G7): the hydrate histogram (no extra label) and the login
 // counter keyed by {outcome}.
 func TestPlatformAPICollectors(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := NewPlatformAPICollectors(reg)
 	if c == nil {
 		t.Fatal("NewPlatformAPICollectors returned nil")
@@ -364,7 +364,7 @@ func TestPlatformAPICollectors(t *testing.T) {
 // promhttp wiring and that Handler only exposes the supplied
 // registry (not DefaultGatherer).
 func TestHandler_ServesFromRegistry(t *testing.T) {
-	reg := NewRegistry()
+	reg := prometheus.NewRegistry()
 	const name = "ach_test_handler_counter_total"
 	c := prometheus.NewCounter(prometheus.CounterOpts{Name: name, Help: "test"})
 	reg.MustRegister(c)

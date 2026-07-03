@@ -40,7 +40,7 @@ type envStore interface {
 	// already-loaded row (OPT-1): CreateHandler reads terminating off the
 	// row's DeletionTimestamp and synced via this method, so the per-call
 	// EnvironmentTerminating/EnvironmentAccessGroupSynced SELECTs are no
-	// longer on the create path (they remain on *store.Store for other use).
+	// longer on the create path (OPT-1 removed the per-call SELECT helpers entirely).
 	AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool
 }
 
@@ -52,8 +52,6 @@ type dbOps interface {
 	InsertEnvironmentKey(ctx context.Context, row db.EkInsertRow) error
 	GetEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
 	RevokeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
-	ListEnvironmentKeysByOwner(ctx context.Context, ownerEmail string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
-	ListEnvironmentKeysByOwnerWithFilter(ctx context.Context, ownerEmailFilter *string, limit int, cursor string) ([]db.EkKeyInfo, string, error)
 	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
 	RevokePersonalKeyByOwner(ctx context.Context, keyID, owner string) (litellmToken *string, err error)
 }
@@ -143,7 +141,7 @@ const defaultTeam = "default"
 //  2. Strict JSON decode (DisallowUnknownFields) into CreateRequest;
 //     missing fields → 400.
 //  3. GetEnvironment from the Postgres projection table; absent or terminating → 404.
-//  4. EnvironmentAccessGroupSynced check; not True → 503 not_ready.
+//  4. AccessGroupSyncedFromRow check; not True → 503 not_ready.
 //  5. Team-membership intersection: authorizedTeams ∩ caller teams ≠ ∅;
 //     empty → 403 unauthorized_team.
 //  6. Idempotent LiteLLM user provision: UserInfoByEmail; on absent run
@@ -604,7 +602,7 @@ func classifyInsertError(err error) insertErrClass {
 //  6. **DB flip**: db.RevokeEnvironmentKey post-LiteLLM-ack. On error
 //     → 500 internal_error + audit; the LiteLLM-side key is revoked
 //     but the DB row is in a partial state. Operator's orphan-cleanup
-//     Runnable will eventually reconcile via ListActiveACHKeyTokens
+//     Runnable will eventually reconcile via ListActiveACHKeyIDs
 //     (Phase 02.2 D-02). Redis NOT DEL'd here either — without the
 //     DB flip a Redis DEL would let the next resolver populate the
 //     cache from the stale 'active' row.

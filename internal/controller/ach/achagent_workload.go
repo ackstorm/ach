@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -201,6 +202,9 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		startupFail = int32(*p.Spec.Engine.StartupTimeoutSeconds/5) + 1
 	}
 
+	podLabels := agentLabels(a)
+	maps.Copy(podLabels, agentSelectorLabels(a.Name))
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: appsv1.DeploymentSpec{
@@ -209,7 +213,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 			Selector: &metav1.LabelSelector{MatchLabels: agentSelectorLabels(a.Name)},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      mergeMaps(agentLabels(a), agentSelectorLabels(a.Name)),
+					Labels:      podLabels,
 					Annotations: map[string]string{configHashAnnotation: configHash},
 				},
 				Spec: corev1.PodSpec{
@@ -284,17 +288,6 @@ func applyPodTemplateOverlay(base corev1.PodTemplateSpec, overlay []byte, agentN
 	}
 	merged.Annotations[configHashAnnotation] = configHash
 	return merged, nil
-}
-
-func mergeMaps(a, b map[string]string) map[string]string {
-	out := make(map[string]string, len(a)+len(b))
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		out[k] = v
-	}
-	return out
 }
 
 // copySpec copies desired's mutable fields onto the fetched existing inside CreateOrUpdate

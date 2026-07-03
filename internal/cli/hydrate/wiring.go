@@ -65,6 +65,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/merge"
+	"github.com/ackstorm/ach/internal/cli/namespace"
 	"github.com/ackstorm/ach/internal/cli/skillstage"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -542,7 +543,7 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite) er
 			// Leaf-prefix EVERY colliding write (including the first) so both
 			// plugins survive; deterministic because plugins are sorted.
 			for _, i := range idxs {
-				all[i].fw.Path = namespaceLeaf(all[i].fw.Path, all[i].plugin)
+				all[i].fw.Path = namespace.Leaf(all[i].fw.Path, all[i].plugin)
 			}
 		case ConflictSkip:
 			// Keep the lowest index (earliest-sorted plugin); skip the rest.
@@ -660,7 +661,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 
 		// Post-resolution safety net: no two surviving collision-eligible
 		// writes may still share a Target. A post-namespace collision would
-		// be a real bug (e.g. namespaceLeaf produced an identical prefix), so
+		// be a real bug (e.g. namespace.Leaf produced an identical prefix), so
 		// fail-fast rather than silently overwrite a state.Plugins[] row.
 		if fw.Merge == adapter.MergeReplace {
 			if owner, dup := finalClaimed[fw.Path]; dup && owner != plugin {
@@ -1132,7 +1133,7 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	if fw.SourceHash != "" {
 		freshSourceHash = fw.SourceHash
 	}
-	outcome := NewDiffer().Compare(prior, onDiskHash, freshSourceHash)
+	outcome := compareDrift(prior, onDiskHash, freshSourceHash)
 
 	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
 	// prior == nil (fresh hydrate) never refuses — there is nothing of ours

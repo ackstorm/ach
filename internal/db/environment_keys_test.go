@@ -180,41 +180,6 @@ func TestListEnvironmentKeysByOwner_FiltersAndOrders(t *testing.T) {
 	}
 }
 
-// TestListEnvironmentKeysByOwnerWithFilter_NilReturnsAll: nil filter returns
-// every row across owners (admin view).
-func TestListEnvironmentKeysByOwnerWithFilter_NilReturnsAll(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	mustExec(t, ctx, pool, `
-		INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name)
-		VALUES
-		    ('ekid_af1', 'h_ek_af1', 'env1', 'a@b.example', 'k-a'),
-		    ('ekid_af2', 'h_ek_af2', 'env1', 'c@d.example', 'k-c'),
-		    ('ekid_af3', 'h_ek_af3', 'env1', 'e@f.example', 'k-e')
-	`)
-
-	got, _, err := db.ListEnvironmentKeysByOwnerWithFilter(ctx, pool, nil, 100, "")
-	if err != nil {
-		t.Fatalf("ListEnvironmentKeysByOwnerWithFilter(nil): %v", err)
-	}
-	if len(got) != 3 {
-		t.Errorf("nil filter returned %d rows; want 3", len(got))
-	}
-
-	// Confirm specific filter narrows.
-	filter := "c@d.example"
-	got2, _, err := db.ListEnvironmentKeysByOwnerWithFilter(ctx, pool, &filter, 100, "")
-	if err != nil {
-		t.Fatalf("ListEnvironmentKeysByOwnerWithFilter(c@d): %v", err)
-	}
-	if len(got2) != 1 || got2[0].KeyID != "ekid_af2" {
-		t.Errorf("filter narrow: got=%v; want [ekid_af2]", got2)
-	}
-}
-
 // TestListEnvironmentKeysByOwner_Pagination: limit=2 walks 3 rows.
 func TestListEnvironmentKeysByOwner_Pagination(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)

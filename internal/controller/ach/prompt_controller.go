@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -171,7 +170,7 @@ func (r *PromptReconciler) writePromptProjection(
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PromptReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Prompt{}, builder.WithPredicates()).
+		For(&achv1alpha1.Prompt{}).
 		Named("ach-prompt")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

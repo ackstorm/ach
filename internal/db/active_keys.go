@@ -2,20 +2,12 @@
 
 // Package db helpers for the OP-15 orphan-cleanup loop (Hub §18.4).
 //
-// Two helpers live here:
-//
-//   - ListActiveACHKeyIDs — DISTINCT union of every active
-//     personal_keys.key_id and environment_keys.key_id. This is the LIVE
-//     join helper the orphan loop uses: ACH-minted LiteLLM keys carry
-//     metadata.ach_key_id in this same key_id namespace (pkid_*/ekid_*),
-//     so the loop's ownership/membership test is metadata.ach_key_id ↔
-//     this set.
-//   - ListActiveACHKeyTokens — DISTINCT union of every active
-//     personal_keys.litellm_token and environment_keys.litellm_token where
-//     the column is non-null. NOT used by the orphan loop: the metadata
-//     ach_key_id join is preferred because key_id is the PK (never NULL),
-//     which avoids the litellm_token-IS-NULL migration fail-open. Retained
-//     unchanged as a candidate second signal for a future cross-check.
+// ListActiveACHKeyIDs — DISTINCT union of every active
+// personal_keys.key_id and environment_keys.key_id. This is the LIVE
+// join helper the orphan loop uses: ACH-minted LiteLLM keys carry
+// metadata.ach_key_id in this same key_id namespace (pkid_*/ekid_*),
+// so the loop's ownership/membership test is metadata.ach_key_id ↔
+// this set.
 //
 // SQL discipline: parameterless SELECT (no $N binds), pgconn class
 // 08/57 propagation per the package convention established in
@@ -89,66 +81,6 @@ func ListActiveACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, err
 			return nil, err
 		}
 		return nil, fmt.Errorf("db: ListActiveACHKeyIDs iterate: %w", err)
-	}
-	return out, nil
-}
-
-// ListActiveACHKeyTokens is the Phase 3 successor to ListActiveACHKeyIDs.
-// It returns the DISTINCT union of every active personal_keys.litellm_token
-// and environment_keys.litellm_token where the column is non-null.
-//
-// Hub §18.4 D-02 (Phase 02.2 closure) — the orphan-cleanup loop's set-
-// difference key changes from key_id (Phase 2) to litellm_token (Phase 3+).
-// LiteLLM's GET /key/list response carries `token` (an opaque hex), NEVER
-// `key_id`; matching on litellm_token is the FIRST PRECISE join key
-// available to the orphan loop, so the existing approximation (every
-// LiteLLM key flagged as orphan because no sk-... value can match a
-// pkid_/ekid_ value) is replaced with a true membership test once Phase 3
-// rows start landing.
-//
-// Filters:
-//   - status = 'active' on both tables (revoked rows MUST NOT contribute —
-//     their LiteLLM-side tokens are intentionally orphan, awaiting the
-//     orphan-cleanup loop's RevokeKey + DeleteKey).
-//   - Non-null litellm_token on both tables (Phase 2 / 02.2 rows leave the
-//     column NULL until Phase 3 SSO write; until then this helper returns
-//     an empty slice — that is the expected steady-state during the
-//     migration period).
-//
-// Returns ([]string{}, nil) on zero matches — never (nil, error).
-// Pgconn 08/57 errors propagate raw; other errors wrap via fmt.Errorf.
-func ListActiveACHKeyTokens(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
-	const sql = `
-		SELECT DISTINCT litellm_token FROM (
-		    SELECT litellm_token FROM personal_keys
-		        WHERE status = 'active' AND litellm_token IS NOT NULL
-		    UNION
-		    SELECT litellm_token FROM environment_keys
-		        WHERE status = 'active' AND litellm_token IS NOT NULL
-		) AS u
-	`
-	rows, err := pool.Query(ctx, sql)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListActiveACHKeyTokens: %w", err)
-	}
-	defer rows.Close()
-
-	out := []string{}
-	for rows.Next() {
-		var tok string
-		if err := rows.Scan(&tok); err != nil {
-			return nil, fmt.Errorf("db: ListActiveACHKeyTokens scan: %w", err)
-		}
-		out = append(out, tok)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListActiveACHKeyTokens iterate: %w", err)
 	}
 	return out, nil
 }

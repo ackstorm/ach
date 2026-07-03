@@ -7,9 +7,8 @@
 // served reads from the informer cache. Issue #34 makes Postgres the source of
 // truth: the Operator dual-writes Environments into the `environments`
 // projection table, and platform-api reads the projection via pgxpool. The
-// Store API surface (GetEnvironment / EnvironmentTerminating /
-// EnvironmentAccessGroupSynced / ListAuthorizedEnvironments) is preserved so
-// handler logic does not change shape — only the underlying transport.
+// Store API surface (GetEnvironment / ListAuthorizedEnvironments) is preserved
+// so handler logic does not change shape — only the underlying transport.
 //
 // All reads scope to the `s.ns` namespace passed at construction (MULTI-01
 // invariant unchanged from the informer-era Store).
@@ -70,56 +69,12 @@ func (s *Store) GetEnvironment(ctx context.Context, name string) (*db.Environmen
 	return db.GetEnvironmentByName(ctx, s.pool, s.ns, name)
 }
 
-// EnvironmentTerminating returns true iff the projection row for the named
-// Environment has a non-NULL deletion_timestamp (drain semantics per CS-09).
-// Absent row → (false, nil).
-//
-// The check delegates to GetEnvironment; the round-trip cost is identical to
-// the informer-era helper (single Postgres SELECT) so call sites that
-// previously did GetEnvironment + EnvironmentTerminating back-to-back still
-// pay only two round trips — pre-issue-34 they paid one informer-cache hit;
-// the new path is bounded by Postgres read latency.
-func (s *Store) EnvironmentTerminating(ctx context.Context, name string) (bool, error) {
-	row, err := s.GetEnvironment(ctx, name)
-	if err != nil {
-		return false, err
-	}
-	if row == nil {
-		return false, nil
-	}
-	return row.DeletionTimestamp != nil, nil
-}
-
-// EnvironmentAccessGroupSynced returns true iff the named Environment's
+// AccessGroupSyncedFromRow returns true iff the given Environment row's
 // access_group_synced_condition JSONB column carries a Condition with
 // Type=AccessGroupSynced and Status=True. The Operator dual-writes the column
 // from its status-rollup path (Phase 2 D-14 / D-15), so platform-api can read
-// the boolean projection directly without a JOIN.
-//
-// Returns:
-//   - (true,  nil) when the condition is present with Status=True.
-//   - (false, nil) when the condition is present with Status=False or Unknown.
-//   - (false, nil) when the column is empty/NULL (pre-first-reconcile or the
-//     reconciler has not yet written the condition).
-//   - (false, nil) when the environment row itself is absent — the
-//     env_not_found branch is the caller's responsibility via GetEnvironment
-//     one step earlier.
-//   - (false, err) on a read or decode failure that is not a clean
-//     (nil, nil) absent shape.
-func (s *Store) EnvironmentAccessGroupSynced(ctx context.Context, name string) (bool, error) {
-	row, err := s.GetEnvironment(ctx, name)
-	if err != nil {
-		return false, err
-	}
-	if row == nil {
-		return false, nil
-	}
-	return decodeAccessGroupSynced(row.AccessGroupSyncedCondition), nil
-}
-
-// AccessGroupSyncedFromRow reports AccessGroupSynced=True for an already-
-// loaded Environment row, avoiding a second SELECT. Mirrors
-// EnvironmentAccessGroupSynced but takes the row the caller already holds.
+// the boolean projection directly without a JOIN. Takes the row the caller
+// already holds (via GetEnvironment), avoiding a second SELECT.
 func (s *Store) AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool {
 	if row == nil {
 		return false

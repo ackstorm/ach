@@ -24,14 +24,6 @@ type NoopClient struct {
 	Log logr.Logger
 }
 
-// NewNoopClient returns a *NoopClient that logs through the supplied
-// logger. The constructor exists for symmetry with the Phase 2
-// constructor it will be paired with; callers MAY also construct a
-// NoopClient by struct literal in tests.
-func NewNoopClient(log logr.Logger) *NoopClient {
-	return &NoopClient{Log: log}
-}
-
 // DeleteAccessGroup is the §6.5 step 2 LiteLLM call. Phase 1 logs and
 // returns nil — the deletion will happen for real in Phase 2.
 func (c *NoopClient) DeleteAccessGroup(_ context.Context, name string) error {

@@ -9,8 +9,8 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
-// DriftOutcome (defined in result.go alongside the Differ interface)
-// values per the §8.4 four-outcome truth table.
+// DriftOutcome (defined in result.go) values per the §8.4 four-outcome
+// truth table.
 //
 // The truth table is a function of four xxh3 digest values:
 //
@@ -35,33 +35,15 @@ const (
 	ConflictPreserve                   // both moved; double conflict.
 )
 
-// Differ_ is the concrete Differ implementation per Task 3 of plan
-// 07-W1-06. It holds no state — Compare is a pure function of its
-// arguments — but the type exists so the commit struct can carry it
-// as a typed field (the Differ interface in result.go).
-//
-// The trailing underscore disambiguates the type name from the
-// Differ interface declared in result.go. Public callers reach the
-// concrete impl via NewDiffer() which returns the interface type.
-type Differ_ struct{}
-
-// NewDiffer returns a Differ implementation suitable for the commit
-// orchestrator's step 9 drift classification. Phase 7 ships a single
-// stateless impl; future deviations (e.g. a per-file override path)
-// would add a constructor variant.
-func NewDiffer() Differ {
-	return Differ_{}
-}
-
-// Compare classifies a single state entry against fresh hash values
-// per §8.4. When stateEntry == nil (fresh-extract path — no prior
-// state to compare against) the result is NoOp — there's nothing to
-// preserve, the caller should overwrite freely.
+// compareDrift classifies a single state entry against fresh hash values
+// per §8.4. When stateEntry == nil (fresh-extract path — no prior state to
+// compare against) the result is NoOp — there's nothing to preserve, the
+// caller should overwrite freely.
 //
 // All four arms are pure string equality; the xxh3 digests carry their
 // own "xxh3:" prefix from internal/cli/hash so a misuse (passing raw
 // bytes) would be immediately visible at the comparison site.
-func (Differ_) Compare(stateEntry *state.FileEntry, onDiskHash, freshSourceHash string) DriftOutcome {
+func compareDrift(stateEntry *state.FileEntry, onDiskHash, freshSourceHash string) DriftOutcome {
 	if stateEntry == nil {
 		return NoOp
 	}

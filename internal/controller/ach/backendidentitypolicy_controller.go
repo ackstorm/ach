@@ -16,7 +16,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -315,7 +314,7 @@ func (r *BackendIdentityPolicyReconciler) enqueueSiblings(ctx context.Context, o
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *BackendIdentityPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.BackendIdentityPolicy{}, builder.WithPredicates()).
+		For(&achv1alpha1.BackendIdentityPolicy{}).
 		Named("ach-backendidentitypolicy").
 		Watches(
 			&achv1alpha1.BackendIdentityPolicy{},

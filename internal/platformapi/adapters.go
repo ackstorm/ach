@@ -36,18 +36,6 @@ func (a *envkeysDBAdapter) RevokeEnvironmentKey(ctx context.Context, keyID strin
 	return db.RevokeEnvironmentKey(ctx, a.pool, keyID)
 }
 
-func (a *envkeysDBAdapter) ListEnvironmentKeysByOwner(
-	ctx context.Context, ownerEmail string, limit int, cursor string,
-) ([]db.EkKeyInfo, string, error) {
-	return db.ListEnvironmentKeysByOwner(ctx, a.pool, ownerEmail, limit, cursor)
-}
-
-func (a *envkeysDBAdapter) ListEnvironmentKeysByOwnerWithFilter(
-	ctx context.Context, ownerEmailFilter *string, limit int, cursor string,
-) ([]db.EkKeyInfo, string, error) {
-	return db.ListEnvironmentKeysByOwnerWithFilter(ctx, a.pool, ownerEmailFilter, limit, cursor)
-}
-
 func (a *envkeysDBAdapter) ListKeys(
 	ctx context.Context, f db.KeyListFilter, limit int, cursor string,
 ) ([]db.KeyListItem, string, error) {

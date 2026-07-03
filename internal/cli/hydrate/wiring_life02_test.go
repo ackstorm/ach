@@ -6,17 +6,17 @@ package hydrate
 // resource bucket.
 //
 // publishFile classifies a co-owned / projected file against its prior state
-// record via NewDiffer().Compare(prior, onDiskHash, freshSourceHash). The
-// source-change axis (sourceMatches) compares Compare's THIRD argument against
-// prior.SourceHash. For a CONVERTED projected file (D-23: Hash == emitted-output
-// xxh3, SourceHash == pre-conversion source xxh3) Hash != SourceHash, so passing
-// the emitted-output freshHash as Compare's third argument spuriously trips the
-// source-change axis on every converted file.
+// record via compareDrift(prior, onDiskHash, freshSourceHash). The
+// source-change axis (sourceMatches) compares compareDrift's THIRD argument
+// against prior.SourceHash. For a CONVERTED projected file (D-23: Hash ==
+// emitted-output xxh3, SourceHash == pre-conversion source xxh3) Hash !=
+// SourceHash, so passing the emitted-output freshHash as the third argument
+// spuriously trips the source-change axis on every converted file.
 //
 // LIFE-02 = publishFile must pass the FRESH SOURCE hash (fw.SourceHash, falling
 // back to the emitted freshHash when empty — the SAME rule the state-recording
-// block uses) as Compare's third argument, so the STATE-04 four-outcome table
-// classifies converted projected resources correctly.
+// block uses) as compareDrift's third argument, so the STATE-04 four-outcome
+// table classifies converted projected resources correctly.
 //
 // Each case calls publishFile directly with a converted prior (Hash != SourceHash)
 // and an on-disk file staged to a known hash, asserting the OBSERVABLE effect on

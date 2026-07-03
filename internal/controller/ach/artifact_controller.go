@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -214,7 +213,7 @@ func (r *ArtifactReconciler) softDeleteArtifactProjection(
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *ArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Artifact{}, builder.WithPredicates()).
+		For(&achv1alpha1.Artifact{}).
 		Named("ach-artifact")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

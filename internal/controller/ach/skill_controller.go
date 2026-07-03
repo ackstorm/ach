@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -170,7 +169,7 @@ func (r *SkillReconciler) writeSkillProjection(
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *SkillReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Skill{}, builder.WithPredicates()).
+		For(&achv1alpha1.Skill{}).
 		Named("ach-skill")
 	if r.ResyncSource != nil {
 		b = b.WatchesRawSource(

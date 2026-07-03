@@ -132,24 +132,10 @@ func buildGitSpecForEntry(
 ) (sourcesgit.Spec, error) {
 	token := extractTokenFromSecret(auth)
 	switch entry.Source.Kind {
-	case kindGitSubdir:
-		canonURL, host, cerr := sources.CanonicalCloneURL(entry.Source.URL)
-		if cerr != nil {
-			return sourcesgit.Spec{}, cerr
-		}
-		return sourcesgit.Spec{
-			URL:        canonURL,
-			Ref:        defaultRef(entry.Source.Ref),
-			SHA:        entry.Source.SHA,
-			Subtree:    entry.Source.Path,
-			Token:      tokenForHost(mp, host, token),
-			CacheRoot:  cacheRoot,
-			AuthScheme: schemeForHost(mp, host),
-		}, nil
-	case kindURL:
-		// url+path collapse: when path is non-empty the entry behaves
-		// like git-subdir (upstream-drift ack — see marketplace_parse.go
-		// header). Empty path → whole-worktree tar.
+	case kindGitSubdir, kindURL:
+		// kindURL: url+path collapse — when path is non-empty the entry
+		// behaves like git-subdir (upstream-drift ack — see
+		// marketplace_parse.go header). Empty path → whole-worktree tar.
 		canonURL, host, cerr := sources.CanonicalCloneURL(entry.Source.URL)
 		if cerr != nil {
 			return sourcesgit.Spec{}, cerr

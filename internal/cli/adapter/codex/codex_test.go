@@ -5,14 +5,11 @@ package codex
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -341,70 +338,6 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	// Case-insensitive alias resolution.
 	if _, ok := adapter.Lookup("CODEX-CLI"); !ok {
 		t.Error("adapter.Lookup(\"CODEX-CLI\") returned false; case-insensitive alias missed")
-	}
-}
-
-// TestCopyFile_SurfacesCloseError_OnDevFull asserts that copyFile
-// surfaces a close(2) ENOSPC when the destination is /dev/full. Per
-// 07-W5-05 + WR-02 (07-REVIEW.md): on Linux with buffered I/O,
-// close(2) can return EIO/ENOSPC when the final flush fails. The
-// prior `defer func() { _ = out.Close() }()` pattern silently dropped
-// that error, recording a truncated file as successfully written.
-// Linux-only: /dev/full is a Linux-specific device that accepts
-// writes but fails on close. NOTE: the duplication of this test
-// across the four adapter packages is intentional per plan
-// 07-W5-05 (avoids cross-package testutil coupling for 4 ~25-line
-// tests).
-func TestCopyFile_SurfacesCloseError_OnDevFull(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("requires Linux /dev/full semantics (WR-02)")
-	}
-
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src.bin")
-	// 64 KiB source — enough to ensure io.Copy actually exercises the
-	// write path (32 KiB default buffer flushed at least twice).
-	payload := bytes.Repeat([]byte{0xAB}, 64*1024)
-	if err := os.WriteFile(src, payload, 0o600); err != nil {
-		t.Fatalf("write src: %v", err)
-	}
-
-	err := adapter.CopyFile(src, "/dev/full")
-	if err == nil {
-		t.Fatal("copyFile(/dev/full) returned nil; expected ENOSPC from close(2) — the deferred-close pattern is swallowing the error (WR-02)")
-	}
-
-	// Linux surfaces ENOSPC either as a syscall.Errno (errors.Is) or
-	// as a *PathError wrapping the errno. Accept either by both
-	// errors.Is and message-substring check ("no space left on device"
-	// is the glibc strerror text).
-	if !errors.Is(err, syscall.ENOSPC) {
-		if !strings.Contains(err.Error(), "no space left on device") {
-			t.Fatalf("copyFile(/dev/full) returned %v (%T); expected ENOSPC / 'no space left on device'", err, err)
-		}
-	}
-}
-
-// TestCopyFile_ReturnsNilOnSuccess asserts the success-path semantics
-// are preserved: io.Copy + close both succeed → copyFile returns nil
-// and the destination matches the source byte-for-byte.
-func TestCopyFile_ReturnsNilOnSuccess(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src.bin")
-	dst := filepath.Join(dir, "dst.bin")
-	payload := []byte("hello world\n")
-	if err := os.WriteFile(src, payload, 0o600); err != nil {
-		t.Fatalf("write src: %v", err)
-	}
-	if err := adapter.CopyFile(src, dst); err != nil {
-		t.Fatalf("copyFile success path returned error: %v", err)
-	}
-	got, err := os.ReadFile(dst) //nolint:gosec // dst is under t.TempDir()
-	if err != nil {
-		t.Fatalf("read dst: %v", err)
-	}
-	if !bytes.Equal(got, payload) {
-		t.Fatalf("dst bytes = %q, want %q", got, payload)
 	}
 }
 
