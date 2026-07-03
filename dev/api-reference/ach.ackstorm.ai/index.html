@@ -3396,7 +3396,7 @@
 </tr>
 <tr>
 <td><code>webhookURL</code> <em>string</em></td>
-<td>WebhookURL is the inbound URL for this agent's webhook channel(s),<br />e.g. https://ach.example.com/hook/ach-system/gh. Paste this into the<br />GitHub/GitLab webhook config, appending /channels/{name}/events for the<br />specific channel. Set only when the agent has &gt;=1 webhook channel.<br />The host segment is only populated when the operator has<br />ACH_PUBLIC_BASE_URL configured; otherwise this is the path-only form<br />(/hook/{ns}/{name}) for the caller to prefix with their own ingress host.</td>
+<td>WebhookURL is the inbound base URL for this agent, e.g.<br />https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/{name}/events for a webhook channel). Set only when<br />the agent has &gt;=1 webhook channel. The host segment is only populated<br />when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,<br />ACH_BASE_URL) configured; otherwise this is the path-only form for<br />the caller to prefix with their own ingress host.</td>
 <td></td>
 <td></td>
 </tr>
