@@ -123,10 +123,10 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 		}, nil
 
 	case resp.StatusCode == nethttp.StatusOK:
-		// 200: caller materializes the body. Build the new UpstreamRev
-		// from ETag + Last-Modified (preserving the format the
-		// conditional-GET branch parses).
-		rev := buildRev(resp.Header.Get("ETag"), resp.Header.Get("Last-Modified"))
+		// Build the new UpstreamRev from ETag + Last-Modified —
+		// "<etag>|<last-modified>", symmetric with splitPriorRev (either
+		// half may be empty; servers vary).
+		rev := resp.Header.Get("ETag") + "|" + resp.Header.Get("Last-Modified")
 		return &sources.FetchResult{
 			Body:        resp.Body,
 			UpstreamRev: rev,
@@ -159,13 +159,6 @@ func splitPriorRev(rev string) (etag, lastMod string) {
 		return rev, ""
 	}
 	return rev[:idx], rev[idx+1:]
-}
-
-// buildRev composes the UpstreamRev returned to the caller from the
-// response's ETag + Last-Modified headers. Either may be empty (servers
-// vary); the composite is symmetric with splitPriorRev's parsing.
-func buildRev(etag, lastMod string) string {
-	return etag + "|" + lastMod
 }
 
 // setHTTPClientForTesting is the test-only override that injects an
