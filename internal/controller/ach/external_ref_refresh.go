@@ -391,19 +391,10 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		}
 		channel := externalRefChannel(deps.Kind)
 		payload := deps.Kind + "/" + deps.Name
-		if channel == "" {
-			// Unknown kind: fall back to the legacy pool-form upsert so we
-			// at least project the row. Unreachable in v1alpha1 (only
-			// plugin/prompt/artifact are valid kinds).
-			if err := achdb.UpsertExternalRef(ctx, deps.DB, ref); err != nil {
-				return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
-			}
-		} else {
-			if err := achdb.WithTxNotify(ctx, deps.DB, channel, payload, func(tx pgx.Tx) error {
-				return achdb.UpsertExternalRefTx(ctx, tx, ref)
-			}); err != nil {
-				return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
-			}
+		if err := achdb.WithTxNotify(ctx, deps.DB, channel, payload, func(tx pgx.Tx) error {
+			return achdb.UpsertExternalRefTx(ctx, tx, ref)
+		}); err != nil {
+			return MaterializeResult{Err: fmt.Errorf("db upsert: %w", err)}
 		}
 	}
 

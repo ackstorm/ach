@@ -359,7 +359,9 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// hosted by the same identity that hosts the marketplace.json.
 		upstreamRev, perr := r.materializeMarketplacePlugin(ctx, &cr, entry, marketplaceSecret)
 		if perr != nil {
-			reason, _ := classifyFetchErrorMarketplace(perr, spec.Refresh, time.Time{})
+			// errUnsupportedPluginSource is intercepted in the Reconcile
+			// body before dispatch; classifyFetchError handles the rest.
+			reason, _ := classifyFetchError(perr, spec.Refresh, time.Time{})
 			failures = append(failures, pluginFailure{name: entry.Name, reason: reason})
 			continue
 		}
@@ -466,7 +468,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 //     marketplace-sourced plugins observe the same cap as Plugin CRDs).
 //
 // Returns the error from the underlying §10.3 step; callers use
-// classifyFetchErrorMarketplace to map to a §12.4 reason string.
+// classifyFetchError to map to a §12.4 reason string.
 func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	ctx context.Context,
 	mp *achv1alpha1.PluginMarketplace,
@@ -578,25 +580,6 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 		}
 	}
 	return upstreamRev, nil
-}
-
-// classifyFetchErrorMarketplace is the marketplace-side fork of
-// classifyFetchError: it understands errUnsupportedPluginSource (npm) and
-// OversizeError in addition to the standard sources.Err* sentinels.
-//
-// Returned reason is one of the marketplace status enum:
-// {Synced, Unreachable, Unauthorized, NotFound, UpstreamInvalid,
-//
-//	InvalidConfig, PluginTooLarge, UnsupportedPluginSource, StaleCacheExpired}.
-func classifyFetchErrorMarketplace(err error, refresh achv1alpha1.RefreshBlock, lastRefresh time.Time) (reason, message string) {
-	if err == nil {
-		return ReasonSynced, ""
-	}
-	// errUnsupportedPluginSource is now intercepted in the Reconcile body
-	// before dispatchMarketplacePlugin runs — the explicit Kind=="" gate
-	// short-circuits there. This function still handles all other
-	// sources.Err* sentinels via classifyFetchError.
-	return classifyFetchError(err, refresh, lastRefresh)
 }
 
 // formatStage2Message renders the D-10 structured one-line summary of
