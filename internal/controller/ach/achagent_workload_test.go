@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
@@ -13,15 +14,16 @@ import (
 func mkEnv(name, val string) []corev1.EnvVar { return []corev1.EnvVar{{Name: name, Value: val}} }
 
 func TestComputeConfigHash_ChangesWithInputs(t *testing.T) {
-	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), "img:1", "sec1")
+	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec1")
 	if len(base) != 16 {
 		t.Fatalf("hash len = %d", len(base))
 	}
 	for name, h := range map[string]string{
-		"config": computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), "img:1", "sec1"),
-		"env":    computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), "img:1", "sec1"),
-		"image":  computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), "img:2", "sec1"),
-		"secret": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), "img:1", "sec2"),
+		"config":      computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), nil, "img:1", "sec1"),
+		"env":         computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), nil, "img:1", "sec1"),
+		"podTemplate": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), []byte(`{"spec":{}}`), "img:1", "sec1"),
+		"image":       computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:2", "sec1"),
+		"secret":      computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec2"),
 	} {
 		if h == base {
 			t.Errorf("%s change did not alter hash", name)
@@ -86,7 +88,10 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	p.Spec.Ach.BaseURL = "https://ach"
 
 	env := buildAgentEnv(a, p)
-	dep := buildDeployment(a, p, "cfghash", env)
+	dep, err := buildDeployment(a, p, "cfghash", env)
+	if err != nil {
+		t.Fatalf("buildDeployment: %v", err)
+	}
 
 	if *dep.Spec.Replicas != 1 {
 		t.Errorf("replicas = %d", *dep.Spec.Replicas)
@@ -158,7 +163,10 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 
 	// And it must NOT be mounted as a file, nor pull in fsGroup (uid/perms reverted).
-	dep := buildDeployment(a, p, "h", buildAgentEnv(a, p))
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p))
+	if err != nil {
+		t.Fatalf("buildDeployment: %v", err)
+	}
 	for _, v := range dep.Spec.Template.Spec.Volumes {
 		if v.Secret != nil {
 			t.Errorf("secret volume present; auth secrets are env-injected now: %+v", v)
@@ -166,5 +174,69 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup != nil {
 		t.Errorf("fsGroup should be unset (uid/perms reverted); securityContext=%+v", sc)
+	}
+}
+
+func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Image = "img:1"
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
+		"metadata": {"labels": {"ach.ackstorm.ai/agent": "hijack", "team": "x"}},
+		"spec": {
+			"securityContext": {"fsGroup": 1000, "fsGroupChangePolicy": "OnRootMismatch"},
+			"containers": [{"name": "agent", "envFrom": [{"secretRef": {"name": "extra"}}]}]
+		}
+	}`)}
+
+	dep, err := buildDeployment(a, p, "hash1", mkEnv("A", "1"))
+	if err != nil {
+		t.Fatalf("buildDeployment: %v", err)
+	}
+	tmpl := dep.Spec.Template
+	sc := tmpl.Spec.SecurityContext
+	if sc == nil || sc.FSGroup == nil || *sc.FSGroup != 1000 {
+		t.Error("fsGroup 1000 not merged into pod securityContext")
+	}
+	if sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("operator runAsNonRoot lost in securityContext map merge")
+	}
+	if len(tmpl.Spec.Containers) != 1 || tmpl.Spec.Containers[0].Name != agentContainerName {
+		t.Fatalf("containers = %+v, want single %q merged by name", tmpl.Spec.Containers, agentContainerName)
+	}
+	c := tmpl.Spec.Containers[0]
+	if len(c.EnvFrom) != 1 || c.EnvFrom[0].SecretRef == nil || c.EnvFrom[0].SecretRef.Name != "extra" {
+		t.Error("envFrom overlay not merged into agent container")
+	}
+	if len(c.Env) == 0 || len(c.VolumeMounts) == 0 || c.LivenessProbe == nil {
+		t.Error("operator env/mounts/probes lost in container merge")
+	}
+	if tmpl.Labels[agentLabelKey] != "demo" {
+		t.Errorf("selector label = %q, want re-pinned %q (immutable Deployment selector)", tmpl.Labels[agentLabelKey], "demo")
+	}
+	if tmpl.Labels["team"] != "x" {
+		t.Error("user label dropped")
+	}
+	if tmpl.Annotations[configHashAnnotation] != "hash1" {
+		t.Error("config-hash annotation not re-pinned after merge")
+	}
+}
+
+func TestBuildDeployment_PodTemplateOverlayInvalid(t *testing.T) {
+	for name, raw := range map[string]string{
+		"malformed-json": `{"spec":`,
+		"type-mismatch":  `{"spec": {"containers": {"not": "a-list"}}}`,
+	} {
+		a := &achv1alpha1.ACHAgent{}
+		a.Name = "demo"
+		a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+		p := &achv1alpha1.AgentProfile{}
+		p.Spec.Image = "img"
+		p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(raw)}
+		if _, err := buildDeployment(a, p, "h", nil); err == nil {
+			t.Errorf("%s: invalid podTemplate overlay must error", name)
+		}
 	}
 }

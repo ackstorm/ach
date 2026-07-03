@@ -137,7 +137,11 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("hash secrets: %w", err)
 	}
-	configHash := computeConfigHash(configJSON, envJSON, profile.Spec.Image, secretHash)
+	var podTemplateJSON []byte
+	if profile.Spec.PodTemplate != nil {
+		podTemplateJSON = profile.Spec.PodTemplate.Raw
+	}
+	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, profile.Spec.Image, secretHash)
 
 	// 6. Apply children.
 	if err := r.apply(ctx, &agent, buildConfigMap(&agent, configJSON)); err != nil {
@@ -151,7 +155,12 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.applyFail(ctx, &agent, conds, "PVC", err)
 		}
 	}
-	if err := r.apply(ctx, &agent, buildDeployment(&agent, &profile, configHash, env)); err != nil {
+	dep, err := buildDeployment(&agent, &profile, configHash, env)
+	if err != nil {
+		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "PodTemplateInvalid", err.Error(), agent.Generation)
+		return r.finish(ctx, &agent, conds)
+	}
+	if err := r.apply(ctx, &agent, dep); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Deployment", err)
 	}
 	if needsService(&agent) {

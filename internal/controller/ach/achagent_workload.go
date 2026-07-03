@@ -5,6 +5,8 @@ package ach
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -12,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -60,10 +63,11 @@ func resolveHealthPort(p *achv1alpha1.AgentProfile) int32 {
 
 // computeConfigHash digests every pod-template input so any change rolls the pod. secretHash is
 // a salted HMAC of secret .Data computed by the reconciler (never plaintext here).
-func computeConfigHash(configJSON, envJSON []byte, image, secretHash string) string {
+func computeConfigHash(configJSON, envJSON, podTemplateJSON []byte, image, secretHash string) string {
 	h := sha256.New()
 	h.Write(configJSON)
 	h.Write(envJSON)
+	h.Write(podTemplateJSON)
 	h.Write([]byte(image))
 	h.Write([]byte(secretHash))
 	return hex.EncodeToString(h.Sum(nil))[:16]
@@ -158,7 +162,7 @@ func needsService(a *achv1alpha1.ACHAgent) bool {
 // buildDeployment builds the single-replica agent Deployment. env is built once by the caller
 // (buildAgentEnv) so what's hashed equals what's deployed. Inbound channel-auth secrets ride in
 // env (secretKeyRef), never as mounted files.
-func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar) *appsv1.Deployment {
+func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar) (*appsv1.Deployment, error) {
 	one := int32(1)
 	falseVal, trueVal := false, true
 
@@ -197,7 +201,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		startupFail = int32(*p.Spec.Engine.StartupTimeoutSeconds/5) + 1
 	}
 
-	return &appsv1.Deployment{
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &one,
@@ -239,6 +243,47 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 			},
 		},
 	}
+
+	if p.Spec.PodTemplate != nil && len(p.Spec.PodTemplate.Raw) > 0 {
+		tmpl, err := applyPodTemplateOverlay(dep.Spec.Template, p.Spec.PodTemplate.Raw, a.Name, configHash)
+		if err != nil {
+			return nil, err
+		}
+		dep.Spec.Template = tmpl
+	}
+	return dep, nil
+}
+
+// applyPodTemplateOverlay strategic-merges the profile's raw podTemplate over the operator-built
+// pod template. Pass-through by design (ponytail: no field guardrails — the profile author already
+// controls spec.image; a broken overlay is PodTemplateInvalid or a failing rollout, both the
+// author's problem). Only operator bookkeeping is re-pinned post-merge: the selector label
+// (Deployment selector is immutable) and the config-hash annotation (rolls + WorkloadReady
+// staleness detection).
+func applyPodTemplateOverlay(base corev1.PodTemplateSpec, overlay []byte, agentName, configHash string) (corev1.PodTemplateSpec, error) {
+	baseJSON, err := json.Marshal(base)
+	if err != nil {
+		return base, fmt.Errorf("marshal pod template: %w", err)
+	}
+	mergedJSON, err := strategicpatch.StrategicMergePatch(baseJSON, overlay, corev1.PodTemplateSpec{})
+	if err != nil {
+		return base, fmt.Errorf("podTemplate overlay: %w", err)
+	}
+	var merged corev1.PodTemplateSpec
+	if err := json.Unmarshal(mergedJSON, &merged); err != nil {
+		return base, fmt.Errorf("podTemplate overlay result: %w", err)
+	}
+	if merged.Labels == nil {
+		merged.Labels = map[string]string{}
+	}
+	for k, v := range agentSelectorLabels(agentName) {
+		merged.Labels[k] = v
+	}
+	if merged.Annotations == nil {
+		merged.Annotations = map[string]string{}
+	}
+	merged.Annotations[configHashAnnotation] = configHash
+	return merged, nil
 }
 
 func mergeMaps(a, b map[string]string) map[string]string {
