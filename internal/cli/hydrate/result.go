@@ -276,26 +276,11 @@ type AdapterDispatcher interface {
 	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins, includeRuntime bool) (RenderResult, error)
 }
 
-// DriftOutcome is the typed-int enum returned by Differ.Compare for the
+// DriftOutcome is the typed-int enum returned by compareDrift for the
 // STATE-04 §8.4 four-outcome truth table. The concrete constants and
-// the helper functions (ShouldExit2 / WrapDriftError) live in drift.go;
-// the type itself is declared here so the Differ interface compiles
-// without depending on drift.go's load order.
+// the helper functions (ShouldExit2 / WrapDriftError / compareDrift) live
+// in drift.go.
 type DriftOutcome int
-
-// Differ computes the STATE-04 four-outcome truth table (§8.4) for a
-// single state entry vs the fresh on-disk and freshly-staged source
-// hashes. The W1 concrete impl lives in drift.go (drift.NewDiffer).
-//
-// TODO 07-W1-06 Task 3 supplies the concrete Differ here (drift.go).
-type Differ interface {
-	// Compare classifies a single FileEntry against the fresh hash
-	// values per §8.4. Returns one of the four DriftOutcome values
-	// (NoOp / UpstreamOnlyOverwrite / LocalEditPreserve /
-	// ConflictPreserve). When stateEntry == nil (fresh extract — no
-	// prior state to compare against), returns NoOp.
-	Compare(stateEntry *state.FileEntry, onDiskHash, freshSourceHash string) DriftOutcome
-}
 
 // StateStore is the data-layer seam wrapping the internal/cli/state
 // package's File-level operations. Unit tests inject a fake to drive

@@ -26,8 +26,6 @@ const (
 // matrix covers all four arms PLUS the nil-entry edge case (fresh-
 // extract path where there's nothing to compare against).
 func TestDrift_TruthTable(t *testing.T) {
-	d := NewDiffer()
-
 	cases := []struct {
 		name            string
 		stateHash       string
@@ -77,7 +75,7 @@ func TestDrift_TruthTable(t *testing.T) {
 				Hash:       tc.stateHash,
 				SourceHash: tc.stateSourceHash,
 			}
-			got := d.Compare(entry, tc.onDiskHash, tc.freshSourceHash)
+			got := compareDrift(entry, tc.onDiskHash, tc.freshSourceHash)
 			if got != tc.want {
 				t.Errorf("Compare(%s) = %d, want %d", tc.name, got, tc.want)
 			}
@@ -90,8 +88,7 @@ func TestDrift_TruthTable(t *testing.T) {
 // against, so the engine should treat the situation as NoOp and
 // overwrite freely.
 func TestDrift_NilEntry_ReturnsNoOp(t *testing.T) {
-	d := NewDiffer()
-	got := d.Compare(nil, hA, hB)
+	got := compareDrift(nil, hA, hB)
 	if got != NoOp {
 		t.Errorf("Compare(nil, ...) = %d, want NoOp (%d)", got, NoOp)
 	}
@@ -200,16 +197,5 @@ func TestOutcomeString_RendersAllFour(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("outcomeString(%d) = %q, want %q", tc.outcome, got, tc.want)
 		}
-	}
-}
-
-// TestNewDiffer_ImplementsDifferInterface — compile-time + run-time
-// gate that the returned value satisfies the Differ interface. The
-// type assertion would fail to compile if NewDiffer's return type
-// drifted; the runtime Compare call exercises the dispatch.
-func TestNewDiffer_ImplementsDifferInterface(t *testing.T) {
-	var d Differ = NewDiffer()
-	if got := d.Compare(nil, hA, hB); got != NoOp {
-		t.Errorf("Differ.Compare(nil) = %d, want NoOp", got)
 	}
 }
