@@ -143,6 +143,16 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, profile.Spec.Image, secretHash)
 
+	// buildDeployment currently fails only on the podTemplate overlay, so mapping every error to
+	// reason PodTemplateInvalid is correct today — revisit if the builder gains other error paths.
+	// Built (and validated) before any child is applied, so a bad overlay leaves nothing applied
+	// this pass — no ConfigMap/ServiceAccount/PVC mutation while the Deployment stays untouched.
+	dep, err := buildDeployment(&agent, &profile, configHash, env)
+	if err != nil {
+		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "PodTemplateInvalid", err.Error(), agent.Generation)
+		return r.finish(ctx, &agent, conds)
+	}
+
 	// 6. Apply children.
 	if err := r.apply(ctx, &agent, buildConfigMap(&agent, configJSON)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "ConfigMap", err)
@@ -154,11 +164,6 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.applyPVC(ctx, &agent, &profile); err != nil {
 			return r.applyFail(ctx, &agent, conds, "PVC", err)
 		}
-	}
-	dep, err := buildDeployment(&agent, &profile, configHash, env)
-	if err != nil {
-		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "PodTemplateInvalid", err.Error(), agent.Generation)
-		return r.finish(ctx, &agent, conds)
 	}
 	if err := r.apply(ctx, &agent, dep); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Deployment", err)

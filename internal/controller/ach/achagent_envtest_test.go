@@ -226,4 +226,12 @@ func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 	})
 	waitAgentCond(t, ctx, "aa-ptbad", condWorkloadApplied, metav1.ConditionFalse)
 	waitAgentCond(t, ctx, "aa-ptbad", condReady, metav1.ConditionFalse)
+
+	var a achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-ptbad"}, &a); err != nil {
+		t.Fatalf("get achagent: %v", err)
+	}
+	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != "PodTemplateInvalid" {
+		t.Fatalf("WorkloadApplied reason = %v, want PodTemplateInvalid", c)
+	}
 }
