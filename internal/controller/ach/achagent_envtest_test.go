@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -162,4 +164,66 @@ func TestACHAgent_SessionCustomRequiresKey(t *testing.T) {
 	if err := k8sClient.Create(ctx, base("aa-sess-ok", &achv1alpha1.SessionSpec{Type: "custom", Key: &key})); err != nil {
 		t.Fatalf("custom+key must be accepted: %v", err)
 	}
+}
+
+func TestACHAgent_PodTemplateOverlay_MergesIntoDeployment(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-pt", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-pt", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Image:       "img:test",
+			Ach:         achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model:       &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"securityContext":{"fsGroup":1000,"fsGroupChangePolicy":"OnRootMismatch"}}}`)},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-pt", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-pt"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-pt", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-pt", condWorkloadApplied, metav1.ConditionTrue)
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-pt")}, &dep); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	sc := dep.Spec.Template.Spec.SecurityContext
+	if sc == nil || sc.FSGroup == nil || *sc.FSGroup != 1000 {
+		t.Fatalf("pod securityContext = %+v, want fsGroup 1000 merged", sc)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("operator runAsNonRoot lost after overlay round-trip")
+	}
+}
+
+func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-ptbad", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-ptbad", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Image: "img:test",
+			Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			// valid JSON (the API server accepts it) but a strategic-merge type mismatch
+			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"containers":{"not":"a-list"}}}`)},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-ptbad", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-ptbad"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-ptbad", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-ptbad", condWorkloadApplied, metav1.ConditionFalse)
+	waitAgentCond(t, ctx, "aa-ptbad", condReady, metav1.ConditionFalse)
 }

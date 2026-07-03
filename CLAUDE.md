@@ -129,7 +129,9 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
 `config.json` ConfigMap + a single-replica Deployment (probes, inbound
 channel-auth secrets injected as `ACH_SECRET_*` env vars via `secretKeyRef` —
 never file-mounted, since a same-uid agent could read mounted files — salted
-config-hash roll) — the harness **self-hydrates**
+config-hash roll; optional profile spec.podTemplate raw overlay
+strategic-merged over the pod template — pass-through, selector label +
+config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
 probe-backed `pod.status` only.
 
