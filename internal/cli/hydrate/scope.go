@@ -2,7 +2,11 @@
 
 package hydrate
 
-import "github.com/ackstorm/ach/internal/cli/state"
+import (
+	"slices"
+
+	"github.com/ackstorm/ach/internal/cli/state"
+)
 
 // BuildScopedEmpty constructs the "new" state.File that the uninstall
 // command (D-25/D-26) feeds to Sync as its set-difference target.
@@ -56,30 +60,18 @@ func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state
 	removeRuntime := onlyRuntime || includeRuntime
 
 	if includeContext {
-		out.Prompts = copyEntries(prev.Prompts)
-		out.Plugins = copyEntries(prev.Plugins)
-		out.Artifacts = copyEntries(prev.Artifacts)
-		out.Skills = copyEntries(prev.Skills)
+		out.Prompts = slices.Clone(prev.Prompts)
+		out.Plugins = slices.Clone(prev.Plugins)
+		out.Artifacts = slices.Clone(prev.Artifacts)
+		out.Skills = slices.Clone(prev.Skills)
 	}
 	if !removeRuntime {
-		out.RuntimeFiles = copyEntries(prev.RuntimeFiles)
+		out.RuntimeFiles = slices.Clone(prev.RuntimeFiles)
 		out.Adapter = state.AdapterSection{
 			ID:    prev.Adapter.ID,
-			Files: copyEntries(prev.Adapter.Files),
+			Files: slices.Clone(prev.Adapter.Files),
 		}
 	}
 
-	return out
-}
-
-// copyEntries returns a shallow copy of the FileEntry slice so the
-// returned File never aliases prev's backing arrays. A nil input yields
-// nil (omitempty round-trips to an absent JSON key).
-func copyEntries(in []state.FileEntry) []state.FileEntry {
-	if in == nil {
-		return nil
-	}
-	out := make([]state.FileEntry, len(in))
-	copy(out, in)
 	return out
 }
