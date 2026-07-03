@@ -40,6 +40,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 
@@ -219,7 +220,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	// ─── metrics: process-local Registry + ContentServiceCollectors +
 	//     shared litellm_unreachable_total (caller="content_service" Inc
 	//     happens inside enforceTeams in internal/contentservice/authz.go).
-	reg := metrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	registerRuntimeCollectors(reg)
 	csCollectors := metrics.NewContentServiceCollectors(reg)
 	csCollectors.PreInitZeroSeries()

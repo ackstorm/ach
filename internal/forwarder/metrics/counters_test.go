@@ -133,7 +133,7 @@ func TestIncJWTSigned_NilCollectors_NoPanic(t *testing.T) {
 // than reaching into the typed collector's unexported CounterVecs.
 func TestIncRequests_AfterInit_Forwards(t *testing.T) {
 	resetCollectors(t)
-	reg := coremetrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := coremetrics.NewForwarderCollectors(reg)
 	lu := coremetrics.MustRegisterLitellmUnreachable(reg)
 	InitCollectors(c, lu)
@@ -155,7 +155,7 @@ func TestIncRequests_AfterInit_Forwards(t *testing.T) {
 // cross-component dashboard depends on this being correct.
 func TestIncLiteLLMUnreachable_AfterInit_LabelsForwarder(t *testing.T) {
 	resetCollectors(t)
-	reg := coremetrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := coremetrics.NewForwarderCollectors(reg)
 	lu := coremetrics.MustRegisterLitellmUnreachable(reg)
 	InitCollectors(c, lu)
@@ -180,7 +180,7 @@ func TestIncLiteLLMUnreachable_AfterInit_LabelsForwarder(t *testing.T) {
 // reason value. Each label set increments once → 4 distinct series.
 func TestIncJWTSuppressed_AllReasons(t *testing.T) {
 	resetCollectors(t)
-	reg := coremetrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := coremetrics.NewForwarderCollectors(reg)
 	lu := coremetrics.MustRegisterLitellmUnreachable(reg)
 	InitCollectors(c, lu)
@@ -207,13 +207,13 @@ func TestIncJWTSuppressed_AllReasons(t *testing.T) {
 func TestInit_ResetSemantics(t *testing.T) {
 	resetCollectors(t)
 
-	reg1 := coremetrics.NewRegistry()
+	reg1 := prometheus.NewRegistry()
 	c1 := coremetrics.NewForwarderCollectors(reg1)
 	lu1 := coremetrics.MustRegisterLitellmUnreachable(reg1)
 	InitCollectors(c1, lu1)
 	IncRequests("/v1", "pk", "forwarded")
 
-	reg2 := coremetrics.NewRegistry()
+	reg2 := prometheus.NewRegistry()
 	c2 := coremetrics.NewForwarderCollectors(reg2)
 	lu2 := coremetrics.MustRegisterLitellmUnreachable(reg2)
 	InitCollectors(c2, lu2)
@@ -246,7 +246,7 @@ func TestInit_ResetSemantics(t *testing.T) {
 func TestMetricsHandler_RegistersOnChiMux(t *testing.T) {
 	resetCollectors(t)
 
-	reg := coremetrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	c := coremetrics.NewForwarderCollectors(reg)
 	lu := coremetrics.MustRegisterLitellmUnreachable(reg)
 	InitCollectors(c, lu)

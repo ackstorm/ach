@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
@@ -16,7 +18,7 @@ import (
 // missing" 500 path — which lets this test exercise the wiring without a real
 // Postgres-backed store.
 func TestHydrateHandler_ObservesDuration(t *testing.T) {
-	reg := achmetrics.NewRegistry()
+	reg := prometheus.NewRegistry()
 	collectors := achmetrics.NewPlatformAPICollectors(reg)
 
 	h := HydrateHandler(Deps{Metrics: collectors})

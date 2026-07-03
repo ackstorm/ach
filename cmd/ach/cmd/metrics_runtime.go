@@ -12,10 +12,10 @@ import (
 // exposes the go_* / process_* baseline (Hub §18.5 "Go runtime
 // baseline"). The operator wires through controller-runtime's Registry,
 // which already ships these; the forwarder / content-service /
-// platform-api build a bare metrics.NewRegistry() (Phase 5 D-09
+// platform-api build a bare prometheus.NewRegistry() (Phase 5 D-09
 // isolation from the global/controller-runtime registry) and add the
-// baseline here rather than in NewRegistry() — keeping the shared
-// constructor's unit-test callers free of runtime-collector noise.
+// baseline here — keeping unit-test callers of the bare registry free
+// of runtime-collector noise.
 func registerRuntimeCollectors(reg *prometheus.Registry) {
 	reg.MustRegister(
 		collectors.NewGoCollector(),
