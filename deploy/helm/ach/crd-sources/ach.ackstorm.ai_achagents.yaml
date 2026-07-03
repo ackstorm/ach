@@ -24,6 +24,10 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
       type: string
+    - jsonPath: .status.webhookURL
+      name: Webhook
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -511,6 +515,16 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              webhookURL:
+                description: |-
+                  WebhookURL is the inbound URL for this agent's webhook channel(s),
+                  e.g. https://ach.example.com/hook/ach-system/gh. Paste this into the
+                  GitHub/GitLab webhook config, appending /channels/{name}/events for the
+                  specific channel. Set only when the agent has >=1 webhook channel.
+                  The host segment is only populated when the operator has
+                  ACH_PUBLIC_BASE_URL configured; otherwise this is the path-only form
+                  (/hook/{ns}/{name}) for the caller to prefix with their own ingress host.
+                type: string
             type: object
         type: object
         x-kubernetes-validations:

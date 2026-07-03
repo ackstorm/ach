@@ -27,10 +27,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/config"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/gateway"
+	"github.com/ackstorm/ach/internal/gateway/agentstore"
 )
 
 var gatewayCmd = &cobra.Command{
@@ -55,8 +58,28 @@ func runGateway(_ *cobra.Command, _ []string) error {
 	namespace := config.EnvOr("POD_NAMESPACE", "ach-system")
 	bindAddr := config.EnvOr("ACH_GATEWAY_BIND_ADDRESS", ":8080")
 
+	// Optional webhook routing: only when ACH_DB_URL is set. Absent → the
+	// gateway is the classic dumb proxy with no /hook route (back-compat).
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
+	var resolver gateway.UpstreamResolver
+	if dbURL := config.EnvOr("ACH_DB_URL", ""); dbURL != "" {
+		pool, err := db.Open(rootCtx, dbURL)
+		if err != nil {
+			return fmt.Errorf("db.Open: %w", err)
+		}
+		defer pool.Close()
+		store := agentstore.New(pool, logr.FromSlogHandler(logger.Handler()))
+		go func() { _ = store.Run(rootCtx) }()
+		resolver = store // *agentstore.Store satisfies gateway.UpstreamResolver
+		logger.Info("webhook routing enabled", "channel", db.AgentsChannel)
+	} else {
+		logger.Info("webhook routing disabled (ACH_DB_URL unset)")
+	}
+
 	routes := gateway.ServiceRoutes(namespace)
-	handler, err := gateway.Handler(routes, logger)
+	handler, err := gateway.Handler(routes, resolver, logger)
 	if err != nil {
 		return fmt.Errorf("build gateway handler: %w", err)
 	}
@@ -101,6 +124,7 @@ func runGateway(_ *cobra.Command, _ []string) error {
 	select {
 	case <-sig:
 		logger.Info("shutdown signal received, draining")
+		rootCancel() // stop the agentstore refresh loop promptly
 	case err := <-serverErr:
 		if err != nil {
 			return fmt.Errorf("server error: %w", err)

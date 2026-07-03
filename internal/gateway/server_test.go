@@ -24,7 +24,7 @@ func TestHandlerRoutesByPrefix(t *testing.T) {
 		{Prefix: "/platform/", Upstream: platform.URL},
 		{Prefix: "/v1/", Upstream: forwarder.URL},
 	}
-	h, err := Handler(routes, slog.Default())
+	h, err := Handler(routes, nil, slog.Default())
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestHandlerRoutesByPrefix(t *testing.T) {
 }
 
 func TestHandlerRejectsBadUpstream(t *testing.T) {
-	_, err := Handler([]Route{{Prefix: "/x/", Upstream: "://not a url"}}, slog.Default())
+	_, err := Handler([]Route{{Prefix: "/x/", Upstream: "://not a url"}}, nil, slog.Default())
 	if err == nil {
 		t.Fatal("expected error for malformed upstream, got nil")
 	}
