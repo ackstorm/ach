@@ -48,7 +48,7 @@ work happens when you debug it.
 
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
-| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `gen-*`, `build-server`/`build-cli`/`build-cli-host`/`build-e2e`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
+| **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `build-server`/`build-cli`/`build-cli-host`/`build-e2e`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
 | **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full` (orchestrates context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
@@ -57,6 +57,19 @@ work happens when you debug it.
 > NO magic-by-prefix — a target is only wrapped if it asks to be. That
 > keeps `make help` honest and prevents a future host-only target from
 > being auto-wrapped by accident.
+
+> **⚠ The generator targets are NOT auto-wrapped.** `gen-code`,
+> `gen-manifests`, `gen-crd-ref-docs`, `helm-sync`, and `fix-spdx` call
+> `controller-gen`/`crd-ref-docs`/`scripts/*.sh` **directly** (no
+> `container_target`), so those tools must already be on PATH. They run
+> correctly in two situations: (1) as **prerequisites** of a wrapped
+> target — `test-envtest`/`build-server`/etc. list `gen-manifests gen-code`
+> as deps, and the wrapper puts the whole chain inside the container; or
+> (2) invoked **standalone** as `./scripts/dev.sh make gen-code` (the
+> `ACH_IN_DEVTOOLS` guard prevents nesting). A bare `make gen-code` on a
+> Go-less host fails with `controller-gen: not found` — that is the missing
+> wrap, not a broken toolchain. (Contrast: `gen-*` is deliberately kept out
+> of the context-A auto-wrapped list above for exactly this reason.)
 
 ## How auto-routing works (`ACH_IN_DEVTOOLS` + `container_target`)
 

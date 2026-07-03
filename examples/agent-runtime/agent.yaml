@@ -29,6 +29,8 @@ spec:
         gitlabEvents: [merge_request, note]
     - name: daily-security
       type: cron
+      # session is a block since v0.6.3 (was a bare string `session: none`).
+      # type: auto|none|custom; key required iff type=custom; +maxTokens/overflow.
       session:
         type: none
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
