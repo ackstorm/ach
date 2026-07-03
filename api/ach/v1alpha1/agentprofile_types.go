@@ -141,6 +141,16 @@ type AgentProfileSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+	// PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
+	// template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design
+	// (ponytail: no field guardrails — the profile author already controls spec.image, i.e.
+	// everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
+	// (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
+	// extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
+	// re-pins the selector label and the config-hash annotation.
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	PodTemplate *apiextensionsv1.JSON `json:"podTemplate,omitempty"`
 }
 
 // AgentProfileStatus is minimal — profiles are read by ACHAgent; they have no side effects.

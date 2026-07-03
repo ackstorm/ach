@@ -233,6 +233,7 @@ _Appears in:_
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
 
 #### AgentProfileStatus

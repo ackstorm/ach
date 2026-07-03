@@ -362,6 +362,16 @@ spec:
                 x-kubernetes-validations:
                 - message: persistence.size is required when persistence.enabled=true
                   rule: '!self.enabled || (has(self.size) && size(self.size) > 0)'
+              podTemplate:
+                description: |-
+                  PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
+                  template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design
+                  (ponytail: no field guardrails — the profile author already controls spec.image, i.e.
+                  everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
+                  (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
+                  extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
+                  re-pins the selector label and the config-hash annotation.
+                x-kubernetes-preserve-unknown-fields: true
               resources:
                 description: ResourceRequirements describes the compute resource requirements.
                 properties:
