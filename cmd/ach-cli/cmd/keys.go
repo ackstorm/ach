@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -223,7 +224,7 @@ environment name, so in the common case you only need to pass the environment.
 			// server POST. Falls through when the list is empty (offline / no
 			// credentials) so the server can provide its own error.
 			envNames := fetchEnvNamesBestEffort(cmd.Context(), flagProfile, flagAPIKey, flagEnvKey)
-			if len(envNames) > 0 && !contains(envNames, resolvedEnv) {
+			if len(envNames) > 0 && !slices.Contains(envNames, resolvedEnv) {
 				return &exit.CodedError{
 					Code: exit.General,
 					Msg: fmt.Sprintf("environment %q not found.\n  Your environments:\n    %s",
@@ -980,16 +981,6 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 		Code: exit.General,
 		Msg:  fmt.Sprintf("no bearer for profile %q; run `ach login`", name),
 	}
-}
-
-// contains reports whether s is present in slice.
-func contains(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // Defensive: keep context import used even on platforms where the

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -707,16 +708,9 @@ func TestAdminKeys_List_SendsFiltersAndRenders(t *testing.T) {
 }
 
 func TestAdminListKinds_ExcludesOperatorInternalKinds(t *testing.T) {
-	got := map[string]bool{}
-	for _, k := range adminListKinds {
-		got[k] = true
-	}
 	for _, banned := range []string{"litellm-connections", "external-refs"} {
-		if got[banned] {
+		if slices.Contains(adminListKinds, banned) {
 			t.Errorf("adminListKinds must not contain operator-internal kind %q", banned)
-		}
-		if isAdminListKind(banned) {
-			t.Errorf("isAdminListKind(%q) = true; want false (kind removed)", banned)
 		}
 	}
 	want := []string{

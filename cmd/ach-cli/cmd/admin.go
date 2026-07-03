@@ -47,6 +47,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -234,15 +235,6 @@ var adminListKinds = []string{
 	"marketplaces", "skill-marketplaces", "bips",
 }
 
-func isAdminListKind(k string) bool {
-	for _, x := range adminListKinds {
-		if x == k {
-			return true
-		}
-	}
-	return false
-}
-
 // adminEnvItem decodes the subset of GET /platform/environments
 // (store.EnvironmentView) the inventory needs. environments has no
 // /platform/admin route — an allowlisted pk- sees every row via that handler's
@@ -343,7 +335,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	}
 
 	kind = strings.TrimSpace(kind)
-	if kind != statusAll && !isAdminListKind(kind) {
+	if kind != statusAll && !slices.Contains(adminListKinds, kind) {
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf("invalid kind %q; expected one of %s, or 'all'",
