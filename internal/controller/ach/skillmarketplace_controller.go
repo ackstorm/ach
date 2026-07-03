@@ -24,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -524,22 +523,12 @@ func (r *SkillMarketplaceReconciler) projectSkillMarketplace(ctx context.Context
 func (r *SkillMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *achv1alpha1.SkillMarketplace, message string, requeue time.Duration) (ctrl.Result, error) {
 	now := metav1.Now()
 	desiredGen := cr.Generation
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.SkillMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.SkillMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, ReasonSynced, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		fresh.Status.LastSuccessfulRefresh = &now
 		fresh.Status.Skills = cr.Status.Skills
 		fresh.Status.SkillsCount = cr.Status.SkillsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
@@ -555,21 +544,11 @@ func (r *SkillMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ach
 // hot-loop; transient reasons surface originalErr for workqueue backoff.
 func (r *SkillMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *achv1alpha1.SkillMarketplace, reason, message string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
 	desiredGen := cr.Generation
-	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.SkillMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.SkillMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, reason, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		fresh.Status.Skills = cr.Status.Skills
 		fresh.Status.SkillsCount = cr.Status.SkillsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
 	}

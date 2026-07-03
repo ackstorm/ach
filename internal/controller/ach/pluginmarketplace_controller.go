@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -618,37 +617,19 @@ func (r *PluginMarketplaceReconciler) projectMarketplace(ctx context.Context, cr
 func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *achv1alpha1.PluginMarketplace, message string, requeue time.Duration) (ctrl.Result, error) {
 	// Record successful catalog refresh (including 304 NotModified) so the
 	// §10.3 within-interval gate can skip the next reconcile within the
-	// refresh window. Mirrors the Plugin/Prompt/Artifact reconciler
-	// semantics where LastSuccessfulRefresh advances on both fresh
-	// fetches and NotModified shortcuts.
+	// refresh window. LastSuccessfulRefresh advances on both fresh fetches
+	// and NotModified shortcuts.
 	now := metav1.Now()
-	// Issue #18: retry on apiserver 409 conflicts. Without the retry the
-	// suite-level reconciler and the per-test reconciler race on the same
-	// CR's resourceVersion under envtest; the loser sees
-	// "object has been modified" and the corresponding status condition
-	// never lands → TestPMR_Stage1_* envtest flake. Mirror the
-	// retry-on-conflict pattern used by sister project alitellm-operator's
-	// writeStatus helpers.
 	desiredGen := cr.Generation
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.PluginMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	// Issue #18: retryStatusUpdate retries on apiserver 409 conflicts. The
+	// apply closure carries the caller-computed discovery set onto the
+	// fresh copy (issue #53 regression: c28eeff).
+	err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.PluginMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, ReasonSynced, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		fresh.Status.LastSuccessfulRefresh = &now
-		// Carry the caller-computed discovery set onto the fresh copy —
-		// the Reconcile body set these on `cr` and the fresh Get would
-		// otherwise drop them (issue #53 regression introduced by c28eeff).
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
@@ -671,33 +652,14 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 //     (Result{}, originalErr) so controller-runtime's workqueue applies
 //     exponential backoff.
 func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *achv1alpha1.PluginMarketplace, reason, message string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
-	// Issue #18: retry on apiserver 409 conflicts. See markSyncedTrue for
-	// rationale — the suite + per-test reconciler race under envtest, and
-	// without the retry the failure-classification status (UpstreamInvalid,
-	// Unauthorized, Unreachable, …) never lands; drainReconcileUntil then
-	// times out → flake.
 	desiredGen := cr.Generation
-	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh achv1alpha1.PluginMarketplace
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cr), &fresh); err != nil {
-			return err
-		}
+	if err := retryStatusUpdate(ctx, r.Client, cr, func(fresh *achv1alpha1.PluginMarketplace) {
 		applyReconcileConditions(&fresh.Status.Conditions, reason, message, desiredGen)
 		fresh.Status.ObservedGeneration = desiredGen
 		// Carry the caller's discovery set (issue #53 regression: c28eeff).
-		// Failure paths pass through the prior value loaded at the top of
-		// Reconcile.
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
-		if u := r.Status().Update(ctx, &fresh); u != nil {
-			return u
-		}
-		cr.Status = fresh.Status
-		cr.ResourceVersion = fresh.ResourceVersion
-		return nil
 	}); err != nil {
-		// Status update failure is logged by the controller-runtime
-		// recorder via the Reconcile return; surface it directly.
 		return ctrl.Result{}, err
 	}
 	if perr := r.projectMarketplace(ctx, cr, "False", reason); perr != nil {

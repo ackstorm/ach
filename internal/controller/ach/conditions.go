@@ -358,9 +358,8 @@ func sourceReachableMessage(sourceSpec sources.SourceSpec) string {
 //	Operation cannot be fulfilled on …: the object has been modified;
 //	please apply your changes to the latest version and try again
 //
-// All non-pluginmarketplace reconcilers (prompt, plugin, artifact,
-// environment, litellmconnection) call this helper at every site that
-// previously called `r.Status().Update` directly.
+// All reconcilers call this helper at every site that previously called
+// `r.Status().Update` directly.
 func retryStatusUpdate[T any, PT interface {
 	*T
 	client.Object
