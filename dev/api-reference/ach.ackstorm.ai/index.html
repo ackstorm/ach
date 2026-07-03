@@ -1909,6 +1909,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sessionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SessionSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#skill" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2913,6 +2924,17 @@
     <span class="md-ellipsis">
       
         SecretKeyRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sessionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SessionSpec
       
     </span>
   </a>
@@ -4212,10 +4234,10 @@ condition is written.</p>
 <td>Minimum: 1 <br /></td>
 </tr>
 <tr>
-<td><code>session</code> <em>string</em></td>
+<td><code>session</code> <em><a href="#sessionspec">SessionSpec</a></em></td>
 <td></td>
-<td>auto</td>
-<td>Enum: [auto none] <br /></td>
+<td></td>
+<td></td>
 </tr>
 <tr>
 <td><code>prompt</code> <em>string</em></td>
@@ -6357,6 +6379,51 @@ prefix listing (directory scope).</p>
 <td>Key is the data key inside the Secret.</td>
 <td></td>
 <td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="sessionspec">SessionSpec<a class="headerlink" href="#sessionspec" title="Permanent link">&para;</a></h4>
+<p>SessionSpec selects which opencode conversation a channel turn reuses and
+bounds its growth (config: channels[].session). type is the discriminator;
+key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
+block lets the harness apply its own default (type: none). This changes only
+which session a turn reuses — the router lane key (event.session_key) is
+unaffected.</p>
+<p><em>Appears in:</em>
+- <a href="#channelspec">ChannelSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>none: fresh session per event, deleted post-turn. auto: reuse the<br />channel-derived session_key. custom: reuse the session named by key.</td>
+<td>none</td>
+<td>Enum: [auto none custom] <br /></td>
+</tr>
+<tr>
+<td><code>key</code> <em>string</em></td>
+<td>Key is the {{ }} session template (payload.<em> / internal.</em>). REQUIRED iff<br />type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>maxTokens</code> <em>integer</em></td>
+<td>MaxTokens caps growth: once the previous turn's input_tokens exceed it,<br />apply overflow (auto/custom only; ignored for none).</td>
+<td></td>
+<td>Minimum: 1 <br /></td>
+</tr>
+<tr>
+<td><code>overflow</code> <em>string</em></td>
+<td>Overflow: compact summarizes the session in place; rotate starts a fresh<br />session and deletes the old one.</td>
+<td>compact</td>
+<td>Enum: [compact rotate] <br /></td>
 </tr>
 </tbody>
 </table>
