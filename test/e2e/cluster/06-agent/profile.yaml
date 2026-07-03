@@ -1,5 +1,5 @@
 # Minimal AgentProfile — no persistence (no PVC), no health override (harness
-# default 8080). Image need not be pullable in kind: the fixture gates on
+# default 8000). Image need not be pullable in kind: the fixture gates on
 # WorkloadApplied, not pod-Ready (see DEFERRED note).
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: AgentProfile
