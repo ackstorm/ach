@@ -6,76 +6,27 @@ import (
 	"fmt"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/namespace"
 )
 
-// ConflictPolicy selects how a local install resolves a destination clash — a
-// planned write whose target path is already owned by a DIFFERENT installed ref
-// at the same target (tracked in installed.json). It mirrors the governed
-// `env hydrate` --conflict policy (same spellings, same default) so the two
-// install paths behave consistently.
-//
-// Only MergeReplace writes can clash: additive merges (MergeDeep keyed JSON/TOML,
-// MergeComposite marker blocks) combine with the existing content rather than
-// clobber it, so they are never treated as conflicts.
-type ConflictPolicy int
+// ConflictPolicy mirrors the governed `env hydrate` --conflict policy (shared
+// enum: internal/cli/conflict) so the two install paths behave consistently.
+// NOTE the local installer is stateful and sequential: the FIRST-installed
+// resource keeps its natural name; a LATER install that clashes is the one
+// prefixed (we never retroactively rename an already-installed file). Only
+// MergeReplace writes can clash: additive merges combine rather than clobber.
+type ConflictPolicy = conflict.Policy
 
 const (
-	// ConflictNamespace leaf-prefixes the colliding write (<plugin>-<name>) so
-	// both resources survive. Default. NOTE the local installer is stateful and
-	// sequential: the FIRST-installed resource keeps its natural name; a LATER
-	// install that clashes is the one prefixed (we never retroactively rename an
-	// already-installed file).
-	ConflictNamespace ConflictPolicy = iota
-	// ConflictSkip drops the clashing write, keeping the already-installed file.
-	ConflictSkip
-	// ConflictOverwrite lets the new write win (last-wins); the caller surfaces
-	// the clobber via collisionWarn.
-	ConflictOverwrite
-	// ConflictRefuse aborts the install on any clash.
-	ConflictRefuse
+	ConflictNamespace = conflict.Namespace
+	ConflictSkip      = conflict.Skip
+	ConflictOverwrite = conflict.Overwrite
+	ConflictRefuse    = conflict.Refuse
 )
 
-// Flag spellings for each policy (the `--conflict` values).
-const (
-	conflictNamespaceStr = "namespace"
-	conflictSkipStr      = "skip"
-	conflictOverwriteStr = "overwrite"
-	conflictRefuseStr    = "refuse"
-)
-
-// String renders the flag spelling.
-func (p ConflictPolicy) String() string {
-	switch p {
-	case ConflictSkip:
-		return conflictSkipStr
-	case ConflictOverwrite:
-		return conflictOverwriteStr
-	case ConflictRefuse:
-		return conflictRefuseStr
-	case ConflictNamespace:
-		return conflictNamespaceStr
-	default:
-		return conflictNamespaceStr
-	}
-}
-
-// ParseConflictPolicy maps the `--conflict` flag value to a policy
-// (case-insensitive). Empty → ConflictNamespace (the default). Unknown → error.
-func ParseConflictPolicy(s string) (ConflictPolicy, error) {
-	switch lowerASCII(s) {
-	case "", conflictNamespaceStr:
-		return ConflictNamespace, nil
-	case conflictSkipStr:
-		return ConflictSkip, nil
-	case conflictOverwriteStr:
-		return ConflictOverwrite, nil
-	case conflictRefuseStr:
-		return ConflictRefuse, nil
-	default:
-		return ConflictNamespace, fmt.Errorf("invalid --conflict %q; want namespace|skip|overwrite|refuse", s)
-	}
-}
+// ParseConflictPolicy maps the `--conflict` flag value to a policy.
+func ParseConflictPolicy(s string) (ConflictPolicy, error) { return conflict.Parse(s) }
 
 // ConflictAction records one resolved clash for the caller to report.
 type ConflictAction struct {
@@ -118,15 +69,4 @@ func ResolveConflicts(writes []PlannedWrite, owners map[string]string, policy Co
 		}
 	}
 	return out, actions, nil
-}
-
-// lowerASCII lowercases ASCII letters (avoids importing strings in this leaf).
-func lowerASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
 }
