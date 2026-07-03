@@ -13,6 +13,8 @@ package ach
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -381,4 +383,45 @@ func retryStatusUpdate[T any, PT interface {
 		cr.SetResourceVersion(fresh.GetResourceVersion())
 		return nil
 	})
+}
+
+// stageFailure is the per-entry stage-2 failure record aggregated into
+// status.message via formatStageFailures.
+type stageFailure struct {
+	name   string
+	reason string
+}
+
+// formatStageFailures renders the D-10 structured one-line summary of
+// per-entry stage-2 failures:
+//
+//	"stage-2: <N> <noun>(s) failed: <n1>: <r1>, <n2>: <r2>, ... [, +<M> more]"
+//
+// First 5 failures listed verbatim; if more, append ", +<M> more". Returns
+// the empty string on zero failures. Bounded to ~500 chars typical — well
+// under Kubernetes' 4096-char status.message limit (names are pre-validated
+// DNS-1123 subdomains; reasons are the §12.4 enum, so no adversarial-name
+// content — T-02-06-08 mitigation).
+func formatStageFailures(failures []stageFailure, noun string) string {
+	if len(failures) == 0 {
+		return ""
+	}
+	const verbatim = 5
+	var b strings.Builder
+	fmt.Fprintf(&b, "stage-2: %d %s(s) failed: ", len(failures), noun)
+	n := len(failures)
+	shown := n
+	if shown > verbatim {
+		shown = verbatim
+	}
+	for i := 0; i < shown; i++ {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s: %s", failures[i].name, failures[i].reason)
+	}
+	if n > verbatim {
+		fmt.Fprintf(&b, ", +%d more", n-verbatim)
+	}
+	return b.String()
 }

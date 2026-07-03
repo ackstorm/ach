@@ -222,7 +222,7 @@ func (r *SkillMarketplaceReconciler) reconcileRefresh(ctx context.Context, cr *a
 	}
 
 	// ─── Status + RequeueAfter. ───
-	msg := formatSkillStage2Message(failures)
+	msg := formatStageFailures(failures, "skill")
 	if msg != "" {
 		logger.Info("stage-2 partial failures", "summary", msg)
 	}
@@ -318,14 +318,14 @@ func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1a
 
 // materializeDiscovered runs Stage-2 over every discovered skill, returning the
 // successful refs (for status) and per-skill failures (for status.message).
-func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []contentkit.DiscoveredSkill, raw []byte, archiveRoot, subPath, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []skillFailure) {
-	var failures []skillFailure
+func (r *SkillMarketplaceReconciler) materializeDiscovered(ctx context.Context, cr *achv1alpha1.SkillMarketplace, discovered []contentkit.DiscoveredSkill, raw []byte, archiveRoot, subPath, rev string) ([]achv1alpha1.SkillMarketplaceSkillRef, []stageFailure) {
+	var failures []stageFailure
 	successful := make([]achv1alpha1.SkillMarketplaceSkillRef, 0, len(discovered))
 	for i := range discovered {
 		d := discovered[i]
 		if err := r.materializeMarketplaceSkill(ctx, cr, d, raw, archiveRoot, subPath, rev); err != nil {
 			reason, _ := classifyFetchError(err, cr.Spec.Refresh, time.Time{})
-			failures = append(failures, skillFailure{name: d.Name, reason: reason})
+			failures = append(failures, stageFailure{name: d.Name, reason: reason})
 			continue
 		}
 		successful = append(successful, achv1alpha1.SkillMarketplaceSkillRef{Name: d.Name, UpstreamRev: rev})
@@ -492,38 +492,6 @@ func defaultSkillsRoot(p string) string {
 		return "skills"
 	}
 	return p
-}
-
-// skillFailure is the per-skill failure record aggregated into status.message.
-type skillFailure struct {
-	name   string
-	reason string
-}
-
-// formatSkillStage2Message renders the one-line summary of per-skill failures
-// (first 5 verbatim, then "+M more"). Empty string on zero failures.
-func formatSkillStage2Message(failures []skillFailure) string {
-	if len(failures) == 0 {
-		return ""
-	}
-	const verbatim = 5
-	var b strings.Builder
-	fmt.Fprintf(&b, "stage-2: %d skill(s) failed: ", len(failures))
-	n := len(failures)
-	maxN := n
-	if maxN > verbatim {
-		maxN = verbatim
-	}
-	for i := 0; i < maxN; i++ {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%s: %s", failures[i].name, failures[i].reason)
-	}
-	if n > verbatim {
-		fmt.Fprintf(&b, ", +%d more", n-verbatim)
-	}
-	return b.String()
 }
 
 // buildSkillMarketplaceRow assembles the skill_marketplaces projection row from

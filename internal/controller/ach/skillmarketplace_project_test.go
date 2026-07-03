@@ -29,17 +29,23 @@ func TestBuildSkillMarketplaceRow_MapsStatusToRow(t *testing.T) {
 	}
 }
 
-func TestFormatSkillStage2Message(t *testing.T) {
-	if got := formatSkillStage2Message(nil); got != "" {
+func TestFormatStageFailures(t *testing.T) {
+	if got := formatStageFailures(nil, "skill"); got != "" {
 		t.Errorf("empty failures = %q, want empty", got)
 	}
-	one := formatSkillStage2Message([]skillFailure{{name: "pdf", reason: "UpstreamInvalid"}})
+	one := formatStageFailures([]stageFailure{{name: "pdf", reason: "UpstreamInvalid"}}, "skill")
 	if one != "stage-2: 1 skill(s) failed: pdf: UpstreamInvalid" {
 		t.Errorf("one failure = %q", one)
 	}
-	many := formatSkillStage2Message([]skillFailure{
+	five := formatStageFailures([]stageFailure{
+		{"a", "X"}, {"b", "X"}, {"c", "X"}, {"d", "X"}, {"e", "X"},
+	}, "plugin")
+	if want := "stage-2: 5 plugin(s) failed: a: X, b: X, c: X, d: X, e: X"; five != want {
+		t.Errorf("exactly-5 failures = %q, want %q (no +N more suffix)", five, want)
+	}
+	many := formatStageFailures([]stageFailure{
 		{"a", "X"}, {"b", "X"}, {"c", "X"}, {"d", "X"}, {"e", "X"}, {"f", "X"}, {"g", "X"},
-	})
+	}, "skill")
 	if want := "stage-2: 7 skill(s) failed: a: X, b: X, c: X, d: X, e: X, +2 more"; many != want {
 		t.Errorf("many failures = %q, want %q", many, want)
 	}

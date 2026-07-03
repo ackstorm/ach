@@ -316,7 +316,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// ─── Stage 2: serial per-plugin materialization (D-09). ───
 
-	var failures []pluginFailure
+	var failures []stageFailure
 	// successful collects the per-entry (name, upstreamRev) pairs that
 	// passed Stage-2 — feeds status.plugins[] so operators can `kubectl
 	// get pluginmarketplace -o yaml` to see exactly what materialized.
@@ -331,12 +331,12 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	deduped := make([]contentkit.ClaudeCodeMarketplacePlugin, 0, len(filtered))
 	for _, entry := range filtered {
 		if strings.TrimSpace(entry.Name) == "" {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonUpstreamInvalid})
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(entry.Name))
 		if _, dup := seen[key]; dup {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonDuplicateName})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonDuplicateName})
 			continue
 		}
 		seen[key] = struct{}{}
@@ -348,7 +348,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// an old npm-shaped entry). Short-circuit before the fetcher so
 		// no live git remote is touched.
 		if entry.Source.Kind == "" {
-			failures = append(failures, pluginFailure{name: entry.Name, reason: ReasonUnsupportedPluginSource})
+			failures = append(failures, stageFailure{name: entry.Name, reason: ReasonUnsupportedPluginSource})
 			continue
 		}
 		// Per-plugin auth Secret: marketplace plugin entries do NOT carry
@@ -361,7 +361,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			// errUnsupportedPluginSource is intercepted in the Reconcile
 			// body before dispatch; classifyFetchError handles the rest.
 			reason, _ := classifyFetchError(perr, spec.Refresh, time.Time{})
-			failures = append(failures, pluginFailure{name: entry.Name, reason: reason})
+			failures = append(failures, stageFailure{name: entry.Name, reason: reason})
 			continue
 		}
 		successful = append(successful, achv1alpha1.MarketplacePluginRef{
@@ -416,7 +416,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// ─── Status + RequeueAfter. ───
 
 	// Format the partial-failure message regardless of overall outcome.
-	msg := formatStage2Message(failures)
+	msg := formatStageFailures(failures, "plugin")
 	if msg != "" {
 		logger.Info("stage-2 partial failures", "summary", msg)
 	}
@@ -579,53 +579,6 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 		}
 	}
 	return upstreamRev, nil
-}
-
-// formatStage2Message renders the D-10 structured one-line summary of
-// per-plugin failures:
-//
-//	"stage-2: <N> plugin(s) failed: <n1>: <r1>, <n2>: <r2>, ... [, +<M> more]"
-//
-// First 5 failures listed verbatim; if more, append ", +<M> more". Returns
-// the empty string on zero failures.
-//
-// Bounded to ~500 chars typical (5 entries × ~80 chars + suffix) — well
-// under Kubernetes' 4096-char status.message limit. Plugin names are
-// pre-validated as DNS-1123 subdomains (~63 chars max) by
-// contentkit.ParseClaudeCodeMarketplace; reason strings are bounded by the §12.4
-// enum (max ~24 chars). T-02-06-08 mitigation: no adversarial-name
-// content in the message because contentkit.ParseClaudeCodeMarketplace rejected
-// path-traversal names.
-func formatStage2Message(failures []pluginFailure) string {
-	if len(failures) == 0 {
-		return ""
-	}
-	const verbatim = 5
-	var b strings.Builder
-	fmt.Fprintf(&b, "stage-2: %d plugin(s) failed: ", len(failures))
-	n := len(failures)
-	max := n
-	if max > verbatim {
-		max = verbatim
-	}
-	for i := 0; i < max; i++ {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%s: %s", failures[i].name, failures[i].reason)
-	}
-	if n > verbatim {
-		fmt.Fprintf(&b, ", +%d more", n-verbatim)
-	}
-	return b.String()
-}
-
-// pluginFailure is the per-plugin failure record aggregated into the
-// status.message via formatStage2Message. Declared at package level so
-// formatStage2Message can be tested independently of Reconcile.
-type pluginFailure struct {
-	name   string
-	reason string
 }
 
 // buildMarketplaceRow assembles the marketplaces projection row from the CR's
