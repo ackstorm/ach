@@ -76,7 +76,11 @@ type ACHAgentReconciler struct {
 
 	// PublicBaseURL is the externally reachable gateway origin (e.g.
 	// https://ach.example.com), used to render status.webhookURL as a full
-	// URL. Empty => status.webhookURL is the path-only form.
+	// URL. Empty => status.webhookURL is the path-only form. Caller resolves
+	// this from ACH_PUBLIC_BASE_URL, falling back to ACH_BASE_URL (same
+	// origin in the common single-ingress deployment; ACH_PUBLIC_BASE_URL
+	// stays available to override for a split-origin setup where the public
+	// webhook ingress differs from platform-api's own origin).
 	PublicBaseURL string
 }
 
@@ -454,10 +458,12 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 }
 
 // agentWebhookURL returns the inbound webhook URL for an agent, or "" when
-// the agent has no webhook channel. baseURL (from PublicBaseURL) is optional:
-// when set, the result is a full URL; when empty, the result is the
-// path-only form the caller prefixes with their own ingress host. Pure (no
-// I/O) so it is unit-tested directly.
+// the agent has no webhook channel. The path carries the agent's Service
+// name (agentResourceName), not the CR name — the gateway forwards
+// /agents/{ns}/{service}/… to that Service verbatim. baseURL (from
+// PublicBaseURL) is optional: when set, the result is a full URL; when
+// empty, the result is the path-only form the caller prefixes with their
+// own ingress host. Pure (no I/O) so it is unit-tested directly.
 func agentWebhookURL(a *achv1alpha1.ACHAgent, baseURL string) string {
 	hasWebhook := false
 	for _, ch := range a.Spec.Channels {
@@ -469,7 +475,7 @@ func agentWebhookURL(a *achv1alpha1.ACHAgent, baseURL string) string {
 	if !hasWebhook {
 		return ""
 	}
-	path := fmt.Sprintf("/hook/%s/%s", a.Namespace, a.Name)
+	path := fmt.Sprintf("/agents/%s/%s", a.Namespace, agentResourceName(a.Name))
 	if baseURL == "" {
 		return path
 	}

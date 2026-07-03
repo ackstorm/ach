@@ -69,13 +69,13 @@ func TestAgentWebhookURL(t *testing.T) {
 		Spec:       achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{{Name: "n", Type: "cron"}}},
 	}
 
-	if got := agentWebhookURL(withWebhook, ""); got != "/hook/ach-system/gh" {
-		t.Fatalf("path-only = %q, want /hook/ach-system/gh", got)
+	if got := agentWebhookURL(withWebhook, ""); got != "/agents/ach-system/achagent-gh" {
+		t.Fatalf("path-only = %q, want /agents/ach-system/achagent-gh", got)
 	}
-	if got := agentWebhookURL(withWebhook, "https://ach.example.com"); got != "https://ach.example.com/hook/ach-system/gh" {
-		t.Fatalf("full URL = %q, want https://ach.example.com/hook/ach-system/gh", got)
+	if got := agentWebhookURL(withWebhook, "https://ach.example.com"); got != "https://ach.example.com/agents/ach-system/achagent-gh" {
+		t.Fatalf("full URL = %q, want https://ach.example.com/agents/ach-system/achagent-gh", got)
 	}
-	if got := agentWebhookURL(withWebhook, "https://ach.example.com/"); got != "https://ach.example.com/hook/ach-system/gh" {
+	if got := agentWebhookURL(withWebhook, "https://ach.example.com/"); got != "https://ach.example.com/agents/ach-system/achagent-gh" {
 		t.Fatalf("trailing-slash baseURL not trimmed: %q", got)
 	}
 	if got := agentWebhookURL(cronOnly, "https://ach.example.com"); got != "" {

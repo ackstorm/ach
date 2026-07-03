@@ -98,7 +98,12 @@ operator:
   # ACH_PUBLIC_BASE_URL (also top-level `extraEnv`, operator-only): the
   # externally reachable gateway origin (e.g. https://ach.example.com). When
   # set, the operator renders ACHAgent status.webhookURL as a full URL;
-  # unset => status.webhookURL is the path-only form (/hook/{ns}/{name}).
+  # unset => status.webhookURL is the path-only form
+  # (/agents/{ns}/achagent-{name}).
+  # Falls back to ACH_BASE_URL when unset — the common single-ingress
+  # deployment needs only ACH_BASE_URL in extraEnv; set ACH_PUBLIC_BASE_URL
+  # separately only when the public webhook ingress differs from
+  # platform-api's own origin.
 
 # platformApi: HTTP API surface for agent registry, config serving.
 platformApi:
@@ -203,9 +208,9 @@ gateway:
   args: ["gateway"]
   # extraEnv supplies optional overrides (e.g. ACH_GATEWAY_BIND_ADDRESS).
   # POD_NAMESPACE is injected via the downward API in the template.
-  # Set ACH_DB_URL here (or top-level extraEnv) to enable webhook routing —
-  # the gateway then serves /hook/{ns}/{name}/... to per-agent Services.
-  # Unset => dumb proxy with no /hook route (default).
+  # ACH_DB_URL is REQUIRED (here or top-level extraEnv) — the gateway
+  # refuses to start without it; the achagents projection is the allowlist
+  # for /agents/{ns}/{service}/... routing to per-agent Services.
   extraEnv: []
 
 # contentService: serves agent-rendered content (assets, snapshots).

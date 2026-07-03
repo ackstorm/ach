@@ -69,7 +69,7 @@ func TestAgentstore_RefreshAndUpstream(t *testing.T) {
 	s := agentstore.New(pool, logr.Discard())
 	require.NoError(t, s.Refresh(ctx))
 
-	got, ok := s.Upstream("ach-system", "gh")
+	got, ok := s.Upstream("ach-system", "achagent-gh")
 	require.True(t, ok)
 	require.Equal(t, "http://achagent-gh.ach-system.svc.cluster.local:8080", got)
 
@@ -89,7 +89,7 @@ func TestAgentstore_NotifyDrivenRefresh(t *testing.T) {
 	go func() { _ = s.Run(runCtx) }()
 
 	time.Sleep(200 * time.Millisecond) // let initial refresh + LISTEN settle
-	_, ok := s.Upstream("ach-system", "later")
+	_, ok := s.Upstream("ach-system", "achagent-later")
 	require.False(t, ok)
 
 	require.NoError(t, db.UpsertAgent(ctx, pool, db.AgentRow{
@@ -99,7 +99,7 @@ func TestAgentstore_NotifyDrivenRefresh(t *testing.T) {
 	require.NoError(t, db.Emit(ctx, pool, db.AgentsChannel, "ach-system/later"))
 
 	require.Eventually(t, func() bool {
-		_, ok := s.Upstream("ach-system", "later")
+		_, ok := s.Upstream("ach-system", "achagent-later")
 		return ok
 	}, 10*time.Second, 50*time.Millisecond, "Upstream should observe NOTIFY-driven insert")
 }

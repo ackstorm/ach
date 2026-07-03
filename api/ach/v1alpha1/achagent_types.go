@@ -250,13 +250,15 @@ type ACHAgentStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
-	// WebhookURL is the inbound URL for this agent's webhook channel(s),
-	// e.g. https://ach.example.com/hook/ach-system/gh. Paste this into the
-	// GitHub/GitLab webhook config, appending /channels/{name}/events for the
-	// specific channel. Set only when the agent has >=1 webhook channel.
-	// The host segment is only populated when the operator has
-	// ACH_PUBLIC_BASE_URL configured; otherwise this is the path-only form
-	// (/hook/{ns}/{name}) for the caller to prefix with their own ingress host.
+	// WebhookURL is the inbound base URL for this agent, e.g.
+	// https://ach.example.com/agents/ach-system/achagent-gh. The last
+	// segment is the agent's Service name; the gateway forwards anything
+	// after it verbatim to that Service (append the harness route you need,
+	// e.g. /channels/{name}/events for a webhook channel). Set only when
+	// the agent has >=1 webhook channel. The host segment is only populated
+	// when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,
+	// ACH_BASE_URL) configured; otherwise this is the path-only form for
+	// the caller to prefix with their own ingress host.
 	// +optional
 	WebhookURL string `json:"webhookURL,omitempty"`
 }

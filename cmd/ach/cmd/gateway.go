@@ -8,6 +8,8 @@
 //	/v1/ /gemini/   -> ach-forwarder:80
 //	/mcp/ /a2a/     -> ach-forwarder:80
 //	/.well-known/   -> ach-forwarder:80   (JWKS)
+//	/agents/{ns}/{service}/… -> that agent Service (allowlisted via the
+//	                            achagents projection; ACH_DB_URL required)
 //	/healthz        -> local 200          (probes)
 //
 // It is a dumb router: no auth, no /metrics, no /dex (see internal/gateway
@@ -40,9 +42,11 @@ var gatewayCmd = &cobra.Command{
 	Use:   "gateway",
 	Short: "Run the ACH edge reverse proxy (single-origin front for all HTTP surfaces)",
 	Long: `Boot the ACH gateway. Reverse-proxies /platform, /content, /v1,
-/gemini, /mcp, /a2a, and /.well-known to their in-cluster Services, and
-serves a local /healthz. Routing is hardcoded; upstream namespace comes
-from POD_NAMESPACE (default ach-system). Binds ACH_GATEWAY_BIND_ADDRESS
+/gemini, /mcp, /a2a, and /.well-known to their in-cluster Services, plus
+/agents/{ns}/{service}/... to per-agent Services (allowlisted via the
+achagents projection — ACH_DB_URL is required), and serves a local
+/healthz. Static routing is hardcoded; upstream namespace comes from
+POD_NAMESPACE (default ach-system). Binds ACH_GATEWAY_BIND_ADDRESS
 (default :8080). It performs no authentication and never exposes /metrics
 or /dex.`,
 	RunE: runGateway,
@@ -58,25 +62,26 @@ func runGateway(_ *cobra.Command, _ []string) error {
 	namespace := config.EnvOr("POD_NAMESPACE", "ach-system")
 	bindAddr := config.EnvOr("ACH_GATEWAY_BIND_ADDRESS", ":8080")
 
-	// Optional webhook routing: only when ACH_DB_URL is set. Absent → the
-	// gateway is the classic dumb proxy with no /hook route (back-compat).
+	// /agents routing needs the achagents projection as its allowlist —
+	// ACH_DB_URL is required; refuse to start without it rather than serve
+	// a silent 404 on every agent URL.
+	dbURL, err := config.MustEnvNonEmpty("ACH_DB_URL")
+	if err != nil {
+		return fmt.Errorf("ACH_DB_URL required (/agents routing allowlist): %w", err)
+	}
+
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
-	var resolver gateway.UpstreamResolver
-	if dbURL := config.EnvOr("ACH_DB_URL", ""); dbURL != "" {
-		pool, err := db.Open(rootCtx, dbURL)
-		if err != nil {
-			return fmt.Errorf("db.Open: %w", err)
-		}
-		defer pool.Close()
-		store := agentstore.New(pool, logr.FromSlogHandler(logger.Handler()))
-		go func() { _ = store.Run(rootCtx) }()
-		resolver = store // *agentstore.Store satisfies gateway.UpstreamResolver
-		logger.Info("webhook routing enabled", "channel", db.AgentsChannel)
-	} else {
-		logger.Info("webhook routing disabled (ACH_DB_URL unset)")
+	pool, err := db.Open(rootCtx, dbURL)
+	if err != nil {
+		return fmt.Errorf("db.Open: %w", err)
 	}
+	defer pool.Close()
+	store := agentstore.New(pool, logr.FromSlogHandler(logger.Handler()))
+	go func() { _ = store.Run(rootCtx) }()
+	var resolver gateway.UpstreamResolver = store
+	logger.Info("agents routing enabled", "channel", db.AgentsChannel)
 
 	routes := gateway.ServiceRoutes(namespace)
 	handler, err := gateway.Handler(routes, resolver, logger)

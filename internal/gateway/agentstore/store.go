@@ -3,7 +3,9 @@
 // Package agentstore is the gateway's Postgres-backed webhook route cache.
 // It mirrors internal/forwarder/bipcache: an atomic.Pointer map refreshed on
 // LISTEN ach_achagents_changed plus a 5-minute safety-net ticker (the shared
-// db.RunRefreshLoop). Keyed "namespace/name" → upstream base URL.
+// db.RunRefreshLoop). Keyed "namespace/serviceName" → upstream base URL (the
+// public /agents/{ns}/{service} URL carries the Service name, e.g.
+// achagent-gh, not the ACHAgent CR name).
 package agentstore
 
 import (
@@ -22,7 +24,7 @@ import (
 // Listener conn, missed events).
 const refreshInterval = 5 * time.Minute
 
-// Store maps (namespace, name) → upstream base URL for webhook agents.
+// Store maps (namespace, serviceName) → upstream base URL for webhook agents.
 // Zero-value is invalid — use New.
 type Store struct {
 	pool *pgxpool.Pool
@@ -40,10 +42,10 @@ func New(pool *pgxpool.Pool, log logr.Logger) *Store {
 }
 
 // Upstream returns the upstream base URL (no path) for a webhook agent, or
-// ("", false) when the (ns, name) pair is not a routable webhook agent.
-func (s *Store) Upstream(ns, name string) (string, bool) {
+// ("", false) when the (ns, serviceName) pair is not a routable webhook agent.
+func (s *Store) Upstream(ns, serviceName string) (string, bool) {
 	m := s.rows.Load()
-	u, ok := (*m)[ns+"/"+name]
+	u, ok := (*m)[ns+"/"+serviceName]
 	return u, ok
 }
 
@@ -56,7 +58,7 @@ func (s *Store) Refresh(ctx context.Context) error {
 	}
 	next := make(map[string]string, len(rows))
 	for _, r := range rows {
-		next[r.Namespace+"/"+r.Name] = fmt.Sprintf(
+		next[r.Namespace+"/"+r.ServiceName] = fmt.Sprintf(
 			"http://%s.%s.svc.cluster.local:%d", r.ServiceName, r.Namespace, r.ServicePort)
 	}
 	s.rows.Store(&next)
