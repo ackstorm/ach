@@ -3,10 +3,8 @@
 package environments
 
 import (
-	"encoding/base64"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,13 +15,6 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/render"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
-)
-
-// defaultLimit is the implicit ?limit when the caller omits the query
-// parameter. maxLimit is the hard cap (Hub §15.5).
-const (
-	defaultLimit = 100
-	maxLimit     = 500
 )
 
 // Deps is the dependency bag the chi server (Plan 03-11) constructs and
@@ -77,41 +68,14 @@ func ListHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Parse ?limit (default 100, cap 500). Reject 0, negative, > maxLimit,
-		// non-numeric strings — all 400 invalid_argument.
-		limit := defaultLimit
-		if raw := r.URL.Query().Get("limit"); raw != "" {
-			n, err := strconv.Atoi(raw)
-			if err != nil || n <= 0 || n > maxLimit {
-				// Hub §15.5 wire code is "invalid_argument" — not in the
-				// audit.Outcome* closed enum (no dedicated constant), so the
-				// literal string is used at the §15.5 envelope. See
-				// .planning/phases/03-hub-identity-platform-api/03-CONTEXT.md
-				// API-12 for the envelope vocabulary boundary.
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"limit must be a positive integer no greater than "+strconv.Itoa(maxLimit), reqID)
-				return
-			}
-			limit = n
-		}
-
-		// Parse ?cursor (opaque base64-encoded integer offset).
-		// On decode failure → 400 invalid_argument.
-		offset := 0
-		if raw := r.URL.Query().Get("cursor"); raw != "" {
-			decoded, err := base64.StdEncoding.DecodeString(raw)
-			if err != nil {
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"cursor must be a valid base64-encoded value", reqID)
-				return
-			}
-			n, err := strconv.Atoi(string(decoded))
-			if err != nil || n < 0 {
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"cursor must decode to a non-negative integer", reqID)
-				return
-			}
-			offset = n
+		// Hub §15.5 wire code is "invalid_argument" — not in the
+		// audit.Outcome* closed enum (no dedicated constant), so the
+		// literal string is used at the §15.5 envelope. See
+		// .planning/phases/03-hub-identity-platform-api/03-CONTEXT.md
+		// API-12 for the envelope vocabulary boundary.
+		limit, offset, ok := render.PageParams(w, r, reqID)
+		if !ok {
+			return
 		}
 
 		// Determine caller teams (only when non-admin; admin sees all so the
@@ -143,30 +107,10 @@ func ListHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Apply pagination. envs is the already-filtered slice; cursor is a
-		// simple offset (opaque-base64-of-decimal) over this slice.
-		total := len(envs)
-		if offset > total {
-			offset = total
-		}
-		end := offset + limit
-		if end > total {
-			end = total
-		}
-		page := envs[offset:end]
-
+		page, nextCursor := render.PageWindow(envs, offset, limit)
 		items := make([]store.EnvironmentView, 0, len(page))
 		for _, row := range page {
 			items = append(items, store.RowToView(row))
-		}
-
-		// Compute next_cursor — base64 of the next offset, or nil when the
-		// page reached the end of the filtered slice.
-		var nextCursor any
-		if end < total {
-			nextCursor = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(end)))
-		} else {
-			nextCursor = nil
 		}
 
 		render.JSON(w, http.StatusOK, map[string]any{

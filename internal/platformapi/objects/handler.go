@@ -3,12 +3,10 @@
 package objects
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,12 +16,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
 
-// defaultLimit is the implicit ?limit when the caller omits the query
-// parameter; maxLimit is the hard cap. Mirrors environments/handler.go.
 const (
-	defaultLimit = 100
-	maxLimit     = 500
-
 	apiVersion = "ach.ackstorm.ai/v1alpha1"
 	kindName   = "Environment"
 )
@@ -120,32 +113,9 @@ func listHandler(deps Deps, s Store) http.HandlerFunc {
 			return
 		}
 
-		limit := defaultLimit
-		if raw := r.URL.Query().Get("limit"); raw != "" {
-			n, err := strconv.Atoi(raw)
-			if err != nil || n <= 0 || n > maxLimit {
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"limit must be a positive integer no greater than "+strconv.Itoa(maxLimit), reqID)
-				return
-			}
-			limit = n
-		}
-
-		offset := 0
-		if raw := r.URL.Query().Get("cursor"); raw != "" {
-			decoded, err := base64.StdEncoding.DecodeString(raw)
-			if err != nil {
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"cursor must be a valid base64-encoded value", reqID)
-				return
-			}
-			n, err := strconv.Atoi(string(decoded))
-			if err != nil || n < 0 {
-				render.Error(w, http.StatusBadRequest, "invalid_argument",
-					"cursor must decode to a non-negative integer", reqID)
-				return
-			}
-			offset = n
+		limit, offset, ok := render.PageParams(w, r, reqID)
+		if !ok {
+			return
 		}
 
 		rows, err := s.List(ctx)
@@ -154,24 +124,10 @@ func listHandler(deps Deps, s Store) http.HandlerFunc {
 			return
 		}
 
-		total := len(rows)
-		if offset > total {
-			offset = total
-		}
-		end := offset + limit
-		if end > total {
-			end = total
-		}
-		page := rows[offset:end]
-
+		page, nextCursor := render.PageWindow(rows, offset, limit)
 		items := make([]manifest, 0, len(page))
 		for _, row := range page {
 			items = append(items, rowToManifest(deps.Namespace, row))
-		}
-
-		var nextCursor any
-		if end < total {
-			nextCursor = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(end)))
 		}
 
 		render.JSON(w, http.StatusOK, map[string]any{

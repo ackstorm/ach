@@ -4,9 +4,7 @@ package inventory
 
 import (
 	"context"
-	"encoding/base64"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,13 +14,6 @@ import (
 	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
-)
-
-// Pagination bounds mirror internal/platformapi/environments (Hub §15.5): an
-// opaque base64-of-decimal offset cursor over the in-memory slice.
-const (
-	defaultLimit = 100
-	maxLimit     = 500
 )
 
 // Lister is the read seam the inventory handlers consume. Production wires the
@@ -285,56 +276,14 @@ func listHandler(build func(ctx context.Context) ([]AdminObjectView, error)) htt
 	}
 }
 
-// paginate slices items by the ?limit (default 100, cap 500) + ?cursor
-// (base64-of-decimal offset) query parameters and renders the standard
-// envelope. Mirrors internal/platformapi/environments.ListHandler verbatim so
-// the CLI cursor loop is uniform across endpoints.
+// paginate slices items by the shared ?limit/?cursor parameters and renders
+// the standard envelope. See render.PageParams for the parameter contract.
 func paginate(w http.ResponseWriter, r *http.Request, reqID string, items []AdminObjectView) {
-	limit := defaultLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n <= 0 || n > maxLimit {
-			render.Error(w, http.StatusBadRequest, "invalid_argument",
-				"limit must be a positive integer no greater than "+strconv.Itoa(maxLimit), reqID)
-			return
-		}
-		limit = n
+	limit, offset, ok := render.PageParams(w, r, reqID)
+	if !ok {
+		return
 	}
-
-	offset := 0
-	if raw := r.URL.Query().Get("cursor"); raw != "" {
-		decoded, err := base64.StdEncoding.DecodeString(raw)
-		if err != nil {
-			render.Error(w, http.StatusBadRequest, "invalid_argument",
-				"cursor must be a valid base64-encoded value", reqID)
-			return
-		}
-		n, err := strconv.Atoi(string(decoded))
-		if err != nil || n < 0 {
-			render.Error(w, http.StatusBadRequest, "invalid_argument",
-				"cursor must decode to a non-negative integer", reqID)
-			return
-		}
-		offset = n
-	}
-
-	total := len(items)
-	if offset > total {
-		offset = total
-	}
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-	page := items[offset:end]
-
-	var nextCursor any
-	if end < total {
-		nextCursor = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(end)))
-	} else {
-		nextCursor = nil
-	}
-
+	page, nextCursor := render.PageWindow(items, offset, limit)
 	render.JSON(w, http.StatusOK, map[string]any{
 		"items":       page,
 		"next_cursor": nextCursor,
