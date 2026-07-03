@@ -30,8 +30,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/agentrender"
+	achdb "github.com/ackstorm/ach/internal/db"
 )
 
 const (
@@ -62,6 +66,10 @@ type ACHAgentReconciler struct {
 	client.Client
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+
+	// DB is the Postgres pool for the achagents projection. Nil in envtest
+	// (k8s-only suite) — every projection call is nil-gated.
+	DB *pgxpool.Pool
 }
 
 //nolint:gocyclo // Single linear resolve→render→apply→status flow; splitting scatters status ordering.
@@ -71,7 +79,9 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	var agent achv1alpha1.ACHAgent
 	if err := r.Get(ctx, req.NamespacedName, &agent); err != nil {
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
+			// CR gone: drop its projection row so the gateway/UI stop
+			// listing it. Key comes from req — no spec needed.
+			return r.deleteAgentProjection(ctx, req.Namespace, req.Name)
 		}
 		return ctrl.Result{}, fmt.Errorf("get achagent: %w", err)
 	}
@@ -343,6 +353,13 @@ func (r *ACHAgentReconciler) finish(ctx context.Context, a *achv1alpha1.ACHAgent
 		setCond(&fresh.Status.Conditions, condReady, metav1.ConditionFalse, reason, msg, a.Generation)
 	}
 	fresh.Status.ObservedGeneration = fresh.Generation
+
+	// Dual-write the achagents projection (read model for gateway + UI).
+	ready := apimeta.IsStatusConditionTrue(fresh.Status.Conditions, condReady)
+	if err := r.writeAgentProjection(ctx, &fresh, ready); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.Status().Update(ctx, &fresh); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
@@ -411,4 +428,59 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 		}
 	}
 	return reqs
+}
+
+// agentProjectionRow builds the achagents projection row from an ACHAgent's
+// spec + its aggregate Ready status. Pure (no I/O) so it is unit-tested
+// without a DB. Service coords are derived from the same helpers the
+// reconciler uses to build the Service, so they match what buildService emits.
+func agentProjectionRow(a *achv1alpha1.ACHAgent, ready bool) achdb.AgentRow {
+	row := achdb.AgentRow{
+		Namespace:       a.Namespace,
+		Name:            a.Name,
+		ProfileRef:      a.Spec.ProfileRef.Name,
+		Ready:           ready,
+		ResourceVersion: a.ResourceVersion,
+	}
+	for _, ch := range a.Spec.Channels {
+		row.Channels = append(row.Channels, achdb.ChannelSummary{Name: ch.Name, Type: ch.Type, Source: ch.Source})
+		if ch.Type == "webhook" {
+			row.HasWebhook = true
+		}
+	}
+	if needsService(a) {
+		row.ServiceName = agentResourceName(a.Name)
+		row.ServicePort = 8080 // buildService pins the Service port to 8080
+	}
+	return row
+}
+
+// writeAgentProjection upserts the achagents row + NOTIFY in one tx. Nil-gated.
+func (r *ACHAgentReconciler) writeAgentProjection(ctx context.Context, a *achv1alpha1.ACHAgent, ready bool) error {
+	if r.DB == nil {
+		return nil
+	}
+	row := agentProjectionRow(a, ready)
+	payload := fmt.Sprintf("%s/%s", a.Namespace, a.Name)
+	if err := achdb.WithTxNotify(ctx, r.DB, achdb.AgentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.UpsertAgentTx(ctx, tx, row)
+	}); err != nil {
+		return fmt.Errorf("db upsert agent projection: %w", err)
+	}
+	return nil
+}
+
+// deleteAgentProjection removes the achagents row + NOTIFY when the CR is gone.
+// Keyed by (ns, name) from the reconcile request — no spec needed. Nil-gated.
+func (r *ACHAgentReconciler) deleteAgentProjection(ctx context.Context, ns, name string) (ctrl.Result, error) {
+	if r.DB == nil {
+		return ctrl.Result{}, nil
+	}
+	payload := ns + "/" + name
+	if err := achdb.WithTxNotify(ctx, r.DB, achdb.AgentsChannel, payload, func(tx pgx.Tx) error {
+		return achdb.DeleteAgentTx(ctx, tx, ns, name)
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("db delete agent projection: %w", err)
+	}
+	return ctrl.Result{}, nil
 }

@@ -572,6 +572,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		DB:        dbPool,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller ACHAgent: %w", err)
 	}
