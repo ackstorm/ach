@@ -40,7 +40,7 @@ type envStore interface {
 	// already-loaded row (OPT-1): CreateHandler reads terminating off the
 	// row's DeletionTimestamp and synced via this method, so the per-call
 	// EnvironmentTerminating/EnvironmentAccessGroupSynced SELECTs are no
-	// longer on the create path (they remain on *store.Store for other use).
+	// longer on the create path (OPT-1 removed the per-call SELECT helpers entirely).
 	AccessGroupSyncedFromRow(row *db.EnvironmentRow) bool
 }
 
@@ -143,7 +143,7 @@ const defaultTeam = "default"
 //  2. Strict JSON decode (DisallowUnknownFields) into CreateRequest;
 //     missing fields → 400.
 //  3. GetEnvironment from the Postgres projection table; absent or terminating → 404.
-//  4. EnvironmentAccessGroupSynced check; not True → 503 not_ready.
+//  4. AccessGroupSyncedFromRow check; not True → 503 not_ready.
 //  5. Team-membership intersection: authorizedTeams ∩ caller teams ≠ ∅;
 //     empty → 403 unauthorized_team.
 //  6. Idempotent LiteLLM user provision: UserInfoByEmail; on absent run
