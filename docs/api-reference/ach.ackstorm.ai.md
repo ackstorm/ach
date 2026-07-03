@@ -535,7 +535,7 @@ _Appears in:_
 | `type` _string_ |  |  | Enum: [webhook cron queue a2a] <br />Required: \{\} <br /> |
 | `source` _string_ |  |  | Enum: [gitlab github generic] <br /> |
 | `concurrency` _integer_ |  | 1 | Minimum: 1 <br /> |
-| `session` _string_ |  | auto | Enum: [auto none] <br /> |
+| `session` _[SessionSpec](#sessionspec)_ |  |  |  |
 | `prompt` _string_ |  |  |  |
 | `webhook` _[WebhookSpec](#webhookspec)_ |  |  |  |
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
@@ -1579,6 +1579,30 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the Kubernetes Secret name. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `key` _string_ | Key is the data key inside the Secret. |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
+#### SessionSpec
+
+
+
+SessionSpec selects which opencode conversation a channel turn reuses and
+bounds its growth (config: channels[].session). type is the discriminator;
+key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
+block lets the harness apply its own default (type: none). This changes only
+which session a turn reuses — the router lane key (event.session_key) is
+unaffected.
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | none: fresh session per event, deleted post-turn. auto: reuse the<br />channel-derived session_key. custom: reuse the session named by key. | none | Enum: [auto none custom] <br /> |
+| `key` _string_ | Key is the \{\{ \}\} session template (payload.* / internal.*). REQUIRED iff<br />type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN. |  |  |
+| `maxTokens` _integer_ | MaxTokens caps growth: once the previous turn's input_tokens exceed it,<br />apply overflow (auto/custom only; ignored for none). |  | Minimum: 1 <br /> |
+| `overflow` _string_ | Overflow: compact summarizes the session in place; rotate starts a fresh<br />session and deletes the old one. | compact | Enum: [compact rotate] <br /> |
 
 
 #### Skill

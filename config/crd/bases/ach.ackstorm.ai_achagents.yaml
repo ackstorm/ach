@@ -152,11 +152,51 @@ spec:
                       - key
                       type: object
                     session:
-                      default: auto
-                      enum:
-                      - auto
-                      - none
-                      type: string
+                      description: |-
+                        SessionSpec selects which opencode conversation a channel turn reuses and
+                        bounds its growth (config: channels[].session). type is the discriminator;
+                        key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
+                        block lets the harness apply its own default (type: none). This changes only
+                        which session a turn reuses — the router lane key (event.session_key) is
+                        unaffected.
+                      properties:
+                        key:
+                          description: |-
+                            Key is the {{ }} session template (payload.* / internal.*). REQUIRED iff
+                            type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN.
+                          type: string
+                        maxTokens:
+                          description: |-
+                            MaxTokens caps growth: once the previous turn's input_tokens exceed it,
+                            apply overflow (auto/custom only; ignored for none).
+                          format: int64
+                          minimum: 1
+                          type: integer
+                        overflow:
+                          default: compact
+                          description: |-
+                            Overflow: compact summarizes the session in place; rotate starts a fresh
+                            session and deletes the old one.
+                          enum:
+                          - compact
+                          - rotate
+                          type: string
+                        type:
+                          default: none
+                          description: |-
+                            none: fresh session per event, deleted post-turn. auto: reuse the
+                            channel-derived session_key. custom: reuse the session named by key.
+                          enum:
+                          - auto
+                          - none
+                          - custom
+                          type: string
+                      type: object
+                      x-kubernetes-validations:
+                      - message: session.key is required (non-empty) iff type is custom,
+                          forbidden otherwise
+                        rule: 'self.type != ''custom'' ? !has(self.key) : (has(self.key)
+                          && size(self.key) > 0)'
                     source:
                       enum:
                       - gitlab
