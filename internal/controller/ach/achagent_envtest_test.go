@@ -132,3 +132,34 @@ func TestACHAgent_ProfileDeletedAfterApplied_ReadyFlipsFalse(t *testing.T) {
 	waitAgentCond(t, ctx, "aa-regress", condProfileResolved, metav1.ConditionFalse)
 	waitAgentCond(t, ctx, "aa-regress", condReady, metav1.ConditionFalse)
 }
+
+func TestACHAgent_SessionCustomRequiresKey(t *testing.T) {
+	ctx := context.Background()
+	base := func(name string, sess *achv1alpha1.SessionSpec) *achv1alpha1.ACHAgent {
+		return &achv1alpha1.ACHAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
+			Spec: achv1alpha1.ACHAgentSpec{
+				ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
+				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+				Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
+				Channels: []achv1alpha1.ChannelSpec{{
+					Name: "c", Type: "cron", Session: sess,
+					Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+				}},
+			},
+		}
+	}
+	key := "{{ payload.thread }}"
+	// custom without key → rejected
+	if err := k8sClient.Create(ctx, base("aa-sess-nokey", &achv1alpha1.SessionSpec{Type: "custom"})); err == nil {
+		t.Fatal("expected rejection: type=custom requires key")
+	}
+	// none WITH key → rejected
+	if err := k8sClient.Create(ctx, base("aa-sess-badkey", &achv1alpha1.SessionSpec{Type: "none", Key: &key})); err == nil {
+		t.Fatal("expected rejection: key forbidden unless type=custom")
+	}
+	// custom WITH key → accepted
+	if err := k8sClient.Create(ctx, base("aa-sess-ok", &achv1alpha1.SessionSpec{Type: "custom", Key: &key})); err != nil {
+		t.Fatalf("custom+key must be accepted: %v", err)
+	}
+}

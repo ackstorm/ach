@@ -29,6 +29,7 @@ spec:
         gitlabEvents: [merge_request, note]
     - name: daily-security
       type: cron
-      session: none
+      session:
+        type: none
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Scan main for new CVEs; open an issue if any are critical."

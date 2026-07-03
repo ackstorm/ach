@@ -19,7 +19,8 @@ spec:
   channels:
     - name: daily
       type: cron
-      session: none
+      session:
+        type: none
       cron:
         schedule: "0 8 * * 1-5"
       prompt: "Scan for CVEs."
