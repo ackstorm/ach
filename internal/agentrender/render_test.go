@@ -190,3 +190,18 @@ func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
 		t.Errorf("forwardEnv = %v, want [HTTPS_PROXY]", cfg.Engine.ForwardEnv)
 	}
 }
+
+func TestRenderChannel_NilSessionOmitted(t *testing.T) {
+	cb := renderChannel(&achv1alpha1.ChannelSpec{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}})
+	b, err := json.Marshal(cb)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, present := m["session"]; present {
+		t.Errorf("nil ChannelSpec.Session must be omitted, not emitted as {}: %s", b)
+	}
+}
