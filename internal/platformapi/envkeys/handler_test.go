@@ -196,12 +196,6 @@ func (d *fakeEkDB) GetEnvironmentKey(context.Context, string) (*db.EkKeyInfo, er
 func (d *fakeEkDB) RevokeEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
 	return nil, nil
 }
-func (d *fakeEkDB) ListEnvironmentKeysByOwner(context.Context, string, int, string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
-}
-func (d *fakeEkDB) ListEnvironmentKeysByOwnerWithFilter(context.Context, *string, int, string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
-}
 func (d *fakeEkDB) ListKeys(_ context.Context, f db.KeyListFilter, _ int, _ string) ([]db.KeyListItem, string, error) {
 	d.lastFilter = f
 	env := "demo"

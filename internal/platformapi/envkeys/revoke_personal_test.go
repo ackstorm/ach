@@ -49,12 +49,6 @@ func (d *revokePersonalDB) GetEnvironmentKey(context.Context, string) (*db.EkKey
 func (d *revokePersonalDB) RevokeEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
 	return nil, nil
 }
-func (d *revokePersonalDB) ListEnvironmentKeysByOwner(context.Context, string, int, string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
-}
-func (d *revokePersonalDB) ListEnvironmentKeysByOwnerWithFilter(context.Context, *string, int, string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
-}
 func (d *revokePersonalDB) ListKeys(context.Context, db.KeyListFilter, int, string) ([]db.KeyListItem, string, error) {
 	return nil, "", nil
 }
@@ -130,14 +124,6 @@ func (d *dispatchDB) GetEnvironmentKey(_ context.Context, _ string) (*db.EkKeyIn
 
 func (d *dispatchDB) RevokeEnvironmentKey(_ context.Context, _ string) (*db.EkKeyInfo, error) {
 	return d.ekRow, nil
-}
-
-func (d *dispatchDB) ListEnvironmentKeysByOwner(_ context.Context, _ string, _ int, _ string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
-}
-
-func (d *dispatchDB) ListEnvironmentKeysByOwnerWithFilter(_ context.Context, _ *string, _ int, _ string) ([]db.EkKeyInfo, string, error) {
-	return nil, "", nil
 }
 
 func (d *dispatchDB) ListKeys(_ context.Context, _ db.KeyListFilter, _ int, _ string) ([]db.KeyListItem, string, error) {
