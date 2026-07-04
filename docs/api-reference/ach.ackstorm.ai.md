@@ -267,7 +267,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `system` _[PromptSystemSpec](#promptsystemspec)_ |  |  | Required: \{\} <br /> |
-| `compose` _string_ |  | append |  |
+| `compose` _string_ |  | append | Enum: [replace append] <br /> |
 
 
 #### Artifact

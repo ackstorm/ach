@@ -65,6 +65,7 @@ type AgentPromptSpec struct {
 	// +kubebuilder:validation:Required
 	System PromptSystemSpec `json:"system"`
 	// +optional
+	// +kubebuilder:validation:Enum=replace;append
 	// +kubebuilder:default=append
 	Compose string `json:"compose,omitempty"`
 }

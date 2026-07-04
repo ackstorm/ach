@@ -413,6 +413,9 @@ spec:
                 properties:
                   compose:
                     default: append
+                    enum:
+                    - replace
+                    - append
                     type: string
                   system:
                     description: |-
