@@ -46,8 +46,6 @@ const (
 	condChannelSecretsResolved = "ChannelSecretsResolved"
 	condWorkloadApplied        = "WorkloadApplied"
 	condWorkloadReady          = "WorkloadReady"
-
-	channelTypeWebhook = "webhook"
 )
 
 var requiredConds = []string{condProfileResolved, condIdentityResolved, condChannelSecretsResolved, condWorkloadApplied, condWorkloadReady}
@@ -75,8 +73,8 @@ type ACHAgentReconciler struct {
 	DB *pgxpool.Pool
 
 	// PublicBaseURL is the externally reachable gateway origin (e.g.
-	// https://ach.example.com), used to render status.webhookURL as a full
-	// URL. Empty => status.webhookURL is the path-only form. Caller resolves
+	// https://ach.example.com), used to render status.gatewayURL as a full
+	// URL. Empty => status.gatewayURL is the path-only form. Caller resolves
 	// this from ACH_PUBLIC_BASE_URL, falling back to ACH_BASE_URL (same
 	// origin in the common single-ingress deployment; ACH_PUBLIC_BASE_URL
 	// stays available to override for a split-origin setup where the public
@@ -379,7 +377,7 @@ func (r *ACHAgentReconciler) finish(ctx context.Context, a *achv1alpha1.ACHAgent
 		setCond(&fresh.Status.Conditions, condReady, metav1.ConditionFalse, reason, msg, a.Generation)
 	}
 	fresh.Status.ObservedGeneration = fresh.Generation
-	fresh.Status.WebhookURL = agentWebhookURL(&fresh, r.PublicBaseURL)
+	fresh.Status.GatewayURL = agentGatewayURL(&fresh, r.PublicBaseURL)
 
 	// Dual-write the achagents projection (read model for gateway + UI).
 	ready := apimeta.IsStatusConditionTrue(fresh.Status.Conditions, condReady)
@@ -457,22 +455,15 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 	return reqs
 }
 
-// agentWebhookURL returns the inbound webhook URL for an agent, or "" when
-// the agent has no webhook channel. The path carries the agent's Service
-// name (agentResourceName), not the CR name — the gateway forwards
-// /agents/{ns}/{service}/… to that Service verbatim. baseURL (from
-// PublicBaseURL) is optional: when set, the result is a full URL; when
-// empty, the result is the path-only form the caller prefixes with their
+// agentGatewayURL returns the inbound gateway URL for an agent, or "" when the
+// agent has not opted into gateway exposure (expose.gateway). The path carries
+// the agent's Service name (agentResourceName), not the CR name — the gateway
+// forwards /agents/{ns}/{service}/… to that Service verbatim (webhook or a2a).
+// baseURL (from PublicBaseURL) is optional: when set, the result is a full URL;
+// when empty, the result is the path-only form the caller prefixes with their
 // own ingress host. Pure (no I/O) so it is unit-tested directly.
-func agentWebhookURL(a *achv1alpha1.ACHAgent, baseURL string) string {
-	hasWebhook := false
-	for _, ch := range a.Spec.Channels {
-		if ch.Type == channelTypeWebhook {
-			hasWebhook = true
-			break
-		}
-	}
-	if !hasWebhook {
+func agentGatewayURL(a *achv1alpha1.ACHAgent, baseURL string) string {
+	if !exposeGateway(a) {
 		return ""
 	}
 	path := fmt.Sprintf("/agents/%s/%s", a.Namespace, agentResourceName(a.Name))
@@ -491,14 +482,12 @@ func agentProjectionRow(a *achv1alpha1.ACHAgent, ready bool) achdb.AgentRow {
 		Namespace:       a.Namespace,
 		Name:            a.Name,
 		ProfileRef:      a.Spec.ProfileRef.Name,
+		Exposed:         exposeGateway(a),
 		Ready:           ready,
 		ResourceVersion: a.ResourceVersion,
 	}
 	for _, ch := range a.Spec.Channels {
 		row.Channels = append(row.Channels, achdb.ChannelSummary{Name: ch.Name, Type: ch.Type, Source: ch.Source})
-		if ch.Type == channelTypeWebhook {
-			row.HasWebhook = true
-		}
 	}
 	if needsService(a) {
 		row.ServiceName = agentResourceName(a.Name)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package agentstore is the gateway's Postgres-backed webhook route cache.
+// Package agentstore is the gateway's Postgres-backed exposed-agent route cache.
 // It mirrors internal/forwarder/bipcache: an atomic.Pointer map refreshed on
 // LISTEN ach_achagents_changed plus a 5-minute safety-net ticker (the shared
 // db.RunRefreshLoop). Keyed "namespace/serviceName" → upstream base URL (the
@@ -24,7 +24,7 @@ import (
 // Listener conn, missed events).
 const refreshInterval = 5 * time.Minute
 
-// Store maps (namespace, serviceName) → upstream base URL for webhook agents.
+// Store maps (namespace, serviceName) → upstream base URL for exposed agents.
 // Zero-value is invalid — use New.
 type Store struct {
 	pool *pgxpool.Pool
@@ -41,8 +41,8 @@ func New(pool *pgxpool.Pool, log logr.Logger) *Store {
 	return s
 }
 
-// Upstream returns the upstream base URL (no path) for a webhook agent, or
-// ("", false) when the (ns, serviceName) pair is not a routable webhook agent.
+// Upstream returns the upstream base URL (no path) for an exposed agent, or
+// ("", false) when the (ns, serviceName) pair is not a routable exposed agent.
 func (s *Store) Upstream(ns, serviceName string) (string, bool) {
 	m := s.rows.Load()
 	u, ok := (*m)[ns+"/"+serviceName]
@@ -52,7 +52,7 @@ func (s *Store) Upstream(ns, serviceName string) (string, bool) {
 // Refresh reloads the full webhook-agent route set from Postgres and swaps the
 // atomic pointer.
 func (s *Store) Refresh(ctx context.Context) error {
-	rows, err := db.ListWebhookAgents(ctx, s.pool)
+	rows, err := db.ListExposedAgents(ctx, s.pool)
 	if err != nil {
 		return err
 	}

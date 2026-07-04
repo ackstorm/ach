@@ -18,6 +18,15 @@ spec:
   prompt:
     system: { type: text, text: "You are a senior code reviewer for the platform team." }
     compose: append
+  # Reachability is opt-in (both default false → fully private). This agent
+  # receives GitLab webhooks through the shared gateway, so it needs both:
+  #   service — create the ClusterIP Service (achagent-gitlab-reviewer)
+  #   gateway — publish /agents/{ns}/{service} + status.gatewayURL (needs service)
+  # A private a2a agent would set only `service: true` (in-cluster peers reach
+  # it, no public URL); omit the whole block for no Service at all.
+  expose:
+    service: true
+    gateway: true
   channels:
     - name: gitlab-mr-review
       type: webhook

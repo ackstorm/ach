@@ -31,17 +31,17 @@ type AgentRow struct {
 	Namespace       string
 	Name            string
 	ProfileRef      string
-	ServiceName     string // "" when the agent has no Service (cron/queue-only)
+	ServiceName     string // "" when the agent has no Service (expose.service=false)
 	ServicePort     int32  // 0 when no Service
-	HasWebhook      bool
+	Exposed         bool   // opted into shared-gateway routing (expose.gateway=true)
 	Ready           bool
 	Channels        []ChannelSummary
 	ResourceVersion string
 	UpdatedAt       time.Time
 }
 
-// WebhookAgentRow is the narrow gateway read shape: only what /hook routing needs.
-type WebhookAgentRow struct {
+// ExposedAgentRow is the narrow gateway read shape: only what /agents routing needs.
+type ExposedAgentRow struct {
 	Namespace   string
 	Name        string
 	ServiceName string
@@ -51,13 +51,13 @@ type WebhookAgentRow struct {
 const upsertAgentSQL = `
 	INSERT INTO achagents
 	    (namespace, name, profile_ref, service_name, service_port,
-	     has_webhook, ready, channels, resource_version, updated_at)
+	     exposed, ready, channels, resource_version, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    profile_ref      = EXCLUDED.profile_ref,
 	    service_name     = EXCLUDED.service_name,
 	    service_port     = EXCLUDED.service_port,
-	    has_webhook      = EXCLUDED.has_webhook,
+	    exposed          = EXCLUDED.exposed,
 	    ready            = EXCLUDED.ready,
 	    channels         = EXCLUDED.channels,
 	    resource_version = EXCLUDED.resource_version,
@@ -75,7 +75,7 @@ func UpsertAgentTx(ctx context.Context, tx pgx.Tx, row AgentRow) error {
 	}
 	if _, err := tx.Exec(ctx, upsertAgentSQL,
 		row.Namespace, row.Name, row.ProfileRef, row.ServiceName, row.ServicePort,
-		row.HasWebhook, row.Ready, chJSON, row.ResourceVersion,
+		row.Exposed, row.Ready, chJSON, row.ResourceVersion,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
@@ -111,28 +111,31 @@ func DeleteAgent(ctx context.Context, pool *pgxpool.Pool, ns, name string) error
 	})
 }
 
-// ListWebhookAgents returns every routable webhook agent across all namespaces
-// (the /hook route carries the namespace, so this is deliberately unscoped).
-// Rows with an empty service_name are excluded — they cannot be routed.
-func ListWebhookAgents(ctx context.Context, pool *pgxpool.Pool) ([]WebhookAgentRow, error) {
+// ListExposedAgents returns every gateway-exposed agent across all namespaces
+// (the /agents route carries the namespace, so this is deliberately unscoped).
+// Channel type is irrelevant — webhook and a2a route identically; the exposed
+// flag (expose.gateway) is the sole gate. Rows with an empty service_name are
+// excluded as a belt-and-suspenders guard (CEL already requires expose.service
+// when expose.gateway is set).
+func ListExposedAgents(ctx context.Context, pool *pgxpool.Pool) ([]ExposedAgentRow, error) {
 	const sql = `
 		SELECT namespace, name, service_name, service_port
 		  FROM achagents
-		 WHERE has_webhook = TRUE AND service_name <> ''
+		 WHERE exposed = TRUE AND service_name <> ''
 	`
 	rows, err := pool.Query(ctx, sql)
 	if err != nil {
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ListWebhookAgents: %w", err)
+		return nil, fmt.Errorf("db: ListExposedAgents: %w", err)
 	}
 	defer rows.Close()
-	out := []WebhookAgentRow{}
+	out := []ExposedAgentRow{}
 	for rows.Next() {
-		var r WebhookAgentRow
+		var r ExposedAgentRow
 		if err := rows.Scan(&r.Namespace, &r.Name, &r.ServiceName, &r.ServicePort); err != nil {
-			return nil, fmt.Errorf("db: scan webhook agent row: %w", err)
+			return nil, fmt.Errorf("db: scan exposed agent row: %w", err)
 		}
 		out = append(out, r)
 	}
@@ -140,7 +143,7 @@ func ListWebhookAgents(ctx context.Context, pool *pgxpool.Pool) ([]WebhookAgentR
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: iterate webhook agent rows: %w", err)
+		return nil, fmt.Errorf("db: iterate exposed agent rows: %w", err)
 	}
 	return out, nil
 }

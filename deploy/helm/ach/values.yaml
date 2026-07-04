@@ -97,8 +97,8 @@ operator:
   #
   # ACH_PUBLIC_BASE_URL (also top-level `extraEnv`, operator-only): the
   # externally reachable gateway origin (e.g. https://ach.example.com). When
-  # set, the operator renders ACHAgent status.webhookURL as a full URL;
-  # unset => status.webhookURL is the path-only form
+  # set, the operator renders ACHAgent status.gatewayURL as a full URL;
+  # unset => status.gatewayURL is the path-only form
   # (/agents/{ns}/achagent-{name}).
   # Falls back to ACH_BASE_URL when unset — the common single-ingress
   # deployment needs only ACH_BASE_URL in extraEnv; set ACH_PUBLIC_BASE_URL

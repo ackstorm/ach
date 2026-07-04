@@ -60,10 +60,10 @@ func TestAgentstore_RefreshAndUpstream(t *testing.T) {
 
 	require.NoError(t, db.UpsertAgent(ctx, pool, db.AgentRow{
 		Namespace: "ach-system", Name: "gh", ServiceName: "achagent-gh", ServicePort: 8080,
-		HasWebhook: true, ResourceVersion: "1",
+		Exposed: true, ResourceVersion: "1",
 	}))
 	require.NoError(t, db.UpsertAgent(ctx, pool, db.AgentRow{
-		Namespace: "ach-system", Name: "cronjob", ResourceVersion: "1", // no webhook, no service
+		Namespace: "ach-system", Name: "cronjob", ResourceVersion: "1", // not exposed, no service
 	}))
 
 	s := agentstore.New(pool, logr.Discard())
@@ -94,7 +94,7 @@ func TestAgentstore_NotifyDrivenRefresh(t *testing.T) {
 
 	require.NoError(t, db.UpsertAgent(ctx, pool, db.AgentRow{
 		Namespace: "ach-system", Name: "later", ServiceName: "achagent-later", ServicePort: 8080,
-		HasWebhook: true, ResourceVersion: "1",
+		Exposed: true, ResourceVersion: "1",
 	}))
 	require.NoError(t, db.Emit(ctx, pool, db.AgentsChannel, "ach-system/later"))
 

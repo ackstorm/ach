@@ -150,14 +150,18 @@ func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.
 	}
 }
 
+// needsService reports whether the operator creates the ClusterIP Service.
+// Now an explicit opt-in (expose.service) rather than inferred from channel
+// type: an inbound HTTP channel is only reachable when the author asks for a
+// Service. Fully private by default.
 func needsService(a *achv1alpha1.ACHAgent) bool {
-	for i := range a.Spec.Channels {
-		switch a.Spec.Channels[i].Type {
-		case channelTypeWebhook, "a2a":
-			return true
-		}
-	}
-	return false
+	return a.Spec.Expose != nil && a.Spec.Expose.Service
+}
+
+// exposeGateway reports whether the agent opts into shared-gateway routing.
+// CEL guarantees gateway ⇒ service, so an exposed agent always has a Service.
+func exposeGateway(a *achv1alpha1.ACHAgent) bool {
+	return a.Spec.Expose != nil && a.Spec.Expose.Gateway
 }
 
 // buildDeployment builds the single-replica agent Deployment. env is built once by the caller

@@ -17,6 +17,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -233,5 +234,94 @@ func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 	}
 	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != "PodTemplateInvalid" {
 		t.Fatalf("WorkloadApplied reason = %v, want PodTemplateInvalid", c)
+	}
+}
+
+// CEL: expose.gateway requires expose.service (admission rejects gateway-only).
+func TestACHAgent_ExposeGatewayRequiresService(t *testing.T) {
+	ctx := context.Background()
+	base := func(name string, expose *achv1alpha1.ExposeSpec) *achv1alpha1.ACHAgent {
+		return &achv1alpha1.ACHAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
+			Spec: achv1alpha1.ACHAgentSpec{
+				ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
+				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+				Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
+				Expose:     expose,
+				Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			},
+		}
+	}
+	// gateway without service → rejected
+	if err := k8sClient.Create(ctx, base("aa-exp-nosvc", &achv1alpha1.ExposeSpec{Gateway: true})); err == nil {
+		t.Fatal("expected rejection: expose.gateway requires expose.service")
+	}
+	// service + gateway → accepted
+	if err := k8sClient.Create(ctx, base("aa-exp-ok", &achv1alpha1.ExposeSpec{Service: true, Gateway: true})); err != nil {
+		t.Fatalf("service+gateway must be accepted: %v", err)
+	}
+}
+
+// expose.service gates Service creation; expose.gateway gates status.gatewayURL.
+func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-exp", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-exp", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+
+	webhookCh := func() achv1alpha1.ChannelSpec {
+		return achv1alpha1.ChannelSpec{
+			Name: "gh", Type: "webhook", Source: "github",
+			Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}},
+		}
+	}
+
+	// Exposed agent: Service created + status.gatewayURL published (path-only in envtest).
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-exp-pub", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-exp", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Expose:     &achv1alpha1.ExposeSpec{Service: true, Gateway: true},
+			Channels:   []achv1alpha1.ChannelSpec{webhookCh()},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-exp-pub", condWorkloadApplied, metav1.ConditionTrue)
+
+	var svc corev1.Service
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-exp-pub")}, &svc); err != nil {
+		t.Fatalf("exposed agent must have a Service: %v", err)
+	}
+	var pub achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-exp-pub"}, &pub); err != nil {
+		t.Fatalf("get exposed agent: %v", err)
+	}
+	if want := "/agents/" + WatchNamespace + "/achagent-aa-exp-pub"; pub.Status.GatewayURL != want {
+		t.Fatalf("status.gatewayURL = %q, want %q", pub.Status.GatewayURL, want)
+	}
+
+	// Private agent (no expose): same webhook channel, but no Service, no URL.
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-exp-priv", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-exp", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{webhookCh()},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-exp-priv", condWorkloadApplied, metav1.ConditionTrue)
+
+	var privSvc corev1.Service
+	err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-exp-priv")}, &privSvc)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("private agent must have no Service, got err=%v", err)
+	}
+	var priv achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-exp-priv"}, &priv); err != nil {
+		t.Fatalf("get private agent: %v", err)
+	}
+	if priv.Status.GatewayURL != "" {
+		t.Fatalf("private agent status.gatewayURL = %q, want empty", priv.Status.GatewayURL)
 	}
 }

@@ -129,6 +129,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ | Limits overrides the profile's default limits. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
+| `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
 
 
@@ -147,7 +148,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ |  |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
-| `webhookURL` _string_ | WebhookURL is the inbound base URL for this agent, e.g.<br />https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/\{name\}/events for a webhook channel). Set only when<br />the agent has >=1 webhook channel. The host segment is only populated<br />when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,<br />ACH_BASE_URL) configured; otherwise this is the path-only form for<br />the caller to prefix with their own ingress host. |  |  |
+| `gatewayURL` _string_ | GatewayURL is the inbound base URL for this agent on the shared gateway,<br />e.g. https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/\{name\}/events for a webhook channel, or the a2a path).<br />Set only when the agent opts into gateway exposure (expose.gateway).<br />The host segment is only populated when the operator has<br />ACH_PUBLIC_BASE_URL (or, as a fallback, ACH_BASE_URL) configured;<br />otherwise this is the path-only form for the caller to prefix with<br />their own ingress host. |  |  |
 
 
 #### AchEndpointSpec
@@ -728,6 +729,26 @@ _Appears in:_
 | `tools` _string array_ |  |  |  |
 | `mcpServers` _string array_ |  |  |  |
 | `skills` _string array_ |  |  |  |
+
+
+#### ExposeSpec
+
+
+
+ExposeSpec controls how an agent is reachable. Both axes default false —
+an agent is fully private (harness Pod only, no Service, no public route)
+unless it explicitly opts in. gateway requires service (the gateway proxies
+to the Service; there is nothing to route to without it).
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `service` _boolean_ | Service creates the ClusterIP Service (achagent-<name>) so in-cluster<br />peers (a2a) or your own ingress can reach the harness. Required for any<br />inbound HTTP channel (webhook/a2a) to be reachable at all. |  |  |
+| `gateway` _boolean_ | Gateway publishes the agent on the shared ACH gateway<br />(/agents/\{ns\}/\{service\} route + status.gatewayURL). Requires service. |  |  |
 
 
 #### ExternalRefStatus

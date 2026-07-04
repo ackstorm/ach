@@ -218,6 +218,23 @@ type ChannelSpec struct {
 	A2A *A2ASpec `json:"a2a,omitempty"`
 }
 
+// ExposeSpec controls how an agent is reachable. Both axes default false —
+// an agent is fully private (harness Pod only, no Service, no public route)
+// unless it explicitly opts in. gateway requires service (the gateway proxies
+// to the Service; there is nothing to route to without it).
+// +kubebuilder:validation:XValidation:rule="!self.gateway || self.service",message="expose.gateway requires expose.service"
+type ExposeSpec struct {
+	// Service creates the ClusterIP Service (achagent-<name>) so in-cluster
+	// peers (a2a) or your own ingress can reach the harness. Required for any
+	// inbound HTTP channel (webhook/a2a) to be reachable at all.
+	// +optional
+	Service bool `json:"service,omitempty"`
+	// Gateway publishes the agent on the shared ACH gateway
+	// (/agents/{ns}/{service} route + status.gatewayURL). Requires service.
+	// +optional
+	Gateway bool `json:"gateway,omitempty"`
+}
+
 // ACHAgentSpec defines the desired state of an agent instance.
 type ACHAgentSpec struct {
 	// +kubebuilder:validation:Required
@@ -236,6 +253,10 @@ type ACHAgentSpec struct {
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional
 	Memory *MemorySpec `json:"memory,omitempty"`
+	// Expose controls reachability (Service + gateway route). Omit for a fully
+	// private agent (no Service, no public URL).
+	// +optional
+	Expose *ExposeSpec `json:"expose,omitempty"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
 	// +listType=map
@@ -251,17 +272,18 @@ type ACHAgentStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
-	// WebhookURL is the inbound base URL for this agent, e.g.
-	// https://ach.example.com/agents/ach-system/achagent-gh. The last
+	// GatewayURL is the inbound base URL for this agent on the shared gateway,
+	// e.g. https://ach.example.com/agents/ach-system/achagent-gh. The last
 	// segment is the agent's Service name; the gateway forwards anything
 	// after it verbatim to that Service (append the harness route you need,
-	// e.g. /channels/{name}/events for a webhook channel). Set only when
-	// the agent has >=1 webhook channel. The host segment is only populated
-	// when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,
-	// ACH_BASE_URL) configured; otherwise this is the path-only form for
-	// the caller to prefix with their own ingress host.
+	// e.g. /channels/{name}/events for a webhook channel, or the a2a path).
+	// Set only when the agent opts into gateway exposure (expose.gateway).
+	// The host segment is only populated when the operator has
+	// ACH_PUBLIC_BASE_URL (or, as a fallback, ACH_BASE_URL) configured;
+	// otherwise this is the path-only form for the caller to prefix with
+	// their own ingress host.
 	// +optional
-	WebhookURL string `json:"webhookURL,omitempty"`
+	GatewayURL string `json:"gatewayURL,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -269,7 +291,7 @@ type ACHAgentStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=agent
 // +kubebuilder:printcolumn:name="Profile",type=string,JSONPath=".spec.profileRef.name"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
-// +kubebuilder:printcolumn:name="Webhook",type=string,JSONPath=".status.webhookURL",priority=1
+// +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=".status.gatewayURL",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="ACHAgent name must be <= 50 chars (operator derives <=63-char child names)"
 

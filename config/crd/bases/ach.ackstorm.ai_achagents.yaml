@@ -23,8 +23,8 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
       type: string
-    - jsonPath: .status.webhookURL
-      name: Webhook
+    - jsonPath: .status.gatewayURL
+      name: Gateway
       priority: 1
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -283,6 +283,26 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              expose:
+                description: |-
+                  Expose controls reachability (Service + gateway route). Omit for a fully
+                  private agent (no Service, no public URL).
+                properties:
+                  gateway:
+                    description: |-
+                      Gateway publishes the agent on the shared ACH gateway
+                      (/agents/{ns}/{service} route + status.gatewayURL). Requires service.
+                    type: boolean
+                  service:
+                    description: |-
+                      Service creates the ClusterIP Service (achagent-<name>) so in-cluster
+                      peers (a2a) or your own ingress can reach the harness. Required for any
+                      inbound HTTP channel (webhook/a2a) to be reachable at all.
+                    type: boolean
+                type: object
+                x-kubernetes-validations:
+                - message: expose.gateway requires expose.service
+                  rule: '!self.gateway || self.service'
               identity:
                 description: 'IdentitySpec carries the ACH ek_ (config: injected as
                   ACH_TOKEN env via secretKeyRef).'
@@ -514,21 +534,22 @@ spec:
                   - type
                   type: object
                 type: array
+              gatewayURL:
+                description: |-
+                  GatewayURL is the inbound base URL for this agent on the shared gateway,
+                  e.g. https://ach.example.com/agents/ach-system/achagent-gh. The last
+                  segment is the agent's Service name; the gateway forwards anything
+                  after it verbatim to that Service (append the harness route you need,
+                  e.g. /channels/{name}/events for a webhook channel, or the a2a path).
+                  Set only when the agent opts into gateway exposure (expose.gateway).
+                  The host segment is only populated when the operator has
+                  ACH_PUBLIC_BASE_URL (or, as a fallback, ACH_BASE_URL) configured;
+                  otherwise this is the path-only form for the caller to prefix with
+                  their own ingress host.
+                type: string
               observedGeneration:
                 format: int64
                 type: integer
-              webhookURL:
-                description: |-
-                  WebhookURL is the inbound base URL for this agent, e.g.
-                  https://ach.example.com/agents/ach-system/achagent-gh. The last
-                  segment is the agent's Service name; the gateway forwards anything
-                  after it verbatim to that Service (append the harness route you need,
-                  e.g. /channels/{name}/events for a webhook channel). Set only when
-                  the agent has >=1 webhook channel. The host segment is only populated
-                  when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,
-                  ACH_BASE_URL) configured; otherwise this is the path-only form for
-                  the caller to prefix with their own ingress host.
-                type: string
             type: object
         type: object
         x-kubernetes-validations:
