@@ -1491,6 +1491,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#exposespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExposeSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#externalrefstatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2513,6 +2524,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#exposespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExposeSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#externalrefstatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3361,6 +3383,12 @@
 <td></td>
 </tr>
 <tr>
+<td><code>expose</code> <em><a href="#exposespec">ExposeSpec</a></em></td>
+<td>Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>channels</code> <em><a href="#channelspec">ChannelSpec</a> array</em></td>
 <td></td>
 <td></td>
@@ -3395,8 +3423,8 @@
 <td></td>
 </tr>
 <tr>
-<td><code>webhookURL</code> <em>string</em></td>
-<td>WebhookURL is the inbound base URL for this agent, e.g.<br />https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/{name}/events for a webhook channel). Set only when<br />the agent has &gt;=1 webhook channel. The host segment is only populated<br />when the operator has ACH_PUBLIC_BASE_URL (or, as a fallback,<br />ACH_BASE_URL) configured; otherwise this is the path-only form for<br />the caller to prefix with their own ingress host.</td>
+<td><code>gatewayURL</code> <em>string</em></td>
+<td>GatewayURL is the inbound base URL for this agent on the shared gateway,<br />e.g. https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/{name}/events for a webhook channel, or the a2a path).<br />Set only when the agent opts into gateway exposure (expose.gateway).<br />The host segment is only populated when the operator has<br />ACH_PUBLIC_BASE_URL (or, as a fallback, ACH_BASE_URL) configured;<br />otherwise this is the path-only form for the caller to prefix with<br />their own ingress host.</td>
 <td></td>
 <td></td>
 </tr>
@@ -4675,6 +4703,37 @@ CRD-02 at admission.</p>
 <tr>
 <td><code>skills</code> <em>string array</em></td>
 <td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="exposespec">ExposeSpec<a class="headerlink" href="#exposespec" title="Permanent link">&para;</a></h4>
+<p>ExposeSpec controls how an agent is reachable. Both axes default false —
+an agent is fully private (harness Pod only, no Service, no public route)
+unless it explicitly opts in. gateway requires service (the gateway proxies
+to the Service; there is nothing to route to without it).</p>
+<p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>service</code> <em>boolean</em></td>
+<td>Service creates the ClusterIP Service (achagent-<name>) so in-cluster<br />peers (a2a) or your own ingress can reach the harness. Required for any<br />inbound HTTP channel (webhook/a2a) to be reachable at all.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gateway</code> <em>boolean</em></td>
+<td>Gateway publishes the agent on the shared ACH gateway<br />(/agents/{ns}/{service} route + status.gatewayURL). Requires service.</td>
 <td></td>
 <td></td>
 </tr>
