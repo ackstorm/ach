@@ -70,6 +70,11 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, er
 // Marshal serializes an AgentConfig (Go struct field order is stable).
 func Marshal(cfg AgentConfig) ([]byte, error) { return json.Marshal(cfg) }
 
+// memoryHindsightSecretEnvName is the fixed env var carrying the hindsight admin-auth
+// secret. In the ACH_SECRET_ namespace so sanitizeForwardEnv strips it from
+// engine.forwardEnv for free; collision-free vs ACH_SECRET_<CH>_<TYPE> (TYPE is never HINDSIGHT).
+const memoryHindsightSecretEnvName = "ACH_SECRET_MEMORY_HINDSIGHT" // #nosec G101 -- env var NAME, not a credential value
+
 // channelSecretEnvName is the deterministic env var name carrying a channel's
 // inbound-auth secret (webhook/a2a). Named ACH_SECRET_<CHANNEL>_<TYPE> (upper-
 // snake, non-alnum → _). The name is NOT sensitive (only the value is, and the
@@ -119,6 +124,16 @@ func ChannelSecretEnv(a achv1alpha1.ACHAgent) []ChannelSecretEnvRef {
 		}
 	}
 	return out
+}
+
+// MemorySecretEnv returns the hindsight admin-auth secret to inject via secretKeyRef,
+// or nil when the agent has no memory auth. Same wiring as channel secrets (env, not file).
+func MemorySecretEnv(a achv1alpha1.ACHAgent) *ChannelSecretEnvRef {
+	m := a.Spec.Memory
+	if m == nil || m.Type != "hindsight" || m.Hindsight == nil || m.Hindsight.Auth == nil {
+		return nil
+	}
+	return &ChannelSecretEnvRef{EnvName: memoryHindsightSecretEnvName, SecretName: m.Hindsight.Auth.Name, Key: m.Hindsight.Auth.Key}
 }
 
 func decodeParams(raw *apiextensionsv1.JSON) (map[string]any, error) {
@@ -196,7 +211,17 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 	switch m.Type {
 	case "hindsight":
 		if m.Hindsight != nil {
-			out.Hindsight = &HindsightBlock{Endpoint: m.Hindsight.Endpoint, Bank: m.Hindsight.Bank, MentalModels: m.Hindsight.MentalModels}
+			hb := &HindsightBlock{Endpoint: m.Hindsight.Endpoint, Bank: m.Hindsight.Bank, Mission: m.Hindsight.Mission}
+			if m.Hindsight.Auth != nil {
+				hb.Auth = &SecretSourceBlock{Env: memoryHindsightSecretEnvName}
+			}
+			for _, mm := range m.Hindsight.MentalModels {
+				hb.MentalModels = append(hb.MentalModels, MentalModelBlock{
+					ID: mm.ID, Name: mm.Name, SourceQuery: mm.SourceQuery,
+					AutoRefresh: mm.AutoRefresh, MaxTokens: mm.MaxTokens,
+				})
+			}
+			out.Hindsight = hb
 		}
 	case "codemem":
 		// codemem block is optional per schema; {"type":"codemem"} is valid.
@@ -306,6 +331,9 @@ func ReferencedSecrets(a achv1alpha1.ACHAgent) map[string][]string {
 				add(ch.A2A.Auth.SecretRef.Name, ch.A2A.Auth.SecretRef.Key)
 			}
 		}
+	}
+	if ref := MemorySecretEnv(a); ref != nil {
+		add(ref.SecretName, ref.Key)
 	}
 	out := make(map[string][]string, len(set))
 	for name, keys := range set {

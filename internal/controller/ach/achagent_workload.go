@@ -102,6 +102,13 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) []corev
 			Key:                  ref.Key,
 		}}})
 	}
+	// Hindsight admin-auth secret (memory.hindsight.auth) — same env-not-file wiring.
+	if ref := agentrender.MemorySecretEnv(*a); ref != nil {
+		env = append(env, corev1.EnvVar{Name: ref.EnvName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretName},
+			Key:                  ref.Key,
+		}}})
+	}
 	return env
 }
 

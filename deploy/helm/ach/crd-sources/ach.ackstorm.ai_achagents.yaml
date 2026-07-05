@@ -375,15 +375,71 @@ spec:
                     description: 'HindsightSpec is the hindsight memory backend (config:
                       memory.hindsight).'
                     properties:
+                      auth:
+                        description: |-
+                          Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).
+                          Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the
+                          value into the pod from this Secret and renders only the env NAME. Omit for an
+                          internal/no-auth Hindsight URL.
+                        properties:
+                          key:
+                            description: Key is the data key inside the Secret.
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name is the Kubernetes Secret name.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
                       bank:
+                        description: |-
+                          Bank is the static, harness-owned memory bank id. NEVER template it from
+                          inbound payload (untrusted → cross-tenant memory); per-repo partitioning is
+                          via tags, harness-side.
                         type: string
                       endpoint:
                         minLength: 1
                         type: string
                       mentalModels:
                         items:
-                          type: string
+                          description: |-
+                            MentalModelSpec is one Hindsight mental model the harness provisions at boot
+                            (config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
+                          properties:
+                            autoRefresh:
+                              description: AutoRefresh triggers a refresh after consolidation
+                                (harness default false).
+                              type: boolean
+                            id:
+                              minLength: 1
+                              type: string
+                            maxTokens:
+                              description: MaxTokens caps the rendered summary (harness
+                                default 2048). Omit to use it.
+                              format: int64
+                              minimum: 1
+                              type: integer
+                            name:
+                              minLength: 1
+                              type: string
+                            sourceQuery:
+                              description: SourceQuery is the question the harness
+                                runs to build/refresh the model.
+                              minLength: 1
+                              type: string
+                          required:
+                          - id
+                          - name
+                          - sourceQuery
+                          type: object
                         type: array
+                      mission:
+                        description: Mission is passed to create_bank at provisioning
+                          (free text).
+                        type: string
                     required:
                     - endpoint
                     type: object

@@ -82,9 +82,20 @@ type MemoryBlock struct {
 }
 
 type HindsightBlock struct {
-	Endpoint     string   `json:"endpoint"`
-	Bank         string   `json:"bank,omitempty"`
-	MentalModels []string `json:"mentalModels,omitempty"`
+	Endpoint     string             `json:"endpoint"`
+	Bank         string             `json:"bank,omitempty"`
+	Auth         *SecretSourceBlock `json:"auth,omitempty"`
+	Mission      string             `json:"mission,omitempty"`
+	MentalModels []MentalModelBlock `json:"mentalModels,omitempty"`
+}
+
+// MentalModelBlock is one rendered memory.hindsight.mentalModels[] entry.
+type MentalModelBlock struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	SourceQuery string `json:"sourceQuery"`
+	AutoRefresh bool   `json:"autoRefresh,omitempty"`
+	MaxTokens   *int64 `json:"maxTokens,omitempty"`
 }
 
 type CodememBlock struct {

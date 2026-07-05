@@ -166,6 +166,82 @@ func TestChannelSecretEnv_NamesAndRefs(t *testing.T) {
 	}
 }
 
+func TestMemorySecretEnv_HindsightAuth(t *testing.T) {
+	withAuth := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
+		Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{Endpoint: "http://h", Auth: &achv1alpha1.SecretKeyRef{Name: "hs", Key: "token"}},
+	}}}
+	ref := MemorySecretEnv(withAuth)
+	if ref == nil || ref.EnvName != "ACH_SECRET_MEMORY_HINDSIGHT" || ref.SecretName != "hs" || ref.Key != "token" {
+		t.Errorf("MemorySecretEnv = %+v, want ACH_SECRET_MEMORY_HINDSIGHT → hs/token", ref)
+	}
+	// It must join ReferencedSecrets so the reconciler key-check + hash + watch cover it.
+	if keys := ReferencedSecrets(withAuth)["hs"]; len(keys) != 1 || keys[0] != "token" {
+		t.Errorf("ReferencedSecrets missing memory secret: %v", ReferencedSecrets(withAuth))
+	}
+	// No auth → no ref (internal/no-auth Hindsight URL).
+	noAuth := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
+		Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{Endpoint: "http://h"},
+	}}}
+	if ref := MemorySecretEnv(noAuth); ref != nil {
+		t.Errorf("MemorySecretEnv(no auth) = %+v, want nil", ref)
+	}
+	// Non-hindsight memory → no ref.
+	if ref := MemorySecretEnv(achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{Type: "codemem"}}}); ref != nil {
+		t.Errorf("MemorySecretEnv(codemem) = %+v, want nil", ref)
+	}
+}
+
+func TestRenderMemory_HindsightRichBlock(t *testing.T) {
+	out := renderMemory(&achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
+		Endpoint: "http://h", Bank: "b", Mission: "reviewer",
+		Auth: &achv1alpha1.SecretKeyRef{Name: "hs", Key: "token"},
+		MentalModels: []achv1alpha1.MentalModelSpec{
+			{ID: "arch", Name: "Arch", SourceQuery: "what arch?", AutoRefresh: true, MaxTokens: ptr(int64(4096))},
+			{ID: "conv", Name: "Conv", SourceQuery: "what conventions?"},
+		},
+	}})
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hs := m["hindsight"].(map[string]any)
+	// auth renders ONLY the operator-generated env name, never the secretRef.
+	if auth := hs["auth"].(map[string]any); auth["env"] != "ACH_SECRET_MEMORY_HINDSIGHT" {
+		t.Errorf("auth = %v, want {env: ACH_SECRET_MEMORY_HINDSIGHT}", auth)
+	}
+	if hs["mission"] != "reviewer" || hs["bank"] != "b" {
+		t.Errorf("mission/bank = %v/%v", hs["mission"], hs["bank"])
+	}
+	mm := hs["mentalModels"].([]any)
+	if len(mm) != 2 {
+		t.Fatalf("mentalModels len = %d, want 2", len(mm))
+	}
+	m0 := mm[0].(map[string]any)
+	if m0["id"] != "arch" || m0["sourceQuery"] != "what arch?" || m0["autoRefresh"] != true || m0["maxTokens"] != float64(4096) {
+		t.Errorf("mentalModels[0] = %v", m0)
+	}
+	// optional fields omitted when unset (harness owns the defaults).
+	m1 := mm[1].(map[string]any)
+	if _, present := m1["autoRefresh"]; present {
+		t.Errorf("mentalModels[1].autoRefresh emitted when unset: %v", m1)
+	}
+	if _, present := m1["maxTokens"]; present {
+		t.Errorf("mentalModels[1].maxTokens emitted when unset: %v", m1)
+	}
+	// no-auth hindsight → no auth key at all.
+	noAuth := renderMemory(&achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{Endpoint: "http://h"}})
+	nb, _ := json.Marshal(noAuth)
+	var nm map[string]any
+	_ = json.Unmarshal(nb, &nm)
+	if _, present := nm["hindsight"].(map[string]any)["auth"]; present {
+		t.Errorf("no-auth hindsight emitted an auth block: %s", nb)
+	}
+}
+
 func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
 		Image: "x", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},

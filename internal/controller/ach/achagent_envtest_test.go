@@ -325,3 +325,74 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 		t.Fatalf("private agent status.gatewayURL = %q, want empty", priv.Status.GatewayURL)
 	}
 }
+
+// TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef proves the hindsight admin
+// secret round-trips: the ConfigMap renders auth.env = the operator-generated
+// name, and the Deployment carries a matching secretKeyRef env var (never inline,
+// never a file). A missing referenced key drives ChannelSecretsResolved=False via
+// the shared ReferencedSecrets/checkChannelSecrets path.
+func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-mem", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-admin", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("bearer")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-mem", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+
+	memAgent := func(name, secretName string) *achv1alpha1.ACHAgent {
+		return &achv1alpha1.ACHAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
+			Spec: achv1alpha1.ACHAgentSpec{
+				ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-mem"},
+				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-mem", Key: "ek"}},
+				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+				Memory: &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
+					Endpoint: "http://h", Mission: "reviewer",
+					Auth:         &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					MentalModels: []achv1alpha1.MentalModelSpec{{ID: "arch", Name: "Arch", SourceQuery: "what arch?"}},
+				}},
+				Channels: []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			},
+		}
+	}
+
+	// Auth secret present → applied, config + Deployment wired.
+	mustApply(t, ctx, memAgent("aa-mem", "hs-admin"))
+	waitAgentCond(t, ctx, "aa-mem", condWorkloadApplied, metav1.ConditionTrue)
+	waitAgentCond(t, ctx, "aa-mem", condChannelSecretsResolved, metav1.ConditionTrue)
+
+	var cm corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-mem")}, &cm); err != nil {
+		t.Fatalf("get configmap: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
+		t.Fatalf("config.json invalid: %v", err)
+	}
+	auth := cfg["memory"].(map[string]any)["hindsight"].(map[string]any)["auth"].(map[string]any)
+	if auth["env"] != "ACH_SECRET_MEMORY_HINDSIGHT" {
+		t.Errorf("config memory.hindsight.auth.env = %v, want ACH_SECRET_MEMORY_HINDSIGHT", auth["env"])
+	}
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-mem")}, &dep); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	var found bool
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		if e.Name != "ACH_SECRET_MEMORY_HINDSIGHT" {
+			continue
+		}
+		found = true
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+			e.ValueFrom.SecretKeyRef.Name != "hs-admin" || e.ValueFrom.SecretKeyRef.Key != "token" {
+			t.Errorf("deployment env ACH_SECRET_MEMORY_HINDSIGHT must be secretKeyRef hs-admin/token, got %+v", e)
+		}
+	}
+	if !found {
+		t.Error("deployment missing ACH_SECRET_MEMORY_HINDSIGHT env var")
+	}
+
+	// Referenced key missing from the secret → ChannelSecretsResolved=False.
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-nokey", Namespace: WatchNamespace}, Data: map[string][]byte{"other": []byte("x")}})
+	mustApply(t, ctx, memAgent("aa-mem-nokey", "hs-nokey"))
+	waitAgentCond(t, ctx, "aa-mem-nokey", condChannelSecretsResolved, metav1.ConditionFalse)
+}

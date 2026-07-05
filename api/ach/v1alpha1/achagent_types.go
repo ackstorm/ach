@@ -70,15 +70,49 @@ type AgentPromptSpec struct {
 	Compose string `json:"compose,omitempty"`
 }
 
+// MentalModelSpec is one Hindsight mental model the harness provisions at boot
+// (config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
+type MentalModelSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// SourceQuery is the question the harness runs to build/refresh the model.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	SourceQuery string `json:"sourceQuery"`
+	// AutoRefresh triggers a refresh after consolidation (harness default false).
+	// +optional
+	AutoRefresh bool `json:"autoRefresh,omitempty"`
+	// MaxTokens caps the rendered summary (harness default 2048). Omit to use it.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxTokens *int64 `json:"maxTokens,omitempty"`
+}
+
 // HindsightSpec is the hindsight memory backend (config: memory.hindsight).
 type HindsightSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Endpoint string `json:"endpoint"`
+	// Bank is the static, harness-owned memory bank id. NEVER template it from
+	// inbound payload (untrusted → cross-tenant memory); per-repo partitioning is
+	// via tags, harness-side.
 	// +optional
 	Bank string `json:"bank,omitempty"`
+	// Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).
+	// Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the
+	// value into the pod from this Secret and renders only the env NAME. Omit for an
+	// internal/no-auth Hindsight URL.
 	// +optional
-	MentalModels []string `json:"mentalModels,omitempty"`
+	Auth *SecretKeyRef `json:"auth,omitempty"`
+	// Mission is passed to create_bank at provisioning (free text).
+	// +optional
+	Mission string `json:"mission,omitempty"`
+	// +optional
+	MentalModels []MentalModelSpec `json:"mentalModels,omitempty"`
 }
 
 // CodememSpec is the codemem memory backend (config: memory.codemem). All fields optional.

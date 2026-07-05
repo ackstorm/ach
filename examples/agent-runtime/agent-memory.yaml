@@ -1,0 +1,48 @@
+# ACHAgent with the Hindsight memory backend (config: memory.hindsight).
+#
+# Prereqs (in addition to the ops-ek secret from README.md):
+#   kubectl -n engineering create secret generic hindsight-admin \
+#     --from-literal=token=<hindsight-admin-bearer>
+#
+# The operator injects that token into the pod as the env var
+# ACH_SECRET_MEMORY_HINDSIGHT (via secretKeyRef, never a file) and renders only
+# the env NAME into config.json (memory.hindsight.auth.env). The harness reads
+# os.environ[NAME] to authenticate its admin path to Hindsight — this is NOT the
+# agent's ek_. Omit `auth` entirely for an internal / no-auth Hindsight URL.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: memory-reviewer
+  namespace: engineering
+spec:
+  profileRef: { name: standard }
+  identity:
+    secretRef: { name: ops-ek, key: ek }
+  capability:
+    environment: engineering-prod
+  memory:
+    type: hindsight
+    hindsight:
+      endpoint: http://hindsight.engineering.svc:8080
+      # bank is static + harness-owned. NEVER template it from inbound payload
+      # (untrusted → cross-tenant memory); partition per-repo via tags harness-side.
+      bank: platform-reviews
+      auth: { name: hindsight-admin, key: token }
+      mission: "Senior reviewer for the platform team; remember architecture and conventions."
+      # mentalModels the harness provisions at boot. autoRefresh + maxTokens are
+      # optional (harness defaults false / 2048) — omit them to take the defaults.
+      mentalModels:
+        - id: architecture
+          name: Architecture
+          sourceQuery: "What is the platform's service architecture and data flow?"
+          autoRefresh: true
+          maxTokens: 4096
+        - id: conventions
+          name: Conventions
+          sourceQuery: "What coding conventions and review standards does the team enforce?"
+  channels:
+    - name: daily-consolidate
+      type: cron
+      session: { type: none }
+      cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
+      prompt: "Review recent merges against the architecture and conventions models."

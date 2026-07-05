@@ -1,0 +1,104 @@
+apiVersion	string
+kind	string
+metadata	object
+spec	object
+spec.capability	object
+spec.capability.environment	string
+spec.capability.filter	object
+spec.capability.filter.exclude	object
+spec.capability.filter.exclude.mcpServers	array
+spec.capability.filter.exclude.mcpServers[]	string
+spec.capability.filter.exclude.skills	array
+spec.capability.filter.exclude.skills[]	string
+spec.capability.filter.exclude.tools	array
+spec.capability.filter.exclude.tools[]	string
+spec.channels	array
+spec.channels[]	object
+spec.channels[].a2a	object
+spec.channels[].a2a.auth	object
+spec.channels[].a2a.auth.header	string
+spec.channels[].a2a.auth.secretRef	object
+spec.channels[].a2a.auth.secretRef.key	string
+spec.channels[].a2a.auth.secretRef.name	string
+spec.channels[].concurrency	integer
+spec.channels[].cron	object
+spec.channels[].cron.schedule	string
+spec.channels[].cron.timezone	string
+spec.channels[].name	string
+spec.channels[].prompt	string
+spec.channels[].queue	object
+spec.channels[].queue.key	string
+spec.channels[].session	object
+spec.channels[].session.key	string
+spec.channels[].session.maxTokens	integer
+spec.channels[].session.overflow	string enum[compact,rotate]
+spec.channels[].session.type	string enum[auto,custom,none]
+spec.channels[].source	string enum[generic,github,gitlab]
+spec.channels[].type	string enum[a2a,cron,queue,webhook]
+spec.channels[].webhook	object
+spec.channels[].webhook.auth	object
+spec.channels[].webhook.auth.header	string
+spec.channels[].webhook.auth.secretRef	object
+spec.channels[].webhook.auth.secretRef.key	string
+spec.channels[].webhook.auth.secretRef.name	string
+spec.channels[].webhook.auth.type	string enum[gitlab_token,header_token,hmac,none]
+spec.channels[].webhook.gitlabEvents	array
+spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note]
+spec.expose	object
+spec.expose.gateway	boolean
+spec.expose.service	boolean
+spec.identity	object
+spec.identity.secretRef	object
+spec.identity.secretRef.key	string
+spec.identity.secretRef.name	string
+spec.limits	object
+spec.limits.idempotencyWindowSeconds	integer
+spec.limits.maxConcurrentInvocations	integer
+spec.limits.maxInvocationSeconds	integer
+spec.limits.maxQueuedTotal	integer
+spec.limits.maxSteps	integer
+spec.limits.terminalOutputRetries	integer
+spec.memory	object
+spec.memory.codemem	object
+spec.memory.codemem.dbPath	string
+spec.memory.codemem.project	string
+spec.memory.hindsight	object
+spec.memory.hindsight.auth	object
+spec.memory.hindsight.auth.key	string
+spec.memory.hindsight.auth.name	string
+spec.memory.hindsight.bank	string
+spec.memory.hindsight.endpoint	string
+spec.memory.hindsight.mentalModels	array
+spec.memory.hindsight.mentalModels[]	object
+spec.memory.hindsight.mentalModels[].autoRefresh	boolean
+spec.memory.hindsight.mentalModels[].id	string
+spec.memory.hindsight.mentalModels[].maxTokens	integer
+spec.memory.hindsight.mentalModels[].name	string
+spec.memory.hindsight.mentalModels[].sourceQuery	string
+spec.memory.hindsight.mission	string
+spec.memory.type	string enum[codemem,hindsight]
+spec.model	object
+spec.model.name	string
+spec.model.params	
+spec.model.type	string enum[anthropic,gemini,openai]
+spec.profileRef	object
+spec.profileRef.name	string
+spec.prompt	object
+spec.prompt.compose	string enum[append,replace]
+spec.prompt.system	object
+spec.prompt.system.ach	string
+spec.prompt.system.achFile	string
+spec.prompt.system.file	string
+spec.prompt.system.text	string
+spec.prompt.system.type	string enum[ach,file,text]
+status	object
+status.conditions	array
+status.conditions[]	object
+status.conditions[].lastTransitionTime	string
+status.conditions[].message	string
+status.conditions[].observedGeneration	integer
+status.conditions[].reason	string
+status.conditions[].status	string enum[False,True,Unknown]
+status.conditions[].type	string
+status.gatewayURL	string
+status.observedGeneration	integer

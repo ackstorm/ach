@@ -177,6 +177,43 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 }
 
+func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
+	a.Spec.Memory = &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
+		Endpoint: "http://h", Auth: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"},
+	}}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Image = "img"
+	p.Spec.Ach.BaseURL = "https://ach"
+
+	// The hindsight admin secret rides in env (secretKeyRef), never inline, never a file.
+	var found bool
+	for _, e := range buildAgentEnv(a, p) {
+		if e.Name != "ACH_SECRET_MEMORY_HINDSIGHT" {
+			continue
+		}
+		found = true
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+			e.ValueFrom.SecretKeyRef.Name != "hs-admin" || e.ValueFrom.SecretKeyRef.Key != "token" {
+			t.Errorf("memory secret env must be a secretKeyRef to hs-admin/token, got %+v", e)
+		}
+	}
+	if !found {
+		t.Fatal("memory auth secret not injected as env var")
+	}
+
+	// No auth → no such env var.
+	a.Spec.Memory.Hindsight.Auth = nil
+	for _, e := range buildAgentEnv(a, p) {
+		if e.Name == "ACH_SECRET_MEMORY_HINDSIGHT" {
+			t.Errorf("no-auth hindsight must not inject ACH_SECRET_MEMORY_HINDSIGHT")
+		}
+	}
+}
+
 func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"

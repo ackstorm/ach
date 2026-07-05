@@ -930,8 +930,10 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `endpoint` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `bank` _string_ |  |  |  |
-| `mentalModels` _string array_ |  |  |  |
+| `bank` _string_ | Bank is the static, harness-owned memory bank id. NEVER template it from<br />inbound payload (untrusted → cross-tenant memory); per-repo partitioning is<br />via tags, harness-side. |  |  |
+| `auth` _[SecretKeyRef](#secretkeyref)_ | Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).<br />Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the<br />value into the pod from this Secret and renders only the env NAME. Omit for an<br />internal/no-auth Hindsight URL. |  |  |
+| `mission` _string_ | Mission is passed to create_bank at provisioning (free text). |  |  |
+| `mentalModels` _[MentalModelSpec](#mentalmodelspec) array_ |  |  |  |
 
 
 #### IdentitySpec
@@ -1132,6 +1134,27 @@ _Appears in:_
 | `type` _string_ |  |  | Enum: [hindsight codemem] <br />Required: \{\} <br /> |
 | `hindsight` _[HindsightSpec](#hindsightspec)_ |  |  |  |
 | `codemem` _[CodememSpec](#codememspec)_ |  |  |  |
+
+
+#### MentalModelSpec
+
+
+
+MentalModelSpec is one Hindsight mental model the harness provisions at boot
+(config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
+
+
+
+_Appears in:_
+- [HindsightSpec](#hindsightspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `id` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `sourceQuery` _string_ | SourceQuery is the question the harness runs to build/refresh the model. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `autoRefresh` _boolean_ | AutoRefresh triggers a refresh after consolidation (harness default false). |  |  |
+| `maxTokens` _integer_ | MaxTokens caps the rendered summary (harness default 2048). Omit to use it. |  | Minimum: 1 <br /> |
 
 
 #### ModelSpec
@@ -1594,6 +1617,7 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 
 _Appears in:_
 - [A2AAuthSpec](#a2aauthspec)
+- [HindsightSpec](#hindsightspec)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
 - [WebhookAuthSpec](#webhookauthspec)

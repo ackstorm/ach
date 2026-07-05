@@ -31,6 +31,11 @@ kubectl -n engineering create secret generic ops-ek \
 # 2. Per-channel secrets referenced by webhook/a2a auth (this example's webhook).
 kubectl -n engineering create secret generic gitlab-webhook \
   --from-literal=secret=<gitlab-webhook-token>
+
+# 3. (agent-memory.yaml only) the Hindsight admin bearer, injected as
+#    ACH_SECRET_MEMORY_HINDSIGHT — NOT the ek_.
+kubectl -n engineering create secret generic hindsight-admin \
+  --from-literal=token=<hindsight-admin-bearer>
 ```
 
 ## Apply
@@ -38,6 +43,9 @@ kubectl -n engineering create secret generic gitlab-webhook \
 ```bash
 kubectl apply -f profile.yaml
 kubectl apply -f agent.yaml
+# Optional: an agent with the Hindsight memory backend (auth + mission +
+# mentalModels the harness provisions at boot). Shares the `standard` profile.
+kubectl apply -f agent-memory.yaml
 ```
 
 ## Status
