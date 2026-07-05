@@ -114,9 +114,15 @@ func callEchoViaForwarder(t *testing.T, gatewayLocal, pk, serverName, text strin
 // not yet run tools/list against a freshly-(re)registered MCP server, so the
 // proxied tools/call returns a 200 isError result — `Tool '<tool>' not found`
 // — instead of the echoed text. That is a warmup race, NOT a JWT/BIP-precedence
-// signal, and it clears within a few seconds (the same call succeeds moments
-// later, e.g. once SC3 runs). postMCPViaForwarder still t.Fatals on a non-200,
-// so a genuine transport/auth failure is not silently retried.
+// signal, and it clears once LiteLLM discovers the tools. postMCPViaForwarder
+// still t.Fatals on a non-200, so a genuine transport/auth failure is not
+// silently retried.
+//
+// This is the FIRST test to exercise the MCP tools/call path against a cold
+// cluster (phase4_bip_loop sorts before phase4_invariants), so it bears the full
+// first-discovery penalty — which on a freshly-brought-up kind cluster can run
+// well past 20s (the original budget flaked at ~23s on `make e2e-full`). The
+// budget is sized for that cold start; warm re-runs return on the first attempt.
 //
 // Bounded retry with an explicit failure path (no-naked-loop rule). The
 // mcp-echo capture is reset before EVERY attempt, including the winning one, so
@@ -124,7 +130,7 @@ func callEchoViaForwarder(t *testing.T, gatewayLocal, pk, serverName, text strin
 // discarded not-found attempt. Returns the winning response body.
 func callEchoViaForwarderEventually(t *testing.T, gatewayLocal, mcpEchoLocal, pk, serverName, text string) string {
 	t.Helper()
-	const attempts = 20
+	const attempts = 60
 	var resp string
 	for i := 0; i < attempts; i++ {
 		resetMcpEchoCapture(t, mcpEchoLocal)

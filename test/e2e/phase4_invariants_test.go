@@ -128,16 +128,16 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 	// (test/e2e/cluster/05-environment/demo.yaml), so the precheck must
 	// pass. LiteLLM may still 404 the path — the comment above notes
 	// that's fine; we only assert the precheck does NOT 403.
-	reqAllowed, _ := http.NewRequest(http.MethodGet, forwarderURL+"/mcp/demo-mcp-jwt/", nil)
-	reqAllowed.Header.Set("x-ach-key", ek)
-	respAllowed, err := http.DefaultClient.Do(reqAllowed)
-	if err != nil {
-		t.Fatalf("allowed mcp request: %v", err)
-	}
-	respAllowed.Body.Close()
-	if respAllowed.StatusCode == http.StatusForbidden {
-		t.Fatalf("expected non-403 on /mcp/allowed (precheck should pass); got 403")
-	}
+	//
+	// The forwarder's envstore is eventually-consistent BY DESIGN (db.Listener
+	// NOTIFY is at-most-once + a 5-min periodic refresh — internal/forwarder/
+	// envstore; RunRefreshLoop does its initial load THEN subscribes, so a NOTIFY
+	// in that gap is lost until the tick). On a freshly-brought-up cluster the
+	// operator's demo-Environment NOTIFY can land before the forwarder's listener
+	// attaches, so the mcpServers allowlist row lags a single GET. Poll until it
+	// loads (non-403) instead of one-shot — matches driveV1ToBackend's retry
+	// idiom above. (Closes the cold cluster-up e2e flake.)
+	waitForwarderPrecheckAuthorized(t, forwarderURL+"/mcp/demo-mcp-jwt/", ek)
 
 	// Bare "/mcp/<name>" (NO trailing slash) — the exact form hydrate writes
 	// into runtime config (platformapi/hydrate/handler.go) and the form that
@@ -145,18 +145,38 @@ func testPhase4SC2McpA2aPrecheck(t *testing.T) {
 	// route was missing; only "/mcp/{name}/*" was registered). A router miss
 	// returns chi's plain 404, so a 404 HERE means the bare route regressed.
 	// We assert it reaches precheck (non-403 AND non-404).
-	reqBare, _ := http.NewRequest(http.MethodGet, forwarderURL+"/mcp/demo-mcp-jwt", nil)
-	reqBare.Header.Set("x-ach-key", ek)
-	respBare, err := http.DefaultClient.Do(reqBare)
-	if err != nil {
-		t.Fatalf("bare-path mcp request: %v", err)
-	}
-	respBare.Body.Close()
-	if respBare.StatusCode == http.StatusNotFound {
+	if st := waitForwarderPrecheckAuthorized(t, forwarderURL+"/mcp/demo-mcp-jwt", ek); st == http.StatusNotFound {
 		t.Fatalf("bare /mcp/demo-mcp-jwt 404'd — the slash-less route regressed (router miss)")
 	}
-	if respBare.StatusCode == http.StatusForbidden {
-		t.Fatalf("expected non-403 on bare /mcp/demo-mcp-jwt (precheck should pass); got 403")
+}
+
+// waitForwarderPrecheckAuthorized GETs url with the ek header, polling until the
+// forwarder precheck stops returning 403, and returns that first non-403 status.
+// The forwarder's envstore/bipcache is eventually-consistent (see the SC2 comment
+// above), so a freshly-synced Environment's mcpServers allowlist may lag a missed
+// NOTIFY on a cold cluster; a one-shot GET races it. A non-403 status (incl. 404)
+// is returned as-is so the caller can still detect a router-miss regression. Fails
+// only if still 403 at the 30s deadline.
+func waitForwarderPrecheckAuthorized(t *testing.T, url, ek string) int {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for attempt := 1; ; attempt++ {
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("x-ach-key", ek)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("mcp precheck GET %s: %v", url, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			return resp.StatusCode
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected non-403 on %s (precheck should pass) — still 403 after 30s; "+
+				"forwarder envstore never loaded the demo mcpServers allowlist", url)
+		}
+		t.Logf("attempt %d: %s still 403 (forwarder envstore cold) — retry", attempt, url)
+		time.Sleep(2 * time.Second)
 	}
 }
 
