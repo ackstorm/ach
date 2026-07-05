@@ -1700,6 +1700,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mentalmodelspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MentalModelSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#modelspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2726,6 +2737,17 @@
     <span class="md-ellipsis">
       
         MemorySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mentalmodelspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MentalModelSpec
       
     </span>
   </a>
@@ -5052,12 +5074,24 @@ Service targetPort and the container probes. Harness default port is 8080.</p>
 </tr>
 <tr>
 <td><code>bank</code> <em>string</em></td>
-<td></td>
+<td>Bank is the static, harness-owned memory bank id. NEVER template it from<br />inbound payload (untrusted → cross-tenant memory); per-repo partitioning is<br />via tags, harness-side.</td>
 <td></td>
 <td></td>
 </tr>
 <tr>
-<td><code>mentalModels</code> <em>string array</em></td>
+<td><code>auth</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
+<td>Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).<br />Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the<br />value into the pod from this Secret and renders only the env NAME. Omit for an<br />internal/no-auth Hindsight URL.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>mission</code> <em>string</em></td>
+<td>Mission is passed to create_bank at provisioning (free text).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>mentalModels</code> <em><a href="#mentalmodelspec">MentalModelSpec</a> array</em></td>
 <td></td>
 <td></td>
 <td></td>
@@ -5430,6 +5464,53 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <td></td>
 <td></td>
 <td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="mentalmodelspec">MentalModelSpec<a class="headerlink" href="#mentalmodelspec" title="Permanent link">&para;</a></h4>
+<p>MentalModelSpec is one Hindsight mental model the harness provisions at boot
+(config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.</p>
+<p><em>Appears in:</em>
+- <a href="#hindsightspec">HindsightSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>sourceQuery</code> <em>string</em></td>
+<td>SourceQuery is the question the harness runs to build/refresh the model.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>autoRefresh</code> <em>boolean</em></td>
+<td>AutoRefresh triggers a refresh after consolidation (harness default false).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>maxTokens</code> <em>integer</em></td>
+<td>MaxTokens caps the rendered summary (harness default 2048). Omit to use it.</td>
+<td></td>
+<td>Minimum: 1 <br /></td>
 </tr>
 </tbody>
 </table>
@@ -6426,6 +6507,7 @@ prefix listing (directory scope).</p>
 <p>SecretKeyRef identifies a key in a same-namespace Secret.</p>
 <p><em>Appears in:</em>
 - <a href="#a2aauthspec">A2AAuthSpec</a>
+- <a href="#hindsightspec">HindsightSpec</a>
 - <a href="#identityspec">IdentitySpec</a>
 - <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a>
 - <a href="#webhookauthspec">WebhookAuthSpec</a></p>
