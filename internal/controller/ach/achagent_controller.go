@@ -192,6 +192,10 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.apply(ctx, &agent, buildService(&agent, &profile)); err != nil {
 			return r.applyFail(ctx, &agent, conds, "Service", err)
 		}
+	} else if err := r.pruneService(ctx, &agent); err != nil {
+		// Converge expose.service true→false (and pre-feat orphans): owner-ref GC
+		// only fires on ACHAgent delete, not when the owner stops desiring the child.
+		return r.applyFail(ctx, &agent, conds, "Service", err)
 	}
 	setCond(&conds, condWorkloadApplied, metav1.ConditionTrue, "WorkloadApplied", "", agent.Generation)
 
@@ -234,6 +238,16 @@ func (r *ACHAgentReconciler) apply(ctx context.Context, owner *achv1alpha1.ACHAg
 		return controllerutil.SetControllerReference(owner, obj, r.Scheme)
 	})
 	return err
+}
+
+// pruneService deletes the ClusterIP Service when the agent no longer opts in
+// (expose.service absent/false). Idempotent — NotFound is a no-op.
+func (r *ACHAgentReconciler) pruneService(ctx context.Context, a *achv1alpha1.ACHAgent) error {
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace}}
+	if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 // applyPVC creates the PVC once. When retainPolicy=Retain the PVC gets NO owner-ref, so it

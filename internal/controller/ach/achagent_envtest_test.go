@@ -326,6 +326,48 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 	}
 }
 
+// Disabling expose.service (true→false) prunes the now-orphaned Service. Owner-ref
+// GC only fires on ACHAgent delete, so without this the Service would leak — the
+// same convergence that cleans agents predating the expose feature.
+func TestACHAgent_ExposeServiceDisabled_PrunesService(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-prune", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-prune", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prune", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-prune"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-prune", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Expose:     &achv1alpha1.ExposeSpec{Service: true},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook", Source: "github", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-prune", condWorkloadApplied, metav1.ConditionTrue)
+
+	svcKey := types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-prune")}
+	if err := k8sClient.Get(ctx, svcKey, &corev1.Service{}); err != nil {
+		t.Fatalf("exposed agent must have a Service before disable: %v", err)
+	}
+
+	// Flip expose off — mirrors a pre-feat agent: Service on disk, spec no longer wants it.
+	var a achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-prune"}, &a); err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	a.Spec.Expose = nil
+	if err := k8sClient.Update(ctx, &a); err != nil {
+		t.Fatalf("disable expose: %v", err)
+	}
+
+	if !Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, svcKey, &corev1.Service{}))
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("Service must be pruned after expose.service disabled")
+	}
+}
+
 // TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef proves the hindsight admin
 // secret round-trips: the ConfigMap renders auth.env = the operator-generated
 // name, and the Deployment carries a matching secretKeyRef env var (never inline,
