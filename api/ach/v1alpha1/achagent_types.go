@@ -158,6 +158,19 @@ type WebhookSpec struct {
 	// +optional
 	// +kubebuilder:validation:items:Enum=merge_request;issue;note
 	GitlabEvents []string `json:"gitlabEvents,omitempty"`
+	// BotUsername is the GitLab username the agent posts AS (the egress PAT's
+	// user — a distinct fact from the agent name). When set, the harness drops
+	// inbound events authored by this user plus gitlab-generated system notes
+	// pre-enqueue (loop-guard). Omit → guard off. gitlab source only; ignored
+	// for github/generic. Rendered verbatim to channels[].webhook.botUsername.
+	// +optional
+	BotUsername *string `json:"botUsername,omitempty"`
+	// TriggerUsers is an actor allowlist: only these GitLab usernames may
+	// trigger the agent (every routed kind: mr/issue/note). Omit → any author
+	// triggers. gitlab source only; ignored for github/generic. Rendered
+	// verbatim to channels[].webhook.triggerUsers.
+	// +optional
+	TriggerUsers []string `json:"triggerUsers,omitempty"`
 }
 
 // CronSpec configures a cron channel (config: channels[].cron).

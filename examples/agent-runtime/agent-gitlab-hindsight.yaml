@@ -1,0 +1,73 @@
+# GitLab code-review ACHAgent with the Hindsight memory backend.
+#
+# Prereqs:
+#   kubectl -n engineering create secret generic ops-ek --from-literal=ek=<ek_...>
+#   kubectl -n engineering create secret generic gitlab-webhook --from-literal=secret=<token>
+#
+# The Hindsight endpoint below is an internal cluster URL, so `auth` is omitted
+# (no bearer). For an external / authed Hindsight, create a secret and add
+#   auth: { name: hindsight-admin, key: token }
+# to memory.hindsight — the operator injects it as ACH_SECRET_MEMORY_HINDSIGHT
+# (env-only, never a file) and renders just the env NAME into config.json.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: gitlab-hindsight-reviewer
+  namespace: engineering
+spec:
+  profileRef: { name: standard }
+  identity:
+    secretRef: { name: ops-ek, key: ek }
+  capability:
+    environment: engineering-prod
+  memory:
+    type: hindsight
+    hindsight:
+      endpoint: http://hindsight-api.hindsight.svc:8888/mcp   # internal → no auth
+      # bank is static + harness-owned. NEVER template it from inbound payload
+      # (untrusted → cross-tenant memory); partition per-repo via tags harness-side.
+      bank: gitlab-ackstorm
+      mission: "AI code reviewer that analyzes GitLab merge requests, issues, and repository code. Focuses on architecture decisions, coding conventions, recurring bugs, and code quality patterns across projects."
+      # mentalModels the harness provisions at boot. autoRefresh + maxTokens are
+      # optional (harness defaults false / 2048).
+      mentalModels:
+        - id: architecture
+          name: "Architecture Overview"
+          sourceQuery: "What is the architecture, tech stack, and key design patterns?"
+          autoRefresh: true
+          maxTokens: 4096
+        - id: conventions
+          name: "Coding Conventions"
+          sourceQuery: "What coding conventions, naming patterns, and style preferences are used?"
+          autoRefresh: true
+          maxTokens: 2048
+        - id: recurring-issues
+          name: "Recurring Issues"
+          sourceQuery: "What bugs, gotchas, or problematic patterns have appeared repeatedly?"
+          autoRefresh: true
+          maxTokens: 2048
+        - id: team-reviewer
+          name: "Team & Review Context"
+          sourceQuery: "Who are the main contributors, what areas do they own, what review feedback was accepted or rejected, and what patterns should I avoid repeating?"
+          autoRefresh: true
+          maxTokens: 2048
+  # Reachability is opt-in (both default false). GitLab webhooks arrive through the
+  # shared gateway, so this agent needs both service (ClusterIP) + gateway (route).
+  expose:
+    service: true
+    gateway: true
+  channels:
+    - name: gitlab-mr-review
+      type: webhook
+      source: gitlab
+      concurrency: 4
+      prompt: "Review this merge request: {{ payload.object_attributes.url }}"
+      webhook:
+        auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
+        gitlabEvents: [merge_request, note]
+        # gitlab-only loop-guard + actor gate (both optional, absent → off).
+        # botUsername: the GitLab user the agent posts AS — the harness drops that
+        # user's own comments/MRs + system notes pre-enqueue so it never re-triggers
+        # itself. triggerUsers: only these usernames may trigger the agent.
+        botUsername: ackbot
+        triggerUsers: [juancarlos.moreno, ivan.hernanz]

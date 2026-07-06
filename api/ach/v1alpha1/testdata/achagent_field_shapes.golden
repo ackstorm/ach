@@ -42,8 +42,11 @@ spec.channels[].webhook.auth.secretRef	object
 spec.channels[].webhook.auth.secretRef.key	string
 spec.channels[].webhook.auth.secretRef.name	string
 spec.channels[].webhook.auth.type	string enum[gitlab_token,header_token,hmac,none]
+spec.channels[].webhook.botUsername	string
 spec.channels[].webhook.gitlabEvents	array
 spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note]
+spec.channels[].webhook.triggerUsers	array
+spec.channels[].webhook.triggerUsers[]	string
 spec.expose	object
 spec.expose.gateway	boolean
 spec.expose.service	boolean

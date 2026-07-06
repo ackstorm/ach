@@ -147,6 +147,8 @@ type SessionBlock struct {
 type WebhookBlock struct {
 	Auth         WebhookAuthBlock `json:"auth"`
 	GitlabEvents []string         `json:"gitlabEvents,omitempty"`
+	BotUsername  *string          `json:"botUsername,omitempty"`
+	TriggerUsers []string         `json:"triggerUsers,omitempty"`
 }
 
 type WebhookAuthBlock struct {

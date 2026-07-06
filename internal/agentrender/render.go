@@ -286,7 +286,7 @@ func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {
 	switch ch.Type {
 	case channelTypeWebhook:
 		if ch.Webhook != nil {
-			w := &WebhookBlock{Auth: WebhookAuthBlock{Type: ch.Webhook.Auth.Type, Header: ch.Webhook.Auth.Header}, GitlabEvents: ch.Webhook.GitlabEvents}
+			w := &WebhookBlock{Auth: WebhookAuthBlock{Type: ch.Webhook.Auth.Type, Header: ch.Webhook.Auth.Header}, GitlabEvents: ch.Webhook.GitlabEvents, BotUsername: ch.Webhook.BotUsername, TriggerUsers: ch.Webhook.TriggerUsers}
 			if ch.Webhook.Auth.SecretRef != nil {
 				w.Auth.Secret = &SecretSourceBlock{Env: channelSecretEnvName(ch)}
 			}

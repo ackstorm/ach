@@ -256,12 +256,29 @@ spec:
                           - message: webhook.auth.header is required when type=header_token
                             rule: self.type!='header_token' || (has(self.header) &&
                               size(self.header)>0)
+                        botUsername:
+                          description: |-
+                            BotUsername is the GitLab username the agent posts AS (the egress PAT's
+                            user — a distinct fact from the agent name). When set, the harness drops
+                            inbound events authored by this user plus gitlab-generated system notes
+                            pre-enqueue (loop-guard). Omit → guard off. gitlab source only; ignored
+                            for github/generic. Rendered verbatim to channels[].webhook.botUsername.
+                          type: string
                         gitlabEvents:
                           items:
                             enum:
                             - merge_request
                             - issue
                             - note
+                            type: string
+                          type: array
+                        triggerUsers:
+                          description: |-
+                            TriggerUsers is an actor allowlist: only these GitLab usernames may
+                            trigger the agent (every routed kind: mr/issue/note). Omit → any author
+                            triggers. gitlab source only; ignored for github/generic. Rendered
+                            verbatim to channels[].webhook.triggerUsers.
+                          items:
                             type: string
                           type: array
                       required:

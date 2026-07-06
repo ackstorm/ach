@@ -281,3 +281,42 @@ func TestRenderChannel_NilSessionOmitted(t *testing.T) {
 		t.Errorf("nil ChannelSpec.Session must be omitted, not emitted as {}: %s", b)
 	}
 }
+
+func TestRenderChannel_GitlabWebhookLoopGuard(t *testing.T) {
+	bot := "ackbot"
+	cb := renderChannel(&achv1alpha1.ChannelSpec{
+		Name: "gl", Type: "webhook", Source: "gitlab",
+		Webhook: &achv1alpha1.WebhookSpec{
+			Auth:         achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gl", Key: "secret"}},
+			GitlabEvents: []string{"merge_request"},
+			BotUsername:  &bot,
+			TriggerUsers: []string{"alice", "bob"},
+		},
+	})
+	if cb.Webhook.BotUsername == nil || *cb.Webhook.BotUsername != bot {
+		t.Errorf("botUsername not passed through verbatim: %+v", cb.Webhook.BotUsername)
+	}
+	if got := cb.Webhook.TriggerUsers; len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
+		t.Errorf("triggerUsers not passed through verbatim: %v", got)
+	}
+
+	// Omitted → absent from JSON (absent → null → prior behavior), not empty/null keys.
+	plain := renderChannel(&achv1alpha1.ChannelSpec{
+		Name: "gl2", Type: "webhook", Source: "gitlab",
+		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}},
+	})
+	b, err := json.Marshal(plain.Webhook)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := m["botUsername"]; ok {
+		t.Errorf("omitted botUsername must be absent, got: %s", b)
+	}
+	if _, ok := m["triggerUsers"]; ok {
+		t.Errorf("omitted triggerUsers must be absent, got: %s", b)
+	}
+}

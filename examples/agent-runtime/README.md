@@ -46,6 +46,9 @@ kubectl apply -f agent.yaml
 # Optional: an agent with the Hindsight memory backend (auth + mission +
 # mentalModels the harness provisions at boot). Shares the `standard` profile.
 kubectl apply -f agent-memory.yaml
+# Optional: a GitLab MR reviewer wired to Hindsight over an internal (no-auth)
+# URL — webhook channel + four mentalModels. No hindsight-admin secret needed.
+kubectl apply -f agent-gitlab-hindsight.yaml
 ```
 
 ## Status

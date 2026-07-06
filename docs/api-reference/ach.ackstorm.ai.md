@@ -1960,5 +1960,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `auth` _[WebhookAuthSpec](#webhookauthspec)_ |  |  | Required: \{\} <br /> |
 | `gitlabEvents` _string array_ |  |  | items:Enum: [merge_request issue note] <br /> |
+| `botUsername` _string_ | BotUsername is the GitLab username the agent posts AS (the egress PAT's<br />user — a distinct fact from the agent name). When set, the harness drops<br />inbound events authored by this user plus gitlab-generated system notes<br />pre-enqueue (loop-guard). Omit → guard off. gitlab source only; ignored<br />for github/generic. Rendered verbatim to channels[].webhook.botUsername. |  |  |
+| `triggerUsers` _string array_ | TriggerUsers is an actor allowlist: only these GitLab usernames may<br />trigger the agent (every routed kind: mr/issue/note). Omit → any author<br />triggers. gitlab source only; ignored for github/generic. Rendered<br />verbatim to channels[].webhook.triggerUsers. |  |  |
 
 
