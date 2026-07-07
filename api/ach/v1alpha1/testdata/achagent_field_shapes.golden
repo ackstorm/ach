@@ -61,6 +61,23 @@ spec.limits.maxInvocationSeconds	integer
 spec.limits.maxQueuedTotal	integer
 spec.limits.maxSteps	integer
 spec.limits.terminalOutputRetries	integer
+spec.mcpServers	array
+spec.mcpServers[]	object
+spec.mcpServers[].local	object
+spec.mcpServers[].local.args	array
+spec.mcpServers[].local.args[]	string
+spec.mcpServers[].local.command	string
+spec.mcpServers[].local.env	array
+spec.mcpServers[].local.env[]	string
+spec.mcpServers[].name	string
+spec.mcpServers[].remote	object
+spec.mcpServers[].remote.headers	object
+spec.mcpServers[].remote.url	string
+spec.mcpServers[].repoCheckout	object
+spec.mcpServers[].repoCheckout.sourceMcpServerId	string
+spec.mcpServers[].repoCheckout.tmpBase	string
+spec.mcpServers[].repoCheckout.ttlSeconds	integer
+spec.mcpServers[].type	string enum[local,remote,repoCheckout]
 spec.memory	object
 spec.memory.codemem	object
 spec.memory.codemem.dbPath	string

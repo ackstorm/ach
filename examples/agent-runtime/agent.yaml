@@ -44,3 +44,34 @@ spec:
         type: none
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Scan main for new CVEs; open an issue if any are critical."
+  # Harness-managed MCP servers (rendered into the config mcpServers map).
+  # Three kinds; presence = enabled. Distinct from the Environment's ACH-fronted
+  # MCP set (which is hydrated, not declared here).
+  mcpServers:
+    # repoCheckout — the harness HOSTS a checkout_repo(project, ref, subpath?) tool
+    # (gitlab archive → on-disk tree; full-tree rg / run tests / build). It reads the
+    # archive from the hydrated MCP server named by sourceMcpServerId, which MUST be
+    # one the Environment (engineering-prod) exposes; a wrong id fails soft at runtime.
+    - name: repo-checkout
+      type: repoCheckout
+      repoCheckout:
+        sourceMcpServerId: gitlab-ro   # must exist in the Environment's MCP set
+        # tmpBase: /tmp/gitlab         # optional (harness default)
+        # ttlSeconds: 3600             # optional (harness default)
+    # local — opencode LAUNCHES a stdio MCP subprocess (bring-your-own tool).
+    # env lists var NAMES to forward; wire their values via profile.spec.extraEnv.
+    # - name: filesystem
+    #   type: local
+    #   local:
+    #     command: docker
+    #     args: [run, -i, --rm, --mount, "type=bind,src=/data,dst=/projects/data,ro", mcp/filesystem, /projects]
+    #     env: [SOME_VAR]
+    # remote — opencode CONNECTS directly to a remote MCP endpoint. headers values are
+    # ${env:NAME} refs (never secret values); wire the env via profile.spec.extraEnv.
+    # SECURITY: the co-resident agent can read the resolved header — front via ACH
+    # hydrate instead if that matters.
+    # - name: other
+    #   type: remote
+    #   remote:
+    #     url: https://mcp.example.com/mcp
+    #     headers: { Authorization: "Bearer ${env:OTHER_MCP_TOKEN}" }

@@ -19,6 +19,9 @@ type AgentConfig struct {
 	Persistence   *PersistBlock   `json:"persistence,omitempty"`
 	Health        *HealthBlock    `json:"health,omitempty"`
 	Channels      []ChannelBlock  `json:"channels,omitempty"`
+	// McpServers is the harness-managed MCP server map keyed by name (schema
+	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
+	McpServers map[string]McpServerBlock `json:"mcpServers,omitempty"`
 }
 
 type AgentBlock struct {
@@ -59,6 +62,29 @@ type EngineBlock struct {
 	IdleTTLSeconds        *int64   `json:"idleTtlSeconds,omitempty"`
 	StartupTimeoutSeconds *int64   `json:"startupTimeoutSeconds,omitempty"`
 	MaxToolCalls          *int64   `json:"maxToolCalls,omitempty"`
+}
+
+// McpServerBlock is one rendered mcpServers[<name>] entry (schema $defs/McpServerConfig,
+// a type-discriminated union). Exactly the fields for Type are set; omitempty drops the
+// rest so each entry matches exactly one union branch.
+type McpServerBlock struct {
+	Type string `json:"type"`
+	// repoCheckout (harness-hosted):
+	RepoCheckout *RepoCheckoutParamsBlock `json:"repoCheckout,omitempty"`
+	// local (passthrough stdio subprocess):
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
+	// remote (passthrough direct connect):
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// RepoCheckoutParamsBlock is the nested params of a repoCheckout mcpServers entry.
+type RepoCheckoutParamsBlock struct {
+	SourceMcpServerID string `json:"sourceMcpServerId"`
+	TmpBase           string `json:"tmpBase,omitempty"`
+	TTLSeconds        *int64 `json:"ttlSeconds,omitempty"`
 }
 
 type PromptBlock struct {

@@ -1,0 +1,34 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: ACHAgent.spec.mcpServers[] must carry the sub-block matching
+# its type (CONTRACT_v3 mcpServers addendum).
+# Expected error substring: "mcpServers"
+#
+# This manifest is otherwise valid but declares an mcpServers entry with
+# type=repoCheckout and NO repoCheckout: block. The discriminator CEL rule
+#   (self.type=='repoCheckout' && has(self.repoCheckout)) ||
+#   (self.type=='local' && has(self.local)) ||
+#   (self.type=='remote' && has(self.remote))
+# rejects with: "mcpServers: the block matching type is required".
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-mcpserver-missing-block
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"
+  mcpServers:
+    - name: repo-checkout
+      type: repoCheckout
+      # repoCheckout block deliberately omitted → CEL rejection

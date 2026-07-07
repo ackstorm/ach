@@ -282,6 +282,77 @@ type ExposeSpec struct {
 	Gateway bool `json:"gateway,omitempty"`
 }
 
+// McpServerSpec is one harness-managed MCP server (rendered into config
+// mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
+// harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
+// PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
+// directly, NOT via the ACH proxy). The operator renders the list into the config's
+// mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
+// (hydrated as runtime.mcpServers) — different namespace, no collision.
+// +kubebuilder:validation:XValidation:rule="(self.type=='repoCheckout' && has(self.repoCheckout)) || (self.type=='local' && has(self.local)) || (self.type=='remote' && has(self.remote))",message="mcpServers: the block matching type is required"
+type McpServerSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=repoCheckout;local;remote
+	Type string `json:"type"`
+	// +optional
+	RepoCheckout *RepoCheckoutSpec `json:"repoCheckout,omitempty"`
+	// +optional
+	Local *LocalMcpSpec `json:"local,omitempty"`
+	// +optional
+	Remote *RemoteMcpSpec `json:"remote,omitempty"`
+}
+
+// RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
+// gitlab://{project}/archive/{ref} from the hydrated MCP server named by
+// sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
+// per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
+// server the agent's Environment exposes makes the tool fail-soft at runtime (no
+// crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
+type RepoCheckoutSpec struct {
+	// SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves
+	// the gitlab archive resource.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	SourceMcpServerID string `json:"sourceMcpServerId"`
+	// TmpBase is the parent dir for per-checkout tmp dirs (harness default /tmp/gitlab).
+	// +optional
+	TmpBase string `json:"tmpBase,omitempty"`
+	// TTLSeconds bounds how long a stale checkout lingers before the next call sweeps
+	// it (harness default 3600).
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+}
+
+// LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
+// env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
+// defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).
+type LocalMcpSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Command string `json:"command"`
+	// +optional
+	Args []string `json:"args,omitempty"`
+	// +optional
+	Env []string `json:"env,omitempty"`
+}
+
+// RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
+// headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
+// the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+// resolved header, so a co-resident same-uid agent CAN read it — front the server via
+// ACH hydrate instead if that is unacceptable.
+type RemoteMcpSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	URL string `json:"url"`
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
 // ACHAgentSpec defines the desired state of an agent instance.
 type ACHAgentSpec struct {
 	// +kubebuilder:validation:Required
@@ -309,6 +380,12 @@ type ACHAgentSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	Channels []ChannelSpec `json:"channels"`
+	// MCPServers are harness-managed MCP servers (repoCheckout / local / remote)
+	// rendered into the config's mcpServers map. Presence = enabled; omit for none.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	MCPServers []McpServerSpec `json:"mcpServers,omitempty"`
 }
 
 // ACHAgentStatus is the observed state.
