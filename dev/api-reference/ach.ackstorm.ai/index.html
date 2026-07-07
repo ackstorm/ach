@@ -1656,6 +1656,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#localmcpspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalMcpSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#localobjectref" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1682,6 +1693,17 @@
     <span class="md-ellipsis">
       
         MarketplacePluginRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcpserverspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        McpServerSpec
       
     </span>
   </a>
@@ -1891,6 +1913,28 @@
     <span class="md-ellipsis">
       
         RefreshBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remotemcpspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteMcpSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repocheckoutspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RepoCheckoutSpec
       
     </span>
   </a>
@@ -2700,6 +2744,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#localmcpspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalMcpSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#localobjectref" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2726,6 +2781,17 @@
     <span class="md-ellipsis">
       
         MarketplacePluginRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcpserverspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        McpServerSpec
       
     </span>
   </a>
@@ -2935,6 +3001,28 @@
     <span class="md-ellipsis">
       
         RefreshBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remotemcpspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteMcpSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repocheckoutspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RepoCheckoutSpec
       
     </span>
   </a>
@@ -3415,6 +3503,12 @@
 <td></td>
 <td></td>
 <td>MinItems: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>mcpServers</code> <em><a href="#mcpserverspec">McpServerSpec</a> array</em></td>
+<td>MCPServers are harness-managed MCP servers (repoCheckout / local / remote)<br />rendered into the config's mcpServers map. Presence = enabled; omit for none.</td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -5338,6 +5432,42 @@ operator. v1alpha1 admits only LiteLLMConnection/default per namespace.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="localmcpspec">LocalMcpSpec<a class="headerlink" href="#localmcpspec" title="Permanent link">&para;</a></h4>
+<p>LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
+env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
+defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).</p>
+<p><em>Appears in:</em>
+- <a href="#mcpserverspec">McpServerSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>command</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>args</code> <em>string array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>env</code> <em>string array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
 <h4 id="localobjectref">LocalObjectRef<a class="headerlink" href="#localobjectref" title="Permanent link">&para;</a></h4>
 <p>LocalObjectRef references a resource by name in the CR's namespace.</p>
 <p><em>Appears in:</em>
@@ -5425,6 +5555,58 @@ materialized AND the upstream revision they pin against.</p>
 <tr>
 <td><code>upstreamRev</code> <em>string</em></td>
 <td>UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision for this entry.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="mcpserverspec">McpServerSpec<a class="headerlink" href="#mcpserverspec" title="Permanent link">&para;</a></h4>
+<p>McpServerSpec is one harness-managed MCP server (rendered into config
+mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
+harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
+PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
+directly, NOT via the ACH proxy). The operator renders the list into the config's
+mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
+(hydrated as runtime.mcpServers) — different namespace, no collision.</p>
+<p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>Enum: [repoCheckout local remote] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>repoCheckout</code> <em><a href="#repocheckoutspec">RepoCheckoutSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>local</code> <em><a href="#localmcpspec">LocalMcpSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>remote</code> <em><a href="#remotemcpspec">RemoteMcpSpec</a></em></td>
+<td></td>
 <td></td>
 <td></td>
 </tr>
@@ -6408,6 +6590,77 @@ refresh attempts.</p>
 <td>MaxStaleness bounds the age of a served cached snapshot. When<br />now - lastSuccessfulRefresh &gt; maxStaleness, Content Service<br />returns 503 stale_cache_expired for the affected content<br />(§10). REQUIRED per CRD-04 — admission rejects a resource that<br />omits this field.</td>
 <td></td>
 <td>Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="remotemcpspec">RemoteMcpSpec<a class="headerlink" href="#remotemcpspec" title="Permanent link">&para;</a></h4>
+<p>RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
+headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
+the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+resolved header, so a co-resident same-uid agent CAN read it — front the server via
+ACH hydrate instead if that is unacceptable.</p>
+<p><em>Appears in:</em>
+- <a href="#mcpserverspec">McpServerSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>headers</code> <em>object (keys:string, values:string)</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="repocheckoutspec">RepoCheckoutSpec<a class="headerlink" href="#repocheckoutspec" title="Permanent link">&para;</a></h4>
+<p>RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
+gitlab://{project}/archive/{ref} from the hydrated MCP server named by
+sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
+per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
+server the agent's Environment exposes makes the tool fail-soft at runtime (no
+crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).</p>
+<p><em>Appears in:</em>
+- <a href="#mcpserverspec">McpServerSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sourceMcpServerId</code> <em>string</em></td>
+<td>SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves<br />the gitlab archive resource.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>tmpBase</code> <em>string</em></td>
+<td>TmpBase is the parent dir for per-checkout tmp dirs (harness default /tmp/gitlab).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ttlSeconds</code> <em>integer</em></td>
+<td>TTLSeconds bounds how long a stale checkout lingers before the next call sweeps<br />it (harness default 3600).</td>
+<td></td>
+<td>Minimum: 0 <br /></td>
 </tr>
 </tbody>
 </table>
