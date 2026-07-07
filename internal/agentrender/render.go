@@ -64,7 +64,45 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, er
 	for i := range a.Spec.Channels {
 		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i]))
 	}
+	cfg.McpServers = renderMcpServers(a.Spec.MCPServers)
 	return cfg, nil
+}
+
+// renderMcpServers turns the spec.mcpServers[] list into the config map keyed by name.
+// repoCheckout params pass through; local.env is sanitized (ACH_*/ek_ stripped, same
+// rule as engine.forwardEnv); remote.headers pass through verbatim as ${env:NAME} refs.
+func renderMcpServers(servers []achv1alpha1.McpServerSpec) map[string]McpServerBlock {
+	if len(servers) == 0 {
+		return nil
+	}
+	out := make(map[string]McpServerBlock, len(servers))
+	for i := range servers {
+		s := &servers[i]
+		b := McpServerBlock{Type: s.Type}
+		switch s.Type {
+		case "repoCheckout":
+			if s.RepoCheckout != nil {
+				b.RepoCheckout = &RepoCheckoutParamsBlock{
+					SourceMcpServerID: s.RepoCheckout.SourceMcpServerID,
+					TmpBase:           s.RepoCheckout.TmpBase,
+					TTLSeconds:        s.RepoCheckout.TTLSeconds,
+				}
+			}
+		case "local":
+			if s.Local != nil {
+				b.Command = s.Local.Command
+				b.Args = s.Local.Args
+				b.Env = sanitizeForwardEnv(s.Local.Env)
+			}
+		case "remote":
+			if s.Remote != nil {
+				b.URL = s.Remote.URL
+				b.Headers = s.Remote.Headers
+			}
+		}
+		out[s.Name] = b
+	}
+	return out
 }
 
 // Marshal serializes an AgentConfig (Go struct field order is stable).

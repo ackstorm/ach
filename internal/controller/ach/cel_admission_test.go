@@ -195,6 +195,15 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "mcpServers",
 		},
+		// CONTRACT_v3 mcpServers addendum — the discriminated union on
+		// ACHAgent.spec.mcpServers[].type requires the matching sub-block.
+		// type=repoCheckout with no repoCheckout: block → rejected.
+		{
+			name:           "invalid_achagent_mcpserver_missing_block",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_mcpserver_missing_block.yaml",
+			shouldFail:     true,
+			errMustContain: "mcpServers",
+		},
 	}
 
 	for _, tc := range cases {

@@ -131,6 +131,7 @@ _Appears in:_
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
+| `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (repoCheckout / local / remote)<br />rendered into the config's mcpServers map. Presence = enabled; omit for none. |  |  |
 
 
 #### ACHAgentStatus
@@ -1051,6 +1052,26 @@ _Appears in:_
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
 
 
+#### LocalMcpSpec
+
+
+
+LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
+env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
+defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).
+
+
+
+_Appears in:_
+- [McpServerSpec](#mcpserverspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `command` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `args` _string array_ |  |  |  |
+| `env` _string array_ |  |  |  |
+
+
 #### LocalObjectRef
 
 
@@ -1113,6 +1134,32 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the plugin's identifier within the catalog<br />(marketplace.json plugins[].name). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag\|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision for this entry. |  |  |
+
+
+#### McpServerSpec
+
+
+
+McpServerSpec is one harness-managed MCP server (rendered into config
+mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
+harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
+PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
+directly, NOT via the ACH proxy). The operator renders the list into the config's
+mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
+(hydrated as runtime.mcpServers) — different namespace, no collision.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `type` _string_ |  |  | Enum: [repoCheckout local remote] <br />Required: \{\} <br /> |
+| `repoCheckout` _[RepoCheckoutSpec](#repocheckoutspec)_ |  |  |  |
+| `local` _[LocalMcpSpec](#localmcpspec)_ |  |  |  |
+| `remote` _[RemoteMcpSpec](#remotemcpspec)_ |  |  |  |
 
 
 #### MemorySpec
@@ -1554,6 +1601,50 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_ | Interval is how often the ACH Operator polls the upstream source.<br />Optional; when unset, the Operator uses an implementation default.<br />Format matches Kubernetes Duration (e.g. "15m", "1h", "30s"). |  |  |
 | `maxStaleness` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_ | MaxStaleness bounds the age of a served cached snapshot. When<br />now - lastSuccessfulRefresh > maxStaleness, Content Service<br />returns 503 stale_cache_expired for the affected content<br />(§10). REQUIRED per CRD-04 — admission rejects a resource that<br />omits this field. |  | Required: \{\} <br /> |
+
+
+#### RemoteMcpSpec
+
+
+
+RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
+headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
+the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+resolved header, so a co-resident same-uid agent CAN read it — front the server via
+ACH hydrate instead if that is unacceptable.
+
+
+
+_Appears in:_
+- [McpServerSpec](#mcpserverspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `url` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `headers` _object (keys:string, values:string)_ |  |  |  |
+
+
+#### RepoCheckoutSpec
+
+
+
+RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
+gitlab://{project}/archive/{ref} from the hydrated MCP server named by
+sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
+per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
+server the agent's Environment exposes makes the tool fail-soft at runtime (no
+crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
+
+
+
+_Appears in:_
+- [McpServerSpec](#mcpserverspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `sourceMcpServerId` _string_ | SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves<br />the gitlab archive resource. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `tmpBase` _string_ | TmpBase is the parent dir for per-checkout tmp dirs (harness default /tmp/gitlab). |  |  |
+| `ttlSeconds` _integer_ | TTLSeconds bounds how long a stale checkout lingers before the next call sweeps<br />it (harness default 3600). |  | Minimum: 0 <br /> |
 
 
 #### RuntimeBlock
