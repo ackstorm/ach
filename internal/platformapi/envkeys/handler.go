@@ -598,7 +598,11 @@ func classifyInsertError(err error) insertErrClass {
 //  5. **LiteLLM FIRST**: deps.LiteLLM.RevokeKey(ctx, litellm_token).
 //     On error → 503 litellm_unreachable + audit; DB row STAYS active
 //     so retry retries cleanly. Redis NOT DEL'd. This ordering is the
-//     KEY-08 invariant.
+//     KEY-08 invariant. EXCEPTION: a 404 (LiteLLM has no such key — it is
+//     already gone) is idempotent success, NOT a failure: the barrier's
+//     goal is already met, so the flow proceeds to step 6. This recovers a
+//     row stranded by an out-of-band LiteLLM key delete. Every other error
+//     still fails closed.
 //  6. **DB flip**: db.RevokeEnvironmentKey post-LiteLLM-ack. On error
 //     → 500 internal_error + audit; the LiteLLM-side key is revoked
 //     but the DB row is in a partial state. Operator's orphan-cleanup
@@ -689,18 +693,31 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 			llToken = *row.LiteLLMToken
 		}
 		if err := deps.LiteLLM.RevokeKey(ctx, llToken); err != nil {
-			st, oc, msg := classifyLitellmErr(err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkRevoke,
-				Outcome:   oc,
-				Actor:     actor,
-				RequestID: reqID,
-				KeyID:     keyID,
-				Target:    &audit.Target{Kind: "environment", Name: row.Environment},
-			})
-			deps.Logger.Error("envkeys.revoke: LiteLLM RevokeKey failed", "key_id", keyID, "err", err)
-			render.Error(w, st, oc, msg, reqID)
-			return
+			// A 404 means LiteLLM no longer has this virtual key — it is
+			// already gone, so the LiteLLM-first barrier's goal (kill the
+			// upstream credential before ACH forgets it) is ALREADY met.
+			// Treat it as idempotent success and fall through to the DB
+			// flip. This recovers a row an operator stranded by deleting
+			// the LiteLLM key out-of-band (direct /key/delete or the UI),
+			// which otherwise leaves the ek_ un-revokable via the CLI.
+			// Any OTHER error leaves the upstream state UNKNOWN → fail
+			// closed (row stays 'active', caller retries cleanly).
+			if !litellm.IsHTTPNotFound(err) {
+				st, oc, msg := classifyLitellmErr(err)
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    audit.ActionEkRevoke,
+					Outcome:   oc,
+					Actor:     actor,
+					RequestID: reqID,
+					KeyID:     keyID,
+					Target:    &audit.Target{Kind: "environment", Name: row.Environment},
+				})
+				deps.Logger.Error("envkeys.revoke: LiteLLM RevokeKey failed", "key_id", keyID, "err", err)
+				render.Error(w, st, oc, msg, reqID)
+				return
+			}
+			deps.Logger.Info("envkeys.revoke: LiteLLM key already absent (404); proceeding to DB flip idempotently",
+				"key_id", keyID)
 		}
 
 		// Step 6: DB flip post-LiteLLM-ack.

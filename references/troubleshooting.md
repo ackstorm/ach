@@ -616,6 +616,26 @@ ticks. If you see a stale upstream key for a fully-revoked user, delete it
 manually (it 401s anyway); a widened-enumeration backstop is a tracked
 follow-up, not part of PR #119.
 
+### ❌ `ach-cli keys revoke <ekid_>` → `502 litellm_rejected` (key deleted in LiteLLM out-of-band)
+ek_ revoke is **LiteLLM-first** (KEY-08): the ACH row flips only after LiteLLM
+acks the `/key/delete`. If you deleted the ek_'s LiteLLM virtual key directly
+(LiteLLM UI, raw `POST /key/delete`, or `ek save`-style tooling) instead of
+through `ach-cli keys revoke`, LiteLLM no longer has the token → future
+`/key/delete` returns **404 `Key not found.`**. The ACH row is untouched, so
+the `ek-…` **still authenticates to ACH** (hydrate/reads work) while every model
++ MCP call 401s at LiteLLM — a desync between ACH and LiteLLM.
+✅ The revoke handler now treats that 404 as **idempotent success** (the
+upstream credential is already gone → the barrier's goal is met) and proceeds to
+the DB flip, so a plain `ach-cli keys revoke <ekid_>` finishes cleanly and
+returns 204. Any OTHER LiteLLM error (503 unreachable, 401/403 rejected) still
+fails closed — the row stays `active` so a retry is safe.
+WHY IT MATTERED: before this, a 404 was classified as a hard rejection → the row
+could never be revoked via the CLI, leaving a live-in-ACH but dead-in-LiteLLM
+key with no self-service recovery (needed a manual DB `UPDATE`). Root fix:
+`litellm.IsHTTPNotFound` + the 404 branch in `revokeEnvironmentKey`
+(`envkeys/handler.go` step 5). **Always** revoke via `ach-cli keys revoke`, not
+directly in LiteLLM, to keep the two sides in sync in the first place.
+
 ### ❌ Code change rebuilt but the old container keeps serving after `cluster-up`
 ```bash
 # edit Go code → make cluster-up → behavior unchanged; pod AGE is hours old
