@@ -19,4 +19,4 @@ resources:
 images:
 - name: controller
   newName: ghcr.io/ackstorm/ach
-  newTag: v0.6.9
+  newTag: v0.6.10
