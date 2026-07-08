@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 // ErrNotFound is returned by list-style helpers when the LiteLLM response
@@ -36,6 +37,17 @@ func (e *APIError) Error() string {
 		return fmt.Sprintf("litellm: %d on %s %s (code=%s, transient)", e.StatusCode, e.Method, e.Path, e.Code)
 	}
 	return fmt.Sprintf("litellm: %d on %s %s (code=%s)", e.StatusCode, e.Method, e.Path, e.Code)
+}
+
+// IsHTTPNotFound reports whether err is an *APIError carrying HTTP 404.
+// A 404 is the LiteLLM signal that the addressed resource does not exist —
+// on POST /key/delete it means the virtual key is already gone. Callers that
+// treat delete-of-absent as idempotent success (the ek_ revoke path) use this
+// to distinguish a confirmed not-found from every other 4xx/5xx, so only a
+// genuine "already gone" bypasses the LiteLLM-first revoke barrier (KEY-08).
+func IsHTTPNotFound(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
 
 // Auth401Error is the typed error returned by Client.makeRequest when
