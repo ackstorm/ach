@@ -572,11 +572,12 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
 	}
 	if err = (&achcontroller.ACHAgentReconciler{
-		Client:        mgr.GetClient(),
-		APIReader:     mgr.GetAPIReader(),
-		Scheme:        mgr.GetScheme(),
-		DB:            dbPool,
-		PublicBaseURL: config.EnvOr("ACH_PUBLIC_BASE_URL", config.EnvOr("ACH_BASE_URL", "")),
+		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
+		Scheme:            mgr.GetScheme(),
+		DB:                dbPool,
+		PublicBaseURL:     config.EnvOr("ACH_PUBLIC_BASE_URL", config.EnvOr("ACH_BASE_URL", "")),
+		DefaultAchBaseURL: config.EnvOr("ACH_BASE_URL", ""),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller ACHAgent: %w", err)
 	}

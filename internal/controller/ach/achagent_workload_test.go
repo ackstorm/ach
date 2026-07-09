@@ -9,6 +9,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 )
 
 func mkEnv(name, val string) []corev1.EnvVar { return []corev1.EnvVar{{Name: name, Value: val}} }
@@ -41,7 +42,7 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 	p.Spec.Ach.BaseURL = "https://ach"
 	p.Spec.ExtraEnv = mkEnv("HTTPS_PROXY", "http://p")
 
-	env := buildAgentEnv(a, p)
+	env := buildAgentEnv(a, p, "")
 
 	var token, base, extra, reserved bool
 	for _, e := range env {
@@ -65,6 +66,75 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 	}
 }
 
+// TestBuildAgentEnv_BaseURLResolution proves ACH_BASE_URL follows the same
+// agent ?? profile ?? operator-default chain as the rendered config.
+func TestBuildAgentEnv_BaseURLResolution(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name = "d"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	p := &achv1alpha1.AgentProfile{} // no profile baseUrl
+
+	get := func(env []corev1.EnvVar) string {
+		for _, e := range env {
+			if e.Name == "ACH_BASE_URL" {
+				return e.Value
+			}
+		}
+		return ""
+	}
+	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://env" {
+		t.Errorf("ACH_BASE_URL = %q, want operator default", v)
+	}
+	p.Spec.Ach.BaseURL = "https://profile"
+	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://profile" {
+		t.Errorf("ACH_BASE_URL = %q, want profile over default", v)
+	}
+	a.Spec.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://agent"}
+	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://agent" {
+		t.Errorf("ACH_BASE_URL = %q, want agent override", v)
+	}
+}
+
+// TestHealthOverride_ConfigProbeServiceAgree is the drift guard: an ACHAgent
+// health override must move the config health block, the probe port, the Service
+// targetPort, and the containerPort together — all resolved via the one shared
+// agentrender.ResolveHealth, so they can never disagree.
+func TestHealthOverride_ConfigProbeServiceAgree(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Capability.Environment = "e"
+	a.Spec.Model = &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}
+	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
+	a.Spec.Health = &achv1alpha1.HealthSpec{Port: 9137} // agent override
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Image = "img"
+	p.Spec.Ach.BaseURL = "https://ach"
+	p.Spec.Health = &achv1alpha1.HealthSpec{Port: 8000} // profile default, must lose
+
+	const want = int32(9137)
+	cfg, err := agentrender.Render(*p, *a, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if cfg.Health.Port != want {
+		t.Errorf("config health.port = %d, want %d", cfg.Health.Port, want)
+	}
+	if got := resolveHealthPort(a, p); got != want {
+		t.Errorf("probe port = %d, want %d", got, want)
+	}
+	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != want {
+		t.Errorf("service targetPort = %d, want %d", tp, want)
+	}
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatalf("buildDeployment: %v", err)
+	}
+	if cp := dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort; cp != want {
+		t.Errorf("containerPort = %d, want %d", cp, want)
+	}
+}
+
 func TestBuildAgentEnv_RejectsReservedExtraEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name = "d"
@@ -72,7 +142,7 @@ func TestBuildAgentEnv_RejectsReservedExtraEnv(t *testing.T) {
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Ach.BaseURL = "u"
 	p.Spec.ExtraEnv = mkEnv("ACH_TOKEN", "ek_LEAK") // reserved — must be dropped
-	for _, e := range buildAgentEnv(a, p) {
+	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name == "ACH_TOKEN" && e.Value == "ek_LEAK" {
 			t.Fatal("reserved ACH_* extraEnv leaked into the pod spec")
 		}
@@ -87,7 +157,7 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	p.Spec.Image = "ghcr.io/ackstorm/ach-agent:latest"
 	p.Spec.Ach.BaseURL = "https://ach"
 
-	env := buildAgentEnv(a, p)
+	env := buildAgentEnv(a, p, "")
 	dep, err := buildDeployment(a, p, "cfghash", env)
 	if err != nil {
 		t.Fatalf("buildDeployment: %v", err)
@@ -148,7 +218,7 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 
 	// Auth secret must be a secretKeyRef env var, never an inline value.
 	var found bool
-	for _, e := range buildAgentEnv(a, p) {
+	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name != "ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK" {
 			continue
 		}
@@ -163,7 +233,7 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 
 	// And it must NOT be mounted as a file, nor pull in fsGroup (uid/perms reverted).
-	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p))
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
 		t.Fatalf("buildDeployment: %v", err)
 	}
@@ -191,7 +261,7 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 
 	// The hindsight admin secret rides in env (secretKeyRef), never inline, never a file.
 	var found bool
-	for _, e := range buildAgentEnv(a, p) {
+	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name != "ACH_SECRET_MEMORY_HINDSIGHT" {
 			continue
 		}
@@ -207,7 +277,7 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 
 	// No auth → no such env var.
 	a.Spec.Memory.Hindsight.Auth = nil
-	for _, e := range buildAgentEnv(a, p) {
+	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name == "ACH_SECRET_MEMORY_HINDSIGHT" {
 			t.Errorf("no-auth hindsight must not inject ACH_SECRET_MEMORY_HINDSIGHT")
 		}

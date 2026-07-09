@@ -50,14 +50,12 @@ spec:
             description: AgentProfileSpec is the reusable infra + defaults half.
             properties:
               ach:
-                description: 'AchEndpointSpec is the ACH platform coordinate (config:
-                  capability.ach.baseUrl + ACH_BASE_URL env).'
+                description: |-
+                  Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the
+                  operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.
                 properties:
                   baseUrl:
-                    minLength: 1
                     type: string
-                required:
-                - baseUrl
                 type: object
               engine:
                 description: |-
@@ -474,7 +472,6 @@ spec:
                   type: object
                 type: array
             required:
-            - ach
             - image
             type: object
           status:

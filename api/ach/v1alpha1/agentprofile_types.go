@@ -16,10 +16,11 @@ type LocalObjectRef struct {
 }
 
 // AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+// BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+// operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
 type AchEndpointSpec struct {
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	BaseURL string `json:"baseUrl"`
+	// +optional
+	BaseURL string `json:"baseUrl,omitempty"`
 }
 
 // ModelSpec selects the ACH-served model (config: model{name,type,params}).
@@ -126,8 +127,10 @@ type AgentProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-	// +kubebuilder:validation:Required
-	Ach AchEndpointSpec `json:"ach"`
+	// Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the
+	// operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.
+	// +optional
+	Ach AchEndpointSpec `json:"ach,omitempty"`
 	// +optional
 	Model *ModelSpec `json:"model,omitempty"`
 	// +optional

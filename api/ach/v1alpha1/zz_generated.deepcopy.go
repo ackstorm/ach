@@ -120,6 +120,16 @@ func (in *ACHAgentSpec) DeepCopyInto(out *ACHAgentSpec) {
 		*out = new(LimitsSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.Ach != nil {
+		in, out := &in.Ach, &out.Ach
+		*out = new(AchEndpointSpec)
+		**out = **in
+	}
+	if in.Health != nil {
+		in, out := &in.Health, &out.Health
+		*out = new(HealthSpec)
+		**out = **in
+	}
 	if in.Prompt != nil {
 		in, out := &in.Prompt, &out.Prompt
 		*out = new(AgentPromptSpec)

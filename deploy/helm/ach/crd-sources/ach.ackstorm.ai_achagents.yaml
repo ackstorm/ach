@@ -56,6 +56,14 @@ spec:
           spec:
             description: ACHAgentSpec defines the desired state of an agent instance.
             properties:
+              ach:
+                description: |-
+                  Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).
+                  Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.
+                properties:
+                  baseUrl:
+                    type: string
+                type: object
               capability:
                 description: 'CapabilitySpec is the per-agent capability block (config:
                   capability{type:ach,ach.environment,filter}).'
@@ -321,6 +329,19 @@ spec:
                 x-kubernetes-validations:
                 - message: expose.gateway requires expose.service
                   rule: '!self.gateway || self.service'
+              health:
+                description: |-
+                  Health overrides the profile's health block (host/port). Drives the config health block,
+                  the Service targetPort, and the container probes together — always resolved as one unit.
+                properties:
+                  host:
+                    type: string
+                  port:
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
               identity:
                 description: 'IdentitySpec carries the ACH ek_ (config: injected as
                   ACH_TOKEN env via secretKeyRef).'

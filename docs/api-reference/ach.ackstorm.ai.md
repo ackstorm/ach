@@ -127,6 +127,8 @@ _Appears in:_
 | `capability` _[CapabilitySpec](#capabilityspec)_ |  |  | Required: \{\} <br /> |
 | `model` _[ModelSpec](#modelspec)_ | Model overrides the profile's default model. |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ | Limits overrides the profile's default limits. |  |  |
+| `ach` _[AchEndpointSpec](#achendpointspec)_ | Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).<br />Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL. |  |  |
+| `health` _[HealthSpec](#healthspec)_ | Health overrides the profile's health block (host/port). Drives the config health block,<br />the Service targetPort, and the container probes together — always resolved as one unit. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
@@ -157,15 +159,18 @@ _Appears in:_
 
 
 AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
 
 
 
 _Appears in:_
+- [ACHAgentSpec](#achagentspec)
 - [AgentProfileSpec](#agentprofilespec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `baseUrl` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `baseUrl` _string_ |  |  |  |
 
 
 #### AgentProfile
@@ -229,7 +234,7 @@ _Appears in:_
 | `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN). |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
-| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  | Required: \{\} <br /> |
+| `ach` _[AchEndpointSpec](#achendpointspec)_ | Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the<br />operator's ACH_BASE_URL. An ACHAgent may override via spec.ach. |  |  |
 | `model` _[ModelSpec](#modelspec)_ |  |  |  |
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
@@ -909,6 +914,7 @@ Service targetPort and the container probes. Harness default port is 8080.
 
 
 _Appears in:_
+- [ACHAgentSpec](#achagentspec)
 - [AgentProfileSpec](#agentprofilespec)
 
 | Field | Description | Default | Validation |

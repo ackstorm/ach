@@ -5,8 +5,9 @@ metadata:
   namespace: engineering
 spec:
   image: ghcr.io/ackstorm/ach-agent:latest
-  ach:
-    baseUrl: https://ach.ackstorm.ai
+  # ach.baseUrl is optional: omitted here so agents inherit the operator's own
+  # ACH_BASE_URL. Set it to pin an explicit (e.g. external) ACH; an ACHAgent can
+  # further override per-agent via its own spec.ach.baseUrl.
   model:
     name: openai.gpt-5
     type: openai

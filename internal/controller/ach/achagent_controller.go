@@ -81,6 +81,12 @@ type ACHAgentReconciler struct {
 	// stays available to override for a split-origin setup where the public
 	// webhook ingress differs from platform-api's own origin).
 	PublicBaseURL string
+
+	// DefaultAchBaseURL is the operator-level fallback ACH base URL (from
+	// ACH_BASE_URL) used when neither ACHAgent.spec.ach nor AgentProfile.spec.ach
+	// sets baseUrl. Empty + no per-object override => the agent is blocked (Render
+	// errors) because it has no ACH to hydrate against.
+	DefaultAchBaseURL string
 }
 
 //nolint:gocyclo // Single linear resolve→render→apply→status flow; splitting scatters status ordering.
@@ -138,7 +144,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	setCond(&conds, condChannelSecretsResolved, metav1.ConditionTrue, "ChannelSecretsFound", "", agent.Generation)
 
 	// 4. Render.
-	cfg, err := agentrender.Render(profile, agent)
+	cfg, err := agentrender.Render(profile, agent, r.DefaultAchBaseURL)
 	if err != nil {
 		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "RenderFailed", err.Error(), agent.Generation)
 		return r.finish(ctx, &agent, conds)
@@ -149,7 +155,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 5. Env (once) + salted secret hash + config hash.
-	env := buildAgentEnv(&agent, &profile)
+	env := buildAgentEnv(&agent, &profile, r.DefaultAchBaseURL)
 	envJSON, err := json.Marshal(env)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("marshal env: %w", err)

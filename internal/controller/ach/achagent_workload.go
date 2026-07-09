@@ -55,11 +55,12 @@ func agentSelectorLabels(agentName string) map[string]string {
 	return map[string]string{agentLabelKey: agentName}
 }
 
-func resolveHealthPort(p *achv1alpha1.AgentProfile) int32 {
-	if p.Spec.Health != nil && p.Spec.Health.Port != 0 {
-		return p.Spec.Health.Port
-	}
-	return agentrender.DefaultHealthPort
+// resolveHealthPort returns the probe/Service targetPort via the shared
+// agentrender.ResolveHealth (agent overrides profile), so it can never drift from
+// the rendered config health block.
+func resolveHealthPort(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) int32 {
+	_, port := agentrender.ResolveHealth(a.Spec.Health, p.Spec.Health)
+	return port
 }
 
 // computeConfigHash digests every pod-template input so any change rolls the pod. secretHash is
@@ -76,9 +77,9 @@ func computeConfigHash(configJSON, envJSON, podTemplateJSON []byte, image, secre
 
 // buildAgentEnv is the SINGLE source of the agent container env. The ek is a secretKeyRef
 // (never inline); reserved ACH_* names in extraEnv are dropped (the operator owns them).
-func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) []corev1.EnvVar {
+func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, defaultBaseURL string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
-		{Name: "ACH_BASE_URL", Value: p.Spec.Ach.BaseURL},
+		{Name: "ACH_BASE_URL", Value: agentrender.ResolveAchBaseURL(a.Spec.Ach, p.Spec.Ach, defaultBaseURL)},
 		{Name: "ACH_ENVIRONMENT", Value: a.Spec.Capability.Environment},
 		{Name: "ACH_CONFIG_PATH", Value: configFilePath},
 		{Name: "ACH_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
@@ -152,7 +153,7 @@ func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.
 		Spec: corev1.ServiceSpec{
 			Type:     corev1.ServiceTypeClusterIP,
 			Selector: agentSelectorLabels(a.Name),
-			Ports:    []corev1.ServicePort{{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(int(resolveHealthPort(p)))}},
+			Ports:    []corev1.ServicePort{{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(int(resolveHealthPort(a, p)))}},
 		},
 	}
 }
@@ -202,7 +203,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		resources = *p.Spec.Resources.DeepCopy()
 	}
 
-	port := resolveHealthPort(p)
+	port := resolveHealthPort(a, p)
 	probe := func(path string) corev1.ProbeHandler {
 		return corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: path, Port: intstr.FromInt(int(port))}}
 	}

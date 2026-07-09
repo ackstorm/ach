@@ -2,6 +2,8 @@ apiVersion	string
 kind	string
 metadata	object
 spec	object
+spec.ach	object
+spec.ach.baseUrl	string
 spec.capability	object
 spec.capability.environment	string
 spec.capability.filter	object
@@ -50,6 +52,9 @@ spec.channels[].webhook.triggerUsers[]	string
 spec.expose	object
 spec.expose.gateway	boolean
 spec.expose.service	boolean
+spec.health	object
+spec.health.host	string
+spec.health.port	integer
 spec.identity	object
 spec.identity.secretRef	object
 spec.identity.secretRef.key	string

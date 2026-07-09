@@ -367,6 +367,14 @@ type ACHAgentSpec struct {
 	// Limits overrides the profile's default limits.
 	// +optional
 	Limits *LimitsSpec `json:"limits,omitempty"`
+	// Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).
+	// Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.
+	// +optional
+	Ach *AchEndpointSpec `json:"ach,omitempty"`
+	// Health overrides the profile's health block (host/port). Drives the config health block,
+	// the Service targetPort, and the container probes together — always resolved as one unit.
+	// +optional
+	Health *HealthSpec `json:"health,omitempty"`
 	// +optional
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional

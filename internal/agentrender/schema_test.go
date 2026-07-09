@@ -160,7 +160,7 @@ func TestRender_ConformsToSchema(t *testing.T) {
 	schema := compileSchema(t)
 	for name, tc := range renderMatrix() {
 		t.Run(name, func(t *testing.T) {
-			cfg, err := Render(tc.profile, tc.agent)
+			cfg, err := Render(tc.profile, tc.agent, "")
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}

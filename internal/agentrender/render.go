@@ -31,15 +31,19 @@ const (
 )
 
 // Render collapses profile + agent into an AgentConfig. Agent fields override profile
-// defaults (model, limits). Errors only on structurally impossible states (defense in depth
-// behind admission CEL).
-func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, error) {
+// defaults (model, limits, ach.baseUrl, health). Errors only on structurally impossible
+// states (defense in depth behind admission CEL).
+func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL string) (AgentConfig, error) {
 	model := a.Spec.Model
 	if model == nil {
 		model = p.Spec.Model
 	}
 	if model == nil {
 		return AgentConfig{}, fmt.Errorf("no model: set ACHAgent.spec.model or AgentProfile.spec.model")
+	}
+	baseURL := ResolveAchBaseURL(a.Spec.Ach, p.Spec.Ach, defaultBaseURL)
+	if baseURL == "" {
+		return AgentConfig{}, fmt.Errorf("no ACH base URL: set ACHAgent.spec.ach.baseUrl, AgentProfile.spec.ach.baseUrl, or operator ACH_BASE_URL")
 	}
 	params, err := decodeParams(model.Params)
 	if err != nil {
@@ -52,7 +56,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, er
 		Model:         ModelBlock{Name: model.Name, Type: model.Type, Params: params},
 		Capability: CapabilityBlock{
 			Type:   "ach",
-			Ach:    AchBlock{BaseURL: p.Spec.Ach.BaseURL, Environment: a.Spec.Capability.Environment},
+			Ach:    AchBlock{BaseURL: baseURL, Environment: a.Spec.Capability.Environment},
 			Filter: renderFilter(a.Spec.Capability.Filter),
 		},
 		Engine:      renderEngine(p.Spec.Engine),
@@ -60,7 +64,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (AgentConfig, er
 		Memory:      renderMemory(a.Spec.Memory),
 		Limits:      renderLimits(a.Spec.Limits, p.Spec.Limits),
 		Persistence: renderPersistence(p.Spec.Persistence),
-		Health:      renderHealth(p.Spec.Health),
+		Health:      renderHealth(a.Spec.Health, p.Spec.Health),
 	}
 	for i := range a.Spec.Channels {
 		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i]))
@@ -294,10 +298,25 @@ func renderPersistence(p *achv1alpha1.PersistenceSpec) *PersistBlock {
 }
 
 // renderHealth ALWAYS emits a health block so the config pins the port the
-// operator probes (no reliance on the harness default). Profile fields override
-// the defaults; a zero/unset host or port falls back to DefaultHealthHost/Port.
-func renderHealth(h *achv1alpha1.HealthSpec) *HealthBlock {
-	host, port := DefaultHealthHost, DefaultHealthPort
+// operator probes (no reliance on the harness default). Resolution is shared with
+// the controller's probe/Service port via ResolveHealth, so config and probes agree
+// by construction.
+func renderHealth(agent, profile *achv1alpha1.HealthSpec) *HealthBlock {
+	host, port := ResolveHealth(agent, profile)
+	return &HealthBlock{Host: host, Port: port}
+}
+
+// ResolveHealth is the SINGLE health host/port resolution: agent block overrides
+// profile block (whole-block, matching the limits precedent), then a zero/unset
+// host or port falls back to DefaultHealthHost/Port. The controller MUST use this
+// for the Service targetPort and container probes so they never drift from the
+// rendered config health block.
+func ResolveHealth(agent, profile *achv1alpha1.HealthSpec) (host string, port int32) {
+	h := agent
+	if h == nil {
+		h = profile
+	}
+	host, port = DefaultHealthHost, DefaultHealthPort
 	if h != nil {
 		if h.Host != "" {
 			host = h.Host
@@ -306,7 +325,21 @@ func renderHealth(h *achv1alpha1.HealthSpec) *HealthBlock {
 			port = h.Port
 		}
 	}
-	return &HealthBlock{Host: host, Port: port}
+	return host, port
+}
+
+// ResolveAchBaseURL is the SINGLE ACH base-URL resolution: ACHAgent.spec.ach ??
+// AgentProfile.spec.ach ?? operator default (ACH_BASE_URL). Empty result => the
+// agent has no ACH to hydrate against and Render blocks it. Used for both the
+// config capability.ach.baseUrl and the container ACH_BASE_URL env.
+func ResolveAchBaseURL(agentAch *achv1alpha1.AchEndpointSpec, profileAch achv1alpha1.AchEndpointSpec, envDefault string) string {
+	if agentAch != nil && agentAch.BaseURL != "" {
+		return agentAch.BaseURL
+	}
+	if profileAch.BaseURL != "" {
+		return profileAch.BaseURL
+	}
+	return envDefault
 }
 
 func renderSession(s *achv1alpha1.SessionSpec) *SessionBlock {

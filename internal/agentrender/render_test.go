@@ -52,7 +52,7 @@ func TestRender_FullGolden(t *testing.T) {
 		},
 	}
 
-	cfg, err := Render(profile, agent)
+	cfg, err := Render(profile, agent, "")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestRender_ModelOverride(t *testing.T) {
 			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	}
-	cfg, err := Render(p, a)
+	cfg, err := Render(p, a, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,8 +131,87 @@ func TestRender_NoModel_Errors(t *testing.T) {
 			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	}
-	if _, err := Render(p, a); err == nil {
+	if _, err := Render(p, a, ""); err == nil {
 		t.Error("expected error when no model set")
+	}
+}
+
+func TestResolveAchBaseURL_Precedence(t *testing.T) {
+	agent := &achv1alpha1.AchEndpointSpec{BaseURL: "https://agent"}
+	profile := achv1alpha1.AchEndpointSpec{BaseURL: "https://profile"}
+	cases := []struct {
+		name    string
+		agent   *achv1alpha1.AchEndpointSpec
+		profile achv1alpha1.AchEndpointSpec
+		def     string
+		want    string
+	}{
+		{"agent wins", agent, profile, "https://env", "https://agent"},
+		{"profile when no agent block", nil, profile, "https://env", "https://profile"},
+		{"profile when agent block empty", &achv1alpha1.AchEndpointSpec{}, profile, "https://env", "https://profile"},
+		{"env default when both empty", nil, achv1alpha1.AchEndpointSpec{}, "https://env", "https://env"},
+		{"empty when all empty", nil, achv1alpha1.AchEndpointSpec{}, "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ResolveAchBaseURL(c.agent, c.profile, c.def); got != c.want {
+				t.Errorf("ResolveAchBaseURL = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestResolveHealth_AgentOverridesProfileWholeBlock(t *testing.T) {
+	cases := []struct {
+		name     string
+		agent    *achv1alpha1.HealthSpec
+		profile  *achv1alpha1.HealthSpec
+		wantHost string
+		wantPort int32
+	}{
+		{"defaults", nil, nil, DefaultHealthHost, DefaultHealthPort},
+		{"profile used when no agent", nil, &achv1alpha1.HealthSpec{Host: "1.2.3.4", Port: 9000}, "1.2.3.4", 9000},
+		// Whole-block replacement (limits precedent): the agent block wins entirely,
+		// so its unset host falls to the DEFAULT — NOT the profile's host.
+		{"agent block replaces profile block", &achv1alpha1.HealthSpec{Port: 9100}, &achv1alpha1.HealthSpec{Host: "1.2.3.4", Port: 9000}, DefaultHealthHost, 9100},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			host, port := ResolveHealth(c.agent, c.profile)
+			if host != c.wantHost || port != c.wantPort {
+				t.Errorf("ResolveHealth = (%q,%d), want (%q,%d)", host, port, c.wantHost, c.wantPort)
+			}
+		})
+	}
+}
+
+func TestRender_BaseURLResolutionAndBlock(t *testing.T) {
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Image: "x", Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}
+	a := achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "a"},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	}
+	// No ach anywhere → blocked.
+	if _, err := Render(p, a, ""); err == nil {
+		t.Error("expected block when no ACH base URL anywhere")
+	}
+	// Operator default resolves it.
+	if _, err := Render(p, a, "https://env"); err != nil {
+		t.Errorf("operator default should satisfy base URL: %v", err)
+	}
+	// Agent override wins even with an empty operator default.
+	a.Spec.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://agent"}
+	cfg, err := Render(p, a, "")
+	if err != nil {
+		t.Fatalf("agent override should satisfy: %v", err)
+	}
+	if cfg.Capability.Ach.BaseURL != "https://agent" {
+		t.Errorf("capability.ach.baseUrl = %q, want agent override", cfg.Capability.Ach.BaseURL)
 	}
 }
 
@@ -253,7 +332,7 @@ func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
 		Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
 		Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 	}}
-	cfg, err := Render(p, a)
+	cfg, err := Render(p, a, "")
 	if err != nil {
 		t.Fatal(err)
 	}
