@@ -80,8 +80,6 @@ func ReasonOf(err error) string {
 		return "NotFound"
 	case errors.Is(err, ErrUpstreamInvalid):
 		return "UpstreamInvalid"
-	case errors.Is(err, ErrUnreachable):
-		return "Unreachable"
 	default:
 		return "Unreachable"
 	}

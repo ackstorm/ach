@@ -4,7 +4,6 @@ package bipcache
 
 import (
 	"context"
-	"sort"
 	"sync/atomic"
 	"time"
 
@@ -89,14 +88,8 @@ func (c *Cache) Refresh(ctx context.Context) error {
 		k := targetKey{Kind: r.TargetKind, Name: r.TargetName}
 		next[k] = append(next[k], r)
 	}
-	// db.ListAllBIPs already orders by name ASC at the SQL layer, but
-	// guard against future writers by sorting per-group as well. Rows are
-	// name-ASC so rows[0] is the alpha-FIRST winner Resolve returns.
-	for k := range next {
-		sort.SliceStable(next[k], func(i, j int) bool {
-			return next[k][i].Name < next[k][j].Name
-		})
-	}
+	// db.ListAllBIPs orders by name ASC at the SQL layer and append
+	// preserves it, so rows[0] is the alpha-FIRST winner Resolve returns.
 	c.rows.Store(&next)
 	return nil
 }
