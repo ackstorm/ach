@@ -8,7 +8,7 @@ and should be sync-back PR'd to alitellm-operator.
 | ach file | alitellm file | Fix |
 |---|---|---|
 | `Dockerfile.devtools` | `Dockerfile.devtools` | Added `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` to abort on curl-pipe failures |
-| `scripts/envtest-assets-path.sh` | `scripts/envtest-assets-path.sh` | LOCALBIN now derives from script location, not `$(pwd)` |
+| `scripts/envtest-assets-path.sh` | `scripts/envtest-assets-path.sh` | LOCALBIN now derives from script location, not `$(pwd)` (removed 2026-07-13 — zero references) |
 | `scripts/dev.sh` | `scripts/dev.sh` | `getent group docker` fallback — skip `--group-add` when docker group absent |
 
 ## 2026-05-25 (Task 3.1) — Makefile port
@@ -97,6 +97,8 @@ in namespace `ach-system`, CRs list updated to ACH kinds
 (environments, plugins, pluginmarketplaces, artifacts, prompts,
 backendidentitypolicies), prefix `e2e-` instead of `tier2-`. All files
 gated with `//go:build e2e`. `go build -tags=e2e ./test/e2e/...` PASS.
+(`test/e2e/utils` removed 2026-07-13 — zero importers; `cluster.sh` dumps
+forensics inline.)
 
 ## 2026-05-25 (Task 10.1) — Cluster scripts
 
@@ -107,7 +109,7 @@ from alitellm; lifted `scripts/dex-config.yaml` from ach-old.
 |---|---|---|
 | `scripts/cluster.sh` | alitellm | **Rewritten** — alitellm cluster.sh depends on `test/e2e/{values,fixtures,charts}/` and `deploy/helm/ach/` that don't yet exist in ach (those land Phase 11+). Replaced `install_{litellm,toolhive,mocks,operator}` with `hydrate_{postgres,valkey,dex,litellm,toolhive}` — each helm-installs an external runtime dep. Postgres + Valkey from bitnami OCI charts (pinned). Dex from dexidp helm repo (uses `scripts/dex-config.yaml`). LiteLLM from BerriAI OCI chart (pulled to tmpdir, untar, install). ToolHive from stacklok OCI charts. Hydration wrapped in `|| true` warn-then-continue (best-effort until Phase 11+ supplies values files). Cluster name `ach-e2e`. |
 | `scripts/cluster.sh print_status` | alitellm | **Fixed bug**: alitellm's `print_status` runs `kubectl get ns default litellm-system ...` which exits non-zero if any listed namespace doesn't exist (e.g. before hydration). Combined with `set -e`, status aborts with `Error 1`. Fix: add `set +e` at top of `print_status` + `return 0` at end — status is purely informational, must never fail. Sync-back PR candidate. |
-| `scripts/collect-forensics.sh` | alitellm | Adapted for ach: operator deploy `ach-operator` in `ach-system`, added platform-api + forwarder deploy log dumps, CR list updated to ach kinds, event collection extended to include `ach-system` namespace. |
+| `scripts/collect-forensics.sh` | alitellm | Adapted for ach: operator deploy `ach-operator` in `ach-system`, added platform-api + forwarder deploy log dumps, CR list updated to ach kinds, event collection extended to include `ach-system` namespace. (removed 2026-07-13 — zero references) |
 | `scripts/kind-config.yaml` | alitellm | Cluster name `alitellm-operator-test` → `ach-e2e`. |
 | `scripts/dex-config.yaml` | ach-old | Copied verbatim — OIDC config for `ach-platform-api`. |
 
