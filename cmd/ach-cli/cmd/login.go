@@ -146,7 +146,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		}
 		_, _ = fmt.Fprintf(stderr, "warning: "+format+"\n", args...)
 	}
-	file, err := config.LoadWith(configPath, warn)
+	file, err := config.LoadWithInsecure(configPath, warn, config.InsecureFromEnv())
 	if err != nil {
 		// ErrInvalidURLScheme / ErrConfigParse / unreadable file → exit 8.
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}

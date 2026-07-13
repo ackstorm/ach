@@ -189,14 +189,14 @@ func TestLoad_WarnOnPermissiveMode(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	var warned string
-	got, err := config.LoadWith(path, func(format string, args ...any) {
+	got, err := config.LoadWithInsecure(path, func(format string, args ...any) {
 		warned += format
-	})
+	}, config.InsecureFromEnv())
 	if err != nil {
-		t.Fatalf("LoadWith: %v", err)
+		t.Fatalf("LoadWithInsecure: %v", err)
 	}
 	if got == nil || got.Default != "prod" {
-		t.Fatalf("LoadWith returned unexpected file: %+v", got)
+		t.Fatalf("LoadWithInsecure returned unexpected file: %+v", got)
 	}
 	if warned == "" {
 		t.Errorf("expected a warning on permissive mode; got none")
@@ -272,9 +272,9 @@ func TestLoadInsecure_AcceptsHTTP(t *testing.T) {
 	if err := os.WriteFile(path, []byte("default: dev\nprofiles:\n  dev:\n    url: http://localhost:8080\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	f, err := config.LoadInsecure(path, true)
+	f, err := config.LoadWithInsecure(path, nil, true)
 	if err != nil {
-		t.Fatalf("LoadInsecure(http, true) returned %v, want nil", err)
+		t.Fatalf("LoadWithInsecure(http, nil, true) returned %v, want nil", err)
 	}
 	if f.Profiles["dev"].URL != "http://localhost:8080" {
 		t.Errorf("URL not preserved; got %q", f.Profiles["dev"].URL)

@@ -143,32 +143,19 @@ func Path() (string, error) {
 // ErrInvalidURLScheme when any profile's URL is neither http:// nor https://.
 //
 // Warns to stderr via a default logger seam when the file mode is
-// more permissive than 0600 — see LoadWith for a test-friendly
+// more permissive than 0600 — see LoadWithInsecure for a test-friendly
 // injectable warning sink.
 func Load(path string) (*File, error) {
 	return LoadWithInsecure(path, defaultWarn, InsecureFromEnv())
 }
 
-// LoadInsecure is Load with an explicit insecure opt-in (the flag-aware
-// commands compute `--insecure || ACH_INSECURE` and pass it here).
-func LoadInsecure(path string, allowInsecure bool) (*File, error) {
-	return LoadWithInsecure(path, defaultWarn, allowInsecure)
-}
-
-// LoadWith is Load with an injectable warning sink. The `warn`
-// closure is called with a Printf-style format + args when the file
-// mode exceeds 0600. This seam exists so tests can capture the
-// warning without redirecting stderr, and so callers (cobra RunE) can
-// route warnings through their own structured logger if they wish.
-// The insecure opt-in is resolved from ACH_INSECURE (use LoadWithInsecure
-// to also honor a --insecure flag).
-func LoadWith(path string, warn func(format string, args ...any)) (*File, error) {
-	return LoadWithInsecure(path, warn, InsecureFromEnv())
-}
-
 // LoadWithInsecure is the full form: injectable warning sink + explicit
 // insecure opt-in. Used by login, which has both a --insecure flag and the
-// permissive-mode warning sink.
+// permissive-mode warning sink. The `warn` closure is called with a
+// Printf-style format + args when the file mode exceeds 0600 — this seam
+// exists so tests can capture the warning without redirecting stderr, and
+// so callers (cobra RunE) can route warnings through their own structured
+// logger if they wish.
 func LoadWithInsecure(path string, warn func(format string, args ...any), allowInsecure bool) (*File, error) {
 	st, err := os.Stat(path)
 	if err != nil {

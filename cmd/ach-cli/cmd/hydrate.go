@@ -1043,7 +1043,7 @@ func resolveBearer(in hydrateInputs) (string, string, error) {
 	}
 	// G19: honor the --insecure flag (OR ACH_INSECURE env) when reading the
 	// profile, so a localhost http:// profile loads under an explicit opt-in.
-	file, err := config.LoadInsecure(configPath, in.insecure || config.InsecureFromEnv())
+	file, err := config.LoadWithInsecure(configPath, nil, in.insecure || config.InsecureFromEnv())
 	if err != nil {
 		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
