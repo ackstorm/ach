@@ -12,7 +12,7 @@
 //   - scoped (marketplace != ""): the marketplace_plugins row with the exact
 //     (marketplace_name, name) PRIMARY KEY. No alphabetical tiebreak; the
 //     caller supplies the marketplace explicitly (parsed from the
-//     pluginref.Parse result).
+//     refparse.Parse result).
 //
 // In both arms (nil, nil) means no row found → caller emits 404.
 //

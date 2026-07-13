@@ -40,8 +40,7 @@ import (
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/teams"
-	"github.com/ackstorm/ach/internal/pluginref"
-	"github.com/ackstorm/ach/internal/skillref"
+	"github.com/ackstorm/ach/internal/refparse"
 )
 
 // contentRow holds the per-request resolved row that gate 7 (staleness)
@@ -230,7 +229,7 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 }
 
 // resolveContent (gate 6 per D-04). Kind-dispatched projection row
-// lookup. For plugin, parses the ref via pluginref and calls
+// lookup. For plugin, parses the ref via refparse and calls
 // db.ResolvePluginByName with the (name, marketplace): a bare name
 // resolves a Plugin CRD row ONLY (no marketplace fallback); a scoped
 // name@marketplace resolves the exact (marketplace_name, name) row. No
@@ -267,10 +266,10 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
 		// of silently treating them as a bare CRD lookup — the grammar
 		// requires a non-empty marketplace whenever '@' is present.
-		if !pluginref.Valid(name) {
+		if !refparse.Valid(name) {
 			return nil, errContentNotFound
 		}
-		pname, marketplace, _ := pluginref.Parse(name)
+		pname, marketplace, _ := refparse.Parse(name)
 		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, pname, marketplace)
 		if err != nil {
 			return nil, errInternal
@@ -304,10 +303,10 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		// contentRow carries Source so pipeline.go serves a marketplace skill
 		// from the absolute StorageLocation (skill-marketplace/<mkt>/<name>.tar.gz)
 		// while a bare skill keeps the deterministic skill/<name>.tar.gz ResolvePath.
-		if !skillref.Valid(name) {
+		if !refparse.Valid(name) {
 			return nil, errContentNotFound
 		}
-		sname, marketplace, _ := skillref.Parse(name)
+		sname, marketplace, _ := refparse.Parse(name)
 		res, err := db.ResolveSkillByName(ctx, d.Pool, d.Namespace, sname, marketplace)
 		if err != nil {
 			return nil, errInternal

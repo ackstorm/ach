@@ -31,8 +31,7 @@ import (
 	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/litellm"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
-	"github.com/ackstorm/ach/internal/pluginref"
-	"github.com/ackstorm/ach/internal/skillref"
+	"github.com/ackstorm/ach/internal/refparse"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -403,11 +402,11 @@ func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, en
 	}
 	var unresolved []string
 	for _, ref := range env.Spec.Context.Plugins {
-		if !pluginref.Valid(ref) {
+		if !refparse.Valid(ref) {
 			unresolved = append(unresolved, ref)
 			continue
 		}
-		pname, mkt, _ := pluginref.Parse(ref)
+		pname, mkt, _ := refparse.Parse(ref)
 		res, err := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
 		if err != nil {
 			return nil, fmt.Errorf("resolve context plugin %q: %w", ref, err)
@@ -430,11 +429,11 @@ func (r *EnvironmentReconciler) contextSkillsUnresolved(ctx context.Context, env
 	}
 	var unresolved []string
 	for _, sref := range env.Spec.Context.Skills {
-		if !skillref.Valid(sref) {
+		if !refparse.Valid(sref) {
 			unresolved = append(unresolved, sref) // malformed ref → unresolved
 			continue
 		}
-		sname, mkt, _ := skillref.Parse(sref)
+		sname, mkt, _ := refparse.Parse(sref)
 		res, err := achdb.ResolveSkillByName(ctx, r.DB, r.Namespace, sname, mkt)
 		if err != nil {
 			return nil, fmt.Errorf("resolve context skill %q: %w", sref, err)

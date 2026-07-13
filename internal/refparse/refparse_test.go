@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package pluginref
+package refparse
 
 import "testing"
 
@@ -14,6 +14,11 @@ func TestParse(t *testing.T) {
 		{"code-review", "code-review", "", false},
 		{"code-review@anthropics-official", "code-review", "anthropics-official", true},
 		{"a@b@c", "a@b", "c", true}, // marketplace is the final @-segment
+		{"pdf-processing", "pdf-processing", "", false},
+		{"branding@ackstorm", "branding", "ackstorm", true},
+		{"@ackstorm", "", "ackstorm", true},
+		{"branding@", "branding", "", true},
+		{"", "", "", false},
 	}
 	for _, tc := range cases {
 		name, mkt, scoped := Parse(tc.in)
@@ -25,8 +30,8 @@ func TestParse(t *testing.T) {
 }
 
 func TestValid(t *testing.T) {
-	good := []string{"code-review", "code-review@anthropics-official"}
-	bad := []string{"", "@mkt", "name@", "@", "name@@"}
+	good := []string{"code-review", "code-review@anthropics-official", "pdf-processing", "branding@ackstorm"}
+	bad := []string{"", "@mkt", "name@", "@", "name@@", "@ackstorm", "branding@"}
 	for _, s := range good {
 		if !Valid(s) {
 			t.Errorf("Valid(%q) = false; want true", s)

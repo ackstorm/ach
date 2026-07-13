@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package pluginref parses Environment context.plugins references of the
-// form "name" (bare → internal Plugin CRD) or "name@marketplace" (→ a
-// marketplace plugin, resolved by exact (marketplace_name, name) PK).
+// Package refparse parses Environment context object references of the
+// form "name" (standalone CR) or "name@marketplace" (an object discovered
+// inside a marketplace) — used by both context.plugins and context.skills.
 //
 // The marketplace qualifier is the segment after the FINAL '@', so a
-// plugin name may itself contain '@' (the CRD deny-pattern permits it).
+// name may itself contain '@' (the CRD deny-pattern permits it).
 // Marketplace metadata.name is DNS-1123 (no '@'), so the final '@' is an
 // unambiguous separator.
-package pluginref
+package refparse
 
 import "strings"
 
@@ -27,11 +27,5 @@ func Parse(ref string) (name, marketplace string, scoped bool) {
 // non-empty too.
 func Valid(ref string) bool {
 	name, mkt, scoped := Parse(ref)
-	if name == "" {
-		return false
-	}
-	if scoped && mkt == "" {
-		return false
-	}
-	return true
+	return name != "" && (!scoped || mkt != "")
 }
