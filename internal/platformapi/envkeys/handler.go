@@ -347,7 +347,7 @@ func (cr *createReq) validateTeamMembership(env *db.EnvironmentRow) (handled boo
 // calls. Returns the resolved LiteLLM user_id and handled=true on a hard error.
 func (cr *createReq) provisionUser() (userID string, handled bool) {
 	userInfo, err := cr.deps.LiteLLM.UserInfoByEmail(cr.ctx, cr.keyCtx.OwnerEmail)
-	if err != nil && !isNotFound(err) {
+	if err != nil && !litellm.IsNotFound(err) {
 		cr.emitLitellmError(err, "envkeys.create: UserInfoByEmail failed")
 		return "", true
 	}
@@ -998,21 +998,6 @@ func writeKeyListJSON(w http.ResponseWriter, items []db.KeyListItem, next string
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": out, "next_cursor": next})
-}
-
-// isNotFound checks if a LiteLLM-side error represents a 404 (user-absent
-// signal). Mirrors the dual-branch detection in
-// internal/platformapi/teams.LookupCallerTeams (Plan 03-05 Task 3): the
-// typed ErrNotFound sentinel OR a substring match on "404" in the wrapped
-// makeRequest error string. Phase 4 may tighten this contract.
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, litellm.ErrNotFound) {
-		return true
-	}
-	return strings.Contains(err.Error(), "404")
 }
 
 // classifyLitellmErr maps a LiteLLM client error to the (HTTP status,

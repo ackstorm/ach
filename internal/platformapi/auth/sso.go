@@ -611,7 +611,7 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 	user, err := deps.LiteLLM.UserInfoByEmail(ctx, email)
 	if err != nil {
 		// 404 → first-time SSO path.
-		if isLiteLLMNotFound(err) {
+		if litellm.IsNotFound(err) {
 			created, createErr := deps.LiteLLM.UserNew(ctx, &litellm.UserNewRequest{
 				UserEmail:     email,
 				UserID:        email, // deterministic LiteLLM user_id = email (not a random UUID)
@@ -691,19 +691,6 @@ func isDuplicateAddErr(err error) bool {
 	s := err.Error()
 	return strings.Contains(s, "/team/member_add") &&
 		(strings.Contains(s, "litellm: 400") || strings.Contains(s, "Bad Request"))
-}
-
-// isLiteLLMNotFound reports whether err signals a LiteLLM 404 response.
-// Per Plan 03-01 D-25, UserInfoByEmail keeps the generic makeRequest 4xx
-// wrapping (i.e. the error string carries "404"); ErrNotFound is also
-// checked defensively for forward compatibility.
-func isLiteLLMNotFound(err error) bool {
-	if errors.Is(err, litellm.ErrNotFound) {
-		return true
-	}
-	// makeRequest formats 4xx as fmt.Errorf("litellm: ... status: 404 ...");
-	// the substring check is robust across LiteLLM error-envelope shapes.
-	return err != nil && strings.Contains(err.Error(), "404")
 }
 
 // provisionKind is the failure-classification used by classifyProvisionError.

@@ -4,8 +4,6 @@ package teams
 
 import (
 	"context"
-	"errors"
-	"strings"
 
 	"github.com/ackstorm/ach/internal/litellm"
 )
@@ -45,7 +43,7 @@ import (
 func LookupCallerTeams(ctx context.Context, ll litellm.Client, email string) ([]string, error) {
 	info, err := ll.UserInfoByEmail(ctx, email)
 	if err != nil {
-		if isNotFound(err) {
+		if litellm.IsNotFound(err) {
 			return []string{}, nil
 		}
 		return nil, err
@@ -89,16 +87,3 @@ func LookupCallerTeams(ctx context.Context, ll litellm.Client, email string) ([]
 	return out, nil
 }
 
-// isNotFound reports whether err represents a LiteLLM 404 — either the
-// typed sentinel (errors.Is path; Phase 4 may move all helpers to this)
-// or the legacy makeRequest 4xx wrapper that surfaces "404" in its
-// message body (Phase 3 D-25 UserInfoByEmail contract).
-func isNotFound(err error) bool {
-	if errors.Is(err, litellm.ErrNotFound) {
-		return true
-	}
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "404")
-}

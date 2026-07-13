@@ -1508,7 +1508,7 @@ func TestCallbackHandler_DefaultTeamMissing(t *testing.T) {
 	// UserNew returns ok (default). TeamMemberAdd returns a fake "team not found" error.
 	flm.teamMemberAddError = func(string, string, string) error {
 		// Simulate the 4xx team_not_found body from LiteLLM. The fmt string
-		// includes "404" so isLiteLLMNotFound would match, but the planner
+		// includes "404" so litellm.IsNotFound would match, but the planner
 		// classifies any TeamMemberAdd error after UserNew as default_team_missing
 		// regardless of the wire shape.
 		return errors.New("litellm: POST /team/member_add status: 404 team_not_found team_id: default")

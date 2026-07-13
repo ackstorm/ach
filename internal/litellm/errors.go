@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // ErrNotFound is returned by list-style helpers when the LiteLLM response
@@ -37,6 +38,17 @@ func (e *APIError) Error() string {
 		return fmt.Sprintf("litellm: %d on %s %s (code=%s, transient)", e.StatusCode, e.Method, e.Path, e.Code)
 	}
 	return fmt.Sprintf("litellm: %d on %s %s (code=%s)", e.StatusCode, e.Method, e.Path, e.Code)
+}
+
+// IsNotFound reports whether err represents a LiteLLM 404 — either the
+// typed ErrNotFound sentinel or the legacy makeRequest 4xx wrapper that
+// carries "404" in its message (Phase 3 D-25 contract; the substring
+// check is robust across LiteLLM error-envelope shapes).
+func IsNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrNotFound) || strings.Contains(err.Error(), "404")
 }
 
 // IsHTTPNotFound reports whether err is an *APIError carrying HTTP 404.
