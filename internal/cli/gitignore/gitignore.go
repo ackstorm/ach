@@ -16,9 +16,10 @@
 package gitignore
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/state"
@@ -83,11 +84,7 @@ func Ensure(dir string, entries []string) (bool, error) {
 	if len(want) == 0 {
 		return false, nil
 	}
-	merged := make([]string, 0, len(want))
-	for e := range want {
-		merged = append(merged, e)
-	}
-	sort.Strings(merged)
+	merged := slices.Sorted(maps.Keys(want))
 
 	var out []string
 	if hadBlock {

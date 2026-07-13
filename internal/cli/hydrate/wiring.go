@@ -54,6 +54,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1702,13 +1703,11 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 
 // appendUniqueSorted inserts name into xs if absent, keeping xs sorted.
 func appendUniqueSorted(xs []string, name string) []string {
-	for _, x := range xs {
-		if x == name {
-			return xs
-		}
+	if slices.Contains(xs, name) {
+		return xs
 	}
 	xs = append(xs, name)
-	sort.Strings(xs)
+	slices.Sort(xs)
 	return xs
 }
 

@@ -76,14 +76,16 @@ func Register(a Adapter) {
 	for _, alias := range aliases {
 		aliasIndex[strings.ToLower(alias)] = id
 	}
+	aliasIndex[strings.ToLower(id)] = id
 }
 
 // Lookup case-folds id, alias-resolves it to a canonical ID, and
 // returns the registered Adapter. Returns (nil, false) when no
 // registered adapter matches.
 //
-// Resolution order: (1) try id as the canonical key (case-folded);
-// (2) fall back to the alias index; (3) return false.
+// Resolution: (1) canonical or alias via the case-folded index; (2)
+// return false. aliasIndex carries every canonical ID's own folded form
+// too (indexed at Register time), so this single lookup covers both.
 func Lookup(id string) (Adapter, bool) {
 	if id == "" {
 		return nil, false
@@ -93,14 +95,6 @@ func Lookup(id string) (Adapter, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	// Direct canonical lookup with case-folding.
-	for canonical, a := range registry {
-		if strings.ToLower(canonical) == folded {
-			return a, true
-		}
-	}
-
-	// Alias lookup.
 	if canonical, ok := aliasIndex[folded]; ok {
 		if a, ok := registry[canonical]; ok {
 			return a, true

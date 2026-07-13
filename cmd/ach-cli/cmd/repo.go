@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -242,19 +243,13 @@ func newRepoRemoveCmd() *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("repo remove: load repos: %v", err)}
 			}
 
-			idx := -1
-			for i, r := range repos.Repos {
-				if r.Name == name {
-					idx = i
-					break
-				}
-			}
+			idx := slices.IndexFunc(repos.Repos, func(r store.RepoEntry) bool { return r.Name == name })
 			if idx < 0 {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "repo %q not registered\n", name)
 				return nil
 			}
 
-			repos.Repos = append(repos.Repos[:idx], repos.Repos[idx+1:]...)
+			repos.Repos = slices.Delete(repos.Repos, idx, idx+1)
 			// DeleteToken before SaveRepos: if we crash between the two writes the
 			// credential is gone but the repos entry is still present, so a retry
 			// re-enters here and re-deletes (idempotent). Acceptable for a
