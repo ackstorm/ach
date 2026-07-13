@@ -52,7 +52,7 @@ func TestWriteError_RendersEnvelope(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_01TEST")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment())
+	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
 
 	resp := rec.Result()
 	t.Cleanup(func() { _ = resp.Body.Close() })
@@ -84,7 +84,7 @@ func TestWriteError_EmitsAudit(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_01ABCD")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment())
+	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
 
 	got := buf.String()
 	for _, want := range []string{
@@ -105,7 +105,7 @@ func TestWriteError_NilKeyInfo_BlankActor(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_x")
 
-	d.writeError(rec, r, "plugin", "bar", nil, errUnauthorizedTeam())
+	d.writeError(rec, r, "plugin", "bar", nil, errUnauthorizedTeam)
 
 	got := buf.String()
 	// With POD_NAMESPACE unset in tests, actor collapses to "/-"
@@ -129,7 +129,7 @@ func TestWriteError_PopulatedKeyInfo_Actor(t *testing.T) {
 		KeyType:    keys.PrefixPk,
 		OwnerEmail: "alice@example.com",
 	}
-	d.writeError(rec, r, "prompt", "doc", info, errUnauthorizedContent())
+	d.writeError(rec, r, "prompt", "doc", info, errUnauthorizedContent)
 
 	got := buf.String()
 	if !strings.Contains(got, `"actor":"/alice@example.com"`) {
@@ -145,7 +145,7 @@ func TestWriteError_IncsMetric(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_z")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment())
+	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
 
 	// Gather from the registry and verify the counter increment.
 	got := gatherCounter(t, reg, "content_service_requests_total",
@@ -192,17 +192,17 @@ func TestErrorFactories_AllCodes(t *testing.T) {
 		wantStatus int
 		wantCode   string
 	}{
-		{errMissingEnvironment(), 400, "missing_environment"},
-		{errInvalidKeyFormat(), 400, "invalid_key_format"},
-		{errExpiredOrRevoked(), 401, "expired_or_revoked"},
-		{errUnauthorizedTeam(), 403, "unauthorized_team"},
-		{errWrongEnvironment(), 403, "wrong_environment"},
-		{errUnauthorizedContent(), 403, "unauthorized_content"},
-		{errEnvironmentNotFound(), 404, "environment_not_found"},
-		{errContentNotFound(), 404, "content_not_found"},
-		{errLitellmUnreachable(), 503, "litellm_unreachable"},
-		{errStaleCacheExpired(), 503, "stale_cache_expired"},
-		{errInternal(), 500, "internal_error"},
+		{errMissingEnvironment, 400, "missing_environment"},
+		{errInvalidKeyFormat, 400, "invalid_key_format"},
+		{errExpiredOrRevoked, 401, "expired_or_revoked"},
+		{errUnauthorizedTeam, 403, "unauthorized_team"},
+		{errWrongEnvironment, 403, "wrong_environment"},
+		{errUnauthorizedContent, 403, "unauthorized_content"},
+		{errEnvironmentNotFound, 404, "environment_not_found"},
+		{errContentNotFound, 404, "content_not_found"},
+		{errLitellmUnreachable, 503, "litellm_unreachable"},
+		{errStaleCacheExpired, 503, "stale_cache_expired"},
+		{errInternal, 500, "internal_error"},
 	}
 	for _, tc := range cases {
 		if tc.got == nil {
@@ -230,17 +230,17 @@ func TestErrorFactories_AllCodes(t *testing.T) {
 func TestErrorFactories_DistinctCodes(t *testing.T) {
 	seen := map[string]bool{}
 	codes := []*errResp{
-		errMissingEnvironment(),
-		errInvalidKeyFormat(),
-		errExpiredOrRevoked(),
-		errUnauthorizedTeam(),
-		errWrongEnvironment(),
-		errUnauthorizedContent(),
-		errEnvironmentNotFound(),
-		errContentNotFound(),
-		errLitellmUnreachable(),
-		errStaleCacheExpired(),
-		errInternal(),
+		errMissingEnvironment,
+		errInvalidKeyFormat,
+		errExpiredOrRevoked,
+		errUnauthorizedTeam,
+		errWrongEnvironment,
+		errUnauthorizedContent,
+		errEnvironmentNotFound,
+		errContentNotFound,
+		errLitellmUnreachable,
+		errStaleCacheExpired,
+		errInternal,
 	}
 	for _, c := range codes {
 		if seen[c.Code] {

@@ -146,7 +146,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 		// cache (e.g. /etc/passwd) must 404, never serve.
 		p, ok := PluginStoragePathWithinRoot(d.CacheRoot, row.StorageLocation)
 		if !ok {
-			return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+			return nil, &pipelineErr{errResp: errContentNotFound, keyInfo: info}
 		}
 		path = p
 	} else {
@@ -159,29 +159,29 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 			// invalid this is a projection-write bug; still 404 from the
 			// client's perspective.
 			if errors.Is(err, ErrInvalidName) {
-				return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+				return nil, &pipelineErr{errResp: errContentNotFound, keyInfo: info}
 			}
-			return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
+			return nil, &pipelineErr{errResp: errInternal, keyInfo: info}
 		}
 	}
 	f, err := os.Open(path) // #nosec G304 — plugin path contained under CacheRoot by PluginStoragePathWithinRoot; other kinds validated by ResolvePath
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			// Projection row claims the file exists; the cache file is
 			// missing. PVC drift / refresh-in-progress. Map to 404
 			// content_not_found — the client retry will likely succeed
 			// once the Operator's next refresh completes.
-			return nil, &pipelineErr{errResp: errContentNotFound(), keyInfo: info}
+			return nil, &pipelineErr{errResp: errContentNotFound, keyInfo: info}
 		}
-		return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
+		return nil, &pipelineErr{errResp: errInternal, keyInfo: info}
 	}
 	fi, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return nil, &pipelineErr{errResp: errInternal(), keyInfo: info}
+		return nil, &pipelineErr{errResp: errInternal, keyInfo: info}
 	}
 
-	contentType := contentTypeFor(kind, row)
+	contentType := contentTypeFor(kind)
 	return &resolvedRow{
 		File:        f,
 		Size:        fi.Size(),
@@ -200,7 +200,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 // So all known kinds advertise application/gzip. Prompt's
 // spec.contentType override is no longer applied to the wire — the file
 // keeps its real MIME via its extension INSIDE the tar.
-func contentTypeFor(kind string, _ *contentRow) string {
+func contentTypeFor(kind string) string {
 	switch kind {
 	case kindPrompt, kindPlugin, kindSkill, kindArtifact:
 		return contentTypeGzip

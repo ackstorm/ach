@@ -28,55 +28,24 @@ type errResp struct {
 	Message string
 }
 
-// Factory functions for each D-03 outcome. Centralising the
+// Shared error-response values for each D-03 outcome. Centralising the
 // (status, code, message) triples here keeps the wire-format vocabulary
 // closed and the gate-site code paths short. Message strings are
 // deliberately terse and non-revealing (T-03-02-02 — no upstream-error
 // echoing).
-
-func errMissingEnvironment() *errResp {
-	return &errResp{HTTPStatus: http.StatusBadRequest, Code: audit.OutcomeMissingEnvironment, Message: "x-ach-environment header required for pk_ requests"}
-}
-
-func errInvalidKeyFormat() *errResp {
-	return &errResp{HTTPStatus: http.StatusBadRequest, Code: audit.OutcomeInvalidKeyFormat, Message: "malformed bearer key"}
-}
-
-func errExpiredOrRevoked() *errResp {
-	return &errResp{HTTPStatus: http.StatusUnauthorized, Code: audit.OutcomeExpiredOrRevoked, Message: "key expired or revoked"}
-}
-
-func errUnauthorizedTeam() *errResp {
-	return &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeUnauthorizedTeam, Message: "team membership does not authorize this environment"}
-}
-
-func errWrongEnvironment() *errResp {
-	return &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeWrongEnvironment, Message: "ek_ bound environment does not match x-ach-environment header"}
-}
-
-func errUnauthorizedContent() *errResp {
-	return &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeUnauthorizedContent, Message: "content not in environment context allowlist"}
-}
-
-func errEnvironmentNotFound() *errResp {
-	return &errResp{HTTPStatus: http.StatusNotFound, Code: audit.OutcomeEnvironmentNotFound, Message: "environment not found"}
-}
-
-func errContentNotFound() *errResp {
-	return &errResp{HTTPStatus: http.StatusNotFound, Code: audit.OutcomeContentNotFound, Message: "content not found"}
-}
-
-func errLitellmUnreachable() *errResp {
-	return &errResp{HTTPStatus: http.StatusServiceUnavailable, Code: audit.OutcomeLitellmUnreachable, Message: "team resolver unavailable"}
-}
-
-func errStaleCacheExpired() *errResp {
-	return &errResp{HTTPStatus: http.StatusServiceUnavailable, Code: audit.OutcomeStaleCacheExpired, Message: "cache file too stale to serve"}
-}
-
-func errInternal() *errResp {
-	return &errResp{HTTPStatus: http.StatusInternalServerError, Code: audit.OutcomeInternalError, Message: "internal error"}
-}
+var (
+	errMissingEnvironment  = &errResp{HTTPStatus: http.StatusBadRequest, Code: audit.OutcomeMissingEnvironment, Message: "x-ach-environment header required for pk_ requests"}
+	errInvalidKeyFormat    = &errResp{HTTPStatus: http.StatusBadRequest, Code: audit.OutcomeInvalidKeyFormat, Message: "malformed bearer key"}
+	errExpiredOrRevoked    = &errResp{HTTPStatus: http.StatusUnauthorized, Code: audit.OutcomeExpiredOrRevoked, Message: "key expired or revoked"}
+	errUnauthorizedTeam    = &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeUnauthorizedTeam, Message: "team membership does not authorize this environment"}
+	errWrongEnvironment    = &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeWrongEnvironment, Message: "ek_ bound environment does not match x-ach-environment header"}
+	errUnauthorizedContent = &errResp{HTTPStatus: http.StatusForbidden, Code: audit.OutcomeUnauthorizedContent, Message: "content not in environment context allowlist"}
+	errEnvironmentNotFound = &errResp{HTTPStatus: http.StatusNotFound, Code: audit.OutcomeEnvironmentNotFound, Message: "environment not found"}
+	errContentNotFound     = &errResp{HTTPStatus: http.StatusNotFound, Code: audit.OutcomeContentNotFound, Message: "content not found"}
+	errLitellmUnreachable  = &errResp{HTTPStatus: http.StatusServiceUnavailable, Code: audit.OutcomeLitellmUnreachable, Message: "team resolver unavailable"}
+	errStaleCacheExpired   = &errResp{HTTPStatus: http.StatusServiceUnavailable, Code: audit.OutcomeStaleCacheExpired, Message: "cache file too stale to serve"}
+	errInternal            = &errResp{HTTPStatus: http.StatusInternalServerError, Code: audit.OutcomeInternalError, Message: "internal error"}
+)
 
 // writeError is the centralised error-response writer for the Content
 // Service. Three responsibilities, in this order:

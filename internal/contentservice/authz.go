@@ -90,17 +90,17 @@ type contentRow struct {
 func resolveAuthn(ctx context.Context, d Deps, r *http.Request) (*keystore.KeyInfo, *errResp) {
 	plaintext := r.Header.Get("x-ach-key")
 	if plaintext == "" {
-		return nil, errInvalidKeyFormat()
+		return nil, errInvalidKeyFormat
 	}
 	if !strings.HasPrefix(plaintext, string(keys.PrefixPk)) && !strings.HasPrefix(plaintext, string(keys.PrefixEk)) {
-		return nil, errInvalidKeyFormat()
+		return nil, errInvalidKeyFormat
 	}
 	info, err := d.Resolver.Resolve(ctx, plaintext)
 	if err != nil {
-		return nil, errInternal()
+		return nil, errInternal
 	}
 	if info == nil {
-		return nil, errExpiredOrRevoked()
+		return nil, errExpiredOrRevoked
 	}
 	return info, nil
 }
@@ -131,21 +131,21 @@ func resolveEnv(d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.Env
 	switch info.KeyType {
 	case keys.PrefixPk:
 		if headerEnv == "" {
-			return nil, errMissingEnvironment()
+			return nil, errMissingEnvironment
 		}
 		resolved = headerEnv
 	case keys.PrefixEk:
 		if headerEnv != "" && headerEnv != info.Environment {
-			return nil, errWrongEnvironment()
+			return nil, errWrongEnvironment
 		}
 		resolved = info.Environment
 	default:
 		// Resolver guarantees PrefixPk or PrefixEk; defensive only.
-		return nil, errInvalidKeyFormat()
+		return nil, errInvalidKeyFormat
 	}
 	row, ok := d.EnvCache.Get(d.Namespace, resolved)
 	if !ok {
-		return nil, errEnvironmentNotFound()
+		return nil, errEnvironmentNotFound
 	}
 	return row, nil
 }
@@ -182,11 +182,11 @@ func enforceTeams(ctx context.Context, d Deps, info *keystore.KeyInfo, envRow *e
 			if d.LiteLLMUnreachable != nil {
 				d.LiteLLMUnreachable.WithLabelValues("content_service").Inc()
 			}
-			return errLitellmUnreachable()
+			return errLitellmUnreachable
 		}
 	}
 	if !teams.HasIntersect(userTeams, envRow.AuthorizedTeams) {
-		return errUnauthorizedTeam()
+		return errUnauthorizedTeam
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 	default:
 		// Unknown kind — router only registers known kinds, so this is
 		// defensive. Map to the cheapest closed-set outcome.
-		return errUnauthorizedContent()
+		return errUnauthorizedContent
 	}
 	for _, n := range list {
 		// Comparison is intentionally on the FULL ref (e.g. "shared@mkt-b"),
@@ -226,7 +226,7 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 			return nil
 		}
 	}
-	return errUnauthorizedContent()
+	return errUnauthorizedContent
 }
 
 // resolveContent (gate 6 per D-04). Kind-dispatched projection row
@@ -252,10 +252,10 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 	case kindPrompt:
 		row, err := db.GetPromptByName(ctx, d.Pool, d.Namespace, name)
 		if err != nil {
-			return nil, errInternal()
+			return nil, errInternal
 		}
 		if row == nil {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		return &contentRow{
 			StorageLocation:       row.StorageLocation,
@@ -268,15 +268,15 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		// of silently treating them as a bare CRD lookup — the grammar
 		// requires a non-empty marketplace whenever '@' is present.
 		if !pluginref.Valid(name) {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		pname, marketplace, _ := pluginref.Parse(name)
 		res, err := db.ResolvePluginByName(ctx, d.Pool, d.Namespace, pname, marketplace)
 		if err != nil {
-			return nil, errInternal()
+			return nil, errInternal
 		}
 		if res == nil {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		return &contentRow{
 			StorageLocation:       res.StorageLocation,
@@ -287,10 +287,10 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 	case kindArtifact:
 		row, err := db.GetArtifactByName(ctx, d.Pool, d.Namespace, name)
 		if err != nil {
-			return nil, errInternal()
+			return nil, errInternal
 		}
 		if row == nil {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		return &contentRow{
 			StorageLocation:       row.StorageLocation,
@@ -305,15 +305,15 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		// from the absolute StorageLocation (skill-marketplace/<mkt>/<name>.tar.gz)
 		// while a bare skill keeps the deterministic skill/<name>.tar.gz ResolvePath.
 		if !skillref.Valid(name) {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		sname, marketplace, _ := skillref.Parse(name)
 		res, err := db.ResolveSkillByName(ctx, d.Pool, d.Namespace, sname, marketplace)
 		if err != nil {
-			return nil, errInternal()
+			return nil, errInternal
 		}
 		if res == nil {
-			return nil, errContentNotFound()
+			return nil, errContentNotFound
 		}
 		return &contentRow{
 			StorageLocation:       res.StorageLocation,
@@ -323,7 +323,7 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		}, nil
 	}
 	// Defensive — chi router only registers known kinds.
-	return nil, errContentNotFound()
+	return nil, errContentNotFound
 }
 
 // checkStaleness (gate 7 per D-04). Pure function. Returns
@@ -337,10 +337,10 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 // Otherwise nil (gate passes).
 func checkStaleness(row *contentRow) *errResp {
 	if row.LastSuccessfulRefresh == nil {
-		return errStaleCacheExpired()
+		return errStaleCacheExpired
 	}
 	if time.Since(*row.LastSuccessfulRefresh) > time.Duration(row.MaxStalenessSeconds)*time.Second {
-		return errStaleCacheExpired()
+		return errStaleCacheExpired
 	}
 	return nil
 }
