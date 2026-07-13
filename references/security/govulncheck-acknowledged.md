@@ -1,7 +1,7 @@
 # Acknowledged govulncheck residuals
 
-**Date:** 2026-06-03
-**Toolchain at acknowledgement:** Go 1.26.4 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.53.0`
+**Date:** 2026-07-13
+**Toolchain at acknowledgement:** Go 1.26.5 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.53.0`
 **Scanner:** `govulncheck@v1.3.0` (pinned in `Dockerfile.devtools::GOVULNCHECK_VERSION`)
 **Invocation:** `./scripts/dev.sh govulncheck ./...`
 
@@ -31,6 +31,12 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-07-13: Bumped Go toolchain 1.26.4 → **1.26.5** (`go.mod` `toolchain` +
+  `Dockerfile.devtools` pinned to `golang:1.26.5-bookworm`). Cleared
+  `GO-2026-5856` (crypto/tls Encrypted Client Hello privacy leak), surfaced by
+  a govulncheck DB refresh. Stdlib-only, independent of any first-party
+  change. `govulncheck ./...` now reports 0 reachable. Ack-list stays empty;
+  gate expects 0.
 - 2026-06-03 (later): Bumped Go toolchain 1.26.3 → **1.26.4** (`go.mod`
   `toolchain` + `Dockerfile.devtools` pinned to `golang:1.26.4-bookworm`).
   This cleared all three stdlib advisories acked earlier the same day —
