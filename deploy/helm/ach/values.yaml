@@ -231,15 +231,6 @@ migrate:
   enabled: true
   args: ["migrate"]
 
-# postgres: assumed external. Set external=false to add embedded subchart
-# (not implemented in v0.0.1).
-postgres:
-  external: true
-
-# redis: assumed external. Same caveat as postgres.
-redis:
-  external: true
-
 # toolhive: enabled=true (default) includes the ClusterRole + ClusterRoleBinding
 # that grants the operator read access to ToolHive MCPServer + VirtualMCPServer
 # objects. Set false on clusters without ToolHive.
