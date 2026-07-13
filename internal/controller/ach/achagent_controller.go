@@ -13,7 +13,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -207,11 +208,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *ACHAgentReconciler) checkChannelSecrets(ctx context.Context, ns string, refSecrets map[string][]string) (reason, msg string) {
-	names := make([]string, 0, len(refSecrets))
-	for n := range refSecrets {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(refSecrets))
 	for _, name := range names {
 		var s corev1.Secret
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &s); err != nil {
@@ -327,11 +324,7 @@ func (r *ACHAgentReconciler) hashSecrets(ctx context.Context, a *achv1alpha1.ACH
 			add(name, k)
 		}
 	}
-	names := make([]string, 0, len(want))
-	for n := range want {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(want))
 
 	mac := hmac.New(sha256.New, []byte(a.UID))
 	for _, name := range names {
@@ -344,11 +337,7 @@ func (r *ACHAgentReconciler) hashSecrets(ctx context.Context, a *achv1alpha1.ACH
 			}
 			return "", err
 		}
-		keys := make([]string, 0, len(want[name]))
-		for k := range want[name] {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		keys := slices.Sorted(maps.Keys(want[name]))
 		for _, k := range keys {
 			mac.Write([]byte(name))
 			mac.Write([]byte{0})

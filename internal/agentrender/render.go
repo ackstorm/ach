@@ -5,7 +5,8 @@ package agentrender
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -375,12 +376,7 @@ func ReferencedSecrets(a achv1alpha1.ACHAgent) map[string][]string {
 	}
 	out := make(map[string][]string, len(set))
 	for name, keys := range set {
-		ks := make([]string, 0, len(keys))
-		for k := range keys {
-			ks = append(ks, k)
-		}
-		sort.Strings(ks)
-		out[name] = ks
+		out[name] = slices.Sorted(maps.Keys(keys))
 	}
 	return out
 }
