@@ -434,7 +434,7 @@ func TestSnapshotter_FailureFollowedBySuccess_FastRetry(t *testing.T) {
 
 // TestSnapshotter_TeamsLandInSnapshot asserts that team aliases from
 // ListAllTeams are stored in LiteLLMSnapshot.Teams after a successful
-// refresh. Empty-alias entries must be skipped (toTeamSet contract).
+// refresh. Empty-alias entries must be skipped (toSet contract).
 func TestSnapshotter_TeamsLandInSnapshot(t *testing.T) {
 	fake := &fakeLiteLLM{
 		teams: []litellm.TeamListEntry{

@@ -193,11 +193,7 @@ func (s *Snapshotter) refreshAndNextInterval(ctx context.Context, backoff time.D
 
 // nextBackoff doubles cur, capped at maxDur.
 func nextBackoff(cur, maxDur time.Duration) time.Duration {
-	doubled := cur * 2
-	if doubled > maxDur {
-		return maxDur
-	}
-	return doubled
+	return min(cur*2, maxDur)
 }
 
 // refresh issues the three LiteLLM list calls and, on full success,
@@ -282,10 +278,10 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	}
 
 	next := &LiteLLMSnapshot{
-		Models:      toModelSet(models),
-		MCPServers:  toMCPSet(mcps),
-		A2AAgents:   toAgentSet(agents),
-		Teams:       toTeamSet(teams),
+		Models:      toSet(models, func(m litellm.ModelInfoResponse) string { return m.ModelName }),
+		MCPServers:  toSet(mcps, func(m litellm.MCPServerEntry) string { return m.ServerName }),
+		A2AAgents:   toSet(agents, func(a litellm.AgentEntry) string { return a.AgentName }),
+		Teams:       toSet(teams, func(t litellm.TeamListEntry) string { return t.TeamAlias }),
 		RefreshedAt: time.Now(),
 		Stale:       false,
 	}
@@ -309,49 +305,15 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	return true
 }
 
-// toModelSet projects a ModelInfoResponse slice into a name set keyed
-// on .ModelName (the LiteLLM-side identifier reconcilers compare against
-// Environment.Spec.Runtime.Models).
-func toModelSet(ms []litellm.ModelInfoResponse) map[string]struct{} {
-	out := make(map[string]struct{}, len(ms))
-	for _, m := range ms {
-		out[m.ModelName] = struct{}{}
-	}
-	return out
-}
-
-// toMCPSet projects an MCPServerEntry slice into a name set keyed on
-// .ServerName (the field name verified against
-// internal/litellm/types.go line 217).
-func toMCPSet(ms []litellm.MCPServerEntry) map[string]struct{} {
-	out := make(map[string]struct{}, len(ms))
-	for _, m := range ms {
-		out[m.ServerName] = struct{}{}
-	}
-	return out
-}
-
-// toAgentSet projects an AgentEntry slice into a name set keyed on
-// .AgentName (the field name verified against
-// internal/litellm/types.go line 256).
-func toAgentSet(as []litellm.AgentEntry) map[string]struct{} {
-	out := make(map[string]struct{}, len(as))
-	for _, a := range as {
-		out[a.AgentName] = struct{}{}
-	}
-	return out
-}
-
-// toTeamSet projects a TeamListEntry slice into a name set keyed on
-// .TeamAlias. Entries with an empty alias are skipped (teams without
-// aliases cannot be referenced in Environment.spec.authorizedTeams).
-func toTeamSet(ts []litellm.TeamListEntry) map[string]struct{} {
-	out := make(map[string]struct{}, len(ts))
-	for _, t := range ts {
-		if t.TeamAlias == "" {
-			continue
+// toSet projects items into a name set via key. Empty keys are skipped
+// (identifiers are never empty; for teams this drops alias-less entries,
+// which cannot be referenced in Environment.spec.authorizedTeams).
+func toSet[T any](items []T, key func(T) string) map[string]struct{} {
+	out := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		if k := key(it); k != "" {
+			out[k] = struct{}{}
 		}
-		out[t.TeamAlias] = struct{}{}
 	}
 	return out
 }
