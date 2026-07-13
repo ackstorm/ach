@@ -86,4 +86,3 @@ func LookupCallerTeams(ctx context.Context, ll litellm.Client, email string) ([]
 	}
 	return out, nil
 }
-
