@@ -145,54 +145,6 @@ func scanBIPRows(rows pgx.Rows) ([]BIPRow, error) {
 	return out, nil
 }
 
-// GetBIPByName returns the row keyed by (Namespace, Name) or (nil, nil) on
-// absence.
-func GetBIPByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*BIPRow, error) {
-	const sql = `
-		SELECT namespace, name, target_kind, target_name,
-		       forward_identity_jwt, observed_generation,
-		       deletion_timestamp, resource_version, updated_at, origin, locked
-		  FROM backend_identity_policies
-		 WHERE namespace = $1 AND name = $2
-	`
-	r := &BIPRow{}
-	if err := scanBIPRow(pool.QueryRow(ctx, sql, ns, name), r); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: GetBIPByName(%s/%s): %w", ns, name, err)
-	}
-	return r, nil
-}
-
-// ListBIPsByTarget returns every live row matching (namespace, target_kind,
-// target_name) ordered by name ASC. Caller (bipcache.Resolve) picks the
-// alpha-FIRST winner. Rows with deletion_timestamp set are excluded.
-func ListBIPsByTarget(ctx context.Context, pool *pgxpool.Pool, ns, targetKind, targetName string) ([]BIPRow, error) {
-	const sql = `
-		SELECT namespace, name, target_kind, target_name,
-		       forward_identity_jwt, observed_generation,
-		       deletion_timestamp, resource_version, updated_at, origin, locked
-		  FROM backend_identity_policies
-		 WHERE namespace   = $1
-		   AND target_kind = $2
-		   AND target_name = $3
-		   AND deletion_timestamp IS NULL
-		 ORDER BY name ASC
-	`
-	rows, err := pool.Query(ctx, sql, ns, targetKind, targetName)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListBIPsByTarget(%s/%s/%s): %w", ns, targetKind, targetName, err)
-	}
-	return scanBIPRows(rows)
-}
-
 // ListAllBIPs returns every live row in the namespace, ordered by name ASC.
 // Used by the forwarder bipcache 5-minute periodic refresh.
 func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, error) {

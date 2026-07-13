@@ -220,16 +220,3 @@ func SoftDeleteLiteLLMConnectionTx(ctx context.Context, tx pgx.Tx, ns, name stri
 	}
 	return nil
 }
-
-// DeleteLiteLLMConnection removes the row outright. Called only after
-// finalizer drain completes. Absence is not an error.
-func DeleteLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM litellm_connections WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteLiteLLMConnection(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
