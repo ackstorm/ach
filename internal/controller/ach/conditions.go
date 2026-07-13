@@ -409,10 +409,7 @@ func formatStageFailures(failures []stageFailure, noun string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "stage-2: %d %s(s) failed: ", len(failures), noun)
 	n := len(failures)
-	shown := n
-	if shown > verbatim {
-		shown = verbatim
-	}
+	shown := min(n, verbatim)
 	for i := 0; i < shown; i++ {
 		if i > 0 {
 			b.WriteString(", ")

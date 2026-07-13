@@ -167,11 +167,11 @@ func (l *Listener) fetch(ctx context.Context, kind, name string) (client.Object,
 // splitPayload splits "<kind>/<name>" into (kind, name, true). Returns
 // ("","",false) on missing '/' or empty parts. Note: <name> may contain
 // '/' segments per Kubernetes resource-name rules (no '/' allowed in
-// metadata.name), so SplitN handles the simple two-part case.
+// metadata.name), so strings.Cut handles the simple two-part case.
 func splitPayload(payload string) (kind, name string, ok bool) {
-	idx := strings.IndexByte(payload, '/')
-	if idx <= 0 || idx == len(payload)-1 {
+	kind, name, ok = strings.Cut(payload, "/")
+	if !ok || kind == "" || name == "" {
 		return "", "", false
 	}
-	return payload[:idx], payload[idx+1:], true
+	return kind, name, true
 }
