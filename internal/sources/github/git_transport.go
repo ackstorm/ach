@@ -35,8 +35,8 @@ func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*s
 		return nil, err
 	}
 
-	parts := strings.SplitN(f.spec.Repo, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	owner, name, ok := strings.Cut(f.spec.Repo, "/")
+	if !ok || owner == "" || name == "" {
 		return nil, fmt.Errorf("github: spec.repo must be <owner>/<name>, got %q: %w",
 			f.spec.Repo, sources.ErrUpstreamInvalid)
 	}

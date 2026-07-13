@@ -74,15 +74,15 @@ func decodeCursor(cursor string) (time.Time, string, error) {
 	if err != nil {
 		return time.Time{}, "", fmt.Errorf("invalid cursor: %w", err)
 	}
-	parts := strings.SplitN(string(raw), "\x00", 2)
-	if len(parts) != 2 {
+	tsRaw, id, ok := strings.Cut(string(raw), "\x00")
+	if !ok {
 		return time.Time{}, "", errors.New("invalid cursor: malformed payload")
 	}
-	ts, err := time.Parse(time.RFC3339Nano, parts[0])
+	ts, err := time.Parse(time.RFC3339Nano, tsRaw)
 	if err != nil {
 		return time.Time{}, "", fmt.Errorf("invalid cursor: %w", err)
 	}
-	return ts, parts[1], nil
+	return ts, id, nil
 }
 
 // InsertPersonalKey writes a single personal_keys row inside an implicit
