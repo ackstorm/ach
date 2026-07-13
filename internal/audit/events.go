@@ -63,10 +63,6 @@ const (
 	ActionAdminRefresh         = "platform.admin.refresh"
 	ActionAdminKeysRevoke      = "platform.admin.keys.revoke"
 	ActionAdminUsersRevokeKeys = "platform.admin.users.revoke_keys"
-	// ActionEnvironmentLifecycle is reserved for the Operator's
-	// Environment-CR reconciliation emission point (Phase 3 wires it via
-	// the existing controller; handlers do NOT emit this action).
-	ActionEnvironmentLifecycle = "platform.environment.lifecycle"
 
 	// ActionContentGet is the Content Service emission action (Phase 5
 	// D-Discretion / Plan 05-05). The handler emits exactly one audit

@@ -28,8 +28,7 @@
 //   - All array fields ALWAYS present in the response envelope; empty values
 //     serialize as `[]` (NOT `null`) per API-04 convention.
 //   - The endpoint is read-only — no audit emission per OBS-01 (environment
-//     listing is not an event surface; ActionEnvironmentLifecycle is the
-//     Operator's emission point, not the Platform API's).
+//     listing is not an event surface; no lifecycle audit action is emitted).
 //
 // All reads are O(1) cache lookups served from the controller-runtime
 // informer cache — no API-server round trips per D-21.

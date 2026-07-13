@@ -33,7 +33,6 @@ func TestEventConstantsAreStable(t *testing.T) {
 		{"ActionAdminRefresh", audit.ActionAdminRefresh, "platform.admin.refresh"},
 		{"ActionAdminKeysRevoke", audit.ActionAdminKeysRevoke, "platform.admin.keys.revoke"},
 		{"ActionAdminUsersRevokeKeys", audit.ActionAdminUsersRevokeKeys, "platform.admin.users.revoke_keys"},
-		{"ActionEnvironmentLifecycle", audit.ActionEnvironmentLifecycle, "platform.environment.lifecycle"},
 
 		// Outcomes — Hub §18.2 (16 verbatim)
 		{"OutcomeCreated", audit.OutcomeCreated, "created"},
