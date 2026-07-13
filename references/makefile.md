@@ -164,6 +164,11 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `build-image-mock` | B | Build `ach-mock:e2e` (LiteLLM-shaped mock). |
 | `build-image-mcp-echo` | B | Build `ach-mcp-echo:e2e` (JWT-verifying MCP backend, issue #35). |
 
+`deploy/kustomize/manager-rbac.yaml` is a static snapshot — its regen
+tooling (`deploy-kustomize-sync{,-check}`) was removed 2026-07-13 as
+unwired (no CI/pre-push caller); edit it by hand if `config/rbac/` changes.
+Helm (`cluster.sh`, `helm-sync`) is the actual deploy path.
+
 ### Code generation (`gen-`)
 | Target | Ctx | Description |
 |--------|-----|-------------|

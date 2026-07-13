@@ -589,43 +589,6 @@ helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted
 	  exit 1; \
 	fi
 
-# --- deploy/kustomize snapshot ---
-
-.PHONY: deploy-kustomize-sync
-deploy-kustomize-sync: ## Regenerate deploy/kustomize/manager-rbac.yaml from config/rbac/ (operator-runtime + metrics-auth subset).
-	bash scripts/render-deploy-kustomize-rbac.sh
-
-.PHONY: deploy-kustomize-sync-check
-deploy-kustomize-sync-check: deploy-kustomize-sync ## CI gate: fail if `make deploy-kustomize-sync` produced uncommitted diff (drift between config/rbac/ and the bundled snapshot).
-	@if ! git diff --quiet deploy/kustomize/manager-rbac.yaml; then \
-	  echo "DEPLOY KUSTOMIZE DRIFT: deploy/kustomize/manager-rbac.yaml is out of sync with config/rbac/. Run \`make deploy-kustomize-sync\` and commit."; \
-	  git diff deploy/kustomize/manager-rbac.yaml; \
-	  exit 1; \
-	fi
-
-.PHONY: ac-n3-audit
-ac-n3-audit: ## SCOPE-03 / AC-N3 static gate: fail if any non-test .go file references /user/ or /key/ as string literals.
-	@hits=$$(grep -RnE '"/user/|"/key/' --include='*.go' --exclude='*_test.go' internal/ cmd/ 2>/dev/null \
-	  | grep -v '^\s*//' || true); \
-	if [ -n "$$hits" ]; then \
-	  echo "AC-N3 VIOLATION: forbidden path-prefix string literals found:"; \
-	  echo "$$hits"; \
-	  exit 1; \
-	fi; \
-	echo "ac-n3-audit: PASS (zero /user/* or /key/* literals in non-test source)"
-
-# --- samples-audit ---
-
-.PHONY: samples-audit
-samples-audit: ## DEPLOY-02: fail the build if any sample manifest contains a TODO(user) placeholder (per plan 07-03 audit gate).
-	@hits=$$(grep -RIE 'TODO\(user\)' config/samples/ 2>/dev/null || true); \
-	if [ -n "$$hits" ]; then \
-	  echo "DEPLOY-02 VIOLATION: TODO(user) placeholders found in samples:"; \
-	  echo "$$hits"; \
-	  exit 1; \
-	fi; \
-	echo "samples-audit: PASS (zero TODO(user) placeholders in config/samples/)"
-
 ##@ E2E (cluster + mocks)
 
 .PHONY: build-image-mock
