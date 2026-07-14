@@ -71,7 +71,7 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
 ```
 ┌──────────────┐ reconcile ┌─────────────────────────────┐  project    ┌────────────┐
 │     CRDs     │──────────▶│       ach operator Pod      │────rows────▶│  Postgres  │
-│ (AgentDef…)  │           │ ┌─────────────┐ ┌─────────┐ │  + NOTIFY   │  (SoT for  │
+│ (Environmen…)│           │ ┌─────────────┐ ┌─────────┐ │  + NOTIFY   │  (SoT for  │
 └──────────────┘           │ │  operator   │ │ content │ │             │ ACH state) │
                            │ │ (reconcile) │ │ service │◀┼──READ ROWS──│            │
                            │ └─────────────┘ └────┬────┘ │             └─────┬──────┘
@@ -121,16 +121,20 @@ directly. It is a logic-free packaging convenience — disable it with
 In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
-CRDs (`ach.ackstorm.ai/v1alpha1`): `AgentDefinition`, `AgentSession`, `Team`,
-`EnvKey`, `BackendIdentityPolicy`, `ContentRef`, `Skill`, `SkillMarketplace`,
-`AgentProfile`, `ACHAgent` (`api/` is authoritative). `Plugin` /
+CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Skill`, `SkillMarketplace`,
+`Prompt`, `Artifact`, `LiteLLMConnection`, `BackendIdentityPolicy`,
+`AgentProfile`, `ACHAgent` (`api/` is authoritative — NO `EnvKey`/`Team`/
+`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist; `ek_`/`pk_` keys and
+teams are platform-api/DB objects). `Plugin` /
 `PluginMarketplace` types also exist in `api/` but their CRDs are NOT shipped
 (gated off, see above). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
 (an agent instance)** render into the single `agent-config-v1` config the
 `ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a
 `config.json` ConfigMap + a single-replica Deployment (probes, inbound
 channel-auth secrets injected as `ACH_SECRET_*` env vars via `secretKeyRef` —
-never file-mounted, since a same-uid agent could read mounted files — salted
+never file-mounted, keeping secret material off the pod filesystem and the
+harness contract simple (NOT an isolation boundary: same-uid reads
+`/proc/<pid>/environ` either way) — salted
 config-hash roll; optional profile spec.podTemplate raw overlay
 strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
@@ -213,8 +217,9 @@ independent collections.)
 → `nightly.yml`. **E2E is NOT a CI gate** — it was removed from `ci.yml`; run
 `make e2e-full` locally before merging any change touching
 `internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
-`deploy/helm/ach/`, or `test/e2e/` (the burden is now entirely local — see "E2E
-debug loop"). Docs-only PRs
+`deploy/helm/ach/`, or `test/e2e/` (the burden stays local — see "E2E debug
+loop" — with `nightly.yml`'s `e2e` job as a 24h backstop on `main`, not a
+merge gate). Docs-only PRs
 (paths-ignore `**/*.md`, `docs/**`, `references/**`, `FIX*.txt`, `LICENSE`,
 `NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml`. **⚠ PR-only is a real gate
 only if branch protection on `main` is enabled** (needs a paid plan / public

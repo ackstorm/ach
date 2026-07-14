@@ -24,6 +24,41 @@ host substitution; the CLI e2e suite normalizes this automatically —
 see `test/e2e/cli_login_hydrate_test.go`). See `examples/README.md`
 for the full demo walkthrough.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph cluster["Kubernetes cluster"]
+        CRDS["CRDs<br/>(Environment, Skill, ACHAgent, …)"]
+        subgraph oppod["ach operator Pod"]
+            OP["operator<br/>(reconcile)"]
+            CS["content-service<br/>(sidecar, artifact PVC)"]
+        end
+        PA["ach platform-api<br/>(REST + Dex SSO + /platform/hydrate)"]
+        FW["ach forwarder<br/>(JWT trust path, BIP+Env caches)"]
+        GW["ach gateway (optional)<br/>(edge proxy + /agents/{ns}/{svc} routes)"]
+        AG["ACHAgent Pod<br/>(ach-agent harness, self-hydrates at boot)"]
+        PG[("Postgres<br/>(source of truth)")]
+        DEX["Dex (SSO)"]
+    end
+    CLI["ach-cli<br/>(developer workspace)"]
+    EXT["External callers<br/>(webhooks, a2a peers)"]
+    LLM["LiteLLM + backends"]
+
+    CRDS -- reconcile --> OP
+    OP -- "project rows + NOTIFY" --> PG
+    PG -. "READ ROWS + LISTEN ach_*_changed" .-> PA & FW & CS & GW
+    OP -- "config.json + Deployment" --> AG
+    CLI -- "login / env hydrate" --> PA
+    PA --- DEX
+    PA -- "hydrate manifest → content" --> CS
+    AG -- "self-hydrate (ek_)" --> PA
+    AG -- "backend calls" --> FW
+    FW -- "per-target JWT mint" --> LLM
+    EXT -- "webhook / a2a" --> GW
+    GW -- "route via achagents projection<br/>(HMAC verified by harness)" --> AG
+```
+
 ## Quick links
 
 - [Documentation](https://ackstorm.github.io/ach/)
