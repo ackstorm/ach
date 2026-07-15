@@ -5,7 +5,7 @@ package hydrate
 // White-box tests for the Phase-3 cross-cutting plumbing (plan 03-01):
 //   - publishFile threads fw.SourceHash (D-23) instead of hardcoding
 //     SourceHash == Hash; an empty fw.SourceHash falls back to freshHash.
-//   - remapGlobalPath generalizes to ALL .opencode/* dirs under global
+//   - adapter.RemapGlobalPath generalizes to ALL .opencode/* dirs under global
 //     scope (D-22), not only .opencode/opencode.json.
 //   - dropRuntimeOwnedMCP is format-aware (TOML for codex .toml targets,
 //     JSON otherwise) and prefix-parameterized (mcp_servers./mcp./mcpServers.)
@@ -89,7 +89,7 @@ func TestRemapGlobalPath_AllOpencodeDirs(t *testing.T) {
 		{"opencode", "AGENTS.md", "AGENTS.md"},
 	}
 	for _, tc := range cases {
-		got := remapGlobalPath(tc.platform, tc.in)
+		got := adapter.RemapGlobalPath(tc.platform, tc.in)
 		if got != tc.want {
 			t.Errorf("remapGlobalPath(%q, %q) = %q; want %q", tc.platform, tc.in, got, tc.want)
 		}

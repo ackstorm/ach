@@ -391,7 +391,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 		for _, fw := range fws {
 			if d.global {
-				fw.Path = remapGlobalPath(d.platformID, fw.Path)
+				fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
 			}
 			entry, err := d.publishRuntimeFile(fw, s, toolRoot)
 			if err != nil {
@@ -459,7 +459,7 @@ func runtimeKindForKey(k string) string {
 // provenance axis in Phase 1 per OPENPACKAGE-MAPPING:66 — the ungated rule
 // arm matches; the gated branch EXISTS for Phase 2).
 //
-// Projected paths compose with remapGlobalPath under --global exactly as
+// Projected paths compose with adapter.RemapGlobalPath under --global exactly as
 // the runtime loop does. Dropped kinds are de-duplicated across all plugin
 // trees and appended (sorted) to result.DroppedComponents.
 //
@@ -632,7 +632,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		}
 		for _, fw := range pr.FileWrites {
 			if d.global {
-				fw.Path = remapGlobalPath(d.platformID, fw.Path)
+				fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
 			}
 			all = append(all, projectedWrite{plugin: ent.Name(), fw: fw})
 		}
@@ -806,7 +806,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	// standalone-Skill hydrate misreport as "Plugins: 0 total (N skills)".
 	for _, fw := range pr.FileWrites {
 		if d.global {
-			fw.Path = remapGlobalPath(d.platformID, fw.Path)
+			fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
 		}
 		// Look up the prior projected entry in the SKILLS bucket so an
 		// unchanged re-hydrate hits the publishFile no-op skip.
@@ -1001,38 +1001,6 @@ func validatePluginName(name string) error {
 		return fmt.Errorf("name %q is not a single path segment (escapes plugin root)", name)
 	}
 	return nil
-}
-
-// opencodeProjectPrefix is the project-scope path prefix OpenCode FileWrites
-// carry (.opencode/opencode.json, .opencode/commands/, .opencode/agents/, …).
-// opencodeGlobalPrefix is the XDG global-config root the prefix remaps to.
-const (
-	opencodeProjectPrefix = ".opencode/"
-	opencodeGlobalPrefix  = ".config/opencode/"
-)
-
-// remapGlobalPath adjusts an adapter's workspace-relative FileWrite path for
-// --global scope where the tool's GLOBAL config location differs from the
-// simple $HOME-join. OpenCode reads its global config from the XDG root
-// ~/.config/opencode/ — NOT ~/.opencode/ (the latter is the PROJECT path).
-//
-// D-22 generalization: ALL projected `.opencode/*` paths remap to
-// `.config/opencode/*` under global scope — not just `.opencode/opencode.json`
-// but also `.opencode/commands/`, `.opencode/agents/`, `.opencode/skills/`, …
-// Project scope (non-global) is never reached here (the caller gates on
-// d.global). The other three adapters' relative paths (.claude/, .codex/,
-// .gemini/) are correct under $HOME as-is and pass through unchanged. Kept in
-// the orchestrator (dispatcher) rather than the adapter so RenderRuntime stays
-// scope-agnostic.
-//
-// The remap is a pure prefix substitution on an already-traversal-guarded
-// relative path (route.resolveRecursiveGlobTarget's T-01-01 guard ran before
-// this), so no ".." can be reintroduced by the concat (T-03-02).
-func remapGlobalPath(platformID, path string) string {
-	if platformID == "opencode" && strings.HasPrefix(path, opencodeProjectPrefix) {
-		return opencodeGlobalPrefix + strings.TrimPrefix(path, opencodeProjectPrefix)
-	}
-	return path
 }
 
 // publishRuntimeFile writes one adapter runtime-config FileWrite via
