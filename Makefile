@@ -319,7 +319,7 @@ _qa-fuzz-long:
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
 
 .PHONY: pre-push
-pre-push: ## Host-only — 17-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
+pre-push: ## Host-only — 18-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
 	./scripts/pre-push-check.sh
 
 .PHONY: verify

@@ -239,7 +239,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-push` | 17-gate publication check (scanners + lint + unit + SPDX + govulncheck + …). Installed git hook. |
+| `pre-push` | 18-gate publication check (scanners + lint + unit + SPDX + govulncheck + …). Installed git hook. |
 | `verify` | `qa-security` + `pre-push` — full gate bundle. |
 | `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 
