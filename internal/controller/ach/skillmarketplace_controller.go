@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
@@ -397,35 +398,10 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 	}
 	finalPath := filepath.Join(finalDir, d.Name+".tar.gz")
 
-	tmpDir := filepath.Join(r.CacheRoot, ".tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		return fmt.Errorf("skill %q: mkdir tmp dir: %w", d.Name, err)
-	}
-	tmpFile, err := os.CreateTemp(tmpDir, "stg-")
+	stagingPath, _, err := cachefs.StageAtomic(r.CacheRoot, bytes.NewReader(sub), 0)
 	if err != nil {
-		return fmt.Errorf("skill %q: create staging file: %w", d.Name, err)
+		return fmt.Errorf("skill %q: %w", d.Name, err)
 	}
-	stagingPath := tmpFile.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
-		}
-	}()
-
-	if _, err := io.Copy(tmpFile, bytes.NewReader(sub)); err != nil {
-		_ = os.Remove(stagingPath)
-		return fmt.Errorf("skill %q: staging copy: %w", d.Name, err)
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = os.Remove(stagingPath)
-		return fmt.Errorf("skill %q: staging fsync: %w", d.Name, err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(stagingPath)
-		return fmt.Errorf("skill %q: staging close: %w", d.Name, err)
-	}
-	closed = true
 
 	if err := os.Rename(stagingPath, finalPath); err != nil {
 		_ = os.Remove(stagingPath)
