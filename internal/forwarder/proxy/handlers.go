@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
@@ -48,11 +50,12 @@ type HandlerDeps struct {
 // traffic only) then forward. routeLabel is the metrics route dimension.
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
-	return func(w http.ResponseWriter, r *http.Request) {
+	inner := func(w http.ResponseWriter, r *http.Request) {
 		maybeInjectEnvironmentTag(r)
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
 		rp.ServeHTTP(w, r)
 	}
+	return observeDuration(routeLabel, inner)
 }
 
 // HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
@@ -91,7 +94,7 @@ type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name strin
 
 func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
-	return func(w http.ResponseWriter, r *http.Request) {
+	inner := func(w http.ResponseWriter, r *http.Request) {
 		kc, _ := middleware.KeyContextFromCtx(r.Context())
 		name := chi.URLParam(r, "name")
 		reqID := middleware.RequestIDFromCtx(r.Context())
@@ -162,6 +165,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		r = r.WithContext(WithJWT(r.Context(), token))
 		rp.ServeHTTP(w, r)
 	}
+	return observeDuration(routeLabel, inner)
 }
 
 // Precheck outcome / envelope-code constants per Hub §15.5.
@@ -210,4 +214,44 @@ func classifyPrecheckErr(err error) (outcome string, status int, code string) {
 // literals; localization is v1beta1.
 func codeMessage(code string) string {
 	return precheckOutcomes[code].msg
+}
+
+// statusRecorder captures the first WriteHeader for the duration metric.
+// Unwrap keeps http.ResponseController (and ReverseProxy's flush path)
+// working through the wrapper — same pattern as the platformapi
+// statusCapturingWriter.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if s.status == 0 {
+		s.status = code
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// statusClass buckets a status code into the §18.5 status_class enum.
+// An implicit 200 (handler never called WriteHeader) counts as 2xx.
+func statusClass(code int) string {
+	if code == 0 {
+		code = http.StatusOK
+	}
+	return strconv.Itoa(code/100) + "xx"
+}
+
+// observeDuration wraps h, emitting
+// forwarder_request_duration_seconds{route, key_type, status_class}
+// per Hub §18.5 once the response completes.
+func observeDuration(routeLabel string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		h(rec, r)
+		metrics.ObserveRequestDuration(routeLabel, keyTypeFor(r.Context()),
+			statusClass(rec.status), time.Since(start).Seconds())
+	}
 }
