@@ -267,6 +267,22 @@ func RemoveDottedKey(root map[string]any, path string) {
 	}
 }
 
+// PruneDottedKeys removes the dotted-path keys from doc and reports the
+// inverse-merge outcome shared by hydrate's syncDeepDoc and the local
+// installer's classifyUninstall: empty=true → nothing engine-contributed
+// remains, the caller deletes the file; else out is the re-encoded
+// document (JSON or TOML per isTOML, byte-stable via EncodeDoc).
+func PruneDottedKeys(doc map[string]any, keys []string, isTOML bool) (out []byte, empty bool, err error) {
+	for _, k := range keys {
+		RemoveDottedKey(doc, k)
+	}
+	if len(doc) == 0 {
+		return nil, true, nil
+	}
+	out, err = EncodeDoc(doc, isTOML)
+	return out, false, err
+}
+
 // WriteComposite performs the forward composite merge: a marker-bounded
 // insert (no prior block) or replace (existing per-plugin block) of block
 // into the host memory file at abs. block must already be wrapped in the

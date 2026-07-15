@@ -463,3 +463,23 @@ func TestMergeDoc_TOML_MergesExistingFile(t *testing.T) {
 		t.Errorf("ach server not merged in")
 	}
 }
+
+func TestPruneDottedKeys(t *testing.T) {
+	doc := map[string]any{"a": map[string]any{"b": 1}, "keep": true}
+	out, empty, err := merge.PruneDottedKeys(doc, []string{"a.b"}, false)
+	if err != nil || empty {
+		t.Fatalf("prune: out=%q empty=%v err=%v", out, empty, err)
+	}
+	if !strings.Contains(string(out), "keep") {
+		t.Errorf("kept key missing from re-encode: %q", out)
+	}
+
+	// RemoveDottedKey does not clean up now-empty parent maps (unchanged
+	// existing behavior) — empty=true only when the top-level key itself
+	// is removed.
+	doc2 := map[string]any{"only": 1}
+	_, empty, err = merge.PruneDottedKeys(doc2, []string{"only"}, false)
+	if err != nil || !empty {
+		t.Errorf("full prune: empty=%v err=%v, want empty=true", empty, err)
+	}
+}

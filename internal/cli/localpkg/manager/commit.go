@@ -171,15 +171,12 @@ func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error
 		if perr != nil {
 			return opSkip, nil, nil
 		}
-		for _, k := range f.Keys {
-			merge.RemoveDottedKey(doc, k)
-		}
-		if len(doc) == 0 {
-			return opRemove, nil, nil
-		}
-		out, eerr := merge.EncodeDoc(doc, isTOML)
+		out, empty, eerr := merge.PruneDottedKeys(doc, f.Keys, isTOML)
 		if eerr != nil {
 			return opSkip, nil, fmt.Errorf("encode deep %s: %w", f.RelPath, eerr)
+		}
+		if empty {
+			return opRemove, nil, nil
 		}
 		return opModify, out, nil
 

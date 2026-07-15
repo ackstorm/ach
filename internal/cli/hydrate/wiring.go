@@ -1605,8 +1605,9 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 	if err := merge.UnmarshalDoc(body, &root, isTOML); err != nil {
 		return false, fmt.Errorf("sync decode %s %s: %w", format, abs, err)
 	}
-	for _, k := range e.Keys {
-		merge.RemoveDottedKey(root, k)
+	out, empty, err := merge.PruneDottedKeys(root, e.Keys, isTOML)
+	if err != nil {
+		return false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
 	}
 	// Preview: the document was decoded and the inverse-merge resolved
 	// (both rewrite and whole-file delete count as pruned). Stop before
@@ -1614,15 +1615,11 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 	if dryRun {
 		return false, nil
 	}
-	if len(root) == 0 {
+	if empty {
 		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 			return false, fmt.Errorf("sync remove %s %s: %w", format, abs, rerr)
 		}
 		return false, nil
-	}
-	out, err := merge.EncodeDoc(root, isTOML)
-	if err != nil {
-		return false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
 	}
 	// 0o600 — deep-merge inverse rewrites the same credential-
 	// bearing adapter runtime-config file (CR-01).
