@@ -227,9 +227,8 @@ or the equivalent Helm value). Non-allowlisted callers receive
 // litellm-connections and external-refs are deliberately excluded: both are
 // operator-internal bookkeeping (the LiteLLM connection config singleton and
 // the per-CR upstream-refresh cache ledger), not user-declared objects, so
-// they only added noise to the inventory. Their server-side admin endpoints
-// (/platform/admin/{litellm-connections,external-refs}) still exist; they are
-// simply no longer surfaced through the CLI.
+// they only added noise to the inventory. The server-side routes were
+// removed 2026-07-15 (audit).
 var adminListKinds = []string{
 	"environments", "plugins", "prompts", "artifacts", "skills",
 	"marketplaces", "skill-marketplaces", "bips",

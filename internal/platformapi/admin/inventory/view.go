@@ -281,30 +281,3 @@ func bipRowToView(r db.BIPRow) AdminObjectView {
 		},
 	}
 }
-
-func litellmConnToView(r db.LiteLLMConnectionRow) AdminObjectView {
-	return AdminObjectView{
-		Kind:      "litellm-connection",
-		Namespace: r.Namespace,
-		Name:      r.Name,
-		Version:   r.ResourceVersion,
-		Sync:      syncProjected,
-		UpdatedAt: rfc3339OrEmpty(r.UpdatedAt),
-		Origin:    r.Origin,
-		Locked:    r.Locked,
-		Extra:     map[string]string{"endpoint": r.Endpoint},
-	}
-}
-
-func externalRefToView(r db.ExternalRef, now time.Time) AdminObjectView {
-	sync, reason := contentSync(optTime(r.LastSuccessfulRefresh), r.MaxStalenessSeconds, now)
-	return AdminObjectView{
-		Kind:       "external-ref",
-		Name:       r.Name,
-		Version:    r.UpstreamRev, // upstream rev (commit SHA / ETag / generation)
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.LastSuccessfulRefresh),
-		Extra:      map[string]string{"refKind": r.Kind},
-	}
-}

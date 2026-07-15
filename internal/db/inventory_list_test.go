@@ -4,8 +4,7 @@
 
 // Integration tests for the admin-inventory List helpers added alongside the
 // `ach admin list` object inventory feature: ListPlugins, ListPrompts,
-// ListArtifacts, ListAllMarketplacePlugins, ListLitellmConnections,
-// ListExternalRefs.
+// ListArtifacts, ListAllMarketplacePlugins.
 //
 // Each asserts: live rows returned in stable order, soft-deleted rows excluded
 // (for tables that have deletion_timestamp), namespace scoping (for ns-keyed
@@ -201,96 +200,3 @@ func TestListAllMarketplacePlugins(t *testing.T) {
 	}
 }
 
-// TestListLitellmConnections: live rows in ns ordered by name; soft-deleted +
-// other-ns rows excluded.
-func TestListLitellmConnections(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	for _, n := range []string{"default", "alt"} {
-		if err := db.UpsertLiteLLMConnection(ctx, pool, db.LiteLLMConnectionRow{
-			Namespace: "ach", Name: n, Endpoint: "http://litellm:4000",
-			MasterKeySecretNamespace: "ach", MasterKeySecretName: "sk", MasterKeySecretKey: "key",
-			ResourceVersion: "1",
-		}); err != nil {
-			t.Fatalf("seed %s: %v", n, err)
-		}
-	}
-	// Soft-deleted row excluded.
-	if err := db.UpsertLiteLLMConnection(ctx, pool, db.LiteLLMConnectionRow{
-		Namespace: "ach", Name: "gone", Endpoint: "http://x", MasterKeySecretNamespace: "ach",
-		MasterKeySecretName: "sk", MasterKeySecretKey: "key", ResourceVersion: "1",
-	}); err != nil {
-		t.Fatalf("seed gone: %v", err)
-	}
-	if err := db.SoftDeleteLiteLLMConnection(ctx, pool, "ach", "gone"); err != nil {
-		t.Fatalf("soft-delete: %v", err)
-	}
-	// Other namespace excluded.
-	if err := db.UpsertLiteLLMConnection(ctx, pool, db.LiteLLMConnectionRow{
-		Namespace: "other", Name: "default", Endpoint: "http://x", MasterKeySecretNamespace: "other",
-		MasterKeySecretName: "sk", MasterKeySecretKey: "key", ResourceVersion: "1",
-	}); err != nil {
-		t.Fatalf("seed other-ns: %v", err)
-	}
-
-	got, err := db.ListLitellmConnections(ctx, pool, "ach")
-	if err != nil {
-		t.Fatalf("ListLitellmConnections: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d rows; want 2", len(got))
-	}
-	if got[0].Name != "alt" || got[1].Name != "default" {
-		t.Errorf("order: got [%q %q], want [alt default]", got[0].Name, got[1].Name)
-	}
-}
-
-// TestListExternalRefs: rows ordered by (kind, name); empty DB returns empty
-// non-nil slice.
-func TestListExternalRefs(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	empty, err := db.ListExternalRefs(ctx, pool)
-	if err != nil {
-		t.Fatalf("ListExternalRefs(empty): %v", err)
-	}
-	if empty == nil || len(empty) != 0 {
-		t.Errorf("empty DB: got %v, want empty non-nil slice", empty)
-	}
-
-	now := time.Now().UTC().Truncate(time.Second)
-	seed := []struct{ kind, name string }{
-		{"plugin", "bravo"},
-		{"plugin", "alpha"},
-		{"artifact", "zulu"},
-	}
-	for _, s := range seed {
-		if err := db.UpsertExternalRef(ctx, pool, db.ExternalRef{
-			Kind: s.kind, Name: s.name, StorageLocation: "/e/" + s.kind + "/" + s.name,
-			UpstreamRev: "rev", LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 600,
-		}); err != nil {
-			t.Fatalf("seed %s/%s: %v", s.kind, s.name, err)
-		}
-	}
-
-	got, err := db.ListExternalRefs(ctx, pool)
-	if err != nil {
-		t.Fatalf("ListExternalRefs: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("got %d rows; want 3", len(got))
-	}
-	want := []string{"artifact/zulu", "plugin/alpha", "plugin/bravo"}
-	for i, w := range want {
-		key := got[i].Kind + "/" + got[i].Name
-		if key != w {
-			t.Errorf("row %d: got %q, want %q", i, key, w)
-		}
-	}
-}

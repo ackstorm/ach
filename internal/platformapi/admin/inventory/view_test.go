@@ -213,27 +213,6 @@ func TestBIPView(t *testing.T) {
 	}
 }
 
-// TestLitellmConnView + marketplace + external-ref sanity.
-func TestOtherKindViews(t *testing.T) {
-	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
-
-	lc := litellmConnToView(db.LiteLLMConnectionRow{
-		Namespace: "ach", Name: "default", Endpoint: "http://litellm:4000",
-		ResourceVersion: "1", UpdatedAt: now, Origin: "cr", Locked: true,
-	})
-	if lc.Sync != syncProjected || lc.Extra["endpoint"] != "http://litellm:4000" {
-		t.Errorf("litellm view wrong: %+v", lc)
-	}
-
-	er := externalRefToView(db.ExternalRef{
-		Kind: "plugin", Name: "caveman", UpstreamRev: "deadbeef",
-		LastSuccessfulRefresh: now.Add(-30 * time.Second), MaxStalenessSeconds: 600,
-	}, now)
-	if er.Sync != syncFresh || er.Extra["refKind"] != "plugin" || er.Version != "deadbeef" {
-		t.Errorf("external-ref view wrong: %+v", er)
-	}
-}
-
 func TestMarketplaceRowToView(t *testing.T) {
 	synced := marketplaceRowToView(db.MarketplaceRow{
 		Namespace: "ach", Name: "ackstorm", SyncedStatus: "True",

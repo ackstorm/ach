@@ -21,7 +21,7 @@ import (
 //     - POST /refresh                  → ForceRefreshHandler
 //  3. Registers read-only object inventory endpoints (GET):
 //     /plugins, /prompts, /artifacts, /skills, /marketplaces,
-//     /skill-marketplaces, /bips, /litellm-connections, /external-refs.
+//     /skill-marketplaces, /bips.
 //  4. Registers read-only runtime catalog endpoints (GET):
 //     /runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
 //     /runtime/teams, /runtime/catalog.
@@ -60,8 +60,6 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/marketplaces", inventory.MarketplacesHandler(inv))
 		r.Get("/skill-marketplaces", inventory.SkillMarketplacesHandler(inv))
 		r.Get("/bips", inventory.BIPsHandler(inv))
-		r.Get("/litellm-connections", inventory.LitellmConnectionsHandler(inv))
-		r.Get("/external-refs", inventory.ExternalRefsHandler(inv))
 
 		rcDeps := runtimecatalog.Deps{
 			Catalog:   runtimecatalog.NewPoolCatalog(deps.Pool),
