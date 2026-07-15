@@ -6,7 +6,6 @@
 #   - Valkey (bitnami chart) — forwarder cache
 #   - Dex (dexidp chart) — OIDC issuer for ach-platform-api
 #   - BerriAI litellm-helm — upstream LiteLLM gateway
-#   - ToolHive operator — vendored MCP servers
 #
 # The ACH operator + content-service + platform-api + forwarder Deployments
 # are deployed by `cluster.sh up` in later phases (currently deferred until
@@ -28,8 +27,8 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 # All cluster bring-up config lives under CLUSTER_DIR, organized by bring-up
 # STAGE (mirrors the reconcile_all order):
 #   00-namespaces/  kustomize base — the namespace layout (apply -k, pre-helm)
-#   01-base/        helm values for the 5 deps (postgres/valkey/dex/litellm/
-#                   toolhive) + dex-config.yaml + auth_user_map.py
+#   01-base/        helm values for the 4 deps (postgres/valkey/dex/litellm)
+#                   + dex-config.yaml + auth_user_map.py
 #   02-ach/         ach.values.yaml (the ach chart) + secrets/ (secretGenerator)
 #   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo +
 #                   ach-mock-model (apply -k, post-ach)
@@ -397,32 +396,6 @@ reconcile_litellm() {
   trap - EXIT
 }
 
-reconcile_toolhive() {
-  # ToolHive CRDs and operator are on independent version streams (0.0.x
-  # vs 0.5.x) — both pins live in test/e2e/cluster/01-base/toolhive.values.yaml.
-  local crds_version operator_version
-  crds_version="$(awk '/^crdsChartVersion:/ {print $2}' "${CLUSTER_DIR}/01-base/toolhive.values.yaml")"
-  operator_version="$(awk '/^operatorChartVersion:/ {print $2}' "${CLUSTER_DIR}/01-base/toolhive.values.yaml")"
-
-  echo "[cluster.sh] installing toolhive-operator-crds @ ${crds_version}..."
-  helm upgrade --install toolhive-operator-crds \
-    oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds \
-    --version "${crds_version}" \
-    --atomic --wait --timeout 60s
-
-  echo "[cluster.sh] installing toolhive-operator @ ${operator_version}..."
-  helm upgrade --install toolhive-operator \
-    oci://ghcr.io/stacklok/toolhive/toolhive-operator \
-    --version "${operator_version}" \
-    --namespace toolhive-system \
-    --atomic --wait --timeout 90s
-
-  # Step 2.5 — add v1beta1 versions to ToolHive CRDs (not yet in
-  # published charts). Since we upgraded to 0.28.3, this is natively supported.
-  # We can skip applying this fixture now.
-  echo "[cluster.sh] toolhive CRD versions: $(kubectl get crd mcpservers.toolhive.stacklok.dev -o jsonpath='{.spec.versions[*].name}' 2>/dev/null || echo 'crd-not-found')"
-}
-
 reconcile_ach() {
   echo "[cluster.sh] reconciling ach (image: ${ACH_IMAGE})..."
 
@@ -658,7 +631,6 @@ reconcile_all() {
   reconcile_valkey
   reconcile_dex
   reconcile_litellm
-  reconcile_toolhive
   reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a (Task 2)
   reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a, stage 03)
   reconcile_objects      # stage 04
@@ -683,7 +655,7 @@ print_status() (
   kubectl get nodes
   echo
   echo "== namespaces (e2e layout) =="
-  kubectl get ns default ach-system litellm-system toolhive-system dex-system mocks dev prod 2>/dev/null
+  kubectl get ns default ach-system litellm-system dex-system mocks dev prod 2>/dev/null
   echo
   echo "== reconcile =="
   helm ls -A

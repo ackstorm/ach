@@ -99,11 +99,3 @@ All HTTP surfaces are fronted by the ach-gateway edge proxy{{ with .Values.ingre
 /metrics has no gateway route and is intentionally NOT reachable through
 this Ingress — it stays an in-cluster scrape concern (unauthenticated).
 {{- end }}
-
-{{ if not .Values.toolhive.enabled }}
-NOTE: toolhive.enabled=false — the ToolHive RBAC is not installed.
-MCPServerDiscovery CRs will surface Ready=False, reason=SourceUnreachable
-if ToolHive CRDs are installed but the operator lacks RBAC to read them.
-To enable, upgrade with --set toolhive.enabled=true after running
-`kubectl apply -f crds/`.
-{{ end }}
