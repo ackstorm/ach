@@ -15,10 +15,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ackstorm/ach/internal/sources"
@@ -394,4 +396,27 @@ func formatStageFailures(failures []stageFailure, noun string) string {
 		fmt.Fprintf(&b, ", +%d more", n-verbatim)
 	}
 	return b.String()
+}
+
+// syncedFalseResult maps a marketplace Synced=False reason to the shared
+// reconcile-result policy: terminal/configuration-derived reasons requeue
+// without error (no hot-loop); transient reasons surface originalErr so
+// the workqueue applies exponential backoff. Superset switch — a reason a
+// given kind never produces simply never matches.
+func syncedFalseResult(reason string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
+	switch reason {
+	case ReasonInvalidConfig,
+		ReasonUnauthorized,
+		ReasonNotFound,
+		ReasonUpstreamInvalid,
+		ReasonUnsupportedPluginSource,
+		ReasonPluginTooLarge:
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	default:
+		// Unreachable / StaleCacheExpired → backoff via workqueue.
+		if originalErr != nil {
+			return ctrl.Result{}, originalErr
+		}
+		return ctrl.Result{}, nil
+	}
 }

@@ -531,19 +531,7 @@ func (r *SkillMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *ac
 	if perr := r.projectSkillMarketplace(ctx, cr, "False", reason); perr != nil {
 		return ctrl.Result{}, perr
 	}
-	switch reason {
-	case ReasonInvalidConfig,
-		ReasonUnauthorized,
-		ReasonNotFound,
-		ReasonUpstreamInvalid,
-		ReasonPluginTooLarge:
-		return ctrl.Result{RequeueAfter: requeue}, nil
-	default:
-		if originalErr != nil {
-			return ctrl.Result{}, originalErr
-		}
-		return ctrl.Result{}, nil
-	}
+	return syncedFalseResult(reason, requeue, originalErr)
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
