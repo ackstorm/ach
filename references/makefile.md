@@ -197,7 +197,7 @@ Helm (`cluster.sh`, `helm-sync`) is the actual deploy path.
 |--------|-----|-------------|
 | `e2e-full` | B | `cluster-up` → `e2e-run`; cluster **kept up** after the run (pass or fail). `make cluster-down` to reclaim. CI does NOT use this target (it tears down via its own `if: always()` step). |
 | `e2e-run` | A | Build e2e-tagged binaries, then run the e2e suite against an already-up cluster; executes `./test/e2e` first, then helper packages, so verbose output from the main suite streams sooner. |
-| `e2e-focus RUN=… / FOCUS=…` | A | Focused subtest (stdlib `-run` or ginkgo focus). |
+| `e2e-focus RUN=…` | A | Focused subtest (stdlib `-run`). |
 
 ### QA (`qa-`)
 | Target | Ctx | Description |
@@ -206,7 +206,7 @@ Helm (`cluster.sh`, `helm-sync`) is the actual deploy path.
 | `qa-lint-fix` | A | golangci-lint with `--fix`. |
 | `qa-lint-config` | A | Verify golangci-lint config. |
 | `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs BASE_REF. |
-| `qa-security` | A | gosec (via lint) + govulncheck + fuzz-short. |
+| `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 16). |
 | `qa-fuzz-short` | A | Go fuzz targets, 60s budget each. |
 | `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (nightly). |
 | `fmt-check` | A | Fail if any Go file is not gofmt-clean (no mutation). |
