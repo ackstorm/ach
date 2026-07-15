@@ -9,14 +9,12 @@ import "github.com/go-chi/chi/v5"
 //
 //   - POST   /platform/keys           — CreateHandler  (§8.2 ek_ create flow).
 //   - GET    /platform/keys           — ListAllHandler (caller-scoped pk_ + ek_).
-//   - GET    /platform/keys/{key_id}  — GetHandler     (single ek_ row read).
 //   - DELETE /platform/keys/{key_id}  — RevokeHandler  (prefix-dispatched:
 //     ekid_ → LiteLLM-first 204; pkid_ → DB-first 200, active-key 409 guard).
 func MountKeys(r chi.Router, deps Deps) {
 	r.Route("/platform/keys", func(r chi.Router) {
 		r.Post("/", CreateHandler(deps))
 		r.Get("/", ListAllHandler(deps))
-		r.Get("/{key_id}", GetHandler(deps))
 		r.Delete("/{key_id}", RevokeHandler(deps))
 	})
 }
