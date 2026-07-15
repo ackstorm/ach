@@ -54,9 +54,6 @@ import (
 //   - LastSuccessfulRefresh: nullable timestamp from the projection row;
 //     nil → stale_cache_expired per CS-10 / OP-11.
 //   - MaxStalenessSeconds: refresh budget for the staleness gate.
-//   - ContentType: optional Prompt.spec.contentType override (Prompt
-//     only — nil/empty falls back to application/octet-stream per
-//     CS-06 + the pipeline's per-kind policy).
 //   - Scope: artifact scope ("object" | "directory") — drives the path
 //     suffix (.tar.gz vs bare) and the response Content-Type.
 //   - Source: §12.3 resolution arm ("plugin" | "marketplace") for
@@ -65,7 +62,6 @@ type contentRow struct {
 	StorageLocation       string
 	LastSuccessfulRefresh *time.Time
 	MaxStalenessSeconds   int64
-	ContentType           *string
 	Scope                 string
 	Source                string
 }
@@ -260,7 +256,6 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			StorageLocation:       row.StorageLocation,
 			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
 			MaxStalenessSeconds:   row.MaxStalenessSeconds,
-			ContentType:           row.ContentType,
 		}, nil
 	case kindPlugin:
 		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
