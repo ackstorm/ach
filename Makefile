@@ -529,6 +529,12 @@ helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted
 	  exit 1; \
 	fi
 
+.PHONY: helm-render-check
+helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service).
+	$(call container_target,_helm-render-check)
+_helm-render-check:
+	bash scripts/helm-render-check.sh
+
 ##@ E2E (cluster + mocks)
 
 .PHONY: build-image-mock

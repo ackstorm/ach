@@ -176,6 +176,7 @@ Helm (`cluster.sh`, `helm-sync`) is the actual deploy path.
 | `gen-manifests` | A | controller-gen CRDs + RBAC + webhook manifests. |
 | `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script; same scope as pre-push gate 15). Also auto-run by `gen-code`. |
 | `gen-crd-ref-docs` | A | Render `docs/api-reference/` from CRD Go types. |
+| `helm-render-check` | A | Render-smoke of non-default chart topologies (gateway off / ingress on / G16 standalone CS). Runs in CI lint job. |
 
 ### Tests (`test-`)
 | Target | Ctx | Description |
