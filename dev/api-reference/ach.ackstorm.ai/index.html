@@ -3481,6 +3481,18 @@
 <td></td>
 </tr>
 <tr>
+<td><code>ach</code> <em><a href="#achendpointspec">AchEndpointSpec</a></em></td>
+<td>Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).<br />Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>health</code> <em><a href="#healthspec">HealthSpec</a></em></td>
+<td>Health overrides the profile's health block (host/port). Drives the config health block,<br />the Service targetPort, and the container probes together — always resolved as one unit.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>prompt</code> <em><a href="#agentpromptspec">AgentPromptSpec</a></em></td>
 <td></td>
 <td></td>
@@ -3547,8 +3559,11 @@
 </tbody>
 </table>
 <h4 id="achendpointspec">AchEndpointSpec<a class="headerlink" href="#achendpointspec" title="Permanent link">&para;</a></h4>
-<p>AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).</p>
+<p>AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.</p>
 <p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentprofilespec">AgentProfileSpec</a></p>
 <table>
 <thead>
@@ -3564,7 +3579,7 @@
 <td><code>baseUrl</code> <em>string</em></td>
 <td></td>
 <td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -3728,9 +3743,9 @@
 </tr>
 <tr>
 <td><code>ach</code> <em><a href="#achendpointspec">AchEndpointSpec</a></em></td>
+<td>Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the<br />operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.</td>
 <td></td>
 <td></td>
-<td>Required: {} <br /></td>
 </tr>
 <tr>
 <td><code>model</code> <em><a href="#modelspec">ModelSpec</a></em></td>
@@ -5121,6 +5136,7 @@ but the constraint is no longer machine-enforced at admission or fetch.</p>
 <p>HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
 Service targetPort and the container probes. Harness default port is 8080.</p>
 <p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentprofilespec">AgentProfileSpec</a></p>
 <table>
 <thead>
