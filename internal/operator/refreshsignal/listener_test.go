@@ -136,6 +136,35 @@ func TestHandle_NotFoundIsSilent(t *testing.T) {
 	}
 }
 
+// TestFetchSkillKinds pins the G8 refresh-kind set: skill and
+// skillmarketplace must pass the allowedKinds gate and resolve via fetch
+// (regression: both were missing, degrading admin force-refresh to the
+// 5-minute resync sweep).
+func TestFetchSkillKinds(t *testing.T) {
+	s := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
+		&achv1alpha1.Skill{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "ns"}},
+		&achv1alpha1.SkillMarketplace{ObjectMeta: metav1.ObjectMeta{Name: "m1", Namespace: "ns"}},
+	).Build()
+	l := &Listener{Namespace: "ns", Client: cl}
+	for _, tc := range []struct{ kind, name string }{
+		{"skill", "s1"},
+		{"skillmarketplace", "m1"},
+	} {
+		if _, ok := allowedKinds[tc.kind]; !ok {
+			t.Errorf("allowedKinds missing %q", tc.kind)
+		}
+		obj, err := l.fetch(context.Background(), tc.kind, tc.name)
+		if err != nil {
+			t.Errorf("fetch(%q): %v", tc.kind, err)
+			continue
+		}
+		if obj == nil {
+			t.Errorf("fetch(%q): nil object", tc.kind)
+		}
+	}
+}
+
 func TestStart_RequiresClientAndPool(t *testing.T) {
 	l := &Listener{}
 	ctx, cancel := context.WithCancel(context.Background())
