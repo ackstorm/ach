@@ -156,9 +156,8 @@ func TestNew_RejectsMetacharHost(t *testing.T) {
 func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
 	t.Parallel()
 	f, err := New(&achv1alpha1.GitLabSource{
-		Project:   "group/proj",
-		Ref:       "main",
-		Transport: "rest",
+		Project: "group/proj",
+		Ref:     "main",
 		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
 			Name: "s",
 		},

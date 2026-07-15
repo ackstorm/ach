@@ -34,9 +34,9 @@ const SkillRawIngressCap = 512 << 20
 // deps.SizeCapBytes (0 = no user cap → ceiling applies).
 //
 // spec.<git>.path narrowing is now applied at FETCH time (the per-provider
-// fetcher narrows the git worktree on-disk, and the REST archive via
-// sources.NarrowArchiveSubtree) — so the body this receives is already rooted
-// at the skill's contents and no post-fetch slicing happens here (F1). Returns
+// fetcher narrows the git worktree on-disk — git.tarSubtree strips the
+// prefix) — so the body this receives is already rooted at the skill's
+// contents and no post-fetch slicing happens here (F1). Returns
 // *OversizeError on overflow (caller maps it to a PluginTooLarge status
 // condition) and an ErrUpstreamInvalid-wrapping error on a malformed/absent
 // skill tree (caller maps it to an upstream-invalid outcome).

@@ -25,7 +25,6 @@ func TestGitTransport_Bitbucket_HappyPath(t *testing.T) {
 		Workspace: "fixture",
 		Repo:      "repo",
 		Ref:       "main",
-		Transport: "git",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -61,7 +60,6 @@ func TestGitTransport_Bitbucket_NotModified(t *testing.T) {
 		Workspace: "fixture",
 		Repo:      "repo",
 		Ref:       "main",
-		Transport: "git",
 	})
 	f.cloneURLForTesting = bare
 
@@ -80,31 +78,6 @@ func TestGitTransport_Bitbucket_NotModified(t *testing.T) {
 	}
 }
 
-func TestGitTransport_Bitbucket_TransportRouting(t *testing.T) {
-	cases := []struct {
-		transport string
-		want      string
-	}{
-		{"", "git"},
-		{"git", "git"},
-		{"rest", "rest"},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.transport, func(t *testing.T) {
-			f, _ := New(&achv1alpha1.BitbucketSource{
-				Workspace: "x",
-				Repo:      "y",
-				Ref:       "main",
-				Transport: tc.transport,
-			})
-			if got := f.resolvedTransport(); got != tc.want {
-				t.Errorf("got %q want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestGitTransport_Bitbucket_UnreachableClassifies(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not on PATH")
@@ -113,7 +86,6 @@ func TestGitTransport_Bitbucket_UnreachableClassifies(t *testing.T) {
 		Workspace: "no",
 		Repo:      "such",
 		Ref:       "main",
-		Transport: "git",
 	})
 	f.cloneURLForTesting = "https://localhost:1/nonexistent.git"
 
@@ -133,7 +105,6 @@ func TestGitTransport_Bitbucket_ConstructCloneURL(t *testing.T) {
 		Workspace: "acme",
 		Repo:      "widgets",
 		Ref:       "main",
-		Transport: "git",
 	})
 	got := f.constructCloneURL()
 	want := "https://bitbucket.org/acme/widgets.git"

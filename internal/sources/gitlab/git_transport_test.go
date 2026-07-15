@@ -22,9 +22,8 @@ func TestGitTransport_GitLab_HappyPath(t *testing.T) {
 	bare := setupGitLabBareFixture(t)
 
 	f, err := New(&achv1alpha1.GitLabSource{
-		Project:   "fixture/repo",
-		Ref:       "main",
-		Transport: "git",
+		Project: "fixture/repo",
+		Ref:     "main",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -57,9 +56,8 @@ func TestGitTransport_GitLab_NotModified(t *testing.T) {
 	head := gitlabHeadSHA(t, bare)
 
 	f, _ := New(&achv1alpha1.GitLabSource{
-		Project:   "fixture/repo",
-		Ref:       "main",
-		Transport: "git",
+		Project: "fixture/repo",
+		Ref:     "main",
 	})
 	f.cloneURLForTesting = bare
 
@@ -78,38 +76,13 @@ func TestGitTransport_GitLab_NotModified(t *testing.T) {
 	}
 }
 
-func TestGitTransport_GitLab_TransportRouting(t *testing.T) {
-	cases := []struct {
-		transport string
-		want      string
-	}{
-		{"", "git"},
-		{"git", "git"},
-		{"rest", "rest"},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.transport, func(t *testing.T) {
-			f, _ := New(&achv1alpha1.GitLabSource{
-				Project:   "x/y",
-				Ref:       "main",
-				Transport: tc.transport,
-			})
-			if got := f.resolvedTransport(); got != tc.want {
-				t.Errorf("got %q want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestGitTransport_GitLab_UnreachableClassifies(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not on PATH")
 	}
 	f, _ := New(&achv1alpha1.GitLabSource{
-		Project:   "no/such",
-		Ref:       "main",
-		Transport: "git",
+		Project: "no/such",
+		Ref:     "main",
 	})
 	f.cloneURLForTesting = "https://localhost:1/nonexistent.git"
 
@@ -126,9 +99,8 @@ func TestGitTransport_GitLab_UnreachableClassifies(t *testing.T) {
 
 func TestGitTransport_GitLab_DefaultHost(t *testing.T) {
 	f, _ := New(&achv1alpha1.GitLabSource{
-		Project:   "acme/widgets",
-		Ref:       "main",
-		Transport: "git",
+		Project: "acme/widgets",
+		Ref:     "main",
 	})
 	got := f.constructCloneURL()
 	want := "https://gitlab.com/acme/widgets.git"
@@ -139,10 +111,9 @@ func TestGitTransport_GitLab_DefaultHost(t *testing.T) {
 
 func TestGitTransport_GitLab_CustomHost(t *testing.T) {
 	f, _ := New(&achv1alpha1.GitLabSource{
-		Host:      "gitlab.example.com",
-		Project:   "acme/widgets",
-		Ref:       "main",
-		Transport: "git",
+		Host:    "gitlab.example.com",
+		Project: "acme/widgets",
+		Ref:     "main",
 	})
 	got := f.constructCloneURL()
 	want := "https://gitlab.example.com/acme/widgets.git"
@@ -169,10 +140,9 @@ func TestGitTransport_GitLab_HostCaseInsensitive(t *testing.T) {
 		tc := tc
 		t.Run(tc.host, func(t *testing.T) {
 			f, err := New(&achv1alpha1.GitLabSource{
-				Host:      tc.host,
-				Project:   "acme/widgets",
-				Ref:       "main",
-				Transport: "git",
+				Host:    tc.host,
+				Project: "acme/widgets",
+				Ref:     "main",
 			})
 			if err != nil {
 				t.Fatalf("New(host=%q): %v", tc.host, err)
@@ -220,20 +190,4 @@ func gitlabHeadSHA(t *testing.T, bare string) string {
 		t.Fatalf("rev-parse: %v", err)
 	}
 	return string(out[:40])
-}
-
-func TestRestBaseURL_NormalizesAndForcesHTTPS(t *testing.T) {
-	cases := []struct{ host, want string }{
-		{"", "https://gitlab.com"},
-		{"gitlab.example.com", "https://gitlab.example.com"},
-		{"https://gitlab.example.com", "https://gitlab.example.com"},
-		{"http://169.254.169.254", "https://169.254.169.254"}, // S1: scheme stripped, https forced
-		{"HTTP://Metadata.Internal/", "https://Metadata.Internal"},
-	}
-	for _, tc := range cases {
-		f := &Fetcher{spec: &achv1alpha1.GitLabSource{Host: tc.host}}
-		if got := f.restBaseURL(); got != tc.want {
-			t.Errorf("restBaseURL(host=%q) = %q, want %q", tc.host, got, tc.want)
-		}
-	}
 }

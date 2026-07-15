@@ -4,7 +4,8 @@ kind: Kustomization
 # Stage 04 — all non-Environment ACH objects, applied post-ach (CRDs exist),
 # pre-Environment (Environments in 05 reference these by name). Sources are the
 # real upstreams (option B); each CR pins refresh.interval=1h so steady-state
-# stays under any anonymous GitHub quota (default git transport, no REST limit).
+# stays reconcile-light (git is the only fetch transport; no per-IP REST quota
+# applies).
 resources:
   # LiteLLMConnection/default is no longer a stage-04 fixture — the ach chart
   # (stage 02) renders it from the litellmConnection values block. The operator

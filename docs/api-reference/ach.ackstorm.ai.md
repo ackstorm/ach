@@ -501,8 +501,7 @@ _Appears in:_
 | `repo` _string_ | Repo within the workspace. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the repo, honored at fetch time (F1; see GitHubSource.Path<br />for the directory-vs-file + marketplace semantics). |  |  |
 | `ref` _string_ | Ref is a branch or tag name. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories on the git transport (transport=rest paired<br />with no auth typically fails because most Bitbucket Cloud REST<br />endpoints require auth even for public repos). Bitbucket Cloud<br />anonymous REST quota: 60 req/h/IP. |  |  |
-| `transport` _string_ | Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed. | git | Enum: [git rest] <br /> |
+| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
 
 
 #### CapabilitySpec
@@ -840,8 +839,7 @@ _Appears in:_
 | `repo` _string_ | Repo is the "<owner>/<name>" GitHub identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the repo, honored at fetch time (F1): a directory narrows the<br />fetched content to that subtree; a single file (Prompt, Artifact<br />scope=object) returns that file's raw bytes. Empty → whole repo.<br />PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this<br />as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path<br />only as the post-fetch skills-root walk hint; PluginMarketplace discovers<br />.claude-plugin/marketplace.json conventionally). |  |  |
 | `ref` _string_ | Ref is a branch or tag name. No immutable commit refs in v1alpha1<br />(CRD-04, Hub §10). |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. Anonymous + transport=rest is also supported<br />but subject to the provider's anonymous REST quota (GitHub:<br />60 req/h/IP) — the bug FIX_GIT.txt fixes by defaulting transport<br />to git. |  |  |
-| `transport` _string_ | Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed. | git | Enum: [git rest] <br /> |
+| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
 
 
 #### GitLabSource
@@ -866,8 +864,7 @@ _Appears in:_
 | `project` _string_ | Project is the "<namespace>/<project>" GitLab identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the project repo, honored at fetch time (F1; see<br />GitHubSource.Path for the directory-vs-file + marketplace semantics). |  |  |
 | `ref` _string_ | Ref is a branch or tag name. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects. Anonymous + transport=rest is also supported<br />but subject to the provider's anonymous REST quota (GitLab:<br />60 req/min/IP) — the bug FIX_GIT.txt fixes by defaulting transport<br />to git. |  |  |
-| `transport` _string_ | Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed. | git | Enum: [git rest] <br /> |
+| `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects. |  |  |
 
 
 #### HTTPSource

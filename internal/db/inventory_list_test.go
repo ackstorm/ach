@@ -199,4 +199,3 @@ func TestListAllMarketplacePlugins(t *testing.T) {
 		}
 	}
 }
-

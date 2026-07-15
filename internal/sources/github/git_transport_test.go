@@ -27,9 +27,8 @@ func TestGitTransport_GitHub_HappyPath(t *testing.T) {
 	bare := setupHubBareFixture(t)
 
 	f, err := New(&achv1alpha1.GitHubSource{
-		Repo:      "fixture/repo",
-		Ref:       "main",
-		Transport: "git",
+		Repo: "fixture/repo",
+		Ref:  "main",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -62,9 +61,8 @@ func TestGitTransport_GitHub_NotModified(t *testing.T) {
 	head := hubHeadSHA(t, bare)
 
 	f, err := New(&achv1alpha1.GitHubSource{
-		Repo:      "fixture/repo",
-		Ref:       "main",
-		Transport: "git",
+		Repo: "fixture/repo",
+		Ref:  "main",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -96,10 +94,9 @@ func TestGitTransport_GitHub_PathNarrows(t *testing.T) {
 	bare := setupHubSubtreeBareFixture(t)
 
 	f, err := New(&achv1alpha1.GitHubSource{
-		Repo:      "fixture/repo",
-		Ref:       "main",
-		Transport: "git",
-		Path:      "skills/pdf",
+		Repo: "fixture/repo",
+		Ref:  "main",
+		Path: "skills/pdf",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -127,38 +124,13 @@ func TestGitTransport_GitHub_PathNarrows(t *testing.T) {
 	}
 }
 
-func TestGitTransport_GitHub_TransportRouting(t *testing.T) {
-	cases := []struct {
-		transport string
-		want      string
-	}{
-		{"", "git"},
-		{"git", "git"},
-		{"rest", "rest"},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.transport, func(t *testing.T) {
-			f, _ := New(&achv1alpha1.GitHubSource{
-				Repo:      "x/y",
-				Ref:       "main",
-				Transport: tc.transport,
-			})
-			if got := f.resolvedTransport(); got != tc.want {
-				t.Errorf("got %q want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestGitTransport_GitHub_UnreachableClassifies(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not on PATH")
 	}
 	f, _ := New(&achv1alpha1.GitHubSource{
-		Repo:      "no/such",
-		Ref:       "main",
-		Transport: "git",
+		Repo: "no/such",
+		Ref:  "main",
 	})
 	f.cloneURLForTesting = "https://localhost:1/nonexistent.git"
 

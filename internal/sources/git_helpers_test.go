@@ -49,18 +49,6 @@ func TestExtractBearerToken_Success(t *testing.T) {
 	}
 }
 
-func TestResolvedTransport(t *testing.T) {
-	if got := sources.ResolvedTransport("rest"); got != "rest" {
-		t.Errorf("rest → %q, want rest", got)
-	}
-	if got := sources.ResolvedTransport("git"); got != "git" {
-		t.Errorf("git → %q, want git", got)
-	}
-	if got := sources.ResolvedTransport(""); got != "git" {
-		t.Errorf("empty → %q, want git", got)
-	}
-}
-
 func TestNormalizeGitLabHost(t *testing.T) {
 	cases := map[string]string{
 		"git.example.com":          "git.example.com",

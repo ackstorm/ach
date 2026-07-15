@@ -74,10 +74,7 @@ spec:
                       exist in the CR's namespace at reconcile time and the operator
                       reads the bearer token from the named key (see SourceAuthSecretRef.Key).
                       When nil, the upstream fetch is anonymous — supported only for
-                      public repositories on the git transport (transport=rest paired
-                      with no auth typically fails because most Bitbucket Cloud REST
-                      endpoints require auth even for public repos). Bitbucket Cloud
-                      anonymous REST quota: 60 req/h/IP.
+                      public repositories.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -136,20 +133,6 @@ spec:
                   repo:
                     description: Repo within the workspace.
                     minLength: 1
-                    type: string
-                  transport:
-                    default: git
-                    description: |-
-                      Transport selects the wire protocol used to fetch from this upstream.
-
-                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
-                                 recommended; default).
-                        "rest" — use the provider's REST API. Subject to per-IP anonymous
-                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
-                                 Retained as a one-release escape hatch; will be removed.
-                    enum:
-                    - git
-                    - rest
                     type: string
                   workspace:
                     description: Workspace name on Bitbucket.
@@ -236,10 +219,7 @@ spec:
                       exist in the CR's namespace at reconcile time and the operator
                       reads the bearer token from the named key (see SourceAuthSecretRef.Key).
                       When nil, the upstream fetch is anonymous — supported only for
-                      public repositories. Anonymous + transport=rest is also supported
-                      but subject to the provider's anonymous REST quota (GitHub:
-                      60 req/h/IP) — the bug FIX_GIT.txt fixes by defaulting transport
-                      to git.
+                      public repositories.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -306,20 +286,6 @@ spec:
                     description: Repo is the "<owner>/<name>" GitHub identifier.
                     minLength: 1
                     type: string
-                  transport:
-                    default: git
-                    description: |-
-                      Transport selects the wire protocol used to fetch from this upstream.
-
-                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
-                                 recommended; default).
-                        "rest" — use the provider's REST API. Subject to per-IP anonymous
-                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
-                                 Retained as a one-release escape hatch; will be removed.
-                    enum:
-                    - git
-                    - rest
-                    type: string
                 required:
                 - ref
                 - repo
@@ -333,10 +299,7 @@ spec:
                       exist in the CR's namespace at reconcile time and the operator
                       reads the bearer token from the named key (see SourceAuthSecretRef.Key).
                       When nil, the upstream fetch is anonymous — supported only for
-                      public projects. Anonymous + transport=rest is also supported
-                      but subject to the provider's anonymous REST quota (GitLab:
-                      60 req/min/IP) — the bug FIX_GIT.txt fixes by defaulting transport
-                      to git.
+                      public projects.
                     properties:
                       accessKeyIdKey:
                         description: |-
@@ -403,20 +366,6 @@ spec:
                   ref:
                     description: Ref is a branch or tag name.
                     minLength: 1
-                    type: string
-                  transport:
-                    default: git
-                    description: |-
-                      Transport selects the wire protocol used to fetch from this upstream.
-
-                        "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;
-                                 recommended; default).
-                        "rest" — use the provider's REST API. Subject to per-IP anonymous
-                                 quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).
-                                 Retained as a one-release escape hatch; will be removed.
-                    enum:
-                    - git
-                    - rest
                     type: string
                 required:
                 - project
