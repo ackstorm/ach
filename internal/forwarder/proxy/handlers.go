@@ -170,7 +170,6 @@ const (
 	outcomeUnauthorizedTeam     = "unauthorized_team"
 	outcomeLitellmUnreachable   = "litellm_unreachable"
 	outcomeInvalidKeyType       = "invalid_key_type"
-	outcomeEnvironmentNotFound  = "environment_not_found"
 	outcomeInternalError        = "internal_error"
 )
 
@@ -185,7 +184,6 @@ var precheckOutcomes = map[string]struct {
 	outcomeUnauthorizedTeam:     {http.StatusForbidden, "caller's teams do not grant access to this resource"},
 	outcomeLitellmUnreachable:   {http.StatusServiceUnavailable, "litellm reachability failure during teams resolve"},
 	outcomeInvalidKeyType:       {http.StatusUnauthorized, "invalid or missing key type for this route"},
-	outcomeEnvironmentNotFound:  {http.StatusNotFound, "environment not found"},
 	outcomeInternalError:        {http.StatusInternalServerError, "internal error"},
 }
 
@@ -203,8 +201,6 @@ func classifyPrecheckErr(err error) (outcome string, status int, code string) {
 		oc = outcomeLitellmUnreachable
 	case errors.Is(err, precheck.ErrInvalidKeyType):
 		oc = outcomeInvalidKeyType
-	case errors.Is(err, precheck.ErrEnvironmentNotFound):
-		oc = outcomeEnvironmentNotFound
 	}
 	return oc, precheckOutcomes[oc].status, oc
 }
