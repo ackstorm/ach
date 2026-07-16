@@ -19,6 +19,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,6 +62,7 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 
 // ACHAgentReconciler reconciles ACHAgent objects. APIReader is the UNCACHED client used for
 // Secret content reads (so Secret bodies are never cached in this shared binary).
@@ -204,6 +206,15 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// only fires on ACHAgent delete, not when the owner stops desiring the child.
 		return r.applyFail(ctx, &agent, conds, "Service", err)
 	}
+	if needsNetworkPolicy(&profile) {
+		if err := r.apply(ctx, &agent, buildNetworkPolicy(&agent, &profile)); err != nil {
+			return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
+		}
+	} else if err := r.pruneNetworkPolicy(ctx, &agent); err != nil {
+		// Converge profile networkPolicy present→absent, same as pruneService: owner-ref
+		// GC only fires on ACHAgent delete, not when the owner stops desiring the child.
+		return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
+	}
 	setCond(&conds, condWorkloadApplied, metav1.ConditionTrue, "WorkloadApplied", "", agent.Generation)
 
 	// 7. WorkloadReady from pod.status (probe-backed).
@@ -248,6 +259,16 @@ func (r *ACHAgentReconciler) apply(ctx context.Context, owner *achv1alpha1.ACHAg
 func (r *ACHAgentReconciler) pruneService(ctx context.Context, a *achv1alpha1.ACHAgent) error {
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace}}
 	if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// pruneNetworkPolicy deletes the egress policy when the profile no longer declares a
+// networkPolicy block. Idempotent — NotFound is a no-op.
+func (r *ACHAgentReconciler) pruneNetworkPolicy(ctx context.Context, a *achv1alpha1.ACHAgent) error {
+	np := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace}}
+	if err := r.Delete(ctx, np); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -422,6 +443,7 @@ func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(&achv1alpha1.AgentProfile{}, handler.EnqueueRequestsFromMapFunc(r.agentsForProfile)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.agentsForSecret), builder.OnlyMetadata).
 		Named("achagent").

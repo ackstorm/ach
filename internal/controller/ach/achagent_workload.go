@@ -385,5 +385,9 @@ func copySpec(existing, desired client.Object) {
 			e.Spec.Ports[0].Protocol = d.Spec.Ports[0].Protocol
 			e.Spec.Ports[0].TargetPort = d.Spec.Ports[0].TargetPort
 		}
+	case *networkingv1.NetworkPolicy:
+		d := desired.(*networkingv1.NetworkPolicy)
+		e.Labels = d.Labels
+		e.Spec = d.Spec
 	}
 }
