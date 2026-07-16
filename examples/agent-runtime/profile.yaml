@@ -32,7 +32,15 @@ spec:
   #
   # Rules are declared, not derived: NetworkPolicy has no FQDN peer type, so the operator
   # cannot turn ach.baseUrl into a peer for you. Point these at your ACH forwarder/gateway.
-  # `networkPolicy: {}` (no egress:) is the strictest setting — DNS only.
+  # `networkPolicy: {}` (no egress:) is the strictest setting — DNS only. On an enforcing CNI
+  # that also blocks ACH_BASE_URL (model/MCP calls fail) while the pod stays Ready — kubelet
+  # probes ignore egress. Recoverable instantly though: drop the block, no pod restart.
+  #
+  # Also declare peers for anything the harness dials directly (not via the ACH forwarder
+  # above): redis (queue channel / stats sink), the memory backend
+  # (memory.hindsight.endpoint), and A2A peer endpoints. Miss one and it degrades silently —
+  # memory/stats are fail-open. Note this block is per-profile while memory/channels are
+  # per-agent, so a shared profile needs the union of every agent's peers.
   #
   # Requires a CNI that enforces NetworkPolicy (Calico, Cilium, ...). On a CNI that ignores
   # it the object is created and enforces nothing — verify before relying on it.

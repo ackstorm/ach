@@ -529,6 +529,8 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 	}
 	if len(np.OwnerReferences) == 0 {
 		t.Error("NetworkPolicy must carry an owner ref (GC on ACHAgent delete)")
+	} else if or := np.OwnerReferences[0]; or.Name != "aa-np" || or.Kind != "ACHAgent" {
+		t.Errorf("owner ref = %s/%s, want ACHAgent/aa-np", or.Kind, or.Name)
 	}
 
 	// Remove the block from the profile — the policy must be pruned (owner-ref GC only
