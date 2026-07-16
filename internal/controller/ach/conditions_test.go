@@ -24,34 +24,14 @@ func TestResolveTransportName(t *testing.T) {
 			want: "git",
 		},
 		{
-			name: "github explicit git",
-			spec: sources.SourceSpec{Type: "github", GitHub: &achv1alpha1.GitHubSource{Transport: "git"}},
-			want: "git",
-		},
-		{
-			name: "github rest",
-			spec: sources.SourceSpec{Type: "github", GitHub: &achv1alpha1.GitHubSource{Transport: "rest"}},
-			want: "rest",
-		},
-		{
 			name: "gitlab default",
 			spec: sources.SourceSpec{Type: "gitlab", GitLab: &achv1alpha1.GitLabSource{}},
 			want: "git",
 		},
 		{
-			name: "gitlab rest",
-			spec: sources.SourceSpec{Type: "gitlab", GitLab: &achv1alpha1.GitLabSource{Transport: "rest"}},
-			want: "rest",
-		},
-		{
 			name: "bitbucket default",
 			spec: sources.SourceSpec{Type: "bitbucket", Bitbucket: &achv1alpha1.BitbucketSource{}},
 			want: "git",
-		},
-		{
-			name: "bitbucket rest",
-			spec: sources.SourceSpec{Type: "bitbucket", Bitbucket: &achv1alpha1.BitbucketSource{Transport: "rest"}},
-			want: "rest",
 		},
 		{
 			name: "s3",
@@ -82,10 +62,10 @@ func TestResolveTransportName(t *testing.T) {
 			name: "multi-pointer-respects-type",
 			spec: sources.SourceSpec{
 				Type:   "gitlab",
-				GitHub: &achv1alpha1.GitHubSource{Transport: "git"},
-				GitLab: &achv1alpha1.GitLabSource{Transport: "rest"},
+				GitHub: &achv1alpha1.GitHubSource{},
+				GitLab: &achv1alpha1.GitLabSource{},
 			},
-			want: "rest",
+			want: "git",
 		},
 	}
 	for _, tc := range cases {
@@ -103,7 +83,7 @@ func TestSourceReachableMessage(t *testing.T) {
 	t.Parallel()
 	got := sourceReachableMessage(sources.SourceSpec{
 		Type:   "github",
-		GitHub: &achv1alpha1.GitHubSource{Transport: "git"},
+		GitHub: &achv1alpha1.GitHubSource{},
 	})
 	want := "transport=git"
 	if got != want {

@@ -108,9 +108,6 @@ func TestCheckMCP_PC4_EkEnvNotFound(t *testing.T) {
 	if !errors.Is(err, ErrUnauthorizedResource) {
 		t.Errorf("err = %v; want ErrUnauthorizedResource (D-15 narrow)", err)
 	}
-	if errors.Is(err, ErrEnvironmentNotFound) {
-		t.Error("ErrEnvironmentNotFound is reserved; missing-env must narrow to ErrUnauthorizedResource")
-	}
 }
 
 func TestCheckMCP_PC5_EkTerminating(t *testing.T) {

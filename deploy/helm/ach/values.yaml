@@ -231,12 +231,6 @@ migrate:
   enabled: true
   args: ["migrate"]
 
-# toolhive: enabled=true (default) includes the ClusterRole + ClusterRoleBinding
-# that grants the operator read access to ToolHive MCPServer + VirtualMCPServer
-# objects. Set false on clusters without ToolHive.
-toolhive:
-  enabled: true
-
 ingress:
   enabled: false
   # className -> spec.ingressClassName. Empty = the cluster's default

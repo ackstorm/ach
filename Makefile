@@ -298,9 +298,9 @@ FUZZ_TIME_SHORT ?= 60s
 FUZZ_TIME_LONG  ?= 10m
 
 .PHONY: qa-security
-qa-security: ## gosec (via lint) + govulncheck + fuzz-short.
+qa-security: ## govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 16).
 	$(call container_target,_qa-security)
-_qa-security: _qa-lint
+_qa-security:
 	bash scripts/govulncheck-gate.sh
 	$(MAKE) _qa-fuzz-short
 
@@ -319,7 +319,7 @@ _qa-fuzz-long:
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
 
 .PHONY: pre-push
-pre-push: ## Host-only — 17-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
+pre-push: ## Host-only — 18-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
 	./scripts/pre-push-check.sh
 
 .PHONY: verify
@@ -529,6 +529,12 @@ helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted
 	  exit 1; \
 	fi
 
+.PHONY: helm-render-check
+helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service).
+	$(call container_target,_helm-render-check)
+_helm-render-check:
+	bash scripts/helm-render-check.sh
+
 ##@ E2E (cluster + mocks)
 
 .PHONY: build-image-mock
@@ -676,7 +682,7 @@ wait-container: ## Wait for named container exit + PASS/FAIL marker. Usage: make
 	@cid=$$(docker ps -q -f name=$(NAME)); \
 	test -n "$$cid" || { echo "ERROR: no running container named '$(NAME)'" >&2; exit 1; }; \
 	timeout $${TIMEOUT:-600} docker logs -f $$cid 2>&1 \
-		| grep -m1 -E "PASS|FAIL|ok\s+github|--- FAIL|Ginkgo ran" \
+		| grep -m1 -E "PASS|FAIL|ok\s+github|--- FAIL" \
 		|| { echo "FAIL: marker not seen within $${TIMEOUT:-600}s (container may have exited early)" >&2; exit 1; }
 
 .PHONY: logs-operator logs-platform-api logs-forwarder logs-litellm
@@ -748,18 +754,15 @@ _e2e-run: _build-e2e
 		echo ">>> E2E RESULT: FAIL (suite=$$suite backends=$$backends)" >&2; exit 1; \
 	fi
 
-e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (stdlib) OR FOCUS='ginkgo it' (legacy).
+e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (go test -run pattern).
 	$(call container_target,_e2e-focus)
 _e2e-focus:
-	@test -n "$(RUN)$(FOCUS)" || { echo "ERROR: pass RUN=<go-test -run pattern> OR FOCUS=<ginkgo it>" >&2; exit 1; }
-	# `-args` is required for ginkgo: without it, `go test` parses the value after
-	# `-ginkgo.focus=` as a package path and reports "no Go files in /workspace".
+	@test -n "$(RUN)" || { echo "ERROR: pass RUN=<go-test -run pattern>" >&2; exit 1; }
 	# Same gateway-URL + skip-passthrough env as _e2e-run so focused runs
 	# execute against the synced cluster (opt out per phase via ACH_SKIP_PHASE<n>=1).
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
 	    go test -tags=e2e -v -count=1 -timeout 5m \
-	    $(if $(RUN),-run "$(RUN)") ./test/e2e/... \
-	    $(if $(FOCUS),-args -ginkgo.focus="$(FOCUS)")
+	    -run "$(RUN)" ./test/e2e/...
 
 e2e-full: ## cluster-up → e2e-run (cluster KEPT up; run `make cluster-down` to reclaim).
 	# No trap/teardown: the cluster is intentionally left running after the

@@ -760,25 +760,8 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 }
 
 // --------------------------------------------------------------------------
-// Shared read types — EkRowView and pagination helpers used by GetHandler
-// and ListAllHandler.
+// Shared read types — pagination helpers used by ListAllHandler.
 // --------------------------------------------------------------------------
-
-// EkRowView is the read-only JSON projection of an environment_keys row
-// returned by GetHandler. Plaintext and credential_hash MUST NOT appear
-// here — only stable identifiers and metadata. litellm_* columns are also
-// omitted: they're internal cross-references for the orphan-cleanup loop
-// and have no consumer outside the Hub.
-type EkRowView struct {
-	KeyID       string  `json:"key_id"`
-	Environment string  `json:"environment"`
-	Name        string  `json:"name"`
-	OwnerEmail  string  `json:"owner_email"`
-	Status      string  `json:"status"`
-	CreatedAt   string  `json:"created_at"`
-	LastUsedAt  *string `json:"last_used_at,omitempty"`
-	RevokedAt   *string `json:"revoked_at,omitempty"`
-}
 
 // defaultListLimit + maxListLimit clamp the ?limit query parameter per
 // §15.5 pagination contract. Mirrors the db.clampLimit invariant from
@@ -807,90 +790,6 @@ func parseLimit(raw string) (int, error) {
 		return 0, errors.New("limit must be <= 500")
 	}
 	return n, nil
-}
-
-// --------------------------------------------------------------------------
-// GetHandler — GET /platform/keys/{key_id} (API-07 single-row read)
-// --------------------------------------------------------------------------
-
-// GetHandler returns the GET /platform/keys/{key_id} handler.
-//
-// Strict ekid_ prefix gate runs BEFORE the DB lookup so a caller probing
-// with a pkid_/ek_/pk_/random string never costs a DB roundtrip (T-03-08-03
-// mitigation). Owner check: non-admin callers may only read their own
-// rows; admin may read any.
-//
-// Response shape uses EkRowView so plaintext + credential_hash + litellm_*
-// fields are excluded by construction.
-func GetHandler(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		reqID := middleware.RequestIDFromCtx(ctx)
-		actor := middleware.ActorFromCtx(ctx)
-		keyCtx, _ := middleware.KeyContextFromCtx(ctx)
-
-		// Caller-type guard.
-		if keyCtx.KeyType != keys.PrefixPk {
-			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "ek_ may not read env-keys", reqID)
-			return
-		}
-
-		// Prefix gate BEFORE any DB roundtrip.
-		keyID := chi.URLParam(r, "key_id")
-		if !strings.HasPrefix(keyID, keys.EkidKeyIDPrefix) {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
-				"key_id must start with "+keys.EkidKeyIDPrefix, reqID)
-			return
-		}
-
-		// DB lookup.
-		row, err := deps.DB.GetEnvironmentKey(ctx, keyID)
-		if err != nil {
-			deps.Logger.Error("envkeys.get: GetEnvironmentKey failed", "key_id", keyID, "err", err)
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		if row == nil {
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "key not found", reqID)
-			return
-		}
-
-		// Owner check.
-		if row.OwnerEmail != keyCtx.OwnerEmail && !keyCtx.IsAdmin {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkCreate, // reuse closest action for read denial; alternative new action not in §18.2 enum
-				Outcome:   audit.OutcomeNotKeyOwner,
-				Actor:     actor,
-				RequestID: reqID,
-				KeyID:     keyID,
-			})
-			render.Error(w, http.StatusForbidden, audit.OutcomeNotKeyOwner, "caller does not own this key", reqID)
-			return
-		}
-
-		render.JSON(w, http.StatusOK, mapEkRow(row))
-	}
-}
-
-// mapEkRow projects a single db.EkKeyInfo row to the EkRowView wire shape.
-func mapEkRow(r *db.EkKeyInfo) EkRowView {
-	v := EkRowView{
-		KeyID:       r.KeyID,
-		Environment: r.Environment,
-		Name:        r.Name,
-		OwnerEmail:  r.OwnerEmail,
-		Status:      r.Status,
-		CreatedAt:   r.CreatedAt.UTC().Format(time.RFC3339),
-	}
-	if r.LastUsedAt != nil {
-		t := r.LastUsedAt.UTC().Format(time.RFC3339)
-		v.LastUsedAt = &t
-	}
-	if r.RevokedAt != nil {
-		t := r.RevokedAt.UTC().Format(time.RFC3339)
-		v.RevokedAt = &t
-	}
-	return v
 }
 
 // --------------------------------------------------------------------------

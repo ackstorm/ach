@@ -114,11 +114,8 @@ func IncLiteLLMUnreachable() {
 //	key_type     ∈ {pk, ek, none}
 //	status_class ∈ {1xx, 2xx, 3xx, 4xx, 5xx}
 //
-// Phase 5 forward-compat addition (Plan 05-06 Task 2) — Phase 4 call
-// sites do NOT yet emit duration observations; the API is available
-// here so a future histogram-instrumentation pass can wire call sites
-// without touching this package again. Bucket layout is
-// ForwarderDurationBuckets per D-11.
+// Emitted by internal/forwarder/proxy observeDuration on every proxied
+// route. Bucket layout is ForwarderDurationBuckets per D-11.
 //
 // D-19 thin-shim: nil-tolerant delegation to
 // ForwarderCollectors.ObserveRequestDuration.

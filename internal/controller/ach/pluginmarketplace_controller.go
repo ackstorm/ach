@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
@@ -487,48 +488,15 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 	}
 	finalPath := filepath.Join(finalDir, entry.Name+".tar.gz")
 
-	// ─── 4: stage at .tmp/stg-<random> ───
-	tmpFile, err := os.CreateTemp(filepath.Join(r.CacheRoot, ".tmp"), "stg-")
-	if err != nil {
-		return "", fmt.Errorf("plugin %q: create staging file: %w", entry.Name, err)
-	}
-	stagingPath := tmpFile.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
-		}
-	}()
-
-	// ─── 5: copy with optional cap (T-02-06-07) ───
+	// ─── 4-6: stage at .tmp/stg-<random>, copy with optional cap (T-02-06-07), fsync + close ───
 	capBytes := int64(r.sizeCapMiB()) << 20
-	var n int64
-	var copyErr error
-	if capBytes > 0 {
-		limited := io.LimitReader(body, capBytes+1)
-		n, copyErr = io.Copy(tmpFile, limited)
-	} else {
-		n, copyErr = io.Copy(tmpFile, body)
+	stagingPath, n, err := cachefs.StageAtomic(r.CacheRoot, body, capBytes)
+	if err != nil {
+		if errors.Is(err, cachefs.ErrOversize) {
+			return "", &OversizeError{Bytes: n, Cap: capBytes}
+		}
+		return "", fmt.Errorf("plugin %q: %w", entry.Name, err)
 	}
-	if copyErr != nil {
-		_ = os.Remove(stagingPath)
-		return "", fmt.Errorf("plugin %q: staging copy: %w", entry.Name, copyErr)
-	}
-	if capBytes > 0 && n > capBytes {
-		_ = os.Remove(stagingPath)
-		return "", &OversizeError{Bytes: n, Cap: capBytes}
-	}
-
-	// ─── 6: fsync + close ───
-	if err := tmpFile.Sync(); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", fmt.Errorf("plugin %q: staging fsync: %w", entry.Name, err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", fmt.Errorf("plugin %q: staging close: %w", entry.Name, err)
-	}
-	closed = true
 
 	// ─── 6.5: post-fetch plugin-contents check ───
 	// Stream the staged tar to contentkit.VerifyPluginContents before rename(2).
@@ -665,21 +633,7 @@ func (r *PluginMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *a
 	if perr := r.projectMarketplace(ctx, cr, "False", reason); perr != nil {
 		return ctrl.Result{}, perr
 	}
-	switch reason {
-	case ReasonInvalidConfig,
-		ReasonUnauthorized,
-		ReasonNotFound,
-		ReasonUpstreamInvalid,
-		ReasonUnsupportedPluginSource,
-		ReasonPluginTooLarge:
-		return ctrl.Result{RequeueAfter: requeue}, nil
-	default:
-		// Unreachable / StaleCacheExpired → backoff via workqueue.
-		if originalErr != nil {
-			return ctrl.Result{}, originalErr
-		}
-		return ctrl.Result{}, nil
-	}
+	return syncedFalseResult(reason, requeue, originalErr)
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.

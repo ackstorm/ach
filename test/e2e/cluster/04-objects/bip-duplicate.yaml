@@ -5,11 +5,12 @@
 # churn). Both CRs are stored, both pass admission, both keep their
 # finalizer. The Forwarder resolves the duplicate at READ time:
 # list all BIPs matching (kind=MCPServer, name=context7), sort by
-# metadata.name ASC, take the LAST one.
+# metadata.name ASC, take the FIRST one (alpha-FIRST tiebreak, frozen
+# per G15 — see internal/forwarder/bipcache/cache.go Resolve).
 #
 # bip-context7-jwt-on  vs  zz-bip-context7-jwt-off:
-#   "bip-..." < "zz-..."  →  zz-bip-context7-jwt-off WINS at runtime
-#                            (Forwarder mints no JWT for /mcp/context7)
+#   "bip-..." < "zz-..."  →  bip-context7-jwt-on WINS at runtime
+#                            (Forwarder MINTS a JWT for /mcp/context7)
 #
 # Operators wanting the opposite outcome rename one of the CRs so the
 # alphabetical order changes. No babysitting on the operator side.

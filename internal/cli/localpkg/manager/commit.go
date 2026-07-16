@@ -17,13 +17,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
-// opencodeProjectPrefix and opencodeGlobalPrefix mirror the constants in
-// internal/cli/hydrate/wiring.go for the global path remap.
-const (
-	localOpencodeProjectPrefix = ".opencode/"
-	localOpencodeGlobalPrefix  = ".config/opencode/"
-)
-
 // FileRec.Merge discriminators recorded by Commit and dispatched on by
 // Uninstall. The empty string is the replace/back-compat default (see
 // store.FileRec doc) and is deliberately NOT a named constant — absence of a
@@ -32,16 +25,6 @@ const (
 	mergeKindDeep      = "deep"
 	mergeKindComposite = "composite"
 )
-
-// remapGlobalPath adjusts a workspace-relative path for --global scope.
-// If adapterID == "opencode" and path starts with ".opencode/", the prefix
-// is replaced with ".config/opencode/". All other paths are returned unchanged.
-func remapGlobalPath(adapterID, path string) string {
-	if adapterID == "opencode" && strings.HasPrefix(path, localOpencodeProjectPrefix) {
-		return localOpencodeGlobalPrefix + strings.TrimPrefix(path, localOpencodeProjectPrefix)
-	}
-	return path
-}
 
 // Commit writes planned writes under root (the tool root: project cwd or $HOME
 // for --global), honoring MergeKind, and returns the relative paths written
@@ -54,7 +37,7 @@ func Commit(root string, global bool, adapterID, compositeID string, writes []Pl
 	for _, w := range writes {
 		rel := w.Path
 		if global {
-			rel = remapGlobalPath(adapterID, w.Path)
+			rel = adapter.RemapGlobalPath(adapterID, w.Path)
 		}
 		abs := filepath.Join(root, rel)
 
@@ -188,15 +171,12 @@ func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error
 		if perr != nil {
 			return opSkip, nil, nil
 		}
-		for _, k := range f.Keys {
-			merge.RemoveDottedKey(doc, k)
-		}
-		if len(doc) == 0 {
-			return opRemove, nil, nil
-		}
-		out, eerr := merge.EncodeDoc(doc, isTOML)
+		out, empty, eerr := merge.PruneDottedKeys(doc, f.Keys, isTOML)
 		if eerr != nil {
 			return opSkip, nil, fmt.Errorf("encode deep %s: %w", f.RelPath, eerr)
+		}
+		if empty {
+			return opRemove, nil, nil
 		}
 		return opModify, out, nil
 

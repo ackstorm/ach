@@ -82,12 +82,8 @@ type pipelineErr struct {
 // original inode (SC#4 — verified by
 // TestPipeline_InFlightReadSurvivesRename).
 //
-// Per-kind Content-Type policy (CS-06):
-//   - prompt:   *contentRow.ContentType if non-nil-non-empty else
-//     application/octet-stream.
-//   - plugin:   application/gzip (always).
-//   - artifact: application/gzip when scope=directory, else
-//     application/octet-stream.
+// Content-Type policy (CS-06, uniform context format): every known kind
+// is served as a gzip tarball — see contentTypeFor.
 func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resolvedRow, *pipelineErr) {
 	// Gate 1 — Authn.
 	info, errR := resolveAuthn(ctx, d, r)

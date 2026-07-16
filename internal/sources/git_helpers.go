@@ -64,11 +64,3 @@ func NormalizeGitLabHost(host string) string {
 	}
 	return strings.TrimRight(host, "/")
 }
-
-// ResolvedTransport returns "rest" when transport == "rest", else "git".
-func ResolvedTransport(transport string) string {
-	if transport == "rest" {
-		return "rest"
-	}
-	return "git"
-}

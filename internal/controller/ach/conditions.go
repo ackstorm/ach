@@ -15,10 +15,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ackstorm/ach/internal/sources"
@@ -273,13 +275,10 @@ func applyReconcileConditions(conds *[]metav1.Condition, reason, message string,
 }
 
 // Transport label constants surfaced on the SourceReachable / Synced
-// condition message. The "rest" / "git" string values match the
-// kubebuilder enum on GitHubSource.Transport / GitLabSource.Transport /
-// BitbucketSource.Transport.
+// condition message.
 const (
-	transportLabelGit  = "git"
-	transportLabelRest = "rest"
-	transportLabelNA   = "n/a"
+	transportLabelGit = "git"
+	transportLabelNA  = "n/a"
 )
 
 // Source-type discriminators matching sources.SourceSpec.Type values
@@ -294,36 +293,13 @@ const (
 // resolveTransportName reports the wire path the outer fetch took for
 // the given SourceSpec. Surfaced on the SourceReachable / Synced
 // condition message so operators can see which transport actually
-// served the request during the one-release window in which both
-// transports coexist (FIX_GIT.txt). Returns:
+// served the request. Returns:
 //
-//	"git"  — github/gitlab/bitbucket source with Transport != "rest"
-//	         (or empty, defaults to git per kubebuilder default).
-//	"rest" — github/gitlab/bitbucket source with Transport == "rest"
-//	         (the one-release legacy escape hatch).
+//	"git"  — github/gitlab/bitbucket source (git is the only transport).
 //	"n/a"  — s3 / gcs / http source (no git transport applies).
 func resolveTransportName(sourceSpec sources.SourceSpec) string {
-	// Dispatch on Type — the registry (internal/sources/registry) also
-	// dispatches by sourceSpec.Type, so the label reported here matches
-	// the fetcher actually invoked. If CEL admission is ever bypassed
-	// and multiple per-type pointers are non-nil, this avoids reporting
-	// whichever pointer happened to be checked first instead of the
-	// one Type actually selected. PR #9 follow-up review finding #8.
 	switch sourceSpec.Type {
-	case sourceTypeGitHub:
-		if sourceSpec.GitHub != nil && sourceSpec.GitHub.Transport == transportLabelRest {
-			return transportLabelRest
-		}
-		return transportLabelGit
-	case sourceTypeGitLab:
-		if sourceSpec.GitLab != nil && sourceSpec.GitLab.Transport == transportLabelRest {
-			return transportLabelRest
-		}
-		return transportLabelGit
-	case sourceTypeBitbucket:
-		if sourceSpec.Bitbucket != nil && sourceSpec.Bitbucket.Transport == transportLabelRest {
-			return transportLabelRest
-		}
+	case sourceTypeGitHub, sourceTypeGitLab, sourceTypeBitbucket:
 		return transportLabelGit
 	default:
 		return transportLabelNA
@@ -331,7 +307,7 @@ func resolveTransportName(sourceSpec sources.SourceSpec) string {
 }
 
 // sourceReachableMessage returns the condition.Message format used by
-// the per-kind reconcilers on success: "transport=<git|rest|n/a>".
+// the per-kind reconcilers on success: "transport=<git|n/a>".
 // Keeps the format string centrally so the per-kind controllers stay
 // surgical.
 func sourceReachableMessage(sourceSpec sources.SourceSpec) string {
@@ -420,4 +396,27 @@ func formatStageFailures(failures []stageFailure, noun string) string {
 		fmt.Fprintf(&b, ", +%d more", n-verbatim)
 	}
 	return b.String()
+}
+
+// syncedFalseResult maps a marketplace Synced=False reason to the shared
+// reconcile-result policy: terminal/configuration-derived reasons requeue
+// without error (no hot-loop); transient reasons surface originalErr so
+// the workqueue applies exponential backoff. Superset switch — a reason a
+// given kind never produces simply never matches.
+func syncedFalseResult(reason string, requeue time.Duration, originalErr error) (ctrl.Result, error) {
+	switch reason {
+	case ReasonInvalidConfig,
+		ReasonUnauthorized,
+		ReasonNotFound,
+		ReasonUpstreamInvalid,
+		ReasonUnsupportedPluginSource,
+		ReasonPluginTooLarge:
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	default:
+		// Unreachable / StaleCacheExpired → backoff via workqueue.
+		if originalErr != nil {
+			return ctrl.Result{}, originalErr
+		}
+		return ctrl.Result{}, nil
+	}
 }

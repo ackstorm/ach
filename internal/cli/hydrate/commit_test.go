@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/lock"
@@ -291,8 +292,8 @@ func TestRemapGlobalPath(t *testing.T) {
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 	}
 	for _, tc := range cases {
-		if got := remapGlobalPath(tc.platform, tc.in); got != tc.want {
-			t.Errorf("remapGlobalPath(%q, %q) = %q, want %q", tc.platform, tc.in, got, tc.want)
+		if got := adapter.RemapGlobalPath(tc.platform, tc.in); got != tc.want {
+			t.Errorf("RemapGlobalPath(%q, %q) = %q, want %q", tc.platform, tc.in, got, tc.want)
 		}
 	}
 }

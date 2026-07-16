@@ -20,7 +20,7 @@ import (
 
 // refreshChannel is the Postgres NOTIFY channel the platform-api's
 // /admin/refresh handler fires on. Payload format: "<kind>/<name>".
-// Allowed kinds: plugin, prompt, artifact, pluginmarketplace.
+// Allowed kinds: plugin, prompt, artifact, skill, pluginmarketplace, skillmarketplace.
 const refreshChannel = "ach_refresh"
 
 // allowed kinds and their canonical names. The listener resolves the
@@ -29,7 +29,9 @@ var allowedKinds = map[string]struct{}{
 	"plugin":            {},
 	"prompt":            {},
 	"artifact":          {},
+	"skill":             {},
 	"pluginmarketplace": {},
+	"skillmarketplace":  {},
 }
 
 // Listener implements manager.Runnable. Run() subscribes to ach_refresh,
@@ -155,6 +157,18 @@ func (l *Listener) fetch(ctx context.Context, kind, name string) (client.Object,
 		return &cr, nil
 	case "pluginmarketplace":
 		var cr achv1alpha1.PluginMarketplace
+		if err := l.Client.Get(ctx, key, &cr); err != nil {
+			return nil, err
+		}
+		return &cr, nil
+	case "skill":
+		var cr achv1alpha1.Skill
+		if err := l.Client.Get(ctx, key, &cr); err != nil {
+			return nil, err
+		}
+		return &cr, nil
+	case "skillmarketplace":
+		var cr achv1alpha1.SkillMarketplace
 		if err := l.Client.Get(ctx, key, &cr); err != nil {
 			return nil, err
 		}

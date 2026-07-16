@@ -48,12 +48,6 @@ func (f fakeLister) SkillMarketplaceSkills(context.Context) ([]db.SkillMarketpla
 	return f.skillMarketplaceSkills, f.err
 }
 func (f fakeLister) BIPs(context.Context) ([]db.BIPRow, error) { return f.bips, f.err }
-func (f fakeLister) LitellmConnections(context.Context) ([]db.LiteLLMConnectionRow, error) {
-	return nil, f.err
-}
-func (f fakeLister) ExternalRefs(context.Context) ([]db.ExternalRef, error) {
-	return nil, f.err
-}
 
 type envelope struct {
 	Items      []AdminObjectView `json:"items"`

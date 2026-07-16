@@ -214,47 +214,31 @@ litellmconnboot`.
 ### ❌ "SourceReachable=False reason=Unauthorized" on a public GitHub repo
 ```bash
 kubectl get plugin/caveman -o jsonpath='{.status.conditions[0]}'
-# {"reason":"Unauthorized","message":"github: GetCommit 403: sources: unauthorized"}
+# {"reason":"Unauthorized","message":"github: unreachable: ..."}
 ```
-✅ This is GitHub's 60 req/h/IP anonymous rate-limit — NOT a config bug. The
-within-interval gate (`shouldSkipFetch` in `internal/controller/ach/external_ref_refresh.go`)
-already prevents steady-state burn; a 403 here means a real burst (multiple
-`cluster.sh up` cycles, operator restarts, or force-refresh fires within an
-hour) has actually exhausted the quota. Either:
-  - wait ~1h for the quota window to roll over, OR
+✅ `github`/`gitlab`/`bitbucket` sources fetch exclusively over git (git
+ls-remote + git clone; no REST call, no per-IP REST rate-limit — the legacy
+`spec.<provider>.transport: rest` escape hatch was removed). A failure here
+means the upstream is genuinely unreachable, the ref doesn't exist, or git's
+HTTPS auth-prompt fired (anonymous + a nonexistent or private repo cannot be
+told apart by git/HTTPS — both surface as "please authenticate"). Either:
   - set `authSecretRef` on a CR whose repo legitimately needs auth, OR
+  - verify `spec.ref` actually exists on the upstream, OR
   - investigate why the operator is reconciling more often than expected
-    (`kubectl -n ach-system logs deploy/ach-operator | grep -c GetCommit`)
+    (`kubectl -n ach-system logs deploy/ach-operator | grep -c "fetch:"`)
 
-WHY IT FAILS: GitHub rate-limits anonymous REST calls by source IP. The Hub's
-default refresh interval is 1h per CR, so legitimate steady-state should
-average <5 API calls/h across 3-5 CRs — well below the 60/h ceiling. Hitting
-the limit means a tight loop or many cluster rebuilds in the same hour.
+The transport that served each fetch is surfaced on the `SourceReachable=True`
+(Plugin/Prompt/Artifact) and `Synced=True` (PluginMarketplace) condition
+messages as `transport=<git|n/a>`.
 
-**Resolution as of 2026-05-27**: The default outer transport for all three
-git source types (`github`, `gitlab`, `bitbucket`) is now `git`
-(`FIX_GIT.txt`), which has no per-IP REST rate-limit. If you still see this
-error on the default transport, the upstream is genuinely unreachable, the
-ref doesn't exist, or git's HTTPS auth-prompt fired (anonymous + a
-nonexistent or private repo cannot be told apart by git/HTTPS — both
-surface as "please authenticate"). To temporarily revert one CR to the
-legacy REST path, set `spec.<github|gitlab|bitbucket>.transport: rest` on
-the CR; that path still hits the per-provider anonymous quotas (GitHub
-60/h, GitLab 60/min, Bitbucket 60/h) and will be removed one release after
-the git transport is observed clean. The transport that actually served
-each fetch is now surfaced on the `SourceReachable=True` (Plugin/Prompt/
-Artifact) and `Synced=True` (PluginMarketplace) condition messages as
-`transport=<git|rest|n/a>`.
-
-**Self-hosted GitLab + git transport (as of 2026-06-04)**: ACH authenticates
-GitLab git-smart-http with HTTP Basic `oauth2:<token>` (GitLab's documented
+**Self-hosted GitLab (as of 2026-06-04)**: ACH authenticates GitLab
+git-smart-http with HTTP Basic `oauth2:<token>` (GitLab's documented
 PAT/Group/Project-token method), NOT `Authorization: Bearer`. Self-hosted
 instances configured without Bearer support (e.g. `git.example.com`) reject
 Bearer with `401 / sources: unauthorized` even when the token, scope, and
 project path are all valid. Basic is selected automatically for `gitlab`
 source types and for marketplace clones whose host matches the marketplace's
-`spec.gitlab.host` — `transport: rest` is NO LONGER required as a workaround
-for this 401. `spec.gitlab.host` accepts `git.example.com` or
+`spec.gitlab.host`. `spec.gitlab.host` accepts `git.example.com` or
 `https://git.example.com` identically (the clone URL is always https).
 (github.com / bitbucket.org still use Bearer.)
 

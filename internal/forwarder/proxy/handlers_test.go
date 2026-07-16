@@ -498,7 +498,6 @@ func TestClassifyPrecheckErr(t *testing.T) {
 		{precheck.ErrUnauthorizedTeam, http.StatusForbidden, "unauthorized_team"},
 		{precheck.ErrLiteLLMUnreachable, http.StatusServiceUnavailable, "litellm_unreachable"},
 		{precheck.ErrInvalidKeyType, http.StatusUnauthorized, "invalid_key_type"},
-		{precheck.ErrEnvironmentNotFound, http.StatusNotFound, "environment_not_found"},
 		{errors.New("anything else"), http.StatusInternalServerError, "internal_error"},
 	}
 	for _, tt := range tests {

@@ -14,7 +14,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
 )
 
-// ---------- remapGlobalPath --------------------------------------------------
+// ---------- adapter.RemapGlobalPath -------------------------------------------
 
 func TestRemapGlobalPath(t *testing.T) {
 	tests := []struct {
@@ -30,9 +30,9 @@ func TestRemapGlobalPath(t *testing.T) {
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 	}
 	for _, tc := range tests {
-		got := remapGlobalPath(tc.adapterID, tc.path)
+		got := adapter.RemapGlobalPath(tc.adapterID, tc.path)
 		if got != tc.want {
-			t.Errorf("remapGlobalPath(%q, %q) = %q; want %q", tc.adapterID, tc.path, got, tc.want)
+			t.Errorf("RemapGlobalPath(%q, %q) = %q; want %q", tc.adapterID, tc.path, got, tc.want)
 		}
 	}
 }

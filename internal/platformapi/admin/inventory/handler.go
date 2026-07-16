@@ -31,8 +31,6 @@ type Lister interface {
 	SkillMarketplaces(ctx context.Context) ([]db.SkillMarketplaceRow, error)
 	SkillMarketplaceSkills(ctx context.Context) ([]db.SkillMarketplaceSkill, error)
 	BIPs(ctx context.Context) ([]db.BIPRow, error)
-	LitellmConnections(ctx context.Context) ([]db.LiteLLMConnectionRow, error)
-	ExternalRefs(ctx context.Context) ([]db.ExternalRef, error)
 }
 
 // Deps is the inventory handler dependency bag. Kept deliberately narrow (just
@@ -87,12 +85,6 @@ func (l dbLister) SkillMarketplaceSkills(ctx context.Context) ([]db.SkillMarketp
 }
 func (l dbLister) BIPs(ctx context.Context) ([]db.BIPRow, error) {
 	return db.ListAllBIPs(ctx, l.pool, l.ns)
-}
-func (l dbLister) LitellmConnections(ctx context.Context) ([]db.LiteLLMConnectionRow, error) {
-	return db.ListLitellmConnections(ctx, l.pool, l.ns)
-}
-func (l dbLister) ExternalRefs(ctx context.Context) ([]db.ExternalRef, error) {
-	return db.ListExternalRefs(ctx, l.pool)
 }
 
 // PluginsHandler serves GET /platform/admin/plugins. It MERGES standalone
@@ -222,37 +214,6 @@ func BIPsHandler(deps Deps) http.HandlerFunc {
 		out := make([]AdminObjectView, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, bipRowToView(r))
-		}
-		return out, nil
-	})
-}
-
-// LitellmConnectionsHandler serves GET /platform/admin/litellm-connections.
-func LitellmConnectionsHandler(deps Deps) http.HandlerFunc {
-	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
-		rows, err := deps.Lister.LitellmConnections(ctx)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]AdminObjectView, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, litellmConnToView(r))
-		}
-		return out, nil
-	})
-}
-
-// ExternalRefsHandler serves GET /platform/admin/external-refs.
-func ExternalRefsHandler(deps Deps) http.HandlerFunc {
-	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
-		rows, err := deps.Lister.ExternalRefs(ctx)
-		if err != nil {
-			return nil, err
-		}
-		now := time.Now()
-		out := make([]AdminObjectView, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, externalRefToView(r, now))
 		}
 		return out, nil
 	})

@@ -394,7 +394,7 @@ claims.
 The automated suite is
 [`test/e2e/phase4_jwt_validate_test.go`](https://github.com/ackstorm/ach/blob/main/test/e2e/phase4_jwt_validate_test.go);
 gate it on `ACH_E2E_PHASE4=1` + `ACH_E2E_PK=<pk_…>` and run via
-`make e2e-focus FOCUS=TestPhase4JWTValidate`.
+`make e2e-focus RUN=TestPhase4JWTValidate`.
 
 ---
 

@@ -88,7 +88,6 @@ func TestFetch_DefaultedKeyMissing_ErrorMessageHasHint(t *testing.T) {
 		Workspace: "ws",
 		Repo:      "repo",
 		Ref:       "main",
-		Transport: "rest",
 		AuthSecretRef: &achv1alpha1.SourceAuthSecretRef{
 			Name: "s",
 		},

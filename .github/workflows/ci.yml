@@ -52,6 +52,9 @@ jobs:
       - name: CRD chart drift gate
         run: make helm-sync-check
 
+      - name: Helm topology render check
+        run: make helm-render-check
+
   unit:
     name: Unit
     runs-on: ubuntu-latest

@@ -131,50 +131,6 @@ func GetExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name string) 
 	return r, nil
 }
 
-// ListExternalRefs returns every external_refs row, ordered by (kind, name)
-// ASC. external_refs has no deletion_timestamp column, so all rows are live.
-// Used by the platform-api admin inventory endpoint (read-only). Returns an
-// empty (non-nil) slice on zero rows.
-func ListExternalRefs(ctx context.Context, pool *pgxpool.Pool) ([]ExternalRef, error) {
-	const sql = `
-		SELECT kind, name, storage_location,
-		       COALESCE(upstream_rev, ''),
-		       COALESCE(last_successful_refresh, 'epoch'::timestamptz),
-		       COALESCE(next_refresh_at, 'epoch'::timestamptz),
-		       max_staleness_seconds,
-		       COALESCE(force_refresh_requested_at, '0001-01-01 00:00:00+00'::timestamptz)
-		  FROM external_refs
-		 ORDER BY kind ASC, name ASC
-	`
-	rows, err := pool.Query(ctx, sql)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListExternalRefs: %w", err)
-	}
-	defer rows.Close()
-	out := []ExternalRef{}
-	for rows.Next() {
-		var r ExternalRef
-		if err := rows.Scan(
-			&r.Kind, &r.Name, &r.StorageLocation, &r.UpstreamRev,
-			&r.LastSuccessfulRefresh, &r.NextRefreshAt, &r.MaxStalenessSeconds,
-			&r.ForceRefreshRequestedAt,
-		); err != nil {
-			return nil, fmt.Errorf("db: ListExternalRefs scan: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListExternalRefs iterate: %w", err)
-	}
-	return out, nil
-}
-
 // ResetExternalRefRefreshOnEmptyCache NULLs out last_successful_refresh on
 // every row. The Plan 02-09 cmd/operator/main.go startup branch calls this
 // when the cache root is empty (OP-11) so every reconciler reissues the

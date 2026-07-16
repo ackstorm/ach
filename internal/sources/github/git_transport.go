@@ -21,14 +21,6 @@ import (
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
 )
 
-// resolvedTransport returns "git" or "rest". Empty defaults to "git"
-// (matches the kubebuilder default; defends against a CR submitted
-// before kube-apiserver defaulting applies — e.g. an envtest scenario
-// that builds the CR struct in Go and bypasses admission).
-func (f *Fetcher) resolvedTransport() string {
-	return sources.ResolvedTransport(f.spec.Transport)
-}
-
 func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
 	token, err := sources.ExtractBearerToken("github", f.spec.AuthSecretRef, req.Secret)
 	if err != nil {

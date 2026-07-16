@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // This file implements the git-protocol transport for the Bitbucket
-// source fetcher (FIX_GIT.txt).
+// source fetcher — the only transport (git, since v0.2.0).
 //
 // Bitbucket Cloud only — Bitbucket Server (Stash) remains out of
 // scope for v1alpha1.
 //
-// Auth: Bearer <token> — same Repository Access Token shape the
-// legacy REST path already uses on /2.0/repositories/{ws}/{repo}/commit
-// and on /{ws}/{repo}/get/<sha>.tar.gz.
+// Auth: Bearer <token> — Repository Access Token, sent via
+// http.extraHeader (never the URL).
 //
 // Clone URL: https://bitbucket.org/<workspace>/<repo>.git — host fixed
-// (no per-CR override; matches the legacy REST defaults).
+// (no per-CR override).
 
 package bitbucket
 
@@ -21,11 +20,6 @@ import (
 	"github.com/ackstorm/ach/internal/sources"
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
 )
-
-// resolvedTransport returns "git" or "rest". Empty defaults to "git".
-func (f *Fetcher) resolvedTransport() string {
-	return sources.ResolvedTransport(f.spec.Transport)
-}
 
 // constructCloneURL builds the https clone URL. Workspace + Repo are
 // already validated by New (CR-02 / validateFlatIdentifier rejects

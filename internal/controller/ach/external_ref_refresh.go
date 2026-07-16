@@ -28,12 +28,14 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/contentkit"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/sources"
@@ -309,57 +311,14 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	}
 	result.Body = wrappedBody
 
-	tmpFile, err := os.CreateTemp(filepath.Join(deps.CacheRoot, ".tmp"), "stg-")
+	// ─── Steps 6-6.9: stage with optional size cap, then rename(2). ───
+	stagingPath, n, err := cachefs.StageAtomic(deps.CacheRoot, result.Body, deps.SizeCapBytes)
 	if err != nil {
-		return MaterializeResult{Err: fmt.Errorf("create staging file: %w", err)}
-	}
-	stagingPath := tmpFile.Name()
-	// Use a closeOnce-style flag so explicit Close before rename(2) does
-	// not double-close at defer time (os.File.Close on a closed file
-	// returns ErrInvalid, which would mask the rename's err).
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmpFile.Close()
+		if errors.Is(err, cachefs.ErrOversize) {
+			return MaterializeResult{Err: &OversizeError{Bytes: n, Cap: deps.SizeCapBytes}}
 		}
-	}()
-
-	// ─── Step 6: copy with optional size cap. ───
-	var n int64
-	var copyErr error
-	if deps.SizeCapBytes > 0 {
-		// LimitReader bound to Cap+1 so we can detect overshoot exactly:
-		// if io.Copy returns Cap+1, the upstream advertised >Cap bytes.
-		limited := io.LimitReader(result.Body, deps.SizeCapBytes+1)
-		n, copyErr = io.Copy(tmpFile, limited)
-	} else {
-		n, copyErr = io.Copy(tmpFile, result.Body)
+		return MaterializeResult{Err: err}
 	}
-	if copyErr != nil {
-		_ = os.Remove(stagingPath)
-		return MaterializeResult{Err: fmt.Errorf("staging copy: %w", copyErr)}
-	}
-	if deps.SizeCapBytes > 0 && n > deps.SizeCapBytes {
-		_ = os.Remove(stagingPath)
-		return MaterializeResult{Err: &OversizeError{Bytes: n, Cap: deps.SizeCapBytes}}
-	}
-
-	// fsync before rename so a power cut does not leave a zero-length file
-	// at the published path. (rename(2) preserves whatever data was on
-	// disk at the moment of the rename — if the buffer never reached the
-	// platter, the post-crash file is short.)
-	if err := tmpFile.Sync(); err != nil {
-		_ = os.Remove(stagingPath)
-		return MaterializeResult{Err: fmt.Errorf("staging fsync: %w", err)}
-	}
-	// Close explicitly so platforms with strict rename-of-open-fd semantics
-	// (Windows; some FUSE FS) behave correctly. POSIX allows rename of an
-	// open file, but explicit close is portable and harmless on Linux.
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(stagingPath)
-		return MaterializeResult{Err: fmt.Errorf("staging close: %w", err)}
-	}
-	closed = true
 
 	// ─── Step 7: atomic rename(2). ───
 	if err := os.Rename(stagingPath, deps.FinalPath); err != nil {

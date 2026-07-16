@@ -8,10 +8,10 @@
 // it — the env var is read at this single site, validated, then handed
 // off.
 //
-// Phase 3 consumer (planned): the pk_/ek_ create/revoke paths in the
-// Platform API (Plan 03-XX TBD) hash the bearer plaintext with
-// credhash.Hash(pepper, plaintext) and persist only the digest. Until
-// that wiring lands, the operator main calls Load() at startup so the
+// Consumers (wired): the pk_ mint path (internal/platformapi/auth/sso.go)
+// and the ek_ create path (internal/platformapi/envkeys/handler.go) hash
+// the bearer plaintext with credhash.Hash(pepper, plaintext) and persist
+// only the digest. The operator main also calls Load() at startup so the
 // "still carries placeholder" guard runs every reboot — operators can
 // trust the next deployment cycle catches a misconfigured Secret.
 //

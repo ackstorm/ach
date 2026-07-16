@@ -32,7 +32,6 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 make cluster-up                                    # idempotent bring-up (kept)
 make e2e-focus RUN='TestPhase4Promotion/SC11a'     # stdlib -run pattern
 make e2e-focus RUN='TestPhase4Promotion'           # full §11 sub-suite
-make e2e-focus FOCUS='registers via POST /model/new'   # legacy ginkgo
 ```
 
 ## Fixtures

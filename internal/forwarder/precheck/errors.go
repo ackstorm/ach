@@ -12,13 +12,12 @@ import "errors"
 //	ErrUnauthorizedResource  → 403 unauthorized_resource
 //	ErrUnauthorizedTeam      → 403 unauthorized_team
 //	ErrLiteLLMUnreachable    → 503 litellm_unreachable
-//	ErrEnvironmentNotFound   → reserved for a future strict variant;
-//	                           precheck currently narrows missing-env
-//	                           to ErrUnauthorizedResource (D-15)
+//
+// Missing-environment is deliberately narrowed to ErrUnauthorizedResource
+// (D-15) — no separate not-found sentinel.
 var (
 	ErrInvalidKeyType       = errors.New("precheck: invalid or missing key type")
 	ErrUnauthorizedResource = errors.New("precheck: unauthorized resource (name not in bound environment)")
 	ErrUnauthorizedTeam     = errors.New("precheck: unauthorized team (no environment grants caller access to this name)")
 	ErrLiteLLMUnreachable   = errors.New("precheck: litellm unreachable during teams resolve")
-	ErrEnvironmentNotFound  = errors.New("precheck: environment not found")
 )

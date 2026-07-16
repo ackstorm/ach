@@ -1,7 +1,7 @@
 # Namespaces for the e2e cluster layout. Applied BEFORE any helm install so
 # the charts (postgres/valkey into ach-system, dex into dex-system, litellm
-# into litellm-system, toolhive into toolhive-system) have their target
-# namespace present. `default` is omitted — it always exists.
+# into litellm-system) have their target namespace present. `default` is
+# omitted — it always exists.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -11,11 +11,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: litellm-system
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: toolhive-system
 ---
 apiVersion: v1
 kind: Namespace

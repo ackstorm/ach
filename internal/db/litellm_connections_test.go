@@ -6,8 +6,8 @@
 //
 // Covers the resurrection invariant shared by every origin-gated projection
 // table (incident 2026-06-04): a live upsert must clear a stale
-// deletion_timestamp left by a prior soft-delete, else the IS-NULL-filtered
-// read (ListLitellmConnections) hides the resurrected row forever.
+// deletion_timestamp left by a prior soft-delete, else an IS-NULL-filtered
+// read hides the resurrected row forever.
 
 package db_test
 
@@ -20,9 +20,8 @@ import (
 )
 
 // TestUpsertLiteLLMConnection_ClearsStaleDeletionTimestamp proves a LIVE
-// reconcile un-sets a drain marker left by a prior soft-delete. The
-// IS-NULL-filtered read is ListLitellmConnections (admin inventory): a
-// resurrected connection must reappear there after the live upsert.
+// reconcile un-sets a drain marker left by a prior soft-delete, so the
+// IS-NULL-filtered read stops hiding the resurrected row.
 func TestUpsertLiteLLMConnection_ClearsStaleDeletionTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -44,15 +43,13 @@ func TestUpsertLiteLLMConnection_ClearsStaleDeletionTimestamp(t *testing.T) {
 	if err := db.SoftDeleteLiteLLMConnection(ctx, pool, "ns", "default"); err != nil {
 		t.Fatalf("SoftDeleteLiteLLMConnection: %v", err)
 	}
-	// Soft-deleted: the IS-NULL-filtered inventory read must NOT list it.
-	pre, err := db.ListLitellmConnections(ctx, pool, "ns")
+	// Soft-deleted: deletion_timestamp must be set.
+	pre, err := db.GetDefaultLiteLLMConnection(ctx, pool, "ns")
 	if err != nil {
-		t.Fatalf("ListLitellmConnections after soft-delete: %v", err)
+		t.Fatalf("GetDefaultLiteLLMConnection after soft-delete: %v", err)
 	}
-	for _, c := range pre {
-		if c.Name == "default" {
-			t.Fatal("ListLitellmConnections returned soft-deleted row (IS NULL filter broken)")
-		}
+	if pre == nil || pre.DeletionTimestamp == nil {
+		t.Fatalf("expected deletion_timestamp set after soft-delete, got %+v", pre)
 	}
 	// Live reconcile of the recreated CR upserts again.
 	row.ResourceVersion = "2"
@@ -66,20 +63,5 @@ func TestUpsertLiteLLMConnection_ClearsStaleDeletionTimestamp(t *testing.T) {
 	}
 	if got == nil || got.DeletionTimestamp != nil {
 		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %+v", got)
-	}
-	// The IS-NULL-filtered inventory read must list the resurrected row.
-	post, err := db.ListLitellmConnections(ctx, pool, "ns")
-	if err != nil {
-		t.Fatalf("ListLitellmConnections after live upsert: %v", err)
-	}
-	var found bool
-	for _, c := range post {
-		if c.Name == "default" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("resurrected litellm_connection missing from ListLitellmConnections after live upsert")
 	}
 }

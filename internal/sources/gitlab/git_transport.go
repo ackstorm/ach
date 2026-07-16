@@ -24,11 +24,6 @@ import (
 	"github.com/ackstorm/ach/internal/sources/gitprovider"
 )
 
-// resolvedTransport returns "git" or "rest". Empty defaults to "git".
-func (f *Fetcher) resolvedTransport() string {
-	return sources.ResolvedTransport(f.spec.Transport)
-}
-
 // normalizeGitLabHost delegates to the canonical sources.NormalizeGitLabHost
 // (single source of truth shared with the marketplace dispatch path). Kept
 // as a thin local alias so existing call sites + CR-02 validation timing
@@ -45,20 +40,6 @@ func normalizeGitLabHost(host string) string {
 // spinning a network call.
 func (f *Fetcher) constructCloneURL() string {
 	return sources.GitLabCloneURL(f.spec.Host, f.spec.Project)
-}
-
-// restBaseURL builds the REST scheme+host from spec.Host with the same
-// hardening as constructCloneURL: normalize (strip any caller-supplied
-// scheme + trailing slash), default to gitlab.com, then force https://.
-// This closes the REST-path SSRF where a raw "http://<internal>" host
-// passed New()-time validation (which strips the scheme before checking)
-// but reached WithBaseURL / archiveURL unsanitized (finding S1).
-func (f *Fetcher) restBaseURL() string {
-	host := normalizeGitLabHost(f.spec.Host)
-	if host == "" {
-		host = "gitlab.com"
-	}
-	return "https://" + host
 }
 
 func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
