@@ -19,10 +19,11 @@ run-name: Release ${{ github.event.head_commit.message }}
 #
 # Because the tag precedes the build, a failure in goreleaser or the chart
 # push DOES leave origin with a tag but no artifacts (v0.6.13 hit exactly
-# this when the runner ran out of disk). Recovery is still just another
+# this when the runner ran out of disk). Recovery is another
 # `chore(release): vX.Y.Z` push: the bump step no-ops on an already-bumped
-# tree, `git tag -a` and its push are tolerant of the existing tag, and
-# goreleaser reads that tag idempotently. Every step here is re-runnable.
+# tree, and the tag step force-repoints the tag at the new HEAD. Both
+# recovery paths — `gh run rerun --failed` (HEAD unchanged) and a fresh
+# marker push (HEAD moved) — are re-runnable.
 
 on:
   push:
@@ -282,20 +283,35 @@ jobs:
       # rejected our post-goreleaser push as 'already exists'), create
       # AND push the tag here before goreleaser runs.
       #
-      # Idempotency contract — `gh run rerun --failed` MUST work:
-      # both `git tag -a` and `git push origin <tag>` are tolerant of
-      # the pre-existing case. A prior failed run that already pushed
-      # the tag to origin would otherwise checkout the tag along with
-      # the branch (fetch-depth: 0 → all refs), making `git tag -a`
-      # exit 128 with "already exists" on the rerun. Each form swallows
-      # the harmless "already exists" rejection on its own line.
-      # goreleaser then reads the existing tag idempotently.
+      # Idempotency contract — BOTH recovery paths must work:
+      #   a) `gh run rerun --failed` — HEAD is unchanged, so any tag from
+      #      the failed attempt already points at the right commit.
+      #   b) a fresh `chore(release): vX.Y.Z` push after a failed attempt —
+      #      HEAD has MOVED, and the previous attempt's tag still points at
+      #      the OLD commit.
+      # The previous `git tag -a ... || true` handled only (a): it swallowed
+      # "already exists" and left the stale tag alone, so in case (b)
+      # goreleaser aborted with "git tag vX.Y.Z was not made against commit
+      # <HEAD>" and v0.6.13 needed a hand-deleted tag to get unstuck.
+      # Force-repointing the tag at HEAD covers both: a no-op in (a), the
+      # fix in (b). fetch-depth: 0 means the stale tag IS in the local
+      # checkout, so -f is what makes the local tag move too.
+      #
+      # Guard: never move a tag whose GitHub release already exists — that
+      # would silently re-point a shipped release at new code. A marker
+      # re-push for an already-published version is a mistake, so fail loud
+      # and let the human cut a new version.
       - name: Create + push release tag
         env:
           VERSION: ${{ needs.parse.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag -a "v$VERSION" -m "v$VERSION" 2>/dev/null || true
-          git push origin "v$VERSION" 2>/dev/null || true
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::release v$VERSION is already published — refusing to re-point its tag at $(git rev-parse --short HEAD). Cut a new version instead."
+            exit 1
+          fi
+          git tag -f -a "v$VERSION" -m "v$VERSION"
+          git push -f origin "refs/tags/v$VERSION"
 
       - name: Run GoReleaser
         env:
