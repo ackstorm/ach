@@ -4,6 +4,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -109,6 +110,29 @@ type PersistenceSpec struct {
 	RetainPolicy *string `json:"retainPolicy,omitempty"`
 }
 
+// NetworkPolicySpec renders a default-deny EGRESS NetworkPolicy selecting the agent pod.
+// Presence is the opt-in: an omitted block means no policy at all (the agent keeps
+// unrestricted egress — the pre-feature behaviour). An empty block (`networkPolicy: {}`)
+// is deny-all-except-DNS.
+//
+// Egress-only by design: policyTypes never includes Ingress, so expose.service /
+// gateway→agent routing is untouched.
+//
+// Rules are DECLARED here, not derived from ach.baseUrl: upstream NetworkPolicy has no
+// FQDN peer type and ACH_BASE_URL is a URL, so the operator cannot translate the ACH
+// endpoint into a peer portably. Declare the forwarder/gateway peer yourself — an
+// in-cluster podSelector+namespaceSelector, or an ipBlock CIDR for an external endpoint.
+// The operator contributes what only it knows: the pod selector (operator-owned labels),
+// the DNS rule, and lifecycle (created/pruned/GC'd with the agent).
+type NetworkPolicySpec struct {
+	// Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1
+	// egress rules, pass-through (same contract as podTemplate: the profile author
+	// already controls spec.image, so no field guardrails here). Empty → DNS only,
+	// i.e. every other outbound connection is denied.
+	// +optional
+	Egress []networkingv1.NetworkPolicyEgressRule `json:"egress,omitempty"`
+}
+
 // AgentProfileSpec is the reusable infra + defaults half.
 type AgentProfileSpec struct {
 	// +kubebuilder:validation:Required
@@ -141,6 +165,10 @@ type AgentProfileSpec struct {
 	Health *HealthSpec `json:"health,omitempty"`
 	// +optional
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+	// NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
+	// Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
+	// +optional
+	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`

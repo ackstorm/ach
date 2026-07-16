@@ -12,6 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -154,6 +155,56 @@ func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.
 			Type:     corev1.ServiceTypeClusterIP,
 			Selector: agentSelectorLabels(a.Name),
 			Ports:    []corev1.ServicePort{{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(int(resolveHealthPort(a, p)))}},
+		},
+	}
+}
+
+// dnsEgressRule allows name resolution. Always first in every rendered policy: without
+// it, a default-deny egress policy breaks DNS and every outbound call fails with a
+// resolution error that looks nothing like a policy denial — the #1 NetworkPolicy footgun.
+//
+// ponytail: port-53-to-anywhere rather than a kube-dns podSelector. CoreDNS labels and
+// node-local DNS cache addresses vary per distro, and a wrong selector fails closed and
+// silently, which is the worst failure mode for a security control. Known ceiling: this
+// does not stop DNS-tunnel exfiltration. If a deployment needs DNS pinned to kube-dns,
+// add a `dns:` knob to NetworkPolicySpec — do not widen this rule.
+func dnsEgressRule() networkingv1.NetworkPolicyEgressRule {
+	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
+	port := intstr.FromInt(53)
+	return networkingv1.NetworkPolicyEgressRule{
+		Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &udp, Port: &port},
+			{Protocol: &tcp, Port: &port},
+		},
+	}
+}
+
+// needsNetworkPolicy reports whether the operator renders the agent's egress policy.
+// Presence of the block is the opt-in; absence keeps the pre-feature unrestricted egress.
+func needsNetworkPolicy(p *achv1alpha1.AgentProfile) bool {
+	return p.Spec.NetworkPolicy != nil
+}
+
+// buildNetworkPolicy renders the agent's egress allowlist: DNS plus the profile-declared
+// rules, denying everything else. Egress-only — policyTypes omits Ingress so gateway→agent
+// routing (expose.service) is unaffected.
+//
+// The operator does not derive the ACH peer: ach.baseUrl is a URL and upstream
+// NetworkPolicy has no FQDN peer type. The profile author declares peers; the operator
+// contributes the pod selector (its own labels), DNS, and lifecycle.
+//
+// Deliberately NOT part of computeConfigHash: the policy is not a pod-template input, so
+// editing it must not roll the pod.
+func buildNetworkPolicy(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *networkingv1.NetworkPolicy {
+	// Fresh slice: p comes from the informer cache and must never be appended into.
+	egress := []networkingv1.NetworkPolicyEgressRule{dnsEgressRule()}
+	egress = append(egress, p.Spec.NetworkPolicy.Egress...)
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: agentSelectorLabels(a.Name)},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+			Egress:      egress,
 		},
 	}
 }

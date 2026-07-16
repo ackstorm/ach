@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/agentrender"
@@ -345,5 +347,89 @@ func TestBuildDeployment_PodTemplateOverlayInvalid(t *testing.T) {
 		if _, err := buildDeployment(a, p, "h", nil); err == nil {
 			t.Errorf("%s: invalid podTemplate overlay must error", name)
 		}
+	}
+}
+
+func TestNeedsNetworkPolicy_PresenceIsTheOptIn(t *testing.T) {
+	p := &achv1alpha1.AgentProfile{}
+	if needsNetworkPolicy(p) {
+		t.Error("nil networkPolicy must render no policy (pre-feature behaviour)")
+	}
+	p.Spec.NetworkPolicy = &achv1alpha1.NetworkPolicySpec{}
+	if !needsNetworkPolicy(p) {
+		t.Error("empty networkPolicy block must render a deny-all-except-DNS policy")
+	}
+}
+
+func TestBuildNetworkPolicy_EmptyBlockIsDNSOnlyAndEgressOnly(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.NetworkPolicy = &achv1alpha1.NetworkPolicySpec{}
+
+	np := buildNetworkPolicy(a, p)
+
+	if np.Name != "achagent-demo" || np.Namespace != "ns" {
+		t.Fatalf("np name/ns = %q/%q, want achagent-demo/ns", np.Name, np.Namespace)
+	}
+	if got := np.Spec.PodSelector.MatchLabels[agentLabelKey]; got != "demo" {
+		t.Errorf("podSelector = %v, want %s=demo", np.Spec.PodSelector.MatchLabels, agentLabelKey)
+	}
+	// Ingress must stay untouched or expose.service/gateway routing breaks.
+	if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != networkingv1.PolicyTypeEgress {
+		t.Errorf("policyTypes = %v, want [Egress] only", np.Spec.PolicyTypes)
+	}
+	if len(np.Spec.Egress) != 1 {
+		t.Fatalf("egress rules = %d, want 1 (DNS only)", len(np.Spec.Egress))
+	}
+	dns := np.Spec.Egress[0]
+	if len(dns.To) != 0 {
+		t.Errorf("DNS rule To = %v, want empty (port-53-to-anywhere)", dns.To)
+	}
+	if len(dns.Ports) != 2 {
+		t.Fatalf("DNS rule ports = %d, want 2 (udp + tcp)", len(dns.Ports))
+	}
+	protos := map[corev1.Protocol]bool{}
+	for _, pt := range dns.Ports {
+		if pt.Port == nil || pt.Port.IntValue() != 53 {
+			t.Errorf("DNS port = %v, want 53", pt.Port)
+		}
+		if pt.Protocol == nil {
+			t.Fatal("DNS port protocol must be explicit")
+		}
+		protos[*pt.Protocol] = true
+	}
+	if !protos[corev1.ProtocolUDP] || !protos[corev1.ProtocolTCP] {
+		t.Errorf("DNS protocols = %v, want both UDP and TCP", protos)
+	}
+}
+
+func TestBuildNetworkPolicy_ProfileRulesAppendedAfterDNS(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	tcp := corev1.ProtocolTCP
+	port := intstr.FromInt(443)
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.NetworkPolicy = &achv1alpha1.NetworkPolicySpec{
+		Egress: []networkingv1.NetworkPolicyEgressRule{{
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/8"}}},
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+		}},
+	}
+
+	np := buildNetworkPolicy(a, p)
+
+	if len(np.Spec.Egress) != 2 {
+		t.Fatalf("egress rules = %d, want 2 (dns + profile rule)", len(np.Spec.Egress))
+	}
+	if len(np.Spec.Egress[0].To) != 0 {
+		t.Error("DNS rule must stay first — a profile rule was prepended")
+	}
+	if np.Spec.Egress[1].To[0].IPBlock.CIDR != "10.0.0.0/8" {
+		t.Errorf("profile rule lost: %+v", np.Spec.Egress[1])
+	}
+	// The profile comes from the informer cache — the builder must never append into it.
+	if len(p.Spec.NetworkPolicy.Egress) != 1 {
+		t.Errorf("builder mutated the cached profile's egress slice: len = %d, want 1", len(p.Spec.NetworkPolicy.Egress))
 	}
 }
