@@ -36,11 +36,22 @@ CONTAINER_TOOL ?= docker
 # sub-make) does NOT cross the docker boundary. Without this, arg-taking
 # wrappers like test-envtest-pkg/e2e-focus would see empty $(PKG)/$(RUN).
 ACH_IN_DEVTOOLS ?= 0
+# MAKEOVERRIDES is raw `VAR=value` text spliced straight into the recipe line
+# below, which make hands to bash — so a value carrying shell metacharacters
+# gets re-parsed AS SHELL. `FOCUS='TestA|TestB'` became a PIPELINE:
+#   ./scripts/dev.sh make ... FOCUS=TestA | TestB PKG=...
+# which silently truncated -run to TestA, ran `TestB` as a command
+# ("TestB: command not found"), and failed with Error 127 — a green-looking
+# selector that never ran half the tests you asked for.
+# Re-quote each override so bash sees one literal word per assignment.
+# Values containing spaces or single quotes are still not supported (foreach
+# splits on whitespace); no caller needs them, and they were already broken.
+SAFE_OVERRIDES = $(foreach o,$(MAKEOVERRIDES),'$(o)')
 define container_target
 	@if [ "$(ACH_IN_DEVTOOLS)" = "1" ]; then \
-		$(MAKE) --no-print-directory $(1) $(MAKEOVERRIDES); \
+		$(MAKE) --no-print-directory $(1) $(SAFE_OVERRIDES); \
 	else \
-		./scripts/dev.sh $(MAKE) --no-print-directory $(1) $(MAKEOVERRIDES); \
+		./scripts/dev.sh $(MAKE) --no-print-directory $(1) $(SAFE_OVERRIDES); \
 	fi
 endef
 
@@ -232,9 +243,16 @@ test-envtest-pkg: ## envtest for one package. Usage: make test-envtest-pkg PKG=.
 	$(call container_target,_test-envtest-pkg)
 _test-envtest-pkg: setup-envtest
 	@test -n "$(PKG)" || (echo "ERROR: PKG=... required" >&2; exit 1)
-	# `script -q /dev/null -c "..."` fakes a TTY so -v output streams.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" \
-		script -q /dev/null -c "go test -v -count=1 -timeout $(or $(TIMEOUT),10m) $(if $(FOCUS),-run $(FOCUS),) $(PKG)"
+	@# No `script -q /dev/null -c "..."` TTY fake here. It re-evaluated its -c
+	@# string in a second shell, so an alternation FOCUS was parsed as a
+	@# PIPELINE: FOCUS='TestA|TestB' ran `go test -run TestA | TestB ./pkg`,
+	@# which silently dropped TestB from -run, piped go test into a
+	@# nonexistent command, and died "write /dev/stdout: broken pipe" /
+	@# Error 127. -v streams without the fake (same as _test-unit-pkg and
+	@# run-envtest-packages.sh), so drop it and single-quote FOCUS.
+	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)"; \
+	export KUBEBUILDER_ASSETS; \
+	go test -v -count=1 -timeout $(or $(TIMEOUT),10m) $(if $(FOCUS),-run '$(FOCUS)',) $(PKG)
 
 .PHONY: test-smoke-idempotency
 test-smoke-idempotency: ## Accelerated AC-R1 idempotency smoke (10s window).
