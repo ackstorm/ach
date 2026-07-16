@@ -1744,6 +1744,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#networkpolicyspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NetworkPolicySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#persistencespec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2832,6 +2843,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#networkpolicyspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NetworkPolicySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#persistencespec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3774,6 +3796,12 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 <tr>
 <td><code>persistence</code> <em><a href="#persistencespec">PersistenceSpec</a></em></td>
 <td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>networkPolicy</code> <em><a href="#networkpolicyspec">NetworkPolicySpec</a></em></td>
+<td>NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5724,6 +5752,39 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <tr>
 <td><code>params</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
 <td>Params is an open, unvalidated dict splatted to the model client.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="networkpolicyspec">NetworkPolicySpec<a class="headerlink" href="#networkpolicyspec" title="Permanent link">&para;</a></h4>
+<p>NetworkPolicySpec renders a default-deny EGRESS NetworkPolicy selecting the agent pod.
+Presence is the opt-in: an omitted block means no policy at all (the agent keeps
+unrestricted egress — the pre-feature behaviour). An empty block (<code>networkPolicy: {}</code>)
+is deny-all-except-DNS.</p>
+<p>Egress-only by design: policyTypes never includes Ingress, so expose.service /
+gateway→agent routing is untouched.</p>
+<p>Rules are DECLARED here, not derived from ach.baseUrl: upstream NetworkPolicy has no
+FQDN peer type and ACH_BASE_URL is a URL, so the operator cannot translate the ACH
+endpoint into a peer portably. Declare the forwarder/gateway peer yourself — an
+in-cluster podSelector+namespaceSelector, or an ipBlock CIDR for an external endpoint.
+The operator contributes what only it knows: the pod selector (operator-owned labels),
+the DNS rule, and lifecycle (created/pruned/GC'd with the agent).</p>
+<p><em>Appears in:</em>
+- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>egress</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#networkpolicyegressrule-v1-networking">NetworkPolicyEgressRule</a> array</em></td>
+<td>Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1<br />egress rules, pass-through (same contract as podTemplate: the profile author<br />already controls spec.image, so no field guardrails here). Empty → DNS only,<br />i.e. every other outbound connection is denied.</td>
 <td></td>
 <td></td>
 </tr>
