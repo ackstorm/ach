@@ -26,6 +26,36 @@ spec:
     size: 10Gi
     mountPath: /var/lib/ach-agent
     retainPolicy: Retain
+  # Optional egress allowlist. Omitted → no NetworkPolicy at all (unrestricted egress).
+  # Present → default-deny egress: DNS (port 53, added by the operator) plus exactly the
+  # rules below. Ingress is never touched, so expose.service/gateway routing still works.
+  #
+  # Rules are declared, not derived: NetworkPolicy has no FQDN peer type, so the operator
+  # cannot turn ach.baseUrl into a peer for you. Point these at your ACH forwarder/gateway.
+  # `networkPolicy: {}` (no egress:) is the strictest setting — DNS only.
+  #
+  # Requires a CNI that enforces NetworkPolicy (Calico, Cilium, ...). On a CNI that ignores
+  # it the object is created and enforces nothing — verify before relying on it.
+  networkPolicy:
+    egress:
+      # In-cluster ACH: the forwarder/gateway Service pods.
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: ach-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: ach
+        ports:
+          - protocol: TCP
+            port: 8080
+      # External ACH behind an ingress/LB: allow the CIDR instead (no FQDN peers exist).
+      # - to:
+      #     - ipBlock:
+      #         cidr: 203.0.113.10/32
+      #   ports:
+      #     - protocol: TCP
+      #       port: 443
   # Optional raw overlay strategic-merged over the operator-rendered pod template.
   # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent").
   podTemplate:
@@ -36,5 +66,5 @@ spec:
       # Sandboxed runtime: the agent container runs opencode, which has a shell tool.
       # runtimeClassName puts the whole pod behind a gVisor/Kata boundary instead of a
       # shared host kernel. Needs the RuntimeClass to exist in the cluster; an unknown
-      # name leaves the pod Pending (visible as WorkloadReady=False).
+      # name means the pod will not run — surfaces as WorkloadReady=False on the ACHAgent.
       # runtimeClassName: gvisor

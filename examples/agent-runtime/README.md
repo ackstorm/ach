@@ -95,9 +95,42 @@ spec:
       runtimeClassName: gvisor
 ```
 
-The RuntimeClass must already exist in the cluster. An unknown name leaves the pod Pending, which
-surfaces as `WorkloadReady=False` on the ACHAgent.
+The RuntimeClass must already exist in the cluster. An unknown name means the pod will not run;
+this surfaces as `WorkloadReady=False` on the ACHAgent.
 
 ### Egress allowlist (`networkPolicy`)
 
-See `spec.networkPolicy` in `profile.yaml`. Omitted → no policy, unrestricted egress.
+The harness fronts every model and MCP call through a localhost proxy that injects the `ek_`, but
+that proxy is *cooperative* — opencode's shell tool can reach anything the pod's network reaches.
+`spec.networkPolicy` makes the boundary enforced instead of assumed.
+
+```yaml
+spec:
+  networkPolicy:
+    egress:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: ach-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: ach
+        ports:
+          - protocol: TCP
+            port: 8080
+```
+
+- **Omitted** → no policy, unrestricted egress (the default, unchanged from before this feature).
+- **`networkPolicy: {}`** → deny-all egress except DNS.
+- The operator always prepends a DNS rule (UDP+TCP port 53, any destination). Without it a
+  default-deny policy breaks name resolution, and the failure looks like a DNS bug rather than a
+  policy denial. Consequence: DNS-tunnel exfiltration is not covered by this policy.
+- **Egress only.** `policyTypes` never includes `Ingress`, so `expose.service` and gateway→agent
+  routing are unaffected.
+- Rules are **declared, not derived**. NetworkPolicy has no FQDN peer type and `ach.baseUrl` is a
+  URL, so the operator cannot compute the ACH peer for you. Use a `podSelector` +
+  `namespaceSelector` for in-cluster ACH, or an `ipBlock` CIDR for an external endpoint.
+- **Requires a CNI that enforces NetworkPolicy** (Calico, Cilium, …). On a CNI that ignores it, the
+  object exists and enforces nothing — verify in your cluster before relying on it.
+- Editing the block does **not** roll the pod (the policy is not a pod-template input); the new
+  rules take effect as soon as the CNI picks the object up.
