@@ -11,6 +11,7 @@ package ach
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,22 +175,11 @@ func TestComputeAvailable(t *testing.T) {
 			if got.Reason != tc.wantReason {
 				t.Errorf("Reason = %q; want %q (message=%q)", got.Reason, tc.wantReason, got.Message)
 			}
-			if tc.wantMsgContains != "" && !contains(got.Message, tc.wantMsgContains) {
+			if tc.wantMsgContains != "" && !strings.Contains(got.Message, tc.wantMsgContains) {
 				t.Errorf("Message = %q; want substring %q", got.Message, tc.wantMsgContains)
 			}
 		})
 	}
-}
-
-// contains is a tiny strings.Contains alias kept local so the test file
-// imports stay minimal (no `strings` import for one helper).
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 // TestEnvironmentAvailableConditionEmitted verifies that a real

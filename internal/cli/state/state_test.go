@@ -3,6 +3,7 @@
 package state_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -211,7 +212,7 @@ func TestSave_WritesValidJSON(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	// Assert literal `<` is preserved (not `<`).
-	if !contains(raw, []byte("<weird>&name.md")) {
+	if !bytes.Contains(raw, []byte("<weird>&name.md")) {
 		t.Fatalf("expected literal HTML chars; got %s", string(raw))
 	}
 	// Assert indent applied.
@@ -219,22 +220,4 @@ func TestSave_WritesValidJSON(t *testing.T) {
 	if err := json.Unmarshal(raw, &anyVal); err != nil {
 		t.Fatalf("written file is not valid JSON: %v\n%s", err, string(raw))
 	}
-}
-
-// contains is a tiny bytes-substring helper to avoid pulling in
-// strings.Contains over []byte conversions.
-func contains(hay, needle []byte) bool {
-	for i := 0; i+len(needle) <= len(hay); i++ {
-		match := true
-		for j := 0; j < len(needle); j++ {
-			if hay[i+j] != needle[j] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
 }
