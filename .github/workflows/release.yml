@@ -11,15 +11,18 @@ run-name: Release ${{ github.event.head_commit.message }}
 #   2. runs the full test gate (make test-unit + make test-envtest-fast),
 #   3. runs `make release-bump VERSION=<X.Y.Z>` and commits the bumps back to
 #      main as github-actions[bot] with a [skip ci] marker,
-#   4. runs goreleaser (image cross-build, sign, SBOM) using
-#      GORELEASER_CURRENT_TAG so no git tag is required at this point,
-#   5. pushes the Helm chart to GHCR's OCI registry,
-#   6. as the LAST step, creates and pushes the annotated v<X.Y.Z>
-#      git tag at the bot-bump commit.
+#   4. creates and pushes the annotated v<X.Y.Z> git tag at the bot-bump
+#      commit — BEFORE goreleaser, which needs a real tag at HEAD (see the
+#      "Create + push release tag" step for why it cannot come after),
+#   5. runs goreleaser (image cross-build, sign, SBOM),
+#   6. pushes the Helm chart to GHCR's OCI registry.
 #
-# Putting the tag last means a failure anywhere upstream leaves origin
-# with no orphan tag — the next attempt is just another
-# `chore(release): vX.Y.Z` push.
+# Because the tag precedes the build, a failure in goreleaser or the chart
+# push DOES leave origin with a tag but no artifacts (v0.6.13 hit exactly
+# this when the runner ran out of disk). Recovery is still just another
+# `chore(release): vX.Y.Z` push: the bump step no-ops on an already-bumped
+# tree, `git tag -a` and its push are tolerant of the existing tag, and
+# goreleaser reads that tag idempotently. Every step here is re-runnable.
 
 on:
   push:
@@ -114,6 +117,35 @@ jobs:
           # contents:write on the workflow's GITHUB_TOKEN lets us push
           # the bot bump commit (and later the tag) back to main.
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ubuntu-latest preinstalls ~25GB of toolchains this build never touches
+      # (Android SDK, CodeQL, ghcup/Haskell, dotnet, swift). Downstream this
+      # job cross-compiles 7 binaries, builds 4 buildx images with --pull, and
+      # runs cyclonedx-gomod — all on the same disk. v0.6.13 died mid-compile
+      # with "no space left on device" (mkdir /tmp/go-build.../: no space).
+      # Reclaim first: this is pure runner fat, nothing built or shipped here
+      # depends on it. Runs before setup-devtools/setup-go/buildx so every
+      # later step gets the headroom.
+      #
+      # Inline rm rather than a free-disk-space action: this repo gates its
+      # supply chain (gitleaks, trufflehog, cosign, SBOM), so a handful of rm
+      # lines beats adding a third-party action to the release path.
+      # NOTE: only /opt/hostedtoolcache/CodeQL is removed, never the whole
+      # hostedtoolcache — setup-go installs Go there later in this job.
+      - name: Free runner disk space
+        run: |
+          echo "before: $(df -h --output=avail / | tail -1) avail"
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/dotnet \
+            /usr/share/swift || true
+          # Preinstalled images only — devtools and the buildx bases are
+          # pulled fresh after this step.
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          echo "after:  $(df -h --output=avail / | tail -1) avail"
 
       # Pull the pre-baked devtools image so `make gen-code helm-sync-check`
       # (controller-gen) runs inside it instead of cold-building the devtools
