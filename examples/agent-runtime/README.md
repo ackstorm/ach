@@ -78,3 +78,26 @@ kubectl -n engineering logs deploy/achagent-gitlab-reviewer
 - Reserved `ACH_*` env vars cannot be set via `AgentProfile.spec.extraEnv`; the
   operator owns that namespace (the ek arrives via `identity.secretRef` as
   `ACH_TOKEN`).
+
+## Hardening the agent pod
+
+The agent container runs opencode, which has a shell tool. Two knobs bound what that shell can
+reach. Both live on the `AgentProfile` (reusable infra), not on the `ACHAgent`.
+
+### Sandboxed runtime (`runtimeClassName`)
+
+No dedicated field — `spec.podTemplate` is a raw strategic-merge overlay, so set it directly:
+
+```yaml
+spec:
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
+```
+
+The RuntimeClass must already exist in the cluster. An unknown name leaves the pod Pending, which
+surfaces as `WorkloadReady=False` on the ACHAgent.
+
+### Egress allowlist (`networkPolicy`)
+
+See `spec.networkPolicy` in `profile.yaml`. Omitted → no policy, unrestricted egress.

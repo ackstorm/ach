@@ -33,3 +33,8 @@ spec:
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+      # Sandboxed runtime: the agent container runs opencode, which has a shell tool.
+      # runtimeClassName puts the whole pod behind a gVisor/Kata boundary instead of a
+      # shared host kernel. Needs the RuntimeClass to exist in the cluster; an unknown
+      # name leaves the pod Pending (visible as WorkloadReady=False).
+      # runtimeClassName: gvisor

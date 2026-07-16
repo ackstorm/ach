@@ -203,6 +203,46 @@ func TestACHAgent_PodTemplateOverlay_MergesIntoDeployment(t *testing.T) {
 	}
 }
 
+// runtimeClassName needs no operator field: podTemplate is a PreserveUnknownFields
+// raw strategic-merge overlay, so a PodSpec scalar merges user-wins. This test is
+// the regression guard for that contract — sandboxed runtimes (gVisor/Kata) are an
+// operator feature only because nothing in the overlay path filters the field.
+func TestACHAgent_PodTemplateOverlay_SetsRuntimeClassName(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-rc", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-rc", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Image:       "img:test",
+			Ach:         achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model:       &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"runtimeClassName":"gvisor"}}`)},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-rc", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-rc"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-rc", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-rc", condWorkloadApplied, metav1.ConditionTrue)
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-rc")}, &dep); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	rc := dep.Spec.Template.Spec.RuntimeClassName
+	if rc == nil || *rc != "gvisor" {
+		t.Fatalf("runtimeClassName = %v, want \"gvisor\" (CRD pruning or overlay filtering regressed)", rc)
+	}
+	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("operator runAsNonRoot lost after overlay round-trip")
+	}
+}
+
 func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-ptbad", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
