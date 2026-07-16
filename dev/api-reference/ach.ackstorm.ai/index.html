@@ -4326,15 +4326,9 @@ condition is written.</p>
 </tr>
 <tr>
 <td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
-<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories on the git transport (transport=rest paired<br />with no auth typically fails because most Bitbucket Cloud REST<br />endpoints require auth even for public repos). Bitbucket Cloud<br />anonymous REST quota: 60 req/h/IP.</td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories.</td>
 <td></td>
 <td></td>
-</tr>
-<tr>
-<td><code>transport</code> <em>string</em></td>
-<td>Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed.</td>
-<td>git</td>
-<td>Enum: [git rest] <br /></td>
 </tr>
 </tbody>
 </table>
@@ -5024,15 +5018,9 @@ or the prefix listing (directory scope).</p>
 </tr>
 <tr>
 <td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
-<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. Anonymous + transport=rest is also supported<br />but subject to the provider's anonymous REST quota (GitHub:<br />60 req/h/IP) — the bug FIX_GIT.txt fixes by defaulting transport<br />to git.</td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories.</td>
 <td></td>
 <td></td>
-</tr>
-<tr>
-<td><code>transport</code> <em>string</em></td>
-<td>Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed.</td>
-<td>git</td>
-<td>Enum: [git rest] <br /></td>
 </tr>
 </tbody>
 </table>
@@ -5081,15 +5069,9 @@ or the prefix listing (directory scope).</p>
 </tr>
 <tr>
 <td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
-<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects. Anonymous + transport=rest is also supported<br />but subject to the provider's anonymous REST quota (GitLab:<br />60 req/min/IP) — the bug FIX_GIT.txt fixes by defaulting transport<br />to git.</td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects.</td>
 <td></td>
 <td></td>
-</tr>
-<tr>
-<td><code>transport</code> <em>string</em></td>
-<td>Transport selects the wire protocol used to fetch from this upstream.<br />  "git"  — use git ls-remote + git clone (no per-IP REST rate-limit;<br />           recommended; default).<br />  "rest" — use the provider's REST API. Subject to per-IP anonymous<br />           quotas (GitHub: 60/h; GitLab: 60/min; Bitbucket: 60/h).<br />           Retained as a one-release escape hatch; will be removed.</td>
-<td>git</td>
-<td>Enum: [git rest] <br /></td>
 </tr>
 </tbody>
 </table>
