@@ -20,6 +20,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Single-binary kustomize manager Pod (operator + content-service co-located, shared RWO PVC, `args:`-selected cobra subcommand).
 - Per-binary RBAC (ServiceAccount + Role + RoleBinding for operator/platform-api/forwarder/content-service).
 - Multi-component Helm chart templates (per-mode Deployments gated by values.yaml toggles + migrate Job via pre-install/upgrade hook).
+- `AgentProfile.spec.networkPolicy`: renders a per-agent default-deny **egress** NetworkPolicy (operator-added DNS rule + author-declared peers), selecting the agent pod by its operator-owned labels, owner-ref'd and pruned when the block is dropped. Omitted → no policy (unchanged behaviour). Egress-only, so `expose.service`/gateway routing is unaffected. Requires a NetworkPolicy-enforcing CNI.
+- Documented + regression-tested `runtimeClassName` (gVisor/Kata) support for agent pods via the existing `AgentProfile.spec.podTemplate` overlay — no new API field.
 
 ### Changed
 - Replaced kustomize-generated `install.yaml` monolith with explicit per-mode Helm templates so each service is independently togglable.

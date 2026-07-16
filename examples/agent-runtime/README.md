@@ -78,3 +78,75 @@ kubectl -n engineering logs deploy/achagent-gitlab-reviewer
 - Reserved `ACH_*` env vars cannot be set via `AgentProfile.spec.extraEnv`; the
   operator owns that namespace (the ek arrives via `identity.secretRef` as
   `ACH_TOKEN`).
+
+## Hardening the agent pod
+
+The agent container runs opencode, which has a shell tool. Two knobs bound what that shell can
+reach. Both live on the `AgentProfile` (reusable infra), not on the `ACHAgent`.
+
+### Sandboxed runtime (`runtimeClassName`)
+
+No dedicated field — `spec.podTemplate` is a raw strategic-merge overlay, so set it directly:
+
+```yaml
+spec:
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
+```
+
+The RuntimeClass must already exist in the cluster. An unknown name means the pod will not run;
+this surfaces as `WorkloadReady=False` on the ACHAgent.
+
+### Egress allowlist (`networkPolicy`)
+
+The harness fronts every model and MCP call through a localhost proxy that injects the `ek_`, but
+that proxy is *cooperative* — opencode's shell tool can reach anything the pod's network reaches.
+`spec.networkPolicy` makes the boundary enforced instead of assumed.
+
+```yaml
+spec:
+  networkPolicy:
+    egress:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: ach-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: ach
+        ports:
+          - protocol: TCP
+            port: 8080
+```
+
+- **Omitted** → no policy, unrestricted egress (the default, unchanged from before this feature).
+- **`networkPolicy: {}`** → deny-all egress except DNS. On an enforcing CNI this also cuts off
+  `ACH_BASE_URL` — every model and MCP call fails — while the pod stays `Ready` (kubelet probes
+  don't check egress), so `{}` can look healthy while doing nothing. It's trivially recoverable
+  though: dropping the block prunes the policy immediately, no pod restart needed.
+- The operator always prepends a DNS rule (UDP+TCP port 53, any destination). Without it a
+  default-deny policy breaks name resolution, and the failure looks like a DNS bug rather than a
+  policy denial. Consequence: DNS-tunnel exfiltration is not covered by this policy.
+- **Egress only.** `policyTypes` never includes `Ingress`, so `expose.service` and gateway→agent
+  routing are unaffected.
+- Rules are **declared, not derived**. NetworkPolicy has no FQDN peer type and `ach.baseUrl` is a
+  URL, so the operator cannot compute the ACH peer for you. Use a `podSelector` +
+  `namespaceSelector` for in-cluster ACH, or an `ipBlock` CIDR for an external endpoint.
+- **Declare every peer the harness dials directly, not just ACH.** The localhost proxy covers
+  model/MCP/A2A egress via `ACH_BASE_URL`, but the harness also dials some endpoints straight
+  from the pod:
+  - **redis**, if any `channels[].type: queue`, or if the stats sink (`ACH_STATS_REDIS_URL`) is
+    configured
+  - the **memory backend**, if `memory.hindsight.endpoint` is set
+  Miss one and it won't error — memory and stats are fail-open by design, so the agent just
+  degrades silently (no session recall, no metrics) instead of failing loudly.
+  A2A peers need no rule of their own: they arrive from hydration and are dialled through
+  `ACH_BASE_URL` like model and MCP traffic.
+- **`networkPolicy` lives on the shared `AgentProfile`, but `memory`/`channels` live on the
+  `ACHAgent`.** A profile shared by several agents needs the *union* of all their peers, which
+  over-grants egress to agents that don't need every peer.
+- **Requires a CNI that enforces NetworkPolicy** (Calico, Cilium, …). On a CNI that ignores it, the
+  object exists and enforces nothing — verify in your cluster before relying on it.
+- Editing the block does **not** roll the pod (the policy is not a pod-template input); the new
+  rules take effect as soon as the CNI picks the object up.

@@ -16,11 +16,13 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -199,6 +201,46 @@ func TestACHAgent_PodTemplateOverlay_MergesIntoDeployment(t *testing.T) {
 		t.Fatalf("pod securityContext = %+v, want fsGroup 1000 merged", sc)
 	}
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("operator runAsNonRoot lost after overlay round-trip")
+	}
+}
+
+// runtimeClassName needs no operator field: podTemplate is a PreserveUnknownFields
+// raw strategic-merge overlay, so a PodSpec scalar merges user-wins. This test is
+// the regression guard for that contract — sandboxed runtimes (gVisor/Kata) are an
+// operator feature only because nothing in the overlay path filters the field.
+func TestACHAgent_PodTemplateOverlay_SetsRuntimeClassName(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-rc", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-rc", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Image:       "img:test",
+			Ach:         achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model:       &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"runtimeClassName":"gvisor"}}`)},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-rc", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-rc"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-rc", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-rc", condWorkloadApplied, metav1.ConditionTrue)
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-rc")}, &dep); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	rc := dep.Spec.Template.Spec.RuntimeClassName
+	if rc == nil || *rc != "gvisor" {
+		t.Fatalf("runtimeClassName = %v, want \"gvisor\" (CRD pruning or overlay filtering regressed)", rc)
+	}
+	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Error("operator runAsNonRoot lost after overlay round-trip")
 	}
 }
@@ -437,4 +479,74 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-nokey", Namespace: WatchNamespace}, Data: map[string][]byte{"other": []byte("x")}})
 	mustApply(t, ctx, memAgent("aa-mem-nokey", "hs-nokey"))
 	waitAgentCond(t, ctx, "aa-mem-nokey", condChannelSecretsResolved, metav1.ConditionFalse)
+}
+
+// Renders on presence, prunes on removal. The flip edits the AgentProfile, so this also
+// exercises the profile→agents reverse-enqueue watch.
+func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-np", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	tcp := corev1.ProtocolTCP
+	port := intstr.FromInt(443)
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-np", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Image: "img:test",
+			Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			NetworkPolicy: &achv1alpha1.NetworkPolicySpec{
+				Egress: []networkingv1.NetworkPolicyEgressRule{{
+					To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/8"}}},
+					Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+				}},
+			},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-np", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-np"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-np", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-np", condWorkloadApplied, metav1.ConditionTrue)
+
+	npKey := types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-np")}
+	var np networkingv1.NetworkPolicy
+	if !Eventually(func() bool { return k8sClient.Get(ctx, npKey, &np) == nil }, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("NetworkPolicy must exist when the profile declares networkPolicy")
+	}
+	if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != networkingv1.PolicyTypeEgress {
+		t.Errorf("policyTypes = %v, want [Egress] only", np.Spec.PolicyTypes)
+	}
+	if np.Spec.PodSelector.MatchLabels[agentLabelKey] != "aa-np" {
+		t.Errorf("podSelector = %v, want %s=aa-np", np.Spec.PodSelector.MatchLabels, agentLabelKey)
+	}
+	if len(np.Spec.Egress) != 2 {
+		t.Fatalf("egress rules = %d, want 2 (dns + profile rule)", len(np.Spec.Egress))
+	}
+	if len(np.OwnerReferences) == 0 {
+		t.Error("NetworkPolicy must carry an owner ref (GC on ACHAgent delete)")
+	} else if or := np.OwnerReferences[0]; or.Name != "aa-np" || or.Kind != "ACHAgent" {
+		t.Errorf("owner ref = %s/%s, want ACHAgent/aa-np", or.Kind, or.Name)
+	}
+
+	// Remove the block from the profile — the policy must be pruned (owner-ref GC only
+	// fires on ACHAgent delete, not when the owner stops desiring the child).
+	var prof achv1alpha1.AgentProfile
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-prof-np"}, &prof); err != nil {
+		t.Fatalf("get profile: %v", err)
+	}
+	prof.Spec.NetworkPolicy = nil
+	if err := k8sClient.Update(ctx, &prof); err != nil {
+		t.Fatalf("remove networkPolicy: %v", err)
+	}
+
+	if !Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, npKey, &networkingv1.NetworkPolicy{}))
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("NetworkPolicy must be pruned once the profile drops the block")
+	}
 }

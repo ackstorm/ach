@@ -29,6 +29,11 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# ACHAgent egress policy (AgentProfile.spec.networkPolicy). Rendered per agent,
+# pruned when the profile drops the block.
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
   - artifacts
