@@ -37,10 +37,11 @@ spec:
   # probes ignore egress. Recoverable instantly though: drop the block, no pod restart.
   #
   # Also declare peers for anything the harness dials directly (not via the ACH forwarder
-  # above): redis (queue channel / stats sink), the memory backend
-  # (memory.hindsight.endpoint), and A2A peer endpoints. Miss one and it degrades silently —
-  # memory/stats are fail-open. Note this block is per-profile while memory/channels are
-  # per-agent, so a shared profile needs the union of every agent's peers.
+  # above): redis (queue channel / stats sink) and the memory backend
+  # (memory.hindsight.endpoint). Miss one and it degrades silently — memory/stats are
+  # fail-open. A2A peers need no rule: they are dialled through ACH_BASE_URL. Note this
+  # block is per-profile while memory/channels are per-agent, so a shared profile needs
+  # the union of every agent's peers.
   #
   # Requires a CNI that enforces NetworkPolicy (Calico, Cilium, ...). On a CNI that ignores
   # it the object is created and enforces nothing — verify before relying on it.

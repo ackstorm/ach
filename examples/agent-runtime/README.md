@@ -139,9 +139,10 @@ spec:
   - **redis**, if any `channels[].type: queue`, or if the stats sink (`ACH_STATS_REDIS_URL`) is
     configured
   - the **memory backend**, if `memory.hindsight.endpoint` is set
-  - **A2A peer** endpoints, for agents with a2a channels/peers
   Miss one and it won't error — memory and stats are fail-open by design, so the agent just
   degrades silently (no session recall, no metrics) instead of failing loudly.
+  A2A peers need no rule of their own: they arrive from hydration and are dialled through
+  `ACH_BASE_URL` like model and MCP traffic.
 - **`networkPolicy` lives on the shared `AgentProfile`, but `memory`/`channels` live on the
   `ACHAgent`.** A profile shared by several agents needs the *union* of all their peers, which
   over-grants egress to agents that don't need every peer.
