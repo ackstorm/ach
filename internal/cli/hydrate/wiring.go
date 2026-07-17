@@ -1673,8 +1673,18 @@ func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
 			strings.Count(dirs[j], string(os.PathSeparator))
 	})
 	for _, d := range dirs {
-		// os.Remove returns *os.PathError wrapping ENOTEMPTY for
-		// non-empty directories; we silently swallow per D-16.
+		// Best-effort by design (D-16): EVERY os.Remove error is discarded, not
+		// just the expected ENOTEMPTY for a non-empty directory — EACCES, EROFS
+		// and EBUSY are swallowed identically. (A previous comment here claimed
+		// only ENOTEMPTY was swallowed; no such type check ever existed.)
+		//
+		// That is acceptable because the worst case is a leftover empty
+		// directory: this is cleanup, the caller has already committed the
+		// hydrate, and pruneEmptyDirs has no error return by design — both
+		// callers (wiring.go step 6, localpkg/manager/commit.go) treat pruning
+		// as advisory. If a failed prune ever needs to be actionable, the
+		// signature has to change first; narrowing the check alone would only
+		// move the silence.
 		_ = os.Remove(d)
 	}
 }

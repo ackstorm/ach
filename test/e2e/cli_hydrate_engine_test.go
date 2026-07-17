@@ -63,6 +63,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1123,7 +1124,7 @@ func phase7AssertMaliciousFixtureRejected(t *testing.T, fixturePath string) {
 	}
 	// No files under output (partial-output-discarded invariant per
 	// 07-W2-02 staging layer).
-	if entries := phase7CountFiles(output); entries > 0 {
+	if entries := phase7CountFiles(t, output); entries > 0 {
 		t.Errorf("sc4 malicious fixture %s: %d files written under %s (want 0)",
 			filepath.Base(fixturePath), entries, output)
 	}
@@ -1135,11 +1136,25 @@ func phase7AssertMaliciousFixtureRejected(t *testing.T, fixturePath string) {
 // — they are not extraction outputs. A successful SAFE-01 rejection
 // fires before any adapter file is materialized, so .claude/.mcp.json
 // and friends should NOT exist; only .ach/ entries (if any) survive.
-func phase7CountFiles(root string) int {
+// phase7CountFiles counts files under root, ignoring the .ach state dir.
+//
+// Callers assert the partial-output-discarded invariant (SAFE-01 / SAFE-03) by
+// requiring the result to be 0, so a walk error MUST NOT be swallowed: it would
+// leave n at 0 and report "no files written — defense held" for a walk that
+// never ran. The closure previously did `if err != nil { return nil }`, which
+// made a broken walk indistinguishable from a working bomb cap.
+//
+// A missing root is NOT an error: discarding partial output legitimately leaves
+// nothing behind, which is 0 files.
+func phase7CountFiles(t *testing.T, root string) int {
+	t.Helper()
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return 0
+	}
 	var n int
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if info.IsDir() {
 			return nil
@@ -1150,7 +1165,9 @@ func phase7CountFiles(root string) int {
 		}
 		n++
 		return nil
-	})
+	}); err != nil {
+		t.Fatalf("phase7CountFiles: walk %s: %v — cannot assert the partial-output-discarded invariant", root, err)
+	}
 	return n
 }
 
@@ -1201,7 +1218,7 @@ func testPhase7Sc4SafeExtractBomb(t *testing.T) {
 		t.Errorf("sc4 bomb: exit 0 (want non-zero — SAFE-03 bomb cap)\n"+
 			"stdout=%s\nstderr=%s", stdout, stderr)
 	}
-	if entries := phase7CountFiles(output); entries > 0 {
+	if entries := phase7CountFiles(t, output); entries > 0 {
 		t.Errorf("sc4 bomb: %d files written under %s (want 0 — partial output discarded)",
 			entries, output)
 	}
