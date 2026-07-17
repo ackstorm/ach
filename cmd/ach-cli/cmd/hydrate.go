@@ -347,10 +347,17 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		return err
 	}
 
-	// Phase 7 scope-flag mutual exclusion. Applies in both dispatch
-	// modes — a --raw + --include-runtime combo is incoherent (no
-	// runtime in the raw response surface), but rejecting both
-	// together at the cobra layer keeps the failure mode consistent.
+	// Phase 7 scope-flag mutual exclusion: --include-runtime + --only-runtime,
+	// and --wait + --lock-timeout. Both dispatch modes run this.
+	//
+	// NOT covered: --raw + engine flags. A --raw + --include-runtime combo is
+	// incoherent (no runtime in the raw response surface), but it is NOT
+	// rejected — runHydrateRaw takes no includeRuntime param, so the flag is
+	// silently ignored on the raw path. Deliberate (#85): --raw is hidden
+	// (MarkHidden, D-04) and exists only as the frozen Phase 6 byte-for-byte
+	// golden-diff anchor; the only callers are e2e tests, none of which pass an
+	// engine flag alongside it. A guard here would be unreachable, and the raw
+	// path is deliberately frozen. If --raw is ever un-hidden, add the check.
 	if err := assertScopeFlags(in); err != nil {
 		return err
 	}
