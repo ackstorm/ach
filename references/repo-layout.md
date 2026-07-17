@@ -35,7 +35,8 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 │   │                          (templates/gateway-deployment.yaml = ach-gateway
 │   │                           Deployment+Service; the prod edge router)
-├── deploy/kustomize/        ← raw kustomize bundle (install.yaml source)
+│                            (deploy/kustomize/ deleted 2026-07-17 — Helm is the
+│                             only supported install; see ach-project-spec.md)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
 ├── examples/                ← CURATED user-facing samples + golden hydrate.json
 │   │                          (independent of the synced fixtures below; NOT

@@ -361,7 +361,6 @@ release-bump: ## Internal: bump version across all manifests. Used by release.ym
 	@sed -i -E 's/^appVersion: .*/appVersion: v$(VERSION)/' deploy/helm/ach/Chart.yaml
 	@sed -i -E 's|^([[:space:]]+)tag: v.*|\1tag: v$(VERSION)|' deploy/helm/ach/values.yaml
 	@sed -i -E 's|^([[:space:]]+)newTag: v.*|\1newTag: v$(VERSION)|' config/manager/kustomization.yaml
-	@sed -i -E 's|^([[:space:]]+)newTag: v.*|\1newTag: v$(VERSION)|' deploy/kustomize/kustomization.yaml
 	@echo "Manifests bumped to v$(VERSION)."
 
 .PHONY: release-cut
