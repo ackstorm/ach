@@ -81,9 +81,13 @@ func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 	case KindPrompt:
 		return 0
 	}
-	// Unknown kind — fall through to the most-restrictive plugin cap so a
-	// future caller passing a stale identifier cannot accidentally bypass
-	// bomb defense. The Extract entry point validates the kind separately.
+	// Unknown kind — fall through to the plugin cap. NOTE: this is not the
+	// most-restrictive cap, despite what this comment used to claim; the
+	// defaults are skill 50 MiB < plugin 200 MiB < artifact 500 MiB, so
+	// skill is the tightest. Kept as plugin because the Extract entry point
+	// validates the kind separately, making this branch unreachable for any
+	// caller that goes through it — it is a backstop, not the enforcement.
+	// If this ever becomes reachable, use MaxExtractedSkillBytes instead.
 	return l.MaxExtractedPluginBytes
 }
 

@@ -297,10 +297,23 @@ func validateContentName(name string) error {
 }
 
 // classifyDownloadURL parses `/content/{kind}/{name}` and returns the
-// matching ResourceKind + name. Defaults to KindArtifact on parse
-// failure (the most restrictive bomb-defense cap so a malformed URL
-// cannot bypass enforcement). Falls back to fallbackName when the
-// URL has no /content/.../name segment.
+// matching ResourceKind + name. Defaults to KindArtifact on parse failure,
+// and falls back to fallbackName when the URL has no /content/.../name
+// segment.
+//
+// The KindArtifact default is NOT a bomb-defense measure — a previous
+// version of this comment claimed it was "the most restrictive cap", which
+// is backwards: the defaults are skill 50 MiB < plugin 200 MiB < artifact
+// 500 MiB (extract/limits.go), so artifact is the LOOSEST cap, not the
+// tightest. What actually stops a malformed URL from extracting under an
+// over-permissive cap is that `kind` also selects the fetch URL
+// (FetchContent -> GET /content/{kind}/{name}), so a misclassified resource
+// 404s instead of extracting at all.
+//
+// That coupling is load-bearing: if the fetch path is ever decoupled from
+// the cap lookup, this default becomes a real bypass. See #83 — the caller
+// (commit.go) already holds the typed diffTarget.Kind and should thread it
+// through rather than have this function guess from a string.
 func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind, string) {
 	if downloadURL == "" {
 		return extract.KindArtifact, fallbackName
