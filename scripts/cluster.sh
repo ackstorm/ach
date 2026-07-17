@@ -266,9 +266,21 @@ reconcile_litellm() {
     --from-file=auth_user_map.py="${CLUSTER_DIR}/01-base/auth_user_map.py" \
     -o yaml --dry-run=client | kubectl apply -f -
 
+  # issue #89: the ConfigMap above has a static name and is created OUTSIDE the
+  # chart, so helm sees no podspec change when auth_user_map.py's CONTENT changes
+  # and never rolls the pod. The chart's own checksum/config annotation only
+  # covers .Values.proxyConfigMap, not this one. Worse, the mount is a subPath
+  # (litellm.values.yaml) — subPath volume mounts never receive ConfigMap updates
+  # at all, not even eventually — so a pod roll is the ONLY way the new script
+  # reaches the container. Feed the hash in as a podAnnotation: helm then rolls
+  # on content change (and only on content change), and --atomic --wait already
+  # gates readiness below.
+  local auth_sha; auth_sha="$(sha256sum "${CLUSTER_DIR}/01-base/auth_user_map.py" | cut -d' ' -f1)"
+
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
     --values "${CLUSTER_DIR}/01-base/litellm.values.yaml" \
+    --set-string "podAnnotations.checksum/ackstorm-litellm-extras=${auth_sha}" \
     --atomic --wait --timeout 5m
 
   # helm --wait covers Deployment readiness + PreSync hook completion,
