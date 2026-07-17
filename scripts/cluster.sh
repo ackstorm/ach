@@ -593,22 +593,35 @@ verify_all() {
   kubectl -n ach-system rollout status deploy/ach-mock-model   --timeout="${to}"
   kubectl -n ach-system rollout status deploy/ach-mock-a2a     --timeout="${to}"
   kubectl -n ach-system wait --for=condition=Ready           --timeout="${to}" litellmconnection/default
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/claude-code-system-prompt
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/openclaw-templates
+  # Gate external refs on Synced, NOT SourceReachable. Per the condition matrix
+  # (internal/controller/ach/conditions.go reasonToConditionStates),
+  # SourceReachable answers "did we reach the upstream?" — it stays TRUE on
+  # post-fetch content failures (UpstreamInvalid / PluginTooLarge: "got bytes,
+  # content bad"). Only Synced=True means the content actually materialized and
+  # status.lastSuccessfulRefresh is stamped, which is what the e2e suite needs:
+  # tests hydrate this content through the Content Service.
+  #
+  # Gating on SourceReachable let a failed artifact pass verify_all — cluster-up
+  # reported success while /content/artifact/<name> 404'd, surfacing 7 minutes
+  # later as unrelated-looking hydrate failures across the whole suite instead of
+  # a loud failure here with the operator's reason attached.
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/claude-code-system-prompt
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/openclaw-templates
   # SkillMarketplace (convention discovery, no marketplace.json) + the two
   # standalone Skills pulled from the same monorepo via spec.github.path. The
   # demo Environment (below) references pdf, docx, and pdf@anthropic-skills, so
   # these must be content-present before demo reaches Available=True.
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skillmarketplace/anthropic-skills
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" skill/pdf
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" skill/docx
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skill/pdf
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skill/docx
   for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
     wait_bip_reconciled "${b}" "${to}"
   done
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo
-  # Phase 5 content-service exercise matrix — valid half healthy.
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" prompt/prompt-valid
-  kubectl -n ach-system wait --for=condition=SourceReachable --timeout="${to}" artifact/artifact-valid
+  # Phase 5 content-service exercise matrix — valid half healthy (Synced: the
+  # content-service exercise reads the materialized bytes, see the note above).
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/prompt-valid
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/artifact-valid
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
   # Phase 5 SC2 unauthorized_team negative fixture. authorizedTeams names a
   # sentinel team absent from LiteLLM → AccessGroupSynced=False → Available=False
@@ -621,6 +634,13 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=ExecutionResourcesResolved --timeout="${to}" environment/env-team-denied
   # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
   # has fetched + failed). kubectl wait supports condition=<type>=false.
+  #
+  # These two stay on SourceReachable (=false) deliberately — do NOT "align"
+  # them with the Synced gates above. These fixtures point at a nonexistent
+  # upstream, so the assertion we want is specifically "the upstream was
+  # UNREACHABLE". Synced=false would be weaker: it is also false for a reachable
+  # upstream whose content was merely bad, so the fixture could rot into
+  # passing for the wrong reason.
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
   # Stage 06 agent-runtime — operator OUTPUT gate. WorkloadApplied=True (NOT
