@@ -785,8 +785,9 @@ e2e-full: ## cluster-up → e2e-run (cluster KEPT up; run `make cluster-down` to
 	# No trap/teardown: the cluster is intentionally left running after the
 	# suite (pass OR fail) so a red run can be diagnosed live. Reclaim with
 	# `make cluster-down`. For a clean-room run: `make cluster-down && make
-	# e2e-full`. NOTE: CI does NOT call this target — .github/workflows/ci.yml
-	# runs cluster-up / e2e-run / cluster-down as separate steps with an
-	# `if: always()` teardown, so CI still never leaks a cluster.
+	# e2e-full`. NOTE: NO workflow calls this target, or runs e2e at all —
+	# ci.yml dropped e2e (#110) and nightly.yml (which did run cluster-up /
+	# e2e-run / cluster-down as separate steps) was deleted 2026-07-17. This
+	# target is the only e2e path there is; nothing runs it but a human.
 	$(MAKE) cluster-up
 	$(MAKE) e2e-run
