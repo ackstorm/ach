@@ -1,7 +1,7 @@
 apiVersion: v2
 name: ach
-version: 0.6.14
-appVersion: v0.6.14
+version: 0.6.15
+appVersion: v0.6.15
 kubeVersion: ">= 1.27.0-0"
 description: >-
   ACH — Agent Capability Hub. Kubernetes operator + platform API + forwarder
