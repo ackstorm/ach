@@ -261,13 +261,13 @@ _test-smoke-idempotency: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 60s -run TestIdempotencyNoMutationSteadyState ./internal/controller/...
 
 .PHONY: test-smoke-idempotency-long
-test-smoke-idempotency-long: ## Real 35-min AC-R1 idempotency test (nightly).
+test-smoke-idempotency-long: ## Real 35-min AC-R1 idempotency test (local-only, on demand).
 	$(call container_target,_test-smoke-idempotency-long)
 _test-smoke-idempotency-long: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 40m -tags=longidempotency -run TestIdempotency35MinReal ./internal/controller/...
 
 .PHONY: test-leak-soak
-test-leak-soak: ## REL-03 1000-reconcile leak harness (nightly).
+test-leak-soak: ## REL-03 1000-reconcile leak harness (local-only, on demand).
 	$(call container_target,_test-leak-soak)
 _test-leak-soak: gen-manifests gen-code fmt vet setup-envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)" go test -count=1 -timeout 5m -tags=longidempotency -run TestLeakHarness_1000Reconciles ./internal/controller/...
@@ -330,7 +330,7 @@ _qa-fuzz-short:
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_SHORT) ./internal/normalize/...;    else echo "qa-fuzz-short: skip — ./internal/normalize absent";    fi
 
 .PHONY: qa-fuzz-long
-qa-fuzz-long: ## Go fuzz targets, 10-minute budget each (nightly).
+qa-fuzz-long: ## Go fuzz targets, 10-minute budget each (local-only, on demand).
 	$(call container_target,_qa-fuzz-long)
 _qa-fuzz-long:
 	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "qa-fuzz-long: skip — ./internal/substitution absent";  fi

@@ -8,7 +8,7 @@
 ```
 ach/
 ├── .github/                 ← alitellm-graft; reconciled for ach
-│   ├── workflows/           CI / release / docs / govulncheck / labeler / nightly
+│   ├── workflows/           CI / release / docs / govulncheck / labeler
 │   ├── CODEOWNERS, dependabot.yml, labeler.yml, ISSUE_TEMPLATE/, PR template
 ├── .goreleaser.yml          ← stable release config (single-binary)
 ├── .goreleaser.prerelease.yml   ← prerelease (alpha/beta/rc tags)

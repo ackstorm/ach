@@ -222,13 +222,14 @@ independent collections.)
 | pull_request → main | ✓ | ✓ | ✓ | ✓ |
 
 `ci.yml` is **PR-only** — `pull_request → main` is the single trigger, no
-`push:` trigger. Release commits (`chore(release): v*`) → `release.yml`; nightly
-→ `nightly.yml`. **E2E is NOT a CI gate** — it was removed from `ci.yml`; run
-`make e2e-full` locally before merging any change touching
+`push:` trigger. Release commits (`chore(release): v*`) → `release.yml`.
+**E2E, soak, leak, and fuzz-long run NOWHERE in CI** — `nightly.yml` was deleted
+2026-07-17 (unused). Their `make` targets still work; they are now **local-only,
+on demand**. Run `make e2e-full` locally before merging any change touching
 `internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
-`deploy/helm/ach/`, or `test/e2e/` (the burden stays local — see "E2E debug
-loop" — with `nightly.yml`'s `e2e` job as a 24h backstop on `main`, not a
-merge gate). Docs-only PRs
+`deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop". There is **no
+automated backstop on `main`**: nothing catches an e2e regression except a
+human running the suite. Docs-only PRs
 (paths-ignore `**/*.md`, `docs/**`, `references/**`, `FIX*.txt`, `LICENSE`,
 `NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml`. **⚠ PR-only is a real gate
 only if branch protection on `main` is enabled** (needs a paid plan / public

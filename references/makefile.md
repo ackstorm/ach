@@ -192,8 +192,8 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `test-unit-pkg PKG=…` | A | Unit tests for one package. |
 | `test-envtest-pkg PKG=… [FOCUS=…] [TIMEOUT=…]` | A | envtest for one package. |
 | `test-smoke-idempotency` | A | Accelerated AC-R1 idempotency smoke (10s). |
-| `test-smoke-idempotency-long` | A | Real 35-min AC-R1 idempotency (nightly). |
-| `test-leak-soak` | A | REL-03 1000-reconcile leak harness (nightly). |
+| `test-smoke-idempotency-long` | A | Real 35-min AC-R1 idempotency (local-only, on demand). |
+| `test-leak-soak` | A | REL-03 1000-reconcile leak harness (local-only, on demand). |
 
 ### E2E (`e2e-`)
 | Target | Ctx | Description |
@@ -211,7 +211,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs BASE_REF. |
 | `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 16). |
 | `qa-fuzz-short` | A | Go fuzz targets, 60s budget each. |
-| `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (nightly). |
+| `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (local-only, on demand). |
 | `fmt-check` | A | Fail if any Go file is not gofmt-clean (no mutation). |
 
 ### Cluster (`cluster-`)

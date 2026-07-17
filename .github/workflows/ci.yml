@@ -27,7 +27,8 @@ on:
 
 # main is PR-only. Post-merge content equals PR head content, so re-running
 # on push main is redundant. Release commits are handled by release.yml.
-# Nightly soak/leak/fuzz lives in nightly.yml.
+# Soak/leak/fuzz-long/e2e run in NO workflow — nightly.yml was deleted
+# 2026-07-17 (unused). They are local-only `make` targets now.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
