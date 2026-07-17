@@ -65,8 +65,11 @@ spec:
                     type: string
                 type: object
               capability:
-                description: 'CapabilitySpec is the per-agent capability block (config:
-                  capability{type:ach,ach.environment,filter}).'
+                description: |-
+                  Capability is optional: both of its fields are optional, so the block
+                  validates nothing on its own. Render always emits a capability block
+                  (the harness schema requires one) — capability.ach.baseUrl comes from
+                  ResolveBaseURL, never from here.
                 properties:
                   environment:
                     description: |-
@@ -668,7 +671,6 @@ spec:
                 - system
                 type: object
             required:
-            - capability
             - channels
             - identity
             - profileRef

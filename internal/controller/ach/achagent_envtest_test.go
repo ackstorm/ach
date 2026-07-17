@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -549,4 +550,35 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 	}, 10*time.Second, 200*time.Millisecond) {
 		t.Fatal("NetworkPolicy must be pruned once the profile drops the block")
 	}
+}
+
+// TestACHAgent_CapabilityOptional proves spec.capability is optional at the API
+// server: a manifest that omits the key entirely still applies and reconciles.
+// The typed client cannot express this — CapabilitySpec is a non-pointer struct,
+// so it always serializes as `capability: {}`; only unstructured omits the key.
+func TestACHAgent_CapabilityOptional(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-nocap", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nocap", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+
+	agent := func(name string, spec map[string]any) *unstructured.Unstructured {
+		spec["profileRef"] = map[string]any{"name": "aa-prof-nocap"}
+		spec["identity"] = map[string]any{"secretRef": map[string]any{"name": "aa-ek-nocap", "key": "ek"}}
+		spec["channels"] = []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}}
+		u := &unstructured.Unstructured{Object: map[string]any{"spec": spec}}
+		u.SetGroupVersionKind(achv1alpha1.GroupVersion.WithKind("ACHAgent"))
+		u.SetNamespace(WatchNamespace)
+		u.SetName(name)
+		return u
+	}
+
+	// Key absent → accepted, and render still emits a capability block.
+	mustApply(t, ctx, agent("aa-nocap", map[string]any{}))
+	waitAgentCond(t, ctx, "aa-nocap", condWorkloadApplied, metav1.ConditionTrue)
+	assertConfigMapValid(t, ctx, agentResourceName("aa-nocap"))
+
+	// Bare `capability:` in YAML → explicit null. The API server treats null as
+	// unset for an optional field, so this is the same as omitting the key.
+	mustApply(t, ctx, agent("aa-nullcap", map[string]any{"capability": nil}))
+	waitAgentCond(t, ctx, "aa-nullcap", condWorkloadApplied, metav1.ConditionTrue)
 }

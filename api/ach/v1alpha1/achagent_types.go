@@ -359,8 +359,12 @@ type ACHAgentSpec struct {
 	ProfileRef LocalObjectRef `json:"profileRef"`
 	// +kubebuilder:validation:Required
 	Identity IdentitySpec `json:"identity"`
-	// +kubebuilder:validation:Required
-	Capability CapabilitySpec `json:"capability"`
+	// Capability is optional: both of its fields are optional, so the block
+	// validates nothing on its own. Render always emits a capability block
+	// (the harness schema requires one) — capability.ach.baseUrl comes from
+	// ResolveBaseURL, never from here.
+	// +optional
+	Capability CapabilitySpec `json:"capability,omitempty"`
 	// Model overrides the profile's default model.
 	// +optional
 	Model *ModelSpec `json:"model,omitempty"`

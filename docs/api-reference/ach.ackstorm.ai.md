@@ -124,7 +124,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `profileRef` _[LocalObjectRef](#localobjectref)_ |  |  | Required: \{\} <br /> |
 | `identity` _[IdentitySpec](#identityspec)_ |  |  | Required: \{\} <br /> |
-| `capability` _[CapabilitySpec](#capabilityspec)_ |  |  | Required: \{\} <br /> |
+| `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />ResolveBaseURL, never from here. |  |  |
 | `model` _[ModelSpec](#modelspec)_ | Model overrides the profile's default model. |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ | Limits overrides the profile's default limits. |  |  |
 | `ach` _[AchEndpointSpec](#achendpointspec)_ | Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).<br />Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL. |  |  |
