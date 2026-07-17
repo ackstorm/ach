@@ -439,14 +439,36 @@ func SpillAndHashXxh3(achDir string, body io.Reader) (path, xxh3 string, err err
 		return "", "", err
 	}
 	p := filepath.Join(dir, "source.bin")
-	if _, err := spillAndHashSha256(body, p); err != nil {
+	sum, err := spillAndHashXxh3(body, p)
+	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", "", err
 	}
-	sum, err := hash.HashFile(p)
-	if err != nil {
-		_ = os.RemoveAll(dir)
-		return "", "", fmt.Errorf("extract: xxh3 staged source: %w", err)
-	}
 	return p, sum, nil
+}
+
+// spillAndHashXxh3 is the xxh3 twin of spillAndHashSha256: it streams body to
+// sourcePath and digests it in the SAME pass via io.MultiWriter, returning the
+// canonical "xxh3:<32hex>".
+//
+// It exists so SpillAndHashXxh3 does not have to spill with the sha256 helper
+// (discarding a hash it never needed) and then re-open and re-read the whole
+// file for the xxh3 — two wasted streams per re-hydrate, on files that may be
+// hundreds of MiB. spillAndHashSha256 keeps its own caller: StageAndPublish
+// genuinely uses that sha256 for the disk-write short-circuit (D-15).
+func spillAndHashXxh3(body io.Reader, sourcePath string) (string, error) {
+	out, err := os.OpenFile(sourcePath,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("extract: create source.bin: %w", err)
+	}
+	h := hash.New()
+	if _, copyErr := io.Copy(io.MultiWriter(out, h), body); copyErr != nil {
+		_ = out.Close()
+		return "", fmt.Errorf("extract: spill body: %w", copyErr)
+	}
+	if err := out.Close(); err != nil {
+		return "", fmt.Errorf("extract: close source.bin: %w", err)
+	}
+	return h.Sum(), nil
 }

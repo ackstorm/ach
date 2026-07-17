@@ -29,12 +29,37 @@ const prefix = "xxh3:"
 // resource. Silently returning a digest computed from partial input
 // would lie about content.
 func Hash(r io.Reader) (string, error) {
-	h := xxh3.New()
+	h := New()
 	if _, err := io.Copy(h, r); err != nil {
 		return "", fmt.Errorf("hash: read input: %w", err)
 	}
-	sum := h.Sum128().Bytes()
-	return prefix + hex.EncodeToString(sum[:]), nil
+	return h.Sum(), nil
+}
+
+// Writer is a streaming xxh3 hasher for callers that are ALREADY moving the
+// bytes for another reason — typically an io.MultiWriter that spills a body to
+// disk. Hashing in that same pass avoids re-opening and re-reading the file
+// just to digest it.
+//
+// It exists so the canonical "xxh3:<32hex>" format stays owned by this package:
+// prefix is unexported precisely because the state engine matches on it
+// byte-for-byte, so callers must not assemble the digest string themselves.
+//
+// Sum may be called once the writes are done; it does not close anything.
+type Writer struct{ h *xxh3.Hasher }
+
+// New returns a Writer ready to accept bytes.
+func New() *Writer { return &Writer{h: xxh3.New()} }
+
+// Write implements io.Writer. The underlying xxh3 hasher never errors.
+func (w *Writer) Write(p []byte) (int, error) { return w.h.Write(p) }
+
+// Sum returns the canonical "xxh3:<32-char-lowercase-hex>" digest of every byte
+// written so far — identical to what Hash/HashBytes/HashFile produce for the
+// same content.
+func (w *Writer) Sum() string {
+	sum := w.h.Sum128().Bytes()
+	return prefix + hex.EncodeToString(sum[:])
 }
 
 // HashBytes is the in-memory convenience form of Hash. It produces the
