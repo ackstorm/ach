@@ -126,10 +126,15 @@ func testPhase5SC1ContentSendfile(t *testing.T) {
 
 	pk, _, env := seedPhase5Fixtures(t, ctx)
 
-	// Sendfile syscall assertion (live via strace under kubectl debug).
-	if !straceCSSendfile(t, ctx, "/content/prompt/prompt-valid", pk, env) {
-		t.Fatalf("expected ≥1 sendfile/sendfile64 syscall during CS GET — none observed (CS-06 zero-copy violated)")
-	}
+	// Sendfile syscall assertion (live via strace under kubectl debug). Run as a
+	// subtest: straceCSSendfile t.Skip's when the assertion cannot be performed
+	// (opt-out unset / no kubectl-debug infra), and a bare skip here would
+	// swallow the CS-06 header + Range/If-* assertions below, which do run.
+	t.Run("sendfile_syscall", func(t *testing.T) {
+		if !straceCSSendfile(t, ctx, "/content/prompt/prompt-valid", pk, env) {
+			t.Fatalf("expected ≥1 sendfile/sendfile64 syscall during CS GET — none observed (CS-06 zero-copy violated)")
+		}
+	})
 
 	csURL := strings.TrimRight(envOrSkip(t, "ACH_CONTENT_SERVICE_URL"), "/")
 	baseReq := func(t *testing.T, extraHeaders map[string]string) *http.Response {

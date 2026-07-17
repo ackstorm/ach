@@ -122,16 +122,22 @@ func seedPhase5Fixtures(t *testing.T, _ context.Context) (pk, ek, env string) {
 // shared PID namespace via `--target=content-service` so PID 1 from
 // the CS container is reachable.
 //
-// Returns false on any non-recoverable error; the caller t.Fatal's
-// on false so that callers don't silently pass a missing-sendfile
-// assertion as success.
+// Returns false only when strace ran and observed no sendfile; the caller
+// t.Fatal's on false. When the assertion cannot be performed at all (opt-out
+// unset, or the kubectl-debug infra is unavailable) this t.Skip's rather than
+// returning true — returning true reported "verified" for a check that never
+// ran. Call it from a subtest so the skip does not swallow the caller's
+// remaining assertions.
 func straceCSSendfile(t *testing.T, ctx context.Context, contentPath, pk, env string) bool {
 	t.Helper()
-	// Skip path when strace ephemeral-container infra isn't available
-	// (kubectl debug requires v1.23+, defaults may vary in kind images).
+	// Opt-in gate: strace needs an ephemeral debug container (kubectl debug
+	// v1.23+, and the kind image must allow it). t.Skip (not `return true`) so
+	// an unset var reports NOT VERIFIED instead of a green sendfile assertion —
+	// ACH_E2E_PHASE5_STRACE is currently set nowhere in CI, so `return true`
+	// meant this check had never actually run. Integration coverage for the
+	// same discipline: Plan 05-05 Task 4 (direct io.Copy assertion).
 	if os.Getenv("ACH_E2E_PHASE5_STRACE") != "1" {
-		t.Logf("ACH_E2E_PHASE5_STRACE not set — skipping sendfile assertion (engineer-pending; integration test at Plan 05-05 Task 4 covers via direct io.Copy assertion)")
-		return true
+		t.Skipf("ACH_E2E_PHASE5_STRACE != 1 — sendfile syscall assertion NOT verified here (integration coverage: Plan 05-05 Task 4)")
 	}
 	// Run strace in background via kubectl debug.
 	straceCmd := exec.CommandContext(ctx, "kubectl", "-n", phase5Namespace,
@@ -141,8 +147,7 @@ func straceCSSendfile(t *testing.T, ctx context.Context, contentPath, pk, env st
 		"--", "strace", "-p", "1", "-e", "trace=sendfile,sendfile64",
 		"-f", "-e", "signal=none", "-o", "/tmp/strace.out")
 	if err := straceCmd.Start(); err != nil {
-		t.Logf("kubectl debug strace start: %v — degrading to skip", err)
-		return true
+		t.Skipf("kubectl debug strace start: %v — sendfile syscall assertion NOT verified", err)
 	}
 	defer func() { _ = straceCmd.Process.Kill() }()
 
@@ -173,8 +178,7 @@ func straceCSSendfile(t *testing.T, ctx context.Context, contentPath, pk, env st
 		"--", "cat", "/tmp/strace.out")
 	out, err := catCmd.CombinedOutput()
 	if err != nil {
-		t.Logf("cat strace.out: %v output=%s — degrading to skip", err, strings.TrimSpace(string(out)))
-		return true
+		t.Skipf("cat strace.out: %v output=%s — sendfile syscall assertion NOT verified", err, strings.TrimSpace(string(out)))
 	}
 	return strings.Contains(string(out), "sendfile")
 }
