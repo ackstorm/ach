@@ -41,6 +41,13 @@ const EnvAuthHeader = "ACH_LITELLM_AUTH_HEADER"
 // per spec §6.1 and Open Question #1.
 const defaultAuthHeader = AuthBearer
 
+// respMaxBytes caps a LiteLLM response body. Sized well above the largest
+// real payload: GET /v1/model/info is ~1.9 MB at 433 models and grows with
+// the catalog. Over-cap is an explicit error — never a silent truncation,
+// which previously cut a valid model/info body mid-JSON and surfaced as a
+// decode failure blamed on the upstream.
+const respMaxBytes = 8 << 20 // 8 MiB
+
 // RESTClient is the operator's *http.Client wrapper for the LiteLLM REST
 // API. All per-domain helpers (model.go, team.go, mcp.go, agents.go,
 // keyinfo.go) call into RESTClient.makeRequest. RESTClient satisfies the
@@ -132,7 +139,16 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 	}
 	defer drainAndClose(resp.Body) // REL-04: every code path.
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB cap
+	// Read cap+1 so an over-cap body is DETECTED rather than silently cut
+	// (the repo-wide LimitReader idiom). A read error is transport-level:
+	// a torn body means the payload cannot be trusted regardless of status.
+	respBody, rerr := io.ReadAll(io.LimitReader(resp.Body, respMaxBytes+1))
+	if rerr != nil {
+		return nil, fmt.Errorf("litellm: %s %s: read body: %w", method, path, rerr)
+	}
+	if len(respBody) > respMaxBytes {
+		return nil, fmt.Errorf("litellm: %s %s: response exceeds %d bytes", method, path, respMaxBytes)
+	}
 
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
