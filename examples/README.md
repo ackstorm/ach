@@ -23,10 +23,6 @@ for the object the operator reconciles in e2e, look there.
 
 | File | Kind | Notes |
 |------|------|-------|
-| `12-mcpremoteproxy-deepwiki.yaml`     | `MCPRemoteProxy` (`toolhive.stacklok.dev`) | Legacy ToolHive sample. NOT part of the synced set; candidate for removal as stale. |
-| `13-mcpserver-aws.yaml`               | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
-| `14-mcpserver-context7.yaml`          | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
-| `15-mcpserver-echo.yaml`              | `MCPServer` (`toolhive.stacklok.dev`)      | Legacy ToolHive sample. NOT in the synced set. |
 | `prometheus-servicemonitor.yaml`      | `ServiceMonitor`                           | Example Prometheus scrape config for the ach metrics endpoints. |
 | `prometheus-alertrules.yaml`          | `PrometheusRule`                           | Recommended ACH alert rules (LiteLLM unreachable, stale content cache, pk_ on runtime route, external-ref refresh failures, Environment unavailable). |
 | `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli env hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |

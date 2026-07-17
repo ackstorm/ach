@@ -41,7 +41,10 @@ ach/
 ├── examples/                ← CURATED user-facing samples + golden hydrate.json
 │   │                          (independent of the synced fixtures below; NOT
 │   │                          auto-applied — copy/adapt by hand)
-│   ├── 12-15 *.yaml          legacy ToolHive (toolhive.stacklok.dev) samples
+│   │                          (the legacy ToolHive 12-15 samples were deleted
+│   │                           2026-07-17 — orphaned by the 2026-07-15
+│   │                           architecture audit that removed all ToolHive
+│   │                           scaffolding; see issue #59)
 │   ├── prometheus-servicemonitor.yaml  example metrics scrape config
 │   ├── test-mcp-jwt.sh        manual /mcp JWT trust-path helper
 │   └── hydrate.json           Golden /platform/hydrate output (CLI e2e diffs vs this)
@@ -89,6 +92,6 @@ it is `Available=False` BY DESIGN and `verify_all` gates it on
 writes the projection row the content-service reads). Tests only create/delete throwaways for
 mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
 `examples/` holds **curated, user-facing
-samples** (legacy ToolHive 12-15, the ServiceMonitor, the manual JWT helper)
-plus the golden `hydrate.json`. The two are independent — moving or editing one
-does not touch the other.
+samples** (the ServiceMonitor, the alert rules, the ach-cli initContainer, the
+manual JWT helper) plus the golden `hydrate.json`. The two are independent —
+moving or editing one does not touch the other.
