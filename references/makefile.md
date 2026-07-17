@@ -164,10 +164,13 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `build-image-mock` | B | Build `ach-mock:e2e` (LiteLLM-shaped mock). |
 | `build-image-mcp-echo` | B | Build `ach-mcp-echo:e2e` (JWT-verifying MCP backend, issue #35). |
 
-`deploy/kustomize/manager-rbac.yaml` is a static snapshot — its regen
-tooling (`deploy-kustomize-sync{,-check}`) was removed 2026-07-13 as
-unwired (no CI/pre-push caller); edit it by hand if `config/rbac/` changes.
-Helm (`cluster.sh`, `helm-sync`) is the actual deploy path.
+`deploy/kustomize/` was deleted 2026-07-17. Its regen tooling
+(`deploy-kustomize-sync{,-check}` + `scripts/render-deploy-kustomize-rbac.sh`)
+had already been removed 2026-07-13 as unwired, leaving a generated bundle with
+no generator and no drift gate — it then silently missed the `networkpolicies`
+grant added for `AgentProfile.spec.networkPolicy`. It was also unusable on its
+own terms: its Deployment referenced a ServiceAccount the bundle never created.
+Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 
 ### Code generation (`gen-`)
 | Target | Ctx | Description |

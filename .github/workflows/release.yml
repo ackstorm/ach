@@ -179,8 +179,7 @@ jobs:
           fi
           git add deploy/helm/ach/Chart.yaml \
                   deploy/helm/ach/values.yaml \
-                  config/manager/kustomization.yaml \
-                  deploy/kustomize/kustomization.yaml
+                  config/manager/kustomization.yaml
           git commit -m "chore(release): bump manifests to v$VERSION [skip ci]"
           git push origin main
           echo "pushed=true" >> "$GITHUB_OUTPUT"
