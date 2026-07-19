@@ -6,8 +6,10 @@ deeper docs. Reading the MANDATORY entry before touching the corresponding code
 is non-negotiable.
 
 > **Lean on purpose** (loaded every conversation). Deep narrative in
-> `references/`: `repo-layout.md`, `release-pipeline.md`, `makefile.md`,
-> `troubleshooting.md` (service-specific debugging).
+> `references/`: `understanding.md` (**whole-system mental model — read FIRST
+> in a fresh session instead of re-exploring the repo**), `repo-layout.md`,
+> `release-pipeline.md`, `makefile.md`, `troubleshooting.md` (service-specific
+> debugging).
 
 ## Documentation hygiene — update docs IN THE SAME COMMIT
 
@@ -27,6 +29,7 @@ that revealed it.
 | **Service/domain** failure mode | `references/troubleshooting.md` |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
+| Architecture/contract shift that invalidates the whole-system brief | `references/understanding.md` |
 
 ## Quick context
 
@@ -197,6 +200,7 @@ independent collections.)
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
+| Fresh session / whole-system comprehension ("understand the project") | `references/understanding.md` (complete mental model — replaces re-exploring the repo) |
 | Any `make` command / command organization | `references/makefile.md` (command list + 3-context model) |
 | Repo layout / synced fixtures / examples | `references/repo-layout.md` + `verify_all` in `scripts/cluster.sh` |
 | Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
