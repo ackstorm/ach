@@ -903,9 +903,9 @@ func TestHydrateSummary(t *testing.T) {
 	}
 	for _, want := range []string{
 		"  Runtime",
-		"    ✓ Models: 3",
 		"    ✓ MCP servers: 2",
 		"    ✓ A2A agents: 1",
+		"    • Models: 3 (served server-side via the gateway — nothing to install locally)",
 		"  Context",
 		"    ✓ Plugins: 4 total (8 agents, 12 commands, 4 skills)",
 		"    ✓ Prompts: 2 files",
@@ -920,6 +920,38 @@ func TestHydrateSummary(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q; got %q", want, got)
 		}
+	}
+}
+
+// TestSummary_ModelsLine_InformativeNotWired asserts the Runtime block renders
+// models as an informational line (server-side via the gateway), NOT a ✓
+// "wired locally" line, and only when Models > 0.
+func TestSummary_ModelsLine_InformativeNotWired(t *testing.T) {
+	meta := summaryMeta{keyPrefix: keys.PrefixEk}
+
+	withModels := summaryFromResult(hydrate.Result{
+		Environment:    "demo",
+		PlatformID:     "claude-code",
+		RuntimeSummary: hydrate.RuntimeSummary{Models: 3, MCPServers: 1},
+	}, meta)
+	if !strings.Contains(withModels, "Models: 3") ||
+		!strings.Contains(withModels, "gateway") {
+		t.Errorf("models line must state count + server-side gateway note:\n%s", withModels)
+	}
+	if strings.Contains(withModels, "✓ Models") {
+		t.Errorf("models must NOT render with a ✓ (they are not wired locally):\n%s", withModels)
+	}
+
+	noModels := summaryFromResult(hydrate.Result{
+		Environment:    "demo",
+		PlatformID:     "claude-code",
+		RuntimeSummary: hydrate.RuntimeSummary{MCPServers: 1},
+	}, meta)
+	if strings.Contains(noModels, "Models") {
+		t.Errorf("no Models line when Models==0:\n%s", noModels)
+	}
+	if strings.Contains(noModels, "A2A agents: 0") {
+		t.Errorf("Runtime block must not print zero-count lines:\n%s", noModels)
 	}
 }
 
@@ -970,9 +1002,9 @@ func TestHydrateSummaryRuntimeKinds(t *testing.T) {
 		ProjectedByKind: map[string]int{"skills": 35},
 	}, summaryMeta{noWarnings: true})
 	for _, want := range []string{
-		"    ✓ Models: 3",
 		"    ✓ MCP servers: 1",
 		"    ✓ A2A agents: 2",
+		"    • Models: 3 (served server-side via the gateway — nothing to install locally)",
 		"    ✓ Plugins: 0 total (35 skills)",
 	} {
 		if !strings.Contains(got, want) {

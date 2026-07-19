@@ -788,9 +788,20 @@ func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 
 	if hasRuntimeSummary(res.RuntimeSummary) {
 		fmt.Fprintln(&b, "  Runtime")
-		fmt.Fprintf(&b, "    ✓ Models: %d\n", res.RuntimeSummary.Models)
-		fmt.Fprintf(&b, "    ✓ MCP servers: %d\n", res.RuntimeSummary.MCPServers)
-		fmt.Fprintf(&b, "    ✓ A2A agents: %d\n\n", res.RuntimeSummary.A2AAgents)
+		if res.RuntimeSummary.MCPServers > 0 {
+			fmt.Fprintf(&b, "    ✓ MCP servers: %d\n", res.RuntimeSummary.MCPServers)
+		}
+		if res.RuntimeSummary.A2AAgents > 0 {
+			fmt.Fprintf(&b, "    ✓ A2A agents: %d\n", res.RuntimeSummary.A2AAgents)
+		}
+		if res.RuntimeSummary.Models > 0 {
+			// Models are NOT wired locally: access is a server-side LiteLLM
+			// access-group behind the gateway, so this is informational (•),
+			// never a ✓ "installed" line.
+			fmt.Fprintf(&b, "    • Models: %d (served server-side via the gateway — nothing to install locally)\n",
+				res.RuntimeSummary.Models)
+		}
+		fmt.Fprintln(&b)
 	}
 
 	if hasContextSummary(res.ContextSummary) || len(res.ProjectedByKind) > 0 {
