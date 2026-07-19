@@ -261,18 +261,16 @@ type AdapterDispatcher interface {
 	// projection leg (route.Project → publishRuntimeFile → Plugins[])
 	// runs after the RenderRuntime loop; when false it is skipped
 	// entirely. The orchestrator derives it as !opts.OnlyRuntime in
-	// commit.go step 10 (where opts is in scope, per D-11) — default
-	// context scope and --include-runtime project plugins; --only-runtime
+	// commit.go step 10 (where opts is in scope, per D-11) — the default
+	// and --no-runtime scopes both project plugins; --only-runtime
 	// skips them (OnlyRuntime has precedence per spec §6.3).
 	//
 	// includeRuntime gates the DIRECT runtime block (m.Runtime mcp/a2a/
-	// models via RenderRuntime). Derived as opts.IncludeRuntime ||
-	// opts.OnlyRuntime: a default hydrate projects ONLY plugin-contributed
-	// mcps (the context slice via projectPlugins); the Environment's direct
-	// runtime mcp/a2a/models reach the adapter config only under
-	// --include-runtime / --only-runtime. Plugin mcps and direct runtime
-	// mcps are independent axes — projectPlugins governs the former,
-	// includeRuntime the latter.
+	// models via RenderRuntime). Derived as `!opts.NoRuntime`: a default
+	// hydrate projects the Environment's direct runtime mcp/a2a AND
+	// plugin-contributed mcps; --no-runtime opts out of the direct-runtime
+	// leg. Plugin mcps and direct runtime mcps are independent axes —
+	// projectPlugins governs the former, includeRuntime the latter.
 	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins, includeRuntime bool) (RenderResult, error)
 }
 

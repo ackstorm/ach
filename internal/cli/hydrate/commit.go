@@ -468,12 +468,11 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// loop completes.
 	//
 	// includeRuntime gates the DIRECT runtime block (m.Runtime mcp/a2a/
-	// models): a default hydrate projects only plugin-contributed mcps; the
-	// Environment's directly-attached runtime endpoints reach the adapter
-	// config AND the runtime mirror ONLY under --include-runtime /
-	// --only-runtime. Hoisted here so both the Render call and the runtime
-	// mirror (step 10b) share one definition.
-	includeRuntime := c.opts.IncludeRuntime || c.opts.OnlyRuntime
+	// models): a default hydrate projects the Environment's direct mcp/a2a
+	// runtime AND plugin-contributed mcps; --no-runtime opts out of the
+	// direct-runtime leg. Hoisted here so both the Render call and the
+	// runtime mirror (step 10b) share one definition.
+	includeRuntime := !c.opts.NoRuntime
 	var renderResult RenderResult
 	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
@@ -484,8 +483,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// travel by context key only (never env/param) per adapter.go.
 		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
 		// WIRE-04 / D-11 scope gate: plugin/resource projection is the
-		// CONTEXT slice. Run it when NOT --only-runtime (default context
-		// scope and --include-runtime both project; OnlyRuntime has
+		// CONTEXT slice. Run it when NOT --only-runtime (the default and
+		// --no-runtime scopes both project context; OnlyRuntime has
 		// precedence per spec §6.3 and skips it). The gate lives here in
 		// the orchestrator where c.opts is in scope (per D-11/PATTERNS),
 		// NOT inside Render.
@@ -598,7 +597,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 }
 
 func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
-	includeRuntime := c.opts.OnlyRuntime || c.opts.IncludeRuntime
+	includeRuntime := !c.opts.NoRuntime
 	if !includeRuntime || m == nil || m.Runtime == nil {
 		return RuntimeSummary{}
 	}
@@ -939,9 +938,9 @@ func (dt diffTarget) isExtractableContent() bool {
 // classify. Out-of-scope state slices are NOT touched per spec §6.3.
 //
 // Scope filter:
-//   - opts.OnlyRuntime           → runtime only (skip context entirely)
-//   - opts.IncludeRuntime        → runtime + context
-//   - default                    → context only (skip runtime entirely)
+//   - opts.OnlyRuntime  → runtime only (skip context entirely)
+//   - opts.NoRuntime    → context only (skip runtime entirely)
+//   - default           → runtime + context (runtime-on-by-default)
 func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 	var targets []diffTarget
 	if m == nil {
@@ -949,7 +948,7 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 	}
 
 	includeContext := !c.opts.OnlyRuntime
-	includeRuntime := c.opts.OnlyRuntime || c.opts.IncludeRuntime
+	includeRuntime := !c.opts.NoRuntime
 
 	if includeContext && m.Context != nil {
 		for _, p := range m.Context.Prompts {

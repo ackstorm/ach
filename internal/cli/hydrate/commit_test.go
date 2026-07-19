@@ -844,7 +844,7 @@ func TestFilesWrittenVsPreserved(t *testing.T) {
 
 // TestRun_ExtractSkipsRuntimeKinds asserts the extraction loop runs ONLY for
 // context kinds (prompt/plugin/artifact) and skips runtime kinds
-// (model/mcpServer/a2aAgent) under --include-runtime. Runtime entries carry an
+// (model/mcpServer/a2aAgent) by default (runtime-on). Runtime entries carry an
 // {id, endpoint}, not a /content/{kind}/{name} tarball; feeding one to
 // ExtractContent derives an empty content name → "content name: empty" (the
 // historical --include-runtime crash). step6Diff still emits 4 diffTargets
@@ -852,7 +852,6 @@ func TestFilesWrittenVsPreserved(t *testing.T) {
 func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 	c, _, _ := newTestCommit(t)
 	c.opts.Platform = "claude-code"
-	c.opts.IncludeRuntime = true
 
 	manifestFn := func() *manifest.Manifest {
 		return &manifest.Manifest{
@@ -874,7 +873,7 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 		return manifestFn(), nil
 	}
 
-	// Precondition: under --include-runtime step6Diff emits 4 targets
+	// Precondition: by default (runtime-on) step6Diff emits 4 targets
 	// (1 context prompt + 3 runtime) — the scope contract is unchanged.
 	if got := len(c.step6Diff(manifestFn())); got != 4 {
 		t.Fatalf("precondition: step6Diff = %d targets, want 4 (1 context + 3 runtime)", got)
@@ -902,7 +901,6 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 func TestRun_RuntimeMirror_WritesSnapshotsAndState(t *testing.T) {
 	c, store, _ := newTestCommit(t)
 	c.opts.Platform = "claude-code"
-	c.opts.IncludeRuntime = true
 	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
 		return &manifest.Manifest{
 			SchemaVersion: "v1alpha1",
@@ -1285,45 +1283,55 @@ func TestCommit_Step6Diff_OnlyRuntime_SkipsContext(t *testing.T) {
 	}
 }
 
-// TestCommit_Step6Diff_DefaultScope_ContextOnly asserts default scope
-// (neither OnlyRuntime nor IncludeRuntime) emits ONLY context targets.
-func TestCommit_Step6Diff_DefaultScope_ContextOnly(t *testing.T) {
+// TestCommit_Step6Diff_DefaultScope_ContextAndRuntime asserts the new default
+// scope (no flags) emits BOTH context and runtime targets (runtime-on-by-default).
+func TestCommit_Step6Diff_DefaultScope_ContextAndRuntime(t *testing.T) {
 	c, _, _ := newTestCommit(t)
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Runtime: &manifest.RuntimeBlock{
-			Models: []manifest.ContentRef{{ID: "m1"}},
+			Models:     []manifest.ContentRef{{ID: "m1"}},
+			MCPServers: []manifest.ContentRef{{ID: "s1"}},
 		},
 		Context: &manifest.ContextBlock{
 			Prompts: []manifest.ContentRef{{ID: "p1"}},
 		},
 	}
 	targets := c.step6Diff(m)
-	if len(targets) != 1 {
-		t.Fatalf("default scope: got %d targets, want 1 (context.prompt only)", len(targets))
-	}
-	if targets[0].Kind != "prompt" {
-		t.Errorf("default scope kind = %q, want %q", targets[0].Kind, "prompt")
+	if len(targets) != 3 {
+		t.Fatalf("default scope: got %d targets, want 3 (1 prompt + 1 model + 1 mcp)", len(targets))
 	}
 }
 
-// TestCommit_Step6Diff_IncludeRuntime_BothScopes asserts
-// --include-runtime emits both runtime and context targets.
-func TestCommit_Step6Diff_IncludeRuntime_BothScopes(t *testing.T) {
+// TestCommit_Step6Diff_NoRuntime_ContextOnly asserts --no-runtime narrows the
+// default back to context-only (the pre-flip default behavior).
+func TestCommit_Step6Diff_NoRuntime_ContextOnly(t *testing.T) {
 	c, _, _ := newTestCommit(t)
-	c.opts.IncludeRuntime = true
+	c.opts.NoRuntime = true
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
-		Runtime: &manifest.RuntimeBlock{
-			Models: []manifest.ContentRef{{ID: "m1"}},
-		},
-		Context: &manifest.ContextBlock{
-			Prompts: []manifest.ContentRef{{ID: "p1"}},
-		},
+		Runtime:       &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "m1"}}},
+		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
 	}
 	targets := c.step6Diff(m)
-	if len(targets) != 2 {
-		t.Fatalf("--include-runtime: got %d targets, want 2", len(targets))
+	if len(targets) != 1 || targets[0].Kind != "prompt" {
+		t.Fatalf("--no-runtime scope: got %+v, want 1 prompt only", targets)
+	}
+}
+
+// TestCommit_Step6Diff_OnlyRuntime_RuntimeOnly asserts --only-runtime emits
+// runtime targets only (context skipped).
+func TestCommit_Step6Diff_OnlyRuntime_RuntimeOnly(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.OnlyRuntime = true
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Runtime:       &manifest.RuntimeBlock{MCPServers: []manifest.ContentRef{{ID: "s1"}}},
+		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
+	}
+	targets := c.step6Diff(m)
+	if len(targets) != 1 || targets[0].Kind != "mcpServer" {
+		t.Fatalf("--only-runtime scope: got %+v, want 1 mcpServer only", targets)
 	}
 }
 
