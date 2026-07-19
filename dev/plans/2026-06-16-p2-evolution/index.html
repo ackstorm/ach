@@ -1,0 +1,1545 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/plans/2026-06-16-p2-evolution/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>P2 Evolution Implementation Plan (G2-build, G16, G7-alerts) - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#p2-evolution-implementation-plan-g2-build-g16-g7-alerts" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              P2 Evolution Implementation Plan (G2-build, G16, G7-alerts)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ground-truth-corrections-trust-these-over-the-decisions-doc-and-the-frozen-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ground-truth corrections (trust THESE over the decisions doc and the frozen spec)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ground-truth corrections (trust THESE over the decisions doc and the frozen spec)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-default-to-ratify-g2-canonical-spec-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended default to ratify (G2) — canonical-spec store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequencing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="p2-evolution-implementation-plan-g2-build-g16-g7-alerts">P2 Evolution Implementation Plan (G2-build, G16, G7-alerts)<a class="headerlink" href="#p2-evolution-implementation-plan-g2-build-g16-g7-alerts" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For Claude:</strong> REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.</p>
+</blockquote>
+<p><strong>Goal:</strong> Deliver the three P2 ("evolution") gaps from <code>docs/external-review-resolutions.md</code>: (G7-alerts) recommended Prometheus alert rules; (G16) content-service HA via an RWX storage-class split into its own Deployment; (G2-build) the UI Objects API + GitOps export + the promotion reconcile that flips a matching <code>ui</code> row to <code>cr</code>.</p>
+<p><strong>Architecture:</strong> ACH = single <code>ach</code> Go binary (cobra-mode-per-subcommand) + separate <code>ach-cli</code>; per-mode Helm Deployments (operator, platform-api, forwarder, gateway) sharing one image, content-service today a sidecar in the operator Pod (RWO PVC). Projection tables in Postgres are the read SoT; the operator is the only writer (<code>origin='cr', locked=true</code>), origin-gated UPSERTs. Metrics live in <code>internal/metrics/</code> (bare registry per service).</p>
+<p><strong>Tech Stack:</strong> Go, chi, pgx, controller-runtime, prometheus/client_golang, Helm, goreleaser, sigs.k8s.io/yaml (already a dep).</p>
+<hr />
+<h2 id="ground-truth-corrections-trust-these-over-the-decisions-doc-and-the-frozen-spec">Ground-truth corrections (trust THESE over the decisions doc and the frozen spec)<a class="headerlink" href="#ground-truth-corrections-trust-these-over-the-decisions-doc-and-the-frozen-spec" title="Permanent link">&para;</a></h2>
+<p>Verified against the working tree 2026-06-16:</p>
+<ol>
+<li><strong>G2 — <code>origin</code> column value is <code>'cr'</code>, NOT the frozen spec's <code>'kubernetes'</code>.</strong> Delivered code uses <code>'ui'</code> and <code>'cr'</code> (migrations 000005/8/9; <code>db/tx.go:40</code> <code>upsertReturning</code>). Use <code>'ui'</code>/<code>'cr'</code> throughout; treat the spec's <code>'kubernetes'</code> as <code>'cr'</code>.</li>
+<li><strong>G2 — there is NO <code>spec_json</code> column.</strong> The frozen spec (§15.x) assumed a generic <code>spec_json JSONB</code>; the delivered tables are <strong>per-field domain-projection columns</strong> (<code>db/environments.go</code>, <code>db/plugins.go</code>, …). Byte-equivalent promotion (§15.8 step 3) requires a stored canonical spec to compare against. <strong>This is the load-bearing design fork — see "Recommended default to ratify" below.</strong></li>
+<li><strong>G2 — the promote half is genuinely absent.</strong> Confirmed: zero matches for <code>PromotionMismatch</code>, origin-flip <code>UPDATE</code>, or spec-canonicalization anywhere in Go. Only the block half exists (<code>ErrOriginConflict</code> → <code>ConflictWithUIRow</code>, <code>db/errors.go:29</code>, set in 6 controllers).</li>
+<li><strong>G2 — <code>sigs.k8s.io/yaml v1.6.0</code> is already a direct dep</strong> (<code>go.mod:47</code>); no new YAML serializer needed. CRD Go types live in <code>api/ach/v1alpha1/</code>.</li>
+<li><strong>G16 — the split is anticipated in-code</strong> at <code>operator-deployment.yaml:154-156</code> ("If the storage class is upgraded to RWX … this Pod can later be split"). <code>ach content-service</code> is already a standalone cobra mode with no k8s dependency beyond the shared cache dir (<code>cmd/ach/cmd/content_service.go</code>). The <code>ach-content-service</code> Service exists today but its selector points at the <strong>operator</strong> Pod (<code>content-service-deployment.yaml:31-38</code>) — must flip to a <code>content-service</code> component when standalone. Gateway already routes <code>/content/</code>→<code>ach-content-service:8082</code> by DNS (<code>internal/gateway/routes.go:30</code>) — no gateway change.</li>
+<li><strong>G7-alerts — 3 of 5 alerts are buildable now</strong> (<code>content_service_requests_total{outcome="stale_cache_expired"}</code>, <code>litellm_unreachable_total</code>, <code>forwarder_requests_total{key_type="pk"}</code> all EXIST). 2 are <strong>blocked on P1 metrics</strong> (<code>operator_external_ref_refresh_total</code>, <code>environment_available</code> — confirmed absent today; land via the P1 code plan tasks 5-7).</li>
+<li><strong>No <code>helm lint</code>/<code>promtool</code> CI gate exists.</strong> Chart validation today is <code>make helm-sync-check</code> (CRD drift only). New Helm templates verify via <code>helm template --set …</code> rendering + grep assertions.</li>
+</ol>
+<h3 id="recommended-default-to-ratify-g2-canonical-spec-store">Recommended default to ratify (G2) — canonical-spec store<a class="headerlink" href="#recommended-default-to-ratify-g2-canonical-spec-store" title="Permanent link">&para;</a></h3>
+<p>The frozen §15.8 promotion step compares the applied CR's canonicalized <code>spec</code> byte-for-byte against the stored row. With per-field projection columns there is nothing to compare against. <strong>Recommended: add a <code>spec_json JSONB NULL</code> column to each UI-writable object table</strong>, populated with the canonical (sorted-key JSON) spec on every <code>origin='ui'</code> write; NULL for <code>origin='cr'</code> rows OR backfilled by the operator on its next reconcile (so promotion can compare). The operator, on CR apply, canonicalizes the CR spec the SAME way and compares to <code>spec_json</code>. This is the smallest delta to the existing schema (vs a parallel <code>ui_objects</code> table, which would duplicate the projection write path). <strong>This plan assumes that default. If you'd rather use a separate <code>ui_objects</code> table, stop and re-plan Phase G2-A.</strong></p>
+<h3 id="sequencing">Sequencing<a class="headerlink" href="#sequencing" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>G7-alerts</strong> depends on P1 metrics (code-plan tasks 5-7) for 2 of 5 alerts → do the 3 ready alerts anytime; gate the 2 blocked alerts behind P1 landing.</li>
+<li><strong>G16</strong> is independent — can run anytime.</li>
+<li><strong>G2-build</strong> is a multi-week epic — independent of G16/G7 but the largest. Do it last or in its own worktree.</li>
+</ul>
+<p><strong>Verify commands (host has no Go — via make):</strong> <code>make test-unit-pkg PKG=…</code>, <code>make test-integration</code> (Docker Postgres, <code>-tags=integration</code>), <code>make test-envtest-pkg PKG=./internal/controller/ach/... FOCUS=…</code>, <code>make qa-lint-changed</code>, <code>make helm-sync-check</code>, <code>make e2e-focus RUN='…'</code>. Helm rendering: <code>./scripts/dev.sh helm template ach deploy/helm/ach --set …</code>.</p>
+<hr />
+<h1 id="part-1-g7-alerts-prometheus-alert-rules">Part 1 — G7-alerts: Prometheus alert rules<a class="headerlink" href="#part-1-g7-alerts-prometheus-alert-rules" title="Permanent link">&para;</a></h1>
+<h2 id="task-1-prometheusrule-helm-template-values-toggle-3-ready-alerts">Task 1: PrometheusRule Helm template + values toggle (3 ready alerts)<a class="headerlink" href="#task-1-prometheusrule-helm-template-values-toggle-3-ready-alerts" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Create: <code>deploy/helm/ach/templates/prometheusrule.yaml</code>
+- Create: <code>examples/prometheus-alertrules.yaml</code>
+- Modify: <code>deploy/helm/ach/values.yaml</code> (add <code>metrics.prometheusRule</code> block ~line 270, mirroring <code>metrics.serviceMonitor</code>)</p>
+<p><strong>Step 1: Add the values block</strong></p>
+<p>In <code>values.yaml</code> under <code>metrics:</code> (alongside <code>serviceMonitor</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="w">  </span><span class="nt">prometheusRule</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="c1"># Alerts targeting P1 metrics are gated; enable once those metrics ship.</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">includeP1Alerts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+<p><strong>Step 2: Write the failing render assertion</strong></p>
+<p>Add a check (a shell assertion in the plan's verification, since Helm has no unit-test harness here): rendering with <code>--set metrics.prometheusRule.enabled=true</code> must emit a <code>kind: PrometheusRule</code> with the 3 ready alerts and NOT the 2 P1 alerts (because <code>includeP1Alerts=false</code>).</p>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach --set metrics.prometheusRule.enabled=true | grep -c 'kind: PrometheusRule'</code>
+Expected: <code>0</code> (template doesn't exist yet) — this is the failing state.</p>
+<p><strong>Step 3: Create the template</strong></p>
+<p><code>deploy/helm/ach/templates/prometheusrule.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p p-Indicator">{{</span><span class="nv">- if .Values.metrics.prometheusRule.enabled</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring.coreos.com/v1</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrometheusRule</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">include &quot;ach.fullname&quot; .</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">.Release.Namespace</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">labels</span><span class="p">:</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p p-Indicator">{{</span><span class="nv">- include &quot;ach.commonLabels&quot; . | nindent 4</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="p p-Indicator">{{</span><span class="nv">- with .Values.metrics.prometheusRule.labels</span><span class="w"> </span><span class="p p-Indicator">}}{{</span><span class="w"> </span><span class="nv">toYaml . | nindent 4</span><span class="w"> </span><span class="p p-Indicator">}}{{</span><span class="nv">- end</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="nt">groups</span><span class="p">:</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach.rules</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">rules</span><span class="p">:</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACHLiteLLMUnreachable</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">          </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">increase(litellm_unreachable_total[5m]) &gt; 0</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">          </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2m</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">          </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="nv">critical</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">          </span><span class="nt">annotations</span><span class="p">:</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">            </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;LiteLLM</span><span class="nv"> </span><span class="s">unreachable</span><span class="nv"> </span><span class="s">from</span><span class="nv"> </span><span class="s">ACH</span><span class="nv"> </span><span class="s">component</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.caller</span><span class="nv"> </span><span class="s">}}`}}&quot;</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">            </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;litellm_unreachable_total{caller=\&quot;{{`{{</span><span class="nv"> </span><span class="s">$labels.caller</span><span class="nv"> </span><span class="s">}}`}}\&quot;}</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">incrementing.&quot;</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACHContentStaleCacheExpired</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">          </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rate(content_service_requests_total{outcome=&quot;stale_cache_expired&quot;}[5m]) &gt; 0</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">          </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">          </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="nv">warning</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">          </span><span class="nt">annotations</span><span class="p">:</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">            </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ACH</span><span class="nv"> </span><span class="s">content</span><span class="nv"> </span><span class="s">cache</span><span class="nv"> </span><span class="s">stale-expired</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">kind</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.kind</span><span class="nv"> </span><span class="s">}}`}}&quot;</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">            </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Content</span><span class="nv"> </span><span class="s">service</span><span class="nv"> </span><span class="s">serving</span><span class="nv"> </span><span class="s">stale_cache_expired</span><span class="nv"> </span><span class="s">—</span><span class="nv"> </span><span class="s">upstream</span><span class="nv"> </span><span class="s">fetch</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">refreshing.&quot;</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACHPersonalKeyOnRuntimeRoute</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">          </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rate(forwarder_requests_total{key_type=&quot;pk&quot;, outcome=&quot;forwarded&quot;}[5m]) &gt; 0</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">          </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0m</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">          </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="nv">info</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">          </span><span class="nt">annotations</span><span class="p">:</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">            </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pk_</span><span class="nv"> </span><span class="s">used</span><span class="nv"> </span><span class="s">on</span><span class="nv"> </span><span class="s">runtime</span><span class="nv"> </span><span class="s">route</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.route</span><span class="nv"> </span><span class="s">}}`}}&quot;</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">            </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pk_</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">Environment-scoped;</span><span class="nv"> </span><span class="s">use</span><span class="nv"> </span><span class="s">ek_</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">Environment-bound</span><span class="nv"> </span><span class="s">workloads/CI/agents</span><span class="nv"> </span><span class="s">(advisory;</span><span class="nv"> </span><span class="s">pk_</span><span class="nv"> </span><span class="s">runtime</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">permanently</span><span class="nv"> </span><span class="s">allowed).&quot;</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">        </span><span class="p p-Indicator">{{</span><span class="nv">- if .Values.metrics.prometheusRule.includeP1Alerts</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACHExternalRefRefreshFailed</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">          </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rate(operator_external_ref_refresh_total{result=~&quot;error|UpstreamInvalid|Unauthorized|NotFound&quot;}[10m]) &gt; 0</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">          </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10m</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="w">          </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="nv">warning</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">          </span><span class="nt">annotations</span><span class="p">:</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="w">            </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ACH</span><span class="nv"> </span><span class="s">operator</span><span class="nv"> </span><span class="s">failing</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">refresh</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.kind</span><span class="nv"> </span><span class="s">}}`}}</span><span class="nv"> </span><span class="s">from</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.type</span><span class="nv"> </span><span class="s">}}`}}&quot;</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACHEnvironmentUnavailable</span>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="w">          </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">environment_available == 0</span>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="w">          </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="w">          </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="nv">critical</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">          </span><span class="nt">annotations</span><span class="p">:</span>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">            </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ACH</span><span class="nv"> </span><span class="s">Environment</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.name</span><span class="nv"> </span><span class="s">}}`}}</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">available&quot;</span>
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="w">            </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;environment_available</span><span class="nv"> </span><span class="s">==</span><span class="nv"> </span><span class="s">0</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">5m</span><span class="nv"> </span><span class="s">—</span><span class="nv"> </span><span class="s">hydrate</span><span class="nv"> </span><span class="s">will</span><span class="nv"> </span><span class="s">fail.</span><span class="nv"> </span><span class="s">Check:</span><span class="nv"> </span><span class="s">kubectl</span><span class="nv"> </span><span class="s">describe</span><span class="nv"> </span><span class="s">environment</span><span class="nv"> </span><span class="s">{{`{{</span><span class="nv"> </span><span class="s">$labels.name</span><span class="nv"> </span><span class="s">}}`}}.&quot;</span>
+<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="w">        </span><span class="p p-Indicator">{{</span><span class="nv">- end</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="p p-Indicator">{{</span><span class="nv">- end</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+</code></pre></div>
+<p>(Use the existing <code>ach.fullname</code>/<code>ach.commonLabels</code> helpers — confirm their names in <code>_helpers.tpl</code>; <code>ach.commonLabels</code> exists. If <code>ach.fullname</code> is absent, use the literal <code>ach</code> name as the ServiceMonitor template does.)</p>
+<p><strong>Step 4: Verify rendering</strong></p>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach --set metrics.prometheusRule.enabled=true | grep -c 'kind: PrometheusRule'</code>
+Expected: <code>1</code>. Then with <code>--set …includeP1Alerts=true</code> confirm <code>ACHEnvironmentUnavailable</code> appears; without it, it does not.</p>
+<p><strong>Step 5: Create the standalone example</strong></p>
+<p><code>examples/prometheus-alertrules.yaml</code>: the same <code>PrometheusRule</code> (all 5 rules, with a comment that the last 2 require the P1 metrics). Add a row in <code>examples/README.md</code>.</p>
+<p><strong>Step 6: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>add<span class="w"> </span>deploy/helm/ach/templates/prometheusrule.yaml<span class="w"> </span>deploy/helm/ach/values.yaml<span class="w"> </span>examples/prometheus-alertrules.yaml<span class="w"> </span>examples/README.md
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(helm): add PrometheusRule with ACH alert rules (G7-alerts)&quot;</span>
+</code></pre></div>
+<p><strong>Step 7 (blocked-on-P1): flip the default once metrics land</strong></p>
+<p>After P1 code-plan tasks 5-7 ship <code>operator_external_ref_refresh_total</code> + <code>environment_available</code>, change <code>includeP1Alerts</code> default to <code>true</code> and update the carried-forward note in <code>docs/external-review-resolutions.md</code>.</p>
+<hr />
+<h1 id="part-2-g16-content-service-ha-via-rwx-split">Part 2 — G16: content-service HA via RWX split<a class="headerlink" href="#part-2-g16-content-service-ha-via-rwx-split" title="Permanent link">&para;</a></h1>
+<h2 id="task-2-values-pvc-parameterization">Task 2: values + PVC parameterization<a class="headerlink" href="#task-2-values-pvc-parameterization" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>deploy/helm/ach/values.yaml</code> (<code>contentService</code> block ~line 175; <code>operator</code> block ~line 63)
+- Modify: <code>deploy/helm/ach/templates/operator-deployment.yaml:22</code> (PVC accessModes + storageClassName)</p>
+<p><strong>Step 1: Add the values keys</strong></p>
+<p><code>contentService</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">contentService</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">standalone</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">      </span><span class="c1"># G16: when true, run as its own Deployment (needs RWX cache)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;content-service&quot;</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<code>operator</code> (new <code>cache</code> sub-key):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">operator</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">cache</span><span class="p p-Indicator">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10Gi</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">accessMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ReadWriteOnce</span><span class="w">      </span><span class="c1"># set ReadWriteMany when contentService.standalone=true</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">           </span><span class="c1"># e.g. efs-sc / nfs-client / cephfs</span>
+</code></pre></div></p>
+<p><strong>Step 2: Parameterize the PVC</strong></p>
+<p>In <code>operator-deployment.yaml</code> PVC spec (lines 12-25):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">accessModes</span><span class="p">:</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">.Values.operator.cache.accessMode | default &quot;ReadWriteOnce&quot;</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="p p-Indicator">{{</span><span class="nv">- with .Values.operator.cache.storageClassName</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">.</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="p p-Indicator">{{</span><span class="nv">- end</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">requests</span><span class="p">:</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">.Values.operator.cache.size | default &quot;10Gi&quot;</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+</code></pre></div>
+<p>(Migrate the existing <code>.Values.operator.cacheSize</code> reference → <code>.Values.operator.cache.size</code>; keep a <code>default "10Gi"</code>.)</p>
+<p><strong>Step 3: Verify both render modes</strong></p>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach | grep -A2 accessModes</code> → <code>ReadWriteOnce</code>.
+Run: <code>… --set operator.cache.accessMode=ReadWriteMany --set operator.cache.storageClassName=efs-sc | grep -A3 accessModes</code> → <code>ReadWriteMany</code> + <code>storageClassName: efs-sc</code>.</p>
+<p><strong>Step 4: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>git<span class="w"> </span>add<span class="w"> </span>deploy/helm/ach/values.yaml<span class="w"> </span>deploy/helm/ach/templates/operator-deployment.yaml
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(helm): parameterize operator cache PVC accessMode/storageClass (G16)&quot;</span>
+</code></pre></div>
+<h2 id="task-3-gate-the-sidecar-on-not-standalone">Task 3: gate the sidecar on <code>not standalone</code><a class="headerlink" href="#task-3-gate-the-sidecar-on-not-standalone" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>deploy/helm/ach/templates/operator-deployment.yaml:149</code> (sidecar guard)</p>
+<p><strong>Step 1: Tighten the sidecar condition</strong></p>
+<p>Change the sidecar guard (line 149) from <code>{{- if .Values.contentService.enabled }}</code> to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">        </span><span class="p p-Indicator">{{</span><span class="nv">- if and .Values.contentService.enabled (not .Values.contentService.standalone)</span><span class="w"> </span><span class="p p-Indicator">}}</span>
+</code></pre></div>
+<p><strong>Step 2: Verify</strong></p>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach --set contentService.standalone=true | grep -c 'name: content-service'</code>
+Expected: the sidecar container is ABSENT from the operator Pod (count drops vs default render).</p>
+<p><strong>Step 3: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>add<span class="w"> </span>deploy/helm/ach/templates/operator-deployment.yaml
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(helm): drop content-service sidecar when standalone (G16)&quot;</span>
+</code></pre></div>
+<h2 id="task-4-standalone-content-service-deployment-sa-rbac-service-selector">Task 4: standalone content-service Deployment + SA + RBAC + Service selector<a class="headerlink" href="#task-4-standalone-content-service-deployment-sa-rbac-service-selector" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>deploy/helm/ach/templates/content-service-deployment.yaml</code> (grow a Deployment + SA; conditional Service selector)
+- Modify: <code>deploy/helm/ach/templates/operator-rbac.yaml</code> (or new <code>content-service-rbac.yaml</code> for the standalone SA)</p>
+<p><strong>Step 1: Add the standalone Deployment</strong></p>
+<p>In <code>content-service-deployment.yaml</code>, gate a new block on <code>{{- if and .Values.contentService.enabled .Values.contentService.standalone }}</code>: a <code>ServiceAccount/ach-content-service</code>, and a <code>Deployment/ach-content-service</code> mirroring <code>platform-api-deployment.yaml</code> but: <code>replicas: {{ .Values.contentService.replicas }}</code>, pod label <code>app.kubernetes.io/component: content-service</code>, container port <code>cs-http: 8082</code>, the same env block as the current sidecar (<code>ACH_CACHE_ROOT=/var/cache/ach</code>, <code>CONTENT_SERVICE_HEALTH_BIND_ADDRESS=:8082</code>, <code>ach.litellmConnectionEnv</code>, DB/Redis/pepper env), a <code>cache</code> volume from PVC <code>ach-operator-cache</code> mounted readOnly at <code>/var/cache/ach</code>, liveness/readiness on <code>/healthz:8082</code>, security context (<code>runAsNonRoot</code>, <code>readOnlyRootFilesystem</code>, <code>fsGroup: 65532</code>, <code>capabilities.drop:[ALL]</code>). Add the Prometheus pod-scrape annotation (mirror forwarder/platform-api).</p>
+<p><strong>Step 2: Conditional Service selector</strong></p>
+<p>Make the <code>ach-content-service</code> Service <code>selector.app.kubernetes.io/component</code> resolve to <code>content-service</code> when standalone, else <code>operator</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span><span class="nt">app.kubernetes.io/name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">app.kubernetes.io/component</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{{</span><span class="w"> </span><span class="nv">if .Values.contentService.standalone</span><span class="w"> </span><span class="p p-Indicator">}}</span><span class="l l-Scalar l-Scalar-Plain">content-service{{ else }}operator{{ end }}</span>
+</code></pre></div>
+<p><strong>Step 3: Standalone RBAC</strong></p>
+<p>When standalone, the new SA needs only the tight RBAC content-service actually uses (it reads Postgres/Redis, NOT the k8s API — per <code>content_service.go</code> header). Add a minimal Role/RoleBinding (or no API-server RBAC at all if it truly only needs Postgres). Confirm by reading <code>content_service.go</code> what k8s verbs (if any) it issues; default to no CRD list/watch.</p>
+<p><strong>Step 4: Verify both modes render coherently</strong></p>
+<p>Run: <code>./scripts/dev.sh helm template ach deploy/helm/ach --set contentService.standalone=true | grep -E 'kind: Deployment|component: content-service'</code>
+Expected: a <code>Deployment</code> named <code>ach-content-service</code> with <code>component: content-service</code>, and the Service selector points to it.
+Run default render: the Service still selects <code>operator</code> and no standalone Deployment renders.</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>git<span class="w"> </span>add<span class="w"> </span>deploy/helm/ach/templates/content-service-deployment.yaml<span class="w"> </span>deploy/helm/ach/templates/*rbac.yaml
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(helm): standalone content-service Deployment for RWX split (G16)&quot;</span>
+</code></pre></div>
+<h2 id="task-5-e2e-docs-for-the-split">Task 5: e2e + docs for the split<a class="headerlink" href="#task-5-e2e-docs-for-the-split" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>references/troubleshooting.md</code> or <code>references/repo-layout.md</code> (document the HA limitation + the standalone toggle)
+- Modify: <code>deploy/helm/ach/values.yaml</code> comments</p>
+<p><strong>Step 1: e2e smoke (optional, RWX needed)</strong></p>
+<p>The kind e2e cluster's default storage class is RWO; a true standalone run needs an RWX provisioner (NFS subdir provisioner). If feasible, add an e2e variant <code>contentService.standalone=true</code> with an RWX class and assert <code>make wait-content-service</code> + a <code>content fetch</code> succeed. If not feasible in kind, document that standalone is validated by <code>helm template</code> + manual RWX cluster testing only.</p>
+<p>Run: <code>make e2e-focus RUN='TestContent'</code> (sidecar mode regression — confirm default path still green).</p>
+<p><strong>Step 2: Document the v1alpha1 limitation + toggle</strong></p>
+<p>Add a note: default = single-replica content path co-located with the operator (content availability tied to the operator Pod); set <code>contentService.standalone=true</code> + an RWX <code>operator.cache.storageClassName</code> to split content-service into its own N-replica Deployment.</p>
+<p><strong>Step 3: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>git<span class="w"> </span>add<span class="w"> </span>references/<span class="w"> </span>deploy/helm/ach/values.yaml
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(g16): document content-service HA split + RWX toggle (G16)&quot;</span>
+</code></pre></div>
+<hr />
+<h1 id="part-3-g2-build-ui-objects-api-gitops-export-promotion">Part 3 — G2-build: UI Objects API + GitOps export + promotion<a class="headerlink" href="#part-3-g2-build-ui-objects-api-gitops-export-promotion" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>This is a multi-week epic with four phases. Each phase is independently committable. Phase A (schema/db) is the foundation; do not start B/C/D until A is green. <strong>Confirm the <code>spec_json</code> design default (above) before Phase A.</strong></p>
+</blockquote>
+<h2 id="phase-g2-a-schema-db-helpers">Phase G2-A — schema + DB helpers<a class="headerlink" href="#phase-g2-a-schema-db-helpers" title="Permanent link">&para;</a></h2>
+<h2 id="task-6-add-spec_json-ui-write-db-helpers">Task 6: add <code>spec_json</code> + UI-write DB helpers<a class="headerlink" href="#task-6-add-spec_json-ui-write-db-helpers" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Create: <code>db/migrations/0000NN_ui_objects_spec_json.up.sql</code> / <code>.down.sql</code> (next migration number)
+- Create: <code>internal/db/ui_objects.go</code>
+- Test: <code>internal/db/ui_objects_test.go</code> (<code>//go:build integration</code>)</p>
+<p><strong>Step 1: Write the failing integration test</strong></p>
+<p>In <code>ui_objects_test.go</code>, <code>TestInsertUIObject_RoundTrip</code>: insert a <code>ui</code> environment via <code>InsertUIObject(ctx, pool, "environment", ns, name, specJSON)</code>; read it back; assert <code>origin='ui'</code>, <code>locked=false</code>, <code>spec_json</code> equals the canonical input. Add <code>TestPromoteIfMatch_MatchFlipsOrigin</code> and <code>TestPromoteIfMatch_MismatchReturnsErr</code>.</p>
+<p><strong>Step 2: Run to verify it fails</strong></p>
+<p>Run: <code>make test-integration</code> (or <code>go test -tags=integration ./internal/db/...</code>)
+Expected: FAIL — migration + helpers absent.</p>
+<p><strong>Step 3: Migration</strong></p>
+<p>Add <code>spec_json JSONB NULL</code> to each UI-writable object table (<code>environments, plugins, prompts, artifacts, backend_identity_policies, skills, …</code> — match the set that already carries <code>origin</code>/<code>locked</code>). Down-migration drops the column.</p>
+<p><strong>Step 4: DB helpers</strong></p>
+<p><code>internal/db/ui_objects.go</code>: <code>InsertUIObject</code> / <code>UpdateUIObject</code> / <code>DeleteUIObject</code> (drain) writing <code>origin='ui', locked=false, spec_json=$canonical</code> (+ the projected columns derived from the spec, OR a NULL projection that a projector backfills — pick the projection approach to match how reads work). <code>PromoteIfMatch(ctx, tx, kind, ns, name, canonicalSpec) (bool, error)</code>: <code>UPDATE &lt;table&gt; SET origin='cr', locked=TRUE WHERE origin='ui' AND namespace=$ AND name=$ AND spec_json=$canonical RETURNING name</code> → <code>true</code> on a row, <code>false</code> (no match → caller emits <code>PromotionMismatch</code>) on <code>ErrNoRows</code>. Add a <code>canonicalizeSpec([]byte) []byte</code> helper (sorted-key JSON via <code>encoding/json</code> round-trip or <code>sigs.k8s.io/yaml</code>→JSON) used by BOTH write and promotion so comparisons are stable.</p>
+<p><strong>Step 5: Run to verify it passes</strong></p>
+<p>Run: <code>make test-integration</code>
+Expected: PASS</p>
+<p><strong>Step 6: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>add<span class="w"> </span>db/migrations/<span class="w"> </span>internal/db/ui_objects.go<span class="w"> </span>internal/db/ui_objects_test.go
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(db): spec_json column + UI-object write/promote helpers (G2)&quot;</span>
+</code></pre></div>
+<h2 id="phase-g2-b-ui-objects-api-routes">Phase G2-B — UI Objects API routes<a class="headerlink" href="#phase-g2-b-ui-objects-api-routes" title="Permanent link">&para;</a></h2>
+<h2 id="task-7-platformobjectskind-crud-ui_writes_disabled-flag">Task 7: <code>/platform/objects/&lt;kind&gt;</code> CRUD + <code>ui_writes_disabled</code> flag<a class="headerlink" href="#task-7-platformobjectskind-crud-ui_writes_disabled-flag" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Create: <code>internal/platformapi/objects/{mount,handler}.go</code>
+- Modify: <code>internal/platformapi/server.go:137</code> (mount inside the authed group, with an AdminOnly-style gate)
+- Test: <code>internal/platformapi/objects/handler_test.go</code> (httptest + fake store)</p>
+<p><strong>Context:</strong> mirror the admin inventory handler pattern (<code>admin/inventory/handler.go</code> generic <code>listHandler</code> + <code>paginate</code>, JSON envelope <code>{items, next_cursor}</code>). Frozen §15.7 endpoint table: <code>GET /&lt;kind&gt;</code>, <code>GET /&lt;kind&gt;/&lt;name&gt;</code>, <code>POST /&lt;kind&gt;</code>, <code>PATCH /&lt;kind&gt;/&lt;name&gt;</code> (JSON Merge), <code>DELETE /&lt;kind&gt;/&lt;name&gt;</code>, <code>GET /&lt;kind&gt;/&lt;name&gt;/yaml</code>. Error codes: <code>403 immutable_via_ui</code> (PATCH/DELETE on a <code>cr</code> row), <code>409 conflict_with_kubernetes_object</code> (POST over an existing <code>cr</code> row), <code>403 ui_writes_disabled</code> (env <code>ACH_DISABLE_UI_WRITES=true</code>).</p>
+<p><strong>Step 1: Write failing handler tests</strong></p>
+<p><code>TestPostObject_CreatesUIRow</code>, <code>TestPatchObject_ImmutableViaUI_403</code> (target is <code>cr</code>), <code>TestPostObject_ConflictWithKubernetes_409</code>, <code>TestUIWritesDisabled_403</code>, <code>TestGetObject_ReturnsSpecStatus</code>. Use a fake store implementing the objects interface; no Postgres.</p>
+<p><strong>Step 2: Run to verify they fail</strong></p>
+<p>Run: <code>make test-unit-pkg PKG=./internal/platformapi/objects/...</code>
+Expected: FAIL — package absent.</p>
+<p><strong>Step 3: Implement the routes</strong></p>
+<p><code>objects/mount.go</code> <code>Mount(deps)</code> registering the 6 routes; <code>handler.go</code> wiring to the Task-6 DB helpers. Respect <code>ACH_DISABLE_UI_WRITES</code>. Validate <code>&lt;kind&gt;</code> against the allowed UI-writable set. POST/PATCH validate the body against the kind's spec (reuse <code>api/v1alpha1</code> types for unmarshal + CEL-equivalent checks where cheap). Mount in <code>server.go</code> inside the authed <code>r.Group</code> (line 137), behind an admin-or-writer gate.</p>
+<p><strong>Step 4: Run to verify they pass</strong></p>
+<p>Run: <code>make test-unit-pkg PKG=./internal/platformapi/objects/...</code>
+Expected: PASS</p>
+<p><strong>Step 5: Lint + commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>make<span class="w"> </span>qa-lint-changed
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>git<span class="w"> </span>add<span class="w"> </span>internal/platformapi/objects/<span class="w"> </span>internal/platformapi/server.go
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(platform-api): UI Objects API CRUD routes (G2)&quot;</span>
+</code></pre></div>
+<h2 id="phase-g2-c-gitops-yaml-export">Phase G2-C — GitOps YAML export<a class="headerlink" href="#phase-g2-c-gitops-yaml-export" title="Permanent link">&para;</a></h2>
+<h2 id="task-8-get-platformobjectskindnameyaml">Task 8: <code>GET /platform/objects/&lt;kind&gt;/&lt;name&gt;/yaml</code><a class="headerlink" href="#task-8-get-platformobjectskindnameyaml" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Create: <code>internal/platformapi/objects/export.go</code>
+- Test: <code>internal/platformapi/objects/export_test.go</code></p>
+<p><strong>Context:</strong> frozen §15.8 — canonical K8s manifest with ONLY <code>apiVersion</code>, <code>kind</code>, <code>metadata.name</code>, <code>metadata.namespace</code>, <code>spec</code>; NO <code>status</code>/<code>uid</code>/<code>resourceVersion</code>/<code>creationTimestamp</code>/<code>generation</code>/<code>managedFields</code>/ACH annotations; deterministic byte-identical output (load-bearing for promotion). <code>Content-Type: application/yaml</code>.</p>
+<p><strong>Step 1: Write the failing test</strong></p>
+<p><code>TestExportYAML_Canonical</code>: export a known environment row; assert the body equals a golden YAML (apiVersion/kind/metadata{name,namespace}/spec only), and that two exports are byte-identical. Assert <code>status</code> and <code>uid</code> are absent.</p>
+<p><strong>Step 2: Run to verify it fails</strong></p>
+<p>Run: <code>make test-unit-pkg PKG=./internal/platformapi/objects/...</code>
+Expected: FAIL.</p>
+<p><strong>Step 3: Implement</strong></p>
+<p><code>export.go</code>: reconstruct a minimal struct <code>{TypeMeta{APIVersion:"ach.ackstorm.ai/v1alpha1", Kind:&lt;Kind&gt;}, ObjectMeta{Name, Namespace}, Spec:&lt;typed spec&gt;}</code> from the projection columns (or the <code>spec_json</code>), marshal with <code>sigs.k8s.io/yaml.Marshal</code> (deterministic). Do NOT marshal the full k8s object (it carries status/managedFields). Set <code>Content-Type: application/yaml</code>.</p>
+<p><strong>Step 4: Run to verify it passes</strong></p>
+<p>Run: <code>make test-unit-pkg PKG=./internal/platformapi/objects/...</code>
+Expected: PASS</p>
+<p><strong>Step 5: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>git<span class="w"> </span>add<span class="w"> </span>internal/platformapi/objects/export.go<span class="w"> </span>internal/platformapi/objects/export_test.go
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(platform-api): canonical GitOps YAML export (G2)&quot;</span>
+</code></pre></div>
+<h2 id="phase-g2-d-promotion-reconcile">Phase G2-D — promotion reconcile<a class="headerlink" href="#phase-g2-d-promotion-reconcile" title="Permanent link">&para;</a></h2>
+<h2 id="task-9-promote-on-match-promotionmismatch-condition">Task 9: promote-on-match + <code>PromotionMismatch</code> condition<a class="headerlink" href="#task-9-promote-on-match-promotionmismatch-condition" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: each writer controller (<code>environment_controller.go</code>, <code>external_ref_driver.go</code> (plugin/prompt/artifact/skill), <code>backendidentitypolicy_controller.go</code>, <code>litellmconnection_controller.go</code>) — call <code>PromoteIfMatch</code> before the block path
+- Modify: <code>internal/controller/ach/conditions.go</code> (add <code>ReasonPromotionMismatch</code>)
+- Test: <code>internal/controller/ach/*_test.go</code> (envtest) + the db integration tests from Task 6</p>
+<p><strong>Context:</strong> today, when the operator UPSERT hits a <code>ui</code> row it returns <code>ErrOriginConflict</code> → <code>ConflictWithUIRow</code> (block). New behavior: first attempt <code>PromoteIfMatch</code> (canonical spec equality). Match → row flips <code>origin='ui'</code>→<code>'cr'</code>, <code>locked=TRUE</code>, primary key <code>id</code> preserved, normal projection continues (<code>Synced=True</code>). Mismatch → <code>Synced=False, reason=PromotionMismatch</code> + a k8s Event with the diff summary; the UI row keeps serving (do NOT overwrite).</p>
+<p><strong>Step 1: Add the reason constant</strong></p>
+<p>In <code>conditions.go</code> (near <code>ReasonConflictWithUIRow</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1">// ReasonPromotionMismatch: a CR was applied matching a ui row by (name,ns) but</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="c1">// its canonical spec differs from the row&#39;s spec_json; the operator refuses to</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="c1">// sync and the ui row keeps serving (frozen §15.8 step 5; G2).</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="kd">const</span><span class="w"> </span><span class="nx">ReasonPromotionMismatch</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;PromotionMismatch&quot;</span>
+</code></pre></div>
+<p><strong>Step 2: Write the failing envtest</strong></p>
+<p><code>TestPromotion_SpecMatchFlipsOrigin</code>: seed a <code>ui</code> row (via the test DB) with spec S; apply a CR with the same canonical spec S; reconcile; assert the row is now <code>origin='cr', locked=true</code>, same <code>id</code>, and the CR has <code>Synced=True</code>. <code>TestPromotion_SpecMismatch_PromotionMismatch</code>: seed <code>ui</code> row spec S; apply CR with spec S′≠S; assert row stays <code>origin='ui'</code> and CR has <code>Synced=False/PromotionMismatch</code>. (These need a DB-backed envtest — the current envtest runs <code>DB: nil</code>; add a Postgres-backed controller test variant or assert at the <code>PromoteIfMatch</code> integration level + a unit test of the controller's branch with a fake store.)</p>
+<p><strong>Step 3: Run to verify it fails</strong></p>
+<p>Run: <code>make test-envtest-pkg PKG=./internal/controller/ach/... FOCUS=TestPromotion</code>
+Expected: FAIL.</p>
+<p><strong>Step 4: Wire promotion into each controller's UPSERT path</strong></p>
+<p>Where each controller currently maps <code>ErrOriginConflict</code>→<code>ConflictWithUIRow</code>: first call <code>PromoteIfMatch(ctx, tx, kind, ns, name, canonicalSpec(cr.Spec))</code>. On <code>true</code>, proceed with the normal <code>origin='cr'</code> projection (now unblocked). On <code>false</code>, set <code>Synced=False/PromotionMismatch</code> + <code>r.Recorder.Event(cr, Warning, "PromotionMismatch", &lt;diff summary&gt;)</code> and requeue. Keep <code>ConflictWithUIRow</code> ONLY for the genuine non-promotable case (e.g. a <code>ui</code> row that the CR is not trying to promote — but with promotion wired, the live path becomes match/mismatch; <code>ConflictWithUIRow</code> remains the fallback). Reuse the same <code>canonicalizeSpec</code> from Task 6 so spec equality is symmetric.</p>
+<p><strong>Step 5: Run to verify it passes</strong></p>
+<p>Run: <code>make test-envtest-pkg PKG=./internal/controller/ach/... FOCUS=TestPromotion</code> then <code>make test-integration</code>
+Expected: PASS</p>
+<p><strong>Step 6: Lint + commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>make<span class="w"> </span>qa-lint-changed
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>git<span class="w"> </span>add<span class="w"> </span>internal/controller/ach/<span class="w"> </span>internal/db/
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(operator): promotion reconcile (ui-&gt;cr) + PromotionMismatch (G2)&quot;</span>
+</code></pre></div>
+<h2 id="task-10-docs-spec-flip-for-g2">Task 10: docs + spec flip for G2<a class="headerlink" href="#task-10-docs-spec-flip-for-g2" title="Permanent link">&para;</a></h2>
+<p><strong>Files:</strong>
+- Modify: <code>references/troubleshooting.md</code> (the dormant <code>ConflictWithUIRow</code> entry from the P1 docs plan → now reachable via the UI path; add <code>PromotionMismatch</code>)
+- Modify: <code>CLAUDE.md</code> (architecture — note the UI write path is now live)
+- Modify: <code>internal/controller/ach/conditions.go</code> (remove the "dormant/reserved" comment added in the P1 docs plan)</p>
+<p><strong>Step 1: Update the docs</strong></p>
+<p>Reverse the P1-docs "dormant/reserved" framing for G2 now that the UI path ships: document <code>POST/PATCH/DELETE /platform/objects/&lt;kind&gt;</code>, <code>GET …/yaml</code>, the promotion flow, and <code>PromotionMismatch</code>. Add a troubleshooting entry for <code>Synced=False/PromotionMismatch</code> (resolution: align the CR spec to the UI row, or delete the UI row).</p>
+<p><strong>Step 2: Commit</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>make<span class="w"> </span>qa-lint-changed
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>git<span class="w"> </span>add<span class="w"> </span>references/<span class="w"> </span>CLAUDE.md<span class="w"> </span>internal/controller/ach/conditions.go
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(g2): document live UI Objects API + promotion (G2)&quot;</span>
+</code></pre></div>
+<p><strong>Spec note (external <code>/home/jcm/Projects/ach-spec/</code>):</strong> flip <code>ach-spec-final-delivered.md</code> §15.7/§15.8 + the <code>PromotionMismatch</code> condition row from NOT IMPLEMENTED → delivered. Reconcile the <code>origin='kubernetes'</code> vs delivered <code>'cr'</code> naming and the <code>spec_json</code> reconstruction note.</p>
+<hr />
+<h2 id="final-gate">Final gate<a class="headerlink" href="#final-gate" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>make<span class="w"> </span>test-unit
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>make<span class="w"> </span>test-integration<span class="w">         </span><span class="c1"># G2 db helpers</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>make<span class="w"> </span>test-envtest<span class="w">             </span><span class="c1"># G2 promotion, G16 unaffected</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>make<span class="w"> </span>qa-lint
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>./scripts/dev.sh<span class="w"> </span>helm<span class="w"> </span>template<span class="w"> </span>ach<span class="w"> </span>deploy/helm/ach<span class="w"> </span>--set<span class="w"> </span>metrics.prometheusRule.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--set<span class="w"> </span>contentService.standalone<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--set<span class="w"> </span>operator.cache.accessMode<span class="o">=</span>ReadWriteMany<span class="w">   </span><span class="c1"># G7 + G16 render</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>make<span class="w"> </span>e2e-full<span class="w">                 </span><span class="c1"># cross-service — local-only gate (G2 routes, G16 sidecar regression)</span>
+</code></pre></div>
+<p>Never push a change touching <code>internal/controller|platformapi|forwarder|contentservice/</code>, <code>api/v1alpha1/</code>, <code>deploy/helm/ach/</code>, or <code>test/e2e/</code> without confirming E2E green. Pre-push 18-gate hook must pass.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

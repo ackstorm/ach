@@ -1,0 +1,4015 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/external-review-resolutions/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>ACH — External Review: Gaps & Resolutions Log - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ach-external-review-gaps-resolutions-log" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ACH — External Review: Gaps &amp; Resolutions Log
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#gap-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gap index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g1-budget-per-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G1 — Budget per Environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G1 — Budget per Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-no-budget-per-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: no budget per Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sub-question-decided-a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sub-question — DECIDED: (a)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g2-ui-objects-api-gitops-export-latent-originui-without-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G2 — UI Objects API / GitOps export = latent (origin='ui' without UI)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G2 — UI Objects API / GitOps export = latent (origin=&#39;ui&#39; without UI)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-fork-the-real-decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The fork (the real decision)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-keep-it-option-a-now-option-c-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: keep it (Option A now → Option C later)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#important-gap-inside-g2-promotion-half-is-not-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important gap inside G2 — promotion half is NOT built
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g3-litellm-sk-virtual-key-plaintext-stored-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G3 — LiteLLM sk- virtual-key plaintext stored (security)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G3 — LiteLLM sk- virtual-key plaintext stored (security)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-its-there-the-architecture-pivot-plan-2026-06-10-forward-user-litellm-keymd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why it's there (the architecture pivot — plan 2026-06-10-forward-user-litellm-key.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-the-most-serious-finding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is the most serious finding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-production-blocker-governance-now-fix-direction-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: production blocker + governance now; fix direction OPEN
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommendation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommendation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fix-direction-decided-fix-1-encrypt-at-rest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fix direction — DECIDED: Fix-1 (encrypt at rest)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g4-no-oci-ach-cli-image-initcontainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G4 — No OCI ach-cli image / InitContainer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G4 — No OCI ach-cli image / InitContainer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-ship-a-separate-ach-cli-image-p1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: ship a separate ach-cli image (P1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-minor-base-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OPEN (minor) — base image
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g5-hydrate-sync-is-a-silent-stub" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G5 — hydrate --sync is a silent stub
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G5 — hydrate --sync is a silent stub">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-sync-must-not-silently-no-op" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: --sync must not silently no-op
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommendation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommendation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fix-decided-path-2-wire-state-05-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fix — DECIDED: Path 2 (wire STATE-05 now)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g6-content-fetch-platforms-list-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G6 — content fetch / platforms list missing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G6 — content fetch / platforms list missing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-content-fetch-matters-the-asymmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why content fetch matters (the asymmetry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-content-normally-flows-so-you-can-place-content-fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How content normally flows (so you can place content fetch)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concrete-debugging-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concrete debugging value
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-theyre-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why they're missing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-build-content-fetch-p1-skip-platforms-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): build content fetch (P1); skip platforms list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sketch-for-whenever-its-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sketch (for whenever it's built)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g7-metrics-gaps-control-plane-is-blind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G7 — Metrics gaps (control plane is blind)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G7 — Metrics gaps (control plane is blind)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-it-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why it matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-build-all-except-the-low-value-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): build all EXCEPT the low-value one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#still-open-carried-forward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still OPEN (carried forward)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g8-skill-skill-marketplace-missing-from-admin-refresh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G8 — skill / skill-marketplace missing from admin refresh
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G8 — skill / skill-marketplace missing from admin refresh">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-the-symptom-not-the-disease" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is the symptom, not the disease
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-fix-is-mechanical-low-effort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The fix is mechanical (low effort)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-fix-it-all-crs-are-same-class-citizens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED: fix it — "all CRs are same-class citizens"
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g9-local-package-manager-repopluginskill-framing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G9 — Local package manager (repo/plugin/skill) framing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G9 — Local package manager (repo/plugin/skill) framing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-tension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The tension
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-option-c-structural-namespace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): Option C — structural namespace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g10-kind-lifecycle-contract-all-crs-same-class-citizens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G10 — Kind-lifecycle contract ("all CRs same-class citizens")
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G10 — Kind-lifecycle contract (&#34;all CRs same-class citizens&#34;)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-decided
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proposed-checklist-ach-tailored-confirmadjust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proposed checklist (ACH-tailored — confirm/adjust)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g12-gateway-as-6th-mode-framing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G12 — Gateway as 6th mode: framing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G12 — Gateway as 6th mode: framing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-option-a-reframe-as-optional-edge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): Option A — reframe as optional edge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#follow-up-work-not-done-yet_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow-up work (NOT done yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g13-pk_-on-runtime-routes-unscoped-ux-alerting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G13 — pk_ on runtime routes (unscoped) — UX / alerting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G13 — pk_ on runtime routes (unscoped) — UX / alerting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-decision-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The decision space
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-ux-hardening-only-honor-frozen-no-toggle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): UX hardening only; honor frozen (no toggle)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g14-litellm-default-team-dependency-already-addressed-reviewer-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G14 — LiteLLM default Team dependency — ALREADY ADDRESSED (reviewer stale)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G14 — LiteLLM default Team dependency — ALREADY ADDRESSED (reviewer stale)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#residual-minor-startup-ordering-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Residual (minor) — startup-ordering window
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call-but-near-closed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call) — but near-closed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g15-backendidentitypolicy-invisible-conflicts-inverted-tiebreaker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G15 — BackendIdentityPolicy: invisible conflicts + inverted tiebreaker
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G15 — BackendIdentityPolicy: invisible conflicts + inverted tiebreaker">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two decisions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-restore-alpha-first-standardized-conflict-condition-a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): restore alpha-FIRST + standardized conflict condition (A)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g16-operator-content-service-single-replica-rwo-pvc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G16 — Operator + Content Service single replica (RWO PVC)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G16 — Operator + Content Service single replica (RWO PVC)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#important-scoping-only-the-content-path-is-structurally-limited" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important scoping — only the content path is structurally limited
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-accept-for-v1alpha1-p2-direction-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): accept for v1alpha1; P2 direction deferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g17-jwt-nbf-removed-spec-says-backends-must-verify-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G17 — JWT nbf removed (spec says backends MUST verify it)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G17 — JWT nbf removed (spec says backends MUST verify it)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-real-trade-why-nbf-might-have-been-dropped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The real trade (why nbf might have been dropped)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-drop-nbf-align-spec-to-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): drop nbf (align spec to code)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g18-jwt-sub-is-now-the-bare-owner-email-dropped-namespace-prefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G18 — JWT sub is now the bare owner email (dropped &lt;namespace&gt;/ prefix)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G18 — JWT sub is now the bare owner email (dropped &lt;namespace&gt;/ prefix)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#note-sub-and-email-are-now-identical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Note — sub and email are now identical
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-ratify-bare-email-sub-keep-email-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): ratify bare-email sub; keep email claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g19-https-enforcement-downgraded-to-warning-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G19 — HTTPS enforcement downgraded to warning-only
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G19 — HTTPS enforcement downgraded to warning-only">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#risk-asymmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risk asymmetry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-cli-b-default-refuse-opt-in-httpsource-d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): CLI = B (default-refuse + opt-in); HTTPSource = D
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#g20-audit-events-dropped-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        G20 — Audit events dropped fields
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="G20 — Audit events dropped fields">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plain-explanation_18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain explanation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-code-actually-does-delivered_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the code actually does (delivered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-open-your-call_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — OPEN (your call)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-decided-your-call-add-high-medium-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision — DECIDED (your call): add high + medium fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consolidated-roadmap-derived-from-the-g1g20-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidated roadmap (derived from the G1–G20 decisions)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consolidated roadmap (derived from the G1–G20 decisions)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p0-security-correctness-pre-production-blockers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P0 — security / correctness, pre-production blockers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-close-v1alpha1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1 — close v1alpha1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-evolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2 — evolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#carried-forward-open-items-not-yet-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Carried-forward open items (not yet decided)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#corrections-to-the-external-review-for-the-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Corrections to the external review (for the record)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ach-external-review-gaps-resolutions-log">ACH — External Review: Gaps &amp; Resolutions Log<a class="headerlink" href="#ach-external-review-gaps-resolutions-log" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> living document. Started 2026-06-16.
+<strong>Context:</strong> an external reviewer audited the <em>delivered</em> ACH against the frozen
+specs (<code>../ach-spec/ach-spec-final-frozen.md</code>, <code>ach-cli-spec-final-frozen.md</code>,
+reconciled in <code>*-spec-final-delivered.md</code>). This log captures, gap by gap, what
+we found, the decision we took, and the follow-up work. <strong>Decisions are recorded
+here first; code/spec changes happen later, deliberately.</strong></p>
+<p>Decision legend:
+- <strong>DECIDED</strong> — direction agreed; follow-up work listed (not yet done).
+- <strong>OPEN</strong> — needs a decision.
+- <strong>PENDING</strong> — not yet discussed.</p>
+<hr />
+<h2 id="gap-index">Gap index<a class="headerlink" href="#gap-index" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Gap</th>
+<th>Severity</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G1</td>
+<td>Budget per Environment</td>
+<td>core-contract</td>
+<td><strong>DECIDED</strong></td>
+</tr>
+<tr>
+<td>G2</td>
+<td>UI Objects API / GitOps export = latent (origin='ui' without UI)</td>
+<td>scope</td>
+<td><strong>DECIDED</strong> (keep; UI+export = P2)</td>
+</tr>
+<tr>
+<td>G3</td>
+<td>LiteLLM <code>sk-</code> virtual-key plaintext stored (TESTING-PHASE)</td>
+<td>security</td>
+<td><strong>DECIDED</strong> (Fix-1 encrypt-at-rest; prod blocker)</td>
+</tr>
+<tr>
+<td>G4</td>
+<td>No OCI <code>ach-cli</code> image / InitContainer</td>
+<td>distribution</td>
+<td><strong>DECIDED</strong> (ship separate image, P1)</td>
+</tr>
+<tr>
+<td>G5</td>
+<td><code>hydrate --sync</code> is a silent stub</td>
+<td>correctness/UX</td>
+<td><strong>DECIDED</strong> (Path 2 — wire STATE-05)</td>
+</tr>
+<tr>
+<td>G6</td>
+<td><code>content fetch</code> / <code>platforms list</code> missing</td>
+<td>debuggability</td>
+<td><strong>DECIDED</strong> (content fetch P1; platforms list dropped)</td>
+</tr>
+<tr>
+<td>G7</td>
+<td>Metrics gaps (env_available, hydrate, operator refresh, cache hit/miss)</td>
+<td>observability</td>
+<td><strong>DECIDED</strong> (build all except marketplace count)</td>
+</tr>
+<tr>
+<td>G8</td>
+<td><code>skill</code>/<code>skill-marketplace</code> missing from admin refresh; no kind-parity checklist</td>
+<td>completeness</td>
+<td><strong>DECIDED</strong> (fix + parity audit; "all CRs same-class")</td>
+</tr>
+<tr>
+<td>G9</td>
+<td>Local package manager (<code>repo</code>/<code>plugin</code>/<code>skill</code>) framing vs governed path</td>
+<td>product clarity</td>
+<td><strong>DECIDED</strong> (Option C — <code>ach-cli local</code> namespace)</td>
+</tr>
+<tr>
+<td>G10</td>
+<td>Too many new kinds before parity; need kind-lifecycle contract</td>
+<td>process</td>
+<td><strong>DECIDED</strong> (checklist as-is; both doc + PR-template; <code>docs/references/</code>)</td>
+</tr>
+<tr>
+<td>G12</td>
+<td>Gateway 6th mode framing (pillar vs packaging detail)</td>
+<td>docs</td>
+<td><strong>DECIDED</strong> (Option A — optional edge)</td>
+</tr>
+<tr>
+<td>G13</td>
+<td><code>pk_</code> on runtime routes — unscoped; UX/alerting</td>
+<td>UX/governance</td>
+<td><strong>DECIDED</strong> (UX hardening; honor frozen, no toggle)</td>
+</tr>
+<tr>
+<td>G14</td>
+<td>LiteLLM <code>default</code> Team hard dependency (no lazy create)</td>
+<td>operability</td>
+<td><strong>DECIDED</strong> (already fixed; A — accept transient race)</td>
+</tr>
+<tr>
+<td>G15</td>
+<td>BIP invisible conflicts + tiebreaker inverted (alpha-LAST vs frozen alpha-FIRST)</td>
+<td>correctness/ops</td>
+<td><strong>DECIDED</strong> (restore alpha-FIRST; std <code>Synced=False/NameConflict</code>)</td>
+</tr>
+<tr>
+<td>G16</td>
+<td>Operator + Content Service single replica (RWO PVC) — no HA</td>
+<td>scaling</td>
+<td><strong>DECIDED</strong> (accept v1alpha1; P2 RWX-split deferred)</td>
+</tr>
+<tr>
+<td>G17</td>
+<td>JWT <code>nbf</code> removed; frozen says verify it — <strong>spec-vs-code drift (not a live break)</strong></td>
+<td>conformance</td>
+<td><strong>DECIDED</strong> (drop <code>nbf</code>; align spec)</td>
+</tr>
+<tr>
+<td>G18</td>
+<td>JWT <code>sub</code> now bare email (dropped <code>&lt;ns&gt;/</code> prefix) — intentional; not a live break</td>
+<td>compat</td>
+<td><strong>DECIDED</strong> (ratify bare <code>sub</code>; keep <code>email</code>)</td>
+</tr>
+<tr>
+<td>G19</td>
+<td>HTTPS enforcement downgraded to warning-only (CLI) + <code>http://</code> allowed on HTTPSource</td>
+<td>security posture</td>
+<td><strong>DECIDED</strong> (CLI B: refuse+opt-in; HTTPSource D: keep+doc)</td>
+</tr>
+<tr>
+<td>G20</td>
+<td>Audit events dropped fields (key.type, environment, route, source.ip/ua)</td>
+<td>auditability</td>
+<td><strong>DECIDED</strong> (add environment + source.ip/ua + route)</td>
+</tr>
+</tbody>
+</table>
+<p>(G11 = duplicate of G2; folded in.)</p>
+<hr />
+<h2 id="g1-budget-per-environment">G1 — Budget per Environment<a class="headerlink" href="#g1-budget-per-environment" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation">Plain explanation<a class="headerlink" href="#plain-explanation" title="Permanent link">&para;</a></h3>
+<p>A LiteLLM <strong>budget</strong> is a spending cap (USD over a period). The frozen spec
+promised that cap could live on an <strong>Environment</strong>: each <code>Environment.spec.budget</code>
+would become a LiteLLM <strong>tag budget</strong> (the env name is attached as a tag on every
+<code>ek_</code> request), so spend on that Environment was capped.</p>
+<h3 id="what-the-code-actually-does-delivered">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>Environment.spec.budget</code> does not exist</strong> — removed from <code>EnvironmentSpec</code>.
+  The operator reconciles only the LiteLLM <strong>access group</strong> (capability gating),
+  not a budget tag.</li>
+<li><code>ek_</code> keys still carry <code>Tags=[env.Name]</code> + <code>AccessGroups=[env.Name]</code>
+  (<code>envkeys/handler.go</code>) — but <strong>for attribution only</strong>, no budget attached.</li>
+<li><strong>LiteLLM tags are Enterprise-only.</strong> The handler has
+  <code>isEnterpriseTagsRejection</code>: on a <code>403 "This feature is only available for
+  LiteLLM Enterprise users: tags"</code> it <strong>drops the tag and retries</strong>. So on OSS
+  LiteLLM the env tag isn't even applied.</li>
+<li><strong>ACH sets no budget anywhere today</strong>: KEY-10 invariant — <code>max_budget</code> is
+  never set on the LiteLLM user (<code>UserNewRequest</code> has no field) nor on the key
+  (<code>KeyGenerateRequest.MaxBudget = nil</code>).</li>
+</ul>
+<p>So a per-Environment budget would have required: re-adding <code>spec.budget</code>, an
+operator tag-budget reconcile loop, <strong>and</strong> LiteLLM Enterprise. It would cap only
+<code>ek_</code> traffic (<code>pk_</code> carries no tag → uncapped).</p>
+<h3 id="decision-decided-no-budget-per-environment">Decision — <strong>DECIDED: no budget per Environment</strong><a class="headerlink" href="#decision-decided-no-budget-per-environment" title="Permanent link">&para;</a></h3>
+<p>Budget is <strong>not</strong> an Environment-level concern. Budget governance hierarchy:</p>
+<ol>
+<li><strong>Now → per-USER.</strong> The budget boundary is the LiteLLM user. Environment is a
+   capability/context/identity boundary, <strong>not</strong> a cost boundary.</li>
+<li><strong>Future → per-KEY.</strong> A key-level budget, <strong>lower than</strong> the user's budget
+   (per-key cap ⊆ per-user cap). Designed later.</li>
+<li><strong>Drop entirely</strong> the per-Environment budget machinery and promise.</li>
+</ol>
+<p>Rationale: per-Environment budget needs LiteLLM Enterprise (tags), leaks via
+<code>pk_</code>, and adds an operator reconcile surface — for a cap that maps more
+naturally onto the principal (user) than onto a capability bundle (Environment).
+The user/key hierarchy is simpler and provider-tier-independent.</p>
+<h3 id="follow-up-work-not-done-yet">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Code:</strong> mostly already aligned — <code>spec.budget</code> is already absent. Keep the
+  <code>ek_</code> env tag as <strong>attribution only</strong>; keep the operator <code>DeleteTag</code> in the
+  Environment deletion drain (tag still used for attribution). Confirm nothing
+  tries to set a tag budget (it doesn't).</li>
+<li><strong>Docs/spec:</strong> purge the per-Environment budget promise wherever it still
+  implies enforcement:</li>
+<li><code>../ach-spec/ach-spec-final-delivered.md</code> §6.3 / §8.6 — reframe env tag as
+    attribution-only; remove "tag budget" language; state budget = user-level
+    (now), key-level (future).</li>
+<li>README "Five Pillars / Usage Governance" + CLAUDE.md — stop selling
+    "Environment groups … limits." Governance = capabilities/identity/forwarding
+    /attribution; budget = LiteLLM user (now) → key (future).</li>
+<li><code>pk_</code> hydrate warning text — its rationale was partly budget; reword to
+    "<code>ek_</code> gives Environment attribution + capability scoping" (drop the budget
+    justification). [ties to G13]</li>
+<li><strong>Future design (per-key budget):</strong> spec a key-level <code>max_budget</code> (≤ user
+  budget) for <code>ek_</code> and/or <code>pk_</code>. Reverses KEY-10 for keys when introduced.</li>
+</ul>
+<h3 id="sub-question-decided-a">Sub-question — <strong>DECIDED: (a)</strong><a class="headerlink" href="#sub-question-decided-a" title="Permanent link">&para;</a></h3>
+<p>Budget stays <strong>out-of-band</strong>: deployer / LiteLLM-Operator sets the user budget in
+LiteLLM; ACH keeps KEY-10 (sets nothing). No code change, honest wording. Per-key
+budget (future) is where ACH would first start writing budgets.</p>
+<hr />
+<h2 id="g2-ui-objects-api-gitops-export-latent-originui-without-ui">G2 — UI Objects API / GitOps export = latent (<code>origin='ui'</code> without UI)<a class="headerlink" href="#g2-ui-objects-api-gitops-export-latent-originui-without-ui" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_1">Plain explanation<a class="headerlink" href="#plain-explanation_1" title="Permanent link">&para;</a></h3>
+<p>The design (issue #34) anticipated <strong>two write paths</strong> for ACH objects:
+- <code>origin='cr'</code> — you <code>kubectl apply</code> a CRD, the operator projects it to Postgres.
+- <code>origin='ui'</code> — a future UI/REST writes rows directly to Postgres.
+To let both coexist, every projection row got an <code>origin</code> ('cr'|'ui') + <code>locked</code>
+column, and "who wins if both touch the same object" logic
+(<code>ErrOriginConflict</code> → CR condition <code>Synced=False/ConflictWithUIRow</code>).</p>
+<h3 id="what-the-code-actually-does-delivered_1">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The UI write path does not exist.</strong> No <code>/platform/objects/&lt;kind&gt;</code> route. No
+  YAML/GitOps export endpoint. (verified: zero matches.)</li>
+<li><strong>No code ever writes <code>origin='ui'</code>.</strong> Only the operator writes, always
+  <code>origin='cr', locked=true</code>. Every <code>'ui'</code> mention in the codebase is a <em>comment
+  about a future possibility</em>.</li>
+<li>But the <strong>whole apparatus is wired and dormant</strong>:</li>
+<li><code>origin</code>+<code>locked</code> columns + CHECK constraints on environments, plugins,
+    prompts, artifacts, external_refs, marketplace_plugins, skills, … (migrations
+    000005/000008/000009).</li>
+<li><code>ErrOriginConflict</code> in <code>internal/db/{environments,plugins,prompts,artifacts,
+    backend_identity_policies,litellm_connections,tx}.go</code>.</li>
+<li><code>ConflictWithUIRow</code> condition flip in ~6 controllers.</li>
+<li><code>ErrUIOriginRefreshUnsupported</code> in <code>refresh_signal.go</code>; content-service
+    <code>pipeline.go</code>/<code>paths.go</code> guard against "future origin='ui' rows pointing
+    outside the cache."</li>
+<li><strong>Consequence:</strong> <code>ErrOriginConflict</code> can never be returned (every row is 'cr',
+  the origin-gated UPSERT never misses), so <code>ConflictWithUIRow</code> is <strong>unreachable</strong>
+  in the delivered system. It is dead logic, not a working capability.</li>
+</ul>
+<h3 id="the-fork-the-real-decision">The fork (the real decision)<a class="headerlink" href="#the-fork-the-real-decision" title="Permanent link">&para;</a></h3>
+<p>Everything hinges on one product question: <strong>is a UI / non-GitOps write path on
+the roadmap?</strong></p>
+<ul>
+<li><strong>Option A — GitOps-first; keep machinery dormant, DE-DOCUMENT it.</strong>
+  Reviewer's recommendation. <code>origin</code>/<code>locked</code> stay as internal-reserved columns</li>
+<li>dormant code (cheap, forward-compatible). Remove from user-facing
+  spec/README/acceptance; stop advertising <code>ConflictWithUIRow</code>; move UI Objects
+  API + GitOps export to an explicit P2 backlog. <strong>No code removal</strong>, just honest
+  framing: "v1alpha1 is GitOps-first; the only supported write path is Kubernetes
+  CRDs."</li>
+<li><strong>Option B — rip it out.</strong> Drop <code>origin</code>/<code>locked</code> columns (down-migration),
+  delete <code>ErrOriginConflict</code> + <code>ConflictWithUIRow</code> + <code>ErrUIOriginRefreshUnsupported</code></li>
+<li>the content-service guards. Simplest <em>runtime</em> mental model now; throws away
+  the #34 work and pays re-add cost if a UI ever lands. Migration churn on 6+
+  tables.</li>
+<li><strong>Option C — finish it.</strong> Build the UI Objects API + GitOps export so the
+  machinery becomes live. Large P2; only if a UI is a committed product direction.</li>
+</ul>
+<h3 id="decision-decided-keep-it-option-a-now-option-c-later">Decision — <strong>DECIDED: keep it (Option A now → Option C later)</strong><a class="headerlink" href="#decision-decided-keep-it-option-a-now-option-c-later" title="Permanent link">&para;</a></h3>
+<p>The <code>origin</code>/<code>locked</code> machinery is <strong>intentional forward-investment</strong>, not
+over-engineering to remove. The product intent (confirmed) is a concrete planned
+feature — so <strong>Option B (rip out) is rejected</strong>. Reviewer's "latent
+over-engineering" label is downgraded to "deliberate, but must not be marketed as
+shipped."</p>
+<p><strong>Intended UI → GitOps promotion flow (the roadmap target):</strong>
+1. <strong>Today:</strong> all objects (plugins, prompts, environments, …) registered via
+   <strong>GitOps</strong> → <code>origin='cr'</code>, <code>locked=true</code>, read-only everywhere but Git.
+2. <strong>Future UI (P2):</strong> a UI registers the same object kinds for max UX →
+   <code>origin='ui'</code>, <code>locked=false</code> (editable in the UI). Workflow: define an
+   Environment in the UI, test it, confirm it works.
+3. <strong>Export/promotion (P2):</strong> an "Export" action serializes a working <code>ui</code> object
+   to <strong>YAML</strong> → the user commits it to their GitOps repo.
+4. On GitOps apply, the operator <strong>overwrites the row to <code>origin='cr'</code></strong> → it
+   becomes <strong>read-only in the UI</strong> (now GitOps-owned). UI = scratchpad with great
+   UX; GitOps = source of truth. <code>origin</code> is exactly the provenance flag that
+   makes this hand-off safe.</p>
+<p><strong>Status split (what's live vs reserved):</strong>
+- <strong>Live in v1alpha1:</strong> GitOps-only write path (<code>origin='cr'</code>). This is the only
+  active object-write surface.
+- <strong>Reserved / future (P2):</strong> UI Objects API (writes <code>origin='ui'</code>), GitOps
+  export (ui→yaml), and the <strong>promotion reconcile</strong> (cr-apply over a matching ui
+  row → flip <code>origin</code> ui→cr, lock).</p>
+<h3 id="important-gap-inside-g2-promotion-half-is-not-built">Important gap inside G2 — promotion half is NOT built<a class="headerlink" href="#important-gap-inside-g2-promotion-half-is-not-built" title="Permanent link">&para;</a></h3>
+<p>The current code implements only the <strong>block</strong> half of conflict resolution:
+operator UPSERT is origin-gated → on a <code>ui</code> row it returns <code>ErrOriginConflict</code> and
+flips the CR to <code>Synced=False/ConflictWithUIRow</code>, <strong>refusing to overwrite</strong>. The
+<strong>promote</strong> half the flow above needs — <em>"a CRD that matches a <code>ui</code> row wins and
+flips <code>origin</code> ui→cr"</em> (frozen §15.8 steps 3–5, <code>PromotionMismatch</code> on no-match) —
+is <strong>absent</strong>. So as wired today, an exported-then-applied object would be
+<em>blocked</em>, not <em>promoted</em>. Building the promotion reconcile is part of the P2 UI
+work and is what actually delivers step 4 above.</p>
+<h3 id="follow-up-work-not-done-yet_1">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Docs (now, cheap):</strong> in <code>../ach-spec/*-delivered.md</code>, README, CLAUDE.md —
+  state plainly "v1alpha1 write path is GitOps/CRD only; UI Objects API + export +
+  promotion are <strong>reserved/future (P2)</strong>, not active." Don't present
+  <code>ConflictWithUIRow</code> / <code>origin='ui'</code> as a shipped capability — label them
+  reserved.</li>
+<li><strong>Code (now, trivial):</strong> add a one-line "reserved for future UI write path
+  (#34); the promotion half is unbuilt — see G2" doc comment where
+  <code>ConflictWithUIRow</code> is set, so readers don't mistake dormant code for live.</li>
+<li><strong>P2 epic (future):</strong> UI Objects API (<code>POST/PUT/DELETE /platform/objects/&lt;kind&gt;</code>
+  writing <code>origin='ui'</code>), GitOps export endpoint (object→YAML), and the promotion
+  reconcile (origin flip on spec-match + <code>PromotionMismatch</code> on mismatch).</li>
+<li><strong>Keep:</strong> all <code>origin</code>/<code>locked</code> columns, constraints, <code>ErrOriginConflict</code>, and
+  per-controller <code>ConflictWithUIRow</code> wiring — they are the foundation, not waste.</li>
+</ul>
+<hr />
+<h2 id="g3-litellm-sk-virtual-key-plaintext-stored-security">G3 — LiteLLM <code>sk-</code> virtual-key plaintext stored (security)<a class="headerlink" href="#g3-litellm-sk-virtual-key-plaintext-stored-security" title="Permanent link">&para;</a></h2>
+<p><em>(Security item — written in plain prose, not compressed.)</em></p>
+<h3 id="plain-explanation_2">Plain explanation<a class="headerlink" href="#plain-explanation_2" title="Permanent link">&para;</a></h3>
+<p>When ACH mints a <code>pk_</code>/<code>ek_</code>, LiteLLM returns a virtual key (<code>sk-…</code>) — the actual
+credential that authorizes calls against LiteLLM. ACH currently stores that <code>sk-…</code>
+<strong>in plaintext</strong> in Postgres (<code>personal_keys.litellm_key_material</code>,
+<code>environment_keys.litellm_key_material</code>, migration <code>000011</code>).</p>
+<h3 id="why-its-there-the-architecture-pivot-plan-2026-06-10-forward-user-litellm-keymd">Why it's there (the architecture pivot — plan <code>2026-06-10-forward-user-litellm-key.md</code>)<a class="headerlink" href="#why-its-there-the-architecture-pivot-plan-2026-06-10-forward-user-litellm-keymd" title="Permanent link">&para;</a></h3>
+<p>The forwarder used to authenticate to LiteLLM with the shared <strong>master key</strong> plus
+an <code>x-litellm-key-id</code> delegation header (frozen FIX01 §A.6 — no per-user secret
+stored). It was changed to forward the <strong>caller's own virtual key</strong> as
+<code>x-litellm-api-key</code> for clean 1:1 identity. The concrete driver: <strong>LiteLLM
+v1.87.1's MCP gateway only grants a non-admin virtual key on the exact
+<code>/mcp/{subpath}</code> route; the master key falls through to an admin-only check and
+500s</strong> (<code>proxy.go:73-99</code>). So for <code>/mcp</code> the forwarder <em>must</em> present a non-admin
+user key, not the master. To have that key available at request time, ACH
+persists it — and, for the testing phase, persists it in cleartext (you accepted
+<em>"me da igual si es en claro, de momento"</em>). Every such path is tagged
+<code>TESTING-PHASE (reverts FIX01 §A.6)</code> so it is greppable when undone.</p>
+<h3 id="why-this-is-the-most-serious-finding">Why this is the most serious finding<a class="headerlink" href="#why-this-is-the-most-serious-finding" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>pk_</code>/<code>ek_</code> themselves are stored only as <strong>HMAC-SHA256-with-pepper hashes</strong> — a
+  database dump does not yield usable ACH keys.</li>
+<li><code>litellm_key_material</code> is the <strong>opposite</strong>: plaintext <code>sk-…</code>. A single read of
+  the Postgres dump yields <strong>every user's live LiteLLM credential</strong>, usable
+  directly against LiteLLM, bypassing ACH entirely (its budgets, audit, access
+  groups). The pepper protects the front-door keys and leaves the back-door key in
+  the clear.</li>
+<li>For a product whose pitch includes "credential boundary / minimize credential
+  sprawl," plaintext provider credentials at rest for the whole user base is
+  disqualifying for any production claim.</li>
+</ul>
+<h3 id="decision-decided-production-blocker-governance-now-fix-direction-open">Decision — <strong>DECIDED: production blocker + governance now; fix direction OPEN</strong><a class="headerlink" href="#decision-decided-production-blocker-governance-now-fix-direction-open" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Plaintext is acceptable in the testing phase ONLY.</strong> It must not reach
+   production in this form.</li>
+<li><strong>Make it a tracked, blocking release gate:</strong></li>
+<li>A blocking epic/issue to remove plaintext at rest.</li>
+<li>A security acceptance criterion: <em>"ACH stores no LiteLLM virtual-key
+     plaintext at rest."</em></li>
+<li>A build/runtime guard: when <code>litellm_key_material</code> is populated, the build
+     is <strong>non-production</strong> — loud startup warning, and a refuse-to-start switch
+     once a "production mode" flag exists.</li>
+<li><strong>Target fix direction — OPEN (pick one):</strong></li>
+<li><strong>Fix-1 — Encrypt at rest (recommended).</strong> Keep the forward-user-key
+     architecture (the MCP-gateway driver is real and hard to undo), but stop
+     storing cleartext. Envelope-encrypt <code>litellm_key_material</code> (KMS / sealed key
+     / a symmetric data-encryption key held like the existing <code>pepper</code>); platform-
+     api encrypts on write, forwarder decrypts on use. A DB dump alone becomes
+     useless without the separate data-encryption key. Moderate effort; both
+     services already share secret-handling infra.</li>
+<li><strong>Fix-2 — Restore master + <code>x-litellm-key-id</code> delegation.</strong> No per-user secret
+     stored for <code>/v1</code>/<code>/gemini</code>/<code>/a2a</code>. But the <code>/mcp</code> gateway constraint above
+     still needs a non-admin user key, so MCP must be solved separately (LiteLLM
+     Operator custom-auth plugin, or a per-request short-lived key mint). Cleaner
+     end-state, more work, depends on LiteLLM custom-auth being deployable. Needs
+     a spike.</li>
+<li><strong>Fix-3 — Mint on demand / don't persist.</strong> LiteLLM returns <code>sk-…</code> only once
+     at <code>/key/generate</code>; it cannot be re-fetched. Would require per-session key
+     regeneration (churn). Likely not viable — noted for completeness.</li>
+</ol>
+<h3 id="recommendation">Recommendation<a class="headerlink" href="#recommendation" title="Permanent link">&para;</a></h3>
+<p>Govern now (step 2 — cheap, immediate), then <strong>Fix-1 (encrypt at rest)</strong> as the
+target: it removes plaintext-at-rest without fighting the LiteLLM MCP-gateway
+constraint that forced the per-user-key model. Keep Fix-2 as a longer-term
+"eliminate storage entirely" goal contingent on a custom-auth spike.</p>
+<h3 id="fix-direction-decided-fix-1-encrypt-at-rest">Fix direction — <strong>DECIDED: Fix-1 (encrypt at rest)</strong><a class="headerlink" href="#fix-direction-decided-fix-1-encrypt-at-rest" title="Permanent link">&para;</a></h3>
+<p>Keep the forward-user-key architecture; encrypt <code>litellm_key_material</code> at rest.
+<strong>Fix-2 rejected</strong> — running a LiteLLM custom-auth plugin is operational overhead
+we don't want to own. No "delegation later" track.</p>
+<p><strong>Implementation sketch (for when we build it):</strong>
+- <strong>Cipher:</strong> AES-256-GCM (authenticated). Store <code>nonce || ciphertext</code> (base64 or
+  bytea) in the column; rename to <code>litellm_key_material_enc</code> to make "encrypted"
+  self-documenting, or keep the name with a changed content contract.
+- <strong>Key:</strong> a 32-byte data-encryption key in a Kubernetes Secret (mirror the
+  existing <code>pepper</code> pattern), RBAC-scoped to the <strong>platform-api</strong> (encrypt-on-mint)
+  and <strong>forwarder</strong> (decrypt-on-use) ServiceAccounts only. Operator/content-service
+  get no read access.
+- <strong>Write path:</strong> platform-api encrypts <code>keyResp.Key</code> at mint
+  (<code>sso.go</code>, <code>envkeys/handler.go</code>) before INSERT.
+- <strong>Read path:</strong> forwarder Director decrypts <code>kc.LiteLLMKeyMaterial</code> just before
+  <code>headers.StripAndRewrite</code> (<code>proxy.go:78-94</code>); plaintext lives only in memory for
+  the request.
+- <strong>Key rotation:</strong> support a <code>current</code>/<code>next</code> key id (same shape as the JWT
+  signing Secret) so material can be re-wrapped without downtime; tag rows with the
+  key id used.
+- <strong>Existing rows:</strong> testing-phase plaintext rows either get a one-time
+  re-encrypt migration or are invalidated (pre-migration keys already "break by
+  design" per the original plan) — clean cutover is acceptable.
+- <strong>Logging:</strong> never log decrypted material; the forwarder already forbids echoing
+  upstream key values.</p>
+<p><strong>Immediate governance (confirmed, do first, independent of the crypto work):</strong>
+- Blocking issue to land Fix-1 before any production claim.
+- Security acceptance criterion: <em>"ACH stores no LiteLLM virtual-key plaintext at
+  rest."</em>
+- Non-production build guard: loud startup warning when plaintext material is
+  detected; refuse-to-start under a future "production mode" flag.</p>
+<hr />
+<h2 id="g4-no-oci-ach-cli-image-initcontainer">G4 — No OCI <code>ach-cli</code> image / InitContainer<a class="headerlink" href="#g4-no-oci-ach-cli-image-initcontainer" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_3">Plain explanation<a class="headerlink" href="#plain-explanation_3" title="Permanent link">&para;</a></h3>
+<p>ACH's headline use case includes deployed agents / CI / Kubernetes Pods that run
+<code>ach-cli env hydrate</code> to populate an Environment <strong>before</strong> the agent workload
+starts — i.e. <code>ach-cli</code> as a Kubernetes <strong>InitContainer</strong>. That needs <code>ach-cli</code>
+packaged as a container image. It isn't.</p>
+<h3 id="what-the-code-actually-does-delivered_2">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>.goreleaser.yml</code> builds the <code>ach-cli</code> binary (<code>builds: id: ach-cli</code>) and ships
+  it as <strong>OS archives only</strong> (<code>archives: cli-binaries</code>).</li>
+<li>The <code>dockers:</code> block publishes <strong>only <code>ids: [ach]</code></strong> (the service binary) →
+  <code>ghcr.io/ackstorm/ach</code> (amd64/arm64 + manifest). There is <strong>no <code>ach-cli</code>
+  image</strong>, no <code>ach-cli</code> Dockerfile, no InitContainer/Job example.</li>
+<li>Workaround today: users build their own image wrapping <code>ach-cli</code>.</li>
+</ul>
+<h3 id="decision-decided-ship-a-separate-ach-cli-image-p1">Decision — <strong>DECIDED: ship a separate <code>ach-cli</code> image (P1)</strong><a class="headerlink" href="#decision-decided-ship-a-separate-ach-cli-image-p1" title="Permanent link">&para;</a></h3>
+<p>Publish <code>ghcr.io/ackstorm/ach-cli:&lt;version&gt;</code> as a <strong>separate</strong> image (NOT bundled
+into the service image — keeps the service image lean; <code>ach-cli</code> deliberately
+drops the k8s/controller-runtime deps). Priority <strong>P1</strong>: important for the agent/
+InitContainer story, but a build-your-own workaround exists, so it does not block
+correctness/security.</p>
+<h3 id="follow-up-work-not-done-yet_2">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>goreleaser:</strong> add <code>dockers:</code> entries for <code>ids: [ach-cli]</code> (amd64 + arm64) and a
+  <code>docker_manifests</code> multi-arch manifest, mirroring the <code>ach</code> image wiring.
+  Reuse the existing <strong>SBOM (CycloneDX) + cosign</strong> signing already applied to the
+  <code>ach</code> image.</li>
+<li><strong>Dockerfile:</strong> minimal <code>Dockerfile.ach-cli</code> — distroless/static base
+  (the static <code>CGO_ENABLED=0</code> build, cf. <code>make build-cli-host</code>), <code>ENTRYPOINT
+  ["ach-cli"]</code>, single explicit <code>COPY</code> of the binary (follows the repo's
+  no-<code>COPY . .</code> rule).</li>
+<li><strong>Examples:</strong> a Kubernetes <strong>InitContainer</strong> snippet — <code>ach-cli env hydrate</code>
+  writing to a shared <code>emptyDir</code> the agent container mounts; credentials
+  (<code>ACH_BASE_URL</code> + <code>ACH_API_KEY</code>/<code>ek_</code>) injected from a Secret. Optionally a Helm
+  values snippet / a one-shot <code>Job</code> example.</li>
+<li><strong>Docs:</strong> <code>../ach-spec/ach-cli-spec-final-delivered.md</code> §2.1/§2.3 (OCI image +
+  InitContainer) are currently marked NOT IMPLEMENTED — flip them to delivered
+  once the image ships.</li>
+</ul>
+<h3 id="open-minor-base-image">OPEN (minor) — base image<a class="headerlink" href="#open-minor-base-image" title="Permanent link">&para;</a></h3>
+<p>Distroless static (recommended — smallest attack surface; <code>ach-cli</code> is a static
+Go binary, no libc needed) vs alpine (shell available for debugging). Lean
+distroless; decide at build time.</p>
+<hr />
+<h2 id="g5-hydrate-sync-is-a-silent-stub">G5 — <code>hydrate --sync</code> is a silent stub<a class="headerlink" href="#g5-hydrate-sync-is-a-silent-stub" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_4">Plain explanation<a class="headerlink" href="#plain-explanation_4" title="Permanent link">&para;</a></h3>
+<p><code>ach-cli env hydrate --sync</code> is supposed to <strong>prune</strong> the files ACH projected for
+resources that an Environment <strong>no longer contains</strong> (you removed a plugin/prompt
+from the Environment; re-hydrate with <code>--sync</code> should delete its old projected
+files). The flag exists, looks operational — and does nothing.</p>
+<h3 id="what-the-code-actually-does-delivered_3">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The commit sequence calls <code>syncFn(existingState, existingState, …)</code>
+  (<code>commit.go:561</code>) — it passes the <strong>old state as BOTH <code>prev</code> and <code>new</code></strong>. The
+  prune algorithm removes entries present in <code>prev</code> but absent from <code>newFile</code>;
+  with <code>prev == new</code> nothing is ever absent → <strong>zero pruning</strong>. Pure no-op.
+  In-code <code>TODO(STATE-05 composition)</code>: the <code>newFile</code> arg should be the <em>composed
+  next-state</em> built later (step 12), but step 11 (sync) runs first.</li>
+<li><strong>The prune algorithm is real and proven</strong> (<code>Sync</code> at <code>wiring.go:1355</code>, with
+  <code>syncOne</code>/<code>syncComposite</code>/<code>syncDeep</code> inverse-merge) — <code>env uninstall</code> exercises
+  it. Only the <strong>hydrate wiring</strong> feeds it the wrong argument.</li>
+<li>Two distinct prunes — don't conflate:</li>
+<li><strong>STATE-04</strong> (works): an entry whose target file is <em>gone from disk</em> is
+    silently pruned on hydrate.</li>
+<li><strong>STATE-05 / <code>--sync</code></strong> (stub): an entry whose <em>resource was dropped from the
+    Environment</em> should be pruned. This is the broken one.</li>
+<li><strong>Why it matters:</strong> projected files include <strong>credential-bearing adapter
+  configs</strong>. A user who trusts <code>--sync</code> to clean up a removed resource is left
+  with stale (possibly secret-bearing) files on disk, while the command reports
+  success. A flag that silently lies is worse than a missing flag.</li>
+<li>Mitigation that exists today: <code>env uninstall</code> does full, correct removal — so
+  the "remove everything" path works; only the incremental "remove what's no
+  longer in the Environment" path is broken.</li>
+</ul>
+<h3 id="decision-decided-sync-must-not-silently-no-op">Decision — <strong>DECIDED: <code>--sync</code> must not silently no-op</strong><a class="headerlink" href="#decision-decided-sync-must-not-silently-no-op" title="Permanent link">&para;</a></h3>
+<p>Non-negotiable: stop the lie. Two implementation paths (pick one):
+- <strong>Path 1 — disable now, wire later (recommended immediate).</strong> Make <code>--sync</code>
+  return an explicit <code>not_implemented</code> error (or hide the flag) so it can't
+  mislead. Cheap, honest, removes the trap immediately. Schedule the real wiring
+  as P1.
+- <strong>Path 2 — wire STATE-05 now.</strong> Compute the composed next-state and pass it as
+  <code>Sync</code>'s <code>newFile</code> (the code is pre-wired: <em>"Sync is wired so future composition
+  automatically activates STATE-05 inverse-merge"</em>). Constraint: preserve the
+  <code>maybeKill(11)</code> SIGKILL-injection boundary that <code>sc2_commit_sequence_sigkill</code>
+  asserts — compute next-state earlier without moving the step-11 kill point.
+  Medium effort; the algorithm already exists and is tested via <code>env uninstall</code>.</p>
+<h3 id="recommendation_1">Recommendation<a class="headerlink" href="#recommendation_1" title="Permanent link">&para;</a></h3>
+<p><strong>Path 1 immediately</strong> (1-line honesty fix — flag stops lying), then <strong>Path 2 as
+P1</strong> to make <code>--sync</code> actually prune dropped-resource files. End-state: <code>--sync</code>
+works; until then it fails loudly instead of silently.</p>
+<h3 id="fix-decided-path-2-wire-state-05-now">Fix — <strong>DECIDED: Path 2 (wire STATE-05 now)</strong><a class="headerlink" href="#fix-decided-path-2-wire-state-05-now" title="Permanent link">&para;</a></h3>
+<p>Wire <code>--sync</code> for real rather than disabling it. Pass the composed next-state as
+<code>Sync</code>'s <code>newFile</code> so entries for resources dropped from the Environment are
+pruned. Hard constraint: <strong>preserve the <code>maybeKill(11)</code> SIGKILL-injection boundary</strong>
+that <code>sc2_commit_sequence_sigkill</code> asserts — compute/compose the next-state earlier
+(or via a thunk) without relocating the step-11 kill point. The prune algorithm
+(<code>Sync</code>/<code>syncOne</code>/<code>syncComposite</code>/<code>syncDeep</code>, <code>wiring.go:1355</code>) is already proven
+via <code>env uninstall</code>; only the hydrate call site (<code>commit.go:561</code>) changes from
+<code>(existingState, existingState)</code> to <code>(existingState, composedNextState)</code>.
+Implementation note: this is the STATE-05 composition follow-up the TODO references.</p>
+<hr />
+<h2 id="g6-content-fetch-platforms-list-missing">G6 — <code>content fetch</code> / <code>platforms list</code> missing<a class="headerlink" href="#g6-content-fetch-platforms-list-missing" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_5">Plain explanation<a class="headerlink" href="#plain-explanation_5" title="Permanent link">&para;</a></h3>
+<p>Two debug/utility commands the frozen CLI spec defined are not built:
+- <code>content fetch &lt;kind&gt; &lt;name&gt;</code> — download one content blob (prompt/plugin/
+  artifact/skill) straight from the Content Service, bypassing adapter projection.
+- <code>platforms list</code> — print the platform adapters compiled into the CLI.</p>
+<h3 id="what-the-code-actually-does-delivered_4">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Neither command exists (no <code>content</code> / <code>platforms</code> subcommand in
+  <code>cmd/ach-cli/</code>).</li>
+<li>The server side exists: <code>GET /content/{kind}/{name}</code> with <code>x-ach-key</code>
+  (+ <code>x-ach-environment</code> for <code>pk_</code>) is live on the Content Service. So
+  <code>content fetch</code> is a thin client over an existing endpoint.</li>
+</ul>
+<h3 id="why-content-fetch-matters-the-asymmetry">Why <code>content fetch</code> matters (the asymmetry)<a class="headerlink" href="#why-content-fetch-matters-the-asymmetry" title="Permanent link">&para;</a></h3>
+<p><code>content fetch</code> is the one tool that <strong>isolates a hydrate failure</strong>: it answers
+"is the problem auth, the Content Service, the cache, the manifest, or the local
+adapter projection?" by fetching the raw blob directly. Without it, a broken
+hydrate is hard to bisect. <code>platforms list</code> is cosmetic — the adapter set is
+already discoverable via <code>env hydrate --target --help</code>.</p>
+<h3 id="how-content-normally-flows-so-you-can-place-content-fetch">How content normally flows (so you can place <code>content fetch</code>)<a class="headerlink" href="#how-content-normally-flows-so-you-can-place-content-fetch" title="Permanent link">&para;</a></h3>
+<p><code>ach-cli env hydrate</code> runs this chain:
+1. <strong>Auth</strong> — CLI sends <code>x-ach-key</code> (<code>pk_</code>/<code>ek_</code>).
+2. <strong>Manifest</strong> — <code>POST /platform/hydrate</code> returns a list of resources, each with
+   a <code>downloadUrl</code> ( <code>{baseURL}/content/{kind}/{name}</code> ) + sha256.
+3. <strong>Content</strong> — for each resource the CLI does <code>GET /content/{kind}/{name}</code>; the
+   Content Service streams the cached blob (<code>sendfile</code>).
+4. <strong>Extract</strong> — CLI safely un-tars the blob.
+5. <strong>Project</strong> — the platform adapter writes the files into <code>.claude/</code> etc.</p>
+<p><code>content fetch</code> is a one-shot client for <strong>step 3 only</strong> — same auth, no
+extraction, no adapter — so it isolates which layer is broken.</p>
+<h3 id="concrete-debugging-value">Concrete debugging value<a class="headerlink" href="#concrete-debugging-value" title="Permanent link">&para;</a></h3>
+<p>When a hydrate fails you don't know which layer failed. <code>content fetch &lt;kind&gt;
+&lt;name&gt;</code> tells you immediately:
+- <code>content fetch</code> <strong>401/403</strong> → it's <strong>auth</strong> (key expired / wrong environment).
+- <code>content fetch</code> <strong>404 / not-ready</strong> → it's the <strong>cache / operator</strong> (upstream not
+  fetched yet, or <code>SourceReachable</code> failing). Nothing to do with your workspace.
+- <code>content fetch</code> <strong>succeeds</strong> (blob downloads fine) → the problem is <strong>extraction
+  or adapter projection</strong> (step 4/5), i.e. local — not the server.</p>
+<p>Without it, that bisection is guesswork. <code>platforms list</code> carries none of this
+weight — it just prints which adapters the CLI knows so you know what <code>--target</code>
+accepts; the same info is already in <code>env hydrate --target --help</code>.</p>
+<h3 id="why-theyre-missing">Why they're missing<a class="headerlink" href="#why-theyre-missing" title="Permanent link">&para;</a></h3>
+<p>Scoped out: the priority surface was <code>hydrate</code> / <code>uninstall</code> / <code>status</code>; the two
+debug utilities were deprioritized, not blocked.</p>
+<h3 id="decision-decided-your-call-build-content-fetch-p1-skip-platforms-list">Decision — <strong>DECIDED (your call): build <code>content fetch</code> (P1); skip <code>platforms list</code></strong><a class="headerlink" href="#decision-decided-your-call-build-content-fetch-p1-skip-platforms-list" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>content fetch</code> → P1.</strong> Build it.</li>
+<li><strong><code>platforms list</code> → skip.</strong> The adapter set is already surfaced via <code>--help</code> and
+  the <code>--target</code> flag. Note: the "platforms" concept was <strong>renamed to "targets"</strong>
+  (<code>--platform</code> → <code>--target</code>), so a <code>platforms list</code> command would also be
+  misnamed. Drop it from scope (remove from spec, don't mark as deferred-backlog).</li>
+</ul>
+<h3 id="sketch-for-whenever-its-built">Sketch (for whenever it's built)<a class="headerlink" href="#sketch-for-whenever-its-built" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli content fetch &lt;kind&gt; &lt;name&gt;</code>:</li>
+<li><code>kind ∈ {prompt, plugin, artifact, skill}</code>; resolve credential the same way
+    <code>env hydrate</code> does (<code>--api-key</code>/<code>--env-key</code>/<code>ACH_*</code>/profile); <code>--environment</code>
+    required for <code>pk_</code>.</li>
+<li><code>GET {baseURL}/content/{kind}/{name}</code> with <code>x-ach-key</code> (+ <code>x-ach-environment</code>).</li>
+<li>Write raw bytes to stdout (gzip for plugin/skill/artifact-directory) or to
+    <code>--output &lt;file&gt;</code>; surface the upstream error envelope + exit code on failure.</li>
+<li>No extraction, no adapter logic — deliberately raw, that's the debug value.</li>
+<li>Update spec <code>ach-cli-spec-final-delivered.md</code> §5.9 from NOT IMPLEMENTED →
+    delivered.</li>
+<li><code>ach-cli platforms list</code> — <strong>dropped from scope</strong> (adapter set already in
+  <code>--help</code> / <code>--target</code>; "platforms" was renamed to "targets"). Remove §5.8 from
+  the CLI spec rather than leaving it as a deferred backlog item.</li>
+</ul>
+<hr />
+<h2 id="g7-metrics-gaps-control-plane-is-blind">G7 — Metrics gaps (control plane is blind)<a class="headerlink" href="#g7-metrics-gaps-control-plane-is-blind" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_6">Plain explanation<a class="headerlink" href="#plain-explanation_6" title="Permanent link">&para;</a></h3>
+<p>Prometheus metrics tell operators what's happening without reading logs. ACH
+instrumented the <strong>data plane</strong> well but left the <strong>control plane</strong> (Platform API
++ operator domain logic) with no ACH-specific metrics — so "why is this
+Environment not working?" can't be answered from metrics alone.</p>
+<h3 id="what-the-code-actually-does-delivered_5">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_5" title="Permanent link">&para;</a></h3>
+<p><strong>Instrumented (confirmed registered):</strong>
+- Forwarder: <code>forwarder_requests_total{route,key_type,outcome}</code>,
+  <code>forwarder_request_duration_seconds{route,key_type,status_class}</code>,
+  <code>forwarder_jwt_signed_total{kind}</code>, <code>forwarder_jwt_suppressed_total{kind,reason}</code>.
+- Content Service: <code>content_service_requests_total{kind,outcome}</code>,
+  <code>content_service_request_duration_seconds{kind}</code>,
+  <code>content_service_bytes_served_total{kind}</code>.
+- Shared: <code>litellm_unreachable_total{caller}</code>.
+- Operator orphan loop: <code>ach_orphan_cleanup_{candidates,revoked,skipped{reason}}_total</code>.</p>
+<p><strong>Missing (frozen §18.5 — confirmed zero matches):</strong>
+| Metric | What it would tell you | Value |
+|--------|------------------------|-------|
+| <code>environment_available{name}</code> (gauge) | Is this Environment ready right now? The single direct answer to "why doesn't my env work." | <strong>highest</strong> |
+| <code>operator_external_ref_refresh_total{kind,type,result}</code> | Are upstream fetches (plugin/skill/prompt/artifact) succeeding or failing, by source type? | <strong>high</strong> |
+| <code>platform_api_hydrate_duration_seconds</code> (histogram) | Hydrate latency/health — the user-facing operation. | <strong>high</strong> |
+| <code>key_resolution_cache_hits_total</code> / <code>misses_total {key_type,layer}</code> | Is the key-resolution cache (Redis/in-proc) effective, or hammering Postgres? Perf diagnosis. | <strong>medium</strong> |
+| <code>platform_api_login_total{outcome}</code> | Login success/failure rate (SSO/CLI). | <strong>medium</strong> |
+| <code>operator_marketplace_plugin_count{marketplace}</code> | How many plugins/skills each marketplace discovered. | <strong>low</strong> |</p>
+<p>Note: the operator does expose generic controller-runtime reconcile metrics, but
+none of the ACH-domain signals above.</p>
+<h3 id="why-it-matters">Why it matters<a class="headerlink" href="#why-it-matters" title="Permanent link">&para;</a></h3>
+<p>The forwarder/content metrics tell you about <strong>traffic</strong>, but a broken Environment
+usually fails <strong>before</strong> any traffic — at refresh (upstream unreachable), at
+availability (a condition stuck False), or at hydrate. None of those have a metric
+today, so detection relies on <code>kubectl describe</code> / logs per-object.</p>
+<h3 id="decision-decided-your-call-build-all-except-the-low-value-one">Decision — <strong>DECIDED (your call): build all EXCEPT the low-value one</strong><a class="headerlink" href="#decision-decided-your-call-build-all-except-the-low-value-one" title="Permanent link">&para;</a></h3>
+<p>Build:
+- <code>environment_available{name}</code> (gauge) — <strong>P1</strong> (highest health signal).
+- <code>operator_external_ref_refresh_total{kind,type,result}</code> — P1.
+- <code>platform_api_hydrate_duration_seconds</code> (histogram) — P1.
+- <code>key_resolution_cache_hits_total</code> / <code>key_resolution_cache_misses_total {key_type,layer}</code> — P1/P2 (perf).
+- <code>platform_api_login_total{outcome}</code> — P1/P2.</p>
+<p><strong>Skip:</strong> <code>operator_marketplace_plugin_count{marketplace}</code> (cosmetic, low value) —
+drop from the §18.5 metric set rather than leaving it as a backlog promise.</p>
+<h3 id="follow-up-work-not-done-yet_3">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add the five metrics at their call sites: operator (env reconcile → set
+  <code>environment_available</code>; refresh driver → <code>operator_external_ref_refresh_total</code>),
+  platform-api (hydrate handler → duration histogram; login/SSO+CLI → login total;
+  key resolver → cache hit/miss).</li>
+<li>Platform-api <code>/metrics</code>: ensure these register on the platform-api collector
+  (today it exposes only Go/process collectors).</li>
+<li>Spec <code>ach-spec-final-delivered.md</code> §18.5: mark the five as delivered; remove
+  <code>operator_marketplace_plugin_count</code>.</li>
+</ul>
+<h3 id="still-open-carried-forward">Still OPEN (carried forward)<a class="headerlink" href="#still-open-carried-forward" title="Permanent link">&para;</a></h3>
+<p>Alert rules derived from these metrics (stale cache, litellm unreachable, failed
+refresh, unavailable env, pk_ runtime usage) — not yet decided; revisit under the
+"recommended alerts" roadmap item.</p>
+<hr />
+<h2 id="g8-skill-skill-marketplace-missing-from-admin-refresh">G8 — <code>skill</code> / <code>skill-marketplace</code> missing from admin refresh<a class="headerlink" href="#g8-skill-skill-marketplace-missing-from-admin-refresh" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_7">Plain explanation<a class="headerlink" href="#plain-explanation_7" title="Permanent link">&para;</a></h3>
+<p><code>admin refresh &lt;kind&gt; &lt;name&gt;</code> is the manual "go re-fetch this from upstream now"
+lever (for debugging / forcing an update without waiting for the periodic refresh
+or re-applying the CR). It works for plugin/prompt/artifact/marketplace — but
+<strong>not</strong> for the newer <code>skill</code> / <code>skill-marketplace</code> kinds.</p>
+<h3 id="what-the-code-actually-does-delivered_6">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Server (<code>admin/handler.go:552</code>): valid kinds =
+  <code>"plugin","prompt","artifact","pluginmarketplace"</code>. <code>skill</code>/<code>skillmarketplace</code>
+  → <code>400 unknown kind</code>.</li>
+<li>CLI (<code>admin.go:149</code>): <code>allowedRefreshKinds = {plugin,prompt,artifact,marketplace}</code>
+  (<code>marketplace</code>→<code>pluginmarketplace</code> server-side). No skill.</li>
+<li><code>db.SetForceRefresh</code> (<code>refresh_signal.go:79</code>): switch handles <code>plugin/prompt/
+  artifact</code> (→ <code>external_refs</code>) and <code>pluginmarketplace</code> (→ <code>marketplace_plugins</code>).
+  No <code>skill</code>/<code>skillmarketplace</code> branch.</li>
+<li><strong>Consequence:</strong> you cannot force-refresh a skill or skill-marketplace. The only
+  way to update one is wait for the operator's periodic refresh or re-apply/poke
+  the CR.</li>
+</ul>
+<h3 id="why-this-is-the-symptom-not-the-disease">Why this is the symptom, not the disease<a class="headerlink" href="#why-this-is-the-symptom-not-the-disease" title="Permanent link">&para;</a></h3>
+<p><code>Skill</code>/<code>SkillMarketplace</code> were added fast and mirror <code>Plugin</code>/<code>PluginMarketplace</code>
+almost everywhere (CRD, projection, content route, hydrate, admin inventory) —
+but the admin-refresh surface was missed. That's exactly the "each new kind
+duplicates a responsibility matrix and leaves small holes" pattern → the general
+cure is the <strong>kind-lifecycle contract</strong> tracked separately as <strong>G10</strong>.</p>
+<h3 id="the-fix-is-mechanical-low-effort">The fix is mechanical (low effort)<a class="headerlink" href="#the-fix-is-mechanical-low-effort" title="Permanent link">&para;</a></h3>
+<p>Skills already live in <code>external_refs</code> (kind discriminator <code>skill</code>); skill-
+marketplace skills live in <code>skill_marketplace_skills</code> (like <code>marketplace_plugins</code>):
+- <code>SetForceRefresh</code>: add <code>"skill"</code> to the <code>external_refs</code> case; add
+  <code>"skillmarketplace"</code> to a marketplace-style case targeting
+  <code>skill_marketplace_skills</code>.
+- Server handler valid-kind set: add <code>skill</code> + <code>skillmarketplace</code>.
+- CLI <code>allowedRefreshKinds</code>: add <code>skill</code> + <code>skill-marketplace</code> (with name mapping).
+- Confirm the <code>skill_controller</code> / <code>skillmarketplace_controller</code> honor
+  <code>force_refresh_requested_at</code> on the <code>ach_refresh</code> notification (the plugin path
+  already does).</p>
+<h3 id="decision-decided-fix-it-all-crs-are-same-class-citizens">Decision — <strong>DECIDED: fix it — "all CRs are same-class citizens"</strong><a class="headerlink" href="#decision-decided-fix-it-all-crs-are-same-class-citizens" title="Permanent link">&para;</a></h3>
+<p>Stated principle (load-bearing, applies beyond G8): <strong>every CR kind is a
+first-class citizen — it must satisfy the full responsibility matrix; no
+second-class kinds.</strong> Consequences:
+- <strong>G8 immediate:</strong> add <code>skill</code> + <code>skill-marketplace</code> to admin refresh
+  (<code>SetForceRefresh</code> external_refs/<code>skill_marketplace_skills</code> cases, server
+  valid-kind set, CLI <code>allowedRefreshKinds</code> with name mapping) and confirm the
+  skill controllers honor <code>force_refresh_requested_at</code>. <strong>P1.</strong>
+- <strong>Parity audit (part of G8):</strong> don't stop at refresh — audit <code>Skill</code> and
+  <code>SkillMarketplace</code> against the <strong>whole</strong> matrix and close any other holes the
+  fast-add left (see the matrix under G10). Likely candidates to re-check:
+  admin-refresh (this), metrics, CLI render/describe/status, docs/spec symmetry.
+- <strong>G10 pre-decided:</strong> this principle <em>is</em> the kind-lifecycle contract. Adopt it
+  as policy so the hole class stops recurring (formalized at G10).</p>
+<hr />
+<h2 id="g9-local-package-manager-repopluginskill-framing">G9 — Local package manager (<code>repo</code>/<code>plugin</code>/<code>skill</code>) framing<a class="headerlink" href="#g9-local-package-manager-repopluginskill-framing" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_8">Plain explanation<a class="headerlink" href="#plain-explanation_8" title="Permanent link">&para;</a></h3>
+<p>ACH has two ways to get a plugin/skill onto disk:
+- <strong>Governed:</strong> <code>ach-cli env hydrate</code> — pulls from the ACH Hub, scoped to an
+  Environment, authorized, audited, reproducible.
+- <strong>Local/ungoverned:</strong> <code>ach-cli plugin install &lt;name@repo&gt;</code> / <code>skill install</code> /
+  <code>repo add</code> — fetches <strong>directly from git</strong> into your adapter dirs, no Hub.
+The risk: nothing tells the user which one they're using, and they share the same
+nouns (<code>plugin</code>, <code>skill</code>).</p>
+<h3 id="what-the-code-actually-does-delivered_7">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Local PM lives in <code>internal/cli/localpkg/</code> (store/source/discover/manager) and
+  fetches via <code>internal/gitfetch</code> straight from <code>github:</code>/<code>git:</code> sources.</li>
+<li><strong>Zero Hub calls</strong> — <code>repo</code>/<code>plugin</code>/<code>skill</code> never touch <code>/platform</code>, <code>/content</code>,
+  or hydrate. Installs are tracked in a local <code>installed.json</code>. Confirmed: no
+  governed path involved.</li>
+<li>It <strong>shares machinery</strong> with the governed path — the conflict resolver "mirrors
+  the governed [hydrate]" (<code>localpkg/manager/conflict.go</code>), and both write into the
+  same adapter dirs. Good for consistency, but reinforces the confusion.</li>
+<li><strong>Current help text carries no governance framing</strong> — <code>plugin.go</code>: "manages
+  locally installed Claude Code plugins"; <code>repo.go</code>: "Manage local package
+  repositories." Nothing says "ungoverned / not audited / bypasses the Hub."</li>
+</ul>
+<h3 id="the-tension">The tension<a class="headerlink" href="#the-tension" title="Permanent link">&para;</a></h3>
+<p><code>plugin install foo@repo</code> looks like an ACH-managed action but is the opposite:
+no Environment, no authorization, no audit, no central reproducibility. A user (or
+an agent) could lean on it thinking they're inside the control plane. This is a
+<strong>positioning</strong> problem, not a correctness bug — the feature is genuinely useful
+DX (fast, local, no Hub ceremony).</p>
+<h3 id="decision-decided-your-call-option-c-structural-namespace">Decision — <strong>DECIDED (your call): Option C — structural namespace</strong><a class="headerlink" href="#decision-decided-your-call-option-c-structural-namespace" title="Permanent link">&para;</a></h3>
+<p>Move <code>repo</code>/<code>plugin</code>/<code>skill</code> under a <code>local</code> parent group so the ungoverned
+boundary is in the command path itself, and the top-level <code>plugin</code>/<code>skill</code> nouns
+are freed (no collision with the governed concepts):
+- <code>ach-cli local repo add|list|remove|update</code>
+- <code>ach-cli local plugin install|uninstall|update|outdated|list</code>
+- <code>ach-cli local skill install|uninstall|update|outdated|list</code></p>
+<p>Namespace word: <strong><code>local</code></strong> (recommended — matches the code package <code>localpkg</code> and
+the existing help text; alternative <code>dev</code> is the only real other candidate —
+minor, decide at implementation). Keep the explicit "ungoverned" wording (Option A
+text) in the <code>local</code> group's Long help — C carries the boundary structurally, the
+wording still explains <em>why</em>.</p>
+<h3 id="follow-up-work-not-done-yet_4">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Re-parent the three cobra commands under a new <code>ach-cli local</code> command; the
+  <code>internal/cli/localpkg/*</code> impl is unchanged.</li>
+<li><code>local</code> group Long help: "Local, ungoverned developer path — installs directly
+  from git into your adapter dirs. Not governed by the ACH Hub (no Environment, no
+  authorization, no audit, no central reproducibility). For governed/reproducible
+  distribution use <code>ach-cli env hydrate</code>."</li>
+<li>Update spec <code>ach-cli-spec-final-delivered.md</code> §5.12 + Appendix A command tree to
+  the <code>local</code>-namespaced form.</li>
+<li><strong>Breaking CLI change</strong> (command paths move) — acceptable pre-release
+  (v1alpha1). Minor open: ship hidden top-level aliases for one release as a
+  transition, or hard-cut. Lean hard-cut (pre-release, cleaner).</li>
+</ul>
+<hr />
+<h2 id="g10-kind-lifecycle-contract-all-crs-same-class-citizens">G10 — Kind-lifecycle contract ("all CRs same-class citizens")<a class="headerlink" href="#g10-kind-lifecycle-contract-all-crs-same-class-citizens" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_9">Plain explanation<a class="headerlink" href="#plain-explanation_9" title="Permanent link">&para;</a></h3>
+<p>Every new CR kind touches a dozen surfaces (CRD, DB projection, status, content
+route, hydrate, admin, metrics, docs, tests). When a kind is added fast, small
+surfaces get missed — exactly what happened to <code>Skill</code>/<code>SkillMarketplace</code>
+(G8: admin refresh). The fix is a <strong>checklist</strong>: a kind isn't "done" until every
+applicable surface is wired, in the same PR.</p>
+<h3 id="pre-decided">Pre-decided<a class="headerlink" href="#pre-decided" title="Permanent link">&para;</a></h3>
+<p>The <strong>G8 principle "all CRs are same-class citizens"</strong> already commits us to this.
+G10 just formalizes it: write the checklist down and enforce it.</p>
+<h3 id="proposed-checklist-ach-tailored-confirmadjust">Proposed checklist (ACH-tailored — confirm/adjust)<a class="headerlink" href="#proposed-checklist-ach-tailored-confirmadjust" title="Permanent link">&para;</a></h3>
+<p>A new <code>*.ach.ackstorm.ai</code> kind MUST land every <strong>applicable</strong> row in the same PR.
+Applicability differs by archetype — <strong>object</strong> (Plugin/Skill/Artifact/Prompt),
+<strong>discovery</strong> (PluginMarketplace/SkillMarketplace), <strong>governance</strong> (Environment/
+BackendIdentityPolicy), <strong>config singleton</strong> (LiteLLMConnection):</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Surface</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>CRD + CEL validation, printcolumns, shortName; generated CRD + <code>make helm-sync-check</code></td>
+<td>all</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Projection table (migration) + writer controller using <code>WithTxNotify</code> + <code>ach_&lt;domain&gt;_changed</code> channel</td>
+<td>all</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Status conditions (closed-set type+reason); <code>ConflictWithUIRow</code> + <code>origin</code>/<code>locked</code> if UI-writable</td>
+<td>all</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Reconciler <code>internal/controller/ach/&lt;kind&gt;_controller.go</code>; finalizer/deletion drain if external side effects</td>
+<td>all</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Content pipeline: F1 path-narrowing fetch, Stage-2 validation gate, cache path, <code>/content/&lt;kind&gt;/{name}</code></td>
+<td>content/object kinds</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Admin inventory: <code>admin list &lt;kind&gt;</code> + <code>GET /platform/admin/&lt;kinds&gt;</code></td>
+<td>all</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Admin refresh: <code>SetForceRefresh</code> case + server valid-kind set + CLI <code>allowedRefreshKinds</code> + controller honors <code>force_refresh_requested_at</code></td>
+<td>external-ref / discovery</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Hydrate: manifest block + CLI stage/nest + adapter projection rule + <code>state.File</code> bucket</td>
+<td>kinds that reach the workspace</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Metrics: refresh-result counter + availability/health signal</td>
+<td>all (as applicable)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Docs/spec: <code>../ach-spec/*-delivered.md</code>, README, CLAUDE.md, <code>examples/</code>, api-reference (<code>make gen-crd-ref-docs</code>)</td>
+<td>all</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Tests: unit + envtest + e2e fixture in <code>test/e2e/cluster/</code></td>
+<td>all</td>
+</tr>
+</tbody>
+</table>
+<h3 id="decision-decided-your-call">Decision — <strong>DECIDED (your call)</strong><a class="headerlink" href="#decision-decided-your-call" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>(a) Checklist:</strong> adopted as-is (the table above). Archetype-aware applicability
+  stays. Amend later if a surface is found missing.</li>
+<li><strong>(b) Home + enforcement: BOTH.</strong></li>
+<li><strong>Reference doc</strong> at <strong><code>docs/references/adding-a-cr-kind.md</code></strong> — the full
+    checklist + archetype applicability matrix (the "how").
+    <em>Note:</em> the repo's existing deep-narrative references live at <strong>top-level
+    <code>references/</code></strong> (e.g. <code>references/repo-layout.md</code>), and <code>docs/references/</code>
+    does not exist yet. Honoring the stated <code>docs/references/</code> path; confirm at
+    implementation whether to create <code>docs/references/</code> or place it under the
+    existing <code>references/</code> to match convention.</li>
+<li><strong>PR-template checklist</strong> — a per-surface tick-list in
+    <code>.github/pull_request_template.md</code> so the contract is a visible gate, not just
+    a doc.</li>
+<li><strong>CLAUDE.md pointer</strong> — one row in the MANDATORY Reading Table → the reference
+    doc, so agents read it before adding a kind.</li>
+<li><strong>Retroactive:</strong> run the checklist against <code>Skill</code>/<code>SkillMarketplace</code> (folded
+  into G8's parity audit) and <code>LiteLLMConnection</code>.</li>
+</ul>
+<hr />
+<h2 id="g12-gateway-as-6th-mode-framing">G12 — Gateway as 6th mode: framing<a class="headerlink" href="#g12-gateway-as-6th-mode-framing" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_10">Plain explanation<a class="headerlink" href="#plain-explanation_10" title="Permanent link">&para;</a></h3>
+<p><code>ach gateway</code> is a <strong>dumb edge reverse proxy</strong> — prefix-routes <code>/platform</code>,
+<code>/content</code>, <code>/v1</code>, <code>/gemini</code>, <code>/mcp</code>, <code>/a2a</code>, <code>/.well-known</code> to the right service.
+No auth, no <code>/metrics</code>, no <code>/dex</code>, no business logic. Its job: present <strong>one
+origin</strong> (one Service/Ingress) in front of platform-api + content-service +
+forwarder. The reviewer's only point: don't sell a logic-free proxy as an
+architectural pillar.</p>
+<h3 id="what-the-code-actually-does-delivered_8">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>internal/gateway/</code> (proxy/routes/server); <code>doc.go</code> states "no auth … no
+  /metrics … no /dex".</li>
+<li><strong>Same <code>ach</code> binary, <code>args:["gateway"]</code></strong> — NOT a separate image (my earlier
+  correction to the review). It is a separate <strong>Deployment</strong> + a <code>gateway.enabled</code>
+  Helm toggle.</li>
+<li>The public Ingress targets <code>ach-gateway</code>; in dev the nginx <code>ach-local-gateway</code>
+  shim fronts it to add <code>/dex</code> + <code>/metrics/&lt;svc&gt;</code> for a single <code>localhost:8080</code>
+  origin.</li>
+<li><strong>Optional:</strong> <code>gateway.enabled</code> can be off; you can route per-service Ingress
+  instead. Single-origin is the convenience, not a hard requirement.</li>
+</ul>
+<h3 id="decision-decided-your-call-option-a-reframe-as-optional-edge">Decision — <strong>DECIDED (your call): Option A — reframe as optional edge</strong><a class="headerlink" href="#decision-decided-your-call-option-a-reframe-as-optional-edge" title="Permanent link">&para;</a></h3>
+<p>Keep the gateway; reframe in docs. The architecture is the <strong>5 logic modes</strong>
+(operator, platform-api, forwarder, content-service, migrate); the gateway is an
+<strong>optional single-origin edge proxy</strong> — logic-free, <code>gateway.enabled</code>-toggleable,
+with per-service Ingress as the alternative. Docs-only; no behavior change.</p>
+<h3 id="follow-up-work-not-done-yet_5">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../ach-spec/ach-spec-final-delivered.md</code> + README + CLAUDE.md: present gateway
+  as optional edge/packaging, not a co-equal architectural mode; state it carries
+  no logic and can be disabled.</li>
+<li>Keep the mode table, but annotate gateway as "edge proxy (optional)".</li>
+</ul>
+<hr />
+<h2 id="g13-pk_-on-runtime-routes-unscoped-ux-alerting">G13 — <code>pk_</code> on runtime routes (unscoped) — UX / alerting<a class="headerlink" href="#g13-pk_-on-runtime-routes-unscoped-ux-alerting" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_11">Plain explanation<a class="headerlink" href="#plain-explanation_11" title="Permanent link">&para;</a></h3>
+<p>A <code>pk_</code> (Personal Key) is accepted on runtime routes (<code>/v1</code>, <code>/mcp</code>, …) just like
+an <code>ek_</code>. But <code>pk_</code> is <strong>not bound to any Environment</strong>: LiteLLM authorizes it
+against the <strong>union of the user's capabilities</strong>, with no Environment access-group
+or attribution tag. <code>ek_</code> is the Environment-scoped key. The risk is purely
+perception: a user may think a <code>pk_</code> runtime call is Environment-scoped when it
+isn't.</p>
+<h3 id="what-the-code-actually-does-delivered_9">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>pk_</code> works on runtime routes, unscoped — <strong>intentional</strong>. The frozen spec made
+  this a <strong>permanent decision</strong> and <em>removed</em> the "server-side toggle to forbid
+  <code>pk_</code> on runtime" from the backlog (mental-model-is-contract): <code>pk_</code> = a person,
+  <code>ek_</code> = a workload bound to an Environment.</li>
+<li>The hydrate <code>pk_</code> warning exists (<code>pkWarning</code>, <code>hydrate.go:71</code>) — though it
+  currently renders in the post-run Tips footer, and its text still leans on the
+  (now removed, see <strong>G1</strong>) budget rationale.</li>
+<li>Alerting is already feasible: <code>forwarder_requests_total{key_type}</code> carries the
+  <code>pk</code>/<code>ek</code> label — a dashboard/alert on <code>key_type="pk"</code> on runtime routes needs
+  no new metric.</li>
+</ul>
+<h3 id="the-decision-space">The decision space<a class="headerlink" href="#the-decision-space" title="Permanent link">&para;</a></h3>
+<p>The behavior is intentional and frozen-decided; this gap is about <strong>UX hardening +
+one optional policy fork</strong>:
+- <strong>Always (regardless of fork):</strong>
+  - Reword the <code>pk_</code> hydrate warning (tie to <strong>G1</strong> — drop the budget
+    justification; say "<code>pk_</code> is not Environment-scoped; use <code>ek_</code> for
+    Environment-bound workloads / CI / agents").
+  - Docs: explicit "dev/personal → <code>pk_</code>" vs "agent/CI/workload → <code>ek_</code>" guidance.
+  - Recommended alert on <code>forwarder_requests_total{key_type="pk"}</code> for runtime
+    routes (ties to the G7 alerts item).
+- <strong>Fork — optional server-side <code>pk_</code>-forbid switch:</strong>
+  - <strong>Honor frozen (no toggle).</strong> <code>pk_</code> runtime stays permanently allowed;
+    enforcement is the user's deployment choice via LiteLLM, not ACH. Just ship the
+    UX + alert.
+  - <strong>Add an optional per-deployment policy</strong> to reject <code>pk_</code> on runtime routes for
+    strict environments. <strong>Reverses the frozen "permanent, no toggle" decision</strong> —
+    a real product change, server-side flag on the forwarder.</p>
+<h3 id="decision-decided-your-call-ux-hardening-only-honor-frozen-no-toggle">Decision — <strong>DECIDED (your call): UX hardening only; honor frozen (no toggle)</strong><a class="headerlink" href="#decision-decided-your-call-ux-hardening-only-honor-frozen-no-toggle" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>(1) UX hardening — yes:</strong></li>
+<li>Reword the <code>pk_</code> hydrate warning (tie to <strong>G1</strong> — drop budget rationale; say
+    "<code>pk_</code> is not Environment-scoped; use <code>ek_</code> for Environment-bound workloads /
+    CI / agents"). Consider rendering it pre-write, not only in the Tips footer.</li>
+<li>Docs: explicit "dev/personal → <code>pk_</code>" vs "agent/CI/workload → <code>ek_</code>" guidance.</li>
+<li>Recommended alert on <code>forwarder_requests_total{key_type="pk"}</code> for runtime
+    routes (ties to the G7 alerts item).</li>
+<li><strong>(2) Fork — honor frozen:</strong> <strong>no server-side <code>pk_</code>-forbid toggle.</strong> <code>pk_</code> on
+  runtime stays a permanent first-class capability; strict-environment enforcement
+  is the deployer's choice via LiteLLM, not an ACH switch. Mental-model-is-contract
+  stands.</li>
+</ul>
+<hr />
+<h2 id="g14-litellm-default-team-dependency-already-addressed-reviewer-stale">G14 — LiteLLM <code>default</code> Team dependency — <strong>ALREADY ADDRESSED (reviewer stale)</strong><a class="headerlink" href="#g14-litellm-default-team-dependency-already-addressed-reviewer-stale" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_12">Plain explanation<a class="headerlink" href="#plain-explanation_12" title="Permanent link">&para;</a></h3>
+<p>Every SSO-provisioned user is enrolled into a LiteLLM team aliased <code>default</code>. The
+reviewer flagged that ACH doesn't create it, so a missing <code>default</code> team would
+500 the first login. <strong>That bootstrap now exists</strong> — the reviewer's claim was
+based on the SSO path alone and missed the operator's proactive bootstrap.</p>
+<h3 id="what-the-code-actually-does-delivered_10">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>EnsureDefaultTeam</code> (<code>internal/litellm/team.go:29</code>): idempotent — list-first via
+  <code>ListTeamsByAlias("default")</code>, <code>POST /team/new</code> only if absent.</li>
+<li>The <strong>LiteLLMConnection reconciler calls it</strong> (<code>litellmconnection_controller.go:229</code>):
+  <em>"Operator-side bootstrap: guarantee LiteLLM has the canonical <code>default</code> team
+  before any SSO callback fires. Idempotent — will retry on next reconcile."</em> This
+  is exactly the recommended fix (the connection reconciler owns the bootstrap).</li>
+<li>The SSO path still renders <code>500 default_team_missing</code> (<code>auth/doc.go:22</code>) <em>if</em> the
+  team is genuinely absent — but the operator proactively creates it, so in steady
+  state it is present before logins.</li>
+</ul>
+<h3 id="residual-minor-startup-ordering-window">Residual (minor) — startup-ordering window<a class="headerlink" href="#residual-minor-startup-ordering-window" title="Permanent link">&para;</a></h3>
+<p>The only remaining edge: a login that arrives <strong>before</strong> the operator's first
+successful <code>EnsureDefaultTeam</code> (operator just started / <code>LiteLLMConnection</code> not yet
+<code>Ready</code> / LiteLLM briefly unreachable) can still 500. It <strong>self-heals</strong> — the next
+reconcile creates the team and subsequent logins succeed. The 500 is transient,
+not a permanent dead-end.</p>
+<h3 id="decision-open-your-call-but-near-closed">Decision — <strong>OPEN (your call) — but near-closed</strong><a class="headerlink" href="#decision-open-your-call-but-near-closed" title="Permanent link">&para;</a></h3>
+<p>The core gap is fixed. Only choose how to treat the transient startup window:
+- <strong>A — accept it (recommended).</strong> It self-heals; document the 500 as a transient
+  "control plane still converging" and move on. Zero work.
+- <strong>B — harden it.</strong> e.g. make the SSO <code>default_team_missing</code> path attempt a
+  lazy <code>EnsureDefaultTeam</code> once before failing, or gate login readiness on
+  <code>LiteLLMConnection Ready</code>. Small work, closes the window fully.
+Tell me A or B. (Also: this corrects the review — G14 was largely a non-issue.)</p>
+<hr />
+<h2 id="g15-backendidentitypolicy-invisible-conflicts-inverted-tiebreaker">G15 — BackendIdentityPolicy: invisible conflicts + inverted tiebreaker<a class="headerlink" href="#g15-backendidentitypolicy-invisible-conflicts-inverted-tiebreaker" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_13">Plain explanation<a class="headerlink" href="#plain-explanation_13" title="Permanent link">&para;</a></h3>
+<p>Two <code>BackendIdentityPolicy</code> CRs may name the same target (<code>kind</code>+<code>name</code>) — k8s
+only enforces <code>metadata.name</code> uniqueness. When that happens the Forwarder must
+pick one. Two problems: (1) the pick <strong>direction was inverted</strong> vs the frozen
+spec, and (2) the loser gets <strong>no status</strong>, so <code>kubectl describe</code> gives the
+operator no clue which BIP actually applies.</p>
+<h3 id="what-the-code-actually-does-delivered_11">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_11" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Tiebreaker = alphabetically LAST.</strong> <code>bipcache/cache.go:72</code> sorts by Name ASC
+  and takes <code>rows[len-1]</code> ("alpha-LAST winner per the ResolveWinner contract"). The
+  frozen spec specified alphabetically <strong>FIRST</strong> (<code>min(name)</code>). <strong>Inverted.</strong></li>
+<li>Twist worth keeping in mind: if the alpha-LAST row has
+    <code>forwardIdentityJWT=false</code>, the result is <strong>no JWT</strong> (explicit opt-out wins) —
+    any status computation must mirror this exact rule.</li>
+<li><strong>No conflict status.</strong> <code>backendidentitypolicy_controller.go:39,72,153</code> — the
+  operator deliberately "stays dumb on BIP duplicates" (OP-16): it emits <strong>no</strong>
+  <code>Synced=DuplicateTarget</code>, no positive <code>Synced=True</code>; steady-state = no condition.
+  The only <code>Synced=False</code> it ever writes is <code>ConflictWithUIRow</code> (the dormant G2
+  one). So a shadowed BIP looks identical to an applied one.</li>
+<li>Runtime is unaffected by status (Forwarder resolves directly from the cache) —
+  this is good (no status-write latency in the hot path), but it also means status
+  is the <em>only</em> place visibility could live, and it's empty.</li>
+</ul>
+<h3 id="two-decisions">Two decisions<a class="headerlink" href="#two-decisions" title="Permanent link">&para;</a></h3>
+<p><strong>(1) Tiebreaker direction.</strong> Either direction is a fine deterministic edge-case
+rule; what matters is that <strong>code, spec, and tests agree</strong> (today they don't —
+spec says FIRST, code does LAST).
+- <strong>Keep alpha-LAST</strong> (no code change; fix the spec/tests to match — recommended,
+  least churn), or
+- <strong>Restore alpha-FIRST</strong> (match frozen; change <code>cache.go</code>).</p>
+<p><strong>(2) Visibility of shadowed BIPs.</strong>
+- <strong>A — write a status condition on losers</strong> (e.g. <code>Effective=False</code> /
+  <code>Shadowed=True</code> with <code>message: "shadowed by BackendIdentityPolicy/&lt;winner&gt;"</code>).
+  Operator computes duplicate groups and <strong>mirrors the Forwarder's ResolveWinner
+  rule exactly</strong> (incl. the opt-out twist) so status can't lie. Restores
+  <code>kubectl describe</code> feedback. This re-introduces the frozen §9.3 <code>DuplicateTarget</code>
+  computation that OP-16 descoped — but as advisory status only (runtime stays
+  forwarder-resolved). Medium effort.
+- <strong>B — lighter signal:</strong> a Kubernetes Event on the loser and/or a metric
+  (<code>bip_duplicate_targets</code>), no per-CR condition. Cheaper, less precise.
+- <strong>C — accept + document.</strong> Duplicates are rare; just document the alpha-LAST
+  rule so operators can reason manually. Zero code.</p>
+<h3 id="decision-decided-your-call-restore-alpha-first-standardized-conflict-condition-a">Decision — <strong>DECIDED (your call): restore alpha-FIRST + standardized conflict condition (A)</strong><a class="headerlink" href="#decision-decided-your-call-restore-alpha-first-standardized-conflict-condition-a" title="Permanent link">&para;</a></h3>
+<p><strong>(1) Tiebreaker → restore alpha-FIRST.</strong> Reviewed the codebase: alpha-FIRST /
+first-wins is the <strong>house convention</strong>; BIP's alpha-LAST is the lone outlier.</p>
+<table>
+<thead>
+<tr>
+<th>Conflict point</th>
+<th>Direction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>BIP duplicate target</strong> (<code>bipcache/cache.go:72</code>, <code>db/backend_identity_policies.go:8</code>)</td>
+<td><strong>alpha-LAST</strong> ← outlier, FIX</td>
+</tr>
+<tr>
+<td>PluginMarketplace intra-marketplace dedup (<code>pluginmarketplace_controller.go:328</code>)</td>
+<td>first-wins ✓</td>
+</tr>
+<tr>
+<td>Hydrate <code>ConflictNamespace</code> plugin collision (<code>wiring.go:548</code>)</td>
+<td>keep earliest/first ✓</td>
+</tr>
+<tr>
+<td><code>ConflictOverwrite</code> (CLI <code>conflict.go:20</code>, localpkg <code>conflict.go:32</code>)</td>
+<td>last-wins — <em>different semantic (explicit overwrite policy, not a name-tiebreak); leave as-is</em></td>
+</tr>
+</tbody>
+</table>
+<p>Flip BIP to <strong>alpha-FIRST</strong> (<code>min(name)</code>), matching frozen + the house convention.
+Touch points: <code>internal/forwarder/bip.ResolveWinner</code> (the contract fn),
+<code>bipcache/cache.go</code> (<code>rows[len-1]</code> → <code>rows[0]</code>), <code>bipcache/doc.go</code>,
+<code>db/backend_identity_policies.go</code>, <code>proxy/handlers.go</code>, and the alpha-LAST tests.
+<strong>Keep the opt-out twist</strong> — if the now-alpha-FIRST winner has
+<code>forwardIdentityJWT=false</code> → no JWT (just applied to the first row instead of last).</p>
+<p><strong>(2) Visibility → A, with a STANDARDIZED conflict condition.</strong> Write a condition
+on the loser <strong>and</strong> standardize the conflict vocabulary across all kinds (your
+call). Proposal — reuse the existing <code>Synced=False</code> + reason pattern (already used
+by <code>ConflictWithUIRow</code>), adding a <strong>standard <code>reason=NameConflict</code></strong>:
+- Loser BIP: <code>Synced=False, reason=NameConflict, message:"shadowed by
+  BackendIdentityPolicy/&lt;winner&gt;"</code>.
+- Operator computes duplicate groups and mirrors the Forwarder's ResolveWinner
+  rule exactly (now alpha-FIRST + opt-out) so status can't lie. Runtime stays
+  forwarder-resolved (status advisory only).
+- <strong>Standardize:</strong> <code>NameConflict</code> becomes the canonical reason for "another CR of
+  the same kind claims the same identity/target," used by <em>every</em> kind that can
+  collide; <code>ConflictWithUIRow</code> stays the canonical reason for cross-origin
+  conflicts. Add "emits <code>Synced=False/NameConflict</code> on duplicate identity" to the
+  <strong>G10 kind-lifecycle checklist</strong> so new kinds inherit it.
+  - Open nit: condition <em>type</em> — keep it as a reason on the standard <code>Synced</code>
+    condition (recommended, matches <code>ConflictWithUIRow</code>), vs a dedicated
+    <code>NameConflict=True</code> condition type. Lean reason-on-<code>Synced</code> for consistency;
+    confirm at implementation.</p>
+<hr />
+<h2 id="g16-operator-content-service-single-replica-rwo-pvc">G16 — Operator + Content Service single replica (RWO PVC)<a class="headerlink" href="#g16-operator-content-service-single-replica-rwo-pvc" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_14">Plain explanation<a class="headerlink" href="#plain-explanation_14" title="Permanent link">&para;</a></h3>
+<p>The content cache lives on a <code>ReadWriteOnce</code> (RWO) volume — only one Pod can mount
+it. The operator <strong>writes</strong> content there (fetch → cache); the content-service
+<strong>reads</strong> it (<code>sendfile</code>). RWO forces both into the <strong>same Pod</strong> (content-service
+is a sidecar of the operator). Result: content serving can't scale horizontally,
+and content availability is tied to the operator Pod.</p>
+<h3 id="what-the-code-actually-does-delivered_12">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_12" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Cache PVC <code>ach-operator-cache</code> = <strong>ReadWriteOnce</strong> (<code>operator-deployment.yaml:22</code>).</li>
+<li>Content-service is a <strong>sidecar in the operator Pod</strong> — explicitly "RWO mandates
+  single-Pod mounters, hence co-location" (<code>operator-deployment.yaml:154</code>).</li>
+<li><code>operator.replicas</code> default <strong>1</strong>.</li>
+<li><strong>The fix is already designed-for:</strong> in-code comment — <em>"If the storage class is
+  upgraded to RWX (EFS/NFS/CephFS) this Pod can later be split"</em>
+  (<code>operator-deployment.yaml:155-156</code>).</li>
+</ul>
+<h3 id="important-scoping-only-the-content-path-is-structurally-limited">Important scoping — only the content path is structurally limited<a class="headerlink" href="#important-scoping-only-the-content-path-is-structurally-limited" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>forwarder / platform-api / gateway are stateless</strong> — they default to
+  <code>replicas: 1</code> in <code>values.yaml</code> but can scale to N today; no structural limit.</li>
+<li><strong>operator</strong> is single-active anyway (controller-runtime leader election is the
+  norm).</li>
+<li>The real coupling is <strong>content-service ↔ operator Pod</strong> (RWO): content serving
+  availability == operator Pod availability; an operator rolling update / crash
+  blips content serving, and content-service can't have its own replicas.</li>
+</ul>
+<h3 id="decision-open-your-call">Decision — <strong>OPEN (your call)</strong><a class="headerlink" href="#decision-open-your-call" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>For v1alpha1: accept (recommended).</strong> Single-replica content path is fine for
+  the current target; just <strong>document the limitation</strong> (content availability tied
+  to operator Pod; no content-service HA) and confirm the stateless services
+  (forwarder/platform-api/gateway) are scaled as needed.</li>
+<li><strong>P2 — pick the decoupling path (or defer):</strong></li>
+<li><strong>RWX split (recommended P2).</strong> Upgrade the storage class to RWX
+    (EFS/NFS/CephFS), split content-service into its own Deployment with N replicas
+    reading the shared volume. <strong>The code already anticipates this</strong> — smallest
+    change, keeps <code>sendfile</code>.</li>
+<li><strong>Object-store backend.</strong> Operator writes to S3/GCS/minio; content-service
+    streams from it. Most cloud-native + fully decoupled, but bigger change and
+    <strong>loses <code>sendfile</code></strong> (streams instead). 
+Tell me: accept for v1alpha1 (yes/no), and the P2 direction (RWX split / object-
+store / defer).</li>
+</ul>
+<h3 id="decision-decided-your-call-accept-for-v1alpha1-p2-direction-deferred">Decision — <strong>DECIDED (your call): accept for v1alpha1; P2 direction deferred</strong><a class="headerlink" href="#decision-decided-your-call-accept-for-v1alpha1-p2-direction-deferred" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>v1alpha1:</strong> accept the single-replica content path. <strong>Document the limitation</strong>
+  (content-serving availability tied to the operator Pod; no content-service HA;
+  scale the stateless forwarder/platform-api/gateway as needed via <code>replicas</code>).</li>
+<li><strong>P2:</strong> decoupling deferred — not chosen now. The <strong>RWX split</strong> is the
+  code-anticipated path when it's picked up (storage class → RWX, split
+  content-service into its own Deployment). Revisit at the scaling/HA milestone.</li>
+</ul>
+<hr />
+<h2 id="g17-jwt-nbf-removed-spec-says-backends-must-verify-it">G17 — JWT <code>nbf</code> removed (spec says backends MUST verify it)<a class="headerlink" href="#g17-jwt-nbf-removed-spec-says-backends-must-verify-it" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_15">Plain explanation<a class="headerlink" href="#plain-explanation_15" title="Permanent link">&para;</a></h3>
+<p>The frozen JWT contract (§9) lists <code>nbf</code> ("not before") as a claim ACH emits and
+tells backends they MUST verify it. The delivered Forwarder <strong>does not emit <code>nbf</code></strong>.
+On its own that's a contract inconsistency; the question is whether it actually
+breaks any backend.</p>
+<h3 id="what-the-code-actually-does-delivered_13">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_13" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>signer.go:158-184</code>: Sign mints <code>iss</code>, <code>sub</code>, <code>aud</code>, <code>iat</code>, <code>exp</code> (+ <code>email</code>).
+  <strong>No <code>nbf</code></strong> (and no <code>jti</code>, which is correct per §9).</li>
+<li><strong>Severity is LOWER than first flagged</strong> — the reference backend doesn't require
+  <code>nbf</code>:</li>
+<li>mcp-echo <code>verify.go</code> enforces <code>iss</code> + <code>aud</code> + <code>exp</code> (<code>WithExpirationRequired</code>);
+    it does <strong>not</strong> require <code>nbf</code>.</li>
+<li><code>jwt-go/v5</code> validates <code>nbf</code> only <strong>if present</strong>; an absent <code>nbf</code> is no
+    constraint. So a missing <code>nbf</code> passes a normal verifier.</li>
+<li>=&gt; Removing <code>nbf</code> does <strong>not</strong> break the reference fixture. This is
+    <strong>spec-vs-code drift</strong>, not a live interop break.</li>
+<li>Residual risk: a <em>third-party</em> backend written strictly to the frozen spec that
+  <strong>requires <code>nbf</code> presence</strong> (uncommon — most libs treat <code>nbf</code> as optional) would
+  reject ACH tokens.</li>
+</ul>
+<h3 id="the-real-trade-why-nbf-might-have-been-dropped">The real trade (why <code>nbf</code> might have been dropped)<a class="headerlink" href="#the-real-trade-why-nbf-might-have-been-dropped" title="Permanent link">&para;</a></h3>
+<p><code>nbf = iat</code> with zero leeway is a <strong>clock-skew footgun</strong>: a backend whose clock is
+slightly behind the issuer sees <code>nbf</code> in the future and rejects a freshly-minted
+token. The 120-second <code>exp</code> already bounds validity, so <code>nbf</code> adds little for such
+a short-lived token while adding skew risk. Dropping it is defensible.</p>
+<h3 id="decision-open-your-call_1">Decision — <strong>OPEN (your call)</strong><a class="headerlink" href="#decision-open-your-call_1" title="Permanent link">&para;</a></h3>
+<p>Pick one (both close the inconsistency):
+- <strong>Align spec to code — drop <code>nbf</code> (recommended).</strong> Update frozen/delivered §9:
+  ACH emits <code>iss/sub/aud/iat/exp</code> (+<code>email</code>), no <code>nbf</code>; backends MUST verify
+  <code>iss/aud/exp</code> (remove <code>nbf</code> from the MUST list). Zero code change; avoids the
+  clock-skew footgun. Note in <code>writing-an-mcp-backend</code> docs that <code>nbf</code> is absent.
+- <strong>Restore <code>nbf</code> in code.</strong> Add <code>"nbf"</code> to Sign to match the frozen spec exactly.
+  One line — but reintroduce the skew risk; mitigate with a small negative leeway
+  (<code>nbf = now - 60</code>) rather than <code>nbf = now</code>, and tell backends to verify with
+  leeway.
+Lean: <strong>drop <code>nbf</code></strong> (align spec to code) — simpler and skew-safe, and the
+reference backend already doesn't use it. Tell me which.</p>
+<h3 id="decision-decided-your-call-drop-nbf-align-spec-to-code">Decision — <strong>DECIDED (your call): drop <code>nbf</code> (align spec to code)</strong><a class="headerlink" href="#decision-decided-your-call-drop-nbf-align-spec-to-code" title="Permanent link">&para;</a></h3>
+<p>ACH does not emit <code>nbf</code>; the contract is updated to match.
+- Spec <code>ach-spec-final-delivered.md</code> §9 + §9.1: remove <code>nbf</code> from the claims block
+  and from the "backends MUST verify" list; state the minted set is
+  <code>iss/sub/aud/iat/exp</code> (+<code>email</code>), no <code>nbf</code>, no <code>jti</code>. <code>exp = iat + 120</code> is the
+  sole time bound.
+- <code>docs/runbooks/writing-an-mcp-backend.md</code> + mcp-echo README: note <code>nbf</code> is absent;
+  verify <code>iss/aud/exp</code> only.
+- No code change.</p>
+<hr />
+<h2 id="g18-jwt-sub-is-now-the-bare-owner-email-dropped-namespace-prefix">G18 — JWT <code>sub</code> is now the bare owner email (dropped <code>&lt;namespace&gt;/</code> prefix)<a class="headerlink" href="#g18-jwt-sub-is-now-the-bare-owner-email-dropped-namespace-prefix" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_16">Plain explanation<a class="headerlink" href="#plain-explanation_16" title="Permanent link">&para;</a></h3>
+<p>The frozen contract said <code>sub = "&lt;namespace&gt;/&lt;owner-email&gt;"</code> and told backends to
+"parse on the first <code>/</code>." The delivered Forwarder sets <code>sub</code> to the <strong>bare owner
+email</strong> (no namespace prefix) and <strong>adds an <code>email</code> claim</strong> with the same value.
+This was an <strong>intentional change</strong> (commit <code>4c646d4</code>, "drop namespace prefix from
+JWT sub, use bare owner email").</p>
+<h3 id="what-the-code-actually-does-delivered_14">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_14" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>handlers.go:131-136</code> / <code>signer.go</code>: <code>sub = kc.OwnerEmail</code> (bare), plus
+  <code>email = kc.OwnerEmail</code>. The <code>Namespace</code> field was removed from the forwarder
+  deps entirely.</li>
+<li><strong>Not a live break</strong> — the reference mcp-echo backend returns <code>sub</code> <strong>verbatim</strong>
+  (<code>verify.go</code> <code>Verified.Sub</code>); it does not split on <code>/</code>. Only a third-party
+  backend written to the frozen spec that extracts a namespace from the <code>sub</code>
+  prefix would mis-read.</li>
+<li>The change is <strong>sensible</strong>: <code>iss</code> already scopes the deployment/signing
+  authority; the frozen spec itself conceded "namespace prefixes inside <code>sub</code> …
+  do not disambiguate signing trust, which is scoped by <code>iss</code> alone." So the
+  prefix was redundant for trust — only a cross-deployment principal-labelling
+  nicety, an edge case.</li>
+</ul>
+<h3 id="note-sub-and-email-are-now-identical">Note — <code>sub</code> and <code>email</code> are now identical<a class="headerlink" href="#note-sub-and-email-are-now-identical" title="Permanent link">&para;</a></h3>
+<p>Both carry the bare owner email → redundant. Harmless (<code>email</code> is a conventional
+claim some backends prefer), but worth a deliberate keep/drop.</p>
+<h3 id="decision-open-your-call_2">Decision — <strong>OPEN (your call)</strong><a class="headerlink" href="#decision-open-your-call_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Ratify bare-email <code>sub</code> (recommended)</strong> — keep the intentional change; make the
+  contract consistent: spec §9/§9.1 already documents bare <code>sub</code>; ensure
+  <code>writing-an-mcp-backend</code> docs say "principal = <code>sub</code> (bare email); key on
+  <code>iss</code>+<code>sub</code>," and add a one-line <strong>compat note</strong> that the legacy <code>&lt;ns&gt;/&lt;email&gt;</code>
+  form is gone (pre-release hard-cut). </li>
+<li>Sub-decision: <strong>keep the <code>email</code> claim</strong> (harmless, conventional) or <strong>drop it</strong>
+    as redundant with <code>sub</code>. Lean keep (cheap forward-compat for email-keyed
+    backends).</li>
+<li><strong>Revert to <code>&lt;namespace&gt;/&lt;email&gt;</code></strong> — only if you actually need cross-deployment
+  principal disambiguation inside <code>sub</code> beyond what <code>iss</code> gives. Unlikely.
+Tell me: ratify (and keep/drop <code>email</code>) or revert.</li>
+</ul>
+<h3 id="decision-decided-your-call-ratify-bare-email-sub-keep-email-claim">Decision — <strong>DECIDED (your call): ratify bare-email <code>sub</code>; keep <code>email</code> claim</strong><a class="headerlink" href="#decision-decided-your-call-ratify-bare-email-sub-keep-email-claim" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>sub</code> = bare owner email is the contract (the intentional <code>4c646d4</code> change stands).</li>
+<li><strong>Keep</strong> the <code>email</code> claim (bare owner email) — harmless, conventional, useful
+  for email-keyed backends, even though it duplicates <code>sub</code>.</li>
+<li>Docs: <code>writing-an-mcp-backend</code> + mcp-echo README — principal = <code>sub</code> (bare
+  email), key on <code>iss</code>+<code>sub</code>; add a one-line compat note that the legacy
+  <code>&lt;namespace&gt;/&lt;email&gt;</code> form is gone (pre-release hard-cut). Spec §9/§9.1 already
+  reflects bare <code>sub</code> + <code>email</code>.</li>
+<li>Clean up the stale "namespace-qualified" comments at <code>signer.go:47,181</code>.</li>
+</ul>
+<hr />
+<h2 id="g19-https-enforcement-downgraded-to-warning-only">G19 — HTTPS enforcement downgraded to warning-only<a class="headerlink" href="#g19-https-enforcement-downgraded-to-warning-only" title="Permanent link">&para;</a></h2>
+<p><em>(Security item — plain prose.)</em></p>
+<h3 id="plain-explanation_17">Plain explanation<a class="headerlink" href="#plain-explanation_17" title="Permanent link">&para;</a></h3>
+<p>The frozen spec required ACH to <strong>refuse</strong> non-<code>https://</code> URLs. The delivered code
+<strong>accepts <code>http://</code></strong> in two places, downgrading transport security:
+1. <strong>CLI → Hub</strong> (the important one): the CLI accepts an <code>http://</code> Hub URL and only
+   prints a warning. Over <code>http://</code>, the CLI sends the <code>pk_</code>/<code>ek_</code> <strong>bearer
+   credential in cleartext</strong> — interceptable on the wire.
+2. <strong>Operator HTTPSource fetch</strong> (lower risk): the operator will fetch content from
+   an <code>http://</code> source — plaintext, but it's content (not credentials) and the
+   concession exists for in-cluster e2e fixture servers.</p>
+<h3 id="what-the-code-actually-does-delivered_15">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_15" title="Permanent link">&para;</a></h3>
+<ul>
+<li>CLI <code>config.go</code>: <code>url:</code> must be <code>http://</code> or <code>https://</code>; <strong><code>http://</code> is
+  accepted</strong>, the command layer only warns about "plaintext transport"
+  (<code>login.go:176</code>, <code>hydrate.go:434</code>, <code>config.go:402</code>). <code>ErrInvalidURLScheme</code> fires
+  only for <em>non</em>-http(s) schemes (ftp, empty). <strong>No hard refusal, no <code>--insecure</code>
+  gate.</strong> (The <code>doc.go:17</code> "HTTPS-only refusal" comment is stale.)</li>
+<li>HTTPSource <code>fetcher.go:12-15,54-56</code>: <code>New()</code> accepts <code>http://</code> and <code>https://</code>;
+  the HTTPS-only invariant (T-02-02-03) was <strong>lifted in Phase 02.1</strong> for in-cluster
+  fixtures; "deployments are expected to use https:// by convention" — but nothing
+  enforces it.</li>
+</ul>
+<h3 id="risk-asymmetry">Risk asymmetry<a class="headerlink" href="#risk-asymmetry" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>CLI = high</strong>: <code>pk_</code>/<code>ek_</code> over plaintext <code>http://</code> to a remote Hub = credential
+  interception. This is the real exposure.</li>
+<li><strong>HTTPSource = low</strong>: cluster-internal content fetch; content integrity is a
+  separate concern; the e2e fixtures genuinely need plaintext.</li>
+</ul>
+<h3 id="decision-open-your-call_3">Decision — <strong>OPEN (your call)</strong><a class="headerlink" href="#decision-open-your-call_3" title="Permanent link">&para;</a></h3>
+<p><strong>CLI (pick one):</strong>
+- <strong>A — loopback-allow, remote-refuse (recommended).</strong> Auto-allow <code>http://</code> only
+  for <code>localhost</code>/<code>127.0.0.1</code> (local dev, frictionless); <strong>refuse</strong> remote
+  <code>http://</code> Hub URLs. Protects credentials by default without a flag.
+- <strong>B — default-refuse + explicit <code>--insecure</code>/<code>ACH_INSECURE</code> opt-in.</strong> Strict;
+  any <code>http://</code> (incl. localhost) needs the opt-in. Restores frozen posture
+  literally.
+- <strong>C — keep warn-only.</strong> Accept the downgrade. Weakest.</p>
+<p><strong>HTTPSource (pick one):</strong>
+- <strong>D — keep the <code>http://</code> concession, but document it as dev/e2e-only</strong> and (nice-
+  to-have) gate it behind a dev/insecure flag or restrict to cluster-internal
+  hostnames. Recommended — low risk, e2e needs it.
+- <strong>E — restore https-only + an explicit dev escape hatch.</strong> Stricter; more work.</p>
+<p>Lean <strong>A</strong> (CLI) + <strong>D</strong> (HTTPSource). Tell me your picks.</p>
+<h3 id="decision-decided-your-call-cli-b-default-refuse-opt-in-httpsource-d">Decision — <strong>DECIDED (your call): CLI = B (default-refuse + opt-in); HTTPSource = D</strong><a class="headerlink" href="#decision-decided-your-call-cli-b-default-refuse-opt-in-httpsource-d" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>CLI → B.</strong> Default-<strong>refuse</strong> any non-<code>https://</code> Hub URL (incl. localhost). Add
+  an explicit opt-in (<code>--insecure</code> flag and/or <code>ACH_INSECURE=1</code>) required for any
+  <code>http://</code>. Restores the frozen HTTPS-only posture literally; plaintext only
+  happens when the user deliberately opts in. Fix the stale <code>doc.go:17</code> comment to
+  match. Enforce in <code>config.go</code> Load/Save (not just a command-layer warning).</li>
+<li><strong>HTTPSource → D.</strong> Keep the <code>http://</code> concession but <strong>document it as
+  dev/e2e-only</strong>; nice-to-have follow-up: gate it behind a dev/insecure flag or
+  restrict plaintext to cluster-internal hostnames. Low risk (content, in-cluster).</li>
+</ul>
+<hr />
+<h2 id="g20-audit-events-dropped-fields">G20 — Audit events dropped fields<a class="headerlink" href="#g20-audit-events-dropped-fields" title="Permanent link">&para;</a></h2>
+<h3 id="plain-explanation_18">Plain explanation<a class="headerlink" href="#plain-explanation_18" title="Permanent link">&para;</a></h3>
+<p>ACH emits structured audit events (who did what, outcome). The frozen schema had
+more fields than the delivered event carries — and since audit/governance is a
+selling point, the missing fields weaken the trail.</p>
+<h3 id="what-the-code-actually-does-delivered_16">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_16" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>audit/emit.go:44</code> <code>Event</code> = <code>Action, Outcome, Actor, RequestID, KeyID,
+  Target{Kind,Name}, Extra map[string]string</code>.</li>
+<li><strong>Missing vs frozen schema:</strong>
+  | Field | Status | Value |
+  |-------|--------|-------|
+  | <code>environment</code> | only via <code>Extra</code> map (ad hoc) | <strong>high</strong> — the core governance dimension ("who did what to <em>which Environment</em>") |
+  | <code>source.ip</code> | <strong>not captured</strong> (middleware reads only <code>x-ach-key</code>) | medium — forensics |
+  | <code>source.user_agent</code> | <strong>not captured</strong> | medium — forensics |
+  | <code>route</code> | not captured | medium — context for forwarder/content events |
+  | <code>key.type</code> (pk/ek) | absent, but <strong>derivable</strong> from <code>KeyID</code> prefix (<code>pkid_</code>/<code>ekid_</code>) | low — redundant |
+  | <code>timestamp</code> | not an explicit field; the slog handler adds it | low — confirm handler emits it |</li>
+<li><strong>Action renames</strong> (cosmetic): <code>content.download</code>→<code>content.get</code>,
+  <code>hydrate</code>→<code>platform.hydrate</code>. Spec-vs-code naming drift, not a data gap.</li>
+</ul>
+<h3 id="decision-open-your-call_4">Decision — <strong>OPEN (your call)</strong><a class="headerlink" href="#decision-open-your-call_4" title="Permanent link">&para;</a></h3>
+<p>Pick the subset to promote to first-class audit fields:
+- <strong><code>environment</code> → first-class (recommended).</strong> Highest governance value; today
+  it's buried in <code>Extra</code>. Make it a typed field set on every env-scoped action.
+- <strong><code>source.ip</code> + <code>source.user_agent</code> → add (recommended for security).</strong> Requires
+  plumbing <code>r.RemoteAddr</code>/<code>X-Forwarded-For</code> + <code>User-Agent</code> from the request into
+  the audit context (not captured today).
+- <strong><code>route</code> → add (optional).</strong> Useful for forwarder/content events.
+- <strong><code>key.type</code> → derive or skip.</strong> Cheap to derive from the <code>KeyID</code> prefix; or skip
+  as redundant.
+- <strong><code>timestamp</code> → verify</strong> the slog handler emits it; add only if absent.
+- <strong>Action names → keep code, align spec.</strong> Don't churn code for <code>content.get</code> vs
+  <code>content.download</code>; update the spec to the delivered names.
+Tell me which fields to add (and confirm "keep code names, fix spec").</p>
+<h3 id="decision-decided-your-call-add-high-medium-fields">Decision — <strong>DECIDED (your call): add high + medium fields</strong><a class="headerlink" href="#decision-decided-your-call-add-high-medium-fields" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>environment</code> → first-class</strong> (high). Typed field, set on every env-scoped
+  audit action; stop relying on the <code>Extra</code> map.</li>
+<li><strong><code>source.ip</code> + <code>source.user_agent</code> → add</strong> (medium/security). Plumb
+  <code>r.RemoteAddr</code> / <code>X-Forwarded-For</code> + <code>User-Agent</code> from the request into the audit
+  context (new capture in middleware).</li>
+<li><strong><code>route</code> → add</strong> (medium). Include the request route on forwarder/content events.</li>
+<li><strong><code>key.type</code> → skip</strong> (low) — derivable from the <code>KeyID</code> prefix (<code>pkid_</code>/<code>ekid_</code>);
+  not worth a dedicated field.</li>
+<li><strong><code>timestamp</code> → verify</strong> the slog handler emits it; add only if missing.</li>
+<li><strong>Action names → keep code, fix spec.</strong> Keep <code>content.get</code> / <code>platform.hydrate</code>;
+  update the frozen/delivered spec audit table to the delivered names (no code
+  churn).</li>
+</ul>
+<hr />
+<h2 id="consolidated-roadmap-derived-from-the-g1g20-decisions">Consolidated roadmap (derived from the G1–G20 decisions)<a class="headerlink" href="#consolidated-roadmap-derived-from-the-g1g20-decisions" title="Permanent link">&para;</a></h2>
+<h3 id="p0-security-correctness-pre-production-blockers">P0 — security / correctness, pre-production blockers<a class="headerlink" href="#p0-security-correctness-pre-production-blockers" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>G3</strong> — encrypt LiteLLM <code>sk-</code> at rest (AES-256-GCM, k8s-Secret DEK); add the
+  non-production guard + security acceptance criterion. <em>(blocker)</em></li>
+<li><strong>G19</strong> — CLI: default-<strong>refuse</strong> non-<code>https://</code>; explicit <code>--insecure</code>/
+  <code>ACH_INSECURE</code> opt-in. <em>(credentials over plaintext)</em></li>
+<li><strong>G5</strong> — wire <code>--sync</code> (STATE-05 composition) so it prunes dropped-resource files
+  instead of silently no-op'ing. <em>(credential-file leak / honesty)</em></li>
+</ul>
+<h3 id="p1-close-v1alpha1">P1 — close v1alpha1<a class="headerlink" href="#p1-close-v1alpha1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>G1</strong> — purge per-Environment budget wording (budget = user-level now, key-level
+  future); reword <code>pk_</code> warning. <em>(docs)</em></li>
+<li><strong>G4</strong> — publish <code>ghcr.io/ackstorm/ach-cli</code> image + InitContainer/Job example.</li>
+<li><strong>G6</strong> — build <code>content fetch</code>; drop <code>platforms list</code>.</li>
+<li><strong>G7</strong> — add metrics: <code>environment_available</code>, <code>operator_external_ref_refresh_total</code>,
+  <code>platform_api_hydrate_duration_seconds</code>, key-resolution cache hit/miss,
+  <code>platform_api_login_total</code>.</li>
+<li><strong>G8</strong> — add <code>skill</code>/<code>skill-marketplace</code> to admin refresh + run the parity audit.</li>
+<li><strong>G9</strong> — re-parent local PM under <code>ach-cli local {repo,plugin,skill}</code>.</li>
+<li><strong>G10</strong> — write <code>docs/references/adding-a-cr-kind.md</code> + PR-template checklist +
+  CLAUDE.md pointer ("all CRs same-class").</li>
+<li><strong>G13</strong> — <code>pk_</code> UX: reword warning (pre-write), dev-vs-agent docs, pk-runtime
+  alert. <em>(no server-side toggle — honor frozen)</em></li>
+<li><strong>G15</strong> — BIP: restore alpha-FIRST tiebreaker; add standard <code>Synced=False/
+  NameConflict</code> condition on losers.</li>
+<li><strong>G17</strong> — drop <code>nbf</code> from the JWT contract (spec/docs only).</li>
+<li><strong>G18</strong> — ratify bare-email <code>sub</code> (keep <code>email</code>); fix docs + stale comments.</li>
+<li><strong>G20</strong> — audit: add <code>environment</code> (first-class) + <code>source.ip</code>/<code>source.user_agent</code></li>
+<li><code>route</code>; align spec to delivered action names.</li>
+<li><strong>G2 (docs half)</strong> — frame v1alpha1 as GitOps/CRD-only write path; mark UI
+  Objects/export/promotion as reserved P2; note <code>ConflictWithUIRow</code> is dormant.</li>
+<li><strong>G12</strong> — reframe gateway as an optional edge proxy (docs).</li>
+<li><strong>G14</strong> — document the transient <code>default_team_missing</code> startup window (accepted).</li>
+</ul>
+<h3 id="p2-evolution">P2 — evolution<a class="headerlink" href="#p2-evolution" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>G2 (build half)</strong> — UI Objects API (<code>origin='ui'</code> writes) + GitOps export + the
+  <strong>promotion reconcile</strong> (cr-apply over a matching ui row → flip origin, lock).</li>
+<li><strong>G16</strong> — content HA: RWX-split (code-anticipated) or object-store cache backend.</li>
+<li><strong>G7 (alerts)</strong> — recommended alert rules (see carried-forward).</li>
+</ul>
+<h2 id="carried-forward-open-items-not-yet-decided">Carried-forward open items (not yet decided)<a class="headerlink" href="#carried-forward-open-items-not-yet-decided" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>G7 alerts</strong> — alert rules from the new metrics (stale cache, litellm
+  unreachable, failed refresh, unavailable env, <code>pk_</code> runtime usage). Revisit.</li>
+<li>Minor implementation nits to settle at build time: G15 condition <em>type</em>
+  (reason-on-<code>Synced</code> vs dedicated <code>NameConflict=True</code>); G9 namespace word
+  (<code>local</code> vs <code>dev</code>); G4 base image (distroless vs alpine); G10 doc home
+  (<code>docs/references/</code> vs existing top-level <code>references/</code>); G2 transition aliases
+  (hidden vs hard-cut); G9 hidden top-level aliases.</li>
+</ul>
+<h2 id="corrections-to-the-external-review-for-the-record">Corrections to the external review (for the record)<a class="headerlink" href="#corrections-to-the-external-review-for-the-record" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>G14</strong> (<code>default</code> Team) — <strong>already fixed</strong>; the operator bootstraps it via the
+  LiteLLMConnection reconciler. Review was stale.</li>
+<li><strong>G17</strong> (<code>nbf</code>) — <strong>not a live break</strong>; the reference backend doesn't require
+  <code>nbf</code>. Downgraded from "P0 interop break" to spec-vs-code drift.</li>
+<li><strong>G18</strong> (<code>sub</code>) — <strong>intentional and sensible</strong> (<code>iss</code> already scopes the
+  deployment); not a live break (reference backend doesn't split <code>sub</code>).</li>
+<li><strong>G12</strong> (gateway) — it is the <strong>same <code>ach</code> image</strong> (arg-selected), not a separate
+  image as the review implied.</li>
+<li><strong>G1</strong> (budget) — per-Environment budget needs <strong>LiteLLM Enterprise</strong> (tags are
+  Enterprise-only; OSS drops them) and leaks via <code>pk_</code> — a sharper reason to drop
+  it than the review gave.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
