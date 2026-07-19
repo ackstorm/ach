@@ -946,3 +946,53 @@ func TestAdapterDispatcherImpl_ProjectionLeg_ScopeSkip(t *testing.T) {
 		t.Errorf("projection ran despite projectPlugins=false")
 	}
 }
+
+// TestRender_EmptyRuntime_WritesNoMcpJson asserts a content-only manifest
+// (no mcpServers, no a2aAgents) with includeRuntime=true writes NO runtime
+// adapter file — "wire everything projectable" means nothing to wire ⇒ nothing
+// written, not an empty {"mcpServers":{}}.
+func TestRender_EmptyRuntime_WritesNoMcpJson(t *testing.T) {
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime:       &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "gpt"}}}, // models only
+		Context:       &manifest.ContextBlock{},
+	}
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	// includeRuntime=true, projectPlugins=true — the DEFAULT scope.
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if len(res.WrittenFiles) != 0 {
+		t.Fatalf("content-only env must write no runtime file, got %d: %+v", len(res.WrittenFiles), res.WrittenFiles)
+	}
+	if _, err := os.Stat(filepath.Join(toolRoot, ".mcp.json")); !os.IsNotExist(err) {
+		t.Fatalf(".mcp.json must not be created for a content-only env (stat err=%v)", err)
+	}
+}
+
+// TestRender_NonEmptyRuntime_WritesMcpJson is the positive control: a manifest
+// WITH an mcp server still writes .mcp.json under the default scope.
+func TestRender_NonEmptyRuntime_WritesMcpJson(t *testing.T) {
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+	m := &manifest.Manifest{
+		SchemaVersion: "v1alpha1",
+		Environment:   "demo",
+		Runtime: &manifest.RuntimeBlock{
+			MCPServers: []manifest.ContentRef{{ID: "s1", Endpoint: "http://x/mcp/s1"}},
+		},
+		Context: &manifest.ContextBlock{},
+	}
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if len(res.WrittenFiles) != 1 {
+		t.Fatalf("env with 1 mcp must write 1 runtime file, got %d", len(res.WrittenFiles))
+	}
+}
