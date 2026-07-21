@@ -136,11 +136,15 @@ func TestClassifyLitellmErr(t *testing.T) {
 // embeds *litellm.NoopClient (which satisfies the full Client interface) and
 // overrides only the three methods CreateHandler exercises: UserInfoByEmail
 // (so the caller is a member of an authorized team), ListAllTeams (so the
-// id→alias resolution in LookupCallerTeams has data), and KeyGenerate (which
-// captures the incoming request so the test can assert on KeyAlias).
+// id→alias resolution in LookupCallerTeams AND the mintAndInsert shell-team
+// lookup have data), and KeyGenerate (which captures the incoming request so
+// the test can assert on KeyAlias/TeamID).
 type captureLiteLLM struct {
 	*litellm.NoopClient
 	lastKeyGenerateReq *litellm.KeyGenerateRequest
+	// teams overrides the default ListAllTeams fixture below when non-nil —
+	// used by TestCreateEkRejectsWhenShellTeamMissing to omit the shell team.
+	teams []litellm.TeamListEntry
 }
 
 func (c *captureLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
@@ -152,7 +156,17 @@ func (c *captureLiteLLM) UserInfoByEmail(_ context.Context, email string) (*lite
 }
 
 func (c *captureLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
-	return []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}}, nil
+	if c.teams != nil {
+		return c.teams, nil
+	}
+	// Default fixture: the caller's authorized "default" team plus the
+	// "prod" environment's shell team (alias ach-env-prod per
+	// litellm.ShellTeamAlias) — every existing test in this file uses
+	// environment "prod", so mintAndInsert's shell-team lookup resolves.
+	return []litellm.TeamListEntry{
+		{TeamID: "team-uuid-default", TeamAlias: "default"},
+		{TeamID: "t-shell", TeamAlias: "ach-env-prod"},
+	}, nil
 }
 
 func (c *captureLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
@@ -279,6 +293,103 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 	}
 }
 
+// TestCreateEkMintsIntoShellTeam is the whole point of the shell-team change:
+// the ek_ must be capped by team_id and must NOT carry any access-group field
+// (a key in both a team and a group triggers LiteLLM's agent-collapse bug).
+func TestCreateEkMintsIntoShellTeam(t *testing.T) {
+	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	deps := Deps{
+		LiteLLM:          flm,
+		DB:               &fakeEkDB{},
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
+	}
+
+	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", body)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("CreateHandler status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	got := flm.lastKeyGenerateReq
+	if got == nil {
+		t.Fatal("KeyGenerate was never called")
+	}
+	if got.TeamID != "t-shell" {
+		t.Fatalf("TeamID = %q, want t-shell (the environment's shell team)", got.TeamID)
+	}
+	if len(got.Models) != 0 {
+		t.Fatalf("Models = %v, want none — the team is the ceiling", got.Models)
+	}
+}
+
+// TestCreateEkRejectsWhenShellTeamMissing: no shell team ⇒ the environment is
+// not fully provisioned, and minting would produce a fail-open key.
+func TestCreateEkRejectsWhenShellTeamMissing(t *testing.T) {
+	flm := &captureLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		// Only the caller's authorized team — no ach-env-prod entry.
+		teams: []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}},
+	}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	deps := Deps{
+		LiteLLM:          flm,
+		DB:               &fakeEkDB{},
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
+	}
+
+	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", body)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("CreateHandler status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"not_ready"`) {
+		t.Fatalf("body missing not_ready code: %s", rec.Body.String())
+	}
+	if flm.lastKeyGenerateReq != nil {
+		t.Fatal("KeyGenerate must not be called when the shell team is missing")
+	}
+}
+
 // --- first-time provision test (user_id=email + no auto key) -------------
 
 // firstTimeLiteLLM drives the env-key create path through provisionUser's
@@ -307,7 +418,13 @@ func (c *firstTimeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*li
 }
 
 func (c *firstTimeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
-	return []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}}, nil
+	// Includes the "prod" shell team (both tests using this fake create
+	// against environment "prod") so mintAndInsert's shell-team lookup
+	// resolves and the create still succeeds.
+	return []litellm.TeamListEntry{
+		{TeamID: "team-uuid-default", TeamAlias: "default"},
+		{TeamID: "t-shell", TeamAlias: "ach-env-prod"},
+	}, nil
 }
 
 func (c *firstTimeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {

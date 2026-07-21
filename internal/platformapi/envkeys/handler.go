@@ -411,14 +411,43 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		return
 	}
 
+	// The ek_ is capped by the Environment's deny-all shell team and by
+	// NOTHING else: no models, no object_permission, no access-group binding.
+	// A key with no team is fail-open on models, and a key that is in both a
+	// team and an access group trips LiteLLM's agent-collapse bug — see
+	// references/litellm-permission-model.md §4 and §7.
+	shellAlias := litellm.ShellTeamAlias(env.Name)
+	shellTeamID, stErr := achteams.LookupTeamIDByAlias(ctx, deps.LiteLLM, shellAlias)
+	if stErr != nil {
+		cr.emitLitellmError(stErr, "envkeys.create: shell team lookup failed")
+		return
+	}
+	if shellTeamID == "" {
+		audit.EmitAudit(ctx, deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeNotReady,
+			Actor:     cr.actor,
+			RequestID: reqID,
+			Target:    cr.target,
+		})
+		render.Error(w, http.StatusServiceUnavailable, audit.OutcomeNotReady,
+			"environment shell team not yet provisioned", reqID)
+		return
+	}
+
 	// LiteLLM KeyGenerate (D-12 step 6). FIX01 §A.6: do NOT supply
 	// req.Key — LiteLLM owns its virtual-key plaintext format
 	// (sk-…) and ACH never persists or forwards it. ACH stores
 	// only the opaque keyResp.Token used for revoke + forwarder
 	// attribution. Tags=[<environment>] per §6.3 ek_ Environment tag;
 	// MaxBudget=nil per KEY-10.
+	//
+	// No TeamMemberAdd needed: LiteLLM only enforces team membership on
+	// /key/generate for non-admin callers, and ACH authenticates with the
+	// master key (PROXY_ADMIN). See references/litellm-permission-model.md §9.
 	keyReq := &litellm.KeyGenerateRequest{
 		UserID:    userID,
+		TeamID:    shellTeamID,
 		KeyAlias:  keyID, // ekid_… — debug attribution only (not used for lookup)
 		MaxBudget: nil,
 		Tags:      []string{env.Name},

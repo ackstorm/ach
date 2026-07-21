@@ -86,3 +86,25 @@ func LookupCallerTeams(ctx context.Context, ll litellm.Client, email string) ([]
 	}
 	return out, nil
 }
+
+// LookupTeamIDByAlias resolves a LiteLLM team alias to its team id via one
+// ListAllTeams round-trip. Returns ("", nil) when no team carries the alias —
+// absence is a caller decision (the ek_ create path turns it into 503
+// not_ready), not an error.
+//
+// First-wins on duplicate aliases, matching the Environment reconciler.
+func LookupTeamIDByAlias(ctx context.Context, ll litellm.Client, alias string) (string, error) {
+	if alias == "" {
+		return "", nil
+	}
+	teams, err := ll.ListAllTeams(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, t := range teams {
+		if t.TeamAlias == alias && t.TeamID != "" {
+			return t.TeamID, nil
+		}
+	}
+	return "", nil
+}

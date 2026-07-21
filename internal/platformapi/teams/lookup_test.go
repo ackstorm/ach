@@ -224,6 +224,32 @@ func TestLookupCallerTeamsUncachedByDesign(t *testing.T) {
 	}
 }
 
+// TestLookupTeamIDByAlias covers the happy resolve + the absent-alias case
+// (returns "", nil — absence is the caller's decision, not an error).
+func TestLookupTeamIDByAlias(t *testing.T) {
+	ll := &fakeLiteLLM{listAllTeams: func() ([]litellm.TeamListEntry, error) {
+		return []litellm.TeamListEntry{
+			{TeamID: "t-1", TeamAlias: "default"},
+			{TeamID: "t-2", TeamAlias: "ach-env-demo"},
+		}, nil
+	}}
+	got, err := LookupTeamIDByAlias(context.Background(), ll, "ach-env-demo")
+	if err != nil {
+		t.Fatalf("LookupTeamIDByAlias: %v", err)
+	}
+	if got != "t-2" {
+		t.Fatalf("id = %q, want t-2", got)
+	}
+
+	missing, err := LookupTeamIDByAlias(context.Background(), ll, "ach-env-nope")
+	if err != nil {
+		t.Fatalf("LookupTeamIDByAlias(absent): %v", err)
+	}
+	if missing != "" {
+		t.Fatalf("absent alias returned %q, want empty string", missing)
+	}
+}
+
 // ListTeamsByAlias is a no-op shim — Client interface compliance.
 func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
