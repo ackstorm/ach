@@ -16,6 +16,7 @@ package ach
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -394,5 +395,316 @@ func TestAccessGroupSynced_False_OnCreateFailure(t *testing.T) {
 		var got achv1alpha1.Environment
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
 		t.Fatalf("expected False/AccessGroupCreateFailed, conditions = %+v", got.Status.Conditions)
+	}
+}
+
+// TestMirrorRepairStep is the pure-logic table for the repair arithmetic:
+// intermediate = (desired \ missing) ∪ stale. Empty-list vs nil matters —
+// an all-drifted environment must yield a NON-nil empty intermediate.
+func TestMirrorRepairStep(t *testing.T) {
+	const G = "ag-1"
+	for _, tc := range []struct {
+		name    string
+		teams   []string
+		mirror  map[string][]string
+		want    []string
+		wantNed bool
+	}{
+		{
+			name:   "healthy — no repair",
+			teams:  []string{"t1", "t2"},
+			mirror: map[string][]string{"t1": {G}, "t2": {G}},
+			want:   []string{"t1", "t2"}, wantNed: false,
+		},
+		{
+			name:   "one missing — healthy peer stays in the intermediate",
+			teams:  []string{"t1", "t2"},
+			mirror: map[string][]string{"t1": {}, "t2": {G}},
+			want:   []string{"t2"}, wantNed: true,
+		},
+		{
+			name:   "team unknown to LiteLLM counts as missing",
+			teams:  []string{"t1"},
+			mirror: map[string][]string{},
+			want:   []string{}, wantNed: true,
+		},
+		{
+			name:   "stale foreign team is pulled IN so it can be pushed out",
+			teams:  []string{"t1"},
+			mirror: map[string][]string{"t1": {G}, "t9": {G}},
+			want:   []string{"t1", "t9"}, wantNed: true,
+		},
+		{
+			name:   "foreign team with an unrelated group is ignored",
+			teams:  []string{"t1"},
+			mirror: map[string][]string{"t1": {G}, "t9": {"ag-other"}},
+			want:   []string{"t1"}, wantNed: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, needed := mirrorRepairStep(G, tc.teams, tc.mirror)
+			if needed != tc.wantNed {
+				t.Errorf("needed = %v; want %v", needed, tc.wantNed)
+			}
+			if !sameSet(got, tc.want) {
+				t.Errorf("intermediate = %v; want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAccessGroupSynced_MirrorMissing — the prod bug, end to end. The group
+// side agrees with desired state (assigned_team_ids == [t-run, t-dream]) but
+// t-run's TEAM-side mirror is empty, and that is the side LiteLLM enforces
+// on. Pre-fix this reconciled to True/Synced with ZERO writes and t-run
+// resolved no tools.
+//
+// Asserts all three contract points:
+//
+//	(a) the sequence converges in ONE reconcile pass,
+//	(b) the next pass writes nothing,
+//	(c) the co-authorized HEALTHY team's mirror is never empty at any
+//	    intermediate step — which is what rules out the PUT []/PUT [D]
+//	    repair that would blink it.
+func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
+	ctx := context.Background()
+	const gid = "ag-uuid-test-env-mirror-missing"
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("run", "t-run")
+	accessGroupFake.SeedTeam("dream", "t-dream")
+	accessGroupFake.SeedTeamMirror("t-run")        // ← drifted: empty mirror
+	accessGroupFake.SeedTeamMirror("t-dream", gid) // ← healthy peer
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: "test-env-mirror-missing",
+		AssignedTeamIDs: []string{"t-run", "t-dream"}, // group side looks correct
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-mirror-missing",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"run", "dream"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	// (a) converges — condition True AND the mirror actually repaired.
+	if !Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		c := agCondition(&got)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("mirror repair did NOT reach True/Synced")
+	}
+	if m := accessGroupFake.Mirror("t-run"); !slices.Contains(m, gid) {
+		t.Fatalf("t-run mirror = %v; want it to contain %s", m, gid)
+	}
+	if n := accessGroupFake.UpdateCallsFor("test-env-mirror-missing"); n != 2 {
+		t.Errorf("update calls = %d; want exactly 2 (intermediate + final)", n)
+	}
+	last := accessGroupFake.LastUpdate("test-env-mirror-missing")
+	if !sameSet(last.AssignedTeamIDs, []string{"t-run", "t-dream"}) {
+		t.Errorf("final PUT assigned_team_ids = %v; want [t-run t-dream]", last.AssignedTeamIDs)
+	}
+
+	// (c) the healthy peer never blinked.
+	if accessGroupFake.MirrorEverEmpty("t-dream") {
+		t.Error("healthy team t-dream had an empty mirror during the repair — " +
+			"the intermediate PUT must exclude only the DRIFTED teams, not clear the list")
+	}
+
+	// (b) a second pass is a no-op.
+	writes := accessGroupFake.UpdateCallsFor("test-env-mirror-missing")
+	var got achv1alpha1.Environment
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Annotations == nil {
+		got.Annotations = map[string]string{}
+	}
+	got.Annotations["test/touch"] = "1"
+	if err := k8sClient.Update(ctx, &got); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * time.Second)
+	if grew := accessGroupFake.UpdateCallsFor("test-env-mirror-missing"); grew != writes {
+		t.Errorf("update calls = %d after re-reconcile; want unchanged (%d) — repaired state must be a no-op",
+			grew, writes)
+	}
+}
+
+// TestAccessGroupSynced_MirrorStale — the symmetric direction: t-ghost is
+// NOT in authorizedTeams but still carries this group in its
+// access_group_ids, so it keeps grants ACH never declared. Stripping it
+// needs a LEAVE delta, which needs t-ghost to be IN assigned_team_ids
+// first — hence the intermediate PUT includes it and the final one drops
+// it. The group side alone cannot see this (assigned_team_ids is already
+// correct) and neither can an alias-filtered team lookup — which is why
+// the resolver lists ALL teams.
+func TestAccessGroupSynced_MirrorStale(t *testing.T) {
+	ctx := context.Background()
+	const gid = "ag-uuid-test-env-mirror-stale"
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("run", "t-run")
+	accessGroupFake.SeedTeamMirror("t-run", gid)
+	accessGroupFake.SeedTeam("ghost", "t-ghost")
+	accessGroupFake.SeedTeamMirror("t-ghost", gid) // not authorized ← stale
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: "test-env-mirror-stale",
+		AssignedTeamIDs: []string{"t-run"},
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-mirror-stale",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"run"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		return len(accessGroupFake.Mirror("t-ghost")) == 0
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("stale mirror on t-ghost not stripped: %v", accessGroupFake.Mirror("t-ghost"))
+	}
+	if m := accessGroupFake.Mirror("t-run"); !slices.Contains(m, gid) {
+		t.Errorf("authorized team t-run lost its mirror: %v", m)
+	}
+	if accessGroupFake.MirrorEverEmpty("t-run") {
+		t.Error("authorized team t-run blinked during the stale-mirror repair")
+	}
+	if n := accessGroupFake.UpdateCallsFor("test-env-mirror-stale"); n != 2 {
+		t.Errorf("update calls = %d; want exactly 2", n)
+	}
+}
+
+// TestAccessGroupSynced_MirrorUnconverged — the safety net. The fake's
+// mirror is frozen (a stand-in for a future LiteLLM that drops the
+// delta-driven write), so the repair sequence cannot converge. The
+// reconciler must fail LOUDLY and STOP, not settle into two futile writes
+// every resync forever.
+func TestAccessGroupSynced_MirrorUnconverged(t *testing.T) {
+	ctx := context.Background()
+	const gid = "ag-uuid-test-env-mirror-stuck"
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("run", "t-run")
+	accessGroupFake.SeedTeamMirror("t-run") // drifted and it will stay that way
+	accessGroupFake.FreezeMirror()
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: "test-env-mirror-stuck",
+		AssignedTeamIDs: []string{"t-run"},
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-mirror-stuck",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"run"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		c := agCondition(&got)
+		return c != nil && c.Status == metav1.ConditionFalse && c.Reason == "MirrorUnconverged"
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("non-converging mirror did NOT surface AccessGroupSynced=False/MirrorUnconverged")
+	}
+
+	// And it must stop writing: further reconciles are suppressed at this
+	// generation, so the write count stays put.
+	writes := accessGroupFake.UpdateCallsFor("test-env-mirror-stuck")
+	var got achv1alpha1.Environment
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Annotations == nil {
+		got.Annotations = map[string]string{}
+	}
+	got.Annotations["test/touch"] = "1"
+	if err := k8sClient.Update(ctx, &got); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * time.Second)
+	if grew := accessGroupFake.UpdateCallsFor("test-env-mirror-stuck"); grew != writes {
+		t.Errorf("update calls = %d after re-reconcile; want unchanged (%d) — "+
+			"a non-converging mirror must not loop on writes", grew, writes)
+	}
+}
+
+// TestAccessGroupSynced_MirrorHealthy — the no-op guard. Both sides agree,
+// so the reconciler must stay read-only. Without this the mirror check
+// could "repair" a healthy binding on every 5-minute pass forever.
+func TestAccessGroupSynced_MirrorHealthy(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("run", "t-run")
+	accessGroupFake.SeedTeamMirror("t-run", "ag-uuid-test-env-mirror-ok")
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   "ag-uuid-test-env-mirror-ok",
+		AccessGroupName: "test-env-mirror-ok",
+		AssignedTeamIDs: []string{"t-run"},
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-mirror-ok",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"run"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		c := agCondition(&got)
+		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("healthy mirror did NOT reach True/Synced")
+	}
+	if n := accessGroupFake.UpdateCallsFor("test-env-mirror-ok"); n != 0 {
+		t.Errorf("healthy mirror must not write: update calls = %d; want 0", n)
 	}
 }
