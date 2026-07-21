@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -93,6 +95,15 @@ type EnvironmentReconciler struct {
 	// Metrics is the operator collector set (G7). Nil-tolerant: unit/
 	// envtest leave it unset and skip the environment_available gauge.
 	Metrics *achmetrics.OperatorCollectors
+
+	// mirrorUnconverged suppresses repeat mirror repairs for an
+	// Environment whose LiteLLM team mirror did NOT converge after the
+	// two-PUT sequence. Key "<ns>/<name>" → the generation observed when
+	// the repair failed. Without it a LiteLLM that changes the delta
+	// semantics would turn every 5-minute resync into two futile writes,
+	// forever and silently. Cleared as soon as the mirror is seen healthy
+	// or the spec generation changes.
+	mirrorUnconverged sync.Map
 }
 
 // recordAvailableGauge sets environment_available{name} to 1 when the
@@ -688,20 +699,44 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	mcpIDs = nonNilStrings(mcpIDs)
 	agentIDs = nonNilStrings(agentIDs)
 
-	// Teams use the existing per-alias filtered endpoint. N small (1-3
-	// authorized teams per env) so per-alias round-trips are fine.
+	// Teams resolve from ONE unfiltered GET /v2/team/list. Two reasons
+	// this beats the former per-alias ListTeamsByAlias loop:
+	//   - it is 1 paged round-trip instead of N;
+	//   - it is the only way to see teams OUTSIDE authorizedTeams, which
+	//     the mirror check below needs (a team that wrongly carries this
+	//     group in its access_group_ids is invisible to an alias-filtered
+	//     lookup).
+	allTeams, terr := r.LiteLLM.ListAllTeams(ctx)
+	if terr != nil {
+		return resolveFailed(env, "ListAllTeams", terr)
+	}
+	// teamAccessGroups is the team-side mirror: teamID → access_group_ids.
+	// LiteLLM enforces model/MCP/agent grants off THIS side, so drift
+	// detection reads it (see computeAccessGroupDrift).
+	teamAccessGroups := make(map[string][]string, len(allTeams))
+	byAlias := make(map[string]string, len(allTeams))
+	for _, t := range allTeams {
+		if t.TeamID == "" {
+			continue
+		}
+		teamAccessGroups[t.TeamID] = t.AccessGroupIDs
+		// First-wins on duplicate aliases — preserves the prior
+		// ListTeamsByAlias(...)[0] semantics.
+		if t.TeamAlias != "" {
+			if _, seen := byAlias[t.TeamAlias]; !seen {
+				byAlias[t.TeamAlias] = t.TeamID
+			}
+		}
+	}
 	teamIDs := make([]string, 0, len(env.Spec.AuthorizedTeams))
 	var teamUnresolved []string
 	for _, alias := range env.Spec.AuthorizedTeams {
-		entries, terr := r.LiteLLM.ListTeamsByAlias(ctx, alias)
-		if terr != nil {
-			return resolveFailed(env, "ListTeamsByAlias", terr)
-		}
-		if len(entries) == 0 || entries[0].TeamID == "" {
+		id, ok := byAlias[alias]
+		if !ok {
 			teamUnresolved = append(teamUnresolved, alias)
 			continue
 		}
-		teamIDs = append(teamIDs, entries[0].TeamID)
+		teamIDs = append(teamIDs, id)
 	}
 
 	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved) > 0 {
@@ -754,29 +789,115 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	}
 
 	// Step 3b: PUT when drifted.
-	if drift := computeAccessGroupDrift(existing, desiredModels, mcpIDs, agentIDs, teamIDs); drift {
-		updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+	if computeAccessGroupDrift(existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups) {
+		return r.repairAccessGroup(ctx, env, existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups, logger)
+	}
+	r.mirrorUnconverged.Delete(env.Namespace + "/" + env.Name)
+
+	return accessGroupSyncedCondition(env, existing)
+}
+
+// repairAccessGroup runs the Step 3b PUT sequence once computeAccessGroupDrift
+// has reported drift on the current pass — split out of reconcileAccessGroup
+// purely to keep that function's cyclomatic complexity under the gocyclo gate;
+// no behaviour change from inlining it there.
+//
+// When the drift is group-side only, this is a single ordinary PUT. When the
+// team mirror also diverges, it runs the two-PUT delta repair (see
+// mirrorRepairStep's doc) followed by a one-shot convergence verify that fails
+// loudly rather than retrying forever.
+func (r *EnvironmentReconciler) repairAccessGroup(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	existing *litellm.AccessGroupResponse,
+	desiredModels, mcpIDs, agentIDs, teamIDs []string,
+	teamAccessGroups map[string][]string,
+	logger logr.Logger,
+) metav1.Condition {
+	key := env.Namespace + "/" + env.Name
+	intermediate, mirrorNeeded := mirrorRepairStep(existing.AccessGroupID, teamIDs, teamAccessGroups)
+
+	// Suppressed: a previous pass ran the full sequence at this same
+	// generation and the mirror still did not converge. Do not burn
+	// two more writes every resync — report loudly and stop.
+	if mirrorNeeded {
+		if g, seen := r.mirrorUnconverged.Load(key); seen && g == env.Generation {
+			return mirrorUnconvergedCondition(env, existing.AccessGroupID,
+				"suppressed after a previous non-converging repair at this generation")
+		}
+
+		// First PUT: move the drifted teams across the assignment
+		// boundary so the FINAL PUT generates the ENTER/LEAVE delta
+		// LiteLLM needs to rewrite their mirror. Healthy teams appear in
+		// both PUTs, so they never leave and never blink.
+		logger.Info("access group team mirror drifted; running delta repair",
+			"name", env.Name, "id", existing.AccessGroupID,
+			"intermediate", intermediate, "desired", teamIDs)
+		if _, cerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
 			AccessModelNames:   desiredModels,
 			AccessMCPServerIDs: mcpIDs,
 			AccessAgentIDs:     agentIDs,
-			AssignedTeamIDs:    teamIDs,
-		})
-		if uerr != nil {
-			logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
+			AssignedTeamIDs:    nonNilStrings(intermediate),
+		}); cerr != nil {
+			logger.Error(cerr, "PUT /v1/access_group/{id} (mirror repair step 1) failed", "id", existing.AccessGroupID)
 			return metav1.Condition{
 				Type:               "AccessGroupSynced",
 				Status:             metav1.ConditionFalse,
 				Reason:             "AccessGroupUpdateFailed",
-				Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) failed: %v", env.Name, existing.AccessGroupID, uerr),
+				Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) mirror repair step 1 failed: %v", env.Name, existing.AccessGroupID, cerr),
 				ObservedGeneration: env.Generation,
 				LastTransitionTime: metav1.Now(),
 			}
 		}
-		logger.Info("updated access group", "name", env.Name, "id", updated.AccessGroupID)
+	}
+
+	// Final PUT: the desired state. When mirrorNeeded was false this
+	// is the ordinary single-PUT drift correction, unchanged.
+	updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+		AccessModelNames:   desiredModels,
+		AccessMCPServerIDs: mcpIDs,
+		AccessAgentIDs:     agentIDs,
+		AssignedTeamIDs:    teamIDs,
+	})
+	if uerr != nil {
+		logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
+		return metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionFalse,
+			Reason:             "AccessGroupUpdateFailed",
+			Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) failed: %v", env.Name, existing.AccessGroupID, uerr),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+	logger.Info("updated access group", "name", env.Name, "id", updated.AccessGroupID)
+
+	if !mirrorNeeded {
 		return accessGroupSyncedCondition(env, updated)
 	}
 
-	return accessGroupSyncedCondition(env, existing)
+	// Convergence guard: re-read the mirrors ONCE (only after a repair
+	// actually ran) and verify. A still-drifted mirror means LiteLLM's
+	// delta semantics no longer hold — fail loudly instead of looping.
+	verifyTeams, verr := r.LiteLLM.ListAllTeams(ctx)
+	if verr != nil {
+		return resolveFailed(env, "ListAllTeams (mirror verify)", verr)
+	}
+	verifyMirror := make(map[string][]string, len(verifyTeams))
+	for _, t := range verifyTeams {
+		if t.TeamID != "" {
+			verifyMirror[t.TeamID] = t.AccessGroupIDs
+		}
+	}
+	if _, still := mirrorRepairStep(existing.AccessGroupID, teamIDs, verifyMirror); still {
+		r.mirrorUnconverged.Store(key, env.Generation)
+		logger.Error(nil, "access group team mirror did NOT converge after repair; suppressing further attempts",
+			"name", env.Name, "id", existing.AccessGroupID, "desired", teamIDs)
+		return mirrorUnconvergedCondition(env, existing.AccessGroupID,
+			"team.access_group_ids still diverges after the two-PUT delta repair")
+	}
+	r.mirrorUnconverged.Delete(key)
+	return accessGroupSyncedCondition(env, updated)
 }
 
 // resolveFailed packages a LiteLLM-unreachable failure during the
@@ -787,6 +908,22 @@ func resolveFailed(env *achv1alpha1.Environment, op string, err error) metav1.Co
 		Status:             metav1.ConditionFalse,
 		Reason:             "ResolveFailed",
 		Message:            fmt.Sprintf("LiteLLM %s failed: %v", op, err),
+		ObservedGeneration: env.Generation,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+// mirrorUnconvergedCondition is the loud failure for a LiteLLM team
+// mirror that survives the two-PUT delta repair. It exists so the
+// operator never degrades into a silent write loop: the Environment goes
+// Available=False with an actionable reason and the repair is suppressed
+// until the spec changes.
+func mirrorUnconvergedCondition(env *achv1alpha1.Environment, groupID, detail string) metav1.Condition {
+	return metav1.Condition{
+		Type:               "AccessGroupSynced",
+		Status:             metav1.ConditionFalse,
+		Reason:             "MirrorUnconverged",
+		Message:            fmt.Sprintf("LiteLLM access group %s (id=%s): %s", env.Name, groupID, detail),
 		ObservedGeneration: env.Generation,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -834,14 +971,85 @@ func mapResolve(names []string, m map[string]string) (ids []string, unresolved [
 	return ids, unresolved
 }
 
-// computeAccessGroupDrift returns true iff the existing access group's
-// stored bindings diverge from the desired state. Each dimension is
-// compared as a set (order-independent).
-func computeAccessGroupDrift(existing *litellm.AccessGroupResponse, models, mcps, agents, teams []string) bool {
-	return !sameSet(existing.AccessModelNames, models) ||
+// mirrorRepairStep computes the intermediate assigned_team_ids for the
+// two-PUT mirror repair, or reports that no repair is needed.
+//
+// LiteLLM's mirror is DELTA-DRIVEN (measured 2026-07-21): it writes
+// team.access_group_ids only for teams that ENTER or LEAVE
+// assigned_team_ids. Re-PUTting the same list produces no delta and no
+// write, so a drifted mirror can only be repaired by moving the affected
+// team across the boundary:
+//
+//	missing = { t ∈ teams : groupID ∉ mirror[t] }  → needs an ENTER delta
+//	stale   = { x ∉ teams : groupID ∈ mirror[x] }  → needs a LEAVE delta,
+//	                                                 so x must be IN first
+//
+// The intermediate list is (teams \ missing) ∪ stale, NOT the empty list.
+// Clearing everything would also evict co-authorized HEALTHY teams and
+// blank their mirror for the instant between the two PUTs — a real outage
+// for the innocent team (measured on env "platform" = [run, dream] with
+// only run drifted). Excluding just the drifted teams produces the same
+// deltas with zero blast radius.
+func mirrorRepairStep(groupID string, teams []string, teamAccessGroups map[string][]string) ([]string, bool) {
+	desired := make(map[string]struct{}, len(teams))
+	for _, id := range teams {
+		desired[id] = struct{}{}
+	}
+	intermediate := make([]string, 0, len(teams))
+	needed := false
+	for _, id := range teams {
+		// A teamID absent from teamAccessGroups counts as missing.
+		if slices.Contains(teamAccessGroups[id], groupID) {
+			intermediate = append(intermediate, id)
+			continue
+		}
+		needed = true // drop it from the intermediate ⇒ ENTER delta on the final PUT
+	}
+	for teamID, groups := range teamAccessGroups {
+		if _, want := desired[teamID]; want {
+			continue
+		}
+		if slices.Contains(groups, groupID) {
+			intermediate = append(intermediate, teamID) // ⇒ LEAVE delta on the final PUT
+			needed = true
+		}
+	}
+	return intermediate, needed
+}
+
+// computeAccessGroupDrift reports whether the existing access group
+// diverges from desired state on ANY axis — the four group-side lists or
+// the team-side mirror.
+//
+// LiteLLM stores the team↔group relation TWICE:
+//
+//	access_group.assigned_team_ids   ← returned by GET /v1/access_group
+//	team.access_group_ids            ← returned by GET /v2/team/list
+//
+// and grants models/MCP servers/agents off the SECOND one. Comparing only
+// the first is blind to the failure that actually bites: a team listed in
+// assigned_team_ids whose own access_group_ids is empty gets zero tools
+// while ACH reports Synced and never writes (observed in prod 2026-07-21
+// — 5 environments, ~1380 consecutive GETs, zero PUTs, team "run" with an
+// empty mirror).
+//
+// teamAccessGroups is teamID → access_group_ids for EVERY team LiteLLM
+// knows (built from the same unfiltered ListAllTeams that resolved the
+// aliases), which is what makes the stale-mirror direction observable at
+// all — an alias-filtered lookup can never see a team outside the spec.
+func computeAccessGroupDrift(
+	existing *litellm.AccessGroupResponse,
+	models, mcps, agents, teams []string,
+	teamAccessGroups map[string][]string,
+) bool {
+	if !sameSet(existing.AccessModelNames, models) ||
 		!sameSet(existing.AccessMCPServerIDs, mcps) ||
 		!sameSet(existing.AccessAgentIDs, agents) ||
-		!sameSet(existing.AssignedTeamIDs, teams)
+		!sameSet(existing.AssignedTeamIDs, teams) {
+		return true
+	}
+	_, mirrorDrift := mirrorRepairStep(existing.AccessGroupID, teams, teamAccessGroups)
+	return mirrorDrift
 }
 
 func sameSet(a, b []string) bool {

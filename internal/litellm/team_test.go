@@ -153,6 +153,35 @@ func TestListAllTeamsPaginates(t *testing.T) {
 	}
 }
 
+// TestListAllTeamsCarriesAccessGroupIDs — /v2/team/list returns the
+// team-side mirror of the access-group binding (access_group_ids). The
+// operator compares it against access_group.assigned_team_ids to detect
+// half-applied bindings, so the field MUST survive the decode.
+func TestListAllTeamsCarriesAccessGroupIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"teams":[
+			{"team_id":"t-run","team_alias":"run",
+			 "access_group_ids":["210f1ff1-c2eb-4fcd-8511-a309ae466d15"]}
+		],"total":1,"page":1,"page_size":100,"total_pages":1}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.ListAllTeams(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllTeams: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("teams: want 1, got %d", len(got))
+	}
+	if len(got[0].AccessGroupIDs) != 1 ||
+		got[0].AccessGroupIDs[0] != "210f1ff1-c2eb-4fcd-8511-a309ae466d15" {
+		t.Errorf("AccessGroupIDs: want [210f1ff1-c2eb-4fcd-8511-a309ae466d15], got %v",
+			got[0].AccessGroupIDs)
+	}
+}
+
 // TestTeamHelpers401Propagation — REL-06 propagation through team helpers.
 func TestTeamHelpers401Propagation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

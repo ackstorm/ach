@@ -31,6 +31,31 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 cd "$REPO_ROOT"
 
+# PUSH_HEAD is what's actually being pushed. Captured before any directory
+# switch below so it names the real commit regardless of which branch ends
+# up checked out in SCAN_ROOT.
+PUSH_HEAD="$(git rev-parse HEAD)"
+
+# SCAN_ROOT is the directory the dockerized git-history scanners (gitleaks,
+# trufflehog) mount. In a linked worktree, REPO_ROOT/.git is a gitlink FILE
+# pointing at <primary>/.git/worktrees/<name>, which itself points back at
+# <primary>/.git via a "commondir" file — objects live there, not under
+# REPO_ROOT. Neither tool's internal `git clone file:///...` can dereference
+# that chain from inside the container (the reference is an absolute host
+# path outside the single REPO_ROOT mount), so both silently or loudly
+# misbehave: gitleaks logs "fatal: not a git repository" then reports a
+# vacuous "no leaks found", trufflehog hard-FAILs with the same clone error
+# misread as "verified live secrets" found. Mounting the primary checkout's
+# root instead — which owns a real .git directory containing the full object
+# database, shared with every linked worktree — fixes both. Outside a
+# worktree, git-common-dir's parent IS REPO_ROOT, so this is a no-op.
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+case "$GIT_COMMON_DIR" in
+  /*) : ;;
+  *) GIT_COMMON_DIR="$REPO_ROOT/$GIT_COMMON_DIR" ;;
+esac
+SCAN_ROOT="$(cd "$(dirname "$GIT_COMMON_DIR")" && pwd)"
+
 EXPECTED_REMOTE="git@github.com:ackstorm/ach.git"
 
 if [[ -t 1 ]]; then
@@ -63,7 +88,10 @@ BASE_REF="${PRE_PUSH_BASE_REF:-origin/main}"
 if git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   SCAN_BASE=$(git merge-base "$BASE_REF" HEAD 2>/dev/null || git rev-parse "$BASE_REF")
   SCAN_LABEL="$BASE_REF..HEAD"
-  GITLEAKS_LOG_OPTS="--log-opts=${SCAN_BASE}..HEAD"
+  # PUSH_HEAD, not the literal "HEAD" — SCAN_ROOT may be a different
+  # checkout (primary repo) than the one this script was invoked from, so
+  # the container's own idea of "HEAD" would name the wrong commit.
+  GITLEAKS_LOG_OPTS="--log-opts=${SCAN_BASE}..${PUSH_HEAD}"
   TRUFFLEHOG_SINCE="--since-commit=${SCAN_BASE}"
 else
   SCAN_BASE=""
@@ -74,7 +102,7 @@ fi
 
 # --- 1. gitleaks ---
 hdr "1. gitleaks ($SCAN_LABEL)"
-if docker run --rm -v "$REPO_ROOT:/repo:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
+if docker run --rm -v "$SCAN_ROOT:/repo:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
      detect --source=/repo --redact --no-banner \
      --config=/repo/.gitleaks.toml $GITLEAKS_LOG_OPTS; then
   ok "no leaks detected"
@@ -84,8 +112,8 @@ fi
 
 # --- 2. trufflehog ---
 hdr "2. trufflehog ($SCAN_LABEL)"
-if docker run --rm -v "$REPO_ROOT:/pwd:ro" trufflesecurity/trufflehog:3.95.3@sha256:9cc33bb080cac0efbbf228a17667172875b529eeeab01efcc4697adfb55f568a \
-     git file:///pwd --only-verified --fail --no-update $TRUFFLEHOG_SINCE; then
+if docker run --rm -v "$SCAN_ROOT:/pwd:ro" trufflesecurity/trufflehog:3.95.3@sha256:9cc33bb080cac0efbbf228a17667172875b529eeeab01efcc4697adfb55f568a \
+     git file:///pwd --branch "$PUSH_HEAD" --only-verified --fail --no-update $TRUFFLEHOG_SINCE; then
   ok "no verified live secrets"
 else
   fail "trufflehog found verified live secrets"

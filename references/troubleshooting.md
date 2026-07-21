@@ -293,7 +293,7 @@ kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.
 ```
 ✅ The named MCP server / A2A agent / authorized team does not exist in
 LiteLLM. The reconciler resolves names on each reconcile via
-`ListMCPServers` / `ListA2AAgents` / `ListTeamsByAlias`; any unresolved
+`ListMCPServers` / `ListA2AAgents` / `ListAllTeams`; any unresolved
 entry flips the condition with the offending list in the message.
 
 Register the missing resource(s):
@@ -325,6 +325,39 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 `access_agent_ids` / `assigned_team_ids` must exist upstream. The
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
+
+### Team has zero models/MCP tools although the access group lists it
+
+LiteLLM stores the team↔access-group relation twice: `access_group.assigned_team_ids`
+(`GET /v1/access_group`) and `team.access_group_ids` (`GET /v2/team/list`). Grants are
+enforced off the **team** side. A manual team edit or a partial write can leave the two
+disagreeing — the group lists the team, the team lists no group, and the team's keys
+resolve zero tools.
+
+Check both sides:
+
+```bash
+curl -sH "Authorization: Bearer $LITELLM_MASTER_KEY" "$LITELLM/v1/access_group" \
+  | jq '.[] | {access_group_name, assigned_team_ids}'
+curl -sH "Authorization: Bearer $LITELLM_MASTER_KEY" "$LITELLM/v2/team/list?page_size=100" \
+  | jq '.teams[] | {team_alias, access_group_ids}'
+```
+
+LiteLLM's mirror is **delta-driven**: it rewrites `team.access_group_ids` only for teams that
+enter or leave `assigned_team_ids`. Re-PUTting the same list changes nothing, which is why the
+pre-v0.6.16 operator could not have repaired this even if it had noticed.
+
+Since v0.6.16 the Environment reconciler compares both sides every pass and repairs a divergent
+mirror with two PUTs — first `assigned_team_ids` **without the drifted teams** (and with any
+stale foreign team temporarily added), then the desired list — so the required deltas fire while
+co-authorized healthy teams stay in both calls and never lose access for an instant. Log line:
+`access group team mirror drifted; running delta repair`.
+
+If the mirror still diverges after the sequence, the Environment goes
+`AccessGroupSynced=False / MirrorUnconverged` and further repairs are suppressed until the spec
+changes — deliberately loud, so a LiteLLM semantics change surfaces as a broken Environment
+rather than an endless write loop. Investigate LiteLLM itself in that case; the operator has done
+all it can.
 
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
