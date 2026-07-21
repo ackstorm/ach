@@ -375,6 +375,19 @@ for keys it confirmed gone BEFORE touching the team.
 Since v0.6.17 the finalizer order is: revoke every `ek_` → delete the access
 group → delete the shell team, so the window does not occur on a normal delete.
 
+### ℹ️ An `ek_` created before v0.6.17 can still reach models its Environment never granted
+
+Keys minted before the shell-team change carry no `team_id`. A LiteLLM key with
+no team is fail-open on models — the access group cannot narrow it (MCP and
+agents DO scope correctly even then). They were deliberately NOT migrated.
+
+Fix per key: `ach-cli keys revoke <ekid_…>` then `ach-cli keys create`. The new
+key is minted into `ach-env-<env>` and capped correctly. To find them:
+
+    psql "$ACH_DB_URL" -c \
+      "SELECT key_id, environment, owner_email, created_at FROM environment_keys
+        WHERE status='active' AND created_at < '2026-07-21' ORDER BY created_at"
+
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
 ./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json
