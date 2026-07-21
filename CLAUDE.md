@@ -9,7 +9,7 @@ is non-negotiable.
 > `references/`: `understanding.md` (**whole-system mental model — read FIRST
 > in a fresh session instead of re-exploring the repo**), `repo-layout.md`,
 > `release-pipeline.md`, `makefile.md`, `troubleshooting.md` (service-specific
-> debugging).
+> debugging), `litellm-permission-model.md`.
 
 ## Documentation hygiene — update docs IN THE SAME COMMIT
 
@@ -206,6 +206,7 @@ independent collections.)
 | Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
+| LiteLLM teams / access groups / key scoping | `references/litellm-permission-model.md` (measured semantics — do NOT re-derive) |
 | New/changed SYNCED CR fixtures         | `test/e2e/cluster/{04-objects,05-environment}/` + `references/repo-layout.md` |
 | Curated examples / `ach-cli login` + `env hydrate` demo | `examples/README.md` |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
