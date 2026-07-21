@@ -646,6 +646,10 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 //   - False/ResolveFailed          — one of ListMCPServers /
 //     ListA2AAgents / ListTeamsByAlias errored (LiteLLM unreachable
 //     mid-reconcile)
+//   - False/ShellTeamFailed        — the per-Environment deny-all shell team
+//     (ach-env-<name>) could not be created or repaired. ek_ keys minted
+//     against a missing shell would be fail-open on models, so the
+//     Environment must not go Available.
 func (r *EnvironmentReconciler) reconcileAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
@@ -751,6 +755,21 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 			ObservedGeneration: env.Generation,
 			LastTransitionTime: metav1.Now(),
 		}
+	}
+
+	// The deny-all shell team is what caps this Environment's ek_ keys, and
+	// it joins assigned_team_ids in the SAME write as the authorized teams:
+	// that list is a whole-list PUT serving both the pk_ path (authorized
+	// teams) and the ek_ path (the shell), so it is always rebuilt as the
+	// union — a spec change to authorizedTeams must never drop the shell.
+	shellAlias := litellm.ShellTeamAlias(env.Name)
+	shellID, sErr := r.ensureShellTeam(ctx, env, byAlias[shellAlias], logger)
+	if sErr != nil {
+		logger.Error(sErr, "shell team reconcile failed", "alias", shellAlias)
+		return shellTeamFailed(env, sErr)
+	}
+	if !slices.Contains(teamIDs, shellID) {
+		teamIDs = append(teamIDs, shellID)
 	}
 
 	// Step 2: discover whether the access group already exists.

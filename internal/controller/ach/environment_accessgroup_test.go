@@ -89,9 +89,13 @@ func TestAccessGroupSynced_True_WhenCreateSucceeds(t *testing.T) {
 	if got := accessGroupFake.CreateCallsFor("test-env-ag-happy"); got < 1 {
 		t.Errorf("create call count = %d; want >= 1", got)
 	}
+	// AssignedTeamIDs must also carry the per-Environment deny-all shell
+	// team (ach-env-test-env-ag-happy): reconcileAccessGroup joins it into
+	// the SAME write as the authorized teams (Task 4).
 	last := accessGroupFake.LastCreate("test-env-ag-happy")
-	if len(last.AssignedTeamIDs) != 1 || last.AssignedTeamIDs[0] != "t-uuid-default" {
-		t.Errorf("LastCreate.AssignedTeamIDs = %v; want [t-uuid-default]", last.AssignedTeamIDs)
+	wantTeams := []string{"t-uuid-default", "id-ach-env-test-env-ag-happy"}
+	if !slices.Equal(last.AssignedTeamIDs, wantTeams) {
+		t.Errorf("LastCreate.AssignedTeamIDs = %v; want %v", last.AssignedTeamIDs, wantTeams)
 	}
 }
 
@@ -513,9 +517,13 @@ func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
 	if n := accessGroupFake.UpdateCallsFor("test-env-mirror-missing"); n != 2 {
 		t.Errorf("update calls = %d; want exactly 2 (intermediate + final)", n)
 	}
+	// The final PUT also carries the deny-all shell team
+	// (ach-env-test-env-mirror-missing) — it joins assigned_team_ids in the
+	// same write as the authorized teams (Task 4).
 	last := accessGroupFake.LastUpdate("test-env-mirror-missing")
-	if !sameSet(last.AssignedTeamIDs, []string{"t-run", "t-dream"}) {
-		t.Errorf("final PUT assigned_team_ids = %v; want [t-run t-dream]", last.AssignedTeamIDs)
+	wantTeams := []string{"t-run", "t-dream", "id-ach-env-test-env-mirror-missing"}
+	if !sameSet(last.AssignedTeamIDs, wantTeams) {
+		t.Errorf("final PUT assigned_team_ids = %v; want %v", last.AssignedTeamIDs, wantTeams)
 	}
 
 	// (c) the healthy peer never blinked.
@@ -672,10 +680,17 @@ func TestAccessGroupSynced_MirrorHealthy(t *testing.T) {
 	accessGroupFake.Reset()
 	accessGroupFake.SeedTeam("run", "t-run")
 	accessGroupFake.SeedTeamMirror("t-run", "ag-uuid-test-env-mirror-ok")
+	// The deny-all shell team must ALSO be pre-seeded as already-created and
+	// healthy (Task 4) — otherwise ensureShellTeam creates it fresh on this
+	// pass, its brand-new empty mirror legitimately triggers one repair
+	// sequence, and this test's whole point (a fully healthy Environment
+	// writes nothing) no longer holds.
+	shellID := accessGroupFake.SeedShellTeam("test-env-mirror-ok")
+	accessGroupFake.SeedTeamMirror(shellID, "ag-uuid-test-env-mirror-ok")
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   "ag-uuid-test-env-mirror-ok",
 		AccessGroupName: "test-env-mirror-ok",
-		AssignedTeamIDs: []string{"t-run"},
+		AssignedTeamIDs: []string{"t-run", shellID},
 	})
 
 	cr := &achv1alpha1.Environment{
