@@ -26,6 +26,14 @@ import (
 // ListAllTeams pass ("" ⇒ create). The list response cannot be used to verify
 // the sentinels — LiteLLM serialises object_permission as null there — so an
 // existing shell costs one extra GET /team/info, and only then.
+//
+// Edge case: if `spec.authorizedTeams` lists the shell's own alias
+// (`ach-env-<name>`) before the shell has ever been created, the caller's
+// unresolved-references check (which runs before this function) rejects that
+// alias every pass — since ensureShellTeam only runs once resolution is
+// clean, the shell is never created and this does NOT self-heal on its own;
+// removing the alias lets the shell get created here, and re-adding it
+// afterward then resolves normally.
 func (r *EnvironmentReconciler) ensureShellTeam(
 	ctx context.Context,
 	env *achv1alpha1.Environment,

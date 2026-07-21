@@ -4,9 +4,11 @@ package ach
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -91,5 +93,51 @@ func TestEnsureShellTeamRepairsDrift(t *testing.T) {
 	}
 	if got.ObjectPermission == nil || len(got.ObjectPermission.Agents) != 1 {
 		t.Fatalf("repaired ObjectPermission = %+v", got.ObjectPermission)
+	}
+}
+
+// TestEnsureShellTeamCreateFailureAborts: when CreateTeam fails (no shell
+// exists yet), ensureShellTeam must return the wrapped sentinel and an empty
+// id — this is the signal reconcileAccessGroup relies on to abort the pass via
+// shellTeamFailed instead of falling through to CreateAccessGroup/UpdateAccessGroup.
+func TestEnsureShellTeamCreateFailureAborts(t *testing.T) {
+	fake := newAccessGroupFake()
+	sentinel := errors.New("litellm unavailable")
+	fake.teamCreateErr = sentinel
+	r := &EnvironmentReconciler{LiteLLM: fake}
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	id, err := r.ensureShellTeam(context.Background(), env, "", logr.Discard())
+	if err == nil {
+		t.Fatal("ensureShellTeam: want error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("ensureShellTeam error = %v, want it to wrap %v", err, sentinel)
+	}
+	if id != "" {
+		t.Fatalf("team id = %q, want empty on failure", id)
+	}
+}
+
+// TestShellTeamFailedCondition: shellTeamFailed must produce the closed-set
+// AccessGroupSynced=False/ShellTeamFailed condition that reconcileAccessGroup
+// returns to abort the pass on a shell-team failure (see the fake-driven abort
+// test above for the error side of that path).
+func TestShellTeamFailedCondition(t *testing.T) {
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+	sentinel := errors.New("boom")
+
+	cond := shellTeamFailed(env, sentinel)
+
+	if cond.Type != "AccessGroupSynced" {
+		t.Fatalf("Type = %q, want AccessGroupSynced", cond.Type)
+	}
+	if cond.Status != metav1.ConditionFalse {
+		t.Fatalf("Status = %q, want %q", cond.Status, metav1.ConditionFalse)
+	}
+	if cond.Reason != "ShellTeamFailed" {
+		t.Fatalf("Reason = %q, want ShellTeamFailed", cond.Reason)
 	}
 }
