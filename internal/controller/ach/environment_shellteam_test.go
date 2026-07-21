@@ -9,6 +9,9 @@ import (
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -142,10 +145,18 @@ func TestShellTeamFailedCondition(t *testing.T) {
 	}
 }
 
-// TestReconcileDeletionOrder asserts the load-bearing LiteLLM call order on
-// Environment deletion: keys → access group → shell team. Deleting the team
-// first would leave its keys answering 200 for ~60s with no route to revoke
-// them (references/litellm-permission-model.md §8).
+// TestReconcileDeletionOrder drives the REAL reconcileDeletion (the §6.5
+// finalizer drain in environment_controller.go) end-to-end against a fake
+// client, and asserts the load-bearing LiteLLM call order it PRODUCES:
+// keys → access group → shell team. Deleting the team first would leave its
+// keys answering 200 for ~60s with no route to revoke them
+// (references/litellm-permission-model.md §8).
+//
+// A prior version of this test called revokeEnvironmentKeys /
+// DeleteAccessGroup / deleteShellTeam directly, in the order written in the
+// test body, then asserted the recording matched that order — circular: it
+// would still pass if the statements inside reconcileDeletion were reordered,
+// which is the exact regression this test exists to catch.
 func TestReconcileDeletionOrder(t *testing.T) {
 	fake := newAccessGroupFake()
 	// Seed a shell team so deleteShellTeam has something to delete.
@@ -154,18 +165,38 @@ func TestReconcileDeletionOrder(t *testing.T) {
 	}
 	fake.order = nil
 
-	r := &EnvironmentReconciler{LiteLLM: fake} // DB nil ⇒ no ek_ rows to revoke
-	env := &achv1alpha1.Environment{}
-	env.Name = "demo"
+	scheme := runtime.NewScheme()
+	if err := achv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme: %v", err)
+	}
+	env := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "demo",
+			Namespace:  "default",
+			Finalizers: []string{environmentFinalizer},
+		},
+	}
+	c := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(env).Build()
 
-	if err := r.revokeEnvironmentKeys(context.Background(), env, logr.Discard()); err != nil {
-		t.Fatalf("revokeEnvironmentKeys: %v", err)
+	// Deleting an object that still carries a finalizer makes the fake
+	// client (like a real apiserver) set DeletionTimestamp instead of
+	// removing it — exactly the state reconcileDeletion's ContainsFinalizer
+	// guard needs to see in order to proceed instead of no-opping.
+	if err := c.Delete(context.Background(), env); err != nil {
+		t.Fatalf("seed delete: %v", err)
 	}
-	if err := r.LiteLLM.DeleteAccessGroup(context.Background(), env.Name); err != nil {
-		t.Fatalf("DeleteAccessGroup: %v", err)
+	var draining achv1alpha1.Environment
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(env), &draining); err != nil {
+		t.Fatalf("get after seed delete: %v", err)
 	}
-	if err := r.deleteShellTeam(context.Background(), env, logr.Discard()); err != nil {
-		t.Fatalf("deleteShellTeam: %v", err)
+	if draining.DeletionTimestamp.IsZero() {
+		t.Fatal("seed: DeletionTimestamp not set after Delete — reconcileDeletion would no-op")
+	}
+
+	r := &EnvironmentReconciler{Client: c, LiteLLM: fake} // DB nil ⇒ no ek_ rows to revoke
+
+	if _, err := r.reconcileDeletion(context.Background(), &draining, logr.Discard()); err != nil {
+		t.Fatalf("reconcileDeletion: %v", err)
 	}
 
 	if len(fake.order) == 0 || fake.order[len(fake.order)-1] != "DeleteTeam" {
@@ -180,4 +211,21 @@ func TestReconcileDeletionOrder(t *testing.T) {
 			}
 		}
 	}
+
+	// r.DB is nil here, so revokeEnvironmentKeys no-ops before ever querying
+	// (environment_shellteam.go's documented nil-DB no-op contract) — this is
+	// NOT evidence that zero ek_ rows existed. Assert RevokeKey is ABSENT
+	// rather than silently letting an empty leg pass as "ordered correctly".
+	for _, call := range fake.order {
+		if call == "RevokeKey" {
+			t.Fatalf("call order = %v, want no RevokeKey with DB nil (no-op contract), not an ordering result", fake.order)
+		}
+	}
+
+	// NOT covered by this test: the "ek_ keys revoked BEFORE the access
+	// group is deleted" leg of the ordering contract. Exercising that leg
+	// needs revokeEnvironmentKeys to do real work, which needs a real
+	// *pgxpool.Pool — r.DB is a concrete pool type with no interface seam,
+	// so it cannot be faked here without a production code change (out of
+	// scope for this fix).
 }
