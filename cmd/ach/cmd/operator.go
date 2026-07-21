@@ -627,7 +627,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		Namespace: watchNS,
 		Log:       ctrl.Log.WithName("refresh-signal"),
 		Client:    mgr.GetClient(),
-		Channels: refreshChannels(pluginCh, promptCh, artifactCh, skillCh, mpCh, smpCh),
+		Channels:  refreshChannels(pluginCh, promptCh, artifactCh, skillCh, mpCh, smpCh),
 	}
 	if err := mgr.Add(refreshListener); err != nil {
 		return fmt.Errorf("unable to add refresh-signal Runnable: %w", err)
