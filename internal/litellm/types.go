@@ -102,6 +102,30 @@ type TeamObjectPermission struct {
 	AgentAccessGroups []string `json:"agent_access_groups"`
 }
 
+// MarshalJSON normalises every nil field to an empty list before encoding.
+// A Go nil slice marshals to JSON `null`, and `null` (like an absent key)
+// reads as "every agent" / "every model" to LiteLLM — the opposite of the
+// deny-all shell team's whole purpose. An explicit `[]` is the closed list;
+// nil must never reach the wire. The alias type sidesteps infinite
+// recursion through this same MarshalJSON.
+func (p TeamObjectPermission) MarshalJSON() ([]byte, error) {
+	type alias TeamObjectPermission
+	out := alias(p)
+	if out.MCPServers == nil {
+		out.MCPServers = []string{}
+	}
+	if out.MCPAccessGroups == nil {
+		out.MCPAccessGroups = []string{}
+	}
+	if out.Agents == nil {
+		out.Agents = []string{}
+	}
+	if out.AgentAccessGroups == nil {
+		out.AgentAccessGroups = []string{}
+	}
+	return json.Marshal(out)
+}
+
 // TeamUpdateRequest is the POST /team/update request body. Only the fields
 // ACH manages are modelled; every other team property is left untouched by
 // omission (LiteLLM treats absent fields as "keep").

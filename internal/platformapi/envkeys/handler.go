@@ -434,7 +434,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		// §6.3's `tags` is a LiteLLM Enterprise-only feature; an OSS
 		// LiteLLM rejects it with 403 "only available for LiteLLM
 		// Enterprise users: tags". Tags are best-effort attribution —
-		// the environment is also carried by AccessGroups and
+		// the environment is also carried by
 		// metadata.ach_environment — so degrade gracefully: drop tags
 		// and retry once. On Enterprise the first call succeeds and this
 		// retry never fires.

@@ -241,6 +241,10 @@ func TestUpdateTeamRequestBody(t *testing.T) {
 	if gotBody["team_id"] != "t-1" {
 		t.Fatalf("body team_id = %v, want t-1", gotBody["team_id"])
 	}
+	models, _ := gotBody["models"].([]any)
+	if len(models) != 1 || models[0] != "__deny_all__" {
+		t.Fatalf("body models = %v, want the deny-all sentinel", gotBody["models"])
+	}
 	op, ok := gotBody["object_permission"].(map[string]any)
 	if !ok {
 		t.Fatalf("body has no object_permission object: %v", gotBody)
@@ -322,6 +326,55 @@ func TestDeleteTeamRejectsEmptyID(t *testing.T) {
 	c := NewRESTClient("http://127.0.0.1:1", "sk-master", logr.Discard())
 	if err := c.DeleteTeam(context.Background(), ""); err == nil {
 		t.Fatal("DeleteTeam(\"\") = nil, want error")
+	}
+}
+
+// TestTeamObjectPermissionMarshalNormalizesNilSlices asserts a zero-value
+// TeamObjectPermission marshals every field as `[]`, never `null` — a nil
+// slice reads as "every agent"/"every model" to LiteLLM, defeating the
+// deny-all shell team's whole purpose.
+func TestTeamObjectPermissionMarshalNormalizesNilSlices(t *testing.T) {
+	b, err := json.Marshal(TeamObjectPermission{})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"mcp_servers", "mcp_access_groups", "agents", "agent_access_groups"} {
+		raw, ok := got[key]
+		if !ok {
+			t.Fatalf("key %q missing from marshaled body: %s", key, b)
+		}
+		if string(raw) != "[]" {
+			t.Errorf("%s = %s, want []", key, raw)
+		}
+	}
+}
+
+// TestTeamObjectPermissionMarshalThroughPointerField confirms the
+// value-receiver MarshalJSON still fires when TeamObjectPermission is
+// reached through TeamUpdateRequest.ObjectPermission (*TeamObjectPermission)
+// — the actual shape UpdateTeam callers send.
+func TestTeamObjectPermissionMarshalThroughPointerField(t *testing.T) {
+	req := TeamUpdateRequest{TeamID: "t-1", ObjectPermission: &TeamObjectPermission{}}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var op map[string]json.RawMessage
+	if err := json.Unmarshal(got["object_permission"], &op); err != nil {
+		t.Fatalf("unmarshal object_permission: %v", err)
+	}
+	for _, key := range []string{"mcp_servers", "mcp_access_groups", "agents", "agent_access_groups"} {
+		if string(op[key]) != "[]" {
+			t.Errorf("object_permission.%s = %s, want [] (nil field through *TeamObjectPermission)", key, op[key])
+		}
 	}
 }
 
