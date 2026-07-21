@@ -61,6 +61,11 @@ closed. This is why ACH's shell team carries sentinels rather than empty lists:
     object_permission.agents              = ["00000000-0000-0000-0000-000000000000"]
     object_permission.agent_access_groups = []
 
+These sentinels cover four axes — `models`, `mcp_servers`, `mcp_access_groups`,
+and `agents` (+ `agent_access_groups`). `object_permission`'s other fields
+(`vector_stores`, `mcp_tool_permissions`, `mcp_toolsets`, `blocked_tools`,
+`search_tools`, `mcp_tool_search_enabled`) are left alone (§9).
+
 Measured on env `test-env` (`gemini.gemini-flash-latest`, `mcp-slack`,
 `finops-advisor`):
 
@@ -154,9 +159,12 @@ the team model-access path — which is why ACH uses an impossible model name.
   no `models`, no `object_permission`, no `access_group_ids`.
 - The environment's grants live only in the access group; the shell team is
   constant boilerplate, identical for every environment.
-- `pk_` keys are unchanged: `spec.authorizedTeams` → `assigned_team_ids` extends
-  what members of those teams can reach from their personal key, which is what
-  access groups are good at, and agents scope correctly on that path.
+- `pk_` keys carry no team (`internal/platformapi/auth/sso.go`) and are
+  therefore fail-open on models per §4; MCP and agents still scope correctly
+  through the access group (`spec.authorizedTeams` → `assigned_team_ids`
+  extends what members of those teams can reach from their personal key). This
+  is a known, deliberate scope decision as of v0.6.17, not a property to rely
+  on.
 - ACH must track which EKs belong to an environment so it can enumerate them at
   deletion time (it does: `environment_keys.environment`). Do not rely on
   `team_id` for that mapping — it disappears with the team.

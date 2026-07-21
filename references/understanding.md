@@ -124,7 +124,9 @@ parity checklist: `references/adding-a-cr-kind.md`.
   (LiteLLM name resolution + content-gating: `last_successful_refresh IS NULL`
   on a referenced skill/plugin row blocks it — prevents Available=True
   false-green) ∧ `AccessGroupSynced` (names→IDs each reconcile →
-  `POST /v1/access_group`) → composite `Available`. Strict name deny-patterns
+  `POST /v1/access_group`; the same condition also covers the per-Environment
+  deny-all shell team, reason `ShellTeamFailed` when it cannot be created or
+  repaired) → composite `Available`. Strict name deny-patterns
   (S2): no `/ \ ? # % whitespace ctrl DEL`; models get the looser pattern
   (provider-prefixed names allowed). `notice` (post-hydrate advisory) +
   `description` (catalog). `BackendIdentityPolicy` — target
@@ -286,8 +288,9 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   self-heals via operator team bootstrap.
 - Keys: `POST /platform/keys` (ek create, §8.2 8-step: env exists + not
   terminating → team intersect → verify-or-create LiteLLM user → gate on
-  `AccessGroupSynced=True` else `503 not_ready` → KeyGenerate w/ access_group
-  + tag → INSERT w/ LiteLLM compensation on failure → plaintext once),
+  `AccessGroupSynced=True` else `503 not_ready` → KeyGenerate into the
+  Environment's shell team (`team_id`) + tag, no access-group binding →
+  INSERT w/ LiteLLM compensation on failure → plaintext once),
   `GET /platform/keys`, `DELETE /platform/keys/{id}` (prefix-dispatched;
   caller-scoped pk self-revoke NOT admin-gated, `?force=true` overrides
   active-key 409).
