@@ -97,6 +97,67 @@ func (r *EnvironmentReconciler) deleteShellTeam(
 	return nil
 }
 
+// revokeEnvironmentKeys revokes every ACTIVE ek_ of this Environment in
+// LiteLLM, before anything else in the deletion sequence.
+//
+// Order is a correctness property, not bookkeeping: deleting the shell team
+// (or the access group) first leaves recently-used keys serving traffic until
+// LiteLLM's key cache expires (~60s), and inside that window key/delete,
+// key/block and key/update all return 404 — the key cannot be revoked by any
+// route. Revoking first makes it immediate and verifiable.
+//
+// A confirmed 404 here (key already gone from LiteLLM, e.g. deleted
+// out-of-band) is logged and skipped so a stale row cannot wedge the finalizer
+// forever. ANY other error aborts the deletion and requeues: reporting a
+// revocation that did not happen is the one outcome that must never occur.
+func (r *EnvironmentReconciler) revokeEnvironmentKeys(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	logger logr.Logger,
+) error {
+	if r.DB == nil {
+		return nil
+	}
+	rows, err := r.DB.Query(ctx,
+		`SELECT key_id, litellm_token FROM environment_keys
+		  WHERE environment=$1 AND status='active' AND litellm_token IS NOT NULL`,
+		env.Name,
+	)
+	if err != nil {
+		return classifyDrainErr("ek_ revoke SELECT", err)
+	}
+	type ekRow struct{ keyID, token string }
+	var pending []ekRow
+	for rows.Next() {
+		var e ekRow
+		if scanErr := rows.Scan(&e.keyID, &e.token); scanErr != nil {
+			rows.Close()
+			return classifyDrainErr("ek_ revoke scan", scanErr)
+		}
+		pending = append(pending, e)
+	}
+	rows.Close()
+	if rerr := rows.Err(); rerr != nil {
+		return classifyDrainErr("ek_ revoke SELECT", rerr)
+	}
+
+	revoked := 0
+	for _, e := range pending {
+		if rvErr := r.LiteLLM.RevokeKey(ctx, e.token); rvErr != nil {
+			if litellm.IsHTTPNotFound(rvErr) {
+				logger.Info("ek_ absent in LiteLLM at revoke time; skipping",
+					"env", env.Name, "key_id", e.keyID)
+				continue
+			}
+			return fmt.Errorf("revoke ek_ %s: %w", e.keyID, rvErr)
+		}
+		revoked++
+	}
+	logger.Info("revoked environment keys in LiteLLM",
+		"env", env.Name, "revoked", revoked, "total", len(pending))
+	return nil
+}
+
 // shellTeamFailed is the closed-set condition for a shell team that could not
 // be provisioned or repaired. It rides AccessGroupSynced because the shell is
 // part of the same LiteLLM write: without it, ek_ minting is unsafe, so the

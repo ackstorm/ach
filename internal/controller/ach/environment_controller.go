@@ -503,14 +503,24 @@ func appendContentUnresolvedMsg(message string, unresolvedPlugins, unresolvedSki
 // Per D-15 the DB write (achdb.UpsertEnvironment) is authoritative: a
 // reconcileDeletion is the §6.5 finalizer drain — extracted from Reconcile
 // to keep the main method's cyclomatic complexity within golangci-lint's
-// gocyclo budget. Runs delete-side-effects on LiteLLM, drains ek_ rows,
-// soft-deletes the projection row, then removes the finalizer.
+// gocyclo budget. Revokes the environment's ek_ keys in LiteLLM, deletes the
+// access group, deletes the deny-all shell team, deletes the tag, drains ek_
+// rows, soft-deletes the projection row, then removes the finalizer.
 func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv1alpha1.Environment, logger logr.Logger) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(env, environmentFinalizer) {
 		return ctrl.Result{}, nil
 	}
+	// Order is load-bearing — see revokeEnvironmentKeys / §8 of
+	// references/litellm-permission-model.md. Keys first, then the group,
+	// then the shell team.
+	if err := r.revokeEnvironmentKeys(ctx, env, logger); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 1 revokeEnvironmentKeys: %w", err)
+	}
 	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)
 	}
 	if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)

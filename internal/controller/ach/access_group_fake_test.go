@@ -61,6 +61,12 @@ type accessGroupFakeImpl struct {
 	lastTeamCreate  map[string]litellm.NewTeamRequest
 	teamCreateErr   error
 
+	// order records the method-name call sequence across CreateTeam /
+	// UpdateTeam / DeleteTeam / DeleteAccessGroup / RevokeKey — the
+	// TestReconcileDeletionOrder assertion that ek_ revoke + access-group
+	// delete both happen strictly before the shell team is deleted.
+	order []string
+
 	// mirrorHistory snapshots teamMirror after every UpdateAccessGroup so
 	// a test can assert that a HEALTHY team's mirror never went empty at
 	// any intermediate step of a repair sequence.
@@ -121,6 +127,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.teamDeleteCalls = map[string]int{}
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
 	f.teamCreateErr = nil
+	f.order = nil
 }
 
 func (f *accessGroupFakeImpl) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
@@ -262,12 +269,23 @@ func (f *accessGroupFakeImpl) DeleteAccessGroupByID(_ context.Context, id string
 
 func (f *accessGroupFakeImpl) DeleteAccessGroup(ctx context.Context, name string) error {
 	f.mu.Lock()
+	f.order = append(f.order, "DeleteAccessGroup")
 	r, ok := f.stored[name]
 	f.mu.Unlock()
 	if !ok {
 		return nil
 	}
 	return f.DeleteAccessGroupByID(ctx, r.AccessGroupID)
+}
+
+// RevokeKey records the call for TestReconcileDeletionOrder and returns nil —
+// the ek_-revocation tests that need error injection live elsewhere; this
+// fake's LiteLLM state has no concept of environment_keys rows to revoke.
+func (f *accessGroupFakeImpl) RevokeKey(_ context.Context, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.order = append(f.order, "RevokeKey")
+	return nil
 }
 
 // Resolver overrides — the reconciler calls these on each pass to build
@@ -339,6 +357,7 @@ func (f *accessGroupFakeImpl) ListAllTeams(_ context.Context) ([]litellm.TeamLis
 func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.order = append(f.order, "CreateTeam")
 	if f.teamCreateErr != nil {
 		return nil, f.teamCreateErr
 	}
@@ -359,6 +378,7 @@ func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeam
 func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.order = append(f.order, "UpdateTeam")
 	f.teamUpdateCalls[req.TeamID]++
 	entry := f.teamsByID[req.TeamID]
 	entry.TeamID = req.TeamID
@@ -384,6 +404,7 @@ func (f *accessGroupFakeImpl) GetTeamInfo(_ context.Context, teamID string) (*li
 func (f *accessGroupFakeImpl) DeleteTeam(_ context.Context, teamID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.order = append(f.order, "DeleteTeam")
 	f.teamDeleteCalls[teamID]++
 	entry := f.teamsByID[teamID]
 	delete(f.teamsByID, teamID)

@@ -359,6 +359,22 @@ changes — deliberately loud, so a LiteLLM semantics change surfaces as a broke
 rather than an endless write loop. Investigate LiteLLM itself in that case; the operator has done
 all it can.
 
+### ❌ A deleted Environment's `ek_` still answers 200 for up to a minute
+
+Only possible if the shell team (`ach-env-<env>`) was deleted BEFORE its keys —
+by hand, or by a build predating v0.6.17. LiteLLM caches key rows for ~60s, and
+inside that window the key cannot be revoked by any route: `POST /key/delete`
+(by `keys` and by `tokens`), `POST /key/block` and `POST /key/update` all return
+404 while the key still serves traffic. The key keeps the deleted team's
+restrictions, so it is a revocation-LATENCY problem, not privilege escalation.
+
+There is no fix from outside — wait out the cache. Never read those 404s as
+"already revoked": the operator logs `ek_ absent in LiteLLM at revoke time` only
+for keys it confirmed gone BEFORE touching the team.
+
+Since v0.6.17 the finalizer order is: revoke every `ek_` → delete the access
+group → delete the shell team, so the window does not occur on a normal delete.
+
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
 ./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json

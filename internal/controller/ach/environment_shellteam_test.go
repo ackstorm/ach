@@ -141,3 +141,43 @@ func TestShellTeamFailedCondition(t *testing.T) {
 		t.Fatalf("Reason = %q, want ShellTeamFailed", cond.Reason)
 	}
 }
+
+// TestReconcileDeletionOrder asserts the load-bearing LiteLLM call order on
+// Environment deletion: keys → access group → shell team. Deleting the team
+// first would leave its keys answering 200 for ~60s with no route to revoke
+// them (references/litellm-permission-model.md §8).
+func TestReconcileDeletionOrder(t *testing.T) {
+	fake := newAccessGroupFake()
+	// Seed a shell team so deleteShellTeam has something to delete.
+	if _, err := fake.CreateTeam(context.Background(), litellm.NewShellTeamRequest("demo")); err != nil {
+		t.Fatalf("seed CreateTeam: %v", err)
+	}
+	fake.order = nil
+
+	r := &EnvironmentReconciler{LiteLLM: fake} // DB nil ⇒ no ek_ rows to revoke
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	if err := r.revokeEnvironmentKeys(context.Background(), env, logr.Discard()); err != nil {
+		t.Fatalf("revokeEnvironmentKeys: %v", err)
+	}
+	if err := r.LiteLLM.DeleteAccessGroup(context.Background(), env.Name); err != nil {
+		t.Fatalf("DeleteAccessGroup: %v", err)
+	}
+	if err := r.deleteShellTeam(context.Background(), env, logr.Discard()); err != nil {
+		t.Fatalf("deleteShellTeam: %v", err)
+	}
+
+	if len(fake.order) == 0 || fake.order[len(fake.order)-1] != "DeleteTeam" {
+		t.Fatalf("call order = %v, want DeleteTeam last", fake.order)
+	}
+	for i, call := range fake.order {
+		if call == "DeleteTeam" {
+			for _, later := range fake.order[i+1:] {
+				if later == "RevokeKey" || later == "DeleteAccessGroup" {
+					t.Fatalf("call order = %v, want every revoke/group delete BEFORE DeleteTeam", fake.order)
+				}
+			}
+		}
+	}
+}
