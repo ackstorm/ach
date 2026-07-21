@@ -56,12 +56,21 @@ func NewShellTeamRequest(env string) *NewTeamRequest {
 // lost its sentinels (someone edited the team by hand, or a LiteLLM upgrade
 // rewrote it). Any drift is a fail-OPEN condition, so the caller repairs it.
 //
-// A field the read-back did not carry is treated as UNVERIFIABLE, not as
-// drift: some LiteLLM versions return only an object_permission_id from the
-// list endpoints, and reporting drift there would turn every reconcile into a
-// pointless write.
+// The check is deliberately asymmetric between Models and ObjectPermission.
+// `GET /v2/team/list` and `GET /team/list` never resolve the object_permission
+// relation and serialise it as null (references/litellm-permission-model.md
+// §9) — that null means "the endpoint did not tell us", not "no permissions",
+// so a nil ObjectPermission alone is UNVERIFIABLE and must not be reported as
+// drift. Models carries no such documented ambiguity: whenever the read
+// resolved ObjectPermission, it resolved the team row, so a nil Models in that
+// case is a genuine fail-open state. The only unverifiable read-back is
+// therefore the one where BOTH fields are absent (a bare team-list row);
+// everywhere else Models is checked unconditionally.
 func ShellTeamDrifted(e TeamListEntry) bool {
-	if e.Models != nil && !slices.Equal(e.Models, []string{ShellTeamDenyAllModel}) {
+	if e.Models == nil && e.ObjectPermission == nil {
+		return false
+	}
+	if !slices.Equal(e.Models, []string{ShellTeamDenyAllModel}) {
 		return true
 	}
 	op := e.ObjectPermission

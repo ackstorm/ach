@@ -49,6 +49,10 @@ func TestShellTeamDrifted(t *testing.T) {
 	}
 
 	cases := map[string]TeamListEntry{
+		"models absent on a resolved read (fail-open on every model)": {
+			Models:           nil,
+			ObjectPermission: ShellTeamPermissions(),
+		},
 		"models cleared (fail-open on every model)": {
 			Models:           []string{},
 			ObjectPermission: ShellTeamPermissions(),
@@ -80,5 +84,15 @@ func TestShellTeamDrifted(t *testing.T) {
 	// forever against a LiteLLM whose list endpoint omits object_permission.
 	if ShellTeamDrifted(TeamListEntry{TeamID: "t-1", TeamAlias: "ach-env-demo"}) {
 		t.Fatal("unverifiable read-back reported as drifted")
+	}
+
+	// A /v2/team/list-shaped read: models resolved (and healthy), the
+	// object_permission relation not. That single unresolved dimension must
+	// not be reported as drift.
+	if ShellTeamDrifted(TeamListEntry{
+		Models:           []string{ShellTeamDenyAllModel},
+		ObjectPermission: nil,
+	}) {
+		t.Fatal("healthy models with unresolved object_permission reported as drifted")
 	}
 }
