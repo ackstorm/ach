@@ -47,19 +47,20 @@ type ModelListResponse struct {
 // NewTeamRequest is the POST /team/new request body. Mirrors the
 // OpenAPI schema's optional fields; callers populate only what they need.
 type NewTeamRequest struct {
-	TeamAlias      string         `json:"team_alias,omitempty"`
-	TeamID         string         `json:"team_id,omitempty"`
-	OrganizationID string         `json:"organization_id,omitempty"`
-	Admins         []string       `json:"admins,omitempty"`
-	Members        []string       `json:"members,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	TPMLimit       *int           `json:"tpm_limit,omitempty"`
-	RPMLimit       *int           `json:"rpm_limit,omitempty"`
-	MaxBudget      *float64       `json:"max_budget,omitempty"`
-	BudgetDuration string         `json:"budget_duration,omitempty"`
-	Models         []string       `json:"models,omitempty"`
-	Blocked        *bool          `json:"blocked,omitempty"`
-	Tags           []string       `json:"tags,omitempty"`
+	TeamAlias        string                `json:"team_alias,omitempty"`
+	TeamID           string                `json:"team_id,omitempty"`
+	OrganizationID   string                `json:"organization_id,omitempty"`
+	Admins           []string              `json:"admins,omitempty"`
+	Members          []string              `json:"members,omitempty"`
+	Metadata         map[string]any        `json:"metadata,omitempty"`
+	TPMLimit         *int                  `json:"tpm_limit,omitempty"`
+	RPMLimit         *int                  `json:"rpm_limit,omitempty"`
+	MaxBudget        *float64              `json:"max_budget,omitempty"`
+	BudgetDuration   string                `json:"budget_duration,omitempty"`
+	Models           []string              `json:"models,omitempty"`
+	Blocked          *bool                 `json:"blocked,omitempty"`
+	Tags             []string              `json:"tags,omitempty"`
+	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
 }
 
 // TeamListEntry is one row of a GET /v2/team/list response. Shape
@@ -77,6 +78,37 @@ type TeamListEntry struct {
 	// grants off THIS side. The two can diverge (manual team edit,
 	// partial write); the Environment reconciler compares both.
 	AccessGroupIDs []string `json:"access_group_ids,omitempty"`
+	// ObjectPermission is the read-back of the team's MCP/agent ceiling.
+	// LiteLLM versions differ on whether the list endpoints inline it or
+	// return only an object_permission_id — a nil here means "the response
+	// did not carry it", NOT "the team has no permissions", so drift
+	// detection must treat nil as unverifiable rather than as drift.
+	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
+}
+
+// TeamObjectPermission is LiteLLM's per-team `object_permission` block —
+// the ONLY place LiteLLM enforces a key's MCP and agent ceiling from
+// (measured 2026-07-21: key-level object_permission on /key/generate is
+// rejected outright, and servers a team reaches through access groups do
+// not count towards it).
+//
+// No field carries omitempty: an empty `agents` list means EVERY agent and
+// an absent one means the same, so the deny-all shell team MUST transmit
+// its lists explicitly. See references/litellm-permission-model.md §5.
+type TeamObjectPermission struct {
+	MCPServers        []string `json:"mcp_servers"`
+	MCPAccessGroups   []string `json:"mcp_access_groups"`
+	Agents            []string `json:"agents"`
+	AgentAccessGroups []string `json:"agent_access_groups"`
+}
+
+// TeamUpdateRequest is the POST /team/update request body. Only the fields
+// ACH manages are modelled; every other team property is left untouched by
+// omission (LiteLLM treats absent fields as "keep").
+type TeamUpdateRequest struct {
+	TeamID           string                `json:"team_id"`
+	Models           []string              `json:"models,omitempty"`
+	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.
@@ -306,8 +338,11 @@ type TeamMemberAddRequest struct {
 // With omitempty on a nil *float64, the JSON output drops the key
 // entirely — the deployer-side LiteLLM keeps its built-in default.
 //
-// AccessGroups carries the LiteLLM access-group name list (Phase 3 ek_
-// creation passes []string{"<environment>"} — single-element slice).
+// TeamID binds the key to a LiteLLM team, which is the ONLY reliable
+// ceiling on a key (measured: a teamless key is fail-open on models, and
+// an access group can never narrow it). ek_ creation passes the
+// environment's deny-all shell team; nothing else is set. Never also put
+// the key in an access group — see references/litellm-permission-model.md §7.
 //
 // Metadata is a free-form pass-through bag stored verbatim on the
 // LiteLLM-side key row. ACH populates it with `ach_key_id`,
@@ -316,14 +351,14 @@ type TeamMemberAddRequest struct {
 // deterministically via `/key/list` without relying on user_id +
 // creation-time heuristics.
 type KeyGenerateRequest struct {
-	UserID       string            `json:"user_id,omitempty"`
-	Key          string            `json:"key,omitempty"`
-	KeyAlias     string            `json:"key_alias,omitempty"`
-	Models       []string          `json:"models,omitempty"`
-	MaxBudget    *float64          `json:"max_budget,omitempty"`
-	Tags         []string          `json:"tags,omitempty"`
-	AccessGroups []string          `json:"access_groups,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	UserID    string            `json:"user_id,omitempty"`
+	Key       string            `json:"key,omitempty"`
+	KeyAlias  string            `json:"key_alias,omitempty"`
+	Models    []string          `json:"models,omitempty"`
+	MaxBudget *float64          `json:"max_budget,omitempty"`
+	Tags      []string          `json:"tags,omitempty"`
+	TeamID    string            `json:"team_id,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
 // KeyGenerateResponse is the POST /key/generate response.

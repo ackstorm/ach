@@ -4,11 +4,14 @@ package litellm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-logr/logr"
 )
 
 // TestListTeamsByAliasExactMatchFilter — §6.7 client-side exact-match
@@ -203,4 +206,140 @@ func TestTeamHelpers401Propagation(t *testing.T) {
 	check("CreateTeam", err)
 	_, err = c.ListTeamsByAlias(context.Background(), "x")
 	check("ListTeamsByAlias", err)
+}
+
+// TestUpdateTeamRequestBody asserts POST /team/update carries the team_id,
+// the models sentinel, and the full object_permission block — the deny-all
+// shell-team contract. A dropped object_permission key would silently leave
+// the team fail-open on agents.
+func TestUpdateTeamRequestBody(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"team_id":"t-1","team_alias":"ach-env-demo"}`))
+	}))
+	defer srv.Close()
+
+	c := NewRESTClient(srv.URL, "sk-master", logr.Discard())
+	out, err := c.UpdateTeam(context.Background(), &TeamUpdateRequest{
+		TeamID:           "t-1",
+		Models:           []string{"__deny_all__"},
+		ObjectPermission: &TeamObjectPermission{Agents: []string{"00000000-0000-0000-0000-000000000000"}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateTeam: %v", err)
+	}
+	if out.TeamID != "t-1" {
+		t.Fatalf("TeamID = %q, want t-1", out.TeamID)
+	}
+	if gotPath != "/team/update" {
+		t.Fatalf("path = %q, want /team/update", gotPath)
+	}
+	if gotBody["team_id"] != "t-1" {
+		t.Fatalf("body team_id = %v, want t-1", gotBody["team_id"])
+	}
+	op, ok := gotBody["object_permission"].(map[string]any)
+	if !ok {
+		t.Fatalf("body has no object_permission object: %v", gotBody)
+	}
+	agents, _ := op["agents"].([]any)
+	if len(agents) != 1 || agents[0] != "00000000-0000-0000-0000-000000000000" {
+		t.Fatalf("object_permission.agents = %v, want the nil-UUID sentinel", op["agents"])
+	}
+	// mcp_servers must serialise even when empty — absent means "every server"
+	// on some LiteLLM paths, and we always want the explicit closed list.
+	if _, present := op["mcp_servers"]; !present {
+		t.Fatalf("object_permission.mcp_servers missing from body: %v", op)
+	}
+}
+
+// TestDeleteTeamRequestBody asserts POST /team/delete sends {"team_ids":[id]}.
+func TestDeleteTeamRequestBody(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := NewRESTClient(srv.URL, "sk-master", logr.Discard())
+	if err := c.DeleteTeam(context.Background(), "t-9"); err != nil {
+		t.Fatalf("DeleteTeam: %v", err)
+	}
+	if gotPath != "/team/delete" {
+		t.Fatalf("path = %q, want /team/delete", gotPath)
+	}
+	ids, _ := gotBody["team_ids"].([]any)
+	if len(ids) != 1 || ids[0] != "t-9" {
+		t.Fatalf("team_ids = %v, want [t-9]", gotBody["team_ids"])
+	}
+}
+
+// TestGetTeamInfoDecodesEnvelopeAndFlat asserts both response shapes decode:
+// LiteLLM wraps the team under "team_info", but a flat body must not break us.
+// GET /team/info is the ONLY read that carries object_permission — the team
+// LIST endpoints serialise it as null — so shell-team drift detection depends
+// on this decoding correctly.
+func TestGetTeamInfoDecodesEnvelopeAndFlat(t *testing.T) {
+	bodies := map[string]string{
+		"envelope": `{"team_id":"t-1","team_info":{"team_id":"t-1","team_alias":"ach-env-demo","models":["__deny_all__"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}}`,
+		"flat":     `{"team_id":"t-1","team_alias":"ach-env-demo","models":["__deny_all__"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}`,
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			var gotQuery string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotQuery = r.URL.Query().Get("team_id")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+
+			c := NewRESTClient(srv.URL, "sk-master", logr.Discard())
+			got, err := c.GetTeamInfo(context.Background(), "t-1")
+			if err != nil {
+				t.Fatalf("GetTeamInfo: %v", err)
+			}
+			if gotQuery != "t-1" {
+				t.Fatalf("team_id query = %q, want t-1", gotQuery)
+			}
+			if got.TeamAlias != "ach-env-demo" {
+				t.Fatalf("TeamAlias = %q", got.TeamAlias)
+			}
+			if got.ObjectPermission == nil || len(got.ObjectPermission.Agents) != 1 {
+				t.Fatalf("ObjectPermission = %+v, want the agent sentinel", got.ObjectPermission)
+			}
+		})
+	}
+}
+
+// TestDeleteTeamRejectsEmptyID guards the "delete every team" footgun.
+func TestDeleteTeamRejectsEmptyID(t *testing.T) {
+	c := NewRESTClient("http://127.0.0.1:1", "sk-master", logr.Discard())
+	if err := c.DeleteTeam(context.Background(), ""); err == nil {
+		t.Fatal("DeleteTeam(\"\") = nil, want error")
+	}
+}
+
+// TestKeyGenerateRequestCarriesTeamID asserts the ek_ mint shape: team_id
+// present, access_groups gone (LiteLLM never accepted that field).
+func TestKeyGenerateRequestCarriesTeamID(t *testing.T) {
+	b, err := json.Marshal(&KeyGenerateRequest{UserID: "u@example.com", TeamID: "t-1"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["team_id"] != "t-1" {
+		t.Fatalf("team_id = %v, want t-1", got["team_id"])
+	}
+	if _, present := got["access_groups"]; present {
+		t.Fatalf("access_groups must not be sent: %v", got)
+	}
 }

@@ -717,6 +717,19 @@ func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, 
 
 func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
+// CreateTeam/UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client
+// interface compliance.
+func (f *fakeLiteLLM) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
 // Unused-method shims to satisfy the wider litellm.Client interface.
 func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
 func (f *fakeLiteLLM) DeleteTag(context.Context, string) error         { return nil }

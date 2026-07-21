@@ -135,6 +135,40 @@ func (c *NoopClient) ListAllTeams(_ context.Context) ([]TeamListEntry, error) {
 	return nil, nil
 }
 
+// CreateTeam is a stub — Phase 1 logs and returns a synthetic entry so the
+// caller's control flow is exercised without LiteLLM connectivity.
+func (c *NoopClient) CreateTeam(_ context.Context, req *NewTeamRequest) (*TeamListEntry, error) {
+	alias := ""
+	if req != nil {
+		alias = req.TeamAlias
+	}
+	c.Log.Info("stub: would create LiteLLM team", "alias", alias)
+	return &TeamListEntry{TeamID: alias, TeamAlias: alias}, nil
+}
+
+// UpdateTeam is a stub — logs and echoes the requested team.
+func (c *NoopClient) UpdateTeam(_ context.Context, req *TeamUpdateRequest) (*TeamListEntry, error) {
+	id := ""
+	if req != nil {
+		id = req.TeamID
+	}
+	c.Log.Info("stub: would update LiteLLM team", "team_id", id)
+	return &TeamListEntry{TeamID: id}, nil
+}
+
+// DeleteTeam is a stub — logs and returns nil.
+func (c *NoopClient) DeleteTeam(_ context.Context, teamID string) error {
+	c.Log.Info("stub: would delete LiteLLM team", "team_id", teamID)
+	return nil
+}
+
+// GetTeamInfo is a stub — returns an entry with no ObjectPermission, which
+// callers must read as "unverifiable", not as "no permissions".
+func (c *NoopClient) GetTeamInfo(_ context.Context, teamID string) (*TeamListEntry, error) {
+	c.Log.Info("stub: would read LiteLLM team info", "team_id", teamID)
+	return &TeamListEntry{TeamID: teamID}, nil
+}
+
 // EnsureDefaultTeam is a no-op for the stub client. Production
 // operator-bootstrap uses RESTClient against a real LiteLLM; envtest
 // pinning to the stub gets a free pass — the SSO path branches on

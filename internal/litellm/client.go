@@ -119,6 +119,20 @@ type Client interface {
 	// team IDs → aliases for the authorized_teams intersection.
 	ListAllTeams(ctx context.Context) ([]TeamListEntry, error)
 
+	// CreateTeam issues POST /team/new. Used by the Environment reconciler
+	// to provision the per-Environment deny-all shell team that caps ek_.
+	CreateTeam(ctx context.Context, req *NewTeamRequest) (*TeamListEntry, error)
+
+	// UpdateTeam issues POST /team/update — shell-team sentinel repair.
+	UpdateTeam(ctx context.Context, req *TeamUpdateRequest) (*TeamListEntry, error)
+
+	// DeleteTeam issues POST /team/delete. Cascades to the team's keys.
+	DeleteTeam(ctx context.Context, teamID string) error
+
+	// GetTeamInfo issues GET /team/info?team_id= — the only read that
+	// resolves object_permission (the list endpoints return it as null).
+	GetTeamInfo(ctx context.Context, teamID string) (*TeamListEntry, error)
+
 	// KeyGenerate issues POST /key/generate.
 	//
 	// ACH does NOT control or persist the LiteLLM virtual-key plaintext

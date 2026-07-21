@@ -149,7 +149,7 @@ const defaultTeam = "default"
 //  7. Generate server-side plaintext (ek-<64>) + key_id (ekid_<26>);
 //     hash plaintext with the pepper; call litellm.KeyGenerate — LiteLLM
 //     owns its virtual-key plaintext format (ACH does NOT supply Key);
-//     ACH supplies AccessGroups=[<env>] + MaxBudget=nil (KEY-10).
+//     ACH supplies MaxBudget=nil (KEY-10).
 //  8. INSERT environment_keys row; on PK collision retry once with a
 //     new ekid_ (reusing same plaintext + LiteLLM token per WARN-03);
 //     on any other failure run the LiteLLM compensation
@@ -415,15 +415,13 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	// req.Key — LiteLLM owns its virtual-key plaintext format
 	// (sk-…) and ACH never persists or forwards it. ACH stores
 	// only the opaque keyResp.Token used for revoke + forwarder
-	// attribution. AccessGroups=[<environment>] +
-	// Tags=[<environment>] per §6.3 ek_ Environment tag;
+	// attribution. Tags=[<environment>] per §6.3 ek_ Environment tag;
 	// MaxBudget=nil per KEY-10.
 	keyReq := &litellm.KeyGenerateRequest{
-		UserID:       userID,
-		KeyAlias:     keyID, // ekid_… — debug attribution only (not used for lookup)
-		MaxBudget:    nil,
-		AccessGroups: []string{env.Name},
-		Tags:         []string{env.Name},
+		UserID:    userID,
+		KeyAlias:  keyID, // ekid_… — debug attribution only (not used for lookup)
+		MaxBudget: nil,
+		Tags:      []string{env.Name},
 		Metadata: map[string]string{
 			"ach_key_id":      keyID,
 			"ach_key_type":    "ek",

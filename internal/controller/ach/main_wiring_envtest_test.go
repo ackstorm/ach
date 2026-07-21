@@ -536,6 +536,19 @@ func (f *wiringFakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListE
 	return nil, nil
 }
 
+// CreateTeam/UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client
+// interface compliance.
+func (f *wiringFakeLiteLLM) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *wiringFakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *wiringFakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *wiringFakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
 // §7 stubs — interface satisfaction only (issue #17: /v1 surface).
 func (f *wiringFakeLiteLLM) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	return &litellm.AccessGroupResponse{AccessGroupID: "wiring-" + req.AccessGroupName, AccessGroupName: req.AccessGroupName}, nil
