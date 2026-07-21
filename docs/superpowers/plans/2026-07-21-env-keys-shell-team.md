@@ -1109,7 +1109,7 @@ func TestEnsureShellTeamRepairsDrift(t *testing.T) {
 }
 ```
 
-Delete the unused `shellTestEnv` helper from the file before running (it is listed above only so you do not reintroduce it); construct the Environment inline as the tests do.
+Construct the Environment inline in each test as shown; do not add a shared helper for two lines.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
