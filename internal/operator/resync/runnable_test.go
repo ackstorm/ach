@@ -4,6 +4,9 @@ package resync
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
@@ -154,5 +158,66 @@ func TestPush_FullChannelDropsAndDoesNotBlock(t *testing.T) {
 		// dropped via default branch — correct
 	case <-time.After(2 * time.Second):
 		t.Fatal("push blocked on a full channel; expected drop-and-log default branch")
+	}
+}
+
+// listRecorder counts List calls per list Kind so a sweep can be asserted
+// to have skipped a Kind entirely (not merely dropped its events).
+type listRecorder struct {
+	client.Client
+	mu    sync.Mutex
+	kinds []string
+}
+
+func (c *listRecorder) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	c.mu.Lock()
+	c.kinds = append(c.kinds, fmt.Sprintf("%T", list))
+	c.mu.Unlock()
+	return c.Client.List(ctx, list, opts...)
+}
+
+func (c *listRecorder) listed(substr string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, k := range c.kinds {
+		if strings.Contains(k, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestResync_GatedKindsNeverListed — with the Plugin/PluginMarketplace
+// channels nil (what the operator wires when featuregate.PluginsEnabled
+// is false), a sweep must not even List those Kinds. Their CRDs are not
+// installed, so a List returns `no matches for kind "PluginList"` and the
+// operator logged that error every 5 minutes.
+func TestResync_GatedKindsNeverListed(t *testing.T) {
+	s := testScheme(t)
+	env := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ach", Name: "demo"},
+	}
+	rec := &listRecorder{Client: fake.NewClientBuilder().WithScheme(s).WithObjects(env).Build()}
+	r := &Resync{
+		Client:    rec,
+		Namespace: "ach",
+		Log:       logr.Discard(),
+		Channels: Channels{
+			Environment: make(chan event.GenericEvent, 8),
+			Plugin:      nil,
+			Marketplace: nil,
+		},
+	}
+
+	r.sweepAll(context.Background())
+
+	if rec.listed("PluginList") {
+		t.Error("sweepAll listed PluginList despite a nil Plugin channel")
+	}
+	if rec.listed("PluginMarketplaceList") {
+		t.Error("sweepAll listed PluginMarketplaceList despite a nil Marketplace channel")
+	}
+	if !rec.listed("EnvironmentList") {
+		t.Error("sweepAll skipped EnvironmentList — the wired Kind must still sweep")
 	}
 }
