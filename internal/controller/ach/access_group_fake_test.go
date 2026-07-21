@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -48,6 +49,19 @@ type accessGroupFakeImpl struct {
 	agents       map[string]string
 	teamsByAlias map[string][]litellm.TeamListEntry
 
+	// teamMirror is teamID → access_group_ids (the team-side mirror).
+	teamMirror map[string][]string
+
+	// mirrorHistory snapshots teamMirror after every UpdateAccessGroup so
+	// a test can assert that a HEALTHY team's mirror never went empty at
+	// any intermediate step of a repair sequence.
+	mirrorHistory []map[string][]string
+
+	// mirrorFrozen simulates a LiteLLM whose delta-driven mirror write
+	// disappeared (a semantics change upstream). PUTs still land; the
+	// mirror never moves. Drives the MirrorUnconverged guard test.
+	mirrorFrozen bool
+
 	listErr error
 }
 
@@ -65,6 +79,7 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		mcps:            map[string]string{},
 		agents:          map[string]string{},
 		teamsByAlias:    map[string][]litellm.TeamListEntry{},
+		teamMirror:      map[string][]string{},
 	}
 }
 
@@ -82,6 +97,9 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.mcps = map[string]string{}
 	f.agents = map[string]string{}
 	f.teamsByAlias = map[string][]litellm.TeamListEntry{}
+	f.teamMirror = map[string][]string{}
+	f.mirrorHistory = nil
+	f.mirrorFrozen = false
 	f.listErr = nil
 }
 
@@ -103,6 +121,18 @@ func (f *accessGroupFakeImpl) CreateAccessGroup(_ context.Context, req litellm.A
 		AssignedKeyIDs:     append([]string{}, req.AssignedKeyIDs...),
 	}
 	f.stored[req.AccessGroupName] = resp
+	// A team named in assigned_team_ids at CREATE time is entering that
+	// relationship for the first time — the same ENTER delta an UpdateAccessGroup
+	// PUT produces (see the delta-driven mirror doc on UpdateAccessGroup below).
+	// Without this a freshly created group's own mirror looks drifted on the
+	// very next reconcile pass (status write → watch → immediate re-reconcile).
+	if !f.mirrorFrozen {
+		for _, t := range req.AssignedTeamIDs {
+			if !slices.Contains(f.teamMirror[t], resp.AccessGroupID) {
+				f.teamMirror[t] = append(f.teamMirror[t], resp.AccessGroupID)
+			}
+		}
+	}
 	return resp, nil
 }
 
@@ -163,8 +193,36 @@ func (f *accessGroupFakeImpl) UpdateAccessGroup(_ context.Context, id string, re
 		found.AccessAgentIDs = append([]string{}, req.AccessAgentIDs...)
 	}
 	if req.AssignedTeamIDs != nil {
+		// Delta-driven mirror, exactly as measured against prod LiteLLM
+		// on 2026-07-21: only teams crossing the assignment boundary get
+		// their access_group_ids rewritten. An identical list is a no-op.
+		if !f.mirrorFrozen {
+			prev := map[string]struct{}{}
+			for _, t := range found.AssignedTeamIDs {
+				prev[t] = struct{}{}
+			}
+			next := map[string]struct{}{}
+			for _, t := range req.AssignedTeamIDs {
+				next[t] = struct{}{}
+			}
+			for t := range next {
+				if _, was := prev[t]; !was { // ENTER
+					if !slices.Contains(f.teamMirror[t], found.AccessGroupID) {
+						f.teamMirror[t] = append(f.teamMirror[t], found.AccessGroupID)
+					}
+				}
+			}
+			for t := range prev {
+				if _, still := next[t]; !still { // LEAVE
+					f.teamMirror[t] = slices.DeleteFunc(
+						append([]string{}, f.teamMirror[t]...),
+						func(g string) bool { return g == found.AccessGroupID })
+				}
+			}
+		}
 		found.AssignedTeamIDs = append([]string{}, req.AssignedTeamIDs...)
 	}
+	f.mirrorHistory = append(f.mirrorHistory, cloneMirror(f.teamMirror))
 	out := *found
 	return &out, nil
 }
@@ -239,14 +297,18 @@ func (f *accessGroupFakeImpl) ListTeamsByAlias(_ context.Context, alias string) 
 	return nil, nil
 }
 
-// ListAllTeams returns every team across all aliases — interface
-// compliance; no controller test exercises it.
+// ListAllTeams returns every seeded team across all aliases, carrying
+// the per-team access_group_ids mirror. This is the call the Environment
+// reconciler uses to resolve authorizedTeams AND to read the mirror.
 func (f *accessGroupFakeImpl) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []litellm.TeamListEntry
 	for _, entries := range f.teamsByAlias {
-		out = append(out, entries...)
+		for _, e := range entries {
+			e.AccessGroupIDs = append([]string{}, f.teamMirror[e.TeamID]...)
+			out = append(out, e)
+		}
 	}
 	return out, nil
 }
@@ -281,10 +343,21 @@ func (f *accessGroupFakeImpl) SeedAgent(name, id string) {
 	f.agents[name] = id
 }
 
+// SeedTeam registers a team under an alias with an EMPTY mirror. Pair it
+// with SeedTeamMirror to model a healthy binding.
 func (f *accessGroupFakeImpl) SeedTeam(alias, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.teamsByAlias[alias] = append(f.teamsByAlias[alias], litellm.TeamListEntry{TeamID: id, TeamAlias: alias})
+}
+
+// SeedTeamMirror sets team.access_group_ids for one team — the LiteLLM
+// side that actually enforces grants. Tests use it to model a mirror
+// that agrees with, or diverges from, access_group.assigned_team_ids.
+func (f *accessGroupFakeImpl) SeedTeamMirror(teamID string, accessGroupIDs ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.teamMirror[teamID] = append([]string{}, accessGroupIDs...)
 }
 
 // SeedExisting pre-populates the stored access-group state for
@@ -307,6 +380,50 @@ func (f *accessGroupFakeImpl) InjectUpdateErr(name string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.updateErrByName[name] = err
+}
+
+func cloneMirror(m map[string][]string) map[string][]string {
+	out := make(map[string][]string, len(m))
+	for k, v := range m {
+		out[k] = append([]string{}, v...)
+	}
+	return out
+}
+
+// MirrorEverEmpty reports whether teamID's mirror was empty in ANY
+// post-PUT snapshot — the blast-radius assertion for a co-authorized
+// healthy team during a repair sequence.
+func (f *accessGroupFakeImpl) MirrorEverEmpty(teamID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, snap := range f.mirrorHistory {
+		if len(snap[teamID]) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Mirror returns the current access_group_ids for one team.
+func (f *accessGroupFakeImpl) Mirror(teamID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.teamMirror[teamID]...)
+}
+
+func (f *accessGroupFakeImpl) LastUpdate(name string) litellm.AccessGroupUpdateRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastUpdate[name]
+}
+
+// FreezeMirror simulates a LiteLLM whose delta-driven mirror write has
+// disappeared — PUTs land but the mirror never moves. Drives the
+// MirrorUnconverged guard test.
+func (f *accessGroupFakeImpl) FreezeMirror() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mirrorFrozen = true
 }
 
 var _ litellm.Client = (*accessGroupFakeImpl)(nil)
