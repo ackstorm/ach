@@ -71,6 +71,12 @@ type TeamListEntry struct {
 	Models         []string        `json:"models,omitempty"`
 	Blocked        *bool           `json:"blocked,omitempty"`
 	Metadata       json.RawMessage `json:"metadata,omitempty"`
+	// AccessGroupIDs is the TEAM-side mirror of the access-group
+	// binding. LiteLLM stores the relation twice — here and in
+	// access_group.assigned_team_ids — and enforces model/MCP/agent
+	// grants off THIS side. The two can diverge (manual team edit,
+	// partial write); the Environment reconciler compares both.
+	AccessGroupIDs []string `json:"access_group_ids,omitempty"`
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.
