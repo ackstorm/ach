@@ -790,94 +790,114 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 
 	// Step 3b: PUT when drifted.
 	if computeAccessGroupDrift(existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups) {
-		key := env.Namespace + "/" + env.Name
-		intermediate, mirrorNeeded := mirrorRepairStep(existing.AccessGroupID, teamIDs, teamAccessGroups)
+		return r.repairAccessGroup(ctx, env, existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups, logger)
+	}
+	r.mirrorUnconverged.Delete(env.Namespace + "/" + env.Name)
 
-		// Suppressed: a previous pass ran the full sequence at this same
-		// generation and the mirror still did not converge. Do not burn
-		// two more writes every resync — report loudly and stop.
-		if mirrorNeeded {
-			if g, seen := r.mirrorUnconverged.Load(key); seen && g == env.Generation {
-				return mirrorUnconvergedCondition(env, existing.AccessGroupID,
-					"suppressed after a previous non-converging repair at this generation")
-			}
+	return accessGroupSyncedCondition(env, existing)
+}
+
+// repairAccessGroup runs the Step 3b PUT sequence once computeAccessGroupDrift
+// has reported drift on the current pass — split out of reconcileAccessGroup
+// purely to keep that function's cyclomatic complexity under the gocyclo gate;
+// no behaviour change from inlining it there.
+//
+// When the drift is group-side only, this is a single ordinary PUT. When the
+// team mirror also diverges, it runs the two-PUT delta repair (see
+// mirrorRepairStep's doc) followed by a one-shot convergence verify that fails
+// loudly rather than retrying forever.
+func (r *EnvironmentReconciler) repairAccessGroup(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	existing *litellm.AccessGroupResponse,
+	desiredModels, mcpIDs, agentIDs, teamIDs []string,
+	teamAccessGroups map[string][]string,
+	logger logr.Logger,
+) metav1.Condition {
+	key := env.Namespace + "/" + env.Name
+	intermediate, mirrorNeeded := mirrorRepairStep(existing.AccessGroupID, teamIDs, teamAccessGroups)
+
+	// Suppressed: a previous pass ran the full sequence at this same
+	// generation and the mirror still did not converge. Do not burn
+	// two more writes every resync — report loudly and stop.
+	if mirrorNeeded {
+		if g, seen := r.mirrorUnconverged.Load(key); seen && g == env.Generation {
+			return mirrorUnconvergedCondition(env, existing.AccessGroupID,
+				"suppressed after a previous non-converging repair at this generation")
 		}
 
 		// First PUT: move the drifted teams across the assignment
 		// boundary so the FINAL PUT generates the ENTER/LEAVE delta
 		// LiteLLM needs to rewrite their mirror. Healthy teams appear in
 		// both PUTs, so they never leave and never blink.
-		if mirrorNeeded {
-			logger.Info("access group team mirror drifted; running delta repair",
-				"name", env.Name, "id", existing.AccessGroupID,
-				"intermediate", intermediate, "desired", teamIDs)
-			if _, cerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
-				AccessModelNames:   desiredModels,
-				AccessMCPServerIDs: mcpIDs,
-				AccessAgentIDs:     agentIDs,
-				AssignedTeamIDs:    nonNilStrings(intermediate),
-			}); cerr != nil {
-				logger.Error(cerr, "PUT /v1/access_group/{id} (mirror repair step 1) failed", "id", existing.AccessGroupID)
-				return metav1.Condition{
-					Type:               "AccessGroupSynced",
-					Status:             metav1.ConditionFalse,
-					Reason:             "AccessGroupUpdateFailed",
-					Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) mirror repair step 1 failed: %v", env.Name, existing.AccessGroupID, cerr),
-					ObservedGeneration: env.Generation,
-					LastTransitionTime: metav1.Now(),
-				}
-			}
-		}
-
-		// Final PUT: the desired state. When mirrorNeeded was false this
-		// is the ordinary single-PUT drift correction, unchanged.
-		updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+		logger.Info("access group team mirror drifted; running delta repair",
+			"name", env.Name, "id", existing.AccessGroupID,
+			"intermediate", intermediate, "desired", teamIDs)
+		if _, cerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
 			AccessModelNames:   desiredModels,
 			AccessMCPServerIDs: mcpIDs,
 			AccessAgentIDs:     agentIDs,
-			AssignedTeamIDs:    teamIDs,
-		})
-		if uerr != nil {
-			logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
+			AssignedTeamIDs:    nonNilStrings(intermediate),
+		}); cerr != nil {
+			logger.Error(cerr, "PUT /v1/access_group/{id} (mirror repair step 1) failed", "id", existing.AccessGroupID)
 			return metav1.Condition{
 				Type:               "AccessGroupSynced",
 				Status:             metav1.ConditionFalse,
 				Reason:             "AccessGroupUpdateFailed",
-				Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) failed: %v", env.Name, existing.AccessGroupID, uerr),
+				Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) mirror repair step 1 failed: %v", env.Name, existing.AccessGroupID, cerr),
 				ObservedGeneration: env.Generation,
 				LastTransitionTime: metav1.Now(),
 			}
 		}
-		logger.Info("updated access group", "name", env.Name, "id", updated.AccessGroupID)
+	}
 
-		// Convergence guard: re-read the mirrors ONCE (only after a repair
-		// actually ran) and verify. A still-drifted mirror means LiteLLM's
-		// delta semantics no longer hold — fail loudly instead of looping.
-		if mirrorNeeded {
-			verifyTeams, verr := r.LiteLLM.ListAllTeams(ctx)
-			if verr != nil {
-				return resolveFailed(env, "ListAllTeams (mirror verify)", verr)
-			}
-			verifyMirror := make(map[string][]string, len(verifyTeams))
-			for _, t := range verifyTeams {
-				if t.TeamID != "" {
-					verifyMirror[t.TeamID] = t.AccessGroupIDs
-				}
-			}
-			if _, still := mirrorRepairStep(existing.AccessGroupID, teamIDs, verifyMirror); still {
-				r.mirrorUnconverged.Store(key, env.Generation)
-				logger.Error(nil, "access group team mirror did NOT converge after repair; suppressing further attempts",
-					"name", env.Name, "id", existing.AccessGroupID, "desired", teamIDs)
-				return mirrorUnconvergedCondition(env, existing.AccessGroupID,
-					"team.access_group_ids still diverges after the two-PUT delta repair")
-			}
-			r.mirrorUnconverged.Delete(key)
+	// Final PUT: the desired state. When mirrorNeeded was false this
+	// is the ordinary single-PUT drift correction, unchanged.
+	updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+		AccessModelNames:   desiredModels,
+		AccessMCPServerIDs: mcpIDs,
+		AccessAgentIDs:     agentIDs,
+		AssignedTeamIDs:    teamIDs,
+	})
+	if uerr != nil {
+		logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
+		return metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionFalse,
+			Reason:             "AccessGroupUpdateFailed",
+			Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) failed: %v", env.Name, existing.AccessGroupID, uerr),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
 		}
+	}
+	logger.Info("updated access group", "name", env.Name, "id", updated.AccessGroupID)
+
+	if !mirrorNeeded {
 		return accessGroupSyncedCondition(env, updated)
 	}
-	r.mirrorUnconverged.Delete(env.Namespace + "/" + env.Name)
 
-	return accessGroupSyncedCondition(env, existing)
+	// Convergence guard: re-read the mirrors ONCE (only after a repair
+	// actually ran) and verify. A still-drifted mirror means LiteLLM's
+	// delta semantics no longer hold — fail loudly instead of looping.
+	verifyTeams, verr := r.LiteLLM.ListAllTeams(ctx)
+	if verr != nil {
+		return resolveFailed(env, "ListAllTeams (mirror verify)", verr)
+	}
+	verifyMirror := make(map[string][]string, len(verifyTeams))
+	for _, t := range verifyTeams {
+		if t.TeamID != "" {
+			verifyMirror[t.TeamID] = t.AccessGroupIDs
+		}
+	}
+	if _, still := mirrorRepairStep(existing.AccessGroupID, teamIDs, verifyMirror); still {
+		r.mirrorUnconverged.Store(key, env.Generation)
+		logger.Error(nil, "access group team mirror did NOT converge after repair; suppressing further attempts",
+			"name", env.Name, "id", existing.AccessGroupID, "desired", teamIDs)
+		return mirrorUnconvergedCondition(env, existing.AccessGroupID,
+			"team.access_group_ids still diverges after the two-PUT delta repair")
+	}
+	r.mirrorUnconverged.Delete(key)
+	return accessGroupSyncedCondition(env, updated)
 }
 
 // resolveFailed packages a LiteLLM-unreachable failure during the
