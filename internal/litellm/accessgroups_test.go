@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -264,10 +265,18 @@ func TestDeleteAccessGroup_AbsentName_NoDelete(t *testing.T) {
 }
 
 func TestAccessGroupName(t *testing.T) {
-	if got := AccessGroupName("platform"); got != "ach-platform" {
-		t.Errorf("AccessGroupName(platform) = %q; want ach-platform", got)
+	if got := AccessGroupName("platform"); got != "ach-env-platform" {
+		t.Errorf("AccessGroupName(platform) = %q; want ach-env-platform", got)
 	}
-	if AccessGroupPrefix != "ach-" {
-		t.Errorf("AccessGroupPrefix = %q; want ach-", AccessGroupPrefix)
+	if AccessGroupPrefix != "ach-env-" {
+		t.Errorf("AccessGroupPrefix = %q; want ach-env-", AccessGroupPrefix)
+	}
+}
+
+func TestAccessGroupNameGenerations(t *testing.T) {
+	got := AccessGroupNameGenerations("platform")
+	want := []string{"ach-env-platform", "ach-platform", "platform"}
+	if !slices.Equal(got, want) {
+		t.Errorf("AccessGroupNameGenerations(platform) = %v; want %v", got, want)
 	}
 }
