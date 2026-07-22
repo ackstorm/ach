@@ -4,6 +4,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -130,6 +131,13 @@ func New(deps Deps) *httputil.ReverseProxy {
 		},
 		ModifyResponse: nil,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// Client went away mid-proxy (SSE stream on /mcp or /v1 closed
+			// by the caller): the inbound request context is canceled, NOT
+			// an upstream fault. Nothing to write, no error to log, no
+			// litellm_unreachable metric — the nginx "499" convention.
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			// Never echo the raw err string — it may contain internal
 			// hostnames or upstream metadata. Map to upstream_unreachable
 			// + log the err on the server side.

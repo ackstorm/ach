@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -73,6 +74,28 @@ func TestNewReverseProxyDeadUpstreamReturns502(t *testing.T) {
 // set (populated by the HTTP server for any percent-encoded char), so %40
 // round-trips as %40. For a literal @, url.EscapedPath() leaves it unescaped
 // because @ is a valid pchar per RFC 3986 — so it also passes through as @.
+func TestNewReverseProxyClientCancelNo502(t *testing.T) {
+	// A caller that disconnects mid-proxy (an /mcp SSE stream closed by
+	// opencode) cancels the inbound request context. That is a client
+	// disconnect, not an upstream fault: the gateway must NOT emit a 502
+	// (the client is already gone) and must NOT log an error.
+	target, _ := url.Parse("http://127.0.0.1:1")
+	rp := newReverseProxy(target, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // client already gone
+	req := httptest.NewRequest(http.MethodGet, "http://gateway.example/mcp/mcp-gitlab", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	rp.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusBadGateway {
+		t.Fatalf("client cancel must not yield 502; got %d", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("client cancel must write no body; got %q", rec.Body.String())
+	}
+}
+
 func TestGateway_PreservesAtInPluginPath(t *testing.T) {
 	var gotEscapedPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

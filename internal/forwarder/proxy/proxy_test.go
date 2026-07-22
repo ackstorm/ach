@@ -314,6 +314,31 @@ func TestErrorHandler_502Envelope(t *testing.T) {
 	}
 }
 
+// A caller that disconnects mid-proxy (an /mcp SSE stream closed by the
+// client) cancels the inbound request context. That is a client disconnect,
+// not an upstream fault: the ErrorHandler must NOT render a 502 envelope
+// (the client is already gone) and must NOT count litellm_unreachable.
+func TestErrorHandler_ClientCancelNo502(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream: mustParseURL(t, "http://127.0.0.1:1"),
+		Logger:          slog.Default(),
+	}
+	rp := New(deps)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // client already gone
+	req := httptest.NewRequest(http.MethodGet, "/mcp/mcp-gitlab", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	rp.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusBadGateway {
+		t.Fatalf("client cancel must not yield 502; got %d", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("client cancel must write no body; got %q", rec.Body.String())
+	}
+}
+
 // PR7: ModifyResponse pass-through — upstream's status/headers/body verbatim.
 func TestModifyResponse_PassThrough(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,8 @@
 package gateway
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -29,6 +31,13 @@ func newReverseProxy(target *url.URL, logger *slog.Logger) *httputil.ReverseProx
 	}
 
 	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		// Client went away mid-proxy (SSE stream on /mcp or /v1 closed by
+		// the caller): the inbound request context is canceled, NOT an
+		// upstream fault. The client is already gone, so there is nothing
+		// to write and no error to log — the nginx "499" convention.
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		if logger != nil {
 			logger.Error("gateway upstream error",
 				slog.String("path", r.URL.Path),
