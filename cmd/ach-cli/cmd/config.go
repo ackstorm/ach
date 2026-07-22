@@ -216,15 +216,29 @@ func newConfigRemoveCmd() *cobra.Command {
 				}
 			}
 			delete(f.Profiles, name)
+			reassigned := ""
 			if f.Default == name {
-				// T-06-04-02 mitigation: clear default so subsequent
-				// commands don't silently route to a vanished profile.
-				f.Default = ""
+				// T-06-04-02 mitigation (updated): a vanished default must
+				// never be left dangling. If any profile remains, reassign
+				// default to it deterministically (sorted-first name) and
+				// say so — an explicit, visible pick, not silent routing.
+				// Only when no profiles remain does default clear to "".
+				names := f.ProfileNames()
+				if len(names) > 0 {
+					f.Default = names[0]
+					reassigned = names[0]
+				} else {
+					f.Default = ""
+				}
 			}
 			if err := config.Save(path, f); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "removed %s\n", name)
+			if reassigned != "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "removed %s; default reassigned to %s\n", name, reassigned)
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "removed %s\n", name)
+			}
 			return nil
 		},
 	}
