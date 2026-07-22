@@ -23,15 +23,10 @@ import (
 func TestReconcileAccessGroup_AttachesEntitledUserShells(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("run", "t-run")
-	accessGroupFake.teamsByID["t-run"] = litellm.TeamListEntry{
-		TeamID: "t-run", TeamAlias: "run",
-		MembersWithRoles: []litellm.TeamMemberRole{{UserID: "a@b.com"}, {UserID: "c@d.com"}},
-	}
+	accessGroupFake.SeedTeamMembers("t-run", "run",
+		litellm.TeamMemberRole{UserID: "a@b.com"}, litellm.TeamMemberRole{UserID: "c@d.com"})
 	// a@b.com HAS a shell; c@d.com does NOT (never minted a pk_).
-	accessGroupFake.teamsByAlias["ach-user-a@b.com"] = []litellm.TeamListEntry{
-		{TeamID: "ach-user-a@b.com", TeamAlias: "ach-user-a@b.com"},
-	}
+	accessGroupFake.SeedUserShellPresent("a@b.com")
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,15 +75,9 @@ func TestReconcileAccessGroup_AttachesEntitledUserShells(t *testing.T) {
 func TestReconcileAccessGroup_MemberRemovalDetaches(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("run", "t-run")
 	// a@b.com already removed from "run" — only c@d.com (no shell) remains.
-	accessGroupFake.teamsByID["t-run"] = litellm.TeamListEntry{
-		TeamID: "t-run", TeamAlias: "run",
-		MembersWithRoles: []litellm.TeamMemberRole{{UserID: "c@d.com"}},
-	}
-	accessGroupFake.teamsByAlias["ach-user-a@b.com"] = []litellm.TeamListEntry{
-		{TeamID: "ach-user-a@b.com", TeamAlias: "ach-user-a@b.com"},
-	}
+	accessGroupFake.SeedTeamMembers("t-run", "run", litellm.TeamMemberRole{UserID: "c@d.com"})
+	accessGroupFake.SeedUserShellPresent("a@b.com")
 
 	// Pre-seed an existing access group as if a@b.com's shell was attached by
 	// a prior reconcile (before their removal from "run").
@@ -141,11 +130,7 @@ func TestReconcileAccessGroup_MemberRemovalDetaches(t *testing.T) {
 func TestReconcileAccessGroup_TeamInfoError_ResolveFailed(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("run", "t-run")
-	accessGroupFake.teamsByID["t-run"] = litellm.TeamListEntry{
-		TeamID: "t-run", TeamAlias: "run",
-		MembersWithRoles: []litellm.TeamMemberRole{{UserID: "a@b.com"}},
-	}
+	accessGroupFake.SeedTeamMembers("t-run", "run", litellm.TeamMemberRole{UserID: "a@b.com"})
 	accessGroupFake.InjectTeamInfoErr("t-run", errors.New("fake: litellm unreachable"))
 
 	cr := &achv1alpha1.Environment{

@@ -449,6 +449,31 @@ func (f *accessGroupFakeImpl) InjectTeamInfoErr(teamID string, err error) {
 	f.teamInfoErrByID[teamID] = err
 }
 
+// SeedTeamMembers registers a human team's members_with_roles (Task 4 —
+// entitledUserShellIDs reads this via GetTeamInfo). Locked, unlike a direct
+// teamsByID/teamsByAlias write: the envtest suite runs a real manager, so a
+// lingering reconcile goroutine from an adjacent test can read these same
+// maps concurrently with a new test's seeding.
+func (f *accessGroupFakeImpl) SeedTeamMembers(teamID, alias string, members ...litellm.TeamMemberRole) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entry := litellm.TeamListEntry{TeamID: teamID, TeamAlias: alias, MembersWithRoles: members}
+	f.teamsByID[teamID] = entry
+	if alias != "" {
+		f.teamsByAlias[alias] = []litellm.TeamListEntry{entry}
+	}
+}
+
+// SeedUserShellPresent registers email's ach-user-<email> shell as already
+// existing (team_id == alias, mirrors CreateTeam's convention) — locked
+// seeding for the entitled-user-shell attachment tests (Task 4).
+func (f *accessGroupFakeImpl) SeedUserShellPresent(email string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	alias := litellm.UserShellAlias(email)
+	f.teamsByAlias[alias] = []litellm.TeamListEntry{{TeamID: alias, TeamAlias: alias}}
+}
+
 func (f *accessGroupFakeImpl) DeleteTeam(_ context.Context, teamID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
