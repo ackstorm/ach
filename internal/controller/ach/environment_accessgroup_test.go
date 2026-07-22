@@ -734,10 +734,12 @@ func TestAccessGroupSynced_MigratesLegacyName(t *testing.T) {
 	// Legacy group already exists under the bare env name with the SAME
 	// bindings the reconciler will compute, so ONLY the name drifts.
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
-		AccessGroupID:   "ag-legacy-uuid",
-		AccessGroupName: "test-env-ag-migrate",
-		AccessModelNames: []string{}, AccessMCPServerIDs: []string{}, AccessAgentIDs: []string{},
-		AssignedTeamIDs: []string{"t-uuid-default", "id-ach-env-test-env-ag-migrate"},
+		AccessGroupID:      "ag-legacy-uuid",
+		AccessGroupName:    "test-env-ag-migrate",
+		AccessModelNames:   []string{},
+		AccessMCPServerIDs: []string{},
+		AccessAgentIDs:     []string{},
+		AssignedTeamIDs:    []string{"t-uuid-default", "id-ach-env-test-env-ag-migrate"},
 	})
 
 	cr := &achv1alpha1.Environment{
