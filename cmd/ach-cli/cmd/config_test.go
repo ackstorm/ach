@@ -216,8 +216,9 @@ func TestConfig_Remove_DefaultWithoutForce(t *testing.T) {
 	}
 }
 
-// TestConfig_Remove_DefaultWithForce asserts removing the active
-// default WITH --force succeeds AND clears default:.
+// TestConfig_Remove_DefaultWithForce asserts removing the active default
+// WITH --force succeeds AND reassigns default: to a remaining profile
+// (deterministic sorted-first pick, announced on stdout).
 func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 	dir := configTestEnv(t)
 	path := seedConfigFile(t, dir, &config.File{
@@ -227,7 +228,7 @@ func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 			"stg":  {URL: "https://stg.example"},
 		},
 	})
-	_, _, code, err := executeConfig(t, "remove", "prod", "--force")
+	stdout, _, code, err := executeConfig(t, "remove", "prod", "--force")
 	if err != nil {
 		t.Fatalf("remove --force: %v", err)
 	}
@@ -241,8 +242,37 @@ func TestConfig_Remove_DefaultWithForce(t *testing.T) {
 	if _, ok := f.Profiles["prod"]; ok {
 		t.Errorf("profile 'prod' should be removed")
 	}
+	if f.Default != "stg" {
+		t.Errorf("default = %q; want 'stg' (reassigned to sole remaining profile)", f.Default)
+	}
+	if !strings.Contains(stdout, "reassigned to stg") {
+		t.Errorf("stdout missing reassignment notice: %q", stdout)
+	}
+}
+
+// TestConfig_Remove_DefaultWithForce_LastProfile asserts default: clears
+// to "" only when NO profile remains to reassign to.
+func TestConfig_Remove_DefaultWithForce_LastProfile(t *testing.T) {
+	dir := configTestEnv(t)
+	path := seedConfigFile(t, dir, &config.File{
+		Default: "prod",
+		Profiles: map[string]*config.Profile{
+			"prod": {URL: "https://prod.example"},
+		},
+	})
+	_, _, code, err := executeConfig(t, "remove", "prod", "--force")
+	if err != nil {
+		t.Fatalf("remove --force: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if f.Default != "" {
-		t.Errorf("default = %q; want '' (cleared after default removal)", f.Default)
+		t.Errorf("default = %q; want '' (no profile left to reassign to)", f.Default)
 	}
 }
 
