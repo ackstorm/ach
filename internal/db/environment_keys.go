@@ -122,6 +122,56 @@ func RevokeEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string)
 	return r, nil
 }
 
+// EkRevokeRow is one row from ListActiveEnvironmentKeysForRevoke — just the
+// two fields the Environment finalizer's key-revoke leg needs before it may
+// delete the environment's access group and shell team
+// (references/litellm-permission-model.md §8: revoking every ek_ in LiteLLM
+// FIRST is the load-bearing ordering). litellm_token is guaranteed non-NULL
+// by the query's WHERE clause, so it is a plain string rather than
+// EkKeyInfo's nullable *string form.
+type EkRevokeRow struct {
+	KeyID        string
+	LiteLLMToken string
+}
+
+// ListActiveEnvironmentKeysForRevoke returns every active, LiteLLM-linked
+// environment_keys row for environment — the query the Environment
+// finalizer's revokeEnvironmentKeys leg runs before deleting the access
+// group and shell team (internal/controller/ach/environment_shellteam.go).
+func ListActiveEnvironmentKeysForRevoke(ctx context.Context, pool *pgxpool.Pool, environment string) ([]EkRevokeRow, error) {
+	const sql = `
+		SELECT key_id, litellm_token FROM environment_keys
+		 WHERE environment=$1 AND status='active' AND litellm_token IS NOT NULL
+	`
+	rows, err := pool.Query(ctx, sql, environment)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s): %w", environment, err)
+	}
+	defer rows.Close()
+
+	var out []EkRevokeRow
+	for rows.Next() {
+		var r EkRevokeRow
+		if scanErr := rows.Scan(&r.KeyID, &r.LiteLLMToken); scanErr != nil {
+			if isTransientPgErr(scanErr) {
+				return nil, scanErr
+			}
+			return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s) scan: %w", environment, scanErr)
+		}
+		out = append(out, r)
+	}
+	if rerr := rows.Err(); rerr != nil {
+		if isTransientPgErr(rerr) {
+			return nil, rerr
+		}
+		return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s): %w", environment, rerr)
+	}
+	return out, nil
+}
+
 // ListEnvironmentKeysByOwner returns a paginated slice of EkKeyInfo for the
 // given owner_email, ordered by (created_at DESC, key_id DESC).
 //

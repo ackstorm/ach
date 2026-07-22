@@ -84,6 +84,10 @@ type EnvironmentReconciler struct {
 	Namespace string
 	Log       logr.Logger
 	DB        *pgxpool.Pool
+	// ListActiveEKsForRevoke is revokeEnvironmentKeys's test seam (see
+	// listActiveEKsForRevokeFn's doc comment in environment_shellteam.go);
+	// nil in production, where the real achdb helper is used against DB.
+	ListActiveEKsForRevoke listActiveEKsForRevokeFn
 	// Phase 2 (Plan 02-09 wires from cmd/operator/main.go):
 	Snapshotter *snapshot.Snapshotter
 	// Issue #34 (A10/A11): external source.Channel feed used by the

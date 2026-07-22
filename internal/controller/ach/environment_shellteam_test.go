@@ -6,15 +6,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgxpool"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
@@ -291,6 +294,15 @@ func TestShellTeamFailedCondition(t *testing.T) {
 // test body, then asserted the recording matched that order — circular: it
 // would still pass if the statements inside reconcileDeletion were reordered,
 // which is the exact regression this test exists to catch.
+//
+// r.DB is left nil — the injected ListActiveEKsForRevoke seam is consulted
+// BEFORE revokeEnvironmentKeys's `if r.DB == nil` guard, so it runs
+// regardless, without also unlocking the OTHER real-Postgres codepaths later
+// in reconcileDeletion (drainEkRows, softDeleteEnvironmentProjection) that
+// have no seam of their own and would panic against a non-functional pool.
+// The seam returns two fake key rows so RevokeKey does real work and the
+// "keys revoked BEFORE the access group / shell team" leg is actually
+// exercised, not vacuous.
 func TestReconcileDeletionOrder(t *testing.T) {
 	fake := newAccessGroupFake()
 	// Seed a shell team so deleteShellTeam has something to delete.
@@ -327,39 +339,29 @@ func TestReconcileDeletionOrder(t *testing.T) {
 		t.Fatal("seed: DeletionTimestamp not set after Delete — reconcileDeletion would no-op")
 	}
 
-	r := &EnvironmentReconciler{Client: c, LiteLLM: fake} // DB nil ⇒ no ek_ rows to revoke
+	r := &EnvironmentReconciler{
+		Client:  c,
+		LiteLLM: fake,
+		// DB stays nil (see the doc comment above); the seam is consulted
+		// first and never touches it.
+		ListActiveEKsForRevoke: func(_ context.Context, _ *pgxpool.Pool, environment string) ([]achdb.EkRevokeRow, error) {
+			return []achdb.EkRevokeRow{
+				{KeyID: "ekid_demo_1", LiteLLMToken: "tok-demo-1"},
+				{KeyID: "ekid_demo_2", LiteLLMToken: "tok-demo-2"},
+			}, nil
+		},
+	}
 
 	if _, err := r.reconcileDeletion(context.Background(), &draining, logr.Discard()); err != nil {
 		t.Fatalf("reconcileDeletion: %v", err)
 	}
 
-	if len(fake.order) == 0 || fake.order[len(fake.order)-1] != "DeleteTeam" {
-		t.Fatalf("call order = %v, want DeleteTeam last", fake.order)
+	// Exact order: both RevokeKey calls (one per seeded key row), then
+	// DeleteAccessGroup, then DeleteTeam. deleteShellTeam's ListTeamsByAlias
+	// lookup and DeleteTag are not recorded into fake.order, so this is the
+	// full recording for the run.
+	wantOrder := []string{"RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteTeam"}
+	if !slices.Equal(fake.order, wantOrder) {
+		t.Fatalf("call order = %v, want %v", fake.order, wantOrder)
 	}
-	for i, call := range fake.order {
-		if call == "DeleteTeam" {
-			for _, later := range fake.order[i+1:] {
-				if later == "RevokeKey" || later == "DeleteAccessGroup" {
-					t.Fatalf("call order = %v, want every revoke/group delete BEFORE DeleteTeam", fake.order)
-				}
-			}
-		}
-	}
-
-	// r.DB is nil here, so revokeEnvironmentKeys no-ops before ever querying
-	// (environment_shellteam.go's documented nil-DB no-op contract) — this is
-	// NOT evidence that zero ek_ rows existed. Assert RevokeKey is ABSENT
-	// rather than silently letting an empty leg pass as "ordered correctly".
-	for _, call := range fake.order {
-		if call == "RevokeKey" {
-			t.Fatalf("call order = %v, want no RevokeKey with DB nil (no-op contract), not an ordering result", fake.order)
-		}
-	}
-
-	// NOT covered by this test: the "ek_ keys revoked BEFORE the access
-	// group is deleted" leg of the ordering contract. Exercising that leg
-	// needs revokeEnvironmentKeys to do real work, which needs a real
-	// *pgxpool.Pool — r.DB is a concrete pool type with no interface seam,
-	// so it cannot be faked here without a production code change (out of
-	// scope for this fix).
 }
