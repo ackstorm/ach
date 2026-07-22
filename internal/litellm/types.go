@@ -84,6 +84,29 @@ type TeamListEntry struct {
 	// did not carry it", NOT "the team has no permissions", so drift
 	// detection must treat nil as unverifiable rather than as drift.
 	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
+	// MembersWithRoles is the team's membership as returned by GET /team/info
+	// (the list endpoints omit it). LiteLLM's user_id equals the email
+	// (provisionUser sets user_id=email), so a member's user_id IS their
+	// email — used by the operator to derive that member's ach-user-<email>
+	// shell without a /user/info round-trip.
+	MembersWithRoles []TeamMemberRole `json:"members_with_roles,omitempty"`
+}
+
+// TeamMemberRole is one entry of members_with_roles.
+type TeamMemberRole struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role,omitempty"`
+}
+
+// MemberEmails returns the member user_ids (== emails). Empty entries dropped.
+func (e TeamListEntry) MemberEmails() []string {
+	out := make([]string, 0, len(e.MembersWithRoles))
+	for _, m := range e.MembersWithRoles {
+		if m.UserID != "" {
+			out = append(out, m.UserID)
+		}
+	}
+	return out
 }
 
 // TeamObjectPermission is LiteLLM's per-team `object_permission` block —
@@ -380,10 +403,14 @@ type TeamMemberAddRequest struct {
 // deterministically via `/key/list` without relying on user_id +
 // creation-time heuristics.
 type KeyGenerateRequest struct {
-	UserID    string            `json:"user_id,omitempty"`
-	Key       string            `json:"key,omitempty"`
-	KeyAlias  string            `json:"key_alias,omitempty"`
-	Models    []string          `json:"models,omitempty"`
+	UserID   string   `json:"user_id,omitempty"`
+	Key      string   `json:"key,omitempty"`
+	KeyAlias string   `json:"key_alias,omitempty"`
+	Models   []string `json:"models,omitempty"`
+	// Duration sets the LiteLLM key's own expiry (e.g. "168h"). Without it
+	// the virtual key is minted with expires:None and outlives the ACH
+	// personal_keys row (which carries pkExpiryWindow). Empty = omitted.
+	Duration  string            `json:"duration,omitempty"`
 	MaxBudget *float64          `json:"max_budget,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	TeamID    string            `json:"team_id,omitempty"`

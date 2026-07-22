@@ -92,6 +92,21 @@ func TestKeyGenerateOmitsMaxBudgetWhenNil(t *testing.T) {
 	}
 }
 
+// TestKeyGenerateRequestSerializesDuration asserts Duration and TeamID land
+// on the wire — the fix for pk_ keys minted with expires:None and no team.
+func TestKeyGenerateRequestSerializesDuration(t *testing.T) {
+	b, err := json.Marshal(&KeyGenerateRequest{UserID: "u", TeamID: "ach-user-a@b.com", Duration: "168h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"duration":"168h"`) {
+		t.Fatalf("duration missing from body: %s", b)
+	}
+	if !strings.Contains(string(b), `"team_id":"ach-user-a@b.com"`) {
+		t.Fatalf("team_id missing from body: %s", b)
+	}
+}
+
 // TestKeyGenerate401Propagation asserts REL-06 typed error flows through
 // KeyGenerate the same way it does through every other RESTClient method.
 func TestKeyGenerate401Propagation(t *testing.T) {
