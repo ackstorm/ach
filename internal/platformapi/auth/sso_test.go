@@ -653,6 +653,7 @@ type callRecord struct {
 	lastKeyGenerateReq    *litellm.KeyGenerateRequest
 	listTeamsCalls        int
 	lastListTeamsAlias    string
+	lastCreateTeamReq     *litellm.NewTeamRequest
 }
 
 // fakeLiteLLM is the test client implementing litellm.Client. Per-method
@@ -669,6 +670,7 @@ type fakeLiteLLM struct {
 	keyGenerateBehaviour func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error)
 	revokeKeyError       func(keyID string) error
 	listTeamsBehaviour   func(alias string) ([]litellm.TeamListEntry, error)
+	createTeamBehaviour  func(req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error)
 }
 
 func newFakeLiteLLM() *fakeLiteLLM {
@@ -717,10 +719,15 @@ func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, 
 
 func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
-// CreateTeam/UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client
-// interface compliance.
-func (f *fakeLiteLLM) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
-	return nil, nil
+// UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client interface
+// compliance. CreateTeam is recorded + configurable: mintAndPersistPK calls
+// it to ensure the caller's per-user shell before KeyGenerate.
+func (f *fakeLiteLLM) CreateTeam(_ context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	f.rec.lastCreateTeamReq = req
+	if f.createTeamBehaviour != nil {
+		return f.createTeamBehaviour(req)
+	}
+	return &litellm.TeamListEntry{TeamID: req.TeamID, TeamAlias: req.TeamAlias}, nil
 }
 func (f *fakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
 	return nil, nil
@@ -1036,6 +1043,110 @@ func TestCallbackHandler_FirstTimeSSOHappyPath(t *testing.T) {
 	count := strings.Count(fullResp, got.Plaintext)
 	if count != 1 {
 		t.Errorf("plaintext occurrence in response (headers+body): got %d, want 1; fullResp=%s", count, fullResp)
+	}
+}
+
+// TestMintPK_PutsKeyInUserShellWithExpiry asserts mintAndPersistPK ensures
+// the caller's per-user deny-all shell before minting, and the key lands in
+// that shell with a non-empty duration (the fix for teamless, expires:None
+// pk_ keys).
+func TestMintPK_PutsKeyInUserShellWithExpiry(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alice@example.com"
+
+	flm := newFakeLiteLLM()
+	dbRec := newDBInsertRecord()
+	tc := &callbackTestCase{
+		stateCookie: "state-abc",
+		urlState:    "state-abc",
+		urlCode:     "code-xyz",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("test-pepper-32-bytes-long-aa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 200; body=%s", w.Result().StatusCode, body)
+	}
+
+	wantShell := "ach-user-alice@example.com"
+	if flm.rec.lastCreateTeamReq == nil || flm.rec.lastCreateTeamReq.TeamID != wantShell {
+		t.Fatalf("user shell not ensured: %+v", flm.rec.lastCreateTeamReq)
+	}
+	kg := flm.rec.lastKeyGenerateReq
+	if kg == nil || kg.TeamID != wantShell {
+		t.Fatalf("KeyGenerate team_id = %+v, want %q", kg, wantShell)
+	}
+	if kg.Duration == "" {
+		t.Fatal("key minted without a duration (expires:None regression)")
+	}
+}
+
+// TestMintPK_DuplicateShellIsSuccess asserts a 400 "already exists" from
+// CreateTeam is treated as success (team_id == alias, so the shell is
+// already there with the id we know) and the key is still minted.
+func TestMintPK_DuplicateShellIsSuccess(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alice@example.com"
+
+	flm := newFakeLiteLLM()
+	flm.createTeamBehaviour = func(*litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+		return nil, &litellm.APIError{StatusCode: 400, Path: "/team/new",
+			Body: []byte("Team id = x already exists")}
+	}
+	dbRec := newDBInsertRecord()
+	tc := &callbackTestCase{
+		stateCookie: "state-abc",
+		urlState:    "state-abc",
+		urlCode:     "code-xyz",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("test-pepper-32-bytes-long-aa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 200 (duplicate shell must be success); body=%s", w.Result().StatusCode, body)
+	}
+	if flm.rec.lastKeyGenerateReq == nil {
+		t.Fatal("KeyGenerate was not called despite duplicate-shell success")
+	}
+}
+
+// TestMintPK_ShellEnsureFailure_503_NoMint asserts an unreachable-LiteLLM
+// error ensuring the user shell fails the callback with 503 and NEVER mints
+// a key — a key with no live shell is fail-open (Hazard 4).
+func TestMintPK_ShellEnsureFailure_503_NoMint(t *testing.T) {
+	fix := newRealOIDC(t, "ach")
+	defer fix.Close()
+	fix.idEmail = "alice@example.com"
+
+	flm := newFakeLiteLLM()
+	flm.createTeamBehaviour = func(*litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+		return nil, errors.New("litellm down")
+	}
+	dbRec := newDBInsertRecord()
+	tc := &callbackTestCase{
+		stateCookie: "state-abc",
+		urlState:    "state-abc",
+		urlCode:     "code-xyz",
+		oidcFix:     fix,
+		litellm:     flm,
+		dbInsert:    dbRec,
+		pepper:      []byte("test-pepper-32-bytes-long-aa"),
+	}
+	w := runCallback(t, tc)
+	if w.Result().StatusCode != http.StatusServiceUnavailable {
+		body, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("status: got %d, want 503; body=%s", w.Result().StatusCode, body)
+	}
+	if flm.rec.lastKeyGenerateReq != nil {
+		t.Fatal("KeyGenerate was called despite shell-ensure failure — fail-open key minted")
 	}
 }
 

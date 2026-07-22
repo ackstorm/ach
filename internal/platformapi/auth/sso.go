@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -268,6 +269,10 @@ type callbackResponse struct {
 // auth call where last_used_at is older than 5 minutes.
 const pkExpiryWindow = 7 * 24 * time.Hour
 
+// durationString renders a Go duration as a LiteLLM key duration ("168h").
+// LiteLLM accepts an <int><unit> string; hours dodge day-unit differences.
+func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Hours())) }
+
 // CallbackHandler returns the GET /platform/auth/sso/callback handler.
 // It implements D-04 step 2 (the load-bearing SSO sequence):
 //
@@ -424,6 +429,21 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		return
 	}
 
+	// Cap the pk_ with the caller's per-user deny-all shell team. A key with
+	// no live team is fail-open on models AND agents (measured; the exact hole
+	// this change closes). The shell MUST exist before KeyGenerate — LiteLLM
+	// silently accepts a nonexistent team_id and mints a fail-open key
+	// (Hazard 4). team_id == alias, so a 400 "already exists" means the shell
+	// is already there with the id we know: success.
+	shellID := litellm.UserShellAlias(email)
+	if _, tErr := deps.LiteLLM.CreateTeam(ctx, litellm.NewUserShellRequest(email)); tErr != nil {
+		if !litellm.IsDuplicateTeamErr(tErr) {
+			deps.fail(ctx, w, actor, audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
+				"litellm user shell provision failed", reqID, "")
+			return
+		}
+	}
+
 	// Step 6b: LiteLLM key registration. ACH does NOT supply
 	// req.Key — LiteLLM owns its own virtual-key plaintext format
 	// (sk-…) and ACH never persists or forwards it (FIX01 §A.6
@@ -435,6 +455,8 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 		UserID:    userID,
 		KeyAlias:  keyID, // pkid_… — debug attribution only (not used for lookup)
+		TeamID:    shellID,                       // per-user deny-all shell (grants attach via the operator)
+		Duration:  durationString(pkExpiryWindow), // LiteLLM key expires with the ACH row
 		MaxBudget: nil,
 		Metadata: map[string]string{
 			"ach_key_id":      keyID,
