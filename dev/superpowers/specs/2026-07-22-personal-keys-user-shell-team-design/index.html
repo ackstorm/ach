@@ -1,0 +1,1448 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/superpowers/specs/2026-07-22-personal-keys-user-shell-team-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Cap Personal Keys with a per-user deny-all shell team - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cap-personal-keys-with-a-per-user-deny-all-shell-team" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Cap Personal Keys with a per-user deny-all shell team
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem (measured)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cap-personal-keys-with-a-per-user-deny-all-shell-team">Cap Personal Keys with a per-user deny-all shell team<a class="headerlink" href="#cap-personal-keys-with-a-per-user-deny-all-shell-team" title="Permanent link">&para;</a></h1>
+<p>Design spec. Follow-up to #159 (v0.6.17, "cap Environment Keys with a
+per-Environment deny-all shell team"). #159 is correct and verified on the live
+cluster; nothing in it is undone here. This is the symmetric half for <strong>Personal
+Keys (<code>pk_</code>)</strong>, plus the operator-side attachment that makes one PK cover the
+union of a user's entitlements.</p>
+<h2 id="problem-measured">Problem (measured)<a class="headerlink" href="#problem-measured" title="Permanent link">&para;</a></h2>
+<p><code>internal/platformapi/auth/sso.go:435</code> mints the PK with <strong>no <code>team_id</code></strong>. On the
+live proxy the resulting key (<code>pkid_01ky4s6xw2r33m8pgzxs7vcx4a</code>,
+<code>ai.run@ackstorm.com</code>, member of teams <code>default</code> + <code>run</code>) has <code>team_id: None</code>,
+<code>models: []</code>, <code>access_group_ids: []</code>, <code>object_permission: null</code>,
+<code>expires: None</code>. A teamless PK is broken in <strong>both</strong> directions at once:</p>
+<table>
+<thead>
+<tr>
+<th>check</th>
+<th>observed</th>
+<th>expected</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>claude-sonnet-5</code></td>
+<td><strong>allowed</strong> (fail-open)</td>
+<td>denied — no team of the user grants <code>anthropic</code></td>
+</tr>
+<tr>
+<td>MCP tools</td>
+<td><strong>0</strong></td>
+<td>the tools of the environments the user is entitled to</td>
+</tr>
+<tr>
+<td>agents</td>
+<td><strong>7</strong>, <code>architecture-reviewer</code> invoked 200 (fail-open)</td>
+<td>only the entitled <code>a2aAgents</code></td>
+</tr>
+</tbody>
+</table>
+<p>It exceeds the user on models + agents (empty lists fail OPEN) and reaches
+nothing on MCP (the environment access groups are attached to <code>run</code>/<code>dream</code>; the
+key is in neither). Same failure class the EK shell fixed in #159.</p>
+<p>The measured LiteLLM semantics this rests on are recorded in
+<code>references/litellm-permission-model.md</code> (do not re-derive): access groups only
+ADD; a team is the only reliable ceiling; a key has exactly one <code>team_id</code>;
+<code>GET /team/info</code> is the one read that resolves <code>object_permission</code> and member
+lists; groups stack/compose across teams (agents/tools union) and resolve
+per-request (attach/detach is immediate, no cache window); deleting a team does
+NOT revoke immediately (~60s window); putting a key in an access group via
+<code>assigned_key_ids</code> collapses its agent set to EVERY agent (Hazard 1 — never do
+it); LiteLLM silently accepts a <code>team_id</code> that does not exist and the key
+behaves fail-open (Hazard 4).</p>
+<h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
+<p>Teams are identity containers; access groups carry every grant. Symmetric to</p>
+<h1 id="159">159:<a class="headerlink" href="#159" title="Permanent link">&para;</a></h1>
+<table>
+<thead>
+<tr>
+<th>object</th>
+<th>one per</th>
+<th>purpose</th>
+<th>holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ach-env-&lt;environment&gt;</code></td>
+<td><code>Environment</code></td>
+<td>deny-all shell</td>
+<td><code>ek_</code> — #159</td>
+</tr>
+<tr>
+<td><code>ach-user-&lt;email&gt;</code></td>
+<td>user (lazy, on first <code>pk_</code>)</td>
+<td>deny-all shell</td>
+<td><code>pk_</code> — this change</td>
+</tr>
+<tr>
+<td>access group <code>&lt;environment&gt;</code></td>
+<td><code>Environment</code></td>
+<td>the env's grants</td>
+<td>no keys, ever</td>
+</tr>
+</tbody>
+</table>
+<p>A PK sits in its deny-all <code>ach-user-&lt;email&gt;</code> shell (models <code>["__deny_all__"]</code>,
+<code>object_permission.agents ["00000000-…-0"]</code>, empty MCP lists — same sentinels as
+the env shell, same reason). It reaches nothing until the operator attaches the
+access group of each Environment the user is entitled to onto that shell; the key
+then inherits the union of those grants through the group→team mirror. Because a
+key has exactly one <code>team_id</code>, a user whose several teams are authorized for
+different Environments cannot be served by dropping the PK into one human team —
+the per-user shell is precisely what lets one PK cover the union.</p>
+<h3 id="the-assigned_team_ids-union-is-a-pure-function-computed-only-in-the-operator">The <code>assigned_team_ids</code> union is a pure function, computed only in the operator<a class="headerlink" href="#the-assigned_team_ids-union-is-a-pure-function-computed-only-in-the-operator" title="Permanent link">&para;</a></h3>
+<p><code>assigned_team_ids</code> is a whole-list PUT. For Environment <code>E</code> the operator always
+rebuilds it whole:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>desired(E.assigned_team_ids) =
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    { resolved ids of E.spec.authorizedTeams }   # human teams — unchanged, keeps lk-* keys working
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  ∪ { ach-env-&lt;E&gt; }                              # the env shell — #159
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  ∪ { ach-user-&lt;m&gt; : m ∈ members(E.authorizedTeams), the shell exists }
+</code></pre></div>
+<p><strong>The operator is the sole writer of <code>assigned_team_ids</code></strong> (Option A). This
+dissolves the lost-update race (Hazard 3) outright — there is no second writer,
+so the spec's "serialise / RMW-retry" is unnecessary. <code>reconcileAccessGroup</code>
+already builds this union for the first two sets; this change adds the third.</p>
+<p>Membership is resolved <strong>live</strong> each reconcile, and cheaply, on one measured
+fact: <code>provisionUser</code> sets the LiteLLM <code>user_id = email</code>
+(<code>sso.go:617</code>). So for each authorized team, <code>GET /team/info</code> yields members
+whose <code>user_id</code> <strong>is</strong> the email — no <code>/user/info</code> fan-out. Derive
+<code>ach-user-&lt;email&gt;</code>, confirm the shell exists in the <code>ListAllTeams</code> <code>byAlias</code>
+map already read this pass (respects lazy creation + Hazard 4), add its id.
+Live resolution means <strong>removal converges</strong>: a user dropped from an authorized
+team disappears from the next reconcile's union → the PUT detaches their shell →
+their PK loses the grant immediately (measured: detach is per-request).</p>
+<p><code>ponytail: +len(authorizedTeams) GET /team/info per env reconcile. authorizedTeams
+is 2-3 today; batch/cache if it ever grows large.</code></p>
+<h3 id="platform-api-provisions-the-shell-at-mint-option-b-never-touches-access-groups">platform-api provisions the shell at mint (Option b), never touches access groups<a class="headerlink" href="#platform-api-provisions-the-shell-at-mint-option-b-never-touches-access-groups" title="Permanent link">&para;</a></h3>
+<p>A <code>pk_</code> shell has no CR, so the operator has no per-user reconcile trigger; the
+only event that says "this user needs a shell" is the login, in platform-api.
+So platform-api, in <code>mintAndPersistPK</code>, before <code>KeyGenerate</code>:</p>
+<ol>
+<li>normalise the email (lower-case, trim),</li>
+<li><strong>ensure the shell</strong>: <code>CreateTeam(NewUserShellRequest(email))</code> with
+   <code>team_id = team_alias = ach-user-&lt;email&gt;</code>; treat the <code>400 "already exists"</code>
+   as success (the id is deterministic — it is the alias). Any other error →
+   503, no key minted (a key with no live shell is fail-open — Hazard 4).</li>
+<li>mint with <code>team_id = ach-user-&lt;email&gt;</code> <strong>and</strong> the expiry fix below.</li>
+</ol>
+<p>platform-api computes no entitlement and writes no access group. Its new work is
+one idempotent <code>CreateTeam</code> — the same class of imperative LiteLLM call it
+already makes at login (<code>UserNew</code>, <code>TeamMemberAdd</code>).</p>
+<h3 id="setting-team_id-explicitly-both-shell-kinds">Setting <code>team_id</code> explicitly (both shell kinds)<a class="headerlink" href="#setting-team_id-explicitly-both-shell-kinds" title="Permanent link">&para;</a></h3>
+<p>Adopt alitellm-operator's convention: pass <code>team_id</code> on <code>POST /team/new</code> equal to
+the alias (measured accepted verbatim, including <code>.</code>/<code>@</code>:
+<code>ach-user-ai.run@ackstorm.com</code>). For <strong>user</strong> shells this is load-bearing — two
+concurrent first-logins would otherwise mint two UUID shells for one user, and
+the operator (first-wins) would attach grants to only one, stranding the other's
+PK deny-all. A deterministic id + idempotent create de-races it.</p>
+<p>For <strong>env</strong> shells the convention is adopted going forward too (removes the
+<code>byAlias</code>-miss duplicate-create hazard at <code>environment_controller.go:780</code>). No
+code migration: the six existing UUID env shells are deleted <strong>by hand</strong> by the
+operator (JC), and the reconciler recreates them under the alias convention with
+the same idempotent-create handling.</p>
+<h3 id="the-expiry-fix">The expiry fix<a class="headerlink" href="#the-expiry-fix" title="Permanent link">&para;</a></h3>
+<p><code>KeyGenerate</code> currently mints with <code>expires: None</code>; only the ACH <code>personal_keys</code>
+row carries <code>pkExpiryWindow</code> (7d). Add a duration field to <code>KeyGenerateRequest</code>
+and set it = <code>pkExpiryWindow</code> so the LiteLLM key does not outlive the ACH record
+(<code>ponytail:</code> send hours, e.g. <code>168h</code>, to avoid day-unit math — verify the unit
+against the deployed LiteLLM).</p>
+<h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
+<p><strong><code>internal/litellm</code></strong>
+- <code>usershell.go</code> (or extend <code>shellteam.go</code>): <code>UserShellPrefix = "ach-user-"</code>,
+  <code>UserShellAlias(email)</code> (normalised), <code>NewUserShellRequest(email)</code>
+  (<code>team_id</code>+alias set, deny-all sentinels), ownership metadata
+  <code>ach_managed=user-shell</code> + <code>ach_user=&lt;email&gt;</code>, <code>IsUserShellManaged</code> /
+  <code>IsUserShellShaped</code>. <strong>DRY</strong>: the deny-all <code>object_permission</code> block, the
+  <code>__deny_all__</code>/nil-UUID sentinels, and <code>ShellTeamDrifted</code> (alias-agnostic —
+  reads only Models + ObjectPermission) are shared with the env shell, not
+  duplicated. Factor a small shared <code>denyAllTeamRequest(alias, teamID, metadata)</code>
+  builder both <code>NewShellTeamRequest</code>/<code>NewUserShellRequest</code> wrap.
+- <code>NewShellTeamRequest</code>: set <code>TeamID = ShellTeamAlias(env.Name)</code> (env shells now
+  carry the alias id too). <code>NewTeamRequest.TeamID</code> already exists.
+- <code>errors_team.go</code>: <code>IsDuplicateTeamErr(err)</code> — mirror <code>IsDuplicateUserErr</code>
+  (<code>errors_user.go</code>): 400/409 + body "already exists".
+- <code>types.go</code>: <code>KeyGenerateRequest</code> gains <code>Duration string json:"duration,omitempty"</code>.
+  <code>TeamListEntry</code> decodes members: <code>MembersWithRoles []{ UserID string
+  json:"user_id" } json:"members_with_roles,omitempty"</code> + a <code>MemberEmails()</code>
+  helper (user_id == email). Verify the <code>/team/info</code> member shape against real
+  LiteLLM.
+- <code>NoopClient</code>/fakes: keep compiling (the 6th integration-tagged fake too — the
+  Task-2 lesson from #159).</p>
+<p><strong><code>internal/platformapi/auth/sso.go</code></strong> — <code>mintAndPersistPK</code>: ensure user shell
+(idempotent, <code>IsDuplicateTeamErr</code> → id = alias), set <code>TeamID</code> + <code>Duration</code> on
+<code>KeyGenerateRequest</code>. On shell-ensure failure → 503, no mint.</p>
+<p><strong><code>internal/controller/ach/environment_controller.go</code></strong> — <code>reconcileAccessGroup</code>:
+after the authorizedTeams→ids + env-shell union, for each authorized team's
+resolved id call <code>GetTeamInfo</code> → member emails → <code>UserShellAlias</code> → add the id
+<strong>iff</strong> present in <code>byAlias</code>. <code>GetTeamInfo</code> error → <code>resolveFailed</code> (requeue —
+never PUT a union missing shells, which would wrongly detach entitled users).</p>
+<p><strong>No change</strong> to <code>reconcileDeletion</code> (user shells are not env-owned; an env's
+group delete simply drops the grant from every attached user shell) or to the
+<code>ek_</code> path.</p>
+<p><strong>Docs (same commit):</strong> <code>references/litellm-permission-model.md</code> §10 (was "pk_
+fail-open residual" → now "pk_ capped by ach-user-<email>", symmetric to ek_) +
+a user-shell section; <code>CLAUDE.md</code> shell-team bullet; <code>references/understanding.md</code>
+pk_ contract; <code>references/troubleshooting.md</code> (deny-all window / fail-open PK).</p>
+<h2 id="decisions-locked">Decisions locked<a class="headerlink" href="#decisions-locked" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Human teams untouched</strong> (Hazard 2). The union only ADDS user shells;
+  <code>authorizedTeams</code> contributes exactly as today, so the <code>lk-*</code> keys keep MCP.</li>
+<li><strong>Migration of the 6 env shells: none in code.</strong> JC deletes the UUID shells by
+  hand; the operator recreates them under <code>team_id=alias</code>.</li>
+<li><strong>Attachment is operator-only</strong> (Option A) → Hazard 3 dissolved.</li>
+<li><strong>Shell provisioning at mint is platform-api's</strong> (Option b) — the absence of a
+  user CR forces the create to originate from the login event.</li>
+<li><strong>Lazy shells</strong> — created only when a PK is minted; no login ⇒ no shell.</li>
+<li><strong>First-ever PK is deny-all until the next reconcile (≤5 min, fail-closed,
+  one-time).</strong> Later logins reuse the already-attached shell. No trigger.
+  <code>ponytail: upgrade to a NOTIFY-driven targeted reconcile (Option C) if
+  first-login latency bites.</code></li>
+<li><strong>User shells are never deleted.</strong> Losing entitlement detaches the shell from
+  the env group (immediate revoke); the deny-all key then reaches nothing.
+  Offboarding-delete and a <code>personal_keys</code>-watching operator loop are deferred.</li>
+</ul>
+<h2 id="hazards-from-the-spec-addressed">Hazards (from the spec, addressed)<a class="headerlink" href="#hazards-from-the-spec-addressed" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Never <code>assigned_key_ids</code></strong> — keys live only in their team; grants reach them
+   via group→team. Never add a key to a group. ✓</li>
+<li><strong><code>lk-*</code> keys</strong> — human teams stay in the union. ✓</li>
+<li><strong>Lost-update race</strong> — one writer (operator). ✓</li>
+<li><strong>Phantom <code>team_id</code> fail-open</strong> — platform-api ensures the shell exists before
+   minting; the operator only adds shells present in <code>byAlias</code>. ✓</li>
+</ol>
+<h2 id="residual-existing-teamless-pks-locked-leave-document-only">Residual — existing teamless PKs (LOCKED: leave, document only)<a class="headerlink" href="#residual-existing-teamless-pks-locked-leave-document-only" title="Permanent link">&para;</a></h2>
+<p>PKs minted before this change keep <code>team_id=NULL</code> and <code>expires: None</code>, so they
+stay fail-open until revoked out-of-band — and the expiry fix here applies only
+to keys minted <em>after</em> it, so those pre-change keys do not churn out on their
+own. <strong>Decision (JC, iii): leave them, document only</strong> — no code migration and no
+one-shot revoke sweep. The change caps every <em>new</em> PK; the pre-change fail-open
+keys are an accepted, documented residual, revocable by hand if/when wanted (and
+the deferred <code>personal_keys</code> watch could sweep them later). Record this plainly
+in <code>references/litellm-permission-model.md</code> §10 so it is not mistaken for a bug.</p>
+<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
+<p>Unit: user-shell serialize (team_id=alias, sentinels), <code>IsDuplicateTeamErr</code>,
+drift reuse, member decode; sso mint (ensure-shell + team_id + duration; dup
+handled; ensure-fail → 503); reconcile includes entitled user shells, converges
+on member removal, <code>GetTeamInfo</code> error → <code>resolveFailed</code>.</p>
+<p>E2E against real LiteLLM (mirror the spec's checks) — for a PK minted for a user
+entitled to <code>&lt;env&gt;</code>:
+- a model in <code>&lt;env&gt;.runtime.models</code> → 200; a model no entitlement grants (e.g.
+  <code>claude-sonnet-5</code> for a <code>run</code> member) → <code>team_model_access_denied</code>;
+- <code>GET /mcp-rest/tools/list</code> = the union of the entitled envs' <code>mcpServers</code>
+  catalogs, nothing else (compare per-server catalogs, not substrings — several
+  servers share generic tool names);
+- <code>GET /v1/agents</code> = exactly the entitled <code>a2aAgents</code>;
+  <code>POST /a2a/{unentitled}/message/send</code> denied;
+- after removing the user from an env's entitlement, the very next request is
+  denied, other envs untouched.</p>
+<h2 id="out-of-scope-deferred">Out of scope / deferred<a class="headerlink" href="#out-of-scope-deferred" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>personal_keys</code>-watching operator loop (would let the operator own shell
+  creation + key-move + attachment fully, and could carry the residual
+  migration). Add "later if needed."</li>
+<li>Option C (NOTIFY-driven immediate attach) to close the first-login window.</li>
+<li>Offboarding user-shell deletion.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
