@@ -9,16 +9,41 @@ import (
 )
 
 // AccessGroupPrefix namespaces ACH-owned access groups inside LiteLLM's flat
-// access-group-name space, mirroring the ach-env-/ach-user- team convention so
-// an ACH group is distinguishable from a hand-made one in the LiteLLM UI.
+// access-group-name space, matching the ach-env-/ach-user- team convention so
+// the prefix names the owning entity (an Environment) and an ACH group is
+// distinguishable from a hand-made one in the LiteLLM UI. A team and this group
+// share the name ach-env-<env>; they live in different LiteLLM namespaces (the
+// team's id equals its alias, the group's id is a UUID), so nothing collides.
 //
 // Only the NAME is prefixed: the access-group id cannot be made deterministic
 // (POST /v1/unified_access_group ignores an explicit access_group_id and mints
 // a fresh UUID), so the name prefix is the whole of the coherence available.
-const AccessGroupPrefix = "ach-"
+const AccessGroupPrefix = "ach-env-"
 
-// AccessGroupName is the LiteLLM access-group name for an Environment.
+// LegacyAccessGroupPrefix is the v0.6.19 access-group prefix, kept only so the
+// self-migrating lookup can adopt-and-rename a group minted before the ach-env-
+// rename. Drop it (and the middle generation in AccessGroupNameGenerations) a
+// version after every group in the wild carries the canonical prefix.
+const LegacyAccessGroupPrefix = "ach-"
+
+// AccessGroupName is the canonical LiteLLM access-group name for an Environment.
 func AccessGroupName(env string) string { return AccessGroupPrefix + env }
+
+// AccessGroupNameGenerations returns every name an Environment's access group
+// may carry in the wild, newest first:
+//
+//	ach-env-<env>   canonical (this release)
+//	ach-<env>       v0.6.19
+//	<env>           pre-v0.6.19
+//
+// The reconciler's fallback lookup and the finalizer both walk this: the lookup
+// adopts a hit BY ID and the drift PUT renames it in place to generations[0]
+// (id + assigned_team_ids preserved, so no key loses grants); the finalizer
+// deletes every generation idempotently so no group survives a delete that
+// raced ahead of the rename.
+func AccessGroupNameGenerations(env string) []string {
+	return []string{AccessGroupName(env), LegacyAccessGroupPrefix + env, env}
+}
 
 // CreateAccessGroup issues POST /v1/access_group. Returns the
 // AccessGroupResponse (UUID, name, current bindings). Replaces the

@@ -86,13 +86,13 @@ func TestAccessGroupSynced_True_WhenCreateSucceeds(t *testing.T) {
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
 		t.Fatalf("expected True/Synced, conditions = %+v", got.Status.Conditions)
 	}
-	if got := accessGroupFake.CreateCallsFor("ach-test-env-ag-happy"); got < 1 {
+	if got := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-happy"); got < 1 {
 		t.Errorf("create call count = %d; want >= 1", got)
 	}
 	// AssignedTeamIDs must also carry the per-Environment deny-all shell
 	// team (ach-env-test-env-ag-happy): reconcileAccessGroup joins it into
 	// the SAME write as the authorized teams (Task 4).
-	last := accessGroupFake.LastCreate("ach-test-env-ag-happy")
+	last := accessGroupFake.LastCreate("ach-env-test-env-ag-happy")
 	wantTeams := []string{"t-uuid-default", "id-ach-env-test-env-ag-happy"}
 	if !slices.Equal(last.AssignedTeamIDs, wantTeams) {
 		t.Errorf("LastCreate.AssignedTeamIDs = %v; want %v", last.AssignedTeamIDs, wantTeams)
@@ -147,7 +147,7 @@ func TestAccessGroupSynced_True_OnEmptyLiteLLMLists(t *testing.T) {
 		t.Fatalf("expected True/Synced on empty LiteLLM lists (ErrNotFound must be tolerated), conditions = %+v", got.Status.Conditions)
 	}
 
-	last := accessGroupFake.LastCreate("ach-test-env-ag-emptylists")
+	last := accessGroupFake.LastCreate("ach-env-test-env-ag-emptylists")
 	if len(last.AccessMCPServerIDs) != 0 || len(last.AccessAgentIDs) != 0 {
 		t.Errorf("create body should carry empty mcp/agent IDs; got mcp=%v agent=%v", last.AccessMCPServerIDs, last.AccessAgentIDs)
 	}
@@ -229,8 +229,8 @@ func TestAccessGroupSynced_Idempotent_NoExtraUpdateOnRereconcile(t *testing.T) {
 		t.Fatalf("first reconcile did not flip AccessGroupSynced=True")
 	}
 
-	firstCreateCount := accessGroupFake.CreateCallsFor("ach-test-env-ag-idemp")
-	firstUpdateCount := accessGroupFake.UpdateCallsFor("ach-test-env-ag-idemp")
+	firstCreateCount := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-idemp")
+	firstUpdateCount := accessGroupFake.UpdateCallsFor("ach-env-test-env-ag-idemp")
 
 	// Trigger re-reconcile via annotation touch.
 	var got achv1alpha1.Environment
@@ -246,10 +246,10 @@ func TestAccessGroupSynced_Idempotent_NoExtraUpdateOnRereconcile(t *testing.T) {
 	}
 
 	time.Sleep(3 * time.Second)
-	if grew := accessGroupFake.CreateCallsFor("ach-test-env-ag-idemp"); grew != firstCreateCount {
+	if grew := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-idemp"); grew != firstCreateCount {
 		t.Errorf("create call count = %d after re-reconcile; want unchanged (%d) — idempotency violated", grew, firstCreateCount)
 	}
-	if grew := accessGroupFake.UpdateCallsFor("ach-test-env-ag-idemp"); grew != firstUpdateCount {
+	if grew := accessGroupFake.UpdateCallsFor("ach-env-test-env-ag-idemp"); grew != firstUpdateCount {
 		t.Errorf("update call count = %d after re-reconcile; want unchanged (%d) — drift-detection false positive", grew, firstUpdateCount)
 	}
 }
@@ -264,7 +264,7 @@ func TestAccessGroupSynced_DriftCorrected(t *testing.T) {
 	// Pre-seed a stored AG with a stale orphan team that's NOT in spec.
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   "ag-uuid-test-env-ag-drift",
-		AccessGroupName: "ach-test-env-ag-drift",
+		AccessGroupName: "ach-env-test-env-ag-drift",
 		AssignedTeamIDs: []string{"t-uuid-orphan"},
 	})
 
@@ -294,7 +294,7 @@ func TestAccessGroupSynced_DriftCorrected(t *testing.T) {
 	}, 15*time.Second, 250*time.Millisecond) {
 		t.Fatalf("drift-correction did NOT reach True/Synced")
 	}
-	if got := accessGroupFake.UpdateCallsFor("ach-test-env-ag-drift"); got < 1 {
+	if got := accessGroupFake.UpdateCallsFor("ach-env-test-env-ag-drift"); got < 1 {
 		t.Errorf("update call count = %d; want >= 1 (PUT to correct drift)", got)
 	}
 }
@@ -320,7 +320,7 @@ func TestAccessGroupSynced_ClearsEmptiedRuntimeDimensions(t *testing.T) {
 	// spec below no longer references; team matches spec (no team drift).
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:      "ag-uuid-test-env-ag-clear",
-		AccessGroupName:    "ach-test-env-ag-clear",
+		AccessGroupName:    "ach-env-test-env-ag-clear",
 		AccessMCPServerIDs: []string{"mcp-stale"},
 		AccessAgentIDs:     []string{"agent-stale"},
 		AssignedTeamIDs:    []string{"t-uuid-default"},
@@ -359,7 +359,7 @@ func TestAccessGroupSynced_ClearsEmptiedRuntimeDimensions(t *testing.T) {
 		t.Fatalf("expected True/Synced with cleared mcp/agent (message containing %q); got message=%q, conditions=%+v",
 			"0 mcp, 0 agent", msg, final.Status.Conditions)
 	}
-	if got := accessGroupFake.UpdateCallsFor("ach-test-env-ag-clear"); got < 1 {
+	if got := accessGroupFake.UpdateCallsFor("ach-env-test-env-ag-clear"); got < 1 {
 		t.Errorf("update call count = %d; want >= 1 (PUT to clear emptied dimensions)", got)
 	}
 }
@@ -370,7 +370,7 @@ func TestAccessGroupSynced_False_OnCreateFailure(t *testing.T) {
 	ctx := context.Background()
 	accessGroupFake.Reset()
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
-	accessGroupFake.InjectCreateErr("ach-test-env-ag-createfail", errors.New("fake: create blew up"))
+	accessGroupFake.InjectCreateErr("ach-env-test-env-ag-createfail", errors.New("fake: create blew up"))
 
 	cr := &achv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -480,7 +480,7 @@ func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
 	accessGroupFake.SeedTeamMirror("t-dream", gid) // ← healthy peer
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   gid,
-		AccessGroupName: "ach-test-env-mirror-missing",
+		AccessGroupName: "ach-env-test-env-mirror-missing",
 		AssignedTeamIDs: []string{"t-run", "t-dream"}, // group side looks correct
 	})
 
@@ -514,13 +514,13 @@ func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
 	if m := accessGroupFake.Mirror("t-run"); !slices.Contains(m, gid) {
 		t.Fatalf("t-run mirror = %v; want it to contain %s", m, gid)
 	}
-	if n := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-missing"); n != 2 {
+	if n := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-missing"); n != 2 {
 		t.Errorf("update calls = %d; want exactly 2 (intermediate + final)", n)
 	}
 	// The final PUT also carries the deny-all shell team
 	// (ach-env-test-env-mirror-missing) — it joins assigned_team_ids in the
 	// same write as the authorized teams (Task 4).
-	last := accessGroupFake.LastUpdate("ach-test-env-mirror-missing")
+	last := accessGroupFake.LastUpdate("ach-env-test-env-mirror-missing")
 	wantTeams := []string{"t-run", "t-dream", "id-ach-env-test-env-mirror-missing"}
 	if !sameSet(last.AssignedTeamIDs, wantTeams) {
 		t.Errorf("final PUT assigned_team_ids = %v; want %v", last.AssignedTeamIDs, wantTeams)
@@ -533,7 +533,7 @@ func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
 	}
 
 	// (b) a second pass is a no-op.
-	writes := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-missing")
+	writes := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-missing")
 	var got achv1alpha1.Environment
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
 		t.Fatal(err)
@@ -546,7 +546,7 @@ func TestAccessGroupSynced_MirrorMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(3 * time.Second)
-	if grew := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-missing"); grew != writes {
+	if grew := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-missing"); grew != writes {
 		t.Errorf("update calls = %d after re-reconcile; want unchanged (%d) — repaired state must be a no-op",
 			grew, writes)
 	}
@@ -570,7 +570,7 @@ func TestAccessGroupSynced_MirrorStale(t *testing.T) {
 	accessGroupFake.SeedTeamMirror("t-ghost", gid) // not authorized ← stale
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   gid,
-		AccessGroupName: "ach-test-env-mirror-stale",
+		AccessGroupName: "ach-env-test-env-mirror-stale",
 		AssignedTeamIDs: []string{"t-run"},
 	})
 
@@ -601,7 +601,7 @@ func TestAccessGroupSynced_MirrorStale(t *testing.T) {
 	if accessGroupFake.MirrorEverEmpty("t-run") {
 		t.Error("authorized team t-run blinked during the stale-mirror repair")
 	}
-	if n := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-stale"); n != 2 {
+	if n := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-stale"); n != 2 {
 		t.Errorf("update calls = %d; want exactly 2", n)
 	}
 }
@@ -620,7 +620,7 @@ func TestAccessGroupSynced_MirrorUnconverged(t *testing.T) {
 	accessGroupFake.FreezeMirror()
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   gid,
-		AccessGroupName: "ach-test-env-mirror-stuck",
+		AccessGroupName: "ach-env-test-env-mirror-stuck",
 		AssignedTeamIDs: []string{"t-run"},
 	})
 
@@ -653,7 +653,7 @@ func TestAccessGroupSynced_MirrorUnconverged(t *testing.T) {
 
 	// And it must stop writing: further reconciles are suppressed at this
 	// generation, so the write count stays put.
-	writes := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-stuck")
+	writes := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-stuck")
 	var got achv1alpha1.Environment
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
 		t.Fatal(err)
@@ -666,7 +666,7 @@ func TestAccessGroupSynced_MirrorUnconverged(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(3 * time.Second)
-	if grew := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-stuck"); grew != writes {
+	if grew := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-stuck"); grew != writes {
 		t.Errorf("update calls = %d after re-reconcile; want unchanged (%d) — "+
 			"a non-converging mirror must not loop on writes", grew, writes)
 	}
@@ -689,7 +689,7 @@ func TestAccessGroupSynced_MirrorHealthy(t *testing.T) {
 	accessGroupFake.SeedTeamMirror(shellID, "ag-uuid-test-env-mirror-ok")
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   "ag-uuid-test-env-mirror-ok",
-		AccessGroupName: "ach-test-env-mirror-ok",
+		AccessGroupName: "ach-env-test-env-mirror-ok",
 		AssignedTeamIDs: []string{"t-run", shellID},
 	})
 
@@ -719,13 +719,13 @@ func TestAccessGroupSynced_MirrorHealthy(t *testing.T) {
 	}, 15*time.Second, 250*time.Millisecond) {
 		t.Fatalf("healthy mirror did NOT reach True/Synced")
 	}
-	if n := accessGroupFake.UpdateCallsFor("ach-test-env-mirror-ok"); n != 0 {
+	if n := accessGroupFake.UpdateCallsFor("ach-env-test-env-mirror-ok"); n != 0 {
 		t.Errorf("healthy mirror must not write: update calls = %d; want 0", n)
 	}
 }
 
 // A pre-rename group named "<env>" (no ach- prefix) is adopted by id and
-// renamed to "ach-<env>" in place — id and assigned_team_ids preserved, no
+// renamed to "ach-env-<env>" in place — id and assigned_team_ids preserved, no
 // second group created.
 func TestAccessGroupSynced_MigratesLegacyName(t *testing.T) {
 	ctx := context.Background()
@@ -756,16 +756,59 @@ func TestAccessGroupSynced_MigratesLegacyName(t *testing.T) {
 	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
 
 	if !Eventually(func() bool {
-		g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-test-env-ag-migrate")
+		g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-env-test-env-ag-migrate")
 		return g != nil && g.AccessGroupID == "ag-legacy-uuid"
 	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatal("legacy group was not renamed in place to ach-test-env-ag-migrate")
+		t.Fatal("legacy group was not renamed in place to ach-env-test-env-ag-migrate")
 	}
 	// No second group under the bare name, and no CREATE was issued.
 	if g, _ := accessGroupFake.GetAccessGroupByName(ctx, "test-env-ag-migrate"); g != nil {
 		t.Error("bare-name group should be gone after in-place rename")
 	}
-	if n := accessGroupFake.CreateCallsFor("ach-test-env-ag-migrate"); n != 0 {
+	if n := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-migrate"); n != 0 {
+		t.Errorf("expected 0 CREATE calls (rename in place); got %d", n)
+	}
+}
+
+// TestAccessGroupSynced_MigratesV0619Name covers the middle generation: a group
+// already named ach-<env> (minted by v0.6.19) is adopted by id and renamed in
+// place to the canonical ach-env-<env>, with no CREATE and no second group.
+func TestAccessGroupSynced_MigratesV0619Name(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      "ag-midgen-uuid",
+		AccessGroupName:    "ach-test-env-ag-midgen",
+		AccessModelNames:   []string{},
+		AccessMCPServerIDs: []string{},
+		AccessAgentIDs:     []string{},
+		AssignedTeamIDs:    []string{"t-uuid-default", "id-ach-env-test-env-ag-midgen"},
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-env-ag-midgen", Namespace: WatchNamespace},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         emptyRuntimeBlock(),
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	if !Eventually(func() bool {
+		g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-env-test-env-ag-midgen")
+		return g != nil && g.AccessGroupID == "ag-midgen-uuid"
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatal("v0.6.19 group was not renamed in place to ach-env-test-env-ag-midgen")
+	}
+	if g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-test-env-ag-midgen"); g != nil {
+		t.Error("v0.6.19-name group should be gone after in-place rename")
+	}
+	if n := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-midgen"); n != 0 {
 		t.Errorf("expected 0 CREATE calls (rename in place); got %d", n)
 	}
 }
