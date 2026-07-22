@@ -2703,7 +2703,8 @@ would become a LiteLLM <strong>tag budget</strong> (the env name is attached as 
 <li><strong><code>Environment.spec.budget</code> does not exist</strong> — removed from <code>EnvironmentSpec</code>.
   The operator reconciles only the LiteLLM <strong>access group</strong> (capability gating),
   not a budget tag.</li>
-<li><code>ek_</code> keys still carry <code>Tags=[env.Name]</code> + <code>AccessGroups=[env.Name]</code>
+<li><code>ek_</code> keys still carry <code>Tags=[env.Name]</code> (<code>AccessGroups=[env.Name]</code> was removed
+  in v0.6.17 — see <code>references/litellm-permission-model.md</code>)
   (<code>envkeys/handler.go</code>) — but <strong>for attribution only</strong>, no budget attached.</li>
 <li><strong>LiteLLM tags are Enterprise-only.</strong> The handler has
   <code>isEnterpriseTagsRejection</code>: on a <code>403 "This feature is only available for
