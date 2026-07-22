@@ -17,6 +17,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"testing"
 
 	"github.com/go-logr/logr"
 
@@ -223,6 +224,16 @@ func (f *accessGroupFakeImpl) UpdateAccessGroup(_ context.Context, id string, re
 	}
 	if found == nil {
 		return nil, errors.New("fake: UpdateAccessGroup id not found")
+	}
+	if req.AccessGroupName != nil && *req.AccessGroupName != name {
+		delete(f.stored, name)
+		found.AccessGroupName = *req.AccessGroupName
+		f.stored[*req.AccessGroupName] = found
+		// Preserve call-count/lastUpdate bookkeeping under the new key so
+		// UpdateCallsFor(newName) sees this call.
+		f.updateCalls[*req.AccessGroupName] += f.updateCalls[name]
+		f.lastUpdate[*req.AccessGroupName] = req
+		name = *req.AccessGroupName
 	}
 	if req.AccessModelNames != nil {
 		found.AccessModelNames = append([]string{}, req.AccessModelNames...)
@@ -617,6 +628,28 @@ func (f *accessGroupFakeImpl) FreezeMirror() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mirrorFrozen = true
+}
+
+func TestFakeUpdateAppliesRename(t *testing.T) {
+	f := newAccessGroupFake()
+	f.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   "ag-legacy",
+		AccessGroupName: "legacy-env",
+	})
+	newName := "ach-legacy-env"
+	if _, err := f.UpdateAccessGroup(context.Background(), "ag-legacy", litellm.AccessGroupUpdateRequest{
+		AccessGroupName:  &newName,
+		AccessModelNames: []string{}, AccessMCPServerIDs: []string{},
+		AccessAgentIDs: []string{}, AssignedTeamIDs: []string{},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if g, _ := f.GetAccessGroupByName(context.Background(), "ach-legacy-env"); g == nil {
+		t.Fatal("expected group under new name after rename")
+	}
+	if g, _ := f.GetAccessGroupByName(context.Background(), "legacy-env"); g != nil {
+		t.Fatal("expected old name to be gone after rename")
+	}
 }
 
 var _ litellm.Client = (*accessGroupFakeImpl)(nil)
