@@ -454,8 +454,8 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 	// MaxBudget remains nil.
 	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
 		UserID:    userID,
-		KeyAlias:  keyID, // pkid_… — debug attribution only (not used for lookup)
-		TeamID:    shellID,                       // per-user deny-all shell (grants attach via the operator)
+		KeyAlias:  keyID,                          // pkid_… — debug attribution only (not used for lookup)
+		TeamID:    shellID,                        // per-user deny-all shell (grants attach via the operator)
 		Duration:  durationString(pkExpiryWindow), // LiteLLM key expires with the ACH row
 		MaxBudget: nil,
 		Metadata: map[string]string{

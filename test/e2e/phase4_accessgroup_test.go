@@ -20,9 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,4 +177,260 @@ func dumpAGConditions(t *testing.T, name string) {
 	out, _ := exec.Command("kubectl", "-n", "ach-system", "get",
 		"environment", name, "-o", "jsonpath={.status.conditions}").Output()
 	t.Logf("environment/%s conditions: %s", name, out)
+}
+
+// TestAccessGroupSynced_PkUserShell_ReachesEntitlements is the Task 6 e2e
+// gate for the per-user deny-all shell team
+// (docs/superpowers/plans/2026-07-22-pk-user-shell-team.md): a pk_ minted
+// through SSO is capped by ach-user-<email>, and after the operator's next
+// reconcile of an entitled Environment, that shell carries exactly that
+// Environment's access group — no more, no less.
+//
+// Scope note: the plan's verification checklist also asks for an MCP-catalog
+// union comparison and a cross-agent A2A denial. The fixture cluster ships
+// exactly one MCP pair and one A2A agent (both wired to "demo"), so there is
+// no second isolated resource to prove a DENIAL against without inventing
+// new cluster fixtures out of scope for this plan — the sibling #159 (env-key
+// shell) plan hit the identical constraint and deliberately left that leg as
+// a human verification recipe rather than automated e2e (see its Task 8 step
+// 4). This test follows the same precedent: what IS fully mechanical here —
+// shell sentinels, access-group attachment, entitled/unentitled model
+// access, key duration — is asserted below against the real in-cluster
+// LiteLLM; the MCP/A2A legs are documented in Task 7's live-verify step.
+func TestAccessGroupSynced_PkUserShell_ReachesEntitlements(t *testing.T) {
+	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
+		t.Skip("§17 e2e (phase4); opt out via ACH_SKIP_PHASE4=1")
+	}
+	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
+	if forwarderURL == "" {
+		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
+	}
+	pk := mustAcquirePk(t)
+	// Static mock-Dex identity every SSO e2e mint resolves to
+	// (references/local-testing-gateway.md §3); provisionUser joins it to
+	// `default`, which is demo's authorizedTeams entry.
+	const ownerEmail = "kilgore@kilgore.trout"
+
+	llPort := startPortForward(t, sc5LiteLLMNS, sc5LiteLLMSvc, 4000)
+	llURL := fmt.Sprintf("http://127.0.0.1:%d", llPort)
+	client := litellm.NewRESTClient(llURL, sc5MasterKey, logr.Discard())
+	ctx := context.Background()
+
+	shellAlias := litellm.UserShellAlias(ownerEmail)
+	shells, err := client.ListTeamsByAlias(ctx, shellAlias)
+	if err != nil {
+		t.Fatalf("ListTeamsByAlias(%s): %v", shellAlias, err)
+	}
+	if len(shells) != 1 {
+		t.Fatalf("ListTeamsByAlias(%s) = %d teams, want exactly 1: %+v", shellAlias, len(shells), shells)
+	}
+	shellID := shells[0].TeamID
+
+	// Force a "demo" reconcile so the operator's next pass attaches this
+	// shell to demo's access group — a brand-new shell is fail-closed until
+	// that happens (the documented one-time window, references/troubleshooting.md).
+	if out, aerr := exec.Command("kubectl", "-n", "ach-system", "annotate", "environment/demo",
+		"ach.ackstorm.ai/e2e-poke="+time.Now().UTC().Format(time.RFC3339Nano), "--overwrite").CombinedOutput(); aerr != nil {
+		t.Fatalf("kubectl annotate environment/demo: %v\n%s", aerr, out)
+	}
+
+	ag, err := client.GetAccessGroupByName(ctx, "demo")
+	if err != nil {
+		t.Fatalf("GetAccessGroupByName(demo): %v", err)
+	}
+	if ag == nil {
+		t.Fatal("GetAccessGroupByName(demo) returned nil — access group not found")
+	}
+
+	var info *litellm.TeamListEntry
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		info, err = client.GetTeamInfo(ctx, shellID)
+		if err != nil {
+			t.Fatalf("GetTeamInfo(%s): %v", shellID, err)
+		}
+		if info != nil && slices.Contains(info.AccessGroupIDs, ag.AccessGroupID) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if info == nil || !slices.Contains(info.AccessGroupIDs, ag.AccessGroupID) {
+		t.Fatalf("shell %s did not pick up demo's access group %s within 30s (last read: %+v)",
+			shellAlias, ag.AccessGroupID, info)
+	}
+
+	// Sentinels — same shape asserted for the env shell in
+	// assertDemoShellTeamWiredInLiteLLM.
+	if !slices.Equal(info.Models, []string{litellm.ShellTeamDenyAllModel}) {
+		t.Fatalf("shell %s models = %v, want [%s]", shellAlias, info.Models, litellm.ShellTeamDenyAllModel)
+	}
+	if info.ObjectPermission == nil {
+		t.Fatalf("shell %s: GET /team/info did not resolve object_permission", shellAlias)
+	}
+	if !slices.Equal(info.ObjectPermission.Agents, []string{litellm.ShellTeamDenyAllAgent}) {
+		t.Fatalf("shell %s object_permission.agents = %v, want [%s]",
+			shellAlias, info.ObjectPermission.Agents, litellm.ShellTeamDenyAllAgent)
+	}
+	if len(info.ObjectPermission.MCPServers) != 0 {
+		t.Fatalf("shell %s object_permission.mcp_servers = %v, want empty", shellAlias, info.ObjectPermission.MCPServers)
+	}
+
+	// Entitled model → 200 (demo's runtime.models grants it via the shell's
+	// newly-attached access group).
+	if code := callViaForwarderChatCompletion(t, forwarderURL, pk, "demo-model"); code != http.StatusOK {
+		t.Errorf("entitled model demo-model → status %d, want 200", code)
+	}
+
+	// Unentitled model → denied. Registered ephemeral (never referenced by
+	// any Environment, so no access group ever grants it); deleted on cleanup.
+	unentitled, modelID := registerThrowawayModel(t, ctx, client, llURL, sc5MasterKey)
+	t.Cleanup(func() { deleteModel(t, llURL, sc5MasterKey, modelID) })
+	if code := callViaForwarderChatCompletion(t, forwarderURL, pk, unentitled); code == http.StatusOK {
+		t.Errorf("unentitled model %s → status 200, want denial (pk_ shell must not reach a model no entitled Environment granted)",
+			unentitled)
+	}
+
+	// Key duration: the minted pk_ must carry a non-null LiteLLM expiry
+	// (durationString fix, T1/T3) — before it, pk_ keys minted with
+	// expires:None outlived the ACH personal_keys row.
+	assertPkKeyHasExpiry(t, llURL, sc5MasterKey, ownerEmail)
+}
+
+// callViaForwarderChatCompletion POSTs a minimal /v1/chat/completions
+// request through the forwarder with the pk_ bearer, and returns the
+// response status code.
+func callViaForwarderChatCompletion(t *testing.T, forwarderURL, pk, model string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, forwarderURL+"/v1/chat/completions",
+		strings.NewReader(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, model)))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-ach-key", pk)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("forwarder POST /v1/chat/completions model=%s: %v", model, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	t.Logf("chat/completions model=%s -> %d body=%s", model, resp.StatusCode, truncate(body, 300))
+	return resp.StatusCode
+}
+
+// registerThrowawayModel POSTs /model/new (master key) for a throwaway model
+// no Environment ever references — the negative control for the pk_ shell's
+// model ceiling. Mirrors scripts/cluster.sh's demo-model seed shape (points
+// at the same ach-mock-model echo backend, so a mistaken 200 would still be
+// diagnosable). Returns the model name and its LiteLLM-internal model_info.id
+// (resolved via the typed ListModels, not guessed from the POST response
+// shape) for cleanup via deleteModel.
+func registerThrowawayModel(t *testing.T, ctx context.Context, client litellm.Client, llURL, masterKey string) (name, id string) {
+	t.Helper()
+	name = fmt.Sprintf("e2e-pk-shell-denied-%d", time.Now().UnixNano())
+	body := fmt.Sprintf(
+		`{"model_name":%q,"litellm_params":{"model":"openai/%s","api_base":"http://ach-mock-model.ach-system.svc/v1","api_key":"sk-mock"}}`,
+		name, name)
+	req, err := http.NewRequest(http.MethodPost, llURL+"/model/new", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+masterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /model/new: %v", err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /model/new: status %d body=%s", resp.StatusCode, raw)
+	}
+
+	models, err := client.ListModels(ctx)
+	if err != nil {
+		t.Fatalf("ListModels (resolving %s's id): %v", name, err)
+	}
+	for _, m := range models {
+		if m.ModelName == name {
+			return name, m.ModelInfo.ID
+		}
+	}
+	t.Fatalf("ListModels: %s not found after POST /model/new", name)
+	return "", ""
+}
+
+// deleteModel POSTs /model/delete (master key) — best-effort cleanup, logged
+// not failed, so a cleanup hiccup never masks the test's real assertions.
+func deleteModel(t *testing.T, llURL, masterKey, modelID string) {
+	t.Helper()
+	if modelID == "" {
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, llURL+"/model/delete",
+		strings.NewReader(fmt.Sprintf(`{"id":%q}`, modelID)))
+	if err != nil {
+		t.Logf("cleanup: new request: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+masterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("cleanup: POST /model/delete(%s): %v", modelID, err)
+		return
+	}
+	_ = resp.Body.Close()
+}
+
+// assertPkKeyHasExpiry asserts the caller's newest pkid_-aliased LiteLLM key
+// carries a non-null expiry — GET /key/list is the only read that resolves
+// `expires` (the typed litellm.UserKeyInfo does not carry it, so this reads
+// the wire response directly).
+func assertPkKeyHasExpiry(t *testing.T, llURL, masterKey, ownerEmail string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet,
+		llURL+"/key/list?user_id="+url.QueryEscape(ownerEmail)+"&return_full_object=true&include_team_keys=false", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+masterKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /key/list: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /key/list: status %d body=%s", resp.StatusCode, raw)
+	}
+	var decoded struct {
+		Keys []struct {
+			KeyAlias  string  `json:"key_alias"`
+			CreatedAt string  `json:"created_at"`
+			Expires   *string `json:"expires"`
+		} `json:"keys"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode /key/list: %v body=%s", err, raw)
+	}
+	var newestAt string
+	var newestExpires *string
+	found := false
+	for _, k := range decoded.Keys {
+		if !strings.HasPrefix(k.KeyAlias, "pkid_") {
+			continue
+		}
+		found = true
+		if k.CreatedAt > newestAt {
+			newestAt = k.CreatedAt
+			newestExpires = k.Expires
+		}
+	}
+	if !found {
+		t.Fatalf("GET /key/list(user_id=%s): no pkid_-aliased key found among %d keys", ownerEmail, len(decoded.Keys))
+	}
+	if newestExpires == nil || *newestExpires == "" {
+		t.Fatalf("newest pk_ (created_at=%s) carries no expiry — durationString regression (expires:None)", newestAt)
+	}
 }
