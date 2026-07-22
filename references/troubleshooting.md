@@ -388,6 +388,24 @@ key is minted into `ach-env-<env>` and capped correctly. To find them:
       "SELECT key_id, environment, owner_email, created_at FROM environment_keys
         WHERE status='active' AND created_at < '2026-07-21' ORDER BY created_at"
 
+### ℹ️ A fresh `pk_` reaches nothing for up to a few minutes after first login
+
+Expected. `mintAndPersistPK` provisions the caller's `ach-user-<email>` shell
+and mints the key into it immediately, but the shell carries NO grants of its
+own — the operator is the sole writer of `assigned_team_ids` and only attaches
+the shell to an entitled Environment's access group on that Environment's
+NEXT reconcile pass. A brand-new pk_ is therefore briefly fail-closed (reaches
+nothing), not fail-open. One-time per user; resolves itself on the next
+Environment reconcile (well under the default `wait-*` timeouts).
+
+### ℹ️ A `pk_` minted before the per-user shell change can reach everything
+
+The mirror image of the `ek_` case above: pre-change PKs carry `team_id=NULL`
+and `expires:None` — deliberately NOT migrated (spec decision iii). A teamless
+key is fail-open on models. Fix per key: have the user re-login via
+`ach-cli login` / the SSO flow to mint a fresh, properly-shelled `pk_`, then
+revoke the old one (`ach-cli keys revoke <pkid_…>` or an admin force-revoke).
+
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
 ./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json

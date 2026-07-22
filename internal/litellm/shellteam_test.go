@@ -49,6 +49,13 @@ func TestNewShellTeamRequestSentinels(t *testing.T) {
 	}
 }
 
+func TestNewShellTeamRequestSetsTeamIDToAlias(t *testing.T) {
+	req := NewShellTeamRequest("demo")
+	if req.TeamID != "ach-env-demo" || req.TeamAlias != "ach-env-demo" {
+		t.Fatalf("env shell id/alias = %q/%q, want ach-env-demo", req.TeamID, req.TeamAlias)
+	}
+}
+
 func TestShellTeamDrifted(t *testing.T) {
 	healthy := TeamListEntry{
 		Models:           []string{ShellTeamDenyAllModel},

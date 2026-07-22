@@ -321,6 +321,28 @@ func TestGetTeamInfoDecodesEnvelopeAndFlat(t *testing.T) {
 	}
 }
 
+// TestTeamInfoDecodesMembersAsEmails asserts GET /team/info's
+// members_with_roles decodes and MemberEmails() extracts the user_ids
+// (LiteLLM's user_id == email, per provisionUser).
+func TestTeamInfoDecodesMembersAsEmails(t *testing.T) {
+	raw := `{"team_info":{"team_id":"t1","team_alias":"default",
+		"members_with_roles":[{"user_id":"a@b.com","role":"user"},{"user_id":"c@d.com","role":"admin"}]}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(raw))
+	}))
+	defer srv.Close()
+
+	c := NewRESTClient(srv.URL, "sk-master", logr.Discard())
+	info, err := c.GetTeamInfo(context.Background(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := info.MemberEmails()
+	if len(got) != 2 || got[0] != "a@b.com" || got[1] != "c@d.com" {
+		t.Fatalf("MemberEmails = %v, want [a@b.com c@d.com]", got)
+	}
+}
+
 // TestDeleteTeamRejectsEmptyID guards the "delete every team" footgun.
 func TestDeleteTeamRejectsEmptyID(t *testing.T) {
 	c := NewRESTClient("http://127.0.0.1:1", "sk-master", logr.Discard())

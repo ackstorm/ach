@@ -68,6 +68,10 @@ type accessGroupFakeImpl struct {
 	// code).
 	teamUpdateResult *litellm.TeamListEntry
 
+	// teamInfoErrByID injects a GetTeamInfo error for a specific team id —
+	// drives the entitledUserShellIDs resolveFailed guard (Task 4).
+	teamInfoErrByID map[string]error
+
 	// order records the method-name call sequence across CreateTeam /
 	// UpdateTeam / DeleteTeam / DeleteAccessGroup / RevokeKey — the
 	// TestReconcileDeletionOrder assertion that ek_ revoke + access-group
@@ -107,6 +111,7 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		teamUpdateCalls: map[string]int{},
 		teamDeleteCalls: map[string]int{},
 		lastTeamCreate:  map[string]litellm.NewTeamRequest{},
+		teamInfoErrByID: map[string]error{},
 	}
 }
 
@@ -135,6 +140,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
 	f.teamCreateErr = nil
 	f.teamUpdateResult = nil
+	f.teamInfoErrByID = map[string]error{}
 	f.order = nil
 }
 
@@ -425,11 +431,47 @@ func marshalTeamMetadata(m map[string]any) json.RawMessage {
 func (f *accessGroupFakeImpl) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.teamInfoErrByID[teamID]; err != nil {
+		return nil, err
+	}
 	entry, ok := f.teamsByID[teamID]
 	if !ok {
 		return nil, nil
 	}
 	return &entry, nil
+}
+
+// InjectTeamInfoErr makes GetTeamInfo(teamID) fail — drives the
+// entitledUserShellIDs resolveFailed guard test.
+func (f *accessGroupFakeImpl) InjectTeamInfoErr(teamID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.teamInfoErrByID[teamID] = err
+}
+
+// SeedTeamMembers registers a human team's members_with_roles (Task 4 —
+// entitledUserShellIDs reads this via GetTeamInfo). Locked, unlike a direct
+// teamsByID/teamsByAlias write: the envtest suite runs a real manager, so a
+// lingering reconcile goroutine from an adjacent test can read these same
+// maps concurrently with a new test's seeding.
+func (f *accessGroupFakeImpl) SeedTeamMembers(teamID, alias string, members ...litellm.TeamMemberRole) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entry := litellm.TeamListEntry{TeamID: teamID, TeamAlias: alias, MembersWithRoles: members}
+	f.teamsByID[teamID] = entry
+	if alias != "" {
+		f.teamsByAlias[alias] = []litellm.TeamListEntry{entry}
+	}
+}
+
+// SeedUserShellPresent registers email's ach-user-<email> shell as already
+// existing (team_id == alias, mirrors CreateTeam's convention) — locked
+// seeding for the entitled-user-shell attachment tests (Task 4).
+func (f *accessGroupFakeImpl) SeedUserShellPresent(email string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	alias := litellm.UserShellAlias(email)
+	f.teamsByAlias[alias] = []litellm.TeamListEntry{{TeamID: alias, TeamAlias: alias}}
 }
 
 func (f *accessGroupFakeImpl) DeleteTeam(_ context.Context, teamID string) error {

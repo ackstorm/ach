@@ -159,12 +159,19 @@ the team model-access path — which is why ACH uses an impossible model name.
   no `models`, no `object_permission`, no `access_group_ids`.
 - The environment's grants live only in the access group; the shell team is
   constant boilerplate, identical for every environment.
-- `pk_` keys carry no team (`internal/platformapi/auth/sso.go`) and are
-  therefore fail-open on models per §4; MCP and agents still scope correctly
-  through the access group (`spec.authorizedTeams` → `assigned_team_ids`
-  extends what members of those teams can reach from their personal key). This
-  is a known, deliberate scope decision as of v0.6.17, not a property to rely
-  on.
+- `pk_` keys are now minted with `team_id: ach-user-<email>` — a
+  per-user deny-all shell, symmetric to the per-Environment one. The shell
+  carries no grants of its own; the operator (sole writer of
+  `assigned_team_ids`) attaches every entitled Environment's access group onto
+  it, live-resolved from `GET /team/info` member `user_id == email`
+  (`internal/controller/ach/environment_usershells.go`). One pk_ therefore
+  reaches exactly the union of the caller's entitlements — no more, no less.
+  `platform-api` provisions the shell (idempotent `POST /team/new`, 400
+  "already exists" = success) and sets the key's own `duration` to match
+  `pkExpiryWindow` at mint time (`internal/platformapi/auth/sso.go`).
+  **Residual (locked, decision iii):** PKs minted BEFORE this change keep
+  `team_id=NULL` + `expires:None` — not migrated — and stay fail-open on
+  models until revoked by hand.
 - ACH must track which EKs belong to an environment so it can enumerate them at
   deletion time (it does: `environment_keys.environment`). Do not rely on
   `team_id` for that mapping — it disappears with the team.
