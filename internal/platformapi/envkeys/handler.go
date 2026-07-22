@@ -445,6 +445,13 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	// No TeamMemberAdd needed: LiteLLM only enforces team membership on
 	// /key/generate for non-admin callers, and ACH authenticates with the
 	// master key (PROXY_ADMIN). See references/litellm-permission-model.md §9.
+	//
+	// An ek_ is deliberately PERPETUAL: no Duration is set, so the LiteLLM key
+	// has no expiry. Its lifetime is the Environment's — it is revoked only by
+	// DELETE /platform/keys/{id} or by deleting the Environment (the shell-team
+	// delete cascades to its keys). Unlike a pk_ (168h sliding window, re-minted
+	// on every SSO login), an ek_ has no renewal path, so a finite window would
+	// silently break long-running agents. See references/litellm-permission-model.md.
 	keyReq := &litellm.KeyGenerateRequest{
 		UserID:    userID,
 		TeamID:    shellTeamID,
