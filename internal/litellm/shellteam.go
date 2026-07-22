@@ -71,14 +71,22 @@ func ShellTeamPermissions() *TeamObjectPermission {
 	}
 }
 
-// NewShellTeamRequest is the POST /team/new body for an Environment's shell.
-func NewShellTeamRequest(env string) *NewTeamRequest {
+// denyAllTeamRequest builds a POST /team/new body for a deny-all shell, shared
+// by the env shell (ach-env-<name>) and the user shell (ach-user-<email>).
+// team_id is set == alias so the id is deterministic and creation is idempotent.
+func denyAllTeamRequest(alias string, metadata map[string]any) *NewTeamRequest {
 	return &NewTeamRequest{
-		TeamAlias:        ShellTeamAlias(env),
+		TeamID:           alias,
+		TeamAlias:        alias,
 		Models:           []string{ShellTeamDenyAllModel},
 		ObjectPermission: ShellTeamPermissions(),
-		Metadata:         ShellTeamMetadata(env),
+		Metadata:         metadata,
 	}
+}
+
+// NewShellTeamRequest is the POST /team/new body for an Environment's shell.
+func NewShellTeamRequest(env string) *NewTeamRequest {
+	return denyAllTeamRequest(ShellTeamAlias(env), ShellTeamMetadata(env))
 }
 
 // IsShellTeamManaged reports whether e's metadata carries the ACH shell-team
