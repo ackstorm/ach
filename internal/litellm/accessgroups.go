@@ -8,6 +8,18 @@ import (
 	"fmt"
 )
 
+// AccessGroupPrefix namespaces ACH-owned access groups inside LiteLLM's flat
+// access-group-name space, mirroring the ach-env-/ach-user- team convention so
+// an ACH group is distinguishable from a hand-made one in the LiteLLM UI.
+//
+// Only the NAME is prefixed: the access-group id cannot be made deterministic
+// (POST /v1/unified_access_group ignores an explicit access_group_id and mints
+// a fresh UUID), so the name prefix is the whole of the coherence available.
+const AccessGroupPrefix = "ach-"
+
+// AccessGroupName is the LiteLLM access-group name for an Environment.
+func AccessGroupName(env string) string { return AccessGroupPrefix + env }
+
 // CreateAccessGroup issues POST /v1/access_group. Returns the
 // AccessGroupResponse (UUID, name, current bindings). Replaces the
 // legacy POST /access_group/new flow whose validator rejected empty
