@@ -520,8 +520,15 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.revokeEnvironmentKeys(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 1 revokeEnvironmentKeys: %w", err)
 	}
-	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+	// Delete the canonical ach-<env> group and, for safety, the legacy
+	// unprefixed <env> group in case the self-migration rename never ran on
+	// this Environment before deletion. Both are idempotent (absent = success),
+	// so the second call is a cheap no-op once migration has happened.
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, litellm.AccessGroupName(env.Name)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup(legacy): %w", err)
 	}
 	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)

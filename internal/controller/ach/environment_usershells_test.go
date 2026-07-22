@@ -57,7 +57,7 @@ func TestReconcileAccessGroup_AttachesEntitledUserShells(t *testing.T) {
 		t.Fatalf("expected True/Synced, conditions = %+v", got.Status.Conditions)
 	}
 
-	last := accessGroupFake.LastCreate("test-env-usershells")
+	last := accessGroupFake.LastCreate("ach-test-env-usershells")
 	if !slices.Contains(last.AssignedTeamIDs, "ach-user-a@b.com") {
 		t.Errorf("AssignedTeamIDs = %v, want ach-user-a@b.com (entitled + shell exists)", last.AssignedTeamIDs)
 	}
@@ -83,7 +83,7 @@ func TestReconcileAccessGroup_MemberRemovalDetaches(t *testing.T) {
 	// a prior reconcile (before their removal from "run").
 	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
 		AccessGroupID:   "ag-uuid-test-env-usershell-detach",
-		AccessGroupName: "test-env-usershell-detach",
+		AccessGroupName: "ach-test-env-usershell-detach",
 		AssignedTeamIDs: []string{"t-run", "ach-user-a@b.com"},
 	})
 	accessGroupFake.SeedTeamMirror("t-run", "ag-uuid-test-env-usershell-detach")
@@ -118,7 +118,7 @@ func TestReconcileAccessGroup_MemberRemovalDetaches(t *testing.T) {
 		t.Fatalf("expected True/Synced, conditions = %+v", got.Status.Conditions)
 	}
 
-	last := accessGroupFake.LastUpdate("test-env-usershell-detach")
+	last := accessGroupFake.LastUpdate("ach-test-env-usershell-detach")
 	if slices.Contains(last.AssignedTeamIDs, "ach-user-a@b.com") {
 		t.Errorf("AssignedTeamIDs = %v, want a@b.com's shell detached (member removed)", last.AssignedTeamIDs)
 	}
@@ -161,7 +161,7 @@ func TestReconcileAccessGroup_TeamInfoError_ResolveFailed(t *testing.T) {
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
 		t.Fatalf("expected False/ResolveFailed, conditions = %+v", got.Status.Conditions)
 	}
-	if accessGroupFake.CreateCallsFor("test-env-usershell-resolvefail") > 0 {
+	if accessGroupFake.CreateCallsFor("ach-test-env-usershell-resolvefail") > 0 {
 		t.Error("access group was created despite GetTeamInfo error — must never PUT a union missing shells")
 	}
 }
