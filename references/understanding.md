@@ -56,7 +56,13 @@ underlying layer keeps its job:
 - **Kubernetes** = ingress path for object creation (GitOps) + reconcile
   substrate. NOT the read path: since issue #34, **Postgres is the
   request-time source of truth**; only the operator holds K8s RBAC.
-- **Dex/OIDC** = identity. SSO login mints `pk_`. `owner_email` stored
+- **Dex/OIDC** = identity. SSO login mints `pk_`, capped into the caller's
+  per-user deny-all shell team `ach-user-<email>` (platform-api provisions it
+  idempotently at mint, matching key `duration`) — NOT teamless; the operator
+  (sole writer of `assigned_team_ids`) attaches every entitled Environment's
+  access group onto that shell each reconcile, so one `pk_` covers the union
+  of the user's entitlements (locked residual: pre-change PKs stay
+  `team_id=NULL`/fail-open until revoked by hand). `owner_email` stored
   verbatim (no normalization — canonicalization is Dex's job). Admin = SSO
   e-mail allowlist file (`/etc/ach/admins/admins.txt`), read at process
   start, no hot reload.
