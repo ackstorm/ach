@@ -68,6 +68,10 @@ type accessGroupFakeImpl struct {
 	// code).
 	teamUpdateResult *litellm.TeamListEntry
 
+	// teamInfoErrByID injects a GetTeamInfo error for a specific team id —
+	// drives the entitledUserShellIDs resolveFailed guard (Task 4).
+	teamInfoErrByID map[string]error
+
 	// order records the method-name call sequence across CreateTeam /
 	// UpdateTeam / DeleteTeam / DeleteAccessGroup / RevokeKey — the
 	// TestReconcileDeletionOrder assertion that ek_ revoke + access-group
@@ -107,6 +111,7 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		teamUpdateCalls: map[string]int{},
 		teamDeleteCalls: map[string]int{},
 		lastTeamCreate:  map[string]litellm.NewTeamRequest{},
+		teamInfoErrByID: map[string]error{},
 	}
 }
 
@@ -135,6 +140,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
 	f.teamCreateErr = nil
 	f.teamUpdateResult = nil
+	f.teamInfoErrByID = map[string]error{}
 	f.order = nil
 }
 
@@ -425,11 +431,22 @@ func marshalTeamMetadata(m map[string]any) json.RawMessage {
 func (f *accessGroupFakeImpl) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.teamInfoErrByID[teamID]; err != nil {
+		return nil, err
+	}
 	entry, ok := f.teamsByID[teamID]
 	if !ok {
 		return nil, nil
 	}
 	return &entry, nil
+}
+
+// InjectTeamInfoErr makes GetTeamInfo(teamID) fail — drives the
+// entitledUserShellIDs resolveFailed guard test.
+func (f *accessGroupFakeImpl) InjectTeamInfoErr(teamID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.teamInfoErrByID[teamID] = err
 }
 
 func (f *accessGroupFakeImpl) DeleteTeam(_ context.Context, teamID string) error {

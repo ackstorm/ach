@@ -756,6 +756,9 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 		}
 		teamIDs = append(teamIDs, id)
 	}
+	// Captured before the env shell is appended below: the member scan runs
+	// over the human authorized teams only (the shell has no members).
+	resolvedAuthorizedTeamIDs := slices.Clone(teamIDs)
 
 	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved) > 0 {
 		return metav1.Condition{
@@ -791,6 +794,21 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	}
 	if !slices.Contains(teamIDs, shellID) {
 		teamIDs = append(teamIDs, shellID)
+	}
+
+	// Attach the shells of every entitled member so their pk_ inherits this
+	// env's grants (the operator is the sole writer of assigned_team_ids). The
+	// authorized-team ids resolved above are the input; user shells are added
+	// only when they exist (lazy creation). A resolution error fails loud
+	// rather than PUTting a union that would detach entitled users.
+	userShellIDs, uErr := r.entitledUserShellIDs(ctx, resolvedAuthorizedTeamIDs, byAlias)
+	if uErr != nil {
+		return resolveFailed(env, "GetTeamInfo", uErr)
+	}
+	for _, id := range userShellIDs {
+		if !slices.Contains(teamIDs, id) {
+			teamIDs = append(teamIDs, id)
+		}
 	}
 
 	// Step 2: discover whether the access group already exists.
