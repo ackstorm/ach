@@ -130,6 +130,28 @@ func (c *countingNoopClient) ListAllTeams(ctx context.Context) ([]litellm.TeamLi
 	return c.accessGroup.ListAllTeams(ctx)
 }
 
+// Shell-team routing (Task 4): without these, CreateTeam/UpdateTeam/
+// GetTeamInfo/DeleteTeam fall through to the embedded NoopClient's stubs,
+// which don't register anything in accessGroup's maps — the shell team
+// ensureShellTeam creates would then be invisible to accessGroup.ListAllTeams
+// on the next reconcile, so the reconciler would recreate it every pass and
+// its mirror would never resolve.
+func (c *countingNoopClient) CreateTeam(ctx context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return c.accessGroup.CreateTeam(ctx, req)
+}
+
+func (c *countingNoopClient) UpdateTeam(ctx context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return c.accessGroup.UpdateTeam(ctx, req)
+}
+
+func (c *countingNoopClient) GetTeamInfo(ctx context.Context, teamID string) (*litellm.TeamListEntry, error) {
+	return c.accessGroup.GetTeamInfo(ctx, teamID)
+}
+
+func (c *countingNoopClient) DeleteTeam(ctx context.Context, teamID string) error {
+	return c.accessGroup.DeleteTeam(ctx, teamID)
+}
+
 // Compile-time interface assertion — if litellm.Client grows a method, the
 // build breaks here until countingNoopClient catches up.
 var _ litellm.Client = (*countingNoopClient)(nil)

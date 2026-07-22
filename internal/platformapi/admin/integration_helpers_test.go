@@ -168,6 +168,16 @@ func (f *fakeLitellm) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 }
 func (f *fakeLitellm) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
 func (f *fakeLitellm) EnsureDefaultTeam(_ context.Context) error               { return nil }
+func (f *fakeLitellm) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLitellm) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLitellm) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *fakeLitellm) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
 
 // recordingRedis implements redisDeleter, recording Del calls.
 type recordingRedis struct {

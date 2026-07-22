@@ -498,6 +498,19 @@ func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, 
 // EnsureDefaultTeam is a no-op shim — Client interface compliance.
 func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
 
+// CreateTeam/UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client
+// interface compliance.
+func (f *fakeLiteLLM) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
 // §7 stubs — interface satisfaction only (issue #17: /v1 surface).
 func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	return nil, nil

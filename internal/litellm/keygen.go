@@ -25,9 +25,9 @@ import (
 // callers pass nil and the field drops from the wire payload entirely.
 // LiteLLM falls back to whatever default the deployer configured server-side.
 //
-// AccessGroups carries the LiteLLM access-group name list — Phase 3 ek-
-// creation passes a single-element slice ([]string{"<environment>"}) so
-// LiteLLM applies the access-group budget policy at request time.
+// TeamID binds the key to a LiteLLM team, which is the ONLY reliable
+// ceiling on a key — an access group can never narrow it. ek_ creation
+// passes the environment's deny-all shell team.
 //
 // Errors propagate verbatim from makeRequest (REL-04 drain+close,
 // REL-06 *Auth401Error, §9.1 no-body-in-error).

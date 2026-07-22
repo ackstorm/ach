@@ -9,7 +9,7 @@ is non-negotiable.
 > `references/`: `understanding.md` (**whole-system mental model — read FIRST
 > in a fresh session instead of re-exploring the repo**), `repo-layout.md`,
 > `release-pipeline.md`, `makefile.md`, `troubleshooting.md` (service-specific
-> debugging).
+> debugging), `litellm-permission-model.md`.
 
 ## Documentation hygiene — update docs IN THE SAME COMMIT
 
@@ -160,7 +160,7 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (`POST /platform/keys` (ek_ create) + `DELETE /platform/keys/{id}` (ek_ revoke; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (an `ek_` is minted ONLY into its Environment's deny-all shell team `ach-env-<env>` — no models, no object_permission, no access-group binding; see `references/litellm-permission-model.md`; `POST /platform/keys` (ek_ create) + `DELETE /platform/keys/{id}` (ek_ revoke; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`/mcp`/`/a2a` rewrite |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead. Also reads the `achagents` projection (**`ACH_DB_URL` required — refuses to start without it**) and serves `/agents/{ns}/{service}/…` to per-agent Services (`{service}` = the Service name, e.g. `achagent-gh`; the tail after it is forwarded verbatim — webhook, a2a, whatever the harness serves) — **only agents that opt in via `spec.expose.gateway=true` are in the route set** (`exposed` projection column); still no auth/no header rewrite; the `ach-agent` harness verifies HMAC on its webhook route |
@@ -186,6 +186,7 @@ Critical paths:
 - `ach-cli login` → platform-api → Dex SSO → `provisionUser` (LiteLLM mint) → `pk_` issuance
 - `ach-cli env hydrate` → platform-api `/platform/hydrate` → content-service sidecar → workspace
 - Environment reconcile → resolve refs against LiteLLM → `POST /v1/access_group`; `Available=True` = `ExecutionResourcesResolved` + `AccessGroupSynced`
+- Environment reconcile → deny-all shell team `ach-env-<name>` (sentinels: `models=["__deny_all__"]`, `agents=["00000000-0000-0000-0000-000000000000"]`) → joined into the access group's `assigned_team_ids` alongside `spec.authorizedTeams`; `ach-cli keys create` mints the `ek_` into that team, which is the only reliable ceiling on a key
 - BackendIdentityPolicy → operator RBAC → forwarder cache → per-target JWT mint → upstream
 - Webhook inbound: GitHub → Ingress → gateway `/agents/{ns}/{service}/…` → (prefix stripped, tail forwarded verbatim) → `{service}.{ns}.svc:8080/…` → harness (HMAC-verify + dedup + session_key on its webhook route). `{service}` is the agent's Service name (`achagent-{name}`); the gateway only allowlists via the `achagents` projection and forwards — the tail (`/channels/{ch}/events`, a2a, …) is the harness's contract, not the gateway's. **Reachability is opt-in per agent via `spec.expose` (both default false):** `expose.service` creates the ClusterIP Service (in-cluster reachability for a2a peers / your own ingress); `expose.gateway` (requires `service`) adds the agent to the gateway route set (webhook OR a2a route the same way) and publishes `ACHAgent.status.gatewayURL` (full URL when `ACH_PUBLIC_BASE_URL` — or, as a fallback, `ACH_BASE_URL` — is set on the operator, else the path-only form). Omit `expose` for a fully private agent (no Service, no route, no URL).
 
@@ -206,6 +207,7 @@ independent collections.)
 | Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
+| LiteLLM teams / access groups / key scoping | `references/litellm-permission-model.md` (measured semantics — do NOT re-derive) |
 | New/changed SYNCED CR fixtures         | `test/e2e/cluster/{04-objects,05-environment}/` + `references/repo-layout.md` |
 | Curated examples / `ach-cli login` + `env hydrate` demo | `examples/README.md` |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
@@ -431,7 +433,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   (Prompt/Artifact/**Skill** closed-set — `Plugin` is gated off, so
   `context.plugins` refs are SKIPPED, not failed, and no longer gate this
   condition; `context.skills` is content-gated) + `AccessGroupSynced` (LiteLLM: names →
-  IDs each reconcile, then `POST /v1/access_group`). Composite `Available=True`
+  IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
   rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
 - **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
   mirrors the (now-gated-off) **Plugin** pipeline end-to-end (fetch → `SKILL.md` Stage-2 validation gate →

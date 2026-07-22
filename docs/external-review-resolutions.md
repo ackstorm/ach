@@ -54,7 +54,8 @@ would become a LiteLLM **tag budget** (the env name is attached as a tag on ever
 - **`Environment.spec.budget` does not exist** — removed from `EnvironmentSpec`.
   The operator reconciles only the LiteLLM **access group** (capability gating),
   not a budget tag.
-- `ek_` keys still carry `Tags=[env.Name]` + `AccessGroups=[env.Name]`
+- `ek_` keys still carry `Tags=[env.Name]` (`AccessGroups=[env.Name]` was removed
+  in v0.6.17 — see `references/litellm-permission-model.md`)
   (`envkeys/handler.go`) — but **for attribution only**, no budget attached.
 - **LiteLLM tags are Enterprise-only.** The handler has
   `isEnterpriseTagsRejection`: on a `403 "This feature is only available for

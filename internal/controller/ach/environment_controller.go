@@ -84,6 +84,10 @@ type EnvironmentReconciler struct {
 	Namespace string
 	Log       logr.Logger
 	DB        *pgxpool.Pool
+	// ListActiveEKsForRevoke is revokeEnvironmentKeys's test seam (see
+	// listActiveEKsForRevokeFn's doc comment in environment_shellteam.go);
+	// nil in production, where the real achdb helper is used against DB.
+	ListActiveEKsForRevoke listActiveEKsForRevokeFn
 	// Phase 2 (Plan 02-09 wires from cmd/operator/main.go):
 	Snapshotter *snapshot.Snapshotter
 	// Issue #34 (A10/A11): external source.Channel feed used by the
@@ -503,14 +507,24 @@ func appendContentUnresolvedMsg(message string, unresolvedPlugins, unresolvedSki
 // Per D-15 the DB write (achdb.UpsertEnvironment) is authoritative: a
 // reconcileDeletion is the §6.5 finalizer drain — extracted from Reconcile
 // to keep the main method's cyclomatic complexity within golangci-lint's
-// gocyclo budget. Runs delete-side-effects on LiteLLM, drains ek_ rows,
-// soft-deletes the projection row, then removes the finalizer.
+// gocyclo budget. Revokes the environment's ek_ keys in LiteLLM, deletes the
+// access group, deletes the deny-all shell team, deletes the tag, drains ek_
+// rows, soft-deletes the projection row, then removes the finalizer.
 func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv1alpha1.Environment, logger logr.Logger) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(env, environmentFinalizer) {
 		return ctrl.Result{}, nil
 	}
+	// Order is load-bearing — see revokeEnvironmentKeys / §8 of
+	// references/litellm-permission-model.md. Keys first, then the group,
+	// then the shell team.
+	if err := r.revokeEnvironmentKeys(ctx, env, logger); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 1 revokeEnvironmentKeys: %w", err)
+	}
 	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)
 	}
 	if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
@@ -646,6 +660,10 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 //   - False/ResolveFailed          — one of ListMCPServers /
 //     ListA2AAgents / ListTeamsByAlias errored (LiteLLM unreachable
 //     mid-reconcile)
+//   - False/ShellTeamFailed        — the per-Environment deny-all shell team
+//     (ach-env-<name>) could not be created or repaired. ek_ keys minted
+//     against a missing shell would be fail-open on models, so the
+//     Environment must not go Available.
 func (r *EnvironmentReconciler) reconcileAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
@@ -751,6 +769,28 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 			ObservedGeneration: env.Generation,
 			LastTransitionTime: metav1.Now(),
 		}
+	}
+
+	// The deny-all shell team is what caps this Environment's ek_ keys, and
+	// it joins assigned_team_ids in the SAME write as the authorized teams:
+	// that list is a whole-list PUT serving both the pk_ path (authorized
+	// teams) and the ek_ path (the shell), so it is always rebuilt as the
+	// union — a spec change to authorizedTeams must never drop the shell.
+	//
+	// byAlias[shellAlias] is resolved from allTeams above, which came from
+	// ListAllTeams — paginated with a hard listAllTeamsPageCap. If the shell
+	// ever falls outside the pages returned (pathological total_pages, or
+	// enough teams to exceed the cap), byAlias misses it and ensureShellTeam
+	// sees existingID=="" and CREATEs a brand-new shell team — a duplicate,
+	// unbounded, every single reconcile.
+	shellAlias := litellm.ShellTeamAlias(env.Name)
+	shellID, sErr := r.ensureShellTeam(ctx, env, byAlias[shellAlias], logger)
+	if sErr != nil {
+		logger.Error(sErr, "shell team reconcile failed", "alias", shellAlias)
+		return shellTeamFailed(env, sErr)
+	}
+	if !slices.Contains(teamIDs, shellID) {
+		teamIDs = append(teamIDs, shellID)
 	}
 
 	// Step 2: discover whether the access group already exists.

@@ -52,6 +52,28 @@ type accessGroupFakeImpl struct {
 	// teamMirror is teamID → access_group_ids (the team-side mirror).
 	teamMirror map[string][]string
 
+	// Shell-team state: alias → entry, plus call counters so a test can
+	// assert create-once / repair-on-drift.
+	teamsByID       map[string]litellm.TeamListEntry
+	teamCreateCalls map[string]int
+	teamUpdateCalls map[string]int
+	teamDeleteCalls map[string]int
+	lastTeamCreate  map[string]litellm.NewTeamRequest
+	teamCreateErr   error
+
+	// teamUpdateResult, when non-nil, is returned by UpdateTeam VERBATIM
+	// instead of the post-write entry state — models a LiteLLM whose POST
+	// /team/update 200s without actually applying the write (Fix 1: the
+	// caller must re-verify the response rather than trusting the status
+	// code).
+	teamUpdateResult *litellm.TeamListEntry
+
+	// order records the method-name call sequence across CreateTeam /
+	// UpdateTeam / DeleteTeam / DeleteAccessGroup / RevokeKey — the
+	// TestReconcileDeletionOrder assertion that ek_ revoke + access-group
+	// delete both happen strictly before the shell team is deleted.
+	order []string
+
 	// mirrorHistory snapshots teamMirror after every UpdateAccessGroup so
 	// a test can assert that a HEALTHY team's mirror never went empty at
 	// any intermediate step of a repair sequence.
@@ -80,6 +102,11 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		agents:          map[string]string{},
 		teamsByAlias:    map[string][]litellm.TeamListEntry{},
 		teamMirror:      map[string][]string{},
+		teamsByID:       map[string]litellm.TeamListEntry{},
+		teamCreateCalls: map[string]int{},
+		teamUpdateCalls: map[string]int{},
+		teamDeleteCalls: map[string]int{},
+		lastTeamCreate:  map[string]litellm.NewTeamRequest{},
 	}
 }
 
@@ -101,6 +128,14 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.mirrorHistory = nil
 	f.mirrorFrozen = false
 	f.listErr = nil
+	f.teamsByID = map[string]litellm.TeamListEntry{}
+	f.teamCreateCalls = map[string]int{}
+	f.teamUpdateCalls = map[string]int{}
+	f.teamDeleteCalls = map[string]int{}
+	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
+	f.teamCreateErr = nil
+	f.teamUpdateResult = nil
+	f.order = nil
 }
 
 func (f *accessGroupFakeImpl) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
@@ -242,12 +277,23 @@ func (f *accessGroupFakeImpl) DeleteAccessGroupByID(_ context.Context, id string
 
 func (f *accessGroupFakeImpl) DeleteAccessGroup(ctx context.Context, name string) error {
 	f.mu.Lock()
+	f.order = append(f.order, "DeleteAccessGroup")
 	r, ok := f.stored[name]
 	f.mu.Unlock()
 	if !ok {
 		return nil
 	}
 	return f.DeleteAccessGroupByID(ctx, r.AccessGroupID)
+}
+
+// RevokeKey records the call for TestReconcileDeletionOrder and returns nil —
+// the ek_-revocation tests that need error injection live elsewhere; this
+// fake's LiteLLM state has no concept of environment_keys rows to revoke.
+func (f *accessGroupFakeImpl) RevokeKey(_ context.Context, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.order = append(f.order, "RevokeKey")
+	return nil
 }
 
 // Resolver overrides — the reconciler calls these on each pass to build
@@ -313,6 +359,90 @@ func (f *accessGroupFakeImpl) ListAllTeams(_ context.Context) ([]litellm.TeamLis
 	return out, nil
 }
 
+// CreateTeam / UpdateTeam / GetTeamInfo / DeleteTeam back the shell-team
+// reconciler (environment_shellteam.go). teamsByAlias is reseeded here too
+// so ListAllTeams (which flattens teamsByAlias) sees a freshly created shell.
+func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.order = append(f.order, "CreateTeam")
+	if f.teamCreateErr != nil {
+		return nil, f.teamCreateErr
+	}
+	f.teamCreateCalls[req.TeamAlias]++
+	f.lastTeamCreate[req.TeamAlias] = *req
+	id := "id-" + req.TeamAlias
+	entry := litellm.TeamListEntry{
+		TeamID:           id,
+		TeamAlias:        req.TeamAlias,
+		Models:           req.Models,
+		ObjectPermission: req.ObjectPermission,
+		Metadata:         marshalTeamMetadata(req.Metadata),
+	}
+	f.teamsByID[id] = entry
+	f.teamsByAlias[req.TeamAlias] = []litellm.TeamListEntry{entry}
+	return &entry, nil
+}
+
+func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.order = append(f.order, "UpdateTeam")
+	f.teamUpdateCalls[req.TeamID]++
+	entry := f.teamsByID[req.TeamID]
+	entry.TeamID = req.TeamID
+	entry.Models = req.Models
+	entry.ObjectPermission = req.ObjectPermission
+	if req.Metadata != nil {
+		entry.Metadata = marshalTeamMetadata(req.Metadata)
+	}
+	f.teamsByID[req.TeamID] = entry
+	if entry.TeamAlias != "" {
+		f.teamsByAlias[entry.TeamAlias] = []litellm.TeamListEntry{entry}
+	}
+	if f.teamUpdateResult != nil {
+		out := *f.teamUpdateResult
+		return &out, nil
+	}
+	out := entry
+	return &out, nil
+}
+
+// marshalTeamMetadata mirrors how the real RESTClient receives metadata back
+// from LiteLLM: ACH sends a map[string]any on the request, LiteLLM echoes it
+// as the TeamListEntry.Metadata json.RawMessage on read-back.
+func marshalTeamMetadata(m map[string]any) json.RawMessage {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+func (f *accessGroupFakeImpl) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entry, ok := f.teamsByID[teamID]
+	if !ok {
+		return nil, nil
+	}
+	return &entry, nil
+}
+
+func (f *accessGroupFakeImpl) DeleteTeam(_ context.Context, teamID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.order = append(f.order, "DeleteTeam")
+	f.teamDeleteCalls[teamID]++
+	entry := f.teamsByID[teamID]
+	delete(f.teamsByID, teamID)
+	delete(f.teamsByAlias, entry.TeamAlias)
+	return nil
+}
+
 func (f *accessGroupFakeImpl) CreateCallsFor(name string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -358,6 +488,27 @@ func (f *accessGroupFakeImpl) SeedTeamMirror(teamID string, accessGroupIDs ...st
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.teamMirror[teamID] = append([]string{}, accessGroupIDs...)
+}
+
+// SeedShellTeam pre-registers env's deny-all shell team as already existing
+// and healthy (sentinels intact), using the same "id-<alias>" convention
+// CreateTeam assigns. Lets a test model a fully-converged Environment (shell
+// already created) instead of exercising ensureShellTeam's create path.
+// Pair with SeedTeamMirror(id, ...) to also mark its group binding healthy.
+func (f *accessGroupFakeImpl) SeedShellTeam(env string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	alias := litellm.ShellTeamAlias(env)
+	id := "id-" + alias
+	entry := litellm.TeamListEntry{
+		TeamID:           id,
+		TeamAlias:        alias,
+		Models:           []string{litellm.ShellTeamDenyAllModel},
+		ObjectPermission: litellm.ShellTeamPermissions(),
+	}
+	f.teamsByID[id] = entry
+	f.teamsByAlias[alias] = []litellm.TeamListEntry{entry}
+	return id
 }
 
 // SeedExisting pre-populates the stored access-group state for

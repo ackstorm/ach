@@ -142,6 +142,38 @@ func (c *Client) ListAllTeams(ctx context.Context) ([]litellm.TeamListEntry, err
 	return client.ListAllTeams(ctx)
 }
 
+func (c *Client) CreateTeam(ctx context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.CreateTeam(ctx, req)
+}
+
+func (c *Client) UpdateTeam(ctx context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.UpdateTeam(ctx, req)
+}
+
+func (c *Client) DeleteTeam(ctx context.Context, teamID string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.DeleteTeam(ctx, teamID)
+}
+
+func (c *Client) GetTeamInfo(ctx context.Context, teamID string) (*litellm.TeamListEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.GetTeamInfo(ctx, teamID)
+}
+
 func (c *Client) EnsureDefaultTeam(ctx context.Context) error {
 	client, err := c.current()
 	if err != nil {

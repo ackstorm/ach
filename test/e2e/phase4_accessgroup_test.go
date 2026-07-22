@@ -17,16 +17,30 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
+
+	"github.com/ackstorm/ach/internal/litellm"
 )
 
 // TestAccessGroupSynced_Demo_HappyPath asserts the demo fixture flips
 // to True/Synced once the operator reconciles. Requires hydrate_litellm
 // to have seeded the demo Model / MCP / A2A.
+//
+// Fix 1 regression gate: every other test on this branch asserts the shell
+// team's sentinels against a Go fake or httptest — nothing checks that a REAL
+// LiteLLM accepts object_permission on POST /team/new and stores it. This has
+// already been confirmed by hand against this cluster (2026-07-21); the
+// assertion below codifies that as a PASS-on-first-run regression gate, not a
+// discovery test.
 func TestAccessGroupSynced_Demo_HappyPath(t *testing.T) {
 	if os.Getenv("ACH_SKIP_PHASE4") == "1" {
 		t.Skip("§17 e2e (phase4); opt out via ACH_SKIP_PHASE4=1")
@@ -38,6 +52,75 @@ func TestAccessGroupSynced_Demo_HappyPath(t *testing.T) {
 		"AccessGroupSynced", "True", "Synced", 30*time.Second) {
 		dumpAGConditions(t, "demo")
 		t.Fatalf("demo Environment did NOT reach AccessGroupSynced=True/Synced within 30s")
+	}
+
+	assertDemoShellTeamWiredInLiteLLM(t)
+}
+
+// assertDemoShellTeamWiredInLiteLLM reads the REAL in-cluster LiteLLM (not a
+// Go fake — see startPortForward / sc5MasterKey, shared with the SC#5 e2e)
+// and confirms the "demo" Environment's deny-all shell team
+// (litellm.ShellTeamAlias("demo")) carries the exact sentinels ACH writes:
+//
+//   - models == [ShellTeamDenyAllModel]
+//   - object_permission.agents == [ShellTeamDenyAllAgent], mcp_servers empty
+//   - access_group_ids contains the demo access group's id — the LiteLLM-side
+//     mirror that actually enforces (references/litellm-permission-model.md
+//     §2), so its presence is the proof the shell is wired to the
+//     Environment's grants and not merely present.
+//
+// GET /team/info?team_id= is the only LiteLLM read that resolves
+// object_permission (references/litellm-permission-model.md §9); GET
+// /v2/team/list serialises it as null, so this deliberately does not use
+// that endpoint for the sentinel assertions.
+func assertDemoShellTeamWiredInLiteLLM(t *testing.T) {
+	t.Helper()
+	llPort := startPortForward(t, sc5LiteLLMNS, sc5LiteLLMSvc, 4000)
+	llURL := fmt.Sprintf("http://127.0.0.1:%d", llPort)
+	client := litellm.NewRESTClient(llURL, sc5MasterKey, logr.Discard())
+	ctx := context.Background()
+
+	alias := litellm.ShellTeamAlias("demo")
+	teams, err := client.ListTeamsByAlias(ctx, alias)
+	if err != nil {
+		t.Fatalf("ListTeamsByAlias(%s): %v", alias, err)
+	}
+	if len(teams) != 1 {
+		t.Fatalf("ListTeamsByAlias(%s) = %d teams, want exactly 1: %+v", alias, len(teams), teams)
+	}
+	teamID := teams[0].TeamID
+
+	info, err := client.GetTeamInfo(ctx, teamID)
+	if err != nil {
+		t.Fatalf("GetTeamInfo(%s) (team=%s): %v", teamID, alias, err)
+	}
+	if info == nil {
+		t.Fatalf("GetTeamInfo(%s) (team=%s) returned nil", teamID, alias)
+	}
+	if !slices.Equal(info.Models, []string{litellm.ShellTeamDenyAllModel}) {
+		t.Fatalf("shell team %s models = %v, want [%s]", alias, info.Models, litellm.ShellTeamDenyAllModel)
+	}
+	if info.ObjectPermission == nil {
+		t.Fatalf("shell team %s: GET /team/info did not resolve object_permission", alias)
+	}
+	if !slices.Equal(info.ObjectPermission.Agents, []string{litellm.ShellTeamDenyAllAgent}) {
+		t.Fatalf("shell team %s object_permission.agents = %v, want [%s]",
+			alias, info.ObjectPermission.Agents, litellm.ShellTeamDenyAllAgent)
+	}
+	if len(info.ObjectPermission.MCPServers) != 0 {
+		t.Fatalf("shell team %s object_permission.mcp_servers = %v, want empty", alias, info.ObjectPermission.MCPServers)
+	}
+
+	ag, err := client.GetAccessGroupByName(ctx, "demo")
+	if err != nil {
+		t.Fatalf("GetAccessGroupByName(demo): %v", err)
+	}
+	if ag == nil {
+		t.Fatal("GetAccessGroupByName(demo) returned nil — access group not found")
+	}
+	if !slices.Contains(info.AccessGroupIDs, ag.AccessGroupID) {
+		t.Fatalf("shell team %s access_group_ids = %v, want to contain the demo access group id %s",
+			alias, info.AccessGroupIDs, ag.AccessGroupID)
 	}
 }
 

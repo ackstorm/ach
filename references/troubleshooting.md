@@ -359,6 +359,35 @@ changes — deliberately loud, so a LiteLLM semantics change surfaces as a broke
 rather than an endless write loop. Investigate LiteLLM itself in that case; the operator has done
 all it can.
 
+### ❌ A deleted Environment's `ek_` still answers 200 for up to a minute
+
+Only possible if the shell team (`ach-env-<env>`) was deleted BEFORE its keys —
+by hand, or by a build predating v0.6.17. LiteLLM caches key rows for ~60s, and
+inside that window the key cannot be revoked by any route: `POST /key/delete`
+(by `keys` and by `tokens`), `POST /key/block` and `POST /key/update` all return
+404 while the key still serves traffic. The key keeps the deleted team's
+restrictions, so it is a revocation-LATENCY problem, not privilege escalation.
+
+There is no fix from outside — wait out the cache. Never read those 404s as
+"already revoked": the operator logs `ek_ absent in LiteLLM at revoke time` only
+for keys it confirmed gone BEFORE touching the team.
+
+Since v0.6.17 the finalizer order is: revoke every `ek_` → delete the access
+group → delete the shell team, so the window does not occur on a normal delete.
+
+### ℹ️ An `ek_` created before v0.6.17 can still reach models its Environment never granted
+
+Keys minted before the shell-team change carry no `team_id`. A LiteLLM key with
+no team is fail-open on models — the access group cannot narrow it (MCP and
+agents DO scope correctly even then). They were deliberately NOT migrated.
+
+Fix per key: `ach-cli keys revoke <ekid_…>` then `ach-cli keys create`. The new
+key is minted into `ach-env-<env>` and capped correctly. To find them:
+
+    psql "$ACH_DB_URL" -c \
+      "SELECT key_id, environment, owner_email, created_at FROM environment_keys
+        WHERE status='active' AND created_at < '2026-07-21' ORDER BY created_at"
+
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
 ./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json

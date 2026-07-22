@@ -130,3 +130,66 @@ func (c *RESTClient) ListAllTeams(ctx context.Context) ([]TeamListEntry, error) 
 	}
 	return all, nil
 }
+
+// UpdateTeam issues POST /team/update. ACH uses it only to re-assert the
+// deny-all shell-team sentinels when a read-back shows they drifted;
+// omitted fields are left untouched by LiteLLM.
+func (c *RESTClient) UpdateTeam(ctx context.Context, req *TeamUpdateRequest) (*TeamListEntry, error) {
+	if req == nil || req.TeamID == "" {
+		return nil, fmt.Errorf("litellm: UpdateTeam: empty team_id")
+	}
+	raw, err := c.makeRequest(ctx, "POST", "/team/update", req)
+	if err != nil {
+		return nil, err
+	}
+	var out TeamListEntry
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("litellm: decode POST /team/update: %w", err)
+	}
+	return &out, nil
+}
+
+// DeleteTeam issues POST /team/delete with {"team_ids": [teamID]}.
+//
+// Deleting a team CASCADES to its keys, so this is a real revocation — the
+// Environment finalizer calls it only AFTER revoking the environment's ek_
+// keys individually (references/litellm-permission-model.md §8: deleting the
+// team first leaves keys serving traffic for ~60s with no route to revoke
+// them). The empty-id guard exists because an empty list is a foot-gun.
+func (c *RESTClient) DeleteTeam(ctx context.Context, teamID string) error {
+	if teamID == "" {
+		return fmt.Errorf("litellm: DeleteTeam: empty team_id")
+	}
+	_, err := c.makeRequest(ctx, "POST", "/team/delete", map[string]any{"team_ids": []string{teamID}})
+	return err
+}
+
+// GetTeamInfo issues GET /team/info?team_id=<id>.
+//
+// This is the ONLY LiteLLM read that resolves a team's object_permission: the
+// list endpoints (/v2/team/list, /team/list) omit the relation and serialise
+// it as null, carrying only object_permission_id. Shell-team drift detection
+// therefore cannot use the list pass.
+//
+// LiteLLM nests the team under "team_info"; the flat form is accepted too so a
+// version difference degrades to "no drift detected" instead of a decode error.
+func (c *RESTClient) GetTeamInfo(ctx context.Context, teamID string) (*TeamListEntry, error) {
+	if teamID == "" {
+		return nil, fmt.Errorf("litellm: GetTeamInfo: empty team_id")
+	}
+	raw, err := c.makeRequest(ctx, "GET", "/team/info?team_id="+url.QueryEscape(teamID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		TeamInfo *TeamListEntry `json:"team_info"`
+	}
+	if uerr := json.Unmarshal(raw, &envelope); uerr == nil && envelope.TeamInfo != nil {
+		return envelope.TeamInfo, nil
+	}
+	var flat TeamListEntry
+	if uerr := json.Unmarshal(raw, &flat); uerr != nil {
+		return nil, fmt.Errorf("litellm: decode GET /team/info: %w", uerr)
+	}
+	return &flat, nil
+}
