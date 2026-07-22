@@ -356,11 +356,12 @@ func TestReconcileDeletionOrder(t *testing.T) {
 		t.Fatalf("reconcileDeletion: %v", err)
 	}
 
-	// Exact order: both RevokeKey calls (one per seeded key row), then
-	// DeleteAccessGroup, then DeleteTeam. deleteShellTeam's ListTeamsByAlias
-	// lookup and DeleteTag are not recorded into fake.order, so this is the
-	// full recording for the run.
-	wantOrder := []string{"RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteTeam"}
+	// Exact order: both RevokeKey calls (one per seeded key row), then TWO
+	// DeleteAccessGroup calls (canonical ach-<env> name, then the legacy
+	// <env> name — both idempotent, see Task 4), then DeleteTeam.
+	// deleteShellTeam's ListTeamsByAlias lookup and DeleteTag are not
+	// recorded into fake.order, so this is the full recording for the run.
+	wantOrder := []string{"RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteTeam"}
 	if !slices.Equal(fake.order, wantOrder) {
 		t.Fatalf("call order = %v, want %v", fake.order, wantOrder)
 	}

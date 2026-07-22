@@ -115,12 +115,12 @@ func assertDemoShellTeamWiredInLiteLLM(t *testing.T) {
 		t.Fatalf("shell team %s object_permission.mcp_servers = %v, want empty", alias, info.ObjectPermission.MCPServers)
 	}
 
-	ag, err := client.GetAccessGroupByName(ctx, "demo")
+	ag, err := client.GetAccessGroupByName(ctx, litellm.AccessGroupName("demo"))
 	if err != nil {
-		t.Fatalf("GetAccessGroupByName(demo): %v", err)
+		t.Fatalf("GetAccessGroupByName(%s): %v", litellm.AccessGroupName("demo"), err)
 	}
 	if ag == nil {
-		t.Fatal("GetAccessGroupByName(demo) returned nil — access group not found")
+		t.Fatalf("GetAccessGroupByName(%s) returned nil — access group not found", litellm.AccessGroupName("demo"))
 	}
 	if !slices.Contains(info.AccessGroupIDs, ag.AccessGroupID) {
 		t.Fatalf("shell team %s access_group_ids = %v, want to contain the demo access group id %s",
@@ -234,12 +234,12 @@ func TestAccessGroupSynced_PkUserShell_ReachesEntitlements(t *testing.T) {
 		t.Fatalf("kubectl annotate environment/demo: %v\n%s", aerr, out)
 	}
 
-	ag, err := client.GetAccessGroupByName(ctx, "demo")
+	ag, err := client.GetAccessGroupByName(ctx, litellm.AccessGroupName("demo"))
 	if err != nil {
-		t.Fatalf("GetAccessGroupByName(demo): %v", err)
+		t.Fatalf("GetAccessGroupByName(%s): %v", litellm.AccessGroupName("demo"), err)
 	}
 	if ag == nil {
-		t.Fatal("GetAccessGroupByName(demo) returned nil — access group not found")
+		t.Fatalf("GetAccessGroupByName(%s) returned nil — access group not found", litellm.AccessGroupName("demo"))
 	}
 
 	var info *litellm.TeamListEntry

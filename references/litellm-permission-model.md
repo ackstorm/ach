@@ -157,6 +157,13 @@ the team model-access path — which is why ACH uses an impossible model name.
 
 - `ek_` keys are minted with `team_id: ach-env-<environment>` and NOTHING else —
   no `models`, no `object_permission`, no `access_group_ids`.
+- `ek_` expiry is a deliberate decision, not an oversight: no `Duration` is set
+  on mint, so the key never expires — its lifetime is the Environment's. It is
+  revoked only by explicit `DELETE /platform/keys/{id}` or by deleting the
+  Environment (the shell-team delete cascades to its keys). This is the
+  opposite of `pk_` below (168h sliding window, re-minted on every SSO login)
+  because an `ek_` has no renewal path — a finite window with no re-mint would
+  silently break long-running agents once it elapsed.
 - The environment's grants live only in the access group; the shell team is
   constant boilerplate, identical for every environment.
 - `pk_` keys are now minted with `team_id: ach-user-<email>` — a

@@ -520,8 +520,15 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.revokeEnvironmentKeys(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 1 revokeEnvironmentKeys: %w", err)
 	}
-	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+	// Delete the canonical ach-<env> group and, for safety, the legacy
+	// unprefixed <env> group in case the self-migration rename never ran on
+	// this Environment before deletion. Both are idempotent (absent = success),
+	// so the second call is a cheap no-op once migration has happened.
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, litellm.AccessGroupName(env.Name)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup: %w", err)
+	}
+	if err := r.LiteLLM.DeleteAccessGroup(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 2 DeleteAccessGroup(legacy): %w", err)
 	}
 	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)
@@ -811,10 +818,23 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 		}
 	}
 
-	// Step 2: discover whether the access group already exists.
-	existing, gerr := r.LiteLLM.GetAccessGroupByName(ctx, env.Name)
+	// Step 2: discover whether the access group already exists. Look up the
+	// canonical ach-<env> name first; on a miss, fall back to the legacy
+	// unprefixed <env> name. A hit on the fallback is adopted BY ID here and
+	// renamed in place by the drift PUT below (PUT keeps id + assigned_team_ids,
+	// so no key ever loses its grants). Self-migrating — the fallback lookup can
+	// be dropped a version after all groups carry the prefix.
+	desiredName := litellm.AccessGroupName(env.Name)
+	existing, gerr := r.LiteLLM.GetAccessGroupByName(ctx, desiredName)
 	if gerr != nil {
 		return resolveFailed(env, "GetAccessGroupByName", gerr)
+	}
+	if existing == nil {
+		legacy, lerr := r.LiteLLM.GetAccessGroupByName(ctx, env.Name)
+		if lerr != nil {
+			return resolveFailed(env, "GetAccessGroupByName(legacy)", lerr)
+		}
+		existing = legacy // nil ⇒ genuine create; non-nil ⇒ rename in place
 	}
 
 	desiredModels := env.Spec.Runtime.Models
@@ -825,7 +845,7 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// Step 3a: POST when absent.
 	if existing == nil {
 		created, cerr := r.LiteLLM.CreateAccessGroup(ctx, litellm.AccessGroupCreateRequest{
-			AccessGroupName:    env.Name,
+			AccessGroupName:    desiredName,
 			AccessModelNames:   desiredModels,
 			AccessMCPServerIDs: mcpIDs,
 			AccessAgentIDs:     agentIDs,
@@ -842,13 +862,13 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 				LastTransitionTime: metav1.Now(),
 			}
 		}
-		logger.Info("created access group", "name", env.Name, "id", created.AccessGroupID)
+		logger.Info("created access group", "name", desiredName, "id", created.AccessGroupID)
 		return accessGroupSyncedCondition(env, created)
 	}
 
 	// Step 3b: PUT when drifted.
-	if computeAccessGroupDrift(existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups) {
-		return r.repairAccessGroup(ctx, env, existing, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups, logger)
+	if computeAccessGroupDrift(existing, desiredName, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups) {
+		return r.repairAccessGroup(ctx, env, existing, desiredName, desiredModels, mcpIDs, agentIDs, teamIDs, teamAccessGroups, logger)
 	}
 	r.mirrorUnconverged.Delete(env.Namespace + "/" + env.Name)
 
@@ -868,6 +888,7 @@ func (r *EnvironmentReconciler) repairAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
 	existing *litellm.AccessGroupResponse,
+	desiredName string,
 	desiredModels, mcpIDs, agentIDs, teamIDs []string,
 	teamAccessGroups map[string][]string,
 	logger logr.Logger,
@@ -911,12 +932,21 @@ func (r *EnvironmentReconciler) repairAccessGroup(
 
 	// Final PUT: the desired state. When mirrorNeeded was false this
 	// is the ordinary single-PUT drift correction, unchanged.
-	updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, litellm.AccessGroupUpdateRequest{
+	// The final PUT is authoritative and always runs, so the rename lands
+	// here. Sending access_group_name only when it differs keeps every other
+	// reconcile a pure-bindings update (the reconciler is otherwise not a name
+	// writer). PUT keeps id + assigned_team_ids, so the rename is grant-safe.
+	updateReq := litellm.AccessGroupUpdateRequest{
 		AccessModelNames:   desiredModels,
 		AccessMCPServerIDs: mcpIDs,
 		AccessAgentIDs:     agentIDs,
 		AssignedTeamIDs:    teamIDs,
-	})
+	}
+	if existing.AccessGroupName != desiredName {
+		name := desiredName
+		updateReq.AccessGroupName = &name
+	}
+	updated, uerr := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, updateReq)
 	if uerr != nil {
 		logger.Error(uerr, "PUT /v1/access_group/{id} failed", "id", existing.AccessGroupID)
 		return metav1.Condition{
@@ -1097,9 +1127,13 @@ func mirrorRepairStep(groupID string, teams []string, teamAccessGroups map[strin
 // all — an alias-filtered lookup can never see a team outside the spec.
 func computeAccessGroupDrift(
 	existing *litellm.AccessGroupResponse,
+	desiredName string,
 	models, mcps, agents, teams []string,
 	teamAccessGroups map[string][]string,
 ) bool {
+	if existing.AccessGroupName != desiredName {
+		return true // migration: a legacy <env>-named group must be renamed
+	}
 	if !sameSet(existing.AccessModelNames, models) ||
 		!sameSet(existing.AccessMCPServerIDs, mcps) ||
 		!sameSet(existing.AccessAgentIDs, agents) ||

@@ -80,11 +80,14 @@ type countingNoopClient struct {
 	accessGroup *accessGroupFakeImpl
 }
 
-// DeleteAccessGroup increments the counter and delegates to the embedded
-// NoopClient (which logs and returns nil).
+// DeleteAccessGroup increments the counter and routes to the per-suite fake
+// (mirroring DeleteAccessGroupByID below) so a finalizer spec driven through
+// the envtest manager can assert the fake's stored state post-delete, not
+// just the call count. Pre-Task-4 this delegated to the embedded NoopClient
+// (log + nil) instead, silently bypassing accessGroupFake.stored.
 func (c *countingNoopClient) DeleteAccessGroup(ctx context.Context, name string) error {
 	c.counter.Add(1)
-	return c.NoopClient.DeleteAccessGroup(ctx, name)
+	return c.accessGroup.DeleteAccessGroup(ctx, name)
 }
 
 // DeleteTag increments the counter and delegates to the embedded

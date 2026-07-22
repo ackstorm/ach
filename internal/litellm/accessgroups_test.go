@@ -262,3 +262,12 @@ func TestDeleteAccessGroup_AbsentName_NoDelete(t *testing.T) {
 		t.Errorf("DELETE must NOT fire when name is absent")
 	}
 }
+
+func TestAccessGroupName(t *testing.T) {
+	if got := AccessGroupName("platform"); got != "ach-platform" {
+		t.Errorf("AccessGroupName(platform) = %q; want ach-platform", got)
+	}
+	if AccessGroupPrefix != "ach-" {
+		t.Errorf("AccessGroupPrefix = %q; want ach-", AccessGroupPrefix)
+	}
+}
