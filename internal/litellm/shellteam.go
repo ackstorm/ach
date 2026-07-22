@@ -2,7 +2,10 @@
 
 package litellm
 
-import "slices"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // The per-Environment deny-all SHELL TEAM is the ceiling on an Environment
 // Key. LiteLLM access groups only ever ADD permissions — a team is the only
@@ -26,7 +29,32 @@ const (
 	// `agents` list means every agent, so the list carries the nil UUID.
 	// alitellm-operator applies the same sentinel to its teams.
 	ShellTeamDenyAllAgent = "00000000-0000-0000-0000-000000000000"
+
+	// ShellTeamManagedMetadataKey / ShellTeamManagedMetadataValue mark a
+	// team as an ACH-owned shell in its `metadata` bag. Without this, ANY
+	// team that happens to carry a shell's alias looks like ACH's own —
+	// ensureShellTeam would UpdateTeam it (overwriting models/
+	// object_permission) and deleteShellTeam would later DeleteTeam it,
+	// which CASCADES to that team's keys. The marker is the proof of
+	// ownership those two functions require before touching a team.
+	ShellTeamManagedMetadataKey   = "ach_managed"
+	ShellTeamManagedMetadataValue = "env-shell"
+	// ShellTeamManagedEnvKey names the companion metadata entry carrying
+	// which Environment a shell team belongs to.
+	ShellTeamManagedEnvKey = "ach_environment"
 )
+
+// ShellTeamMetadata is the ownership metadata bag stamped on an
+// Environment's shell team at create time (NewShellTeamRequest) and
+// re-asserted on every repair (environment_shellteam.go's ensureShellTeam),
+// so a shell can always be told apart from a same-alias team ACH did not
+// create.
+func ShellTeamMetadata(env string) map[string]any {
+	return map[string]any{
+		ShellTeamManagedMetadataKey: ShellTeamManagedMetadataValue,
+		ShellTeamManagedEnvKey:      env,
+	}
+}
 
 // ShellTeamAlias is the LiteLLM team alias for an Environment's shell team.
 func ShellTeamAlias(env string) string { return ShellTeamPrefix + env }
@@ -49,7 +77,36 @@ func NewShellTeamRequest(env string) *NewTeamRequest {
 		TeamAlias:        ShellTeamAlias(env),
 		Models:           []string{ShellTeamDenyAllModel},
 		ObjectPermission: ShellTeamPermissions(),
+		Metadata:         ShellTeamMetadata(env),
 	}
+}
+
+// IsShellTeamManaged reports whether e's metadata carries the ACH shell-team
+// ownership marker for env. Absent or unparseable metadata is NOT managed —
+// fail safe, so callers refuse to touch a team they cannot prove they own.
+func IsShellTeamManaged(e TeamListEntry, env string) bool {
+	if len(e.Metadata) == 0 {
+		return false
+	}
+	var meta map[string]string
+	if err := json.Unmarshal(e.Metadata, &meta); err != nil {
+		return false
+	}
+	return meta[ShellTeamManagedMetadataKey] == ShellTeamManagedMetadataValue &&
+		meta[ShellTeamManagedEnvKey] == env
+}
+
+// IsShellTeamShaped reports whether e already carries a shell team's alias
+// and deny-all Models sentinel for env, independent of ownership metadata.
+//
+// This is the migration path for shells created before
+// ShellTeamManagedMetadataKey existed: they carry no metadata, but landing
+// on exactly this alias with exactly the deny-all sentinel is not a state an
+// unrelated hand-made team would plausibly be in. ensureShellTeam treats a
+// shell-shaped-but-unmarked team as adoptable (repairs it, which also stamps
+// the metadata) instead of refusing it forever.
+func IsShellTeamShaped(e TeamListEntry, env string) bool {
+	return e.TeamAlias == ShellTeamAlias(env) && slices.Equal(e.Models, []string{ShellTeamDenyAllModel})
 }
 
 // ShellTeamDrifted reports whether a shell team read back from LiteLLM has

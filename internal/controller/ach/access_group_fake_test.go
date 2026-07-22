@@ -61,6 +61,13 @@ type accessGroupFakeImpl struct {
 	lastTeamCreate  map[string]litellm.NewTeamRequest
 	teamCreateErr   error
 
+	// teamUpdateResult, when non-nil, is returned by UpdateTeam VERBATIM
+	// instead of the post-write entry state — models a LiteLLM whose POST
+	// /team/update 200s without actually applying the write (Fix 1: the
+	// caller must re-verify the response rather than trusting the status
+	// code).
+	teamUpdateResult *litellm.TeamListEntry
+
 	// order records the method-name call sequence across CreateTeam /
 	// UpdateTeam / DeleteTeam / DeleteAccessGroup / RevokeKey — the
 	// TestReconcileDeletionOrder assertion that ek_ revoke + access-group
@@ -127,6 +134,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.teamDeleteCalls = map[string]int{}
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
 	f.teamCreateErr = nil
+	f.teamUpdateResult = nil
 	f.order = nil
 }
 
@@ -369,6 +377,7 @@ func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeam
 		TeamAlias:        req.TeamAlias,
 		Models:           req.Models,
 		ObjectPermission: req.ObjectPermission,
+		Metadata:         marshalTeamMetadata(req.Metadata),
 	}
 	f.teamsByID[id] = entry
 	f.teamsByAlias[req.TeamAlias] = []litellm.TeamListEntry{entry}
@@ -384,11 +393,33 @@ func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpd
 	entry.TeamID = req.TeamID
 	entry.Models = req.Models
 	entry.ObjectPermission = req.ObjectPermission
+	if req.Metadata != nil {
+		entry.Metadata = marshalTeamMetadata(req.Metadata)
+	}
 	f.teamsByID[req.TeamID] = entry
 	if entry.TeamAlias != "" {
 		f.teamsByAlias[entry.TeamAlias] = []litellm.TeamListEntry{entry}
 	}
-	return &entry, nil
+	if f.teamUpdateResult != nil {
+		out := *f.teamUpdateResult
+		return &out, nil
+	}
+	out := entry
+	return &out, nil
+}
+
+// marshalTeamMetadata mirrors how the real RESTClient receives metadata back
+// from LiteLLM: ACH sends a map[string]any on the request, LiteLLM echoes it
+// as the TeamListEntry.Metadata json.RawMessage on read-back.
+func marshalTeamMetadata(m map[string]any) json.RawMessage {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return raw
 }
 
 func (f *accessGroupFakeImpl) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {

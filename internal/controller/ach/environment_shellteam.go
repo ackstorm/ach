@@ -58,15 +58,69 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 	if ierr != nil {
 		return "", fmt.Errorf("read shell team %s: %w", alias, ierr)
 	}
-	if info != nil && litellm.ShellTeamDrifted(*info) {
-		if _, err := r.LiteLLM.UpdateTeam(ctx, &litellm.TeamUpdateRequest{
+	if info == nil {
+		return existingID, nil
+	}
+
+	// Ownership gate (fix: same-alias team adoption). ensureShellTeam used to
+	// treat ANY team aliased ach-env-<name> as its own — it would UpdateTeam
+	// it (overwriting models/object_permission) and deleteShellTeam would
+	// later DeleteTeam it, which CASCADES to that team's keys. That is
+	// catastrophic if the alias is ever shared by a team an admin created by
+	// hand. Metadata stamped at CreateTeam time (litellm.ShellTeamMetadata)
+	// is the proof of ownership; only a marked team is touched.
+	//
+	// Migration: shells this branch created BEFORE this metadata existed
+	// (including every shell already running in the cluster today) carry
+	// none, so a strict "managed only" check would strand them as
+	// unmanaged forever. Those shells are still unambiguously recognizable
+	// by SHAPE — alias ach-env-<env> together with the exact deny-all
+	// Models sentinel is not a state an unrelated hand-made team would
+	// plausibly land in by chance — so a shell missing ONLY the metadata is
+	// adopted: the repair write below re-asserts the sentinels AND stamps
+	// the metadata, and every following pass then sees it as managed. A
+	// team that is neither marked NOR shell-shaped could be anything, so it
+	// is refused outright — loud beats a silent takeover.
+	managed := litellm.IsShellTeamManaged(*info, env.Name)
+	if !managed && !litellm.IsShellTeamShaped(*info, env.Name) {
+		return "", fmt.Errorf(
+			"shell team %s (id=%s) is not ACH-managed: refusing to update or delete a team ACH did not create",
+			alias, existingID,
+		)
+	}
+
+	if drifted := litellm.ShellTeamDrifted(*info); drifted || !managed {
+		resp, err := r.LiteLLM.UpdateTeam(ctx, &litellm.TeamUpdateRequest{
 			TeamID:           existingID,
 			Models:           []string{litellm.ShellTeamDenyAllModel},
 			ObjectPermission: litellm.ShellTeamPermissions(),
-		}); err != nil {
+			Metadata:         litellm.ShellTeamMetadata(env.Name),
+		})
+		if err != nil {
 			return "", fmt.Errorf("repair shell team %s: %w", alias, err)
 		}
-		logger.Info("repaired shell team sentinels", "alias", alias, "id", existingID)
+		// POST /team/update returns the applied state inline (unlike the
+		// list endpoints) — re-check it instead of trusting the 200. A
+		// LiteLLM that accepts the write but does not apply it would
+		// otherwise leave the Environment reporting AccessGroupSynced=True
+		// over a fail-open shell forever, silently.
+		if resp != nil && litellm.ShellTeamDrifted(*resp) {
+			return "", fmt.Errorf("repair shell team %s: sentinels still drifted after update", alias)
+		}
+		if !managed {
+			logger.Info("adopted pre-existing shell-shaped team lacking ownership metadata", "alias", alias, "id", existingID)
+		} else {
+			logger.Info("repaired shell team sentinels", "alias", alias, "id", existingID)
+		}
+	} else if info.Models == nil && info.ObjectPermission == nil {
+		// GetTeamInfo is documented as the one read that always resolves
+		// object_permission (references/litellm-permission-model.md §9); a
+		// response carrying neither field would mean a LiteLLM version that
+		// stopped doing so. ShellTeamDrifted correctly refuses to report
+		// that as drift (it can't tell fail-open from unresolved), but with
+		// no log line here that silently leaves the shell permanently
+		// unverified — this is the one signal an operator would have.
+		logger.Info("shell team sentinels unverifiable from read-back; GetTeamInfo returned neither models nor object_permission", "alias", alias, "id", existingID)
 	}
 	return existingID, nil
 }
@@ -87,6 +141,19 @@ func (r *EnvironmentReconciler) deleteShellTeam(
 	}
 	for _, t := range teams {
 		if t.TeamID == "" {
+			continue
+		}
+		// DeleteTeam CASCADES to the team's keys (see the doc comment on
+		// litellm.RESTClient.DeleteTeam) — refuse to delete a same-alias
+		// team that isn't proven ACH-managed. Unlike ensureShellTeam, there
+		// is no shape-based adoption fallback here: by the time an
+		// Environment is deleted, ensureShellTeam has run at least once
+		// during its lifetime and already stamped the metadata onto any
+		// adoptable shell, so an unmarked team seen here is genuinely
+		// unrecognized rather than mid-migration.
+		if !litellm.IsShellTeamManaged(t, env.Name) {
+			logger.Info("skipping delete: team is not ACH-managed for this environment",
+				"alias", alias, "id", t.TeamID)
 			continue
 		}
 		if derr := r.LiteLLM.DeleteTeam(ctx, t.TeamID); derr != nil {
@@ -118,6 +185,17 @@ func (r *EnvironmentReconciler) revokeEnvironmentKeys(
 	if r.DB == nil {
 		return nil
 	}
+	// ponytail: ONE pass over active rows, unlike the sibling drainEkRows
+	// loop below in the deletion sequence (a key can be INSERTed while
+	// deletion is in progress here too). A key inserted after this SELECT
+	// gets its DB row unconditionally flipped to 'revoked' by drainEkRows
+	// later, but is never RevokeKey'd in LiteLLM by THIS function — it is
+	// cleaned up only by the shell-team delete cascade (with LiteLLM's
+	// ~60s key-cache window) or by the orphan reconciler afterwards. Upgrade
+	// to a drainEkRows-style reselect-until-converged loop here if that
+	// window ever proves too wide in practice; the revoke MUST still run
+	// (and re-run) strictly before DeleteAccessGroup/deleteShellTeam, so
+	// don't just move this pass later in the sequence instead.
 	rows, err := r.DB.Query(ctx,
 		`SELECT key_id, litellm_token FROM environment_keys
 		  WHERE environment=$1 AND status='active' AND litellm_token IS NOT NULL`,

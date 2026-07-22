@@ -4,6 +4,7 @@ package ach
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -16,6 +17,18 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/litellm"
 )
+
+// shellTeamMetadataJSON marshals the same ownership metadata
+// litellm.ShellTeamMetadata produces, for seeding a fake TeamListEntry as
+// already ACH-managed.
+func shellTeamMetadataJSON(t *testing.T, env string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(litellm.ShellTeamMetadata(env))
+	if err != nil {
+		t.Fatalf("marshal shell team metadata: %v", err)
+	}
+	return raw
+}
 
 // TestEnsureShellTeamCreatesWithSentinels: absent shell → one POST /team/new
 // carrying both sentinels, and the returned id is the created team's.
@@ -52,6 +65,7 @@ func TestEnsureShellTeamIsIdempotent(t *testing.T) {
 		TeamAlias:        "ach-env-demo",
 		Models:           []string{litellm.ShellTeamDenyAllModel},
 		ObjectPermission: litellm.ShellTeamPermissions(),
+		Metadata:         shellTeamMetadataJSON(t, "demo"),
 	}
 	r := &EnvironmentReconciler{LiteLLM: fake}
 	env := &achv1alpha1.Environment{}
@@ -79,6 +93,7 @@ func TestEnsureShellTeamRepairsDrift(t *testing.T) {
 		TeamAlias:        "ach-env-demo",
 		Models:           []string{},
 		ObjectPermission: &litellm.TeamObjectPermission{Agents: []string{}},
+		Metadata:         shellTeamMetadataJSON(t, "demo"),
 	}
 	r := &EnvironmentReconciler{LiteLLM: fake}
 	env := &achv1alpha1.Environment{}
@@ -96,6 +111,125 @@ func TestEnsureShellTeamRepairsDrift(t *testing.T) {
 	}
 	if got.ObjectPermission == nil || len(got.ObjectPermission.Agents) != 1 {
 		t.Fatalf("repaired ObjectPermission = %+v", got.ObjectPermission)
+	}
+}
+
+// TestEnsureShellTeamRepairVerifiesResponse is Fix 1's load-bearing test: a
+// POST /team/update that 200s WITHOUT actually applying the sentinels must
+// not be reported as a successful repair. UpdateTeam's response carries
+// object_permission inline (unlike the list endpoints), so ensureShellTeam
+// must re-check it instead of trusting the status code.
+func TestEnsureShellTeamRepairVerifiesResponse(t *testing.T) {
+	fake := newAccessGroupFake()
+	fake.teamsByID["t-drifted"] = litellm.TeamListEntry{
+		TeamID:           "t-drifted",
+		TeamAlias:        "ach-env-demo",
+		Models:           []string{},
+		ObjectPermission: &litellm.TeamObjectPermission{Agents: []string{}},
+		Metadata:         shellTeamMetadataJSON(t, "demo"),
+	}
+	// The response LiteLLM hands back is STILL drifted despite the request —
+	// models a write that 200s but never actually applied.
+	fake.teamUpdateResult = &litellm.TeamListEntry{
+		TeamID:           "t-drifted",
+		TeamAlias:        "ach-env-demo",
+		Models:           []string{},
+		ObjectPermission: &litellm.TeamObjectPermission{Agents: []string{}},
+	}
+	r := &EnvironmentReconciler{LiteLLM: fake}
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	if _, err := r.ensureShellTeam(context.Background(), env, "t-drifted", logr.Discard()); err == nil {
+		t.Fatal("ensureShellTeam: want error when the repair response is still drifted, got nil")
+	}
+	if fake.teamUpdateCalls["t-drifted"] != 1 {
+		t.Fatalf("UpdateTeam calls = %d, want 1", fake.teamUpdateCalls["t-drifted"])
+	}
+}
+
+// TestEnsureShellTeamAdoptsUnmarkedShellShaped is Fix 2's migration-path
+// test: a shell created before ownership metadata existed (every shell in
+// the running kind cluster today) carries none, but its alias and deny-all
+// Models sentinel are unmistakably shell-shaped. It must be adopted — a
+// repair write that ALSO stamps the metadata — rather than refused forever.
+func TestEnsureShellTeamAdoptsUnmarkedShellShaped(t *testing.T) {
+	fake := newAccessGroupFake()
+	fake.teamsByID["t-premigration"] = litellm.TeamListEntry{
+		TeamID:           "t-premigration",
+		TeamAlias:        "ach-env-demo",
+		Models:           []string{litellm.ShellTeamDenyAllModel},
+		ObjectPermission: litellm.ShellTeamPermissions(),
+		// No Metadata — the pre-Fix-2 state.
+	}
+	r := &EnvironmentReconciler{LiteLLM: fake}
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	id, err := r.ensureShellTeam(context.Background(), env, "t-premigration", logr.Discard())
+	if err != nil {
+		t.Fatalf("ensureShellTeam: want adoption to succeed, got error: %v", err)
+	}
+	if id != "t-premigration" {
+		t.Fatalf("team id = %q, want t-premigration", id)
+	}
+	if fake.teamUpdateCalls["t-premigration"] != 1 {
+		t.Fatalf("UpdateTeam calls = %d, want 1 (the adoption stamp)", fake.teamUpdateCalls["t-premigration"])
+	}
+	got := fake.teamsByID["t-premigration"]
+	if !litellm.IsShellTeamManaged(got, "demo") {
+		t.Fatalf("team not marked managed after adoption: metadata = %s", got.Metadata)
+	}
+}
+
+// TestEnsureShellTeamRefusesUnmanagedNonShellShaped is Fix 2's refusal test:
+// a same-alias team that is neither marked ACH-managed NOR shell-shaped
+// could be anything an admin created by hand. ensureShellTeam must refuse to
+// touch it (no UpdateTeam call) rather than silently overwriting its
+// models/object_permission.
+func TestEnsureShellTeamRefusesUnmanagedNonShellShaped(t *testing.T) {
+	fake := newAccessGroupFake()
+	fake.teamsByID["t-foreign"] = litellm.TeamListEntry{
+		TeamID:    "t-foreign",
+		TeamAlias: "ach-env-demo",
+		Models:    []string{"gpt-4"},
+	}
+	r := &EnvironmentReconciler{LiteLLM: fake}
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	if _, err := r.ensureShellTeam(context.Background(), env, "t-foreign", logr.Discard()); err == nil {
+		t.Fatal("ensureShellTeam: want error for an unmanaged, non-shell-shaped team, got nil")
+	}
+	if fake.teamUpdateCalls["t-foreign"] != 0 {
+		t.Fatalf("UpdateTeam calls = %d, want 0 — must never touch an unrecognized team", fake.teamUpdateCalls["t-foreign"])
+	}
+}
+
+// TestDeleteShellTeamSkipsUnmanaged: deleteShellTeam must never DeleteTeam
+// (which CASCADES to that team's keys) a same-alias team it cannot prove it
+// created.
+func TestDeleteShellTeamSkipsUnmanaged(t *testing.T) {
+	fake := newAccessGroupFake()
+	foreign := litellm.TeamListEntry{
+		TeamID:    "t-foreign",
+		TeamAlias: "ach-env-demo",
+		Models:    []string{"gpt-4"},
+	}
+	fake.teamsByAlias["ach-env-demo"] = []litellm.TeamListEntry{foreign}
+	fake.teamsByID["t-foreign"] = foreign
+	r := &EnvironmentReconciler{LiteLLM: fake}
+	env := &achv1alpha1.Environment{}
+	env.Name = "demo"
+
+	if err := r.deleteShellTeam(context.Background(), env, logr.Discard()); err != nil {
+		t.Fatalf("deleteShellTeam: %v", err)
+	}
+	if fake.teamDeleteCalls["t-foreign"] != 0 {
+		t.Fatalf("DeleteTeam calls = %d, want 0 for an unmanaged team", fake.teamDeleteCalls["t-foreign"])
+	}
+	if _, ok := fake.teamsByID["t-foreign"]; !ok {
+		t.Fatal("team was removed from fake state — DeleteTeam must have been skipped, not called")
 	}
 }
 

@@ -133,6 +133,11 @@ type TeamUpdateRequest struct {
 	TeamID           string                `json:"team_id"`
 	Models           []string              `json:"models,omitempty"`
 	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
+	// Metadata mirrors NewTeamRequest.Metadata. ensureShellTeam sends the
+	// shell-team ownership marker (litellm.ShellTeamMetadata) on every
+	// repair so a pre-ownership-metadata shell gets adopted/stamped the
+	// first time it is next touched (references/litellm-permission-model.md).
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.

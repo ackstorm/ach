@@ -772,6 +772,13 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// that list is a whole-list PUT serving both the pk_ path (authorized
 	// teams) and the ek_ path (the shell), so it is always rebuilt as the
 	// union — a spec change to authorizedTeams must never drop the shell.
+	//
+	// byAlias[shellAlias] is resolved from allTeams above, which came from
+	// ListAllTeams — paginated with a hard listAllTeamsPageCap. If the shell
+	// ever falls outside the pages returned (pathological total_pages, or
+	// enough teams to exceed the cap), byAlias misses it and ensureShellTeam
+	// sees existingID=="" and CREATEs a brand-new shell team — a duplicate,
+	// unbounded, every single reconcile.
 	shellAlias := litellm.ShellTeamAlias(env.Name)
 	shellID, sErr := r.ensureShellTeam(ctx, env, byAlias[shellAlias], logger)
 	if sErr != nil {

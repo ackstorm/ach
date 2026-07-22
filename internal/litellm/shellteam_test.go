@@ -2,7 +2,10 @@
 
 package litellm
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestShellTeamAlias(t *testing.T) {
 	if got := ShellTeamAlias("platform"); got != "ach-env-platform" {
@@ -36,6 +39,13 @@ func TestNewShellTeamRequestSentinels(t *testing.T) {
 	}
 	if op.AgentAccessGroups == nil || len(op.AgentAccessGroups) != 0 {
 		t.Fatalf("AgentAccessGroups = %v, want an explicit empty list", op.AgentAccessGroups)
+	}
+	if req.Metadata[ShellTeamManagedMetadataKey] != ShellTeamManagedMetadataValue {
+		t.Fatalf("Metadata[%s] = %v, want %q — a freshly created shell must be marked ACH-managed",
+			ShellTeamManagedMetadataKey, req.Metadata[ShellTeamManagedMetadataKey], ShellTeamManagedMetadataValue)
+	}
+	if req.Metadata[ShellTeamManagedEnvKey] != "demo" {
+		t.Fatalf("Metadata[%s] = %v, want %q", ShellTeamManagedEnvKey, req.Metadata[ShellTeamManagedEnvKey], "demo")
 	}
 }
 
@@ -94,5 +104,56 @@ func TestShellTeamDrifted(t *testing.T) {
 		ObjectPermission: nil,
 	}) {
 		t.Fatal("healthy models with unresolved object_permission reported as drifted")
+	}
+}
+
+// TestIsShellTeamManaged: the Fix 2 ownership gate. Only metadata carrying
+// BOTH the marker key/value AND the matching environment name counts —
+// absent, unparseable, or mismatched metadata must fail safe to "not managed"
+// so ensureShellTeam/deleteShellTeam refuse to touch a team they cannot prove
+// they own.
+func TestIsShellTeamManaged(t *testing.T) {
+	marked := func(env string) []byte {
+		raw, err := json.Marshal(map[string]string{
+			ShellTeamManagedMetadataKey: ShellTeamManagedMetadataValue,
+			ShellTeamManagedEnvKey:      env,
+		})
+		if err != nil {
+			t.Fatalf("marshal metadata: %v", err)
+		}
+		return raw
+	}
+
+	if !IsShellTeamManaged(TeamListEntry{Metadata: marked("demo")}, "demo") {
+		t.Error("correctly-marked entry reported as not managed")
+	}
+	if IsShellTeamManaged(TeamListEntry{}, "demo") {
+		t.Error("absent metadata reported as managed")
+	}
+	if IsShellTeamManaged(TeamListEntry{Metadata: []byte("not json")}, "demo") {
+		t.Error("unparseable metadata reported as managed")
+	}
+	if IsShellTeamManaged(TeamListEntry{Metadata: marked("other-env")}, "demo") {
+		t.Error("metadata marked for a different environment reported as managed")
+	}
+	if IsShellTeamManaged(TeamListEntry{Metadata: []byte(`{"some_other_key":"x"}`)}, "demo") {
+		t.Error("metadata missing the ACH marker reported as managed")
+	}
+}
+
+// TestIsShellTeamShaped: the Fix 2 migration-adoption check — alias plus the
+// exact deny-all Models sentinel, independent of metadata.
+func TestIsShellTeamShaped(t *testing.T) {
+	if !IsShellTeamShaped(TeamListEntry{TeamAlias: "ach-env-demo", Models: []string{ShellTeamDenyAllModel}}, "demo") {
+		t.Error("shell-shaped entry reported as not shaped")
+	}
+	if IsShellTeamShaped(TeamListEntry{TeamAlias: "ach-env-demo", Models: []string{"gpt-4"}}, "demo") {
+		t.Error("a team with a real model granted reported as shaped")
+	}
+	if IsShellTeamShaped(TeamListEntry{TeamAlias: "some-other-alias", Models: []string{ShellTeamDenyAllModel}}, "demo") {
+		t.Error("a different alias reported as shaped")
+	}
+	if IsShellTeamShaped(TeamListEntry{TeamAlias: "ach-env-demo"}, "demo") {
+		t.Error("absent Models (nil, not the sentinel) reported as shaped")
 	}
 }
