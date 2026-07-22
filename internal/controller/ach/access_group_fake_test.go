@@ -233,7 +233,6 @@ func (f *accessGroupFakeImpl) UpdateAccessGroup(_ context.Context, id string, re
 		// UpdateCallsFor(newName) sees this call.
 		f.updateCalls[*req.AccessGroupName] += f.updateCalls[name]
 		f.lastUpdate[*req.AccessGroupName] = req
-		name = *req.AccessGroupName
 	}
 	if req.AccessModelNames != nil {
 		found.AccessModelNames = append([]string{}, req.AccessModelNames...)
