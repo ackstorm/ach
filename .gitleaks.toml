@@ -1,55 +1,48 @@
-# gitleaks v8 config — extends the default ruleset with project-scoped
-# allowlists for synthetic test fixtures and vendored upstream sample tokens.
+# gitleaks v8 config — extends the default ruleset with a project-scoped
+# allowlist for synthetic test fixtures and vendored upstream sample tokens.
 #
-# Surgical scope: the allowlists below cover the exact sample / fixture
-# strings that appear in this repo. Any real-looking secret value WILL
-# still trigger gitleaks regardless of file path.
+# ⚠ SINGULAR [allowlist] ONLY. gitleaks v8.21.2 (pinned in
+# scripts/pre-push-check.sh) honors exactly one top-level [allowlist] table.
+# The array-of-tables form [[allowlists]] is SILENTLY IGNORED by this version
+# — a config written with it scans with NO allowlist at all, and every
+# fixture token false-positives. Do NOT split this back into [[allowlists]]
+# blocks unless you also bump the pinned gitleaks image to a version that
+# honors them (verify with a fixture-token probe against the new image first).
+#
+# Surgical scope: a finding is allowed only if the extracted secret matches
+# one of the fixture SHAPES below (fully anchored) or the file lives in a
+# gitignored cache path. A real-looking secret — an sk- key WITHOUT a
+# fake-marker word, an AWS key, any random high-entropy blob — still fails,
+# and trufflehog's verified-live-secret gate is the second net regardless.
 
 [extend]
 useDefault = true
 
-# Allowlist 1 — fixture / sample token values that appear in tests, docs,
-# and the vendored LiteLLM OpenAPI spec.
-# `regexTarget = "match"` evaluates against the gitleaks-detected match
-# (which includes the secret value), so the strings below catch every
-# occurrence of these literal tokens regardless of file path.
-[[allowlists]]
-description = "Project fixtures + upstream LiteLLM sample tokens"
-regexTarget = "match"
-regexes = [
-    '''sk-1234''',
-    '''sk-test-master-key''',
-    '''sk-wrong-key-tier2''',
-    '''sk-canary-MODEL-LEAK-[0-9]+''',
-]
+[allowlist]
+description = "ACH synthetic fixtures + upstream LiteLLM sample tokens + gitignored caches"
 
-# Allowlist 2 — ACH synthetic fixtures in *_test.go files where the
-# secret value contains an obvious "this is fake" marker
-# (test|canary|example|synthetic|fake|dummy). Real-looking secrets in
-# test files still fail the check.
-#
-# ACH does NOT bundle the upstream LiteLLM OpenAPI spec (alitellm did,
-# under spec/litellm_api.json), so that allowlist is dropped here.
-[[allowlists]]
-description = "ACH synthetic test fixtures"
-condition   = "AND"
-paths = [
-    '''.*_test\.go$''',
-]
-regexTarget = "match"
-regexes = [
-    '''(?i)(test|canary|example|synthetic|fake|dummy)''',
-]
-
-# Allowlist 3 — local Go module cache (.gocache/) and vendor/ are
-# build-time artifacts (gitignored), never committed. With --no-git
-# scans, gitleaks does not consult .gitignore, so explicitly skip them
-# to avoid flagging upstream testdata fixtures (gosec, prometheus,
-# zxcvbn-go test keys, etc.). Git-aware scans (the actual pre-push
-# gate) ignore .gocache/ via .gitignore and never hit these paths.
-[[allowlists]]
-description = "Build-time caches (.gocache/, vendor/) — gitignored"
+# Build-time / scratch paths (gitignored, never committed). The git-history
+# gate never reaches these; they matter only for a developer's --no-git scan.
 paths = [
     '''(^|/)\.gocache/''',
     '''(^|/)vendor/''',
+    '''(^|/)\.superpowers/''',
+]
+
+# Fixture token SHAPES, matched against the extracted secret (default
+# regexTarget), fully anchored so a substring of a real secret cannot slip:
+#   ^sk-1234$                     LiteLLM smoke key
+#   ^sk-…<fake-marker>…$          any LiteLLM virtual key carrying an explicit
+#                                 test/canary/example/fake/dummy/wrong marker;
+#                                 a real leaked key (sk-<random>) has no marker
+#                                 → still caught
+#   ^ach-<identifier>$            ACH access-group / team names (ach-env-<env>,
+#                                 ach-user-<email>, ach-test-env-…) — k8s-style
+#                                 identifiers quoted in code, tests, and docs,
+#                                 never secrets, but long enough to trip the
+#                                 generic-api-key entropy rule
+regexes = [
+    '''^sk-1234$''',
+    '''(?i)^sk-[a-z0-9]*-?(test|canary|example|fake|dummy|wrong)[a-z0-9-]*$''',
+    '''^ach-[a-z0-9-]+$''',
 ]

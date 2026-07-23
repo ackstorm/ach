@@ -101,10 +101,16 @@ else
 fi
 
 # --- 1. gitleaks ---
+# SCAN_ROOT (mounted at /repo) owns the object DB and is scanned, but its
+# .gitleaks.toml is the PRIMARY checkout's — in a linked worktree that is a
+# different, possibly stale copy than the branch being pushed. Mount the
+# invoking worktree's config separately at /gitleaks.toml so the gate always
+# uses the ruleset from the branch it is gating. Outside a worktree
+# REPO_ROOT == SCAN_ROOT, so this is the same file — a no-op.
 hdr "1. gitleaks ($SCAN_LABEL)"
-if docker run --rm -v "$SCAN_ROOT:/repo:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
+if docker run --rm -v "$SCAN_ROOT:/repo:ro" -v "$REPO_ROOT/.gitleaks.toml:/gitleaks.toml:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
      detect --source=/repo --redact --no-banner \
-     --config=/repo/.gitleaks.toml $GITLEAKS_LOG_OPTS; then
+     --config=/gitleaks.toml $GITLEAKS_LOG_OPTS; then
   ok "no leaks detected"
 else
   fail "gitleaks found secrets (see output above)"
