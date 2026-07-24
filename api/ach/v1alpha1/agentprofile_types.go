@@ -17,7 +17,7 @@ type LocalObjectRef struct {
 }
 
 // AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-// BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+// BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
 // operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
 type AchEndpointSpec struct {
 	// +optional
@@ -182,17 +182,21 @@ type PersistenceSpec struct {
 type NetworkPolicySpec struct {
 	// Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1
 	// egress rules, pass-through (same contract as podTemplate: the profile author
-	// already controls spec.image, so no field guardrails here). Empty → DNS only,
+	// already controls spec.achagent.image, so no field guardrails here). Empty → DNS only,
 	// i.e. every other outbound connection is denied.
 	// +optional
 	Egress []networkingv1.NetworkPolicyEgressRule `json:"egress,omitempty"`
 }
 
-// AgentProfileSpec is the reusable infra + defaults half.
+// AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
+// (image/ach/model/engine/limits/health) live under the named achagent block and
+// deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+// everything else here is profile-only infrastructure an agent cannot override.
 type AgentProfileSpec struct {
+	// Achagent holds the agent-overridable defaults. image is required here
+	// (object-level CEL); the other fields are optional defaults.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Image string `json:"image"`
+	Achagent AgentDefaults `json:"achagent"`
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// +optional
@@ -206,18 +210,6 @@ type AgentProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-	// Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the
-	// operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.
-	// +optional
-	Ach AchEndpointSpec `json:"ach,omitempty"`
-	// +optional
-	Model *ModelSpec `json:"model,omitempty"`
-	// +optional
-	Engine *EngineSpec `json:"engine,omitempty"`
-	// +optional
-	Limits *LimitsSpec `json:"limits,omitempty"`
-	// +optional
-	Health *HealthSpec `json:"health,omitempty"`
 	// +optional
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 	// NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
@@ -229,7 +221,7 @@ type AgentProfileSpec struct {
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 	// PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
 	// template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design
-	// (ponytail: no field guardrails — the profile author already controls spec.image, i.e.
+	// (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
 	// everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
 	// (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
 	// extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
@@ -248,9 +240,10 @@ type AgentProfileStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=aprofile
-// +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.image"
+// +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.achagent.image"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="AgentProfile name must be <= 50 chars (operator derives <=63-char child names)"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image) > 0",message="spec.achagent.image is required (nonempty)"
 
 // AgentProfile is the reusable infra + defaults for a class of agents.
 type AgentProfile struct {

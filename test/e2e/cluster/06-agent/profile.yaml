@@ -7,9 +7,10 @@ metadata:
   name: e2e-profile
   namespace: ach-system
 spec:
-  image: ghcr.io/ackstorm/ach-agent:latest
-  ach:
-    baseUrl: http://ach-gateway.ach-system.svc
-  model:
-    name: openai.gpt-5
-    type: openai
+  achagent:
+    image: ghcr.io/ackstorm/ach-agent:latest
+    ach:
+      baseUrl: http://ach-gateway.ach-system.svc
+    model:
+      name: openai.gpt-5
+      type: openai
