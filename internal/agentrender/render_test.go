@@ -570,9 +570,9 @@ func TestRender_NoImage_Errors(t *testing.T) {
 
 func TestRender_AgentEngineAndImageOverride(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
-		Image: "img:profile",
-		Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "u"},
-		Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		Image:  "img:profile",
+		Ach:    &achv1alpha1.AchEndpointSpec{BaseURL: "u"},
+		Model:  &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
 		Engine: &achv1alpha1.EngineSpec{Type: "opencode", ForwardEnv: []string{"HTTPS_PROXY"}},
 	}}}
 	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: achv1alpha1.ACHAgentSpec{

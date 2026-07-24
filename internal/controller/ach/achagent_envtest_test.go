@@ -101,7 +101,7 @@ func TestACHAgent_MissingProfile_ProfileResolvedFalse(t *testing.T) {
 func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-happy", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-happy", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-happy", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-happy", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
@@ -119,7 +119,7 @@ func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 func TestACHAgent_ProfileDeletedAfterApplied_ReadyFlipsFalse(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-regress", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-regress", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}
+	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-regress", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}}
 	mustApply(t, ctx, prof)
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-regress", Namespace: WatchNamespace},
@@ -176,9 +176,11 @@ func TestACHAgent_PodTemplateOverlay_MergesIntoDeployment(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-pt", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Image:       "img:test",
-			Ach:         achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-			Model:       &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test",
+				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			},
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"securityContext":{"fsGroup":1000,"fsGroupChangePolicy":"OnRootMismatch"}}}`)},
 		},
 	})
@@ -216,9 +218,11 @@ func TestACHAgent_PodTemplateOverlay_SetsRuntimeClassName(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-rc", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Image:       "img:test",
-			Ach:         achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-			Model:       &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test",
+				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			},
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"runtimeClassName":"gvisor"}}`)},
 		},
 	})
@@ -252,9 +256,11 @@ func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-ptbad", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Image: "img:test",
-			Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test",
+				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			},
 			// valid JSON (the API server accepts it) but a strategic-merge type mismatch
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"containers":{"not":"a-list"}}}`)},
 		},
@@ -309,7 +315,7 @@ func TestACHAgent_ExposeGatewayRequiresService(t *testing.T) {
 func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-exp", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-exp", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-exp", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
 
 	webhookCh := func() achv1alpha1.ChannelSpec {
 		return achv1alpha1.ChannelSpec{
@@ -375,7 +381,7 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 func TestACHAgent_ExposeServiceDisabled_PrunesService(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-prune", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-prune", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-prune", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
 
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prune", Namespace: WatchNamespace},
@@ -420,7 +426,7 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-mem", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-admin", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("bearer")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-mem", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-mem", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
 
 	memAgent := func(name, secretName string) *achv1alpha1.ACHAgent {
 		return &achv1alpha1.ACHAgent{
@@ -492,9 +498,11 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-np", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Image: "img:test",
-			Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test",
+				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			},
 			NetworkPolicy: &achv1alpha1.NetworkPolicySpec{
 				Egress: []networkingv1.NetworkPolicyEgressRule{{
 					To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/8"}}},
@@ -559,7 +567,7 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 func TestACHAgent_CapabilityOptional(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-nocap", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nocap", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Image: "img:test", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nocap", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
 
 	agent := func(name string, spec map[string]any) *unstructured.Unstructured {
 		spec["profileRef"] = map[string]any{"name": "aa-prof-nocap"}
@@ -581,4 +589,34 @@ func TestACHAgent_CapabilityOptional(t *testing.T) {
 	// unset for an optional field, so this is the same as omitting the key.
 	mustApply(t, ctx, agent("aa-nullcap", map[string]any{"capability": nil}))
 	waitAgentCond(t, ctx, "aa-nullcap", condWorkloadApplied, metav1.ConditionTrue)
+}
+
+// CEL: spec.achagent.image is required (nonempty) on AgentProfile. Two invalid
+// shapes: `achagent: {}` present-but-empty (any typed client), and spec.achagent
+// omitted entirely (only unstructured can produce it — exercises the
+// has(self.spec.achagent) branch + the Required marker).
+func TestAgentProfile_CEL_AchagentImageRequired(t *testing.T) {
+	ctx := context.Background()
+	bad := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-noimg", Namespace: WatchNamespace},
+		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}},
+	}
+	if err := k8sClient.Create(ctx, bad); err == nil {
+		t.Fatal("expected rejection: empty spec.achagent.image (achagent: {})")
+	}
+	u := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{}}}
+	u.SetAPIVersion("ach.ackstorm.ai/v1alpha1")
+	u.SetKind("AgentProfile")
+	u.SetName("aa-prof-noachagent")
+	u.SetNamespace(WatchNamespace)
+	if err := k8sClient.Create(ctx, u); err == nil {
+		t.Fatal("expected rejection: spec.achagent omitted entirely")
+	}
+	good := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-img-ok", Namespace: WatchNamespace},
+		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test"}},
+	}
+	if err := k8sClient.Create(ctx, good); err != nil {
+		t.Fatalf("valid profile rejected: %v", err)
+	}
 }
