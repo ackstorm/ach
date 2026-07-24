@@ -1,0 +1,129 @@
+{
+  "title": "ACH — Control Plane",
+  "uid": "ach-control-plane",
+  "tags": ["ach", "observability"],
+  "schemaVersion": 39,
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(environment_available, namespace)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Environments Available",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(environment_available{namespace=~\"$namespace\"})", "legendFormat": "available" } ],
+      "fieldConfig": { "defaults": { "unit": "none", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Forwarder Requests /s",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "req/s" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "pk_ on Runtime Route /s (should be 0)",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\", key_type=\"pk\", outcome=\"forwarded\"}[5m]))", "legendFormat": "pk fwd/s" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.0001 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Forwarder Request Rate by Outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (outcome) (rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{outcome}}" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Forwarder Latency p95 by Route",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, route) (rate(forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "{{route}}" } ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Content-Service Request Rate by Outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (outcome) (rate(content_service_requests_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{outcome}}" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Content-Service Bytes Served by Kind",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (kind) (rate(content_service_bytes_served_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{kind}}" } ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "LiteLLM Unreachable /s by Caller",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (caller) (rate(litellm_unreachable_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{caller}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "External-Ref Refresh Failures /s by Result",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (result) (rate(operator_external_ref_refresh_total{namespace=~\"$namespace\", result!~\"Synced|not_modified\"}[5m]))", "legendFormat": "{{result}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Key-Resolution Cache Hit Ratio",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) / clamp_min(sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) + sum(rate(key_resolution_cache_misses_total{namespace=~\"$namespace\"}[5m])), 1)", "legendFormat": "hit ratio" } ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Orphan Cleanup /s (revoked + skipped by reason)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(ach_orphan_cleanup_revoked_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "revoked" },
+        { "refId": "B", "expr": "sum by (reason) (rate(ach_orphan_cleanup_skipped_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "skipped:{{reason}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Platform-API Login /s by Outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (outcome) (rate(platform_api_login_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{outcome}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Forwarder JWT Suppressed /s by Reason",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (reason) (rate(forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{reason}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+{
+  "title": "ACH — Agents",
+  "uid": "ach-agents",
+  "tags": ["ach", "observability", "ach-agent"],
+  "schemaVersion": 39,
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(ach_agent_sessions_total, namespace)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "pod",
+        "label": "agent pod",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(ach_agent_sessions_total{namespace=~\"$namespace\"}, pod)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Sessions /s",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(ach_agent_sessions_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "sessions/s" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area" }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Cost (USD, selected range)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__range]))", "legendFormat": "USD" } ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "none", "colorMode": "value" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Tokens /s (in+out)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(ach_agent_turn_tokens_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "tok/s" } ],
+      "fieldConfig": { "defaults": { "unit": "none" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area" }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Degraded Signals /s (any > 0 = investigate)",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(ach_agent_stats_degraded_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(memory_degraded_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(router_persistence_degraded_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(engine_launch_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(engine_watchdog_kills_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "degraded/s" } ],
+      "fieldConfig": { "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.0001 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Turns /s by Model",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (model) (rate(ach_agent_turns_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{model}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Tokens /s by Direction",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (direction) (rate(ach_agent_turn_tokens_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{direction}}" } ],
+      "fieldConfig": { "defaults": { "unit": "none" } }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Turn Duration p50 / p95 by Model",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le, model) (rate(ach_agent_turn_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p50 {{model}}" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le, model) (rate(ach_agent_turn_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p95 {{model}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Tool Calls /s by Status",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (status) (rate(ach_agent_tool_calls_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{status}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Tool Duration p95 by Tool",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, tool) (rate(ach_agent_tool_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "{{tool}}" } ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Inbound Events /s by Channel",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "refId": "A", "expr": "sum by (channel) (rate(channel_inbound_events_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{channel}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Router Drops /s (backpressure / dedup / expire)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(router_backpressure_rejects_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "backpressure_rejects" },
+        { "refId": "B", "expr": "sum(rate(router_dedup_discards_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "dedup_discards" },
+        { "refId": "C", "expr": "sum(rate(router_expire_drops_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "expire_drops" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    }
+  ]
+}
