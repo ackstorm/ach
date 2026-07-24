@@ -32,15 +32,23 @@ in prod has `spec.capability.environment` and `spec.capability.name` **unset**
 (`<none>`), and neither reaches the pod labels or the metrics. There is no way
 to slice cost/traffic/errors by capability or environment today.
 
-**Proposal:**
-1. Operator: copy `capability.name` → pod label `ach.ackstorm.ai/capability`
-   and `capability.environment` → `ach.ackstorm.ai/environment`.
-2. PodMonitor: relabel both into `capability` / `environment` series labels
-   (same mechanism as `agent`, one line each).
+**Proposal (either path — the app path is preferred):**
+- **App-native (preferred):** the agent container already receives the
+  `ACH_ENVIRONMENT` env var (`achagent_workload.go` sets it from
+  `spec.capability.environment`). Have the agent emit `environment` (and
+  `capability`) as a label on every `ach_agent_*` metric, straight from that env
+  var. Grouping/filtering by environment then works with zero relabel config.
+- **Scrape-time:** operator copies `capability.name` / `capability.environment`
+  onto pod labels, and the PodMonitor relabels them into series labels (same
+  one-line mechanism as `agent`).
+
+Either way, the values are only meaningful once agents actually **set**
+`spec.capability.environment` (all prod agents currently leave it empty).
 
 **Why:** unlocks per-capability and per-environment (dev/stage/prod) dashboards,
 alerts, and FinOps chargeback — the "control de capabilities" the dashboards are
-meant to provide.
+meant to provide. This is the direct answer to "should we tag agent metrics with
+environment so we can group by env?" — yes, via `ACH_ENVIRONMENT`.
 
 ## 2. `outcome` label on `ach_agent_sessions_total` — success/error rate
 
@@ -76,30 +84,7 @@ invocations or queued work. Backpressure is only visible after it rejects
 
 **Why:** capacity planning and early backpressure warning before drops happen.
 
-## 5. Normalize the `model` label
-
-**Gap:** the same model appears under two names —
-`gemini-flash-latest` and `gemini.gemini-flash-latest`. This splits every
-per-model series (cost, tokens, turns) into two, so per-model aggregation and
-cost attribution are wrong.
-
-**Proposal:** canonicalize the model identifier at emission (single source of
-truth — strip/keep the provider prefix consistently).
-
-**Why:** correct cost-by-model and latency-by-model; fewer duplicate legend
-entries.
-
-## 6. `cache_write` tokens appear stuck at 0
-
-**Observation:** over 24h, `direction="cache_read"` = ~32.6k tokens (≈64% of all
-tokens — great cache reuse) but `direction="cache_write"` = **0**. Either
-prompt-cache writes genuinely never happen in this window, or the counter is not
-incremented.
-
-**Proposal:** verify the agent increments `cache_write`; if it is never emitted,
-prompt-cache **write** cost is invisible and cache-efficiency math is incomplete.
-
-## 7. `platform_api_login_total` — referenced but never emitted
+## 5. `platform_api_login_total` — referenced but never emitted
 
 **Gap:** the original control-plane dashboard had a "Platform-API Login /s by
 outcome" panel querying `platform_api_login_total`, which **does not exist** in
@@ -110,14 +95,19 @@ dashboard).
 (SSO login observability is security-relevant) or leave the panel out. Currently
 only `platform_api_hydrate_duration_seconds_*` is emitted.
 
-## 8. FinOps: cost attribution labels
+## 6. FinOps: cost attribution labels + verify cost is captured
 
 **Gap:** `ach_agent_turn_cost_usd_total` carries `agent`, `model`, `channel` —
 good — but no `capability`/`environment`/`tenant`. Chargeback per capability or
 tenant is not possible.
 
-**Proposal:** add the labels from #1 to the cost counter (they propagate for
-free once the pod labels exist).
+**Proposal:** add the labels from #1 to the cost counter (they propagate for free
+once the environment/capability labels exist).
+
+**⚠ Under investigation:** agent-reported cost (`ach_agent_turn_cost_usd_total`)
+reads ~$0 while LiteLLM records real spend (`litellm_spend_metric_total`,
+`litellm_total_spend`) for the same calls. The agent's cost accounting appears to
+under-report — tracked separately from this dashboard work.
 
 ---
 
