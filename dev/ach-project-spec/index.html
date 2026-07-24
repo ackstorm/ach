@@ -1426,7 +1426,7 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 </tr>
 <tr>
 <td><code>AgentProfile</code> / <code>ACHAgent</code></td>
-<td>Reusable infra template + agent instance → rendered <code>agent-config-v1</code>; the harness self-hydrates at boot. Explicit, narrow override set (model, limits, ach.baseUrl, health).</td>
+<td>Reusable infra template + agent instance → rendered <code>agent-config-v1</code>; the harness self-hydrates at boot. Profile defaults under <code>spec.achagent</code> (image, ach, model, engine, limits, health) deep-merge per-field with the agent's flat overrides (set agent field wins); infra stays profile-only.</td>
 </tr>
 <tr>
 <td><code>Plugin</code> / <code>PluginMarketplace</code></td>

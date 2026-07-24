@@ -1205,6 +1205,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentdefaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDefaults
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentprofile" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2319,6 +2330,17 @@
     <span class="md-ellipsis">
       
         AchEndpointSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentdefaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDefaults
       
     </span>
   </a>
@@ -3529,32 +3551,44 @@
 <td>Required: {} <br /></td>
 </tr>
 <tr>
-<td><code>capability</code> <em><a href="#capabilityspec">CapabilitySpec</a></em></td>
-<td>Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />ResolveBaseURL, never from here.</td>
+<td><code>image</code> <em>string</em></td>
 <td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>model</code> <em><a href="#modelspec">ModelSpec</a></em></td>
-<td>Model overrides the profile's default model.</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>limits</code> <em><a href="#limitsspec">LimitsSpec</a></em></td>
-<td>Limits overrides the profile's default limits.</td>
 <td></td>
 <td></td>
 </tr>
 <tr>
 <td><code>ach</code> <em><a href="#achendpointspec">AchEndpointSpec</a></em></td>
-<td>Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).<br />Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code> <em><a href="#modelspec">ModelSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>engine</code> <em><a href="#enginespec">EngineSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>limits</code> <em><a href="#limitsspec">LimitsSpec</a></em></td>
+<td></td>
 <td></td>
 <td></td>
 </tr>
 <tr>
 <td><code>health</code> <em><a href="#healthspec">HealthSpec</a></em></td>
-<td>Health overrides the profile's health block (host/port). Drives the config health block,<br />the Service targetPort, and the container probes together — always resolved as one unit.</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>capability</code> <em><a href="#capabilityspec">CapabilitySpec</a></em></td>
+<td>Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here.</td>
 <td></td>
 <td></td>
 </tr>
@@ -3626,8 +3660,37 @@
 </table>
 <h4 id="achendpointspec">AchEndpointSpec<a class="headerlink" href="#achendpointspec" title="Permanent link">&para;</a></h4>
 <p>AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
 operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.</p>
+<p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a>
+- <a href="#agentdefaults">AgentDefaults</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>baseUrl</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="agentdefaults">AgentDefaults<a class="headerlink" href="#agentdefaults" title="Permanent link">&para;</a></h4>
+<p>AgentDefaults is the shared set of profile defaults that an agent may override.
+AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
+type inline. Resolution is a per-field deep merge: a field set on the agent
+wins, while an omitted field inherits from the profile. Slices, maps, and
+nested blocks such as engine.pi are atomic and are not recursively merged.
+The resolvers are the source of truth for this behavior. Image is required on
+the profile, but optional on the agent and inherited when omitted.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentprofilespec">AgentProfileSpec</a></p>
@@ -3642,7 +3705,37 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 </thead>
 <tbody>
 <tr>
-<td><code>baseUrl</code> <em>string</em></td>
+<td><code>image</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ach</code> <em><a href="#achendpointspec">AchEndpointSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code> <em><a href="#modelspec">ModelSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>engine</code> <em><a href="#enginespec">EngineSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>limits</code> <em><a href="#limitsspec">LimitsSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>health</code> <em><a href="#healthspec">HealthSpec</a></em></td>
 <td></td>
 <td></td>
 <td></td>
@@ -3758,7 +3851,10 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 </tbody>
 </table>
 <h4 id="agentprofilespec">AgentProfileSpec<a class="headerlink" href="#agentprofilespec" title="Permanent link">&para;</a></h4>
-<p>AgentProfileSpec is the reusable infra + defaults half.</p>
+<p>AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
+(image/ach/model/engine/limits/health) live under the named achagent block and
+deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+everything else here is profile-only infrastructure an agent cannot override.</p>
 <p><em>Appears in:</em>
 - <a href="#agentprofile">AgentProfile</a></p>
 <table>
@@ -3772,10 +3868,10 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 </thead>
 <tbody>
 <tr>
-<td><code>image</code> <em>string</em></td>
+<td><code>achagent</code> <em><a href="#agentdefaults">AgentDefaults</a></em></td>
+<td>Achagent holds the agent-overridable defaults. image is required here<br />(object-level CEL); the other fields are optional defaults.</td>
 <td></td>
-<td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
+<td>Required: {} <br /></td>
 </tr>
 <tr>
 <td><code>imagePullSecrets</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core">LocalObjectReference</a> array</em></td>
@@ -3808,36 +3904,6 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 <td></td>
 </tr>
 <tr>
-<td><code>ach</code> <em><a href="#achendpointspec">AchEndpointSpec</a></em></td>
-<td>Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the<br />operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>model</code> <em><a href="#modelspec">ModelSpec</a></em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>engine</code> <em><a href="#enginespec">EngineSpec</a></em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>limits</code> <em><a href="#limitsspec">LimitsSpec</a></em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>health</code> <em><a href="#healthspec">HealthSpec</a></em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
 <td><code>persistence</code> <em><a href="#persistencespec">PersistenceSpec</a></em></td>
 <td></td>
 <td></td>
@@ -3857,7 +3923,7 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 </tr>
 <tr>
 <td><code>podTemplate</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
-<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
+<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
 <td></td>
 <td></td>
 </tr>
@@ -4610,7 +4676,8 @@ or marketplace_plugins rows) and are served by the ACH Content Service.</p>
 <p>EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
 (the harness defaults them).</p>
 <p><em>Appears in:</em>
-- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+- <a href="#achagentspec">ACHAgentSpec</a>
+- <a href="#agentdefaults">AgentDefaults</a></p>
 <table>
 <thead>
 <tr>
@@ -5203,7 +5270,7 @@ but the constraint is no longer machine-enforced at admission or fetch.</p>
 Service targetPort and the container probes. Harness default port is 8080.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
-- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+- <a href="#agentdefaults">AgentDefaults</a></p>
 <table>
 <thead>
 <tr>
@@ -5300,7 +5367,7 @@ Service targetPort and the container probes. Harness default port is 8080.</p>
 <p>LimitsSpec bounds invocations (config: limits.*). Unset → harness default.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
-- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+- <a href="#agentdefaults">AgentDefaults</a></p>
 <table>
 <thead>
 <tr>
@@ -5782,7 +5849,7 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <p>ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
-- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+- <a href="#agentdefaults">AgentDefaults</a></p>
 <table>
 <thead>
 <tr>
@@ -5846,7 +5913,7 @@ the DNS rule, and lifecycle (created/pruned/GC'd with the agent).</p>
 <tbody>
 <tr>
 <td><code>egress</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#networkpolicyegressrule-v1-networking">NetworkPolicyEgressRule</a> array</em></td>
-<td>Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1<br />egress rules, pass-through (same contract as podTemplate: the profile author<br />already controls spec.image, so no field guardrails here). Empty → DNS only,<br />i.e. every other outbound connection is denied.</td>
+<td>Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1<br />egress rules, pass-through (same contract as podTemplate: the profile author<br />already controls spec.achagent.image, so no field guardrails here). Empty → DNS only,<br />i.e. every other outbound connection is denied.</td>
 <td></td>
 <td></td>
 </tr>
