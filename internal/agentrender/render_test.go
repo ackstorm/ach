@@ -18,15 +18,17 @@ func rawJSON(s string) *apiextensionsv1.JSON { return &apiextensionsv1.JSON{Raw:
 func TestRender_FullGolden(t *testing.T) {
 	profile := achv1alpha1.AgentProfile{
 		Spec: achv1alpha1.AgentProfileSpec{
-			Image: "ghcr.io/ackstorm/ach-agent:latest",
-			Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach.ackstorm.ai"},
-			Model: &achv1alpha1.ModelSpec{Name: "openai.gpt-5", Type: "openai"},
-			Engine: &achv1alpha1.EngineSpec{
-				Home: "/var/lib/ach-agent/home", ForwardEnv: []string{"HTTPS_PROXY"},
-				IdleTTLSeconds: ptr(int64(30)), StartupTimeoutSeconds: ptr(int64(30)),
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "ghcr.io/ackstorm/ach-agent:latest",
+				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach.ackstorm.ai"},
+				Model: &achv1alpha1.ModelSpec{Name: "openai.gpt-5", Type: "openai"},
+				Engine: &achv1alpha1.EngineSpec{
+					Home: "/var/lib/ach-agent/home", ForwardEnv: []string{"HTTPS_PROXY"},
+					IdleTTLSeconds: ptr(int64(30)), StartupTimeoutSeconds: ptr(int64(30)),
+				},
+				Limits: &achv1alpha1.LimitsSpec{MaxConcurrentInvocations: ptr(int64(8)), MaxSteps: ptr(int64(50))},
+				Health: &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000},
 			},
-			Limits:      &achv1alpha1.LimitsSpec{MaxConcurrentInvocations: ptr(int64(8)), MaxSteps: ptr(int64(50))},
-			Health:      &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000},
 			Persistence: &achv1alpha1.PersistenceSpec{Enabled: true, MountPath: "/var/lib/ach-agent"},
 		},
 	}
@@ -39,7 +41,9 @@ func TestRender_FullGolden(t *testing.T) {
 				Environment: "engineering-prod",
 				Filter:      &achv1alpha1.FilterSpec{Exclude: &achv1alpha1.ExcludeSpec{Skills: []string{"send-email"}}},
 			},
-			Model:  &achv1alpha1.ModelSpec{Name: "openai.gpt-5", Type: "openai", Params: rawJSON(`{"temperature":1}`)},
+			AgentDefaults: achv1alpha1.AgentDefaults{
+				Model: &achv1alpha1.ModelSpec{Name: "openai.gpt-5", Type: "openai", Params: rawJSON(`{"temperature":1}`)},
+			},
 			Prompt: &achv1alpha1.AgentPromptSpec{System: achv1alpha1.PromptSystemSpec{Type: "text", Text: "You are a reviewer."}, Compose: "append"},
 			Channels: []achv1alpha1.ChannelSpec{
 				{
@@ -100,15 +104,15 @@ func TestRender_FullGolden(t *testing.T) {
 }
 
 func TestRender_ModelOverride(t *testing.T) {
-	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Image: "x", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "profile-model", Type: "openai"}}}
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "x", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "profile-model", Type: "openai"}}}}
 	a := achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
-			Model:      &achv1alpha1.ModelSpec{Name: "agent-model", Type: "gemini"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "p"},
+			Identity:      achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+			Capability:    achv1alpha1.CapabilitySpec{Environment: "e"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Model: &achv1alpha1.ModelSpec{Name: "agent-model", Type: "gemini"}},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	}
 	cfg, err := Render(p, a, "")
@@ -121,7 +125,7 @@ func TestRender_ModelOverride(t *testing.T) {
 }
 
 func TestRender_NoModel_Errors(t *testing.T) {
-	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Image: "x", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "u"}}}
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "x", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "u"}}}}
 	a := achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
 		Spec: achv1alpha1.ACHAgentSpec{
@@ -138,19 +142,19 @@ func TestRender_NoModel_Errors(t *testing.T) {
 
 func TestResolveAchBaseURL_Precedence(t *testing.T) {
 	agent := &achv1alpha1.AchEndpointSpec{BaseURL: "https://agent"}
-	profile := achv1alpha1.AchEndpointSpec{BaseURL: "https://profile"}
+	profile := &achv1alpha1.AchEndpointSpec{BaseURL: "https://profile"}
 	cases := []struct {
 		name    string
 		agent   *achv1alpha1.AchEndpointSpec
-		profile achv1alpha1.AchEndpointSpec
+		profile *achv1alpha1.AchEndpointSpec
 		def     string
 		want    string
 	}{
 		{"agent wins", agent, profile, "https://env", "https://agent"},
 		{"profile when no agent block", nil, profile, "https://env", "https://profile"},
 		{"profile when agent block empty", &achv1alpha1.AchEndpointSpec{}, profile, "https://env", "https://profile"},
-		{"env default when both empty", nil, achv1alpha1.AchEndpointSpec{}, "https://env", "https://env"},
-		{"empty when all empty", nil, achv1alpha1.AchEndpointSpec{}, "", ""},
+		{"env default when both empty", nil, nil, "https://env", "https://env"},
+		{"empty when all empty", nil, nil, "", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -161,7 +165,7 @@ func TestResolveAchBaseURL_Precedence(t *testing.T) {
 	}
 }
 
-func TestResolveHealth_AgentOverridesProfileWholeBlock(t *testing.T) {
+func TestResolveHealth_FieldMerge(t *testing.T) {
 	cases := []struct {
 		name     string
 		agent    *achv1alpha1.HealthSpec
@@ -171,9 +175,10 @@ func TestResolveHealth_AgentOverridesProfileWholeBlock(t *testing.T) {
 	}{
 		{"defaults", nil, nil, DefaultHealthHost, DefaultHealthPort},
 		{"profile used when no agent", nil, &achv1alpha1.HealthSpec{Host: "1.2.3.4", Port: 9000}, "1.2.3.4", 9000},
-		// Whole-block replacement (limits precedent): the agent block wins entirely,
-		// so its unset host falls to the DEFAULT — NOT the profile's host.
-		{"agent block replaces profile block", &achv1alpha1.HealthSpec{Port: 9100}, &achv1alpha1.HealthSpec{Host: "1.2.3.4", Port: 9000}, DefaultHealthHost, 9100},
+		// Field-level merge: agent port wins, unset agent host INHERITS the profile's.
+		{"agent port merges over profile host", &achv1alpha1.HealthSpec{Port: 9100}, &achv1alpha1.HealthSpec{Host: "1.2.3.4", Port: 9000}, "1.2.3.4", 9100},
+		{"agent host merges over profile port", &achv1alpha1.HealthSpec{Host: "127.0.0.1"}, &achv1alpha1.HealthSpec{Port: 9000}, "127.0.0.1", 9000},
+		{"agent-only falls to defaults for unset", &achv1alpha1.HealthSpec{Port: 9100}, nil, DefaultHealthHost, 9100},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -186,7 +191,7 @@ func TestResolveHealth_AgentOverridesProfileWholeBlock(t *testing.T) {
 }
 
 func TestRender_BaseURLResolutionAndBlock(t *testing.T) {
-	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Image: "x", Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "x", Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}}
 	a := achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
 		Spec: achv1alpha1.ACHAgentSpec{
@@ -323,8 +328,10 @@ func TestRenderMemory_HindsightRichBlock(t *testing.T) {
 
 func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
-		Image: "x", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
-		Engine: &achv1alpha1.EngineSpec{ForwardEnv: []string{"HTTPS_PROXY", "ACH_SECRET_X_WEBHOOK", "ACH_TOKEN"}},
+		Achagent: achv1alpha1.AgentDefaults{
+			Image: "x", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Engine: &achv1alpha1.EngineSpec{ForwardEnv: []string{"HTTPS_PROXY", "ACH_SECRET_X_WEBHOOK", "ACH_TOKEN"}},
+		},
 	}}
 	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: achv1alpha1.ACHAgentSpec{
 		ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
@@ -416,11 +423,13 @@ func TestRenderEnginePi(t *testing.T) {
 
 func TestRenderModelThinking(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
-		Image: "img",
-		Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-		Model: &achv1alpha1.ModelSpec{
-			Name: "openai.gpt-5", Type: "openai",
-			Thinking: &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"},
+		Achagent: achv1alpha1.AgentDefaults{
+			Image: "img",
+			Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model: &achv1alpha1.ModelSpec{
+				Name: "openai.gpt-5", Type: "openai",
+				Thinking: &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"},
+			},
 		},
 	}}
 	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "t"}}
@@ -435,9 +444,11 @@ func TestRenderModelThinking(t *testing.T) {
 
 func TestRenderModelThinkingAbsent(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
-		Image: "img",
-		Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-		Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		Achagent: achv1alpha1.AgentDefaults{
+			Image: "img",
+			Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		},
 	}}
 	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "t"}}
 	cfg, err := Render(p, a, "")
@@ -446,5 +457,138 @@ func TestRenderModelThinkingAbsent(t *testing.T) {
 	}
 	if cfg.Model.Thinking != nil {
 		t.Fatalf("Model.Thinking = %+v, want nil (omitted from JSON)", cfg.Model.Thinking)
+	}
+}
+
+func TestResolveImage(t *testing.T) {
+	if got := ResolveImage("", "img:profile"); got != "img:profile" {
+		t.Errorf("empty agent image must inherit profile, got %q", got)
+	}
+	if got := ResolveImage("img:agent", "img:profile"); got != "img:agent" {
+		t.Errorf("agent image must win, got %q", got)
+	}
+	if got := ResolveImage("", ""); got != "" {
+		t.Errorf("both empty must resolve empty, got %q", got)
+	}
+}
+
+func TestResolveEngine(t *testing.T) {
+	profile := &achv1alpha1.EngineSpec{
+		Home: "/h", ForwardEnv: []string{"HTTPS_PROXY"},
+		IdleTTLSeconds: ptr(int64(30)), StartupTimeoutSeconds: ptr(int64(600)), Type: "opencode",
+	}
+	t.Run("nil agent inherits profile", func(t *testing.T) {
+		if got := ResolveEngine(nil, profile); got != profile {
+			t.Errorf("ResolveEngine(nil, p) = %+v, want profile", got)
+		}
+	})
+	t.Run("nil profile returns agent", func(t *testing.T) {
+		agent := &achv1alpha1.EngineSpec{Type: "pi"}
+		if got := ResolveEngine(agent, nil); got != agent {
+			t.Errorf("ResolveEngine(a, nil) = %+v, want agent", got)
+		}
+	})
+	t.Run("nil engine on both sides", func(t *testing.T) {
+		if got := ResolveEngine(nil, nil); got != nil {
+			t.Errorf("ResolveEngine(nil, nil) = %+v, want nil", got)
+		}
+	})
+	t.Run("agent type pi inherits profile fields, pi block atomic", func(t *testing.T) {
+		agent := &achv1alpha1.EngineSpec{Type: "pi", Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"}}
+		got := ResolveEngine(agent, profile)
+		if got.Type != "pi" || got.Pi == nil || got.Pi.BinaryPath != "pi" {
+			t.Errorf("agent type/pi must win: %+v", got)
+		}
+		if got.Home != "/h" || len(got.ForwardEnv) != 1 || got.ForwardEnv[0] != "HTTPS_PROXY" {
+			t.Errorf("unset agent fields must inherit profile: %+v", got)
+		}
+		if got.IdleTTLSeconds == nil || *got.IdleTTLSeconds != 30 || got.StartupTimeoutSeconds == nil || *got.StartupTimeoutSeconds != 600 {
+			t.Errorf("pointer fields must inherit profile: %+v", got)
+		}
+	})
+	t.Run("agent forwardEnv replaces atomically", func(t *testing.T) {
+		agent := &achv1alpha1.EngineSpec{ForwardEnv: []string{"NO_PROXY"}}
+		got := ResolveEngine(agent, profile)
+		if len(got.ForwardEnv) != 1 || got.ForwardEnv[0] != "NO_PROXY" {
+			t.Errorf("forwardEnv must replace as a whole: %v", got.ForwardEnv)
+		}
+	})
+}
+
+func TestResolveLimits_FieldMerge(t *testing.T) {
+	profile := &achv1alpha1.LimitsSpec{MaxConcurrentInvocations: ptr(int64(8)), MaxSteps: ptr(int64(50))}
+	agent := &achv1alpha1.LimitsSpec{MaxSteps: ptr(int64(10))}
+	got := ResolveLimits(agent, profile)
+	if got.MaxSteps == nil || *got.MaxSteps != 10 {
+		t.Errorf("agent maxSteps must win: %+v", got)
+	}
+	if got.MaxConcurrentInvocations == nil || *got.MaxConcurrentInvocations != 8 {
+		t.Errorf("unset agent field must inherit profile: %+v", got)
+	}
+	if got := ResolveLimits(nil, profile); got != profile {
+		t.Errorf("nil agent must inherit profile")
+	}
+	if got := ResolveLimits(agent, nil); got != agent {
+		t.Errorf("nil profile must return agent")
+	}
+}
+
+func TestResolveModel_InheritsParams(t *testing.T) {
+	profile := &achv1alpha1.ModelSpec{
+		Name: "openai.gpt-5", Type: "openai",
+		Params:   rawJSON(`{"temperature":1}`),
+		Thinking: &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"},
+	}
+	agent := &achv1alpha1.ModelSpec{Name: "gemini.pro", Type: "gemini"}
+	got := ResolveModel(agent, profile)
+	if got.Name != "gemini.pro" || got.Type != "gemini" {
+		t.Errorf("agent name/type must win: %+v", got)
+	}
+	if got.Params == nil || string(got.Params.Raw) != `{"temperature":1}` {
+		t.Errorf("omitted agent params must inherit profile params: %+v", got.Params)
+	}
+	if got.Thinking == nil || got.Thinking.Effort != "high" {
+		t.Errorf("omitted agent thinking must inherit profile thinking: %+v", got.Thinking)
+	}
+	// Atomic replacement when the agent DOES set params.
+	agent2 := &achv1alpha1.ModelSpec{Name: "m", Type: "openai", Params: rawJSON(`{"top_p":0.5}`)}
+	if got := ResolveModel(agent2, profile); string(got.Params.Raw) != `{"top_p":0.5}` {
+		t.Errorf("agent params must replace as a whole: %s", got.Params.Raw)
+	}
+}
+
+func TestRender_NoImage_Errors(t *testing.T) {
+	// Empty achagent (the live-migration shape of an old stored profile) → clear error.
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
+		Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "u"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+	}}}
+	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "a"}}
+	if _, err := Render(p, a, ""); err == nil {
+		t.Error("expected error when no image resolves")
+	}
+}
+
+func TestRender_AgentEngineAndImageOverride(t *testing.T) {
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
+		Image: "img:profile",
+		Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "u"},
+		Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		Engine: &achv1alpha1.EngineSpec{Type: "opencode", ForwardEnv: []string{"HTTPS_PROXY"}},
+	}}}
+	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: achv1alpha1.ACHAgentSpec{
+		ProfileRef:    achv1alpha1.LocalObjectRef{Name: "p"},
+		Identity:      achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+		AgentDefaults: achv1alpha1.AgentDefaults{Image: "img:agent", Engine: &achv1alpha1.EngineSpec{Type: "pi", Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"}}},
+		Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+	}}
+	cfg, err := Render(p, a, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if cfg.Engine == nil || cfg.Engine.Type != "pi" || cfg.Engine.Pi == nil || cfg.Engine.Pi.BinaryPath != "pi" {
+		t.Errorf("agent engine type/pi must win: %+v", cfg.Engine)
+	}
+	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
+		t.Errorf("rendered engine must inherit profile forwardEnv: %v", cfg.Engine.ForwardEnv)
 	}
 }

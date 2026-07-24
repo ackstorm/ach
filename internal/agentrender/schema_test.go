@@ -88,7 +88,13 @@ type renderCase struct {
 func renderMatrix() map[string]renderCase {
 	base := func(name string, ch []achv1alpha1.ChannelSpec) renderCase {
 		return renderCase{
-			profile: achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Image: "img", Ach: achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}},
+			profile: achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
+				Achagent: achv1alpha1.AgentDefaults{
+					Image: "img",
+					Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+					Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				},
+			}},
 			agent: achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: achv1alpha1.ACHAgentSpec{
 				ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
 				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
@@ -132,13 +138,13 @@ func renderMatrix() map[string]renderCase {
 	memC.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "codemem"}
 	m["memory-codemem-bare"] = memC
 	full := base("full", cron)
-	full.profile.Spec.Engine = &achv1alpha1.EngineSpec{
+	full.profile.Spec.Achagent.Engine = &achv1alpha1.EngineSpec{
 		Home: "/h", ForwardEnv: []string{"HTTPS_PROXY"}, Type: "pi",
 		Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"},
 	}
-	full.profile.Spec.Model.Thinking = &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"}
-	full.profile.Spec.Limits = &achv1alpha1.LimitsSpec{MaxSteps: ptr(int64(50))}
-	full.profile.Spec.Health = &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000}
+	full.profile.Spec.Achagent.Model.Thinking = &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"}
+	full.profile.Spec.Achagent.Limits = &achv1alpha1.LimitsSpec{MaxSteps: ptr(int64(50))}
+	full.profile.Spec.Achagent.Health = &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000}
 	full.profile.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, MountPath: "/var/lib/ach-agent"}
 	full.agent.Spec.Capability.Filter = &achv1alpha1.FilterSpec{Exclude: &achv1alpha1.ExcludeSpec{Skills: []string{"send-email"}}}
 	m["full"] = full

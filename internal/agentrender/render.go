@@ -34,16 +34,16 @@ const (
 // defaults (model, limits, ach.baseUrl, health). Errors only on structurally impossible
 // states (defense in depth behind admission CEL).
 func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL string) (AgentConfig, error) {
-	model := a.Spec.Model
+	model := ResolveModel(a.Spec.Model, p.Spec.Achagent.Model)
 	if model == nil {
-		model = p.Spec.Model
+		return AgentConfig{}, fmt.Errorf("no model: set ACHAgent.spec.model or AgentProfile.spec.achagent.model")
 	}
-	if model == nil {
-		return AgentConfig{}, fmt.Errorf("no model: set ACHAgent.spec.model or AgentProfile.spec.model")
+	if ResolveImage(a.Spec.Image, p.Spec.Achagent.Image) == "" {
+		return AgentConfig{}, fmt.Errorf("no image: set ACHAgent.spec.image or AgentProfile.spec.achagent.image")
 	}
-	baseURL := ResolveAchBaseURL(a.Spec.Ach, p.Spec.Ach, defaultBaseURL)
+	baseURL := ResolveAchBaseURL(a.Spec.Ach, p.Spec.Achagent.Ach, defaultBaseURL)
 	if baseURL == "" {
-		return AgentConfig{}, fmt.Errorf("no ACH base URL: set ACHAgent.spec.ach.baseUrl, AgentProfile.spec.ach.baseUrl, or operator ACH_BASE_URL")
+		return AgentConfig{}, fmt.Errorf("no ACH base URL: set ACHAgent.spec.ach.baseUrl, AgentProfile.spec.achagent.ach.baseUrl, or operator ACH_BASE_URL")
 	}
 	params, err := decodeParams(model.Params)
 	if err != nil {
@@ -63,12 +63,12 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 			Ach:    AchBlock{BaseURL: baseURL, Environment: a.Spec.Capability.Environment},
 			Filter: renderFilter(a.Spec.Capability.Filter),
 		},
-		Engine:      renderEngine(p.Spec.Engine),
+		Engine:      renderEngine(ResolveEngine(a.Spec.Engine, p.Spec.Achagent.Engine)),
 		Prompt:      renderPrompt(a.Spec.Prompt),
 		Memory:      renderMemory(a.Spec.Memory),
-		Limits:      renderLimits(a.Spec.Limits, p.Spec.Limits),
+		Limits:      renderLimits(ResolveLimits(a.Spec.Limits, p.Spec.Achagent.Limits)),
 		Persistence: renderPersistence(p.Spec.Persistence),
-		Health:      renderHealth(a.Spec.Health, p.Spec.Health),
+		Health:      renderHealth(a.Spec.Health, p.Spec.Achagent.Health),
 	}
 	for i := range a.Spec.Channels {
 		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i]))
@@ -287,11 +287,7 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 	return out
 }
 
-func renderLimits(agent, profile *achv1alpha1.LimitsSpec) *LimitsBlock {
-	l := agent
-	if l == nil {
-		l = profile
-	}
+func renderLimits(l *achv1alpha1.LimitsSpec) *LimitsBlock {
 	if l == nil {
 		return nil
 	}
@@ -318,37 +314,146 @@ func renderHealth(agent, profile *achv1alpha1.HealthSpec) *HealthBlock {
 	return &HealthBlock{Host: host, Port: port}
 }
 
-// ResolveHealth is the SINGLE health host/port resolution: agent block overrides
-// profile block (whole-block, matching the limits precedent), then a zero/unset
-// host or port falls back to DefaultHealthHost/Port. The controller MUST use this
-// for the Service targetPort and container probes so they never drift from the
-// rendered config health block.
-func ResolveHealth(agent, profile *achv1alpha1.HealthSpec) (host string, port int32) {
-	h := agent
-	if h == nil {
-		h = profile
+// ResolveImage is the per-agent image resolution: agent wins when set, else the
+// profile's spec.achagent.image. Empty result blocks the agent (Render errors).
+func ResolveImage(agent, profile string) string {
+	if agent != "" {
+		return agent
 	}
+	return profile
+}
+
+// ResolveModel deep-merges the agent model over the profile model per field.
+// Params and Thinking are atomic: present on the agent → replace as a whole;
+// omitted → inherit the profile's (deliberate: an agent that changes name/type
+// but omits params inherits profile params). Result may alias profile memory —
+// read-only.
+func ResolveModel(agent, profile *achv1alpha1.ModelSpec) *achv1alpha1.ModelSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.Name != "" {
+		out.Name = agent.Name
+	}
+	if agent.Type != "" {
+		out.Type = agent.Type
+	}
+	if agent.Params != nil {
+		out.Params = agent.Params
+	}
+	if agent.Thinking != nil {
+		out.Thinking = agent.Thinking
+	}
+	return &out
+}
+
+// ResolveEngine deep-merges the agent engine over the profile engine per field.
+// ForwardEnv and Pi are atomic (replace as a whole when present on the agent).
+// Result may alias profile memory — read-only.
+func ResolveEngine(agent, profile *achv1alpha1.EngineSpec) *achv1alpha1.EngineSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.Home != "" {
+		out.Home = agent.Home
+	}
+	if agent.WorkDir != "" {
+		out.WorkDir = agent.WorkDir
+	}
+	if agent.ForwardEnv != nil {
+		out.ForwardEnv = agent.ForwardEnv
+	}
+	if agent.IdleTTLSeconds != nil {
+		out.IdleTTLSeconds = agent.IdleTTLSeconds
+	}
+	if agent.StartupTimeoutSeconds != nil {
+		out.StartupTimeoutSeconds = agent.StartupTimeoutSeconds
+	}
+	if agent.MaxToolCalls != nil {
+		out.MaxToolCalls = agent.MaxToolCalls
+	}
+	if agent.Type != "" {
+		out.Type = agent.Type
+	}
+	if agent.Pi != nil {
+		out.Pi = agent.Pi
+	}
+	return &out
+}
+
+// ResolveLimits deep-merges the agent limits over the profile limits per field.
+// Result may alias profile memory — read-only.
+func ResolveLimits(agent, profile *achv1alpha1.LimitsSpec) *achv1alpha1.LimitsSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.MaxConcurrentInvocations != nil {
+		out.MaxConcurrentInvocations = agent.MaxConcurrentInvocations
+	}
+	if agent.MaxInvocationSeconds != nil {
+		out.MaxInvocationSeconds = agent.MaxInvocationSeconds
+	}
+	if agent.MaxQueuedTotal != nil {
+		out.MaxQueuedTotal = agent.MaxQueuedTotal
+	}
+	if agent.IdempotencyWindowSeconds != nil {
+		out.IdempotencyWindowSeconds = agent.IdempotencyWindowSeconds
+	}
+	if agent.MaxSteps != nil {
+		out.MaxSteps = agent.MaxSteps
+	}
+	if agent.TerminalOutputRetries != nil {
+		out.TerminalOutputRetries = agent.TerminalOutputRetries
+	}
+	return &out
+}
+
+// ResolveHealth is the SINGLE health host/port resolution: per-field deep merge
+// (agent field wins, else profile, else DefaultHealthHost/Port). The controller
+// MUST use this for the Service targetPort and container probes so they never
+// drift from the rendered config health block.
+func ResolveHealth(agent, profile *achv1alpha1.HealthSpec) (host string, port int32) {
 	host, port = DefaultHealthHost, DefaultHealthPort
-	if h != nil {
-		if h.Host != "" {
-			host = h.Host
+	if profile != nil {
+		if profile.Host != "" {
+			host = profile.Host
 		}
-		if h.Port != 0 {
-			port = h.Port
+		if profile.Port != 0 {
+			port = profile.Port
+		}
+	}
+	if agent != nil {
+		if agent.Host != "" {
+			host = agent.Host
+		}
+		if agent.Port != 0 {
+			port = agent.Port
 		}
 	}
 	return host, port
 }
 
 // ResolveAchBaseURL is the SINGLE ACH base-URL resolution: ACHAgent.spec.ach ??
-// AgentProfile.spec.ach ?? operator default (ACH_BASE_URL). Empty result => the
-// agent has no ACH to hydrate against and Render blocks it. Used for both the
-// config capability.ach.baseUrl and the container ACH_BASE_URL env.
-func ResolveAchBaseURL(agentAch *achv1alpha1.AchEndpointSpec, profileAch achv1alpha1.AchEndpointSpec, envDefault string) string {
+// AgentProfile.spec.achagent.ach ?? operator default (ACH_BASE_URL). Empty
+// result => the agent has no ACH to hydrate against and Render blocks it. Used
+// for both the config capability.ach.baseUrl and the container ACH_BASE_URL env.
+func ResolveAchBaseURL(agentAch, profileAch *achv1alpha1.AchEndpointSpec, envDefault string) string {
 	if agentAch != nil && agentAch.BaseURL != "" {
 		return agentAch.BaseURL
 	}
-	if profileAch.BaseURL != "" {
+	if profileAch != nil && profileAch.BaseURL != "" {
 		return profileAch.BaseURL
 	}
 	return envDefault
