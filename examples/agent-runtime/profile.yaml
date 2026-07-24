@@ -14,6 +14,11 @@ spec:
   engine:
     forwardEnv: [HTTPS_PROXY, SSL_CERT_FILE]
     idleTtlSeconds: 30
+    # Pi engine (requires an ach-agent image >= v0.8.1 that ships the `pi` binary):
+    #   type: pi
+    #   pi:
+    #     model: { reasoning: true, input: [text], contextWindow: 200000, maxTokens: 32000 }
+    #     thinkingLevel: high   # requires model.reasoning: true
   limits:
     maxConcurrentInvocations: 8
     maxInvocationSeconds: 1800

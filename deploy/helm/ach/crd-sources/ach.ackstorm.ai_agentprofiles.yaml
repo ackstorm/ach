@@ -77,10 +77,46 @@ spec:
                     format: int64
                     minimum: 0
                     type: integer
+                  pi:
+                    description: Pi configures the Pi engine; consulted only when
+                      Type == "pi".
+                    properties:
+                      binaryPath:
+                        type: string
+                      mcpAdapterPath:
+                        type: string
+                      model:
+                        description: |-
+                          Model is Pi's typed capability descriptor. Omitted → the harness's own builtin
+                          defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).
+                        properties:
+                          contextWindow:
+                            type: integer
+                          input:
+                            items:
+                              type: string
+                            type: array
+                          maxTokens:
+                            type: integer
+                          reasoning:
+                            type: boolean
+                        type: object
+                      thinkingLevel:
+                        description: |-
+                          ThinkingLevel selects the --thinking level passed to pi at launch. Free string —
+                          ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails
+                          on an unrecognized value or a value set without Model.Reasoning=true.
+                        type: string
+                    type: object
                   startupTimeoutSeconds:
                     format: int64
                     minimum: 1
                     type: integer
+                  type:
+                    description: |-
+                      Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
+                      hard-fails on an unknown value. Omitted → harness default (opencode).
+                    type: string
                   workDir:
                     type: string
                 type: object

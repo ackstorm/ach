@@ -627,6 +627,8 @@ _Appears in:_
 | `idleTtlSeconds` _integer_ |  |  | Minimum: 0 <br /> |
 | `startupTimeoutSeconds` _integer_ |  |  | Minimum: 1 <br /> |
 | `maxToolCalls` _integer_ |  |  | Minimum: 0 <br /> |
+| `type` _string_ | Type selects the engine. Free string ("opencode"\|"pi"); the harness validates and<br />hard-fails on an unknown value. Omitted → harness default (opencode). |  |  |
+| `pi` _[PiEngineSpec](#pienginespec)_ | Pi configures the Pi engine; consulted only when Type == "pi". |  |  |
 
 
 #### Environment
@@ -1274,6 +1276,47 @@ _Appears in:_
 | `storageClassName` _string_ |  |  |  |
 | `mountPath` _string_ |  | /var/lib/ach-agent |  |
 | `retainPolicy` _string_ | RetainPolicy controls PVC lifecycle on ACHAgent deletion. Retain → the PVC is created<br />WITHOUT a controller owner-ref, so it survives agent deletion (operator-managed cleanup). |  | Enum: [Retain Delete] <br /> |
+
+
+#### PiEngineSpec
+
+
+
+PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
+optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
+vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).
+
+
+
+_Appears in:_
+- [EngineSpec](#enginespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `binaryPath` _string_ |  |  |  |
+| `mcpAdapterPath` _string_ |  |  |  |
+| `model` _[PiModelSpec](#pimodelspec)_ | Model is Pi's typed capability descriptor. Omitted → the harness's own builtin<br />defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384). |  |  |
+| `thinkingLevel` _string_ | ThinkingLevel selects the --thinking level passed to pi at launch. Free string —<br />ach-agent validates (one of off\|minimal\|low\|medium\|high\|xhigh\|max) and hard-fails<br />on an unrecognized value or a value set without Model.Reasoning=true. |  |  |
+
+
+#### PiModelSpec
+
+
+
+PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
+ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).
+
+
+
+_Appears in:_
+- [PiEngineSpec](#pienginespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `reasoning` _boolean_ |  |  |  |
+| `input` _string array_ |  |  |  |
+| `contextWindow` _integer_ |  |  |  |
+| `maxTokens` _integer_ |  |  |  |
 
 
 #### Plugin

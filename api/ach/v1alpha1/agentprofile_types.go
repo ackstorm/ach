@@ -56,6 +56,45 @@ type EngineSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	MaxToolCalls *int64 `json:"maxToolCalls,omitempty"`
+	// Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
+	// hard-fails on an unknown value. Omitted → harness default (opencode).
+	// +optional
+	Type string `json:"type,omitempty"`
+	// Pi configures the Pi engine; consulted only when Type == "pi".
+	// +optional
+	Pi *PiEngineSpec `json:"pi,omitempty"`
+}
+
+// PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
+// optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
+// vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).
+type PiEngineSpec struct {
+	// +optional
+	BinaryPath string `json:"binaryPath,omitempty"`
+	// +optional
+	McpAdapterPath string `json:"mcpAdapterPath,omitempty"`
+	// Model is Pi's typed capability descriptor. Omitted → the harness's own builtin
+	// defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).
+	// +optional
+	Model *PiModelSpec `json:"model,omitempty"`
+	// ThinkingLevel selects the --thinking level passed to pi at launch. Free string —
+	// ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails
+	// on an unrecognized value or a value set without Model.Reasoning=true.
+	// +optional
+	ThinkingLevel string `json:"thinkingLevel,omitempty"`
+}
+
+// PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
+// ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).
+type PiModelSpec struct {
+	// +optional
+	Reasoning bool `json:"reasoning,omitempty"`
+	// +optional
+	Input []string `json:"input,omitempty"`
+	// +optional
+	ContextWindow int `json:"contextWindow,omitempty"`
+	// +optional
+	MaxTokens int `json:"maxTokens,omitempty"`
 }
 
 // LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
