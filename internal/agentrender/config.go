@@ -62,6 +62,22 @@ type EngineBlock struct {
 	IdleTTLSeconds        *int64   `json:"idleTtlSeconds,omitempty"`
 	StartupTimeoutSeconds *int64   `json:"startupTimeoutSeconds,omitempty"`
 	MaxToolCalls          *int64   `json:"maxToolCalls,omitempty"`
+	Type                  string   `json:"type,omitempty"`
+	Pi                    *PiBlock `json:"pi,omitempty"`
+}
+
+type PiBlock struct {
+	BinaryPath     string        `json:"binaryPath,omitempty"`
+	McpAdapterPath string        `json:"mcpAdapterPath,omitempty"`
+	Model          *PiModelBlock `json:"model,omitempty"`
+	ThinkingLevel  string        `json:"thinkingLevel,omitempty"`
+}
+
+type PiModelBlock struct {
+	Reasoning     bool     `json:"reasoning,omitempty"`
+	Input         []string `json:"input,omitempty"`
+	ContextWindow int      `json:"contextWindow,omitempty"`
+	MaxTokens     int      `json:"maxTokens,omitempty"`
 }
 
 // McpServerBlock is one rendered mcpServers[<name>] entry (schema $defs/McpServerConfig,

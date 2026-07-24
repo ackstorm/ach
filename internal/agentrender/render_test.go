@@ -399,3 +399,40 @@ func TestRenderChannel_GitlabWebhookLoopGuard(t *testing.T) {
 		t.Errorf("omitted triggerUsers must be absent, got: %s", b)
 	}
 }
+
+func TestRenderEnginePi(t *testing.T) {
+	e := &achv1alpha1.EngineSpec{
+		Type: "pi",
+		Pi:   &achv1alpha1.PiEngineSpec{BinaryPath: "pi", McpAdapterPath: "/opt/adapter"},
+	}
+	b := renderEngine(e)
+	if b.Type != "pi" {
+		t.Fatalf("Type = %q, want pi", b.Type)
+	}
+	if b.Pi == nil || b.Pi.BinaryPath != "pi" || b.Pi.McpAdapterPath != "/opt/adapter" {
+		t.Fatalf("Pi = %+v, want binaryPath=pi mcpAdapterPath=/opt/adapter", b.Pi)
+	}
+}
+
+func TestRenderEnginePiModelCapability(t *testing.T) {
+	e := &achv1alpha1.EngineSpec{
+		Type: "pi",
+		Pi: &achv1alpha1.PiEngineSpec{
+			BinaryPath: "pi",
+			Model: &achv1alpha1.PiModelSpec{
+				Reasoning: true, Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000,
+			},
+			ThinkingLevel: "high",
+		},
+	}
+	b := renderEngine(e)
+	if b.Pi == nil || b.Pi.Model == nil {
+		t.Fatalf("Pi.Model = nil, want a rendered PiModelBlock")
+	}
+	if !b.Pi.Model.Reasoning || b.Pi.Model.ContextWindow != 200000 || b.Pi.Model.MaxTokens != 32000 {
+		t.Fatalf("Pi.Model = %+v, want reasoning=true contextWindow=200000 maxTokens=32000", b.Pi.Model)
+	}
+	if b.Pi.ThinkingLevel != "high" {
+		t.Fatalf("Pi.ThinkingLevel = %q, want high", b.Pi.ThinkingLevel)
+	}
+}

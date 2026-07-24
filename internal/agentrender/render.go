@@ -205,7 +205,24 @@ func renderEngine(e *achv1alpha1.EngineSpec) *EngineBlock {
 	if e == nil {
 		return nil
 	}
-	return &EngineBlock{Home: e.Home, WorkDir: e.WorkDir, ForwardEnv: sanitizeForwardEnv(e.ForwardEnv), IdleTTLSeconds: e.IdleTTLSeconds, StartupTimeoutSeconds: e.StartupTimeoutSeconds, MaxToolCalls: e.MaxToolCalls}
+	b := &EngineBlock{
+		Home: e.Home, WorkDir: e.WorkDir, ForwardEnv: sanitizeForwardEnv(e.ForwardEnv),
+		IdleTTLSeconds: e.IdleTTLSeconds, StartupTimeoutSeconds: e.StartupTimeoutSeconds,
+		MaxToolCalls: e.MaxToolCalls, Type: e.Type,
+	}
+	if e.Pi != nil {
+		b.Pi = &PiBlock{
+			BinaryPath: e.Pi.BinaryPath, McpAdapterPath: e.Pi.McpAdapterPath,
+			ThinkingLevel: e.Pi.ThinkingLevel,
+		}
+		if e.Pi.Model != nil {
+			b.Pi.Model = &PiModelBlock{
+				Reasoning: e.Pi.Model.Reasoning, Input: e.Pi.Model.Input,
+				ContextWindow: e.Pi.Model.ContextWindow, MaxTokens: e.Pi.Model.MaxTokens,
+			}
+		}
+	}
+	return b
 }
 
 // sanitizeForwardEnv drops any ACH_*-named var from the harness→engine forward
