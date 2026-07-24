@@ -3130,22 +3130,22 @@ instrumented the <strong>data plane</strong> well but left the <strong>control p
 Environment not working?" can't be answered from metrics alone.</p>
 <h3 id="what-the-code-actually-does-delivered_5">What the code actually does (delivered)<a class="headerlink" href="#what-the-code-actually-does-delivered_5" title="Permanent link">&para;</a></h3>
 <p><strong>Instrumented (confirmed registered):</strong>
-- Forwarder: <code>forwarder_requests_total{route,key_type,outcome}</code>,
-  <code>forwarder_request_duration_seconds{route,key_type,status_class}</code>,
-  <code>forwarder_jwt_signed_total{kind}</code>, <code>forwarder_jwt_suppressed_total{kind,reason}</code>.
-- Content Service: <code>content_service_requests_total{kind,outcome}</code>,
-  <code>content_service_request_duration_seconds{kind}</code>,
-  <code>content_service_bytes_served_total{kind}</code>.
-- Shared: <code>litellm_unreachable_total{caller}</code>.
+- Forwarder: <code>ach_forwarder_requests_total{route,key_type,outcome}</code>,
+  <code>ach_forwarder_request_duration_seconds{route,key_type,status_class}</code>,
+  <code>ach_forwarder_jwt_signed_total{kind}</code>, <code>ach_forwarder_jwt_suppressed_total{kind,reason}</code>.
+- Content Service: <code>ach_content_service_requests_total{kind,outcome}</code>,
+  <code>ach_content_service_request_duration_seconds{kind}</code>,
+  <code>ach_content_service_bytes_served_total{kind}</code>.
+- Shared: <code>ach_litellm_unreachable_total{caller}</code>.
 - Operator orphan loop: <code>ach_orphan_cleanup_{candidates,revoked,skipped{reason}}_total</code>.</p>
 <p><strong>Missing (frozen §18.5 — confirmed zero matches):</strong>
 | Metric | What it would tell you | Value |
 |--------|------------------------|-------|
-| <code>environment_available{name}</code> (gauge) | Is this Environment ready right now? The single direct answer to "why doesn't my env work." | <strong>highest</strong> |
-| <code>operator_external_ref_refresh_total{kind,type,result}</code> | Are upstream fetches (plugin/skill/prompt/artifact) succeeding or failing, by source type? | <strong>high</strong> |
-| <code>platform_api_hydrate_duration_seconds</code> (histogram) | Hydrate latency/health — the user-facing operation. | <strong>high</strong> |
-| <code>key_resolution_cache_hits_total</code> / <code>misses_total {key_type,layer}</code> | Is the key-resolution cache (Redis/in-proc) effective, or hammering Postgres? Perf diagnosis. | <strong>medium</strong> |
-| <code>platform_api_login_total{outcome}</code> | Login success/failure rate (SSO/CLI). | <strong>medium</strong> |
+| <code>ach_environment_available{name}</code> (gauge) | Is this Environment ready right now? The single direct answer to "why doesn't my env work." | <strong>highest</strong> |
+| <code>ach_operator_external_ref_refresh_total{kind,type,result}</code> | Are upstream fetches (plugin/skill/prompt/artifact) succeeding or failing, by source type? | <strong>high</strong> |
+| <code>ach_platform_api_hydrate_duration_seconds</code> (histogram) | Hydrate latency/health — the user-facing operation. | <strong>high</strong> |
+| <code>ach_key_resolution_cache_hits_total</code> / <code>misses_total {key_type,layer}</code> | Is the key-resolution cache (Redis/in-proc) effective, or hammering Postgres? Perf diagnosis. | <strong>medium</strong> |
+| <code>ach_platform_api_login_total{outcome}</code> | Login success/failure rate (SSO/CLI). | <strong>medium</strong> |
 | <code>operator_marketplace_plugin_count{marketplace}</code> | How many plugins/skills each marketplace discovered. | <strong>low</strong> |</p>
 <p>Note: the operator does expose generic controller-runtime reconcile metrics, but
 none of the ACH-domain signals above.</p>
@@ -3156,17 +3156,17 @@ availability (a condition stuck False), or at hydrate. None of those have a metr
 today, so detection relies on <code>kubectl describe</code> / logs per-object.</p>
 <h3 id="decision-decided-your-call-build-all-except-the-low-value-one">Decision — <strong>DECIDED (your call): build all EXCEPT the low-value one</strong><a class="headerlink" href="#decision-decided-your-call-build-all-except-the-low-value-one" title="Permanent link">&para;</a></h3>
 <p>Build:
-- <code>environment_available{name}</code> (gauge) — <strong>P1</strong> (highest health signal).
-- <code>operator_external_ref_refresh_total{kind,type,result}</code> — P1.
-- <code>platform_api_hydrate_duration_seconds</code> (histogram) — P1.
-- <code>key_resolution_cache_hits_total</code> / <code>key_resolution_cache_misses_total {key_type,layer}</code> — P1/P2 (perf).
-- <code>platform_api_login_total{outcome}</code> — P1/P2.</p>
+- <code>ach_environment_available{name}</code> (gauge) — <strong>P1</strong> (highest health signal).
+- <code>ach_operator_external_ref_refresh_total{kind,type,result}</code> — P1.
+- <code>ach_platform_api_hydrate_duration_seconds</code> (histogram) — P1.
+- <code>ach_key_resolution_cache_hits_total</code> / <code>ach_key_resolution_cache_misses_total {key_type,layer}</code> — P1/P2 (perf).
+- <code>ach_platform_api_login_total{outcome}</code> — P1/P2.</p>
 <p><strong>Skip:</strong> <code>operator_marketplace_plugin_count{marketplace}</code> (cosmetic, low value) —
 drop from the §18.5 metric set rather than leaving it as a backlog promise.</p>
 <h3 id="follow-up-work-not-done-yet_3">Follow-up work (NOT done yet)<a class="headerlink" href="#follow-up-work-not-done-yet_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Add the five metrics at their call sites: operator (env reconcile → set
-  <code>environment_available</code>; refresh driver → <code>operator_external_ref_refresh_total</code>),
+  <code>ach_environment_available</code>; refresh driver → <code>ach_operator_external_ref_refresh_total</code>),
   platform-api (hydrate handler → duration histogram; login/SSO+CLI → login total;
   key resolver → cache hit/miss).</li>
 <li>Platform-api <code>/metrics</code>: ensure these register on the platform-api collector
@@ -3440,7 +3440,7 @@ isn't.</p>
 <li>The hydrate <code>pk_</code> warning exists (<code>pkWarning</code>, <code>hydrate.go:71</code>) — though it
   currently renders in the post-run Tips footer, and its text still leans on the
   (now removed, see <strong>G1</strong>) budget rationale.</li>
-<li>Alerting is already feasible: <code>forwarder_requests_total{key_type}</code> carries the
+<li>Alerting is already feasible: <code>ach_forwarder_requests_total{key_type}</code> carries the
   <code>pk</code>/<code>ek</code> label — a dashboard/alert on <code>key_type="pk"</code> on runtime routes needs
   no new metric.</li>
 </ul>
@@ -3452,7 +3452,7 @@ one optional policy fork</strong>:
     justification; say "<code>pk_</code> is not Environment-scoped; use <code>ek_</code> for
     Environment-bound workloads / CI / agents").
   - Docs: explicit "dev/personal → <code>pk_</code>" vs "agent/CI/workload → <code>ek_</code>" guidance.
-  - Recommended alert on <code>forwarder_requests_total{key_type="pk"}</code> for runtime
+  - Recommended alert on <code>ach_forwarder_requests_total{key_type="pk"}</code> for runtime
     routes (ties to the G7 alerts item).
 - <strong>Fork — optional server-side <code>pk_</code>-forbid switch:</strong>
   - <strong>Honor frozen (no toggle).</strong> <code>pk_</code> runtime stays permanently allowed;
@@ -3468,7 +3468,7 @@ one optional policy fork</strong>:
     "<code>pk_</code> is not Environment-scoped; use <code>ek_</code> for Environment-bound workloads /
     CI / agents"). Consider rendering it pre-write, not only in the Tips footer.</li>
 <li>Docs: explicit "dev/personal → <code>pk_</code>" vs "agent/CI/workload → <code>ek_</code>" guidance.</li>
-<li>Recommended alert on <code>forwarder_requests_total{key_type="pk"}</code> for runtime
+<li>Recommended alert on <code>ach_forwarder_requests_total{key_type="pk"}</code> for runtime
     routes (ties to the G7 alerts item).</li>
 <li><strong>(2) Fork — honor frozen:</strong> <strong>no server-side <code>pk_</code>-forbid toggle.</strong> <code>pk_</code> on
   runtime stays a permanent first-class capability; strict-environment enforcement
@@ -3884,9 +3884,9 @@ Tell me which fields to add (and confirm "keep code names, fix spec").</p>
   future); reword <code>pk_</code> warning. <em>(docs)</em></li>
 <li><strong>G4</strong> — publish <code>ghcr.io/ackstorm/ach-cli</code> image + InitContainer/Job example.</li>
 <li><strong>G6</strong> — build <code>content fetch</code>; drop <code>platforms list</code>.</li>
-<li><strong>G7</strong> — add metrics: <code>environment_available</code>, <code>operator_external_ref_refresh_total</code>,
-  <code>platform_api_hydrate_duration_seconds</code>, key-resolution cache hit/miss,
-  <code>platform_api_login_total</code>.</li>
+<li><strong>G7</strong> — add metrics: <code>ach_environment_available</code>, <code>ach_operator_external_ref_refresh_total</code>,
+  <code>ach_platform_api_hydrate_duration_seconds</code>, key-resolution cache hit/miss,
+  <code>ach_platform_api_login_total</code>.</li>
 <li><strong>G8</strong> — add <code>skill</code>/<code>skill-marketplace</code> to admin refresh + run the parity audit.</li>
 <li><strong>G9</strong> — re-parent local PM under <code>ach-cli local {repo,plugin,skill}</code>.</li>
 <li><strong>G10</strong> — write <code>docs/references/adding-a-cr-kind.md</code> + PR-template checklist +

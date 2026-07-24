@@ -1668,8 +1668,8 @@ the Forwarder reads from Postgres unconditionally.</p>
 <p>When no BIP matches it logs the same fact at <strong>Debug</strong>
 (<code>no backend identity policy; forwarding without JWT</code>) — raise the log
 level to see <em>why</em> identity is not being forwarded. The corresponding
-counters are <code>forwarder_jwt_signed_total{kind}</code> (mint) and
-<code>forwarder_jwt_suppressed_total{kind,reason}</code> with
+counters are <code>ach_forwarder_jwt_signed_total{kind}</code> (mint) and
+<code>ach_forwarder_jwt_suppressed_total{kind,reason}</code> with
 <code>reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}</code>.
 A common gotcha: the BIP must live in the <strong>same namespace as the
 forwarder Pod</strong> (<code>POD_NAMESPACE</code>) — the cache query is namespace-scoped,

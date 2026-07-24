@@ -1766,6 +1766,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#pienginespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PiEngineSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pimodelspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PiModelSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#plugin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2858,6 +2880,28 @@
     <span class="md-ellipsis">
       
         PersistenceSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pienginespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PiEngineSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pimodelspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PiModelSpec
       
     </span>
   </a>
@@ -4613,6 +4657,18 @@ or marketplace_plugins rows) and are served by the ACH Content Service.</p>
 <td></td>
 <td>Minimum: 0 <br /></td>
 </tr>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type selects the engine. Free string ("opencode"|"pi"); the harness validates and<br />hard-fails on an unknown value. Omitted → harness default (opencode).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>pi</code> <em><a href="#pienginespec">PiEngineSpec</a></em></td>
+<td>Pi configures the Pi engine; consulted only when Type == "pi".</td>
+<td></td>
+<td></td>
+</tr>
 </tbody>
 </table>
 <h4 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h4>
@@ -5833,6 +5889,89 @@ the DNS rule, and lifecycle (created/pruned/GC'd with the agent).</p>
 <td>RetainPolicy controls PVC lifecycle on ACHAgent deletion. Retain → the PVC is created<br />WITHOUT a controller owner-ref, so it survives agent deletion (operator-managed cleanup).</td>
 <td></td>
 <td>Enum: [Retain Delete] <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pienginespec">PiEngineSpec<a class="headerlink" href="#pienginespec" title="Permanent link">&para;</a></h4>
+<p>PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
+optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
+vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).</p>
+<p><em>Appears in:</em>
+- <a href="#enginespec">EngineSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>binaryPath</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>mcpAdapterPath</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>model</code> <em><a href="#pimodelspec">PiModelSpec</a></em></td>
+<td>Model is Pi's typed capability descriptor. Omitted → the harness's own builtin<br />defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>thinkingLevel</code> <em>string</em></td>
+<td>ThinkingLevel selects the --thinking level passed to pi at launch. Free string —<br />ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails<br />on an unrecognized value or a value set without Model.Reasoning=true.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pimodelspec">PiModelSpec<a class="headerlink" href="#pimodelspec" title="Permanent link">&para;</a></h4>
+<p>PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
+ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).</p>
+<p><em>Appears in:</em>
+- <a href="#pienginespec">PiEngineSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reasoning</code> <em>boolean</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>input</code> <em>string array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>contextWindow</code> <em>integer</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>maxTokens</code> <em>integer</em></td>
+<td></td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>

@@ -1189,7 +1189,7 @@
   capability-gated to one Environment and carries its attribution tag. Use this
   for anything reproducible or governed.</li>
 </ul>
-<p>A recommended Prometheus alert: watch <code>forwarder_requests_total{key_type="pk"}</code>
+<p>A recommended Prometheus alert: watch <code>ach_forwarder_requests_total{key_type="pk"}</code>
 on runtime routes to catch <code>pk_</code> used where an <code>ek_</code> belongs. There is no
 server-side <code>pk_</code>-forbid toggle (honoring the frozen permanent decision);
 enforcement, if wanted, is the deployer's LiteLLM choice.</p>
