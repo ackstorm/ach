@@ -49,11 +49,15 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("model.params: %w", err)
 	}
+	var thinking *ThinkingBlock
+	if model.Thinking != nil {
+		thinking = &ThinkingBlock{Enabled: model.Thinking.Enabled, Effort: model.Thinking.Effort}
+	}
 
 	cfg := AgentConfig{
 		SchemaVersion: "1",
 		Agent:         AgentBlock{Name: a.Name},
-		Model:         ModelBlock{Name: model.Name, Type: model.Type, Params: params},
+		Model:         ModelBlock{Name: model.Name, Type: model.Type, Params: params, Thinking: thinking},
 		Capability: CapabilityBlock{
 			Type:   "ach",
 			Ach:    AchBlock{BaseURL: baseURL, Environment: a.Spec.Capability.Environment},
@@ -211,16 +215,7 @@ func renderEngine(e *achv1alpha1.EngineSpec) *EngineBlock {
 		MaxToolCalls: e.MaxToolCalls, Type: e.Type,
 	}
 	if e.Pi != nil {
-		b.Pi = &PiBlock{
-			BinaryPath: e.Pi.BinaryPath, McpAdapterPath: e.Pi.McpAdapterPath,
-			ThinkingLevel: e.Pi.ThinkingLevel,
-		}
-		if e.Pi.Model != nil {
-			b.Pi.Model = &PiModelBlock{
-				Reasoning: e.Pi.Model.Reasoning, Input: e.Pi.Model.Input,
-				ContextWindow: e.Pi.Model.ContextWindow, MaxTokens: e.Pi.Model.MaxTokens,
-			}
-		}
+		b.Pi = &PiBlock{BinaryPath: e.Pi.BinaryPath, McpAdapterPath: e.Pi.McpAdapterPath}
 	}
 	return b
 }

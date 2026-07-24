@@ -608,6 +608,17 @@ spec:
                     description: Params is an open, unvalidated dict splatted to the
                       model client.
                     x-kubernetes-preserve-unknown-fields: true
+                  thinking:
+                    description: |-
+                      Thinking is the normalized model-level reasoning intent (config: model.thinking).
+                      Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer
+                      (D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.
+                    properties:
+                      effort:
+                        type: string
+                      enabled:
+                        type: boolean
+                    type: object
                   type:
                     enum:
                     - openai

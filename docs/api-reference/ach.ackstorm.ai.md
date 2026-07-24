@@ -1214,7 +1214,7 @@ _Appears in:_
 
 
 
-ModelSpec selects the ACH-served model (config: model{name,type,params}).
+ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
 
 
 
@@ -1227,6 +1227,7 @@ _Appears in:_
 | `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `type` _string_ |  |  | Enum: [openai gemini anthropic] <br />Required: \{\} <br /> |
 | `params` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | Params is an open, unvalidated dict splatted to the model client. |  |  |
+| `thinking` _[ThinkingSpec](#thinkingspec)_ | Thinking is the normalized model-level reasoning intent (config: model.thinking).<br />Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer<br />(D-2 precedent): effort one of minimal\|low\|medium\|high\|xhigh, requires enabled=true. |  |  |
 
 
 #### NetworkPolicySpec
@@ -1282,9 +1283,11 @@ _Appears in:_
 
 
 
-PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
-optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
-vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).
+PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*) — executable
+knobs ONLY (model identity and thinking intent live in ModelSpec). All fields are
+optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH;
+the vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter). The
+v0.8.1-only model and thinking-level fields were removed for ach-agent v0.9.0.
 
 
 
@@ -1295,28 +1298,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `binaryPath` _string_ |  |  |  |
 | `mcpAdapterPath` _string_ |  |  |  |
-| `model` _[PiModelSpec](#pimodelspec)_ | Model is Pi's typed capability descriptor. Omitted → the harness's own builtin<br />defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384). |  |  |
-| `thinkingLevel` _string_ | ThinkingLevel selects the --thinking level passed to pi at launch. Free string —<br />ach-agent validates (one of off\|minimal\|low\|medium\|high\|xhigh\|max) and hard-fails<br />on an unrecognized value or a value set without Model.Reasoning=true. |  |  |
-
-
-#### PiModelSpec
-
-
-
-PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
-ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).
-
-
-
-_Appears in:_
-- [PiEngineSpec](#pienginespec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `reasoning` _boolean_ |  |  |  |
-| `input` _string array_ |  |  |  |
-| `contextWindow` _integer_ |  |  |  |
-| `maxTokens` _integer_ |  |  |  |
 
 
 #### Plugin
@@ -2073,6 +2054,24 @@ _Appears in:_
 | `secretAccessKeyKey` _string_ | SecretAccessKeyKey is the data-key holding the AWS secret-access-key<br />(S3 source only). |  | MinLength: 1 <br /> |
 | `headerName` _string_ | HeaderName is the HTTP header name to attach for http sources<br />(e.g. "Authorization"). |  | MinLength: 1 <br /> |
 | `headerValueKey` _string_ | HeaderValueKey is the data-key holding the value for HeaderName<br />(http source only). |  | MinLength: 1 <br /> |
+
+
+#### ThinkingSpec
+
+
+
+ThinkingSpec is the normalized reasoning intent each engine translates for itself
+(pi: models.json reasoning + --thinking; opencode: per-call providerOptions).
+
+
+
+_Appears in:_
+- [ModelSpec](#modelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ |  |  |  |
+| `effort` _string_ |  |  |  |
 
 
 #### UnresolvedRuntime

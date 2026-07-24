@@ -414,25 +414,37 @@ func TestRenderEnginePi(t *testing.T) {
 	}
 }
 
-func TestRenderEnginePiModelCapability(t *testing.T) {
-	e := &achv1alpha1.EngineSpec{
-		Type: "pi",
-		Pi: &achv1alpha1.PiEngineSpec{
-			BinaryPath: "pi",
-			Model: &achv1alpha1.PiModelSpec{
-				Reasoning: true, Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000,
-			},
-			ThinkingLevel: "high",
+func TestRenderModelThinking(t *testing.T) {
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
+		Image: "img",
+		Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+		Model: &achv1alpha1.ModelSpec{
+			Name: "openai.gpt-5", Type: "openai",
+			Thinking: &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"},
 		},
+	}}
+	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "t"}}
+	cfg, err := Render(p, a, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
 	}
-	b := renderEngine(e)
-	if b.Pi == nil || b.Pi.Model == nil {
-		t.Fatalf("Pi.Model = nil, want a rendered PiModelBlock")
+	if cfg.Model.Thinking == nil || !cfg.Model.Thinking.Enabled || cfg.Model.Thinking.Effort != "high" {
+		t.Fatalf("Model.Thinking = %+v, want enabled=true effort=high", cfg.Model.Thinking)
 	}
-	if !b.Pi.Model.Reasoning || b.Pi.Model.ContextWindow != 200000 || b.Pi.Model.MaxTokens != 32000 {
-		t.Fatalf("Pi.Model = %+v, want reasoning=true contextWindow=200000 maxTokens=32000", b.Pi.Model)
+}
+
+func TestRenderModelThinkingAbsent(t *testing.T) {
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{
+		Image: "img",
+		Ach:   achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+		Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+	}}
+	a := achv1alpha1.ACHAgent{ObjectMeta: metav1.ObjectMeta{Name: "t"}}
+	cfg, err := Render(p, a, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
 	}
-	if b.Pi.ThinkingLevel != "high" {
-		t.Fatalf("Pi.ThinkingLevel = %q, want high", b.Pi.ThinkingLevel)
+	if cfg.Model.Thinking != nil {
+		t.Fatalf("Model.Thinking = %+v, want nil (omitted from JSON)", cfg.Model.Thinking)
 	}
 }

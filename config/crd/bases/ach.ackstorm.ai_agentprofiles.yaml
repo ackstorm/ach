@@ -84,28 +84,6 @@ spec:
                         type: string
                       mcpAdapterPath:
                         type: string
-                      model:
-                        description: |-
-                          Model is Pi's typed capability descriptor. Omitted → the harness's own builtin
-                          defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).
-                        properties:
-                          contextWindow:
-                            type: integer
-                          input:
-                            items:
-                              type: string
-                            type: array
-                          maxTokens:
-                            type: integer
-                          reasoning:
-                            type: boolean
-                        type: object
-                      thinkingLevel:
-                        description: |-
-                          ThinkingLevel selects the --thinking level passed to pi at launch. Free string —
-                          ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails
-                          on an unrecognized value or a value set without Model.Reasoning=true.
-                        type: string
                     type: object
                   startupTimeoutSeconds:
                     format: int64
@@ -345,7 +323,7 @@ spec:
                     type: integer
                 type: object
               model:
-                description: 'ModelSpec selects the ACH-served model (config: model{name,type,params}).'
+                description: 'ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).'
                 properties:
                   name:
                     minLength: 1
@@ -354,6 +332,17 @@ spec:
                     description: Params is an open, unvalidated dict splatted to the
                       model client.
                     x-kubernetes-preserve-unknown-fields: true
+                  thinking:
+                    description: |-
+                      Thinking is the normalized model-level reasoning intent (config: model.thinking).
+                      Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer
+                      (D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.
+                    properties:
+                      effort:
+                        type: string
+                      enabled:
+                        type: boolean
+                    type: object
                   type:
                     enum:
                     - openai

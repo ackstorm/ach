@@ -29,9 +29,17 @@ type AgentBlock struct {
 }
 
 type ModelBlock struct {
-	Name   string         `json:"name"`
-	Type   string         `json:"type"`
-	Params map[string]any `json:"params,omitempty"`
+	Name     string         `json:"name"`
+	Type     string         `json:"type"`
+	Params   map[string]any `json:"params,omitempty"`
+	Thinking *ThinkingBlock `json:"thinking,omitempty"`
+}
+
+// ThinkingBlock is the normalized model.thinking reasoning intent (schema
+// $defs/ThinkingBlock) — the canonical thinking surface each engine translates.
+type ThinkingBlock struct {
+	Enabled bool   `json:"enabled"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 type CapabilityBlock struct {
@@ -67,17 +75,8 @@ type EngineBlock struct {
 }
 
 type PiBlock struct {
-	BinaryPath     string        `json:"binaryPath,omitempty"`
-	McpAdapterPath string        `json:"mcpAdapterPath,omitempty"`
-	Model          *PiModelBlock `json:"model,omitempty"`
-	ThinkingLevel  string        `json:"thinkingLevel,omitempty"`
-}
-
-type PiModelBlock struct {
-	Reasoning     bool     `json:"reasoning,omitempty"`
-	Input         []string `json:"input,omitempty"`
-	ContextWindow int      `json:"contextWindow,omitempty"`
-	MaxTokens     int      `json:"maxTokens,omitempty"`
+	BinaryPath     string `json:"binaryPath,omitempty"`
+	McpAdapterPath string `json:"mcpAdapterPath,omitempty"`
 }
 
 // McpServerBlock is one rendered mcpServers[<name>] entry (schema $defs/McpServerConfig,
