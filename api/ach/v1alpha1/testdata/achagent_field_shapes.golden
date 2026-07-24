@@ -49,6 +49,18 @@ spec.channels[].webhook.gitlabEvents	array
 spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note]
 spec.channels[].webhook.triggerUsers	array
 spec.channels[].webhook.triggerUsers[]	string
+spec.engine	object
+spec.engine.forwardEnv	array
+spec.engine.forwardEnv[]	string
+spec.engine.home	string
+spec.engine.idleTtlSeconds	integer
+spec.engine.maxToolCalls	integer
+spec.engine.pi	object
+spec.engine.pi.binaryPath	string
+spec.engine.pi.mcpAdapterPath	string
+spec.engine.startupTimeoutSeconds	integer
+spec.engine.type	string
+spec.engine.workDir	string
 spec.expose	object
 spec.expose.gateway	boolean
 spec.expose.service	boolean
@@ -59,6 +71,7 @@ spec.identity	object
 spec.identity.secretRef	object
 spec.identity.secretRef.key	string
 spec.identity.secretRef.name	string
+spec.image	string
 spec.limits	object
 spec.limits.idempotencyWindowSeconds	integer
 spec.limits.maxConcurrentInvocations	integer

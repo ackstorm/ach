@@ -40,8 +40,8 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Capability.Environment = "prod"
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "img"
-	p.Spec.Ach.BaseURL = "https://ach"
+	p.Spec.Achagent.Image = "img"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 	p.Spec.ExtraEnv = mkEnv("HTTPS_PROXY", "http://p")
 
 	env := buildAgentEnv(a, p, "")
@@ -87,7 +87,7 @@ func TestBuildAgentEnv_BaseURLResolution(t *testing.T) {
 	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://env" {
 		t.Errorf("ACH_BASE_URL = %q, want operator default", v)
 	}
-	p.Spec.Ach.BaseURL = "https://profile"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://profile"}
 	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://profile" {
 		t.Errorf("ACH_BASE_URL = %q, want profile over default", v)
 	}
@@ -110,9 +110,9 @@ func TestHealthOverride_ConfigProbeServiceAgree(t *testing.T) {
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
 	a.Spec.Health = &achv1alpha1.HealthSpec{Port: 9137} // agent override
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "img"
-	p.Spec.Ach.BaseURL = "https://ach"
-	p.Spec.Health = &achv1alpha1.HealthSpec{Port: 8000} // profile default, must lose
+	p.Spec.Achagent.Image = "img"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Health = &achv1alpha1.HealthSpec{Port: 8000} // profile default, must lose
 
 	const want = int32(9137)
 	cfg, err := agentrender.Render(*p, *a, "")
@@ -142,7 +142,7 @@ func TestBuildAgentEnv_RejectsReservedExtraEnv(t *testing.T) {
 	a.Name = "d"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Ach.BaseURL = "u"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "u"}
 	p.Spec.ExtraEnv = mkEnv("ACH_TOKEN", "ek_LEAK") // reserved — must be dropped
 	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name == "ACH_TOKEN" && e.Value == "ek_LEAK" {
@@ -156,8 +156,8 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	a.Name, a.Namespace = "demo", "ns"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "ghcr.io/ackstorm/ach-agent:latest"
-	p.Spec.Ach.BaseURL = "https://ach"
+	p.Spec.Achagent.Image = "ghcr.io/ackstorm/ach-agent:latest"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 
 	env := buildAgentEnv(a, p, "")
 	dep, err := buildDeployment(a, p, "cfghash", env)
@@ -169,7 +169,7 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 		t.Errorf("replicas = %d", *dep.Spec.Replicas)
 	}
 	c := dep.Spec.Template.Spec.Containers[0]
-	if c.Image != p.Spec.Image {
+	if c.Image != p.Spec.Achagent.Image {
 		t.Errorf("image = %q", c.Image)
 	}
 	if c.ReadinessProbe == nil || c.ReadinessProbe.HTTPGet == nil || c.ReadinessProbe.HTTPGet.Path != "/readyz" {
@@ -215,8 +215,8 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gl-hook", Key: "secret"}}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "img"
-	p.Spec.Ach.BaseURL = "https://ach"
+	p.Spec.Achagent.Image = "img"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 
 	// Auth secret must be a secretKeyRef env var, never an inline value.
 	var found bool
@@ -258,8 +258,8 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 		Endpoint: "http://h", Auth: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"},
 	}}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "img"
-	p.Spec.Ach.BaseURL = "https://ach"
+	p.Spec.Achagent.Image = "img"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 
 	// The hindsight admin secret rides in env (secretKeyRef), never inline, never a file.
 	var found bool
@@ -291,7 +291,7 @@ func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
 	a.Name, a.Namespace = "demo", "ns"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Image = "img:1"
+	p.Spec.Achagent.Image = "img:1"
 	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
 		"metadata": {"labels": {"ach.ackstorm.ai/agent": "hijack", "team": "x"}},
 		"spec": {
@@ -342,7 +342,7 @@ func TestBuildDeployment_PodTemplateOverlayInvalid(t *testing.T) {
 		a.Name = "demo"
 		a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
 		p := &achv1alpha1.AgentProfile{}
-		p.Spec.Image = "img"
+		p.Spec.Achagent.Image = "img"
 		p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(raw)}
 		if _, err := buildDeployment(a, p, "h", nil); err == nil {
 			t.Errorf("%s: invalid podTemplate overlay must error", name)
@@ -431,5 +431,53 @@ func TestBuildNetworkPolicy_ProfileRulesAppendedAfterDNS(t *testing.T) {
 	// The profile comes from the informer cache — the builder must never append into it.
 	if len(p.Spec.NetworkPolicy.Egress) != 1 {
 		t.Errorf("builder mutated the cached profile's egress slice: len = %d, want 1", len(p.Spec.NetworkPolicy.Egress))
+	}
+}
+
+// TestBuildDeployment_AgentImageAndEngineOverride: profile engine forwardEnv +
+// type opencode; agent type pi + image override. The container image must be the
+// agent's, the startup budget must come from the RESOLVED engine, and the
+// rendered engine must inherit the profile's forwardEnv while taking the
+// agent's type (per-field deep merge).
+func TestBuildDeployment_AgentImageAndEngineOverride(t *testing.T) {
+	st := int64(600)
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Capability.Environment = "e"
+	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
+	a.Spec.AgentDefaults = achv1alpha1.AgentDefaults{
+		Image:  "img:agent",
+		Engine: &achv1alpha1.EngineSpec{Type: "pi", Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"}},
+	}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent = achv1alpha1.AgentDefaults{
+		Image:  "img:profile",
+		Ach:    &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+		Model:  &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+		Engine: &achv1alpha1.EngineSpec{Type: "opencode", ForwardEnv: []string{"HTTPS_PROXY"}, StartupTimeoutSeconds: &st},
+	}
+
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatalf("buildDeployment: %v", err)
+	}
+	c := dep.Spec.Template.Spec.Containers[0]
+	if c.Image != "img:agent" {
+		t.Errorf("container image = %q, want agent override img:agent", c.Image)
+	}
+	if got := c.StartupProbe.FailureThreshold; got != int32(600/5)+1 {
+		t.Errorf("startup FailureThreshold = %d, want %d (from resolved engine startupTimeoutSeconds)", got, int32(600/5)+1)
+	}
+
+	cfg, err := agentrender.Render(*p, *a, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if cfg.Engine == nil || cfg.Engine.Type != "pi" {
+		t.Errorf("rendered engine type = %+v, want agent's pi", cfg.Engine)
+	}
+	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
+		t.Errorf("rendered engine forwardEnv = %v, want inherited [HTTPS_PROXY]", cfg.Engine.ForwardEnv)
 	}
 }

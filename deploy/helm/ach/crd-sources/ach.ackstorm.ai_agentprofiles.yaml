@@ -18,7 +18,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.image
+    - jsonPath: .spec.achagent.image
       name: Image
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -48,55 +48,142 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentProfileSpec is the reusable infra + defaults half.
+            description: |-
+              AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
+              (image/ach/model/engine/limits/health) live under the named achagent block and
+              deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+              everything else here is profile-only infrastructure an agent cannot override.
             properties:
-              ach:
+              achagent:
                 description: |-
-                  Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the
-                  operator's ACH_BASE_URL. An ACHAgent may override via spec.ach.
+                  Achagent holds the agent-overridable defaults. image is required here
+                  (object-level CEL); the other fields are optional defaults.
                 properties:
-                  baseUrl:
-                    type: string
-                type: object
-              engine:
-                description: |-
-                  EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
-                  (the harness defaults them).
-                properties:
-                  forwardEnv:
-                    items:
-                      type: string
-                    type: array
-                  home:
-                    type: string
-                  idleTtlSeconds:
-                    format: int64
-                    minimum: 0
-                    type: integer
-                  maxToolCalls:
-                    format: int64
-                    minimum: 0
-                    type: integer
-                  pi:
-                    description: Pi configures the Pi engine; consulted only when
-                      Type == "pi".
+                  ach:
+                    description: |-
+                      AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+                      BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+                      operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
                     properties:
-                      binaryPath:
-                        type: string
-                      mcpAdapterPath:
+                      baseUrl:
                         type: string
                     type: object
-                  startupTimeoutSeconds:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  type:
+                  engine:
                     description: |-
-                      Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
-                      hard-fails on an unknown value. Omitted → harness default (opencode).
+                      EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
+                      (the harness defaults them).
+                    properties:
+                      forwardEnv:
+                        items:
+                          type: string
+                        type: array
+                      home:
+                        type: string
+                      idleTtlSeconds:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      maxToolCalls:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      pi:
+                        description: Pi configures the Pi engine; consulted only when
+                          Type == "pi".
+                        properties:
+                          binaryPath:
+                            type: string
+                          mcpAdapterPath:
+                            type: string
+                        type: object
+                      startupTimeoutSeconds:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      type:
+                        description: |-
+                          Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
+                          hard-fails on an unknown value. Omitted → harness default (opencode).
+                        type: string
+                      workDir:
+                        type: string
+                    type: object
+                  health:
+                    description: |-
+                      HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
+                      Service targetPort and the container probes. Harness default port is 8080.
+                    properties:
+                      host:
+                        type: string
+                      port:
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    type: object
+                  image:
                     type: string
-                  workDir:
-                    type: string
+                  limits:
+                    description: 'LimitsSpec bounds invocations (config: limits.*).
+                      Unset → harness default.'
+                    properties:
+                      idempotencyWindowSeconds:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      maxConcurrentInvocations:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      maxInvocationSeconds:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      maxQueuedTotal:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      maxSteps:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      terminalOutputRetries:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                    type: object
+                  model:
+                    description: 'ModelSpec selects the ACH-served model (config:
+                      model{name,type,params,thinking}).'
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                      params:
+                        description: Params is an open, unvalidated dict splatted
+                          to the model client.
+                        x-kubernetes-preserve-unknown-fields: true
+                      thinking:
+                        description: |-
+                          Thinking is the normalized model-level reasoning intent (config: model.thinking).
+                          Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer
+                          (D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.
+                        properties:
+                          effort:
+                            type: string
+                          enabled:
+                            type: boolean
+                        type: object
+                      type:
+                        enum:
+                        - openai
+                        - gemini
+                        - anthropic
+                        type: string
+                    required:
+                    - name
+                    - type
+                    type: object
                 type: object
               extraEnv:
                 description: |-
@@ -260,22 +347,6 @@ spec:
                 x-kubernetes-validations:
                 - message: extraEnv must not set reserved ACH_* vars
                   rule: self.all(e, !e.name.startsWith('ACH_'))
-              health:
-                description: |-
-                  HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
-                  Service targetPort and the container probes. Harness default port is 8080.
-                properties:
-                  host:
-                    type: string
-                  port:
-                    format: int32
-                    maximum: 65535
-                    minimum: 1
-                    type: integer
-                type: object
-              image:
-                minLength: 1
-                type: string
               imagePullSecrets:
                 items:
                   description: |-
@@ -294,66 +365,6 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
-              limits:
-                description: 'LimitsSpec bounds invocations (config: limits.*). Unset
-                  → harness default.'
-                properties:
-                  idempotencyWindowSeconds:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  maxConcurrentInvocations:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  maxInvocationSeconds:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  maxQueuedTotal:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  maxSteps:
-                    format: int64
-                    minimum: 1
-                    type: integer
-                  terminalOutputRetries:
-                    format: int64
-                    minimum: 0
-                    type: integer
-                type: object
-              model:
-                description: 'ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).'
-                properties:
-                  name:
-                    minLength: 1
-                    type: string
-                  params:
-                    description: Params is an open, unvalidated dict splatted to the
-                      model client.
-                    x-kubernetes-preserve-unknown-fields: true
-                  thinking:
-                    description: |-
-                      Thinking is the normalized model-level reasoning intent (config: model.thinking).
-                      Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer
-                      (D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.
-                    properties:
-                      effort:
-                        type: string
-                      enabled:
-                        type: boolean
-                    type: object
-                  type:
-                    enum:
-                    - openai
-                    - gemini
-                    - anthropic
-                    type: string
-                required:
-                - name
-                - type
-                type: object
               networkPolicy:
                 description: |-
                   NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
@@ -363,7 +374,7 @@ spec:
                     description: |-
                       Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1
                       egress rules, pass-through (same contract as podTemplate: the profile author
-                      already controls spec.image, so no field guardrails here). Empty → DNS only,
+                      already controls spec.achagent.image, so no field guardrails here). Empty → DNS only,
                       i.e. every other outbound connection is denied.
                     items:
                       description: |-
@@ -589,7 +600,7 @@ spec:
                 description: |-
                   PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
                   template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design
-                  (ponytail: no field guardrails — the profile author already controls spec.image, i.e.
+                  (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
                   everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
                   (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
                   extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
@@ -698,7 +709,7 @@ spec:
                   type: object
                 type: array
             required:
-            - image
+            - achagent
             type: object
           status:
             description: AgentProfileStatus is minimal — profiles are read by ACHAgent;
@@ -713,6 +724,9 @@ spec:
         - message: AgentProfile name must be <= 50 chars (operator derives <=63-char
             child names)
           rule: size(self.metadata.name) <= 50
+        - message: spec.achagent.image is required (nonempty)
+          rule: has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image)
+            > 0
     served: true
     storage: true
     subresources:

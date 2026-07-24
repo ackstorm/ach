@@ -2,12 +2,15 @@
 
 Two CRDs run an ACH agent as a Kubernetes workload:
 
-- **`AgentProfile`** — reusable infra + defaults (image, model, engine knobs,
-  limits, health port, persistence). One profile is shared by many agents.
-  `spec.podTemplate` is an optional raw strategic-merge overlay over the
-  rendered pod template (containers merge by name `agent`; the operator
-  re-pins its selector label and config-hash annotation; everything else is
-  the author's responsibility).
+- **`AgentProfile`** — reusable infra (resources, persistence, networkPolicy,
+  podTemplate) plus agent-overridable defaults under `spec.achagent` (image,
+  ach, model, engine knobs, limits, health port). One profile is shared by many
+  agents; an `ACHAgent` may override any `spec.achagent` field flat on its own
+  spec (per-field deep merge — a set agent field wins, an omitted one inherits
+  the profile's). `spec.podTemplate` is an optional raw strategic-merge overlay
+  over the rendered pod template (containers merge by name `agent`; the
+  operator re-pins its selector label and config-hash annotation; everything
+  else is the author's responsibility).
 - **`ACHAgent`** — an agent instance. References a profile, supplies its ACH
   identity (`ek_`), the target Hub Environment, an optional persona prompt, and
   one or more inbound channels (webhook / cron / queue / a2a).

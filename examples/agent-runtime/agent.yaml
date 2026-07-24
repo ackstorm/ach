@@ -15,6 +15,11 @@ spec:
       exclude:
         skills: [send-email]
         mcpServers: [dangerous-admin]
+  # Any spec.achagent default from the profile can be overridden per-agent (deep
+  # merge: a set field wins, an omitted field inherits the profile's), e.g.:
+  # image: ghcr.io/ackstorm/ach-agent:next
+  # engine:
+  #   type: pi
   prompt:
     system: { type: text, text: "You are a senior code reviewer for the platform team." }
     compose: append

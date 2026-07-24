@@ -60,7 +60,7 @@ func agentSelectorLabels(agentName string) map[string]string {
 // agentrender.ResolveHealth (agent overrides profile), so it can never drift from
 // the rendered config health block.
 func resolveHealthPort(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) int32 {
-	_, port := agentrender.ResolveHealth(a.Spec.Health, p.Spec.Health)
+	_, port := agentrender.ResolveHealth(a.Spec.Health, p.Spec.Achagent.Health)
 	return port
 }
 
@@ -80,7 +80,7 @@ func computeConfigHash(configJSON, envJSON, podTemplateJSON []byte, image, secre
 // (never inline); reserved ACH_* names in extraEnv are dropped (the operator owns them).
 func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, defaultBaseURL string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
-		{Name: "ACH_BASE_URL", Value: agentrender.ResolveAchBaseURL(a.Spec.Ach, p.Spec.Ach, defaultBaseURL)},
+		{Name: "ACH_BASE_URL", Value: agentrender.ResolveAchBaseURL(a.Spec.Ach, p.Spec.Achagent.Ach, defaultBaseURL)},
 		{Name: "ACH_ENVIRONMENT", Value: a.Spec.Capability.Environment},
 		{Name: "ACH_CONFIG_PATH", Value: configFilePath},
 		{Name: "ACH_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
@@ -261,8 +261,8 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 	// startupProbe budget tracks engine.startupTimeoutSeconds; liveness only arms after startup
 	// succeeds, so a long hydration is not killed.
 	startupFail := int32(30) // 30 * 5s = 150s
-	if p.Spec.Engine != nil && p.Spec.Engine.StartupTimeoutSeconds != nil && *p.Spec.Engine.StartupTimeoutSeconds > 0 {
-		startupFail = int32(*p.Spec.Engine.StartupTimeoutSeconds/5) + 1
+	if eng := agentrender.ResolveEngine(a.Spec.Engine, p.Spec.Achagent.Engine); eng != nil && eng.StartupTimeoutSeconds != nil && *eng.StartupTimeoutSeconds > 0 {
+		startupFail = int32(*eng.StartupTimeoutSeconds/5) + 1
 	}
 
 	podLabels := agentLabels(a)
@@ -290,7 +290,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
 						Name:  agentContainerName,
-						Image: p.Spec.Image,
+						Image: agentrender.ResolveImage(a.Spec.Image, p.Spec.Achagent.Image),
 						// The health port doubles as the harness /metrics port (same server as
 						// /healthz + /readyz). Declared named so the PodMonitor
 						// (monitoring.coreos.com/v1) can reference it by name for scraping.
@@ -323,7 +323,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 
 // applyPodTemplateOverlay strategic-merges the profile's raw podTemplate over the operator-built
 // pod template. Pass-through by design (ponytail: no field guardrails — the profile author already
-// controls spec.image; a broken overlay is PodTemplateInvalid or a failing rollout, both the
+// controls spec.achagent.image (agent-overridable via ACHAgent.spec.image); a broken overlay is PodTemplateInvalid or a failing rollout, both the
 // author's problem). Only operator bookkeeping is re-pinned post-merge: the selector label
 // (Deployment selector is immutable) and the config-hash annotation (rolls + WorkloadReady
 // staleness detection).
