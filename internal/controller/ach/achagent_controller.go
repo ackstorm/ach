@@ -85,7 +85,7 @@ type ACHAgentReconciler struct {
 	PublicBaseURL string
 
 	// DefaultAchBaseURL is the operator-level fallback ACH base URL (from
-	// ACH_BASE_URL) used when neither ACHAgent.spec.ach nor AgentProfile.spec.ach
+	// ACH_BASE_URL) used when neither ACHAgent.spec.ach nor AgentProfile.spec.achagent.ach
 	// sets baseUrl. Empty + no per-object override => the agent is blocked (Render
 	// errors) because it has no ACH to hydrate against.
 	DefaultAchBaseURL string
@@ -170,7 +170,8 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if profile.Spec.PodTemplate != nil {
 		podTemplateJSON = profile.Spec.PodTemplate.Raw
 	}
-	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, profile.Spec.Image, secretHash)
+	resolvedImage := agentrender.ResolveImage(agent.Spec.Image, profile.Spec.Achagent.Image)
+	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash)
 
 	// buildDeployment currently fails only on the podTemplate overlay, so mapping every error to
 	// reason PodTemplateInvalid is correct today — revisit if the builder gains other error paths.

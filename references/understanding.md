@@ -142,7 +142,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
 - **config singleton**: `LiteLLMConnection` — name CEL-forced `default`;
   endpoint + master-key SecretRef. Operator probes, `EnsureDefaultTeam`
   (idempotent — LiteLLM assigns UUID team_id).
-- **agent fleet**: `AgentProfile` (infra template: image, resources,
+- **agent fleet**: `AgentProfile` (infra template: resources,
   extraEnv (ACH_* CEL-forbidden), persistence PVC (Retain/Delete), egress-only
   default-deny `networkPolicy` opt-in (DNS rule + declared peers), raw
   `podTemplate` strategic-merge overlay — pass-through by design, selector +
@@ -159,10 +159,14 @@ parity checklist: `references/adding-a-cr-kind.md`.
   default false, gateway requires service). Operator renders `agent-config-v1`
   ConfigMap + single-replica Deployment (`internal/agentrender`, JSON tags
   schema-locked); salted config-hash roll; harness **self-hydrates** at boot —
-  no init container; status from probes. Override set explicit + narrow:
-  `model`, `limits`, `ach.baseUrl` (agent ?? profile ?? operator
-  ACH_BASE_URL; empty blocks), `health` (whole-block, resolved ONCE for
-  config + Service targetPort + probes). `status.gatewayURL` host from
+  no init container; status from probes. Profile defaults under `spec.achagent`
+  (image, ach, model, engine, limits, health) deep-merge per-field with the
+  agent's flat overrides (set agent field wins; `engine.forwardEnv`/`model.params`/
+  `model.thinking`/`engine.pi` atomic). Profile-only infra (not overridable):
+  imagePullSecrets, resources, extraEnv, nodeSelector, tolerations, persistence,
+  networkPolicy, terminationGracePeriodSeconds, podTemplate. `ach.baseUrl` = agent ?? profile
+  ?? operator ACH_BASE_URL (empty blocks); `health` resolved ONCE
+  (`ResolveHealth`) for config + Service targetPort + probes. `status.gatewayURL` host from
   `ACH_PUBLIC_BASE_URL` ?? `ACH_BASE_URL`, else path-only.
 
 Not CRDs (common confusion): pk_/ek_ (platform-api/DB objects), teams

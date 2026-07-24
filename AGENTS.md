@@ -142,16 +142,20 @@ config-hash roll; optional profile spec.podTemplate raw overlay
 strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
-probe-backed `pod.status` only. The profile is the **base template**, but the
-override set is **explicit, not general**: only `model`, `limits`, `ach.baseUrl`,
-and `health` do agent-wins-else-profile (`agentrender.Resolve*`); every other
-field is owned by exactly one side (see `internal/agentrender/render.go`).
-`ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.ach ?? operator
-ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent — no ACH to hydrate
-against); `health` is whole-block (the agent block replaces the profile's, so its
-unset host/port fall to defaults, NOT the profile's) and is resolved ONCE via
-`agentrender.ResolveHealth` so the config health block, Service targetPort, and
-container probes never drift.
+probe-backed `pod.status` only. The profile's `spec.achagent` block (image/ach/model/engine/limits/health) holds
+the agent-overridable defaults; an ACHAgent sets the same fields flat on its
+spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
+(`agentrender.Resolve{Image,Model,Engine,Limits,Health}` + `ResolveAchBaseURL`):
+a set agent field wins, an omitted one inherits the profile's. Slices/maps/
+nested blocks (`engine.forwardEnv`, `model.params`, `model.thinking`,
+`engine.pi`) are atomic — present on the agent ⇒ replace as a whole. Everything
+else on the profile is profile-only infrastructure an agent cannot override:
+`imagePullSecrets`, `resources`, `extraEnv`, `nodeSelector`, `tolerations`,
+`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`.
+`ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.achagent.ach ??
+operator ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent); `health`
+is resolved ONCE via `agentrender.ResolveHealth` so the config health block,
+Service targetPort, and container probes never drift.
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging

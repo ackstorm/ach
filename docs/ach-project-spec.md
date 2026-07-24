@@ -92,7 +92,7 @@ flowchart LR
 | `Prompt`, `Artifact` | Additional context objects, fetch-narrowed by `spec.path`. |
 | `LiteLLMConnection` | Singleton (`default`) per namespace: the LiteLLM endpoint + admin credential Environments resolve against. |
 | `BackendIdentityPolicy` | Per-target JWT identity the forwarder mints — agents never hold long-lived backend credentials. |
-| `AgentProfile` / `ACHAgent` | Reusable infra template + agent instance → rendered `agent-config-v1`; the harness self-hydrates at boot. Explicit, narrow override set (model, limits, ach.baseUrl, health). |
+| `AgentProfile` / `ACHAgent` | Reusable infra template + agent instance → rendered `agent-config-v1`; the harness self-hydrates at boot. Profile defaults under `spec.achagent` (image, ach, model, engine, limits, health) deep-merge per-field with the agent's flat overrides (set agent field wins); infra stays profile-only. |
 | `Plugin` / `PluginMarketplace` | Fully built, currently gated off — a deliberate scope decision, reversible with one const + `make helm-sync`. |
 
 That is 11 kinds; the chart ships 9 (the 2 plugin kinds are gated off). **Not

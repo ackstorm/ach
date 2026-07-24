@@ -57,8 +57,9 @@ spec:
             properties:
               ach:
                 description: |-
-                  Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).
-                  Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.
+                  AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
+                  BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+                  operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
                 properties:
                   baseUrl:
                     type: string
@@ -68,7 +69,7 @@ spec:
                   Capability is optional: both of its fields are optional, so the block
                   validates nothing on its own. Render always emits a capability block
                   (the harness schema requires one) — capability.ach.baseUrl comes from
-                  ResolveBaseURL, never from here.
+                  agentrender.ResolveAchBaseURL, never from here.
                 properties:
                   environment:
                     description: |-
@@ -311,6 +312,46 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              engine:
+                description: |-
+                  EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
+                  (the harness defaults them).
+                properties:
+                  forwardEnv:
+                    items:
+                      type: string
+                    type: array
+                  home:
+                    type: string
+                  idleTtlSeconds:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  maxToolCalls:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  pi:
+                    description: Pi configures the Pi engine; consulted only when
+                      Type == "pi".
+                    properties:
+                      binaryPath:
+                        type: string
+                      mcpAdapterPath:
+                        type: string
+                    type: object
+                  startupTimeoutSeconds:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  type:
+                    description: |-
+                      Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
+                      hard-fails on an unknown value. Omitted → harness default (opencode).
+                    type: string
+                  workDir:
+                    type: string
+                type: object
               expose:
                 description: |-
                   Expose controls reachability (Service + gateway route). Omit for a fully
@@ -333,8 +374,8 @@ spec:
                   rule: '!self.gateway || self.service'
               health:
                 description: |-
-                  Health overrides the profile's health block (host/port). Drives the config health block,
-                  the Service targetPort, and the container probes together — always resolved as one unit.
+                  HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
+                  Service targetPort and the container probes. Harness default port is 8080.
                 properties:
                   host:
                     type: string
@@ -367,8 +408,11 @@ spec:
                 required:
                 - secretRef
                 type: object
+              image:
+                type: string
               limits:
-                description: Limits overrides the profile's default limits.
+                description: 'LimitsSpec bounds invocations (config: limits.*). Unset
+                  → harness default.'
                 properties:
                   idempotencyWindowSeconds:
                     format: int64
@@ -598,7 +642,7 @@ spec:
                 - message: memory.hindsight is required when type=hindsight
                   rule: (self.type=='hindsight' && has(self.hindsight)) || (self.type=='codemem')
               model:
-                description: Model overrides the profile's default model.
+                description: 'ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).'
                 properties:
                   name:
                     minLength: 1

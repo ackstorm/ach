@@ -124,11 +124,13 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `profileRef` _[LocalObjectRef](#localobjectref)_ |  |  | Required: \{\} <br /> |
 | `identity` _[IdentitySpec](#identityspec)_ |  |  | Required: \{\} <br /> |
-| `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />ResolveBaseURL, never from here. |  |  |
-| `model` _[ModelSpec](#modelspec)_ | Model overrides the profile's default model. |  |  |
-| `limits` _[LimitsSpec](#limitsspec)_ | Limits overrides the profile's default limits. |  |  |
-| `ach` _[AchEndpointSpec](#achendpointspec)_ | Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).<br />Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL. |  |  |
-| `health` _[HealthSpec](#healthspec)_ | Health overrides the profile's health block (host/port). Drives the config health block,<br />the Service targetPort, and the container probes together — always resolved as one unit. |  |  |
+| `image` _string_ |  |  |  |
+| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  |  |
+| `model` _[ModelSpec](#modelspec)_ |  |  |  |
+| `engine` _[EngineSpec](#enginespec)_ |  |  |  |
+| `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
+| `health` _[HealthSpec](#healthspec)_ |  |  |  |
+| `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
@@ -159,8 +161,31 @@ _Appears in:_
 
 
 AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.ach.baseUrl ??
+BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
 operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `baseUrl` _string_ |  |  |  |
+
+
+#### AgentDefaults
+
+
+
+AgentDefaults is the shared set of profile defaults that an agent may override.
+AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
+type inline. Resolution is a per-field deep merge: a field set on the agent
+wins, while an omitted field inherits from the profile. Slices, maps, and
+nested blocks such as engine.pi are atomic and are not recursively merged.
+The resolvers are the source of truth for this behavior. Image is required on
+the profile, but optional on the agent and inherited when omitted.
 
 
 
@@ -170,7 +195,12 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `baseUrl` _string_ |  |  |  |
+| `image` _string_ |  |  |  |
+| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  |  |
+| `model` _[ModelSpec](#modelspec)_ |  |  |  |
+| `engine` _[EngineSpec](#enginespec)_ |  |  |  |
+| `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
+| `health` _[HealthSpec](#healthspec)_ |  |  |  |
 
 
 #### AgentProfile
@@ -219,7 +249,10 @@ AgentProfileList contains a list of AgentProfile.
 
 
 
-AgentProfileSpec is the reusable infra + defaults half.
+AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
+(image/ach/model/engine/limits/health) live under the named achagent block and
+deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+everything else here is profile-only infrastructure an agent cannot override.
 
 
 
@@ -228,21 +261,16 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `image` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `achagent` _[AgentDefaults](#agentdefaults)_ | Achagent holds the agent-overridable defaults. image is required here<br />(object-level CEL); the other fields are optional defaults. |  | Required: \{\} <br /> |
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
 | `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN). |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
-| `ach` _[AchEndpointSpec](#achendpointspec)_ | Ach is the profile-level ACH endpoint default. Optional: an empty baseUrl inherits the<br />operator's ACH_BASE_URL. An ACHAgent may override via spec.ach. |  |  |
-| `model` _[ModelSpec](#modelspec)_ |  |  |  |
-| `engine` _[EngineSpec](#enginespec)_ |  |  |  |
-| `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
-| `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
 | `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
-| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
 
 #### AgentProfileStatus
@@ -617,7 +645,8 @@ EngineSpec is the harness-local engine block (config: engine.*). Unset fields ar
 
 
 _Appears in:_
-- [AgentProfileSpec](#agentprofilespec)
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -915,7 +944,7 @@ Service targetPort and the container probes. Harness default port is 8080.
 
 _Appears in:_
 - [ACHAgentSpec](#achagentspec)
-- [AgentProfileSpec](#agentprofilespec)
+- [AgentDefaults](#agentdefaults)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -969,7 +998,7 @@ LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
 
 _Appears in:_
 - [ACHAgentSpec](#achagentspec)
-- [AgentProfileSpec](#agentprofilespec)
+- [AgentDefaults](#agentdefaults)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1220,7 +1249,7 @@ ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}
 
 _Appears in:_
 - [ACHAgentSpec](#achagentspec)
-- [AgentProfileSpec](#agentprofilespec)
+- [AgentDefaults](#agentdefaults)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1256,7 +1285,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `egress` _[NetworkPolicyEgressRule](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#networkpolicyegressrule-v1-networking) array_ | Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1<br />egress rules, pass-through (same contract as podTemplate: the profile author<br />already controls spec.image, so no field guardrails here). Empty → DNS only,<br />i.e. every other outbound connection is denied. |  |  |
+| `egress` _[NetworkPolicyEgressRule](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#networkpolicyegressrule-v1-networking) array_ | Egress rules appended after the operator's DNS rule. Raw networking.k8s.io/v1<br />egress rules, pass-through (same contract as podTemplate: the profile author<br />already controls spec.achagent.image, so no field guardrails here). Empty → DNS only,<br />i.e. every other outbound connection is denied. |  |  |
 
 
 #### PersistenceSpec
