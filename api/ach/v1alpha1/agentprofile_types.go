@@ -43,6 +43,28 @@ type ModelSpec struct {
 	Thinking *ThinkingSpec `json:"thinking,omitempty"`
 }
 
+// AgentDefaults is the shared set of profile defaults that an agent may override.
+// AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
+// type inline. Resolution is a per-field deep merge: a field set on the agent
+// wins, while an omitted field inherits from the profile. Slices, maps, and
+// nested blocks such as engine.pi are atomic and are not recursively merged.
+// The resolvers are the source of truth for this behavior. Image is required on
+// the profile, but optional on the agent and inherited when omitted.
+type AgentDefaults struct {
+	// +optional
+	Image string `json:"image,omitempty"`
+	// +optional
+	Ach *AchEndpointSpec `json:"ach,omitempty"`
+	// +optional
+	Model *ModelSpec `json:"model,omitempty"`
+	// +optional
+	Engine *EngineSpec `json:"engine,omitempty"`
+	// +optional
+	Limits *LimitsSpec `json:"limits,omitempty"`
+	// +optional
+	Health *HealthSpec `json:"health,omitempty"`
+}
+
 // ThinkingSpec is the normalized reasoning intent each engine translates for itself
 // (pi: models.json reasoning + --thinking; opencode: per-call providerOptions).
 type ThinkingSpec struct {
