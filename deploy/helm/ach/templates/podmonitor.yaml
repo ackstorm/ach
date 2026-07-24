@@ -35,7 +35,10 @@ spec:
       app.kubernetes.io/name: ach-agent
   podMetricsEndpoints:
     - port: health
-      path: /metrics
+      # Trailing slash: the agent serves metrics at /metrics/ and 307-redirects
+      # /metrics → /metrics/. Scraping /metrics/ directly avoids the redirect
+      # (and any Prometheus with follow_redirects=false silently getting a 307).
+      path: /metrics/
       {{- with .Values.metrics.podMonitor.interval }}
       interval: {{ . | quote }}
       {{- end }}
