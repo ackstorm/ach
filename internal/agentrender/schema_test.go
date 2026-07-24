@@ -136,6 +136,7 @@ func renderMatrix() map[string]renderCase {
 		Home: "/h", ForwardEnv: []string{"HTTPS_PROXY"}, Type: "pi",
 		Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"},
 	}
+	full.profile.Spec.Model.Thinking = &achv1alpha1.ThinkingSpec{Enabled: true, Effort: "high"}
 	full.profile.Spec.Limits = &achv1alpha1.LimitsSpec{MaxSteps: ptr(int64(50))}
 	full.profile.Spec.Health = &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000}
 	full.profile.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, MountPath: "/var/lib/ach-agent"}
