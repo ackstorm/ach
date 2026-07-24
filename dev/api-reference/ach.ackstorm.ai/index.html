@@ -1777,17 +1777,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pimodelspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PiModelSpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#plugin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2122,6 +2111,17 @@
     <span class="md-ellipsis">
       
         SourceAuthSecretRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thinkingspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ThinkingSpec
       
     </span>
   </a>
@@ -2898,17 +2898,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pimodelspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PiModelSpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#plugin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3243,6 +3232,17 @@
     <span class="md-ellipsis">
       
         SourceAuthSecretRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thinkingspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ThinkingSpec
       
     </span>
   </a>
@@ -5779,7 +5779,7 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 </tbody>
 </table>
 <h4 id="modelspec">ModelSpec<a class="headerlink" href="#modelspec" title="Permanent link">&para;</a></h4>
-<p>ModelSpec selects the ACH-served model (config: model{name,type,params}).</p>
+<p>ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentprofilespec">AgentProfileSpec</a></p>
@@ -5808,6 +5808,12 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <tr>
 <td><code>params</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
 <td>Params is an open, unvalidated dict splatted to the model client.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>thinking</code> <em><a href="#thinkingspec">ThinkingSpec</a></em></td>
+<td>Thinking is the normalized model-level reasoning intent (config: model.thinking).<br />Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer<br />(D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5893,9 +5899,11 @@ the DNS rule, and lifecycle (created/pruned/GC'd with the agent).</p>
 </tbody>
 </table>
 <h4 id="pienginespec">PiEngineSpec<a class="headerlink" href="#pienginespec" title="Permanent link">&para;</a></h4>
-<p>PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
-optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
-vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).</p>
+<p>PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*) — executable
+knobs ONLY (model identity and thinking intent live in ModelSpec). All fields are
+optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH;
+the vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter). The
+v0.8.1-only model and thinking-level fields were removed for ach-agent v0.9.0.</p>
 <p><em>Appears in:</em>
 - <a href="#enginespec">EngineSpec</a></p>
 <table>
@@ -5916,59 +5924,6 @@ vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).</p>
 </tr>
 <tr>
 <td><code>mcpAdapterPath</code> <em>string</em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>model</code> <em><a href="#pimodelspec">PiModelSpec</a></em></td>
-<td>Model is Pi's typed capability descriptor. Omitted → the harness's own builtin<br />defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>thinkingLevel</code> <em>string</em></td>
-<td>ThinkingLevel selects the --thinking level passed to pi at launch. Free string —<br />ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails<br />on an unrecognized value or a value set without Model.Reasoning=true.</td>
-<td></td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<h4 id="pimodelspec">PiModelSpec<a class="headerlink" href="#pimodelspec" title="Permanent link">&para;</a></h4>
-<p>PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
-ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).</p>
-<p><em>Appears in:</em>
-- <a href="#pienginespec">PiEngineSpec</a></p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-<th>Default</th>
-<th>Validation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>reasoning</code> <em>boolean</em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>input</code> <em>string array</em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>contextWindow</code> <em>integer</em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>maxTokens</code> <em>integer</em></td>
 <td></td>
 <td></td>
 <td></td>
@@ -7603,6 +7558,35 @@ v1alpha1).</p>
 <td>HeaderValueKey is the data-key holding the value for HeaderName<br />(http source only).</td>
 <td></td>
 <td>MinLength: 1 <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="thinkingspec">ThinkingSpec<a class="headerlink" href="#thinkingspec" title="Permanent link">&para;</a></h4>
+<p>ThinkingSpec is the normalized reasoning intent each engine translates for itself
+(pi: models.json reasoning + --thinking; opencode: per-call providerOptions).</p>
+<p><em>Appears in:</em>
+- <a href="#modelspec">ModelSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled</code> <em>boolean</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>effort</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
