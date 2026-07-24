@@ -110,27 +110,8 @@ func (in *ACHAgentSpec) DeepCopyInto(out *ACHAgentSpec) {
 	*out = *in
 	out.ProfileRef = in.ProfileRef
 	out.Identity = in.Identity
+	in.AgentDefaults.DeepCopyInto(&out.AgentDefaults)
 	in.Capability.DeepCopyInto(&out.Capability)
-	if in.Model != nil {
-		in, out := &in.Model, &out.Model
-		*out = new(ModelSpec)
-		(*in).DeepCopyInto(*out)
-	}
-	if in.Limits != nil {
-		in, out := &in.Limits, &out.Limits
-		*out = new(LimitsSpec)
-		(*in).DeepCopyInto(*out)
-	}
-	if in.Ach != nil {
-		in, out := &in.Ach, &out.Ach
-		*out = new(AchEndpointSpec)
-		**out = **in
-	}
-	if in.Health != nil {
-		in, out := &in.Health, &out.Health
-		*out = new(HealthSpec)
-		**out = **in
-	}
 	if in.Prompt != nil {
 		in, out := &in.Prompt, &out.Prompt
 		*out = new(AgentPromptSpec)

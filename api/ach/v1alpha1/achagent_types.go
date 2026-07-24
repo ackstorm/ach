@@ -359,26 +359,16 @@ type ACHAgentSpec struct {
 	ProfileRef LocalObjectRef `json:"profileRef"`
 	// +kubebuilder:validation:Required
 	Identity IdentitySpec `json:"identity"`
+	// AgentDefaults are the inline per-agent overrides of the profile's
+	// spec.achagent defaults (image/ach/model/engine/limits/health). Per-field
+	// deep merge: a set field here wins, an omitted one inherits the profile's.
+	AgentDefaults `json:",inline"`
 	// Capability is optional: both of its fields are optional, so the block
 	// validates nothing on its own. Render always emits a capability block
 	// (the harness schema requires one) — capability.ach.baseUrl comes from
-	// ResolveBaseURL, never from here.
+	// agentrender.ResolveAchBaseURL, never from here.
 	// +optional
 	Capability CapabilitySpec `json:"capability,omitempty"`
-	// Model overrides the profile's default model.
-	// +optional
-	Model *ModelSpec `json:"model,omitempty"`
-	// Limits overrides the profile's default limits.
-	// +optional
-	Limits *LimitsSpec `json:"limits,omitempty"`
-	// Ach overrides the profile's ACH endpoint (e.g. point this agent at an external ACH).
-	// Empty inherits AgentProfile.spec.ach ?? operator ACH_BASE_URL.
-	// +optional
-	Ach *AchEndpointSpec `json:"ach,omitempty"`
-	// Health overrides the profile's health block (host/port). Drives the config health block,
-	// the Service targetPort, and the container probes together — always resolved as one unit.
-	// +optional
-	Health *HealthSpec `json:"health,omitempty"`
 	// +optional
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional
