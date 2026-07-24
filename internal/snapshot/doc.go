@@ -18,7 +18,7 @@
 // against a stale snapshot still write ExecutionResourcesResolved
 // based on the cached data; the LiteLLMUnreachableCount counter
 // increments on every failed tick (Phase 5 wires it into the
-// litellm_unreachable_total{caller="operator"} Prometheus counter).
+// ach_litellm_unreachable_total{caller="operator"} Prometheus counter).
 //
 // First-refresh failure produces an empty stale snapshot so callers
 // get consistent "every spec entry unresolved + Stale=true" semantics

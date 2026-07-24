@@ -27,7 +27,7 @@
 //     type-level pinning.
 //   - Shared cross-service collector (shared.go) —
 //     MustRegisterLitellmUnreachable returns the single
-//     litellm_unreachable_total CounterVec; each service holds the
+//     ach_litellm_unreachable_total CounterVec; each service holds the
 //     returned pointer and calls
 //     .WithLabelValues("forwarder"|"content_service"|
 //     "platform_api"|"operator").Inc().

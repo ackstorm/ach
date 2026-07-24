@@ -5,7 +5,7 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 // MustRegisterLitellmUnreachable registers the single
-// litellm_unreachable_total CounterVec on reg and returns the
+// ach_litellm_unreachable_total CounterVec on reg and returns the
 // pointer so the caller can hold it for per-request Inc calls.
 //
 // Per Phase 5 D-09 / OBS-05 / Hub §18.5: every Hub component that
@@ -31,7 +31,7 @@ import "github.com/prometheus/client_golang/prometheus"
 func MustRegisterLitellmUnreachable(reg prometheus.Registerer) *prometheus.CounterVec {
 	c := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "litellm_unreachable_total",
+			Name: "ach_litellm_unreachable_total",
 			Help: "Total LiteLLM upstream-unreachable events, partitioned by Hub caller (§18.5).",
 		},
 		[]string{"caller"},

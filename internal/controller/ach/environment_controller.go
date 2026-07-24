@@ -97,7 +97,7 @@ type EnvironmentReconciler struct {
 	ResyncSource chan event.GenericEvent
 
 	// Metrics is the operator collector set (G7). Nil-tolerant: unit/
-	// envtest leave it unset and skip the environment_available gauge.
+	// envtest leave it unset and skip the ach_environment_available gauge.
 	Metrics *achmetrics.OperatorCollectors
 
 	// mirrorUnconverged suppresses repeat mirror repairs for an
@@ -110,7 +110,7 @@ type EnvironmentReconciler struct {
 	mirrorUnconverged sync.Map
 }
 
-// recordAvailableGauge sets environment_available{name} to 1 when the
+// recordAvailableGauge sets ach_environment_available{name} to 1 when the
 // rolled-up Available condition is True, else 0 (G7). Nil-tolerant.
 func (r *EnvironmentReconciler) recordAvailableGauge(name string, available metav1.Condition) {
 	if r.Metrics == nil {
@@ -545,7 +545,7 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.Update(ctx, env); err != nil {
 		return ctrl.Result{}, err
 	}
-	// G7: drop the environment_available{name} series so a deleted
+	// G7: drop the ach_environment_available{name} series so a deleted
 	// Environment does not leave a stale gauge behind.
 	if r.Metrics != nil {
 		r.Metrics.EnvironmentAvailable.DeleteLabelValues(env.Name)

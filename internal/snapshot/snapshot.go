@@ -79,7 +79,7 @@ type LiteLLMSnapshot struct {
 //     payloads themselves contain only LiteLLM-registered names which
 //     are operationally-visible per Hub §6.4 — not secret material.
 //   - litellmUnreachableCount: atomic.Int64 counter Phase 5 will export
-//     as litellm_unreachable_total{caller="operator"} per §18.5.
+//     as ach_litellm_unreachable_total{caller="operator"} per §18.5.
 type Snapshotter struct {
 	client                  litellm.Client
 	interval                time.Duration
@@ -133,7 +133,7 @@ func (s *Snapshotter) Snapshot() LiteLLMSnapshot {
 // LiteLLMUnreachableCount returns the cumulative number of refresh
 // attempts that failed because LiteLLM was unreachable (i.e. any of
 // the four list calls returned a non-ErrNotFound error). Phase 5
-// wires this counter into the litellm_unreachable_total{caller="operator"}
+// wires this counter into the ach_litellm_unreachable_total{caller="operator"}
 // Prometheus counter per Hub §18.5.
 func (s *Snapshotter) LiteLLMUnreachableCount() int64 {
 	return s.litellmUnreachableCount.Load()

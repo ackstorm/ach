@@ -479,25 +479,25 @@ func testPhase5SC5MetricsTopology(t *testing.T) {
 	t.Run("ForwarderMetrics", func(t *testing.T) {
 		body := getMetricsBody(t, ctx, forwarderURL)
 		assertContains(t, body,
-			"forwarder_requests_total",
-			"forwarder_jwt_signed_total",
-			"forwarder_jwt_suppressed_total",
-			"forwarder_request_duration_seconds",
-			"litellm_unreachable_total",
+			"ach_forwarder_requests_total",
+			"ach_forwarder_jwt_signed_total",
+			"ach_forwarder_jwt_suppressed_total",
+			"ach_forwarder_request_duration_seconds",
+			"ach_litellm_unreachable_total",
 		)
-		if strings.Contains(body, "litellm_unreachable_total") &&
+		if strings.Contains(body, "ach_litellm_unreachable_total") &&
 			!strings.Contains(body, `caller="forwarder"`) {
-			t.Logf("litellm_unreachable_total present but no caller=\"forwarder\" sample yet (zero-count families register but only emit samples after the first failure)")
+			t.Logf("ach_litellm_unreachable_total present but no caller=\"forwarder\" sample yet (zero-count families register but only emit samples after the first failure)")
 		}
 	})
 
 	t.Run("ContentServiceMetrics", func(t *testing.T) {
 		body := getMetricsBody(t, ctx, csURL)
 		assertContains(t, body,
-			"content_service_requests_total",
-			"content_service_bytes_served_total",
-			"content_service_request_duration_seconds",
-			"litellm_unreachable_total",
+			"ach_content_service_requests_total",
+			"ach_content_service_bytes_served_total",
+			"ach_content_service_request_duration_seconds",
+			"ach_litellm_unreachable_total",
 		)
 	})
 
@@ -505,20 +505,20 @@ func testPhase5SC5MetricsTopology(t *testing.T) {
 		body := getMetricsBody(t, ctx, papiURL)
 		// Platform-API has no §18.5-mandated handler-level metrics;
 		// /metrics must still return the Go runtime baseline plus the
-		// shared litellm_unreachable_total registered by Plan 05-06.
-		assertContains(t, body, "go_goroutines", "litellm_unreachable_total")
+		// shared ach_litellm_unreachable_total registered by Plan 05-06.
+		assertContains(t, body, "go_goroutines", "ach_litellm_unreachable_total")
 	})
 
 	t.Run("OperatorMetrics", func(t *testing.T) {
 		body := getMetricsBody(t, ctx, operatorURL)
 		// controller-runtime metricsserver — at least 3 of its
 		// standard families MUST appear, plus the shared
-		// litellm_unreachable_total registered by Plan 05-06 Task 5.
+		// ach_litellm_unreachable_total registered by Plan 05-06 Task 5.
 		families := []string{
 			"controller_runtime_reconcile_total",
 			"controller_runtime_reconcile_errors_total",
 			"workqueue_depth",
-			"litellm_unreachable_total",
+			"ach_litellm_unreachable_total",
 		}
 		assertContains(t, body, families...)
 	})

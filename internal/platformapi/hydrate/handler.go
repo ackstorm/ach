@@ -45,7 +45,7 @@ type Deps struct {
 	BaseURL string
 	Audit   *slog.Logger
 	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
-	// observe platform_api_hydrate_duration_seconds per request.
+	// observe ach_platform_api_hydrate_duration_seconds per request.
 	Metrics *achmetrics.PlatformAPICollectors
 }
 

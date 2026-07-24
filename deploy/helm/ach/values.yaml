@@ -49,7 +49,7 @@ watchNamespace: ""
 # in operator-deployment.yaml actually resolves to a live endpoint.
 # Phase 5 OBS-03..06 + SC#5 wiring — the operator's :8080/metrics
 # surfaces controller_runtime_reconcile_*, workqueue_*, plus the
-# shared litellm_unreachable_total{caller="operator"} registered by
+# shared ach_litellm_unreachable_total{caller="operator"} registered by
 # Plan 05-06 Task 5.
 #
 # To switch to secure metrics (TLS + authn/authz on :8443) for
@@ -345,8 +345,8 @@ metrics:
     labels: {}
     # includeP1Alerts: the two alerts on operator metrics
     # (ACHExternalRefRefreshFailed, ACHEnvironmentUnavailable). Both metrics
-    # are exposed by the operator — operator_external_ref_refresh_total
-    # (external_ref_driver.go) and environment_available
+    # are exposed by the operator — ach_operator_external_ref_refresh_total
+    # (external_ref_driver.go) and ach_environment_available
     # (environment_controller.go) — so these alerts are enabled by default.
     includeP1Alerts: true
 

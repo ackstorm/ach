@@ -20,7 +20,7 @@
 
 | # | Location | Problem | Fix |
 |---|----------|---------|-----|
-| DC1 | `internal/snapshot/snapshot.go:75-82,111-118,226-227` | `litellmUnreachableCount` counter + `LiteLLMUnreachableCount()` getter accumulated every failed tick but never read in prod (metric never wired) | Leave a TODO (documented Phase-5 deferral) or drop field+getter until the `litellm_unreachable_total` metric is actually wired |
+| DC1 | `internal/snapshot/snapshot.go:75-82,111-118,226-227` | `litellmUnreachableCount` counter + `LiteLLMUnreachableCount()` getter accumulated every failed tick but never read in prod (metric never wired) | Leave a TODO (documented Phase-5 deferral) or drop field+getter until the `ach_litellm_unreachable_total` metric is actually wired |
 | DC2 | `internal/operator/resync/runnable.go:217-234` | `Describe()`, `intervalOrDefault()`, `runnable` iface + assertion exist only for trivial-coverage tests; clamp already inline in `Start()` | Delete all four + their two tests; drop unused `fmt` import |
 | DC3 | `internal/connection/snapshot.go:8-13` | `Snapshot.Generation` written at all 6 `Rebuild` sites, read nowhere | Remove field + the 6 `Generation: conn.Generation` literals |
 | DC4 | `internal/controller/ach/external_ref_refresh.go:149-153` | `ExternalRefRefreshDeps.Log` set by all 3 callers, never read on any path (doc admits "reserved for future") | Drop field + the 3 `Log: logger` assignments |

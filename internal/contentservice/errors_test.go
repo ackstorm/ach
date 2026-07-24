@@ -148,7 +148,7 @@ func TestWriteError_IncsMetric(t *testing.T) {
 	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
 
 	// Gather from the registry and verify the counter increment.
-	got := gatherCounter(t, reg, "content_service_requests_total",
+	got := gatherCounter(t, reg, "ach_content_service_requests_total",
 		map[string]string{"kind": "prompt", "outcome": "missing_environment"})
 	if got != 1 {
 		t.Errorf("metric counter=%v, want 1", got)

@@ -217,9 +217,9 @@ func TestEnforceTeams_PK(t *testing.T) {
 		if errR == nil || errR.Code != "litellm_unreachable" {
 			t.Fatalf("got errR=%+v, want litellm_unreachable", errR)
 		}
-		got := gatherCounter(t, reg, "litellm_unreachable_total", map[string]string{"caller": "content_service"})
+		got := gatherCounter(t, reg, "ach_litellm_unreachable_total", map[string]string{"caller": "content_service"})
 		if got != 1 {
-			t.Fatalf("litellm_unreachable_total counter=%v, want 1", got)
+			t.Fatalf("ach_litellm_unreachable_total counter=%v, want 1", got)
 		}
 	})
 	t.Run("empty intersection → 403", func(t *testing.T) {
@@ -258,9 +258,9 @@ func TestEnforceTeams_PK(t *testing.T) {
 			t.Fatalf("got errR=%+v, want unauthorized_team (ErrNotFound → empty teams)", errR)
 		}
 		// Counter MUST NOT increment for ErrNotFound.
-		got := gatherCounter(t, reg, "litellm_unreachable_total", map[string]string{"caller": "content_service"})
+		got := gatherCounter(t, reg, "ach_litellm_unreachable_total", map[string]string{"caller": "content_service"})
 		if got != 0 {
-			t.Fatalf("litellm_unreachable_total counter=%v, want 0 (ErrNotFound is not transport failure)", got)
+			t.Fatalf("ach_litellm_unreachable_total counter=%v, want 0 (ErrNotFound is not transport failure)", got)
 		}
 	})
 }

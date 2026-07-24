@@ -59,7 +59,7 @@ type Deps struct {
 	PollInterval time.Duration
 
 	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
-	// increment platform_api_login_total{outcome} on the /token branch.
+	// increment ach_platform_api_login_total{outcome} on the /token branch.
 	Metrics *achmetrics.PlatformAPICollectors
 }
 

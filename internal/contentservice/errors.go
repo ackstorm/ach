@@ -60,7 +60,7 @@ var (
 //     the response and the audit line). Per the §18.5 / D-Discretion
 //     contract, every Content Service request emits one audit record
 //     (regardless of success or failure).
-//  3. Increment the content_service_requests_total{kind, outcome}
+//  3. Increment the ach_content_service_requests_total{kind, outcome}
 //     metric via Metrics.IncRequest — closes the §18.5 normative
 //     metric contract (OBS-06) by tagging every denial with its
 //     outcome code.

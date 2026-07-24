@@ -2,7 +2,7 @@
 # Prometheus Operator PrometheusRule (monitoring.coreos.com/v1) — opt-in via
 # metrics.prometheusRule.enabled. The recommended ACH alert rules. The two
 # alerts gated behind metrics.prometheusRule.includeP1Alerts target operator
-# metrics (operator_external_ref_refresh_total, environment_available).
+# metrics (ach_operator_external_ref_refresh_total, ach_environment_available).
 #
 # REQUIRES the Prometheus Operator CRDs; enabling this without them makes
 # `helm install` fail with `no matches for kind "PrometheusRule"`.
@@ -21,15 +21,15 @@ spec:
     - name: ach.rules
       rules:
         - alert: ACHLiteLLMUnreachable
-          expr: increase(litellm_unreachable_total[5m]) > 0
+          expr: increase(ach_litellm_unreachable_total[5m]) > 0
           for: 2m
           labels:
             severity: critical
           annotations:
             summary: "LiteLLM unreachable from ACH component {{`{{ $labels.caller }}`}}"
-            description: "litellm_unreachable_total{caller=\"{{`{{ $labels.caller }}`}}\"} is incrementing."
+            description: "ach_litellm_unreachable_total{caller=\"{{`{{ $labels.caller }}`}}\"} is incrementing."
         - alert: ACHContentStaleCacheExpired
-          expr: rate(content_service_requests_total{outcome="stale_cache_expired"}[5m]) > 0
+          expr: rate(ach_content_service_requests_total{outcome="stale_cache_expired"}[5m]) > 0
           for: 5m
           labels:
             severity: warning
@@ -37,7 +37,7 @@ spec:
             summary: "ACH content cache stale-expired for kind {{`{{ $labels.kind }}`}}"
             description: "Content service serving stale_cache_expired — upstream fetch not refreshing."
         - alert: ACHPersonalKeyOnRuntimeRoute
-          expr: rate(forwarder_requests_total{key_type="pk", outcome="forwarded"}[5m]) > 0
+          expr: rate(ach_forwarder_requests_total{key_type="pk", outcome="forwarded"}[5m]) > 0
           for: 0m
           labels:
             severity: info
@@ -46,20 +46,20 @@ spec:
             description: "pk_ is not Environment-scoped; use ek_ for Environment-bound workloads/CI/agents (advisory; pk_ runtime is permanently allowed)."
         {{- if .Values.metrics.prometheusRule.includeP1Alerts }}
         - alert: ACHExternalRefRefreshFailed
-          expr: rate(operator_external_ref_refresh_total{result!~"Synced|not_modified"}[10m]) > 0
+          expr: rate(ach_operator_external_ref_refresh_total{result!~"Synced|not_modified"}[10m]) > 0
           for: 10m
           labels:
             severity: warning
           annotations:
             summary: "ACH operator failing to refresh {{`{{ $labels.kind }}`}} from {{`{{ $labels.type }}`}}"
-            description: "operator_external_ref_refresh_total result={{`{{ $labels.result }}`}} (Unreachable/Unauthorized/NotFound/UpstreamInvalid/PluginTooLarge/StaleCacheExpired)."
+            description: "ach_operator_external_ref_refresh_total result={{`{{ $labels.result }}`}} (Unreachable/Unauthorized/NotFound/UpstreamInvalid/PluginTooLarge/StaleCacheExpired)."
         - alert: ACHEnvironmentUnavailable
-          expr: environment_available == 0
+          expr: ach_environment_available == 0
           for: 5m
           labels:
             severity: critical
           annotations:
             summary: "ACH Environment {{`{{ $labels.name }}`}} is not available"
-            description: "environment_available == 0 for 5m — hydrate will fail. Check: kubectl describe environment {{`{{ $labels.name }}`}}."
+            description: "ach_environment_available == 0 for 5m — hydrate will fail. Check: kubectl describe environment {{`{{ $labels.name }}`}}."
         {{- end }}
 {{- end }}

@@ -58,7 +58,7 @@ import (
 //   - Resolver           — keystore.Resolver (Phase 3 D-08 reused).
 //   - Teams              — keystore.TeamsResolver (Phase 4 D-17 reused).
 //   - Metrics            — *metrics.ContentServiceCollectors (Plan 05-01).
-//   - LiteLLMUnreachable — shared litellm_unreachable_total CounterVec
+//   - LiteLLMUnreachable — shared ach_litellm_unreachable_total CounterVec
 //     (Plan 05-01 / OBS-05). Incremented with
 //     caller="content_service" on transport
 //     failures inside enforceTeams.

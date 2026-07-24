@@ -512,23 +512,23 @@ Environment not working?" can't be answered from metrics alone.
 
 ### What the code actually does (delivered)
 **Instrumented (confirmed registered):**
-- Forwarder: `forwarder_requests_total{route,key_type,outcome}`,
-  `forwarder_request_duration_seconds{route,key_type,status_class}`,
-  `forwarder_jwt_signed_total{kind}`, `forwarder_jwt_suppressed_total{kind,reason}`.
-- Content Service: `content_service_requests_total{kind,outcome}`,
-  `content_service_request_duration_seconds{kind}`,
-  `content_service_bytes_served_total{kind}`.
-- Shared: `litellm_unreachable_total{caller}`.
+- Forwarder: `ach_forwarder_requests_total{route,key_type,outcome}`,
+  `ach_forwarder_request_duration_seconds{route,key_type,status_class}`,
+  `ach_forwarder_jwt_signed_total{kind}`, `ach_forwarder_jwt_suppressed_total{kind,reason}`.
+- Content Service: `ach_content_service_requests_total{kind,outcome}`,
+  `ach_content_service_request_duration_seconds{kind}`,
+  `ach_content_service_bytes_served_total{kind}`.
+- Shared: `ach_litellm_unreachable_total{caller}`.
 - Operator orphan loop: `ach_orphan_cleanup_{candidates,revoked,skipped{reason}}_total`.
 
 **Missing (frozen §18.5 — confirmed zero matches):**
 | Metric | What it would tell you | Value |
 |--------|------------------------|-------|
-| `environment_available{name}` (gauge) | Is this Environment ready right now? The single direct answer to "why doesn't my env work." | **highest** |
-| `operator_external_ref_refresh_total{kind,type,result}` | Are upstream fetches (plugin/skill/prompt/artifact) succeeding or failing, by source type? | **high** |
-| `platform_api_hydrate_duration_seconds` (histogram) | Hydrate latency/health — the user-facing operation. | **high** |
-| `key_resolution_cache_hits_total` / `misses_total {key_type,layer}` | Is the key-resolution cache (Redis/in-proc) effective, or hammering Postgres? Perf diagnosis. | **medium** |
-| `platform_api_login_total{outcome}` | Login success/failure rate (SSO/CLI). | **medium** |
+| `ach_environment_available{name}` (gauge) | Is this Environment ready right now? The single direct answer to "why doesn't my env work." | **highest** |
+| `ach_operator_external_ref_refresh_total{kind,type,result}` | Are upstream fetches (plugin/skill/prompt/artifact) succeeding or failing, by source type? | **high** |
+| `ach_platform_api_hydrate_duration_seconds` (histogram) | Hydrate latency/health — the user-facing operation. | **high** |
+| `ach_key_resolution_cache_hits_total` / `misses_total {key_type,layer}` | Is the key-resolution cache (Redis/in-proc) effective, or hammering Postgres? Perf diagnosis. | **medium** |
+| `ach_platform_api_login_total{outcome}` | Login success/failure rate (SSO/CLI). | **medium** |
 | `operator_marketplace_plugin_count{marketplace}` | How many plugins/skills each marketplace discovered. | **low** |
 
 Note: the operator does expose generic controller-runtime reconcile metrics, but
@@ -542,18 +542,18 @@ today, so detection relies on `kubectl describe` / logs per-object.
 
 ### Decision — **DECIDED (your call): build all EXCEPT the low-value one**
 Build:
-- `environment_available{name}` (gauge) — **P1** (highest health signal).
-- `operator_external_ref_refresh_total{kind,type,result}` — P1.
-- `platform_api_hydrate_duration_seconds` (histogram) — P1.
-- `key_resolution_cache_hits_total` / `key_resolution_cache_misses_total {key_type,layer}` — P1/P2 (perf).
-- `platform_api_login_total{outcome}` — P1/P2.
+- `ach_environment_available{name}` (gauge) — **P1** (highest health signal).
+- `ach_operator_external_ref_refresh_total{kind,type,result}` — P1.
+- `ach_platform_api_hydrate_duration_seconds` (histogram) — P1.
+- `ach_key_resolution_cache_hits_total` / `ach_key_resolution_cache_misses_total {key_type,layer}` — P1/P2 (perf).
+- `ach_platform_api_login_total{outcome}` — P1/P2.
 
 **Skip:** `operator_marketplace_plugin_count{marketplace}` (cosmetic, low value) —
 drop from the §18.5 metric set rather than leaving it as a backlog promise.
 
 ### Follow-up work (NOT done yet)
 - Add the five metrics at their call sites: operator (env reconcile → set
-  `environment_available`; refresh driver → `operator_external_ref_refresh_total`),
+  `ach_environment_available`; refresh driver → `ach_operator_external_ref_refresh_total`),
   platform-api (hydrate handler → duration histogram; login/SSO+CLI → login total;
   key resolver → cache hit/miss).
 - Platform-api `/metrics`: ensure these register on the platform-api collector
@@ -793,7 +793,7 @@ isn't.
 - The hydrate `pk_` warning exists (`pkWarning`, `hydrate.go:71`) — though it
   currently renders in the post-run Tips footer, and its text still leans on the
   (now removed, see **G1**) budget rationale.
-- Alerting is already feasible: `forwarder_requests_total{key_type}` carries the
+- Alerting is already feasible: `ach_forwarder_requests_total{key_type}` carries the
   `pk`/`ek` label — a dashboard/alert on `key_type="pk"` on runtime routes needs
   no new metric.
 
@@ -805,7 +805,7 @@ one optional policy fork**:
     justification; say "`pk_` is not Environment-scoped; use `ek_` for
     Environment-bound workloads / CI / agents").
   - Docs: explicit "dev/personal → `pk_`" vs "agent/CI/workload → `ek_`" guidance.
-  - Recommended alert on `forwarder_requests_total{key_type="pk"}` for runtime
+  - Recommended alert on `ach_forwarder_requests_total{key_type="pk"}` for runtime
     routes (ties to the G7 alerts item).
 - **Fork — optional server-side `pk_`-forbid switch:**
   - **Honor frozen (no toggle).** `pk_` runtime stays permanently allowed;
@@ -821,7 +821,7 @@ one optional policy fork**:
     "`pk_` is not Environment-scoped; use `ek_` for Environment-bound workloads /
     CI / agents"). Consider rendering it pre-write, not only in the Tips footer.
   - Docs: explicit "dev/personal → `pk_`" vs "agent/CI/workload → `ek_`" guidance.
-  - Recommended alert on `forwarder_requests_total{key_type="pk"}` for runtime
+  - Recommended alert on `ach_forwarder_requests_total{key_type="pk"}` for runtime
     routes (ties to the G7 alerts item).
 - **(2) Fork — honor frozen:** **no server-side `pk_`-forbid toggle.** `pk_` on
   runtime stays a permanent first-class capability; strict-environment enforcement
@@ -1241,9 +1241,9 @@ Tell me which fields to add (and confirm "keep code names, fix spec").
   future); reword `pk_` warning. *(docs)*
 - **G4** — publish `ghcr.io/ackstorm/ach-cli` image + InitContainer/Job example.
 - **G6** — build `content fetch`; drop `platforms list`.
-- **G7** — add metrics: `environment_available`, `operator_external_ref_refresh_total`,
-  `platform_api_hydrate_duration_seconds`, key-resolution cache hit/miss,
-  `platform_api_login_total`.
+- **G7** — add metrics: `ach_environment_available`, `ach_operator_external_ref_refresh_total`,
+  `ach_platform_api_hydrate_duration_seconds`, key-resolution cache hit/miss,
+  `ach_platform_api_login_total`.
 - **G8** — add `skill`/`skill-marketplace` to admin refresh + run the parity audit.
 - **G9** — re-parent local PM under `ach-cli local {repo,plugin,skill}`.
 - **G10** — write `docs/references/adding-a-cr-kind.md` + PR-template checklist +

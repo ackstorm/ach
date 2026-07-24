@@ -218,7 +218,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	}()
 
 	// ─── metrics: process-local Registry + ContentServiceCollectors +
-	//     shared litellm_unreachable_total (caller="content_service" Inc
+	//     shared ach_litellm_unreachable_total (caller="content_service" Inc
 	//     happens inside enforceTeams in internal/contentservice/authz.go).
 	reg := prometheus.NewRegistry()
 	registerRuntimeCollectors(reg)

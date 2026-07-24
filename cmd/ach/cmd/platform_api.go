@@ -200,7 +200,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
 
 	// ─── Phase 5 D-09 / D-10 / OBS-05: process-local Prometheus
-	//     Registry + shared litellm_unreachable_total counter (caller
+	//     Registry + shared ach_litellm_unreachable_total counter (caller
 	//     dimension pre-declared with all four §18.5 values). Platform
 	//     API does NOT receive a typed PlatformAPICollectors struct in
 	//     §18.5 — only Forwarder and Content Service have typed

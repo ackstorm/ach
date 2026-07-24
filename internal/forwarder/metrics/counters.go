@@ -41,7 +41,7 @@ var (
 	litellmUnreachable *prometheus.CounterVec
 )
 
-// IncRequests increments forwarder_requests_total{route, key_type, outcome}
+// IncRequests increments ach_forwarder_requests_total{route, key_type, outcome}
 // per Hub §18.5 normative label-value enums:
 //
 //	route    ∈ {/v1, /gemini, /mcp, /a2a}
@@ -60,7 +60,7 @@ func IncRequests(route, keyType, outcome string) {
 	}
 }
 
-// IncJWTSigned increments forwarder_jwt_signed_total{kind} per Hub §18.5:
+// IncJWTSigned increments ach_forwarder_jwt_signed_total{kind} per Hub §18.5:
 //
 //	kind ∈ {MCPServer, A2AAgent}
 //
@@ -71,7 +71,7 @@ func IncJWTSigned(kind string) {
 	}
 }
 
-// IncJWTSuppressed increments forwarder_jwt_suppressed_total{kind, reason}
+// IncJWTSuppressed increments ach_forwarder_jwt_suppressed_total{kind, reason}
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}
@@ -93,13 +93,13 @@ func IncJWTSuppressed(kind, reason string) {
 	}
 }
 
-// IncLiteLLMUnreachable increments litellm_unreachable_total{caller="forwarder"}.
+// IncLiteLLMUnreachable increments ach_litellm_unreachable_total{caller="forwarder"}.
 // Single counter spanning all callers per Hub §18.5 normative label-value
 // enum. The caller="forwarder" label is hidden inside the shim so the
 // zero-arg signature stays compatible with every Phase 4 call site.
 //
 // D-19 thin-shim: nil-tolerant delegation to the shared
-// litellm_unreachable_total CounterVec registered by Plan 05-01's
+// ach_litellm_unreachable_total CounterVec registered by Plan 05-01's
 // MustRegisterLitellmUnreachable.
 func IncLiteLLMUnreachable() {
 	if litellmUnreachable != nil {
@@ -107,7 +107,7 @@ func IncLiteLLMUnreachable() {
 	}
 }
 
-// ObserveRequestDuration observes forwarder_request_duration_seconds
+// ObserveRequestDuration observes ach_forwarder_request_duration_seconds
 // {route, key_type, status_class} per Hub §18.5:
 //
 //	route        ∈ {/v1, /gemini, /mcp, /a2a}

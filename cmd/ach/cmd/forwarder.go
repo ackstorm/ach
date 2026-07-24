@@ -197,7 +197,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out := &forwarderProcessDeps{logger: logger}
 
 	// ─── Phase 5 D-09 / D-10: process-local Prometheus Registry +
-	//     typed ForwarderCollectors + shared litellm_unreachable_total.
+	//     typed ForwarderCollectors + shared ach_litellm_unreachable_total.
 	//     InitCollectors plumbs the typed collectors into the Phase 4
 	//     internal/forwarder/metrics shim (counters.go), so existing
 	//     IncRequests / IncJWTSigned / IncJWTSuppressed /

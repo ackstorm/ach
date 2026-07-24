@@ -278,7 +278,7 @@ Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
   enum, `actor=<ns>/<email>`, key.id only — never plaintext/hash. Runtime
   forwarding NOT audited (LiteLLM is that source). Metrics (spec §18.5):
   per-service process-local registries, typed label enums, no per-request
-  labels; `litellm_unreachable_total{caller}` cross-service;
+  labels; `ach_litellm_unreachable_total{caller}` cross-service;
   `forwarder_jwt_signed/suppressed_total{reason}` = BIP visibility.
 
 ## 7. Platform API surfaces

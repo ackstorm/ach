@@ -312,7 +312,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}
 
 	// ─── Phase 5 D-10 / OBS-05: register the shared
-	//     litellm_unreachable_total counter on controller-runtime's
+	//     ach_litellm_unreachable_total counter on controller-runtime's
 	//     global metrics Registry (typed as a RegistererGatherer, which
 	//     satisfies the prometheus.Registerer parameter of the single
 	//     MustRegisterLitellmUnreachable in internal/metrics/shared.go).
@@ -335,7 +335,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	operatorLitellmUnreachable := achmetrics.MustRegisterLitellmUnreachable(crmetrics.Registry)
 	operatorLitellmUnreachable.WithLabelValues("operator").Add(0) // expose family at 0 (§18.5)
 	operatorSetupLog.Info("operator: registered ACH-namespaced collectors on controller-runtime metrics registry",
-		"metric_count", 1, "metric", "litellm_unreachable_total")
+		"metric_count", 1, "metric", "ach_litellm_unreachable_total")
 
 	if len(metricsCertPath) > 0 {
 		operatorSetupLog.Info("Initializing metrics certificate watcher using provided certificates",
@@ -470,8 +470,8 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to add orphan-cleanup Runnable: %w", err)
 	}
 
-	// G7: register the ACH-domain operator collectors (environment_available
-	// + operator_external_ref_refresh_total) on controller-runtime's metrics
+	// G7: register the ACH-domain operator collectors (ach_environment_available
+	// + ach_operator_external_ref_refresh_total) on controller-runtime's metrics
 	// Registry so the operator /metrics surfaces them.
 	opMetrics := achmetrics.NewOperatorCollectors(crmetrics.Registry)
 

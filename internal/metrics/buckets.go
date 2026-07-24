@@ -5,7 +5,7 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 // ForwarderDurationBuckets is the histogram bucket set for
-// forwarder_request_duration_seconds. Per Phase 5 D-11, the forwarder
+// ach_forwarder_request_duration_seconds. Per Phase 5 D-11, the forwarder
 // is a thin proxy in front of LiteLLM / upstream MCP+A2A backends; the
 // observable forwarder latency tail beyond 10 seconds is upstream's
 // latency, not the forwarder's. SSE long-poll requests deliberately
@@ -17,7 +17,7 @@ import "github.com/prometheus/client_golang/prometheus"
 var ForwarderDurationBuckets = prometheus.DefBuckets
 
 // ContentServiceDurationBuckets is the histogram bucket set for
-// content_service_request_duration_seconds. Per Phase 5 D-11, the
+// ach_content_service_request_duration_seconds. Per Phase 5 D-11, the
 // content service streams artifact tarballs whose body size can drive
 // the observed latency well past 10 seconds. The DefBuckets tail
 // (10s) is extended with 30s and 60s bins so that a multi-megabyte

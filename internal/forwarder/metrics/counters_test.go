@@ -143,10 +143,10 @@ func TestIncRequests_AfterInit_Forwards(t *testing.T) {
 	IncRequests("/v1", "pk", "forwarded")
 
 	body := scrapeMetrics(t, makeMux(reg))
-	v := scrapeMetricValue(t, body, "forwarder_requests_total",
+	v := scrapeMetricValue(t, body, "ach_forwarder_requests_total",
 		`key_type="pk",outcome="forwarded",route="/v1"`)
 	if v != 3 {
-		t.Errorf("forwarder_requests_total{route=/v1,key_type=pk,outcome=forwarded}: got %v, want 3\nbody=%s", v, body)
+		t.Errorf("ach_forwarder_requests_total{route=/v1,key_type=pk,outcome=forwarded}: got %v, want 3\nbody=%s", v, body)
 	}
 }
 
@@ -166,12 +166,12 @@ func TestIncLiteLLMUnreachable_AfterInit_LabelsForwarder(t *testing.T) {
 
 	got := testutil.ToFloat64(lu.WithLabelValues("forwarder"))
 	if got != 5 {
-		t.Errorf("litellm_unreachable_total{caller=forwarder}: got %v, want 5", got)
+		t.Errorf("ach_litellm_unreachable_total{caller=forwarder}: got %v, want 5", got)
 	}
 	// Other caller labels MUST be untouched.
 	for _, other := range []string{"content_service", "platform_api", "operator"} {
 		if v := testutil.ToFloat64(lu.WithLabelValues(other)); v != 0 {
-			t.Errorf("litellm_unreachable_total{caller=%s}: got %v, want 0", other, v)
+			t.Errorf("ach_litellm_unreachable_total{caller=%s}: got %v, want 0", other, v)
 		}
 	}
 }
@@ -192,10 +192,10 @@ func TestIncJWTSuppressed_AllReasons(t *testing.T) {
 
 	body := scrapeMetrics(t, makeMux(reg))
 	for _, reason := range reasons {
-		v := scrapeMetricValue(t, body, "forwarder_jwt_suppressed_total",
+		v := scrapeMetricValue(t, body, "ach_forwarder_jwt_suppressed_total",
 			`kind="MCPServer",reason="`+reason+`"`)
 		if v != 1 {
-			t.Errorf("forwarder_jwt_suppressed_total{kind=MCPServer,reason=%s}: got %v, want 1\nbody=%s", reason, v, body)
+			t.Errorf("ach_forwarder_jwt_suppressed_total{kind=MCPServer,reason=%s}: got %v, want 1\nbody=%s", reason, v, body)
 		}
 	}
 }
@@ -222,13 +222,13 @@ func TestInit_ResetSemantics(t *testing.T) {
 	IncRequests("/v1", "pk", "forwarded")
 
 	body1 := scrapeMetrics(t, makeMux(reg1))
-	v1 := scrapeMetricValue(t, body1, "forwarder_requests_total",
+	v1 := scrapeMetricValue(t, body1, "ach_forwarder_requests_total",
 		`key_type="pk",outcome="forwarded",route="/v1"`)
 	if v1 != 1 {
 		t.Errorf("reg1 counter: got %v, want 1 (first Inc landed before re-init)", v1)
 	}
 	body2 := scrapeMetrics(t, makeMux(reg2))
-	v2 := scrapeMetricValue(t, body2, "forwarder_requests_total",
+	v2 := scrapeMetricValue(t, body2, "ach_forwarder_requests_total",
 		`key_type="pk",outcome="forwarded",route="/v1"`)
 	if v2 != 2 {
 		t.Errorf("reg2 counter: got %v, want 2 (two Inc after re-init)", v2)
@@ -252,8 +252,8 @@ func TestMetricsHandler_RegistersOnChiMux(t *testing.T) {
 	InitCollectors(c, lu)
 
 	// Inc once via the shim so the scrape output contains a non-zero
-	// sample for forwarder_requests_total AND for the shared
-	// litellm_unreachable_total — both Counters omit zero-valued series
+	// sample for ach_forwarder_requests_total AND for the shared
+	// ach_litellm_unreachable_total — both Counters omit zero-valued series
 	// from the scrape body until first Inc, so both need an Inc call to
 	// appear in the assertion below.
 	IncRequests("/v1", "pk", "forwarded")
@@ -271,8 +271,8 @@ func TestMetricsHandler_RegistersOnChiMux(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"forwarder_requests_total",
-		"litellm_unreachable_total",
+		"ach_forwarder_requests_total",
+		"ach_litellm_unreachable_total",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/metrics body missing %q", want)

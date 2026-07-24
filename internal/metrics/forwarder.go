@@ -14,12 +14,12 @@ import "github.com/prometheus/client_golang/prometheus"
 //
 // Cardinality budget (§18.5):
 //
-//	forwarder_requests_total{route, key_type, outcome}
+//	ach_forwarder_requests_total{route, key_type, outcome}
 //	  4 routes × 3 key_types × 9 outcomes = 108
-//	forwarder_request_duration_seconds{route, key_type, status_class}
+//	ach_forwarder_request_duration_seconds{route, key_type, status_class}
 //	  4 × 3 × 5 = 60 series × bucket_count
-//	forwarder_jwt_signed_total{kind}                    2 series
-//	forwarder_jwt_suppressed_total{kind, reason}        2 × 4 = 8 series
+//	ach_forwarder_jwt_signed_total{kind}                    2 series
+//	ach_forwarder_jwt_suppressed_total{kind, reason}        2 × 4 = 8 series
 type ForwarderCollectors struct {
 	requests      *prometheus.CounterVec
 	duration      *prometheus.HistogramVec
@@ -40,14 +40,14 @@ func NewForwarderCollectors(reg *prometheus.Registry) *ForwarderCollectors {
 	c := &ForwarderCollectors{
 		requests: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "forwarder_requests_total",
+				Name: "ach_forwarder_requests_total",
 				Help: "Total forwarder requests, partitioned by route/key_type/outcome (Hub §18.5).",
 			},
 			[]string{"route", "key_type", "outcome"},
 		),
 		duration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "forwarder_request_duration_seconds",
+				Name:    "ach_forwarder_request_duration_seconds",
 				Help:    "Forwarder request duration seconds, partitioned by route/key_type/status_class (Hub §18.5).",
 				Buckets: ForwarderDurationBuckets,
 			},
@@ -55,14 +55,14 @@ func NewForwarderCollectors(reg *prometheus.Registry) *ForwarderCollectors {
 		),
 		jwtSigned: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "forwarder_jwt_signed_total",
+				Name: "ach_forwarder_jwt_signed_total",
 				Help: "Total backend-identity JWTs successfully minted, partitioned by target kind (Hub §18.5).",
 			},
 			[]string{"kind"},
 		),
 		jwtSuppressed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "forwarder_jwt_suppressed_total",
+				Name: "ach_forwarder_jwt_suppressed_total",
 				Help: "Total JWT mints skipped or failed, partitioned by kind and suppression reason (Hub §18.5).",
 			},
 			[]string{"kind", "reason"},
@@ -86,7 +86,7 @@ func (c *ForwarderCollectors) PreInitZeroSeries() {
 	c.jwtSuppressed.WithLabelValues("mcp", "no_bip").Add(0)
 }
 
-// IncRequest increments forwarder_requests_total{route, key_type, outcome}
+// IncRequest increments ach_forwarder_requests_total{route, key_type, outcome}
 // per Hub §18.5 normative label-value enums:
 //
 //	route    ∈ {/v1, /gemini, /mcp, /a2a}
@@ -102,7 +102,7 @@ func (c *ForwarderCollectors) IncRequest(route, keyType, outcome string) {
 	c.requests.WithLabelValues(route, keyType, outcome).Inc()
 }
 
-// ObserveRequestDuration observes forwarder_request_duration_seconds
+// ObserveRequestDuration observes ach_forwarder_request_duration_seconds
 // {route, key_type, status_class} per Hub §18.5:
 //
 //	route        ∈ {/v1, /gemini, /mcp, /a2a}
@@ -115,7 +115,7 @@ func (c *ForwarderCollectors) ObserveRequestDuration(route, keyType, statusClass
 	c.duration.WithLabelValues(route, keyType, statusClass).Observe(seconds)
 }
 
-// IncJWTSigned increments forwarder_jwt_signed_total{kind} per Hub
+// IncJWTSigned increments ach_forwarder_jwt_signed_total{kind} per Hub
 // §18.5:
 //
 //	kind ∈ {MCPServer, A2AAgent}
@@ -126,7 +126,7 @@ func (c *ForwarderCollectors) IncJWTSigned(kind string) {
 	c.jwtSigned.WithLabelValues(kind).Inc()
 }
 
-// IncJWTSuppressed increments forwarder_jwt_suppressed_total{kind, reason}
+// IncJWTSuppressed increments ach_forwarder_jwt_suppressed_total{kind, reason}
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}

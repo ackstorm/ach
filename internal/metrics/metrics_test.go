@@ -130,13 +130,13 @@ func TestLitellmUnreachable_AllCallers(t *testing.T) {
 	}
 	var fam *dto.MetricFamily
 	for _, f := range families {
-		if f.GetName() == "litellm_unreachable_total" {
+		if f.GetName() == "ach_litellm_unreachable_total" {
 			fam = f
 			break
 		}
 	}
 	if fam == nil {
-		t.Fatal("litellm_unreachable_total family not registered")
+		t.Fatal("ach_litellm_unreachable_total family not registered")
 	}
 	if got, want := len(fam.GetMetric()), 4; got != want {
 		t.Fatalf("expected %d caller series, got %d", want, got)
@@ -214,10 +214,10 @@ func TestForwarderCollectors_LabelKeys(t *testing.T) {
 		family string
 		want   []string
 	}{
-		{"forwarder_requests_total", []string{"key_type", "outcome", "route"}},
-		{"forwarder_request_duration_seconds", []string{"key_type", "route", "status_class"}},
-		{"forwarder_jwt_signed_total", []string{"kind"}},
-		{"forwarder_jwt_suppressed_total", []string{"kind", "reason"}},
+		{"ach_forwarder_requests_total", []string{"key_type", "outcome", "route"}},
+		{"ach_forwarder_request_duration_seconds", []string{"key_type", "route", "status_class"}},
+		{"ach_forwarder_jwt_signed_total", []string{"kind"}},
+		{"ach_forwarder_jwt_suppressed_total", []string{"kind", "reason"}},
 	}
 	for _, tc := range cases {
 		got := metricLabelKeys(t, reg, tc.family)
@@ -245,9 +245,9 @@ func TestContentServiceCollectors_LabelKeys(t *testing.T) {
 		family string
 		want   []string
 	}{
-		{"content_service_requests_total", []string{"kind", "outcome"}},
-		{"content_service_request_duration_seconds", []string{"kind"}},
-		{"content_service_bytes_served_total", []string{"kind"}},
+		{"ach_content_service_requests_total", []string{"kind", "outcome"}},
+		{"ach_content_service_request_duration_seconds", []string{"kind"}},
+		{"ach_content_service_bytes_served_total", []string{"kind"}},
 	}
 	for _, tc := range cases {
 		got := metricLabelKeys(t, reg, tc.family)
@@ -274,9 +274,9 @@ func TestContentServiceCollectors_NoForbiddenLabels(t *testing.T) {
 		"owner_email": {},
 	}
 	families := []string{
-		"content_service_requests_total",
-		"content_service_request_duration_seconds",
-		"content_service_bytes_served_total",
+		"ach_content_service_requests_total",
+		"ach_content_service_request_duration_seconds",
+		"ach_content_service_bytes_served_total",
 	}
 	for _, fam := range families {
 		keys := metricLabelKeys(t, reg, fam)
@@ -289,7 +289,7 @@ func TestContentServiceCollectors_NoForbiddenLabels(t *testing.T) {
 }
 
 // TestOperatorCollectors_EnvironmentAvailableLabels — asserts the
-// environment_available gauge registers with the {name} label and records
+// ach_environment_available gauge registers with the {name} label and records
 // the set value (G7).
 func TestOperatorCollectors_EnvironmentAvailableLabels(t *testing.T) {
 	reg := prometheus.NewRegistry()
@@ -299,27 +299,27 @@ func TestOperatorCollectors_EnvironmentAvailableLabels(t *testing.T) {
 	}
 	c.EnvironmentAvailable.WithLabelValues("prod").Set(1)
 
-	if got, want := metricLabelKeys(t, reg, "environment_available"), []string{"name"}; !equalStringSlices(got, want) {
-		t.Errorf("environment_available label keys: got %v, want %v", got, want)
+	if got, want := metricLabelKeys(t, reg, "ach_environment_available"), []string{"name"}; !equalStringSlices(got, want) {
+		t.Errorf("ach_environment_available label keys: got %v, want %v", got, want)
 	}
-	if v := gaugeValue(t, reg, "environment_available", map[string]string{"name": "prod"}); v != 1 {
-		t.Errorf("environment_available{name=prod} = %v, want 1", v)
+	if v := gaugeValue(t, reg, "ach_environment_available", map[string]string{"name": "prod"}); v != 1 {
+		t.Errorf("ach_environment_available{name=prod} = %v, want 1", v)
 	}
 }
 
 // TestOperatorCollectors_ExternalRefRefreshLabels — asserts the
-// operator_external_ref_refresh_total counter registers with the
+// ach_operator_external_ref_refresh_total counter registers with the
 // {kind,result,type} label set and increments (G7).
 func TestOperatorCollectors_ExternalRefRefreshLabels(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	c := NewOperatorCollectors(reg)
 	c.ExternalRefRefresh.WithLabelValues("plugin", "github", "synced").Inc()
 
-	if got, want := metricLabelKeys(t, reg, "operator_external_ref_refresh_total"), []string{"kind", "result", "type"}; !equalStringSlices(got, want) {
-		t.Errorf("operator_external_ref_refresh_total label keys: got %v, want %v", got, want)
+	if got, want := metricLabelKeys(t, reg, "ach_operator_external_ref_refresh_total"), []string{"kind", "result", "type"}; !equalStringSlices(got, want) {
+		t.Errorf("ach_operator_external_ref_refresh_total label keys: got %v, want %v", got, want)
 	}
-	if v := counterValue(t, reg, "operator_external_ref_refresh_total", map[string]string{"kind": "plugin", "type": "github", "result": "synced"}); v != 1 {
-		t.Errorf("operator_external_ref_refresh_total{plugin,github,synced} = %v, want 1", v)
+	if v := counterValue(t, reg, "ach_operator_external_ref_refresh_total", map[string]string{"kind": "plugin", "type": "github", "result": "synced"}); v != 1 {
+		t.Errorf("ach_operator_external_ref_refresh_total{plugin,github,synced} = %v, want 1", v)
 	}
 }
 
@@ -337,8 +337,8 @@ func TestPlatformAPICollectors(t *testing.T) {
 
 	names := familyNames(t, reg)
 	want := map[string]bool{
-		"platform_api_hydrate_duration_seconds": false,
-		"platform_api_login_total":              false,
+		"ach_platform_api_hydrate_duration_seconds": false,
+		"ach_platform_api_login_total":              false,
 	}
 	for _, n := range names {
 		if _, ok := want[n]; ok {
@@ -350,11 +350,11 @@ func TestPlatformAPICollectors(t *testing.T) {
 			t.Errorf("family %s not registered; got %v", n, names)
 		}
 	}
-	if got, w := metricLabelKeys(t, reg, "platform_api_login_total"), []string{"outcome"}; !equalStringSlices(got, w) {
-		t.Errorf("platform_api_login_total label keys: got %v, want %v", got, w)
+	if got, w := metricLabelKeys(t, reg, "ach_platform_api_login_total"), []string{"outcome"}; !equalStringSlices(got, w) {
+		t.Errorf("ach_platform_api_login_total label keys: got %v, want %v", got, w)
 	}
-	if v := counterValue(t, reg, "platform_api_login_total", map[string]string{"outcome": "created"}); v != 1 {
-		t.Errorf("platform_api_login_total{created} = %v, want 1", v)
+	if v := counterValue(t, reg, "ach_platform_api_login_total", map[string]string{"outcome": "created"}); v != 1 {
+		t.Errorf("ach_platform_api_login_total{created} = %v, want 1", v)
 	}
 }
 

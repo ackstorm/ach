@@ -30,7 +30,7 @@ func TestObserveDuration_EmitsHistogram(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
 
-	n, err := testutil.GatherAndCount(reg, "forwarder_request_duration_seconds")
+	n, err := testutil.GatherAndCount(reg, "ach_forwarder_request_duration_seconds")
 	if err != nil {
 		t.Fatalf("gather: %v", err)
 	}

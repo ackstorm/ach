@@ -35,7 +35,7 @@ func TestHydrateHandler_ObservesDuration(t *testing.T) {
 	var count uint64
 	found := false
 	for _, fam := range families {
-		if fam.GetName() != "platform_api_hydrate_duration_seconds" {
+		if fam.GetName() != "ach_platform_api_hydrate_duration_seconds" {
 			continue
 		}
 		found = true
@@ -46,7 +46,7 @@ func TestHydrateHandler_ObservesDuration(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("platform_api_hydrate_duration_seconds family not registered")
+		t.Fatal("ach_platform_api_hydrate_duration_seconds family not registered")
 	}
 	if count != 1 {
 		t.Errorf("hydrate duration sample count = %d, want 1", count)

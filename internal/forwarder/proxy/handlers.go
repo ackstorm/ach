@@ -244,7 +244,7 @@ func statusClass(code int) string {
 }
 
 // observeDuration wraps h, emitting
-// forwarder_request_duration_seconds{route, key_type, status_class}
+// ach_forwarder_request_duration_seconds{route, key_type, status_class}
 // per Hub §18.5 once the response completes.
 func observeDuration(routeLabel string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

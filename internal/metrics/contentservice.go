@@ -20,11 +20,11 @@ import "github.com/prometheus/client_golang/prometheus"
 //
 // Cardinality budget (§18.5):
 //
-//	content_service_requests_total{kind, outcome}
+//	ach_content_service_requests_total{kind, outcome}
 //	  3 kinds × ~11 outcomes = ~33 series
-//	content_service_request_duration_seconds{kind}
+//	ach_content_service_request_duration_seconds{kind}
 //	  3 series × bucket_count
-//	content_service_bytes_served_total{kind}
+//	ach_content_service_bytes_served_total{kind}
 //	  3 series
 type ContentServiceCollectors struct {
 	requests *prometheus.CounterVec
@@ -45,14 +45,14 @@ func NewContentServiceCollectors(reg *prometheus.Registry) *ContentServiceCollec
 	c := &ContentServiceCollectors{
 		requests: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "content_service_requests_total",
+				Name: "ach_content_service_requests_total",
 				Help: "Total content-service requests, partitioned by kind/outcome (Hub §18.5).",
 			},
 			[]string{"kind", "outcome"},
 		),
 		duration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "content_service_request_duration_seconds",
+				Name:    "ach_content_service_request_duration_seconds",
 				Help:    "Content-service request duration seconds, partitioned by kind (Hub §18.5).",
 				Buckets: ContentServiceDurationBuckets,
 			},
@@ -60,7 +60,7 @@ func NewContentServiceCollectors(reg *prometheus.Registry) *ContentServiceCollec
 		),
 		bytes: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "content_service_bytes_served_total",
+				Name: "ach_content_service_bytes_served_total",
 				Help: "Total bytes streamed from the content service, partitioned by kind (Hub §18.5).",
 			},
 			[]string{"kind"},
@@ -83,7 +83,7 @@ func (c *ContentServiceCollectors) PreInitZeroSeries() {
 	c.bytes.WithLabelValues("plugin").Add(0)
 }
 
-// IncRequest increments content_service_requests_total{kind, outcome}
+// IncRequest increments ach_content_service_requests_total{kind, outcome}
 // per Hub §18.5 normative label-value enums:
 //
 //	kind    ∈ {prompt, plugin, artifact}
@@ -101,7 +101,7 @@ func (c *ContentServiceCollectors) IncRequest(kind, outcome string) {
 	c.requests.WithLabelValues(kind, outcome).Inc()
 }
 
-// ObserveRequestDuration observes content_service_request_duration_seconds
+// ObserveRequestDuration observes ach_content_service_request_duration_seconds
 // {kind} per Hub §18.5:
 //
 //	kind ∈ {prompt, plugin, artifact}
@@ -113,7 +113,7 @@ func (c *ContentServiceCollectors) ObserveRequestDuration(kind string, seconds f
 	c.duration.WithLabelValues(kind).Observe(seconds)
 }
 
-// AddBytesServed adds n bytes to content_service_bytes_served_total
+// AddBytesServed adds n bytes to ach_content_service_bytes_served_total
 // {kind} per Hub §18.5:
 //
 //	kind ∈ {prompt, plugin, artifact}

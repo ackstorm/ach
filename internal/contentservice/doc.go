@@ -55,11 +55,11 @@
 //   - Every request emits exactly one audit event via
 //     audit.EmitAudit with Action=content.get and Outcome matching
 //     the response body code (D-03 table) or "forwarded" on success.
-//   - content_service_requests_total{kind,outcome},
+//   - ach_content_service_requests_total{kind,outcome},
 //     _request_duration_seconds{kind}, and _bytes_served_total{kind}
 //     are populated on every request. Cardinality budget per §18.5
 //     OBS-06: NO request_id, NO owner_email labels.
-//   - litellm_unreachable_total{caller=content_service} is
+//   - ach_litellm_unreachable_total{caller=content_service} is
 //     incremented on every transport-failure TeamsResolver miss in
 //     enforceTeams (shared CounterVec via metrics.
 //     MustRegisterLitellmUnreachable).

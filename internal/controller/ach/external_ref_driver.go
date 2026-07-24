@@ -169,7 +169,7 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	}
 	result := materializeExternalRef(ctx, deps)
 
-	// G7: operator_external_ref_refresh_total{kind,type,result}. result is
+	// G7: ach_operator_external_ref_refresh_total{kind,type,result}. result is
 	// the fetch-classification reason on failure, "not_modified" on a 304/
 	// SHA-match, else "synced".
 	if cfg.metrics != nil {

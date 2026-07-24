@@ -112,7 +112,7 @@ type Deps struct {
 	InsecureCookie bool
 
 	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
-	// increment platform_api_login_total{outcome} on the SSO login path.
+	// increment ach_platform_api_login_total{outcome} on the SSO login path.
 	Metrics *achmetrics.PlatformAPICollectors
 }
 
@@ -241,7 +241,7 @@ func (deps Deps) fail(ctx context.Context, w http.ResponseWriter, actor, outcome
 		RequestID: reqID,
 		KeyID:     keyID,
 	})
-	// G7: single SSO-failure convergence point → platform_api_login_total.
+	// G7: single SSO-failure convergence point → ach_platform_api_login_total.
 	if deps.Metrics != nil {
 		deps.Metrics.Login.WithLabelValues(outcome).Inc()
 	}
@@ -526,7 +526,7 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 		RequestID: reqID,
 		KeyID:     keyID,
 	})
-	// G7: platform_api_login_total{outcome="created"} on successful mint.
+	// G7: ach_platform_api_login_total{outcome="created"} on successful mint.
 	if deps.Metrics != nil {
 		deps.Metrics.Login.WithLabelValues(audit.OutcomeCreated).Inc()
 	}
