@@ -575,10 +575,54 @@ func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, em
 // token poll, not via the browser.
 const callbackHTMLPage = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>ach login</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signed in to ACH</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1a1a1a; --muted:#8a8a8a; --brand:#FA1E28; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d0d0d; --fg:#f5f5f5; --muted:#7a7a7a; }
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    display:flex; align-items:center; justify-content:center;
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .card { display:flex; flex-direction:column; align-items:center; text-align:center; padding:24px; }
+  .logo { width:76px; height:76px; margin-bottom:26px; }
+  h1 { font-size:30px; font-weight:600; letter-spacing:-0.02em; margin-bottom:12px; }
+  p { font-size:16px; color:var(--muted); font-weight:400; }
+</style>
+</head>
 <body>
-<h1>Login successful</h1>
-<p>You may close this window and return to your terminal.</p>
+  <main class="card">
+    <svg class="logo" viewBox="0 0 100 100" fill="none" aria-label="ACH" role="img">
+      <g stroke="var(--brand)" stroke-width="3.2" stroke-linecap="round">
+        <polygon points="50,18 77.7,34 77.7,66 50,82 22.3,66 22.3,34" fill="none"/>
+        <line x1="50" y1="50" x2="50"   y2="18"/>
+        <line x1="50" y1="50" x2="77.7" y2="34"/>
+        <line x1="50" y1="50" x2="77.7" y2="66"/>
+        <line x1="50" y1="50" x2="50"   y2="82"/>
+        <line x1="50" y1="50" x2="22.3" y2="66"/>
+        <line x1="50" y1="50" x2="22.3" y2="34"/>
+      </g>
+      <g fill="var(--brand)">
+        <circle cx="50"   cy="18" r="5.2"/>
+        <circle cx="77.7" cy="34" r="5.2"/>
+        <circle cx="77.7" cy="66" r="5.2"/>
+        <circle cx="50"   cy="82" r="5.2"/>
+        <circle cx="22.3" cy="66" r="5.2"/>
+        <circle cx="22.3" cy="34" r="5.2"/>
+        <circle cx="50" cy="50" r="8.4"/>
+      </g>
+    </svg>
+    <h1>Signed in to ACH</h1>
+    <p>You may now close this page</p>
+  </main>
 </body>
 </html>
 `

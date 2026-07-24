@@ -24,7 +24,7 @@
 // internal/platformapi/auth package) writes the freshly minted pk_
 // payload to "ach:cli-session:<id>" via cli.Put when the inbound
 // callback URL packs a session_id into the OAuth2 state — and renders
-// a friendly browser-side HTML "you may close this window" page
+// a friendly browser-side HTML "you may now close this page" page
 // instead of the legacy JSON body. Absence-of-session-id preserves the
 // pre-Phase-6 JSON response so test/e2e/phase3_invariants browser-
 // driven assertions continue to pass.
