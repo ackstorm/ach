@@ -53,3 +53,9 @@ spec/
 
 # SDD/superpowers session scratch — never commit
 .superpowers/
+
+# Local planning docs + graphify output — never commit new scratch here
+# (dirs still hold some legacy tracked files; this only ignores untracked)
+docs/plans/
+docs/superpowers/
+graphify-out/
