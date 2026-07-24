@@ -105,6 +105,9 @@ spec.memory.type	string enum[codemem,hindsight]
 spec.model	object
 spec.model.name	string
 spec.model.params	
+spec.model.thinking	object
+spec.model.thinking.effort	string
+spec.model.thinking.enabled	boolean
 spec.model.type	string enum[anthropic,gemini,openai]
 spec.profileRef	object
 spec.profileRef.name	string

@@ -134,13 +134,7 @@ func renderMatrix() map[string]renderCase {
 	full := base("full", cron)
 	full.profile.Spec.Engine = &achv1alpha1.EngineSpec{
 		Home: "/h", ForwardEnv: []string{"HTTPS_PROXY"}, Type: "pi",
-		Pi: &achv1alpha1.PiEngineSpec{
-			BinaryPath: "pi",
-			Model: &achv1alpha1.PiModelSpec{
-				Reasoning: true, Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000,
-			},
-			ThinkingLevel: "high",
-		},
+		Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"},
 	}
 	full.profile.Spec.Limits = &achv1alpha1.LimitsSpec{MaxSteps: ptr(int64(50))}
 	full.profile.Spec.Health = &achv1alpha1.HealthSpec{Host: "0.0.0.0", Port: 8000}

@@ -24,7 +24,7 @@ type AchEndpointSpec struct {
 	BaseURL string `json:"baseUrl,omitempty"`
 }
 
-// ModelSpec selects the ACH-served model (config: model{name,type,params}).
+// ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
 type ModelSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -36,6 +36,20 @@ type ModelSpec struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Params *apiextensionsv1.JSON `json:"params,omitempty"`
+	// Thinking is the normalized model-level reasoning intent (config: model.thinking).
+	// Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer
+	// (D-2 precedent): effort one of minimal|low|medium|high|xhigh, requires enabled=true.
+	// +optional
+	Thinking *ThinkingSpec `json:"thinking,omitempty"`
+}
+
+// ThinkingSpec is the normalized reasoning intent each engine translates for itself
+// (pi: models.json reasoning + --thinking; opencode: per-call providerOptions).
+type ThinkingSpec struct {
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// +optional
+	Effort string `json:"effort,omitempty"`
 }
 
 // EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
@@ -65,36 +79,16 @@ type EngineSpec struct {
 	Pi *PiEngineSpec `json:"pi,omitempty"`
 }
 
-// PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*). All fields are
-// optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH; the
-// vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter).
+// PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*) — executable
+// knobs ONLY (model identity and thinking intent live in ModelSpec). All fields are
+// optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH;
+// the vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter). The
+// v0.8.1-only model and thinking-level fields were removed for ach-agent v0.9.0.
 type PiEngineSpec struct {
 	// +optional
 	BinaryPath string `json:"binaryPath,omitempty"`
 	// +optional
 	McpAdapterPath string `json:"mcpAdapterPath,omitempty"`
-	// Model is Pi's typed capability descriptor. Omitted → the harness's own builtin
-	// defaults (reasoning=false, input=[text], contextWindow=128000, maxTokens=16384).
-	// +optional
-	Model *PiModelSpec `json:"model,omitempty"`
-	// ThinkingLevel selects the --thinking level passed to pi at launch. Free string —
-	// ach-agent validates (one of off|minimal|low|medium|high|xhigh|max) and hard-fails
-	// on an unrecognized value or a value set without Model.Reasoning=true.
-	// +optional
-	ThinkingLevel string `json:"thinkingLevel,omitempty"`
-}
-
-// PiModelSpec is Pi's model capability descriptor (config: engine.pi.model.*). Free-form —
-// ach-agent's Pydantic PiModelCapabilities is the single enforcer (D-2 precedent).
-type PiModelSpec struct {
-	// +optional
-	Reasoning bool `json:"reasoning,omitempty"`
-	// +optional
-	Input []string `json:"input,omitempty"`
-	// +optional
-	ContextWindow int `json:"contextWindow,omitempty"`
-	// +optional
-	MaxTokens int `json:"maxTokens,omitempty"`
 }
 
 // LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
