@@ -426,6 +426,7 @@ func TestKeyTypeFor(t *testing.T) {
 func TestRouteFor(t *testing.T) {
 	tests := map[string]string{
 		"/v1/chat/completions": "/v1",
+		"/v2/model/info":       "/v2",
 		"/gemini/foo":          "/gemini",
 		"/mcp/server-x/tools":  "/mcp",
 		"/a2a/agent-y":         "/a2a",

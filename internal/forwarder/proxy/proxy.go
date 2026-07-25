@@ -162,6 +162,13 @@ func routeFor(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/v1"):
 		return "/v1"
+	// Prefix matching already guarantees a `/v2` path takes neither the `/mcp` branch
+	// (`proxy.go:103`) nor the `/gemini` branch (`:122`); the default path holds with
+	// or without the case. The case is required for **metrics parity**: the shared
+	// `ErrorHandler` labels its series via `routeFor(r.URL.Path)` (`proxy.go:150`), so
+	// without it a `/v2` upstream fault is emitted as `route="unknown"`, violating AC-13.
+	case strings.HasPrefix(path, "/v2"):
+		return "/v2"
 	case strings.HasPrefix(path, "/gemini"):
 		return "/gemini"
 	case strings.HasPrefix(path, "/mcp"):

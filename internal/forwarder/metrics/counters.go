@@ -44,7 +44,7 @@ var (
 // IncRequests increments ach_forwarder_requests_total{route, key_type, outcome}
 // per Hub §18.5 normative label-value enums:
 //
-//	route    ∈ {/v1, /gemini, /mcp, /a2a}
+//	route    ∈ {/v1, /v2, /gemini, /mcp, /a2a}
 //	key_type ∈ {pk, ek, none}
 //	outcome  ∈ {forwarded, unauthorized_resource, unauthorized_team,
 //	             expired_or_revoked, litellm_unreachable, internal_error,
@@ -110,7 +110,7 @@ func IncLiteLLMUnreachable() {
 // ObserveRequestDuration observes ach_forwarder_request_duration_seconds
 // {route, key_type, status_class} per Hub §18.5:
 //
-//	route        ∈ {/v1, /gemini, /mcp, /a2a}
+//	route        ∈ {/v1, /v2, /gemini, /mcp, /a2a}
 //	key_type     ∈ {pk, ek, none}
 //	status_class ∈ {1xx, 2xx, 3xx, 4xx, 5xx}
 //
