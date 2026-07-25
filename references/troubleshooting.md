@@ -566,6 +566,12 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ Cost stuck at 0 under `litellm_usage`
+
+Check `/v2/model/info` reachability through the gateway. A control plane
+predating `/v2` forwarding returns 404 at the edge, so the cost source cannot
+read the model information it needs.
+
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
 After migration `000011` the forwarder authenticates to LiteLLM with the
 **caller's own** virtual key (`litellm_key_material`), not the master key

@@ -60,7 +60,7 @@ var (
 // Safe to call alongside SSE: SSE is RESPONSE-side; request body for
 // LiteLLM chat completions is always buffered JSON.
 //
-// Scope (v1alpha1): /v1 + /gemini per-route handlers only.
+// Scope (v1alpha1): /v1 + /v2 + /gemini per-route handlers only.
 // MCP/A2A tag injection deferred to v1beta1.
 func InjectEnvironmentTag(req *http.Request, environmentName string) error {
 	if environmentName == "" {

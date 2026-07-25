@@ -134,6 +134,49 @@ func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	}
 }
 
+// TestDirector_V2HeaderParity pins B.3.3+B.3.4: a /v2 request reaches upstream
+// with the caller's own material as a BARE x-litellm-api-key and with every
+// client auth header stripped — byte-identical to the /v1 case.
+func TestDirector_V2HeaderParity(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
+	}
+	rp := New(deps)
+
+	material := "sk-user-1"
+	sealed := sealMaterial(t, material)
+	kc := middleware.KeyContext{
+		KeyType:            keys.PrefixEk,
+		OwnerEmail:         "u@example.com",
+		Environment:        "demo",
+		LiteLLMKeyMaterial: &sealed,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v2/model/info?model=demo-model", nil)
+	req.Header.Set("Authorization", "Bearer evil")
+	req.Header.Set("x-ach-key", "ek_xyz")
+	req.Header.Set("X-Goog-Api-Key", "leak")
+	req = req.WithContext(ctxWithKeyAndJWT(kc, ""))
+
+	rp.Director(req)
+
+	if req.URL.Path != "/v2/model/info" {
+		t.Errorf("path = %s; want verbatim preserved", req.URL.Path)
+	}
+	if req.Host != "" {
+		t.Errorf("req.Host = %q; want empty", req.Host)
+	}
+	if got := req.Header.Get("x-litellm-api-key"); got != material {
+		t.Errorf("x-litellm-api-key = %q; want bare %q on /v2", got, material)
+	}
+	for _, h := range []string{"Authorization", "x-ach-key", "X-Goog-Api-Key"} {
+		if got := req.Header.Get(h); got != "" {
+			t.Errorf("%s = %q; want stripped on /v2", h, got)
+		}
+	}
+}
+
 // Issue #41: the "Bearer " prefix on x-litellm-api-key is MCP-only. /mcp
 // gets "Bearer <material>"; /v1 gets the bare value (asserted in
 // TestDirector_ForwardsUserMaterial).

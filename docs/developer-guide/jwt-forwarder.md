@@ -13,6 +13,11 @@ backend-side verification code, see
 the rotation procedure, see
 [JWT key rotation](../runbooks/jwt-key-rotation.md).
 
+`/v1`, `/v2`, and `/gemini` are pass-through route families with **no** JWT
+involvement. `/v2` behaves exactly as `/v1`: it receives the caller's bare
+`x-litellm-api-key`, with no precheck; LiteLLM is the authorization boundary.
+`/mcp` and `/a2a` remain the only JWT routes.
+
 ---
 
 ## 1. End-to-end flow
@@ -212,7 +217,7 @@ shared master key.
   into the new `litellm_key_material` column (reversing FIX01 §A.6 — plaintext,
   deliberate for this testing phase).
 - The resolver carries it through `KeyInfo` → `KeyContext`; the Director writes
-  it as `x-litellm-api-key` — **bare** on `/v1`/`/a2a`, `Bearer `-prefixed on
+  it as `x-litellm-api-key` — **bare** on `/v1`/`/v2`/`/a2a`, `Bearer `-prefixed on
   `/mcp` (LiteLLM's MCP key parser requires the prefix).
 - **`/gemini` is the exception:** LiteLLM's native Google AI Studio passthrough
   authenticates the virtual key ONLY via `x-goog-api-key` (or `?key=`) — it does

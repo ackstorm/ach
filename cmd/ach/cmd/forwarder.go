@@ -81,7 +81,7 @@ func init() {
 var forwarderCmd = &cobra.Command{
 	Use:   "forwarder",
 	Short: "Run the ACH Hub Forwarder (runtime trust path + JWT mint + JWKS)",
-	Long: `Boot the chi-backed reverse proxy on /v1, /gemini, /mcp/{name},
+	Long: `Boot the chi-backed reverse proxy on /v1, /v2, /gemini, /mcp/{name},
 /a2a/{name} with §5.1 header strip+rewrite, §9 Ed25519 JWT signing gated
 by BackendIdentityPolicy, and /.well-known/jwks.json. Refuses to start
 when ACH_BASE_URL is not http(s)://, ACH_KEY_ENCRYPTION_KEY is unset/invalid
@@ -175,7 +175,7 @@ type forwarderProcessDeps struct {
 	// metricsHandler is the /metrics http.Handler from
 	// metrics.Handler(reg). Composed onto the traffic listener in
 	// runForwarderServer so a scrape client can hit
-	// http://forwarder:8080/metrics on the SAME port as /v1, /gemini,
+	// http://forwarder:8080/metrics on the SAME port as /v1, /v2, /gemini,
 	// etc. (Plan 05-06 D-10).
 	metricsHandler http.Handler
 }
