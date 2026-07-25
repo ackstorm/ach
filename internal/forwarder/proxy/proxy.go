@@ -58,7 +58,7 @@ type Deps struct {
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
-// process; all four routes (/v1, /gemini, /mcp, /a2a) share it.
+// process; all five routes (/v1, /v2, /gemini, /mcp, /a2a) share it.
 //
 // Director ordering per D-05:
 //  1. Rewrite scheme + host from deps.LiteLLMUpstream.
@@ -99,7 +99,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 			}
 			headers.StripAndRewrite(req.Header, material)
 			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
-			// requires a "Bearer " prefix; /v1, /gemini, /a2a take the bare value.
+			// requires a "Bearer " prefix; /v1, /v2, /gemini, /a2a take the bare value.
 			if routeFor(req.URL.Path) == "/mcp" {
 				// Collapse to the bare /mcp/<server> form. LiteLLM v1.87.1's MCP
 				// gateway grants non-admin virtual keys ONLY on the exact
@@ -131,7 +131,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 		},
 		ModifyResponse: nil,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			// Client went away mid-proxy (SSE stream on /mcp or /v1 closed
+			// Client went away mid-proxy (SSE stream on /mcp, /v1, or /v2 closed
 			// by the caller): the inbound request context is canceled, NOT
 			// an upstream fault. Nothing to write, no error to log, no
 			// litellm_unreachable metric — the nginx "499" convention.
@@ -157,7 +157,8 @@ func New(deps Deps) *httputil.ReverseProxy {
 }
 
 // routeFor extracts the top-level route name for metrics labels.
-// "/v1/chat/completions" → "/v1"; "/mcp/foo/bar" → "/mcp"; etc.
+// "/v1/chat/completions" → "/v1"; "/v2/model/info" → "/v2";
+// "/mcp/foo/bar" → "/mcp"; etc.
 func routeFor(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/v1"):

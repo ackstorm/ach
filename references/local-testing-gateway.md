@@ -9,7 +9,7 @@ This document outlines the local unifed gateway architecture and testing procedu
 Routing now lives in **two layers**. Production routing is owned by the
 in-binary **`ach-gateway`** pod (`ach gateway` mode, `internal/gateway`): a
 dumb reverse proxy that fronts every production-real surface
-(`/platform /content /v1 /gemini /mcp /a2a /.well-known`) behind one
+(`/platform /content /v1 /v2 /gemini /mcp /a2a /.well-known`) behind one
 in-cluster Service. In prod the public Ingress targets `ach-gateway`
 directly — there is no nginx.
 
@@ -36,7 +36,7 @@ gateway exactly as prod will.
    │ :5556   │           │ /metrics     │         │ (ach gateway)  │
    └─────────┘           └──────────────┘         └───────┬────────┘
                                           ┌───────────────┼───────────────┐
-                          ▼ (/platform)   ▼ (/content)                    ▼ (/v1,/gemini,/mcp,/a2a,/.well-known)
+                          ▼ (/platform)   ▼ (/content)                    ▼ (/v1,/v2,/gemini,/mcp,/a2a,/.well-known)
                 ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐
                 │  ach-platform-api  │ │  content-service   │ │   ach-forwarder    │
                 │   (Service: 80)    │ │  (Service: 8082)   │ │   (Service: 80)    │
@@ -46,7 +46,7 @@ gateway exactly as prod will.
 Reachable under the single localhost port (`8080`):
 * **Platform API:** `http://localhost:8080/platform/` — shim → `ach-gateway` → platform-api
 * **Content Service:** `http://localhost:8080/content/` — shim → `ach-gateway` → content-service
-* **LLM Forwarder:** `http://localhost:8080/{v1,gemini,mcp,a2a}/`, JWKS at `/.well-known/` — shim → `ach-gateway` → forwarder
+* **LLM Forwarder:** `http://localhost:8080/{v1,v2,gemini,mcp,a2a}/`, JWKS at `/.well-known/` — shim → `ach-gateway` → forwarder
 * **SSO (Dex):** `http://localhost:8080/dex/` — **DEV KLUDGE, served by the shim, never by `ach-gateway`.** Prod reaches Dex directly via `ACH_DEX_ISSUER_URL` (e.g. `https://auth.ackstorm.ai`) with no gateway involvement.
 * **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — **DEV KLUDGE, served by the shim.** Distinct routes because a bare `/metrics` can't disambiguate four services. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`; `/metrics/operator` is backed by the `ach-operator-metrics` Service. **`ach-gateway` has NO `/metrics` route by design** — keeping metrics off the prod router means the prod Ingress physically cannot leak them.
 * **Shim health:** `http://localhost:8080/healthz` returns `200 ok` directly from nginx (no upstream); it backs the shim pod's probes. `ach-gateway` serves its own local `/healthz` for its pod probes.
@@ -71,7 +71,7 @@ The gateway Service is **`type: NodePort` (nodePort `30080`)** and
 (hostPort `8080` → node containerPort `30080`). So on any cluster created
 with the current kind-config, the whole platform is reachable at
 `http://localhost:8080` **with no port-forward** — the unified SSO +
-`/platform` + `/content` + `/v1` paths all route through nginx.
+`/platform` + `/content` + `/v1` + `/v2` paths all route through nginx.
 
 > The `extraPortMapping` only binds at `kind create`. A cluster created
 > **before** this change won't have it — recreate it

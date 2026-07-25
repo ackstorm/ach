@@ -715,7 +715,7 @@ logs-litellm:      ## Tail LiteLLM logs.
 # --- E2E harness wiring ----------------------------------------------------
 # Everything reaches the synced cluster through the gateway (localhost:8080;
 # kind extraPortMapping + devtools --network=host). Data-plane URLs ARE the
-# gateway base (it routes /v1 /content /platform /mcp /a2a /.well-known /dex);
+# gateway base (it routes /v1 /v2 /content /platform /mcp /a2a /.well-known /dex);
 # metrics get distinct /metrics/<svc> routes (a bare /metrics can't
 # disambiguate four services behind one base). Phases run BY DEFAULT against
 # the synced cluster — opt OUT of a phase with ACH_SKIP_PHASE<n>=1 for focused
