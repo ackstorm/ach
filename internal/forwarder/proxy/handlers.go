@@ -66,12 +66,13 @@ func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(dep
 // same auth translation, no precheck and no JWT — LiteLLM stays the
 // authorization boundary for every /v2 endpoint, exactly as for /v1 (B.3.2).
 //
-// Security note (B.3.9, flagged not blocked — user-approved design): a blanket
-// /v2/* pass-through exposes every LiteLLM /v2 endpoint (e.g. /v2/team/list,
-// /v2/key/info) to any authenticated pk_/ek_, precisely as /v1/* exposes
-// every /v1 endpoint today. LiteLLM stays the authorization boundary.
-// Narrowing would be a change to both families, never a /v2 special case. Its
-// measured extent is recorded by P0-v2 item (6) (C.3).
+// Security note to preserve verbatim in the HandlerV2 doc comment or the PR
+// body (B.3.9, flagged not blocked — user-approved design): a blanket `/v2/*`
+// pass-through exposes every LiteLLM `/v2` endpoint (e.g. `/v2/team/list`,
+// `/v2/key/info`) to any authenticated `pk_`/`ek_`, precisely as `/v1/*`
+// exposes every `/v1` endpoint today. LiteLLM stays the authorization boundary.
+// Narrowing would be a change to **both** families, never a `/v2` special case.
+// Its measured extent is recorded by P0-v2 item (6) (C.3).
 func HandlerV2(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v2") }
 
 // HandlerGemini mirrors HandlerV1 for /gemini/*.
