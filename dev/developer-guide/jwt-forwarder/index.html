@@ -1456,6 +1456,10 @@ backend-side verification code, see
 <a href="../../runbooks/writing-an-mcp-backend/">Writing an MCP backend</a>. For
 the rotation procedure, see
 <a href="../../runbooks/jwt-key-rotation/">JWT key rotation</a>.</p>
+<p><code>/v1</code>, <code>/v2</code>, and <code>/gemini</code> are pass-through route families with <strong>no</strong> JWT
+involvement. <code>/v2</code> behaves exactly as <code>/v1</code>: it receives the caller's bare
+<code>x-litellm-api-key</code>, with no precheck; LiteLLM is the authorization boundary.
+<code>/mcp</code> and <code>/a2a</code> remain the only JWT routes.</p>
 <hr />
 <h2 id="1-end-to-end-flow">1. End-to-end flow<a class="headerlink" href="#1-end-to-end-flow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌────────────┐  x-ach-key: pk_…           ┌──────────────┐
@@ -1685,7 +1689,7 @@ shared master key.</p>
   into the new <code>litellm_key_material</code> column (reversing FIX01 §A.6 — plaintext,
   deliberate for this testing phase).</li>
 <li>The resolver carries it through <code>KeyInfo</code> → <code>KeyContext</code>; the Director writes
-  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/a2a</code>, <code>Bearer</code>-prefixed on
+  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/v2</code>/<code>/a2a</code>, <code>Bearer</code>-prefixed on
   <code>/mcp</code> (LiteLLM's MCP key parser requires the prefix).</li>
 <li><strong><code>/gemini</code> is the exception:</strong> LiteLLM's native Google AI Studio passthrough
   authenticates the virtual key ONLY via <code>x-goog-api-key</code> (or <code>?key=</code>) — it does
