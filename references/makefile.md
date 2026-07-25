@@ -124,8 +124,12 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 > Note: the `cluster.sh` per-component reconcile functions are named
 > `reconcile_*` (`reconcile_all`, `reconcile_ach`, `reconcile_fixtures`,
 > `reconcile_objects` [stage 04], `reconcile_environments` [stage 05], …) and
-> `reconcile_all` ends with `verify_all` [stage 06], which blocks until every
-> synced object is healthy — shared by both `cluster-up` and `cluster-sync`.
+> `reconcile_all` ends with `verify_all` [stage 07], which first waits for the
+> stage-03 `ach-mcp-echo` backend and verifies that LiteLLM's live
+> `/v1/mcp/tools` result contains exactly one `demo-mcp-jwt.echo` and one
+> `demo-mcp-nojwt.echo`, then blocks until every synced object is healthy.
+> This strengthened readiness contract is shared by both `cluster-up` and
+> `cluster-sync`.
 > Unrelated to `ach-cli env hydrate` / `/platform/hydrate`, which materialize
 > workspace artifacts.
 

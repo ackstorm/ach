@@ -18,6 +18,7 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase3_helpers_test.go`              | Port-forward + HTTP-client + audit-line parser helpers                                                                 |
 | `phase4_invariants_test.go`           | Phase 04 SCs #1–#5 (Forwarder header rewrite + precheck + JWT mint + JWKS + audit), plan 04-09 helpers                 |
 | `phase4_helpers_test.go`              | Phase 04 Forwarder helpers (SSO key acquisition, JWKS probe, BIP fixture seed)                                         |
+| `phase4_bip_loop_test.go`             | Phase 04 BIP closed loop — single-shot JWT-present and JWT-absent MCP calls through both seeded routes                 |
 | `phase4_environment_available_test.go`| TODO §9 acceptance — Environment Available composite condition (runs by default; opt out via `ACH_SKIP_PHASE4=1`)      |
 | `phase4_promotion_test.go`            | §11 UAT promotion: force-refresh, BIP, restart, finalizer matrix (the §11c/§11f PluginMarketplace subtests were removed — kind gated off via `featuregate.PluginsEnabled`)         |
 | `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, DB-count helpers     |
@@ -30,9 +31,17 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 
 ```bash
 make cluster-up                                    # idempotent bring-up (kept)
+make e2e-focus RUN='TestPhase4BIPClosedLoop'        # single-shot BIP/MCP route checks
 make e2e-focus RUN='TestPhase4Promotion/SC11a'     # stdlib -run pattern
 make e2e-focus RUN='TestPhase4Promotion'           # full §11 sub-suite
 ```
+
+`make cluster-up` and `make cluster-sync` wait for the Ready `ach-mcp-echo`
+backend and LiteLLM's live MCP discovery of both seeded echo tools before
+reporting readiness. The BIP loop calls are intentionally single-shot: cluster
+readiness owns discovery convergence, so a focused test on a retained cluster
+only proves the already-warmed registry and must not hide a failed readiness
+gate with its own retry.
 
 ## Fixtures
 
