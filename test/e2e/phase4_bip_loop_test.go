@@ -61,7 +61,8 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 
 	t.Run("jwt_route_attaches_jwt", func(t *testing.T) {
 		echoed := "hola-bip-jwt"
-		callEchoViaForwarderEventually(t, gatewayLocal, mcpEchoLocal, pk, bipJWTRouteName, echoed)
+		resetMcpEchoCapture(t, mcpEchoLocal)
+		callEchoViaForwarder(t, gatewayLocal, pk, bipJWTRouteName, echoed)
 		snap := readMcpEchoCapture(t, mcpEchoLocal)
 		if !snap.JWTPresent {
 			t.Fatalf("jwt route: jwt_present=false, want true — forwardIdentityJWT:true "+
@@ -81,7 +82,8 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 
 	t.Run("nojwt_route_omits_jwt", func(t *testing.T) {
 		echoed := "hola-bip-nojwt"
-		callEchoViaForwarderEventually(t, gatewayLocal, mcpEchoLocal, pk, bipNoJWTRouteName, echoed)
+		resetMcpEchoCapture(t, mcpEchoLocal)
+		callEchoViaForwarder(t, gatewayLocal, pk, bipNoJWTRouteName, echoed)
 		snap := readMcpEchoCapture(t, mcpEchoLocal)
 		if snap.JWTPresent {
 			t.Fatalf("nojwt route: jwt_present=true, want false — forwardIdentityJWT:false "+
@@ -105,43 +107,9 @@ func callEchoViaForwarder(t *testing.T, gatewayLocal, pk, serverName, text strin
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"%s.echo","arguments":{"text":%q}}}`,
 		serverName, text)
-	return postMCPViaForwarder(t, url, pk, body)
-}
-
-// callEchoViaForwarderEventually drives the echo tool through the forwarder,
-// retrying the whole tools/call on the transient LiteLLM MCP tool-discovery
-// warmup window. Right after cluster-up rolls the litellm chart, LiteLLM has
-// not yet run tools/list against a freshly-(re)registered MCP server, so the
-// proxied tools/call returns a 200 isError result — `Tool '<tool>' not found`
-// — instead of the echoed text. That is a warmup race, NOT a JWT/BIP-precedence
-// signal, and it clears once LiteLLM discovers the tools. postMCPViaForwarder
-// still t.Fatals on a non-200, so a genuine transport/auth failure is not
-// silently retried.
-//
-// This is the FIRST test to exercise the MCP tools/call path against a cold
-// cluster (phase4_bip_loop sorts before phase4_invariants), so it bears the full
-// first-discovery penalty — which on a freshly-brought-up kind cluster can run
-// well past 20s (the original budget flaked at ~23s on `make e2e-full`). The
-// budget is sized for that cold start; warm re-runs return on the first attempt.
-//
-// Bounded retry with an explicit failure path (no-naked-loop rule). The
-// mcp-echo capture is reset before EVERY attempt, including the winning one, so
-// a subsequent readMcpEchoCapture reflects the successful echo and never a
-// discarded not-found attempt. Returns the winning response body.
-func callEchoViaForwarderEventually(t *testing.T, gatewayLocal, mcpEchoLocal, pk, serverName, text string) string {
-	t.Helper()
-	const attempts = 60
-	var resp string
-	for i := 0; i < attempts; i++ {
-		resetMcpEchoCapture(t, mcpEchoLocal)
-		resp = callEchoViaForwarder(t, gatewayLocal, pk, serverName, text)
-		if strings.Contains(resp, text) {
-			return resp
-		}
-		time.Sleep(1 * time.Second)
+	resp := postMCPViaForwarder(t, url, pk, body)
+	if !strings.Contains(resp, text) {
+		t.Fatalf("MCP server %q tools/call response did not contain echo %q: %s", serverName, text, resp)
 	}
-	t.Fatalf("echo never round-tripped %q on /mcp/%s within %ds "+
-		"(LiteLLM MCP tool-discovery warmup window?); last resp=%s",
-		text, serverName, attempts, resp)
 	return resp
 }

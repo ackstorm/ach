@@ -11,6 +11,7 @@ func TestServiceRoutes(t *testing.T) {
 		"/platform/":    "http://ach-platform-api.ach-system.svc.cluster.local:80",
 		"/content/":     "http://ach-content-service.ach-system.svc.cluster.local:8082",
 		"/v1/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/v2/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
 		"/gemini/":      "http://ach-forwarder.ach-system.svc.cluster.local:80",
 		"/mcp/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
 		"/a2a/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",

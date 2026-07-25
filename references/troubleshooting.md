@@ -566,6 +566,12 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ Cost stuck at 0 under `litellm_usage`
+
+Check `/v2/model/info` reachability through the gateway. A control plane
+predating `/v2` forwarding returns 404 at the edge, so the cost source cannot
+read the model information it needs.
+
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
 After migration `000011` the forwarder authenticates to LiteLLM with the
 **caller's own** virtual key (`litellm_key_material`), not the master key
@@ -610,15 +616,17 @@ A proxied `tools/call` returns **HTTP 200** with an `isError` result body
 for a tool that demonstrably exists (mcp-echo registers `echo` statically at
 boot). Not the `tools=[]` auth-drop misconfig above — the SAME call succeeds a
 few seconds later. ✅ It is LiteLLM's **MCP tool-discovery warmup window**: right
-after `cluster-up` rolls the litellm chart, LiteLLM has not yet run `tools/list`
-against a freshly-(re)registered MCP server, so its tool registry can't resolve
-the (server-prefix-stripped) tool name. The error string is LiteLLM's, not
-mcp-go's. Drive the echo through a bounded retry that re-issues the whole
-`tools/call` until it round-trips — `callEchoViaForwarderEventually`
-(`test/e2e/phase4_bip_loop_test.go`) is the canonical helper; a single-shot
-forwarder→LiteLLM echo (e.g. `TestPhase4JWTValidate/ViaForwarder_PkRoundTrip`)
-is exposed to the same race. WHY: discovery is async/periodic, so the very first
-`tools/call` after a roll races it; it is NOT a JWT/BIP-precedence signal.
+after `cluster-up` or `cluster-sync` rolls/re-registers LiteLLM, its registry
+may not yet have run `tools/list` against the Ready backend. The error string is
+LiteLLM's, not mcp-go's. Re-run or fix the failed cluster readiness gate; do not
+increase a Go test retry budget. Readiness succeeds only when the live
+`/v1/mcp/tools` response contains exactly one `demo-mcp-jwt.echo` and one
+`demo-mcp-nojwt.echo`. A focused pass on a retained cluster proves only that the
+registry has warmed. On failure, use the emitted last `/v1/mcp/tools` response,
+relevant `/v1/mcp/server` rows, port-forward log, `ach-mcp-echo` logs, and
+LiteLLM logs to distinguish registration, backend, authorization, discovery,
+and port-forward failures. WHY: discovery is asynchronous, so readiness—not
+the first route test—owns convergence; this is not a JWT/BIP-precedence signal.
 
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
 **Dormant / unreachable in v1alpha1.** The v1alpha1 write path is **GitOps/CRD

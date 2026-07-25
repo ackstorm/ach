@@ -14,7 +14,7 @@ import (
 // dropped before the D-07 write pass.
 //
 // Hub spec §5.1 + FWD-04 mandate the strip on EVERY route — the function is
-// shared by /v1, /gemini, /mcp/{name}, /a2a/{name}.
+// shared by /v1, /v2, /gemini, /mcp/{name}, /a2a/{name}.
 const (
 	prefixXLiteLLM = "x-litellm-"
 	prefixXAch     = "x-ach-"
@@ -125,7 +125,7 @@ func StripAndRewrite(h http.Header, litellmAPIKey string) {
 	// TESTING-PHASE (reverts FIX01 §A.6 / D-13): the caller's own LiteLLM
 	// virtual key is written here for ALL routes. The "Bearer " prefix that
 	// LiteLLM's MCP key parser (user_api_key_auth_mcp.py) requires is applied
-	// ONLY on the /mcp route by the proxy Director — /v1, /gemini, and /a2a
+	// ONLY on the /mcp route by the proxy Director — /v1, /v2, /gemini, and /a2a
 	// take the bare value. The x-litellm-key-id delegation header is no longer
 	// written.
 	h.Set("x-litellm-api-key", litellmAPIKey)

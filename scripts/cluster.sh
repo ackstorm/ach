@@ -76,6 +76,13 @@ ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 # (pullPolicy=IfNotPresent) — kind load is given that exact tag.
 MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
 
+# LiteLLM MCP registrations seeded by reconcile_litellm and the fully
+# qualified tool names returned after LiteLLM runs tools/list against them.
+MCP_JWT_SERVER_NAME="demo-mcp-jwt"
+MCP_NOJWT_SERVER_NAME="demo-mcp-nojwt"
+MCP_JWT_TOOL_NAME="${MCP_JWT_SERVER_NAME}.echo"
+MCP_NOJWT_TOOL_NAME="${MCP_NOJWT_SERVER_NAME}.echo"
+
 # ach-mock — OpenAI chat-completion + a2a echo/capture backend that sits BEHIND
 # the real LiteLLM as the model upstream (it is NOT a LiteLLM mock). Built +
 # kind-loaded unconditionally by reconcile_ach (e2e always needs it for ek_
@@ -337,10 +344,41 @@ reconcile_litellm() {
         "litellm_params": {
           "model": "openai/demo-model",
           "api_base": "http://ach-mock-model.ach-system.svc/v1",
-          "api_key": "sk-mock"
+          "api_key": "sk-mock",
+          "input_cost_per_token": 0.0000011,
+          "output_cost_per_token": 0.0000022,
+          "cache_read_input_token_cost": 0.00000011,
+          "cache_creation_input_token_cost": 0.00000055
         }
       }' 2>&1)"
   echo "[cluster.sh]   model 'demo-model' → ${seed_out}"
+
+  # B.4.2 — second seeded model DELIBERATELY OMITS cache_creation_input_token_cost,
+  # reproducing the live evidence shape of spec.md B.2 so the harness's documented
+  # fallback to input_cost_per_token (A.2) is pinned by a real fixture. The dotted
+  # alias matches the production model_name key shape.
+  for mid in $(curl -s http://localhost:4001/v1/model/info \
+        -H "Authorization: Bearer ${mk}" \
+      | jq -r '.data[] | select(.model_name=="demo.demo-flash") | .model_info.id'); do
+    curl -s -X POST http://localhost:4001/model/delete \
+      -H "Authorization: Bearer ${mk}" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"${mid}\"}" >/dev/null
+  done
+  seed_out="$(curl -s -X POST http://localhost:4001/model/new \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "model_name": "demo.demo-flash",
+        "litellm_params": {
+          "model": "openai/demo-model",
+          "api_base": "http://ach-mock-model.ach-system.svc/v1",
+          "api_key": "sk-mock",
+          "input_cost_per_token": 0.0000033,
+          "output_cost_per_token": 0.0000044,
+          "cache_read_input_token_cost": 0.00000033
+        }
+      }' 2>&1)"
+  echo "[cluster.sh]   model 'demo.demo-flash' → ${seed_out}"
 
   # 2) Seed the demo Environment's two MCP servers (BIP closed-loop).
   #
@@ -366,7 +404,7 @@ reconcile_litellm() {
   # POST /v1/mcp/server is NOT idempotent (each call mints a new server_id),
   # so re-running cluster-up/sync would pile up duplicate rows with ambiguous
   # routing. Delete any existing rows for the name first.
-  for srv in demo-mcp-jwt demo-mcp-nojwt; do
+  for srv in "${MCP_JWT_SERVER_NAME}" "${MCP_NOJWT_SERVER_NAME}"; do
     for sid in $(curl -s http://localhost:4001/v1/mcp/server \
         -H 'Authorization: Bearer sk-test-master-key' \
         | jq -r --arg n "${srv}" '.[] | select(.server_name==$n) | .server_id'); do
@@ -573,10 +611,119 @@ wait_bip_reconciled() {
     --timeout="${to}" backendidentitypolicy/"${name}"
 }
 
+mcp_tools_ready() {
+  local body="$1"
+  jq -e --arg jwt_tool "${MCP_JWT_TOOL_NAME}" --arg nojwt_tool "${MCP_NOJWT_TOOL_NAME}" '
+    (.tools // null) as $tools
+    | ($tools | type == "array")
+      and ([$tools[]? | select(.name == $jwt_tool)] | length == 1)
+      and ([$tools[]? | select(.name == $nojwt_tool)] | length == 1)
+  ' "${body}" >/dev/null 2>&1
+}
+
+wait_mcp_tools_discovered() (
+  local to="$1"
+  local tmpdir last_body attempt_body port_forward_log server_body
+  local port_forward_pid discovery_rc port_forward_alive
+  tmpdir="$(mktemp -d)"
+  last_body="${tmpdir}/last-tools.json"
+  port_forward_log="${tmpdir}/port-forward.log"
+
+  kubectl -n litellm-system port-forward svc/litellm 4001:4000 \
+    >"${port_forward_log}" 2>&1 &
+  port_forward_pid=$!
+  trap 'kill "${port_forward_pid}" 2>/dev/null || true; wait "${port_forward_pid}" 2>/dev/null || true; rm -rf "${tmpdir}"' EXIT
+
+  export MCP_JWT_TOOL_NAME MCP_NOJWT_TOOL_NAME
+  export -f mcp_tools_ready
+  set +e
+  MCP_PORT_FORWARD_PID="${port_forward_pid}" \
+  MCP_TOOLS_DIR="${tmpdir}" \
+  MCP_LAST_BODY="${last_body}" \
+  MCP_MASTER_KEY='sk-test-master-key' \
+  timeout --foreground "${to}" bash -c '
+    while true; do
+      if ! kill -0 "${MCP_PORT_FORWARD_PID}" 2>/dev/null; then
+        exit 3
+      fi
+
+      attempt_body="${MCP_TOOLS_DIR}/tools-response.tmp"
+      http_code="$(curl --connect-timeout 2 --max-time 5 -sS \
+        -o "${attempt_body}" -w "%{http_code}" \
+        -H "Authorization: Bearer ${MCP_MASTER_KEY}" \
+        http://localhost:4001/v1/mcp/tools)"
+      curl_rc=$?
+      if [[ -f "${attempt_body}" ]]; then
+        mv -f "${attempt_body}" "${MCP_LAST_BODY}"
+      fi
+      if ((curl_rc == 0)) && [[ "${http_code}" =~ ^2[0-9][0-9]$ ]] && \
+         mcp_tools_ready "${MCP_LAST_BODY}"; then
+        exit 0
+      fi
+      if ! kill -0 "${MCP_PORT_FORWARD_PID}" 2>/dev/null; then
+        exit 3
+      fi
+      sleep 2
+    done
+  ' _
+  discovery_rc=$?
+  set -e
+
+  if ((discovery_rc == 0)); then
+    echo "[cluster.sh] LiteLLM MCP tools discovered: ${MCP_JWT_TOOL_NAME}, ${MCP_NOJWT_TOOL_NAME}"
+    return 0
+  fi
+
+  if kill -0 "${port_forward_pid}" 2>/dev/null; then
+    port_forward_alive=yes
+  else
+    port_forward_alive=no
+  fi
+  echo "[cluster.sh] ERROR: LiteLLM MCP discovery did not find exactly one each of ${MCP_JWT_TOOL_NAME} and ${MCP_NOJWT_TOOL_NAME} within ${to} (port-forward alive: ${port_forward_alive}; rc=${discovery_rc})" >&2
+  if [[ -s "${last_body}" ]]; then
+    echo "[cluster.sh] Last GET /v1/mcp/tools response body:" >&2
+    sed -n '1,200p' "${last_body}" >&2 || true
+  else
+    echo "[cluster.sh] Last GET /v1/mcp/tools response body: <no response body captured>" >&2
+  fi
+  echo "[cluster.sh] LiteLLM port-forward log:" >&2
+  sed -n '1,200p' "${port_forward_log}" >&2 || true
+
+  if [[ "${port_forward_alive}" == yes ]]; then
+    server_body="${tmpdir}/mcp-server.json"
+    echo "[cluster.sh] Relevant LiteLLM MCP server rows:" >&2
+    if curl --connect-timeout 2 --max-time 5 -sS \
+      -o "${server_body}" \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      http://localhost:4001/v1/mcp/server; then
+      jq -c --arg jwt_server "${MCP_JWT_SERVER_NAME}" \
+        --arg nojwt_server "${MCP_NOJWT_SERVER_NAME}" \
+        'map(select(.server_name == $jwt_server or .server_name == $nojwt_server))
+         | .[] | {server_id, server_name, url, extra_headers, allow_all_keys}' \
+        "${server_body}" >&2 || true
+    else
+      echo "<unable to query /v1/mcp/server>" >&2
+    fi
+  fi
+
+  echo "[cluster.sh] ach-mcp-echo Deployment:" >&2
+  kubectl -n ach-system get deploy/ach-mcp-echo -o wide >&2 || true
+  echo "[cluster.sh] ach-mcp-echo Pods:" >&2
+  kubectl -n ach-system get pods -l app.kubernetes.io/component=mock-mcp-echo -o wide >&2 || true
+  echo "[cluster.sh] ach-mcp-echo Deployment description:" >&2
+  kubectl -n ach-system describe deploy/ach-mcp-echo >&2 || true
+  echo "[cluster.sh] ach-mcp-echo logs:" >&2
+  kubectl -n ach-system logs deploy/ach-mcp-echo -c mcp-echo --tail=200 >&2 || true
+  echo "[cluster.sh] LiteLLM logs:" >&2
+  kubectl -n litellm-system logs deploy/litellm -c litellm --tail=300 >&2 || true
+  return 1
+)
+
 verify_all() {
-  # Stage 06 — block until every synced object reaches its healthy state. This
-  # is the "everything is OK before we run tests" gate the e2e suite relies on
-  # (tests assert, they do not apply). VERIFY_TIMEOUT default 300s per resource.
+  # Stage 07 — block until every synced object and seeded MCP tool reaches its
+  # healthy state. This is the "everything is OK before we run tests" gate the
+  # e2e suite relies on (tests assert, they do not apply). VERIFY_TIMEOUT
+  # defaults to 300s per resource.
   #
   # Excluded from the happy-state gate on purpose (intentional negative/edge
   # fixtures): backendidentitypolicy/zz-bip-context7-jwt-off (duplicate-PK
@@ -587,9 +734,10 @@ verify_all() {
   # disabled behind featuregate.PluginsEnabled=false and their CRDs are not in
   # the chart), so they are not gated here.
   local to="${VERIFY_TIMEOUT:-300s}"
-  echo "[cluster.sh] verifying all synced objects healthy (stage 06)..."
+  echo "[cluster.sh] verifying all synced objects and seeded MCP tools (stage 07)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
   kubectl -n ach-system rollout status deploy/ach-mcp-echo     --timeout="${to}"
+  wait_mcp_tools_discovered "${to}"
   kubectl -n ach-system rollout status deploy/ach-mock-model   --timeout="${to}"
   kubectl -n ach-system rollout status deploy/ach-mock-a2a     --timeout="${to}"
   kubectl -n ach-system wait --for=condition=Ready           --timeout="${to}" litellmconnection/default
@@ -655,7 +803,7 @@ verify_all() {
   kubectl -n ach-system get deploy achagent-e2e-agent \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_TOKEN")].valueFrom.secretKeyRef.name}' \
     | grep -q .
-  echo "[cluster.sh] all synced objects healthy."
+  echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }
 
 reconcile_all() {

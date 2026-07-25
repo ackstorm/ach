@@ -88,10 +88,10 @@ through `exit.DispatchAndRender` (sole `os.Exit` callers).
 |---|---|---|
 | operator | Sole K8s watcher. Reconciles the 9 live CRD kinds → projects Postgres rows via `WithTxNotify` (row write + NOTIFY in one tx). Sole LiteLLM access-group/tag writer. Mints `ach-jwt-signing-keys` (mint-once, survives uninstall), bootstraps `LiteLLMConnection/default` pre-`mgr.Start` (Helm can't — REST-mapper limitation). Runnables: LiteLLM snapshot (5m), orphan cleanup, 5-min resync, `ach_refresh` LISTEN. | `ACH_DB_URL`, pepper, `ACH_NAMESPACE` (ach-system), `ACH_CACHE_ROOT` (/var/cache/ach), size caps, orphan knobs |
 | platform-api | NO k8s client. Chi REST: Dex SSO + device-code CLI login, `pk_`/`ek_` lifecycle, `/platform/hydrate`, admin (inventory/refresh/keys/runtime-catalog), UI Objects API (Environment-only v1, GitOps-wins). | `ACH_BASE_URL`, DB, pepper, DEK, LiteLLM base+master, Dex 4-var set, Redis, `POD_NAMESPACE` |
-| forwarder | Runtime data path `/v1 /gemini /mcp /a2a`. Key resolve (Redis 60s → Postgres), MCP/A2A precheck, header strip+rewrite, per-target JWT mint, JWKS. Only k8s touchpoint: the JWT Secret informer (field-selector-scoped). LiteLLM endpoint+key resolved from the `LiteLLMConnection/default` projection at boot (60s retry). | dual port: traffic :8080, health :8081 |
+| forwarder | Runtime data path `/v1 /v2 /gemini /mcp /a2a`. Key resolve (Redis 60s → Postgres), MCP/A2A precheck, header strip+rewrite, per-target JWT mint, JWKS. Only k8s touchpoint: the JWT Secret informer (field-selector-scoped). LiteLLM endpoint+key resolved from the `LiteLLMConnection/default` projection at boot (60s retry). | dual port: traffic :8080, health :8081 |
 | content-service | Default: **sidecar in operator Pod** (RWO PVC forces co-location; `contentService.standalone=true` + RWX for HA, G16). 8-gate authz pipeline → `sendfile(2)` streaming, inode-pinned via early `os.Open`. Range/conditional headers ignored — always full 200, `Cache-Control: no-store`. | :8082, Redis envcache (`ach_environments_changed`) |
 | migrate | golang-migrate one-shot init Job. 18 migrations in `db/migrations/`. | `ACH_MIGRATIONS_PATH` (/db/migrations) |
-| gateway (optional) | Logic-free edge proxy, single origin: `/platform`→PA, `/content`→CS, `/v1 /gemini /mcp /a2a /.well-known`→FWD. No auth, no /metrics, no /dex. Plus `/agents/{ns}/{service}/…` from the `achagents` projection — only `expose.gateway=true` agents in route set; prefix stripped, tail verbatim; HMAC verified by the harness, not the gateway. **Requires `ACH_DB_URL`.** | disable via `gateway.enabled=false` |
+| gateway (optional) | Logic-free edge proxy, single origin: `/platform`→PA, `/content`→CS, `/v1 /v2 /gemini /mcp /a2a /.well-known`→FWD. No auth, no /metrics, no /dex. Plus `/agents/{ns}/{service}/…` from the `achagents` projection — only `expose.gateway=true` agents in route set; prefix stripped, tail verbatim; HMAC verified by the harness, not the gateway. **Requires `ACH_DB_URL`.** | disable via `gateway.enabled=false` |
 
 **Universal read-path pattern:** `atomic.Pointer` in-memory cache +
 `LISTEN ach_*_changed` + 5-min periodic refresh (`db.RunRefreshLoop`) —
@@ -243,7 +243,7 @@ Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
   the backend (top failure mode — surfaces as `tools=[]`).
 - **LiteLLM auth (post-migration 000011, TESTING-PHASE)**: forwarder
   authenticates with the **caller's own** virtual key — bare
-  `x-litellm-api-key` on `/v1`+`/a2a`, `Bearer`-prefixed on `/mcp`, bare
+  `x-litellm-api-key` on `/v1`+`/v2`+`/a2a`, `Bearer`-prefixed on `/mcp`, bare
   `x-goog-api-key` on `/gemini` (native passthrough reads only that). Master
   key OUT of the data path (survives only for teams precheck + admin ops).
   `x-litellm-key-id` delegation no longer sent; pre-000011 keys have NULL
@@ -256,8 +256,9 @@ Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
   runtime traffic gets the `<environment>` tag injected; `pk_` untagged.
 - **Precheck** (mcp/a2a only, before JWT): ek → name ∈ bound Environment's
   runtime list (O(1) cache, terminating fail-closed); pk → LiteLLM team
-  intersect (unreachable → `503 litellm_unreachable`). `/v1`+`/gemini` skip
-  (model authz delegated to LiteLLM).
+  intersect (unreachable → `503 litellm_unreachable`). `/v1`+`/v2`+`/gemini` skip
+  (model authz delegated to LiteLLM). `/v2` behaves exactly as `/v1`: bare
+  `x-litellm-api-key`, no precheck, and no JWT.
 - **Supply chain**: git protocol allow-list pinned
   (`protocol.allow=never`, https allow, file top-level-only —
   CVE-2022-39253-class defense); CR-02 validators reject URL/argv

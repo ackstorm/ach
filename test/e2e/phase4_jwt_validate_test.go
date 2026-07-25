@@ -21,7 +21,7 @@
 // Activation: requires testMocks.enabled=true AND
 // testMocks.mcpEcho.enabled=true on the kept-cluster Helm install. The
 // `extra_headers: ["authorization"]` opt-in on the LiteLLM MCP server
-// registration (seeded by scripts/cluster.sh hydrate_fixtures) is
+// registration (seeded by scripts/cluster.sh reconcile_litellm) is
 // REQUIRED for the ViaForwarder subtest.
 //
 // Run via:

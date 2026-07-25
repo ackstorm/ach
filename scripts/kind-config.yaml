@@ -10,7 +10,7 @@
 # Service ach-local-gateway (type NodePort, nodePort 30080) -> nginx
 # :8080. This removes the need for a manual
 # `kubectl port-forward svc/ach-local-gateway 8080:80` to drive the
-# SSO + /platform + /content + /v1 paths. (Metrics endpoints are still
+# SSO + /platform + /content + /v1 + /v2 paths. (Metrics endpoints are still
 # reached via `kubectl port-forward`, not host-published.)
 apiVersion: kind.x-k8s.io/v1alpha4
 kind: Cluster

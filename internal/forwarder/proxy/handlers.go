@@ -46,7 +46,7 @@ type HandlerDeps struct {
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
-// /v1 and /gemini: inject the Environment attribution tag (FWD-06, ek_
+// /v1, /v2, and /gemini: inject the Environment attribution tag (FWD-06, ek_
 // traffic only) then forward. routeLabel is the metrics route dimension.
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
@@ -62,10 +62,23 @@ func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 // handles model-level auth via the shared key + key_id headers.
 func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v1") }
 
+// HandlerV2 mirrors HandlerV1 for /v2/*. Same taggedPassthrough constructor,
+// same auth translation, no precheck and no JWT — LiteLLM stays the
+// authorization boundary for every /v2 endpoint, exactly as for /v1 (B.3.2).
+//
+// Security note to preserve verbatim in the HandlerV2 doc comment or the PR
+// body (B.3.9, flagged not blocked — user-approved design): a blanket `/v2/*`
+// pass-through exposes every LiteLLM `/v2` endpoint (e.g. `/v2/team/list`,
+// `/v2/key/info`) to any authenticated `pk_`/`ek_`, precisely as `/v1/*`
+// exposes every `/v1` endpoint today. LiteLLM stays the authorization boundary.
+// Narrowing would be a change to **both** families, never a `/v2` special case.
+// Its measured extent is recorded by P0-v2 item (6) (C.3).
+func HandlerV2(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v2") }
+
 // HandlerGemini mirrors HandlerV1 for /gemini/*.
 func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/gemini") }
 
-// maybeInjectEnvironmentTag is the FWD-06 ek_ guard shared by /v1 + /gemini.
+// maybeInjectEnvironmentTag is the FWD-06 ek_ guard shared by /v1 + /v2 + /gemini.
 // pk_ traffic and bodyless requests pass through unmodified.
 func maybeInjectEnvironmentTag(r *http.Request) {
 	kc, ok := middleware.KeyContextFromCtx(r.Context())

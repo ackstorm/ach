@@ -54,3 +54,25 @@ func TestRouteAcceptsBareAndSubpathNames(t *testing.T) {
 		}
 	}
 }
+
+// TestV2RegisteredInsideAuthnGroup pins B.3.1: /v2/* sits INSIDE the same
+// pamw.Authn group as /v1/*, so an unauthenticated request is rejected
+// identically (401), never 404 (route missing) and never 200 (bypass).
+func TestV2RegisteredInsideAuthnGroup(t *testing.T) {
+	upstream, err := url.Parse("http://litellm.invalid")
+	if err != nil {
+		t.Fatalf("parse upstream: %v", err)
+	}
+	h := forwarder.New(forwarder.Deps{
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream: upstream,
+	})
+	for _, p := range []string{"/v1/model/info", "/v2/model/info"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s: got %d, want 401 (inside Authn group)", p, rec.Code)
+		}
+	}
+}

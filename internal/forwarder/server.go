@@ -38,7 +38,7 @@ type Deps struct {
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
-// authenticated /v1, /gemini, /mcp/{name}[/*], /a2a/{name}[/*] routes (the
+// authenticated /v1, /v2, /gemini, /mcp/{name}[/*], /a2a/{name}[/*] routes (the
 // bare and subpath forms are both registered so a slash-less MCP endpoint
 // resolves — see the route block below).
 // D-02 middleware chain: RequestID → RecoverPanic → AccessLog → Authn
@@ -72,6 +72,7 @@ func New(deps Deps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(pamw.Authn(deps.Resolver, nil, nil)) // no allowlist, no audit
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
+		r.Handle("/v2/*", proxy.HandlerV2(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))
 		// Both the bare "/mcp/{name}" and the subpath "/mcp/{name}/*" forms
 		// are registered: chi (no RedirectSlashes here) does NOT match a

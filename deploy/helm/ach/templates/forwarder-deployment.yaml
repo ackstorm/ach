@@ -28,7 +28,7 @@ spec:
       annotations:
         # Phase 5 OBS-03 + D-12 — scrape the forwarder's main traffic
         # listener at :8080/metrics. Plan 05-06 mounts GET /metrics on
-        # the chi mux alongside /v1, /gemini, /mcp, /a2a route family.
+        # the chi mux alongside /v1, /v2, /gemini, /mcp, /a2a route family.
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
