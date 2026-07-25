@@ -337,10 +337,41 @@ reconcile_litellm() {
         "litellm_params": {
           "model": "openai/demo-model",
           "api_base": "http://ach-mock-model.ach-system.svc/v1",
-          "api_key": "sk-mock"
+          "api_key": "sk-mock",
+          "input_cost_per_token": 0.0000011,
+          "output_cost_per_token": 0.0000022,
+          "cache_read_input_token_cost": 0.00000011,
+          "cache_creation_input_token_cost": 0.00000055
         }
       }' 2>&1)"
   echo "[cluster.sh]   model 'demo-model' → ${seed_out}"
+
+  # B.4.2 — second seeded model DELIBERATELY OMITS cache_creation_input_token_cost,
+  # reproducing the live evidence shape of spec.md B.2 so the harness's documented
+  # fallback to input_cost_per_token (A.2) is pinned by a real fixture. The dotted
+  # alias matches the production model_name key shape.
+  for mid in $(curl -s http://localhost:4001/v1/model/info \
+        -H "Authorization: Bearer ${mk}" \
+      | jq -r '.data[] | select(.model_name=="demo.demo-flash") | .model_info.id'); do
+    curl -s -X POST http://localhost:4001/model/delete \
+      -H "Authorization: Bearer ${mk}" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"${mid}\"}" >/dev/null
+  done
+  seed_out="$(curl -s -X POST http://localhost:4001/model/new \
+      -H 'Authorization: Bearer sk-test-master-key' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "model_name": "demo.demo-flash",
+        "litellm_params": {
+          "model": "openai/demo-model",
+          "api_base": "http://ach-mock-model.ach-system.svc/v1",
+          "api_key": "sk-mock",
+          "input_cost_per_token": 0.0000033,
+          "output_cost_per_token": 0.0000044,
+          "cache_read_input_token_cost": 0.00000033
+        }
+      }' 2>&1)"
+  echo "[cluster.sh]   model 'demo.demo-flash' → ${seed_out}"
 
   # 2) Seed the demo Environment's two MCP servers (BIP closed-loop).
   #
