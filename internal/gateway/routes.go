@@ -14,7 +14,7 @@ type Route struct {
 
 // ServiceRoutes returns the production route table for the given
 // namespace. Upstreams are in-cluster Service DNS names. The forwarder
-// owns four route families (/v1, /gemini, /mcp, /a2a) plus /.well-known
+// owns five route families (/v1, /v2, /gemini, /mcp, /a2a) plus /.well-known
 // (JWKS); platform-api owns /platform; content-service owns /content.
 //
 // Deliberately absent: /metrics (unauthenticated per service — never
@@ -29,6 +29,7 @@ func ServiceRoutes(namespace string) []Route {
 		{Prefix: "/platform/", Upstream: svc("ach-platform-api", 80)},
 		{Prefix: "/content/", Upstream: svc("ach-content-service", 8082)},
 		{Prefix: "/v1/", Upstream: forwarder},
+		{Prefix: "/v2/", Upstream: forwarder},
 		{Prefix: "/gemini/", Upstream: forwarder},
 		{Prefix: "/mcp/", Upstream: forwarder},
 		{Prefix: "/a2a/", Upstream: forwarder},

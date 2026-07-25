@@ -1,7 +1,7 @@
 {{- if .Values.ingress.enabled }}
 # Optional public Ingress. With the ach-gateway edge proxy in front of all
 # HTTP surfaces, this Ingress routes a single backend -> ach-gateway:80.
-# The gateway owns path routing (/platform, /content, /v1, /gemini, /mcp,
+# The gateway owns path routing (/platform, /content, /v1, /v2, /gemini, /mcp,
 # /a2a, /.well-known).
 #
 # SECURITY: the gateway has NO /metrics route and NO "/" catch-all that

@@ -5,7 +5,7 @@
 //
 //	/platform/      -> ach-platform-api:80
 //	/content/       -> ach-content-service:8082
-//	/v1/ /gemini/   -> ach-forwarder:80
+//	/v1/ /v2/ /gemini/   -> ach-forwarder:80
 //	/mcp/ /a2a/     -> ach-forwarder:80
 //	/.well-known/   -> ach-forwarder:80   (JWKS)
 //	/agents/{ns}/{service}/… -> that agent Service (allowlisted via the
@@ -41,7 +41,7 @@ import (
 var gatewayCmd = &cobra.Command{
 	Use:   "gateway",
 	Short: "Run the ACH edge reverse proxy (single-origin front for all HTTP surfaces)",
-	Long: `Boot the ACH gateway. Reverse-proxies /platform, /content, /v1,
+	Long: `Boot the ACH gateway. Reverse-proxies /platform, /content, /v1, /v2,
 /gemini, /mcp, /a2a, and /.well-known to their in-cluster Services, plus
 /agents/{ns}/{service}/... to per-agent Services (allowlisted via the
 achagents projection — ACH_DB_URL is required), and serves a local
