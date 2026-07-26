@@ -2,94 +2,94 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://ackstorm.github.io/ach/dev/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/ach-project-spec/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/external-review-resolutions/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/api-reference/ach.ackstorm.ai/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/architecture/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/development/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/jwt-forwarder/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/litellm-custom-auth/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/developer-guide/release-process/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/getting-started/installation/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/getting-started/quickstart/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/cli/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/content-service/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/forwarder/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/gateway/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/operator/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/platform-api/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/reviews/2026-06-01/shared-core/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/jwt-key-rotation/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/phase6-cli-e2e-verification/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/runbooks/writing-an-mcp-backend/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
     <url>
          <loc>https://ackstorm.github.io/ach/dev/user-guide/</loc>
-         <lastmod>2026-07-25</lastmod>
+         <lastmod>2026-07-26</lastmod>
     </url>
 </urlset>
