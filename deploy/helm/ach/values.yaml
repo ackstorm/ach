@@ -354,8 +354,9 @@ metrics:
   # for the kube-prometheus-stack Grafana sidecar to auto-load. Needs NO
   # Prometheus Operator CRD — plain ConfigMaps — so it works wherever that
   # sidecar runs (sidecar.dashboards.enabled=true, the kube-prometheus-stack
-  # default). The JSON lives in the chart's dashboards/ dir, synced from
-  # examples/grafana by `make helm-sync`.
+  # default). The JSON lives in the chart's own dashboards/ dir; see
+  # examples/grafana/README.md for what each dashboard shows and how to import
+  # one by hand.
   #
   # ⚠ THE SIDECAR MUST WATCH THE NAMESPACE THESE LAND IN. kube-prometheus-stack
   # defaults sidecar.dashboards.searchNamespace to null = the sidecar's OWN

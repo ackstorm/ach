@@ -347,9 +347,8 @@ sensitive patterns (`.env`, `*.pem`, `*.key`, kubeconfig) · LICENSE + README ·
 origin-remote match · govulncheck ack-list 1:1 (`scripts/govulncheck-gate.sh`,
 list at `references/security/govulncheck-acknowledged.md`) · `go mod tidy` drift
 · per-file SPDX header · full golangci-lint · `make test-unit` · chart mirror
-drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44, plus
-`dashboards/` vs `examples/grafana`). Fix the
-root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
+drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44). Fix
+the root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
 gates).
 
 ## Common failure modes (generic / workflow)

@@ -7,8 +7,9 @@
 {{- $name = printf "ach-dashboard-%s" $name | trunc 63 | trimSuffix "-" }}
 ---
 # Grafana dashboard ConfigMap — opt-in via metrics.dashboards.enabled. One
-# ConfigMap per JSON in the chart's dashboards/ dir (synced from
-# examples/grafana by `make helm-sync`). Unlike the ServiceMonitor/PodMonitor,
+# ConfigMap per JSON in the chart's dashboards/ dir, which is where the
+# dashboards LIVE (edit them there; there is no second copy to keep in sync).
+# Unlike the ServiceMonitor/PodMonitor,
 # this needs NO Prometheus Operator CRD — the kube-prometheus-stack Grafana
 # sidecar watches plain ConfigMaps carrying the configured label and reloads
 # them, so the dashboards ship and update with the release instead of being

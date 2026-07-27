@@ -4,6 +4,11 @@ Six importable dashboards for the ACH observability surface. All share a
 `datasource` + `namespace` template variable; the agent-scoped ones add an
 `agent` variable.
 
+> **The JSON lives in [`deploy/helm/ach/dashboards/`](../../deploy/helm/ach/dashboards/)**,
+> inside the chart — Helm cannot read files outside its own directory, and a
+> second copy here would just be 120 KB of duplication behind a sync gate.
+> Edit the dashboards there. This directory holds their docs and validator.
+
 | File | uid | Covers |
 |------|-----|--------|
 | `ach-agents.json` | `ach-agents` | Fleet overview: agents up, sessions/turns/tokens/cost, latency by model, tool calls, channel events, reliability counters (router drops, engine failures, degraded) — grouped **by agent** |
@@ -16,13 +21,20 @@ Six importable dashboards for the ACH observability surface. All share a
 ## Import
 
 **Preferred — ship them with the release.** Set `metrics.dashboards.enabled=true`
-in the chart: `make helm-sync` copies these JSONs into
-`deploy/helm/ach/dashboards/` and `templates/grafana-dashboards.yaml` renders one
-ConfigMap per dashboard, labelled `grafana_dashboard: "1"` for the
+in the chart: `templates/grafana-dashboards.yaml` renders one ConfigMap per JSON
+in `deploy/helm/ach/dashboards/`, labelled `grafana_dashboard: "1"` for the
 kube-prometheus-stack Grafana sidecar to auto-load. No Prometheus Operator CRD is
-involved (plain ConfigMaps), the dashboards update with every release, and
-`make helm-sync-check` fails the push on drift between this directory and the
-chart copies. Provisioned dashboards are read-only in the UI — edit them here.
+involved (plain ConfigMaps) and the dashboards update with every release.
+Provisioned dashboards are read-only in the UI — edit the JSON in the chart.
+
+⚠ The sidecar only picks them up if it watches the namespace they land in.
+kube-prometheus-stack defaults `sidecar.dashboards.searchNamespace` to null —
+its OWN namespace — so with ACH and Prometheus in different namespaces either
+run the sidecar with `searchNamespace=ALL` or set
+`metrics.dashboards.namespace`. Nothing errors when this is wrong; the
+dashboards just never appear. The `grafana_folder` annotation likewise needs
+both `sidecar.dashboards.folderAnnotation=grafana_folder` and
+`sidecar.dashboards.provider.foldersFromFilesStructure=true`.
 
 **Manual** — Grafana → **Dashboards → New → Import → Upload JSON file** (or
 paste). Pick your Prometheus datasource when prompted (the `datasource` template
@@ -59,8 +71,11 @@ family is unchanged.
 Validate the JSON and metric-name contract with:
 
 ```bash
-bash examples/grafana/check-metric-names.sh
+make qa-dashboards      # = bash examples/grafana/check-metric-names.sh
 ```
+
+It also runs in CI, so a metric rename that leaves a dashboard querying a dead
+name fails the build instead of shipping a silently empty panel.
 
 ## Proposed metrics & label improvements
 

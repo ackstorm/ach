@@ -47,11 +47,11 @@ jobs:
       - name: Run linter
         run: make qa-lint
 
-      # Issue #44: fail if the chart's copied surfaces drift from their sources —
-      # crd-sources/ from config/crd/bases, dashboards/ from examples/grafana.
-      # helm-sync-check re-syncs then gates; a stale chart CRD would ship an old
-      # schema to `helm install/upgrade` users, a stale dashboard a dead query.
-      - name: Chart drift gate (CRDs + dashboards)
+      # Issue #44: fail if the chart's copied CRDs (crd-sources/) drift from
+      # config/crd/bases. helm-sync-check re-syncs then gates on ANY change —
+      # added, deleted or modified; a stale chart CRD would ship an old schema to
+      # `helm install/upgrade` users.
+      - name: Chart CRD drift gate
         run: make helm-sync-check
 
       - name: Helm topology render check

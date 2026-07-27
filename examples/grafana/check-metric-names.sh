@@ -3,8 +3,8 @@
 # Verify that dashboard queries track ACH's normalized Prometheus metric names.
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dashboards=("$root"/*.json)
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+dashboards=("$repo"/deploy/helm/ach/dashboards/*.json)
 
 for dashboard in "${dashboards[@]}"; do
   jq empty "$dashboard"
