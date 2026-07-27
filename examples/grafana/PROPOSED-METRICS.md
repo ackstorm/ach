@@ -74,26 +74,27 @@ failing MCP server is silent in metrics.
 
 ## 4. Engine in-flight / queue-depth gauge
 
-**Gap:** we have `engine_launch_failures_total`, `engine_watchdog_kills_total`,
-`engine_drain_completed_total` (events) but **no gauge** of concurrent in-flight
-invocations or queued work. Backpressure is only visible after it rejects
-(`router_backpressure_rejects_total`).
+**Gap:** we have `ach_agent_engine_launch_failures_total`,
+`ach_agent_engine_watchdog_kills_total`, `ach_agent_engine_drain_completed_total`
+(events) but **no gauge** of concurrent in-flight invocations or queued work.
+Backpressure is only visible after it rejects
+(`ach_agent_router_backpressure_rejects_total`).
 
 **Proposal:** `ach_agent_inflight_invocations` (gauge) and
 `ach_agent_queue_depth` (gauge), per agent.
 
 **Why:** capacity planning and early backpressure warning before drops happen.
 
-## 5. `platform_api_login_total` — referenced but never emitted
+## 5. `ach_platform_api_login_total` — referenced but never emitted
 
 **Gap:** the original control-plane dashboard had a "Platform-API Login /s by
 outcome" panel querying `platform_api_login_total`, which **does not exist** in
 Prometheus (the panel was always empty; it has been removed from the rebuilt
 dashboard).
 
-**Proposal:** either add `platform_api_login_total{outcome="success|failure"}`
+**Proposal:** either add `ach_platform_api_login_total{outcome="success|failure"}`
 (SSO login observability is security-relevant) or leave the panel out. Currently
-only `platform_api_hydrate_duration_seconds_*` is emitted.
+only `ach_platform_api_hydrate_duration_seconds_*` is emitted.
 
 ## 6. FinOps: cost attribution labels + verify cost is captured
 
