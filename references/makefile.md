@@ -183,6 +183,8 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `gen-manifests` | A | controller-gen CRDs + RBAC + webhook manifests. |
 | `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script; same scope as pre-push gate 15). Also auto-run by `gen-code`. |
 | `gen-crd-ref-docs` | A | Render `docs/api-reference/` from CRD Go types. |
+| `helm-sync` | A | Copy the chart's two mirrored surfaces: generated CRDs (`config/crd/bases` → `deploy/helm/ach/crd-sources/`, minus the gated-off Plugin kinds) and the Grafana dashboards (`examples/grafana/*.json` → `deploy/helm/ach/dashboards/`, which `templates/grafana-dashboards.yaml` globs). |
+| `helm-sync-check` | A | Drift gate for both mirrored dirs (pre-push gate 18). Fails when `helm-sync` produces a diff. |
 | `helm-render-check` | A | Render-smoke of non-default chart topologies (gateway off / ingress on / G16 standalone CS). Runs in CI lint job. |
 
 ### Tests (`test-`)

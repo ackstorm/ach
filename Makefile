@@ -525,7 +525,7 @@ endef
 # --- helm / chart packaging ---
 
 .PHONY: helm-sync
-helm-sync: gen-manifests ## Sync generated CRDs into the Helm chart's crd-sources/ (the chart's ONLY generated surface — per-mode Deployments are hand-authored templates).
+helm-sync: gen-manifests ## Sync generated CRDs + Grafana dashboards into the Helm chart (crd-sources/ + dashboards/ — the chart's ONLY copied surfaces; per-mode Deployments are hand-authored templates).
 	# CRDs land in crd-sources/ (NOT the reserved crds/ dir name) so the
 	# templates/crds.yaml loop can range over them and emit each one as a
 	# Helm-managed template. helm-inject-crd-annotation.py adds
@@ -537,12 +537,17 @@ helm-sync: gen-manifests ## Sync generated CRDs into the Helm chart's crd-source
 	# the chart must not ship their CRDs (they remain in config/crd/bases for
 	# envtest + codegen). rm-after-copy yields a deterministic excluded set.
 	rm -f deploy/helm/ach/crd-sources/ach.ackstorm.ai_plugins.yaml deploy/helm/ach/crd-sources/ach.ackstorm.ai_pluginmarketplaces.yaml
+	# Grafana dashboards: examples/grafana is the source of truth; the chart
+	# ships copies so templates/grafana-dashboards.yaml can .Files.Glob them
+	# (Helm cannot read files outside the chart dir).
+	mkdir -p deploy/helm/ach/dashboards
+	cp -f examples/grafana/*.json deploy/helm/ach/dashboards/
 
 .PHONY: helm-sync-check
-helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD drift in the chart.
-	@if ! git diff --quiet deploy/helm/ach/crd-sources/; then \
-	  echo "CHART CRD DRIFT: deploy/helm/ach/crd-sources/ is out of sync with config/crd/bases. Run \`make helm-sync\` and commit."; \
-	  git --no-pager diff --stat deploy/helm/ach/crd-sources/; \
+helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD or dashboard drift in the chart.
+	@if ! git diff --quiet deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; then \
+	  echo "CHART DRIFT: deploy/helm/ach/{crd-sources,dashboards}/ is out of sync with config/crd/bases + examples/grafana. Run \`make helm-sync\` and commit."; \
+	  git --no-pager diff --stat deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; \
 	  exit 1; \
 	fi
 

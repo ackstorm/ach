@@ -4,46 +4,45 @@ Grounded in a live audit of the `pro-ack-ai-platform` cluster (namespace `ach`,
 7 agents). Each item lists the gap observed, the proposal, and why it matters.
 Ordered by value/effort.
 
-> Naming note: this document uses the **bare** metric names currently emitted in
-> production (pre-`ach_` rename, commit `37c4234`). After that rename ships, the
-> control-plane names gain the `ach_` prefix; the agent metrics (`ach_agent_*`,
-> `router_*`, `channel_*`, `engine_*`, `memory_degraded_*`) are emitted by the
-> Python agent image and are **not** covered by the Go rename.
+> Naming note: every metric family now carries a prefix — control-plane metrics
+> use `ach_` (Go rename `37c4234`) and the Python agent families use `ach_agent_`
+> (ach-agent `112256f`, shipped in v0.10.0), **including** the router, channel,
+> engine, and memory metrics. Bare names (`forwarder_*`, `router_*`,
+> `memory_degraded_total`, …) no longer exist in Prometheus; a dashboard still
+> querying them renders "No data", which on a fail-open counter reads as a false
+> green.
 
-## 0. `agent` series label — OPEN (scrape-time relabeling reverted)
+## 0. `agent` series label — DONE (ach-agent v0.10.1, app-native)
 
-**Gap:** agent metrics carried only the hashed `pod` label (e.g.
+**Gap (was):** agent metrics carried only the hashed `pod` label (e.g.
 `achagent-classifier-7fc457cfb9-8bskq`), so dashboards could not group or filter
 by agent name.
 
 **Tried and reverted:** the chart's `PodMonitor` relabelled the operator-set pod
 label `ach.ackstorm.ai/agent` into an `agent` series label; that block was removed
-from `deploy/helm/ach/templates/podmonitor.yaml`. Only `ach_agent_info` carries
-`agent` today, so `by (agent)` grouping is unavailable on the other series.
+from `deploy/helm/ach/templates/podmonitor.yaml`.
 
-**Fix:** have the agent app emit `agent` natively as a metric label on every
-`ach_agent_*` series instead of relying on scrape-time relabeling — survives any
-change to pod labelling.
+**Shipped:** the harness stamps identity at exposition time —
+`src/ach_agent/http/metrics.py` (`IdentityRegistry`) adds `agent` **and**
+`environment` to every sample of every `ach_agent_*` family, so the labels
+survive any change to pod labelling. Verified in prod 2026-07-27:
+`ach_agent_sessions_total{agent="zohodesk-joan",environment="zohodesk",…}`.
 
-## 1. `environment` + `capability` labels — enables real capability control
+## 1. `environment` label — DONE; `capability` — OPEN
 
-**Gap:** the whole point of the "capabilities" view is missing. Every ACHAgent
-in prod has `spec.capability.environment` and `spec.capability.name` **unset**
-(`<none>`), and neither reaches the pod labels or the metrics. There is no way
-to slice cost/traffic/errors by capability or environment today.
+**Shipped (`environment`):** the same `IdentityRegistry` from §0 stamps
+`environment` on every `ach_agent_*` series, straight from the `ACH_ENVIRONMENT`
+env var the operator injects (`achagent_workload.go`). No relabel config needed.
 
-**Proposal (either path — the app path is preferred):**
-- **App-native (preferred):** the agent container already receives the
-  `ACH_ENVIRONMENT` env var (`achagent_workload.go` sets it from
-  `spec.capability.environment`). Have the agent emit `environment` (and
-  `capability`) as a label on every `ach_agent_*` metric, straight from that env
-  var. Grouping/filtering by environment then works with zero relabel config.
-- **Scrape-time:** operator copies `capability.name` / `capability.environment`
-  onto pod labels, and the PodMonitor relabels them into series labels (same
-  one-line mechanism as `agent`).
+**Still open (`capability`), and still worth little today:** no `capability`
+label is emitted, and every prod ACHAgent leaves `spec.capability.name` unset,
+so even a shipped label would be empty. Add it app-native (same registry) when
+agents actually set the field.
 
-Either way, the values are only meaningful once agents actually **set**
-`spec.capability.environment` (all prod agents currently leave it empty).
+**Dashboards do not use it yet:** the six JSONs here expose only `$namespace`
+(+ `$agent` in the detail one). Adding an `$environment` template variable and
+threading `environment=~"$environment"` through every expr is the follow-up that
+cashes in this label.
 
 **Why:** unlocks per-capability and per-environment (dev/stage/prod) dashboards,
 alerts, and FinOps chargeback — the "control de capabilities" the dashboards are
@@ -105,18 +104,77 @@ tenant is not possible.
 **Proposal:** add the labels from #1 to the cost counter (they propagate for free
 once the environment/capability labels exist).
 
-**⚠ Under investigation:** agent-reported cost (`ach_agent_turn_cost_usd_total`)
-reads ~$0 while LiteLLM records real spend (`litellm_spend_metric_total`,
-`litellm_total_spend`) for the same calls. The agent's cost accounting appears to
-under-report — tracked separately from this dashboard work.
+**✅ Resolved (2026-07-27) — the ~$0 cost was a configuration gap, not a bug.**
+`cost.source` (ACH v0.6.23 CRD field, harness ≥ v0.10.0) selects where the
+figure comes from: `engine` (default, the engine's own price table), `litellm_usage`
+(harness prices the per-response usage against `GET /v2/model/info`),
+`litellm_headers` (reads `x-litellm-response-cost`), or `none`. Measured on
+`zohodesk-joan`:
+
+- `litellm_usage` matches LiteLLM's own billing **exactly** — 3 identical calls
+  gave an `x-litellm-key-spend` delta of `0.0012131` each, and the local math
+  (`4002 × 3e-07 + 5 × 2.5e-06`) lands on the same `0.0012131`.
+- It only prices when `spec.model.name` is the **namespaced LiteLLM deployment
+  name** (`gemini.gemini-flash-latest`). The bare `gemini-flash-latest` routes
+  fine but `?model=` returns no catalog entry → `no_entry` → unpriced turns.
+- `litellm_headers` is a constant 0 on the `/gemini` passthrough: LiteLLM emits
+  the cost headers on the `/v1` router path only. Gemini-wire agents must use
+  `litellm_usage`.
+
+**⚠ Cost and token counters do not share a basis** under `litellm_usage`: the
+harness replaces only the `cost` field of the engine-reported usage, so
+`ach_agent_turn_tokens_total` still carries the engine's numbers while the cost
+accumulates over every upstream call of the turn (observed: 9 822 input tokens
+on the metric vs a cost implying ~161 k billable input tokens). Do **not** build
+$/token panels from these two families.
+
+**⚠ `increase()` misses a counter's first sample:** a fresh
+`ach_agent_turn_cost_usd_total` series appears already carrying the first turn's
+cost, and Prometheus treats that first observation as the baseline — the very
+first invocation after a pod roll reads as `0` in the range panels.
+
+## 7. Duration histogram buckets are too small — every high quantile saturates
+
+**Gap:** `ach_agent_turn_duration_seconds` and `ach_agent_tool_duration_seconds`
+are declared without `buckets=`, so they use the `prometheus_client` defaults —
+`.005 … 10, +Inf`. Agents run with `limits.maxInvocationSeconds: 1800` and MCP
+tool calls routinely pass 10 s, so everything above 10 s lands in `+Inf` and the
+p90/p95/p99 panels read `10s`/`+Inf` regardless of the real latency.
+
+**Proposal:** explicit buckets on both histograms, e.g.
+`(0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1800)`.
+
+**Why:** every latency panel in `ach-agents`, `ach-agent-detail` and `ach-tools`
+is currently unusable for anything slower than 10 s — which is the normal case.
+
+## 8. `ach_agent_channel_inbound_events_total` counts a2a only
+
+**Gap:** the counter is incremented in exactly one place —
+`channels/a2a.py` — so webhook and cron events never reach it. The "Channel
+inbound events /s" panel therefore undercounts to a2a traffic (and no series
+exists at all in prod, where the traffic is webhook).
+
+**Proposal:** increment it in every channel adapter at event ingress, keeping
+the `type` label (`webhook|a2a|cron|…`).
 
 ---
 
-## Dashboard provisioning (ops recommendation)
+## Dashboard provisioning — SHIPPED (chart `metrics.dashboards.enabled`)
 
-These dashboards live as JSON examples and were imported into Grafana by hand.
-To make them GitOps-managed, provision them via a ConfigMap carrying the
-`grafana_dashboard: "1"` label (the kube-prometheus-stack Grafana sidecar
-auto-loads them). This can be added to the chart behind a
-`metrics.dashboards.enabled` value so the dashboards ship and update with the
-release instead of drifting from the repo.
+`examples/grafana/` is the source of truth; `make helm-sync` copies the JSON
+into `deploy/helm/ach/dashboards/` and `templates/grafana-dashboards.yaml`
+renders one labelled ConfigMap per dashboard, which the kube-prometheus-stack
+Grafana sidecar auto-loads. The pre-push gate (`make helm-sync-check`) fails on
+drift between the two directories.
+
+```yaml
+metrics:
+  dashboards:
+    enabled: true       # default false
+    label: grafana_dashboard   # must match the sidecar's LABEL
+    labelValue: "1"
+    folder: ACH         # needs sidecar.dashboards.folderAnnotation=grafana_folder
+```
+
+Dashboards loaded this way are provisioned, hence read-only in the UI — edits go
+through this repo, which is the point.

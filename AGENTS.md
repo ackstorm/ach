@@ -224,6 +224,7 @@ independent collections.)
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
 | Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/developer-guide/jwt-forwarder.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in) |
+| Changing what `AgentProfile`+`ACHAgent` render into (`agent-config-v1`) | `../ach-agent/docs/schemas/operator-contract.md` — prose half, pins contract rev **v3** (was `CONTRACT_v3.md` until 2026-07-27) — plus `agent-config-v1.schema.json` beside it, authoritative for field names/types/defaults. **Neither repo may change it unilaterally:** ach-agent regenerates (`make schema`), then re-vendor `internal/agentrender/testdata/agent-config-v1.schema.json` in the SAME change — `TestSchema_NoDrift` enforces it. Published: `https://ackstorm.github.io/ach-agent/stable/schemas/agent-config-v1.schema.json` |
 
 ## CI gating
 
@@ -345,8 +346,9 @@ The 18 hard gates (failure blocks push): gitleaks + trufflehog
 sensitive patterns (`.env`, `*.pem`, `*.key`, kubeconfig) · LICENSE + README ·
 origin-remote match · govulncheck ack-list 1:1 (`scripts/govulncheck-gate.sh`,
 list at `references/security/govulncheck-acknowledged.md`) · `go mod tidy` drift
-· per-file SPDX header · full golangci-lint · `make test-unit` · chart CRD drift
-(`make helm-sync-check` — `crd-sources/` vs `config/crd/bases`, #44). Fix the
+· per-file SPDX header · full golangci-lint · `make test-unit` · chart mirror
+drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44, plus
+`dashboards/` vs `examples/grafana`). Fix the
 root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
 gates).
 
