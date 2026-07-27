@@ -2064,7 +2064,7 @@ func TestCallbackHandler_WithSessionIDWritesRedisAndRendersHTML(t *testing.T) {
 		t.Errorf("Content-Type: got %q, want text/html prefix", got)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "You may close this window") {
+	if !strings.Contains(string(body), "You may now close this page") {
 		t.Errorf("html body missing close-window text; got: %s", string(body))
 	}
 	// The pk- plaintext MUST NOT be in the browser body — only Redis

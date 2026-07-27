@@ -35,11 +35,20 @@ spec:
       app.kubernetes.io/name: ach-agent
   podMetricsEndpoints:
     - port: health
-      path: /metrics
+      # Trailing slash: the agent serves metrics at /metrics/ and 307-redirects
+      # /metrics → /metrics/. Scraping /metrics/ directly avoids the redirect
+      # (and any Prometheus with follow_redirects=false silently getting a 307).
+      path: /metrics/
       {{- with .Values.metrics.podMonitor.interval }}
       interval: {{ . | quote }}
       {{- end }}
       {{- with .Values.metrics.podMonitor.scrapeTimeout }}
       scrapeTimeout: {{ . | quote }}
       {{- end }}
+      relabelings:
+        # Surface the operator-set pod label ach.ackstorm.ai/agent as a clean
+        # `agent` series label. Without this, agent metrics only carry the
+        # hashed pod name, so dashboards can't group/filter by agent name.
+        - sourceLabels: [__meta_kubernetes_pod_label_ach_ackstorm_ai_agent]
+          targetLabel: agent
 {{- end }}

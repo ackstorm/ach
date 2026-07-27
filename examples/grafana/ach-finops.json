@@ -1,6 +1,6 @@
 {
-  "uid": "ach-control-plane",
-  "title": "ACH \u2014 Control Plane",
+  "uid": "ach-finops",
+  "title": "ACH \u2014 FinOps (Cost & Tokens)",
   "tags": [
     "ach",
     "observability"
@@ -9,7 +9,7 @@
   "editable": true,
   "version": 0,
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "refresh": "30s",
@@ -34,7 +34,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "query": "label_values(environment_available, namespace)",
+        "query": "label_values(ach_agent_sessions_total, namespace)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -67,7 +67,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Health",
+      "title": "Spend",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -80,7 +80,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Environments Available",
+      "title": "Cost /h (now)",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -94,7 +94,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(environment_available{namespace=~\"$namespace\"})",
+          "expr": "sum(rate(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[5m])) * 3600",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -104,20 +104,25 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "currencyUSD",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "green",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "yellow",
                 "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
               }
             ]
-          }
+          },
+          "decimals": 3
         },
         "overrides": []
       },
@@ -138,7 +143,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Forwarder req /s",
+      "title": "Cost (range total)",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -152,7 +157,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[$__range]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -162,7 +167,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps"
+          "unit": "currencyUSD",
+          "decimals": 3
         },
         "overrides": []
       },
@@ -183,7 +189,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "pk on runtime /s (should be 0)",
+      "title": "Cost / 1k sessions",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -197,7 +203,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\",key_type=\"pk\", outcome=\"forwarded\"}[5m]))",
+          "expr": "1000 * sum(increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[$__range])) / clamp_min(sum(increase(ach_agent_sessions_total{namespace=~\"$namespace\"}[$__range])), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -207,20 +213,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.0001
-              }
-            ]
-          }
+          "unit": "currencyUSD",
+          "decimals": 3
         },
         "overrides": []
       },
@@ -232,7 +226,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto"
@@ -241,7 +235,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Reconcile errors /s",
+      "title": "Cache-read token ratio",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -255,7 +249,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(controller_runtime_reconcile_errors_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(increase(ach_agent_turn_tokens_total{namespace=~\"$namespace\",direction=\"cache_read\"}[$__range])) / clamp_min(sum(increase(ach_agent_turn_tokens_total{namespace=~\"$namespace\"}[$__range])), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -265,20 +259,25 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "red",
-                "value": 0.0001
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.4
               }
             ]
-          }
+          },
+          "decimals": 2
         },
         "overrides": []
       },
@@ -294,12 +293,13 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto"
-      }
+      },
+      "description": "Share of tokens served from prompt cache over the selected range \u2014 higher = cheaper. Computed over $__range so idle windows don't read as 0."
     },
     {
       "id": 6,
       "type": "row",
-      "title": "Forwarder & content-service",
+      "title": "Cost breakdown",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -312,7 +312,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Forwarder req/s by outcome",
+      "title": "Cost $/h by agent",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -326,23 +326,27 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (agent) (rate(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[5m])) * 3600",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{outcome}}"
+          "legendFormat": "{{agent}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "currencyUSD",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
             "fillOpacity": 18,
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
           }
         },
         "overrides": []
@@ -353,16 +357,19 @@
           "sort": "desc"
         },
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
         }
       }
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Forwarder p95 latency by route",
+      "title": "Cost $/h by model",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -376,23 +383,27 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "expr": "sum by (model) (rate(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[5m])) * 3600",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{route}}"
+          "legendFormat": "{{model}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "currencyUSD",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
             "fillOpacity": 18,
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
           }
         },
         "overrides": []
@@ -403,19 +414,22 @@
           "sort": "desc"
         },
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
         }
       }
     },
     {
       "id": 9,
-      "type": "timeseries",
-      "title": "Content-service req/s by outcome",
+      "type": "piechart",
+      "title": "Cost share by agent (range)",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 15
       },
@@ -426,47 +440,46 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(content_service_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (agent) (increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[$__range]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{outcome}}"
+          "legendFormat": "{{agent}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
       "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
         },
+        "pieType": "donut",
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
         }
       }
     },
     {
       "id": 10,
-      "type": "timeseries",
-      "title": "Content-service bytes/s by kind",
+      "type": "piechart",
+      "title": "Cost share by channel (range)",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 15
       },
       "datasource": {
@@ -476,17 +489,149 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (kind) (rate(content_service_bytes_served_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (channel) (increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[$__range]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{kind}}"
+          "legendFormat": "{{channel}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "pieType": "donut",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Cost by agent \u00d7 model (range)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, model) (increase(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": 0,
+          "type": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "endpoint": true,
+              "container": true,
+              "namespace": true,
+              "pod": true,
+              "service": true
+            },
+            "renameByName": {
+              "Value": "cost $",
+              "agent": "Agent",
+              "model": "Model"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "cost $",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Tokens",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Tokens /s by direction",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (direction) (rate(ach_agent_turn_tokens_total{namespace=~\"$namespace\"}[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{direction}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -514,72 +659,9 @@
       }
     },
     {
-      "id": 11,
-      "type": "row",
-      "title": "Keys, refs, LLM",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      },
-      "panels": []
-    },
-    {
-      "id": 12,
+      "id": 14,
       "type": "timeseries",
-      "title": "LiteLLM unreachable /s by caller",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (caller) (rate(litellm_unreachable_total{namespace=~\"$namespace\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{caller}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 13,
-      "type": "timeseries",
-      "title": "External-ref refresh failures /s",
+      "title": "Tokens /s by model",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -593,76 +675,28 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(operator_external_ref_refresh_total{namespace=~\"$namespace\",result!~\"Synced|not_modified\"}[5m]))",
+          "expr": "sum by (model) (rate(ach_agent_turn_tokens_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{result}}"
+          "legendFormat": "{{model}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "short",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
             "fillOpacity": 18,
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
           }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 14,
-      "type": "timeseries",
-      "title": "Key-resolution cache hit ratio",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) / clamp_min(sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) + sum(rate(key_resolution_cache_misses_total{namespace=~\"$namespace\"}[5m])), 1)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "hit ratio"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          },
-          "min": 0,
-          "max": 1
         },
         "overrides": []
       },
@@ -680,8 +714,77 @@
     },
     {
       "id": 15,
+      "type": "table",
+      "title": "Tokens by direction (range)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (direction) (increase(ach_agent_turn_tokens_total{namespace=~\"$namespace\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": 0,
+          "type": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "endpoint": true,
+              "container": true,
+              "namespace": true,
+              "pod": true,
+              "service": true
+            },
+            "renameByName": {
+              "Value": "tokens",
+              "direction": "Direction"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "tokens",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
       "type": "timeseries",
-      "title": "Forwarder JWT suppressed /s by reason",
+      "title": "Cost per session by agent",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -695,302 +798,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (rate(forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (agent) (rate(ach_agent_turn_cost_usd_total{namespace=~\"$namespace\"}[5m])) / clamp_min(sum by (agent) (rate(ach_agent_sessions_total{namespace=~\"$namespace\"}[5m])), 0.0001)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "{{reason}}"
+          "legendFormat": "{{agent}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 16,
-      "type": "row",
-      "title": "Operator internals",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 40
-      },
-      "panels": []
-    },
-    {
-      "id": 17,
-      "type": "timeseries",
-      "title": "Reconciles /s by controller",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 41
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (controller) (rate(controller_runtime_reconcile_total{namespace=~\"$namespace\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{controller}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Reconcile p95 latency",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 41
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{controller}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 19,
-      "type": "timeseries",
-      "title": "Workqueue depth",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 49
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (name) (workqueue_depth{namespace=~\"$namespace\"})",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 20,
-      "type": "timeseries",
-      "title": "Platform-API hydrate p95",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 49
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(platform_api_hydrate_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "p95"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 18,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "id": 21,
-      "type": "row",
-      "title": "Orphan cleanup",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 57
-      },
-      "panels": []
-    },
-    {
-      "id": 22,
-      "type": "timeseries",
-      "title": "Orphan cleanup /s (revoked + skipped by reason)",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 58
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(ach_orphan_cleanup_revoked_total{namespace=~\"$namespace\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "revoked"
-        },
-        {
-          "refId": "B",
-          "expr": "sum by (reason) (rate(ach_orphan_cleanup_skipped_total{namespace=~\"$namespace\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "skipped:{{reason}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
+          "unit": "currencyUSD",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
