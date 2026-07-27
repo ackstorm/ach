@@ -620,3 +620,52 @@ func TestAgentProfile_CEL_AchagentImageRequired(t *testing.T) {
 		t.Fatalf("valid profile rejected: %v", err)
 	}
 }
+
+// Both CRDs must accept cost and the apiserver must not prune it, so the rendered
+// ConfigMap carries the agent's value over the profile's.
+func TestACHAgent_CostOverride_AgentWinsInRenderedConfig(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-cost", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-cost", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
+			Image: "img:test",
+			Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+			Cost:  &achv1alpha1.CostSpec{Source: "litellm_usage"},
+		}},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-cost", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-cost"},
+			Identity:      achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-cost", Key: "ek"}},
+			Capability:    achv1alpha1.CapabilitySpec{Environment: "prod"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Cost: &achv1alpha1.CostSpec{Source: "none"}},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-cost", condWorkloadApplied, metav1.ConditionTrue)
+
+	// The profile round-trip proves the apiserver kept spec.achagent.cost.
+	var prof achv1alpha1.AgentProfile
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-prof-cost"}, &prof); err != nil {
+		t.Fatalf("get profile: %v", err)
+	}
+	if prof.Spec.Achagent.Cost == nil || prof.Spec.Achagent.Cost.Source != "litellm_usage" {
+		t.Fatalf("profile cost pruned by the apiserver: %+v", prof.Spec.Achagent.Cost)
+	}
+
+	var cm corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-cost")}, &cm); err != nil {
+		t.Fatalf("get configmap: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
+		t.Fatalf("config.json invalid: %v", err)
+	}
+	cost, _ := cfg["cost"].(map[string]any)
+	if cost == nil || cost["source"] != "none" {
+		t.Fatalf("config cost = %v, want source none (agent overrides profile)", cfg["cost"])
+	}
+}

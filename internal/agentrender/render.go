@@ -69,6 +69,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 		Limits:      renderLimits(ResolveLimits(a.Spec.Limits, p.Spec.Achagent.Limits)),
 		Persistence: renderPersistence(p.Spec.Persistence),
 		Health:      renderHealth(a.Spec.Health, p.Spec.Achagent.Health),
+		Cost:        renderCost(ResolveCost(a.Spec.Cost, p.Spec.Achagent.Cost)),
 	}
 	for i := range a.Spec.Channels {
 		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i]))
@@ -314,6 +315,15 @@ func renderHealth(agent, profile *achv1alpha1.HealthSpec) *HealthBlock {
 	return &HealthBlock{Host: host, Port: port}
 }
 
+// renderCost emits the block ONLY when the resolved source is non-empty, so an operator
+// upgrade alone changes no rendered config and no config hash.
+func renderCost(c *achv1alpha1.CostSpec) *CostBlock {
+	if c == nil || c.Source == "" {
+		return nil
+	}
+	return &CostBlock{Source: c.Source}
+}
+
 // ResolveImage is the per-agent image resolution: agent wins when set, else the
 // profile's spec.achagent.image. Empty result blocks the agent (Render errors).
 func ResolveImage(agent, profile string) string {
@@ -443,6 +453,17 @@ func ResolveHealth(agent, profile *achv1alpha1.HealthSpec) (host string, port in
 		}
 	}
 	return host, port
+}
+
+// ResolveCost resolves the cost block. ATOMIC BLOCK: a block present on the agent replaces
+// the profile's wholly, matching the "nested blocks are atomic" rule on AgentDefaults. With
+// a single field this is indistinguishable from a per-field merge; ADDING A SECOND FIELD TO
+// CostSpec REQUIRES CONVERTING THIS TO A PER-FIELD MERGE AND UPDATING THE DOCS.
+func ResolveCost(agent, profile *achv1alpha1.CostSpec) *achv1alpha1.CostSpec {
+	if agent != nil {
+		return agent
+	}
+	return profile
 }
 
 // ResolveAchBaseURL is the SINGLE ACH base-URL resolution: ACHAgent.spec.ach ??

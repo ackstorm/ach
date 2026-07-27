@@ -4,6 +4,7 @@ package agentrender
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -591,4 +592,76 @@ func TestRender_AgentEngineAndImageOverride(t *testing.T) {
 	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
 		t.Errorf("rendered engine must inherit profile forwardEnv: %v", cfg.Engine.ForwardEnv)
 	}
+}
+
+func TestResolveCost(t *testing.T) {
+	profile := &achv1alpha1.CostSpec{Source: "litellm_usage"}
+	t.Run("nil agent inherits profile", func(t *testing.T) {
+		if got := ResolveCost(nil, profile); got != profile {
+			t.Errorf("ResolveCost(nil, p) = %+v, want profile", got)
+		}
+	})
+	t.Run("nil profile returns agent", func(t *testing.T) {
+		agent := &achv1alpha1.CostSpec{Source: "none"}
+		if got := ResolveCost(agent, nil); got != agent {
+			t.Errorf("ResolveCost(a, nil) = %+v, want agent", got)
+		}
+	})
+	t.Run("nil cost on both sides", func(t *testing.T) {
+		if got := ResolveCost(nil, nil); got != nil {
+			t.Errorf("ResolveCost(nil, nil) = %+v, want nil", got)
+		}
+	})
+	t.Run("agent block replaces profile atomically", func(t *testing.T) {
+		agent := &achv1alpha1.CostSpec{Source: "litellm_headers"}
+		if got := ResolveCost(agent, profile); got.Source != "litellm_headers" {
+			t.Errorf("agent block must win wholly: %+v", got)
+		}
+	})
+}
+
+// Unset everywhere ⇒ no cost key at all, so an operator upgrade alone leaves every
+// rendered config byte-identical and every agent config hash unchanged.
+func TestRenderCost_OmitWhenUnset(t *testing.T) {
+	tc := renderMatrix()["minimal"]
+	cfg, err := Render(tc.profile, tc.agent, "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if cfg.Cost != nil {
+		t.Fatalf("cost block emitted with nothing set: %+v", cfg.Cost)
+	}
+	b, err := Marshal(cfg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"cost"`) {
+		t.Fatalf("rendered config must not contain a cost key: %s", b)
+	}
+}
+
+func TestRenderCost_AgentWinsProfileInherits(t *testing.T) {
+	t.Run("profile only inherits", func(t *testing.T) {
+		tc := renderMatrix()["minimal"]
+		tc.profile.Spec.Achagent.Cost = &achv1alpha1.CostSpec{Source: "litellm_usage"}
+		cfg, err := Render(tc.profile, tc.agent, "")
+		if err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		if cfg.Cost == nil || cfg.Cost.Source != "litellm_usage" {
+			t.Fatalf("omitted agent cost must inherit the profile's: %+v", cfg.Cost)
+		}
+	})
+	t.Run("agent wins", func(t *testing.T) {
+		tc := renderMatrix()["minimal"]
+		tc.profile.Spec.Achagent.Cost = &achv1alpha1.CostSpec{Source: "litellm_usage"}
+		tc.agent.Spec.Cost = &achv1alpha1.CostSpec{Source: "none"}
+		cfg, err := Render(tc.profile, tc.agent, "")
+		if err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		if cfg.Cost == nil || cfg.Cost.Source != "none" {
+			t.Fatalf("agent cost must win: %+v", cfg.Cost)
+		}
+	})
 }

@@ -47,7 +47,7 @@ type ModelSpec struct {
 // AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
 // type inline. Resolution is a per-field deep merge: a field set on the agent
 // wins, while an omitted field inherits from the profile. Slices, maps, and
-// nested blocks such as engine.pi are atomic and are not recursively merged.
+// nested blocks such as engine.pi and cost are atomic and are not recursively merged.
 // The resolvers are the source of truth for this behavior. Image is required on
 // the profile, but optional on the agent and inherited when omitted.
 type AgentDefaults struct {
@@ -63,6 +63,8 @@ type AgentDefaults struct {
 	Limits *LimitsSpec `json:"limits,omitempty"`
 	// +optional
 	Health *HealthSpec `json:"health,omitempty"`
+	// +optional
+	Cost *CostSpec `json:"cost,omitempty"`
 }
 
 // ThinkingSpec is the normalized reasoning intent each engine translates for itself
@@ -146,6 +148,17 @@ type HealthSpec struct {
 	Port int32 `json:"port,omitempty"`
 }
 
+// CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
+// Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
+// hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
+// litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
+// litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
+// ach-agent image >= v0.10.0.
+type CostSpec struct {
+	// +optional
+	Source string `json:"source,omitempty"`
+}
+
 // PersistenceSpec configures PVC-backed durable state (config: persistence{enabled,mountPath}).
 // +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.size) && size(self.size) > 0)",message="persistence.size is required when persistence.enabled=true"
 type PersistenceSpec struct {
@@ -189,7 +202,7 @@ type NetworkPolicySpec struct {
 }
 
 // AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-// (image/ach/model/engine/limits/health) live under the named achagent block and
+// (image/ach/model/engine/limits/health/cost) live under the named achagent block and
 // deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
 // everything else here is profile-only infrastructure an agent cannot override.
 type AgentProfileSpec struct {

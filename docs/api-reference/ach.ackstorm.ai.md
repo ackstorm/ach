@@ -130,6 +130,7 @@ _Appears in:_
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
+| `cost` _[CostSpec](#costspec)_ |  |  |  |
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
@@ -183,7 +184,7 @@ AgentDefaults is the shared set of profile defaults that an agent may override.
 AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
 type inline. Resolution is a per-field deep merge: a field set on the agent
 wins, while an omitted field inherits from the profile. Slices, maps, and
-nested blocks such as engine.pi are atomic and are not recursively merged.
+nested blocks such as engine.pi and cost are atomic and are not recursively merged.
 The resolvers are the source of truth for this behavior. Image is required on
 the profile, but optional on the agent and inherited when omitted.
 
@@ -201,6 +202,7 @@ _Appears in:_
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
+| `cost` _[CostSpec](#costspec)_ |  |  |  |
 
 
 #### AgentProfile
@@ -250,7 +252,7 @@ AgentProfileList contains a list of AgentProfile.
 
 
 AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-(image/ach/model/engine/limits/health) live under the named achagent block and
+(image/ach/model/engine/limits/health/cost) live under the named achagent block and
 deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
 everything else here is profile-only infrastructure an agent cannot override.
 
@@ -616,6 +618,28 @@ _Appears in:_
 | `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+
+
+#### CostSpec
+
+
+
+CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
+Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
+hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
+litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
+litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
+ach-agent image >= v0.10.0.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `source` _string_ |  |  |  |
 
 
 #### CronSpec

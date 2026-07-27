@@ -21,10 +21,12 @@ every panel). Requires Prometheus scraping ACH — enable
 `metrics.serviceMonitor.enabled` (control-plane) and `metrics.podMonitor.enabled`
 (agents) in the Helm chart.
 
-The agent dashboards group by a clean `agent` label. The chart's PodMonitor now
-relabels the operator-set pod label `ach.ackstorm.ai/agent` into an `agent`
-series label, so `label_values(ach_agent_sessions_total, agent)` returns
-`classifier`, `finops-advisor`, … instead of hashed pod names.
+The agent dashboards group by a clean `agent` label, which today only
+`ach_agent_info` carries natively — the chart's PodMonitor no longer relabels the
+operator-set pod label `ach.ackstorm.ai/agent` into an `agent` series label. Until
+the harness emits `agent` on every `ach_agent_*` series (PROPOSED-METRICS.md §0),
+the `by (agent)` panels and the `$agent` variable stay empty; group by `pod`
+instead, or re-add a `relabelings` block to your own PodMonitor.
 
 ## Metric names
 

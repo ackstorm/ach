@@ -20,6 +20,7 @@ spec:
   # image: ghcr.io/ackstorm/ach-agent:next
   # engine:
   #   type: pi
+  # cost: { source: none }
   prompt:
     system: { type: text, text: "You are a senior code reviewer for the platform team." }
     compose: append

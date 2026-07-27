@@ -28,6 +28,13 @@ spec:
     health:
       host: 0.0.0.0
       port: 8000
+    # Where the per-invocation cost figure comes from (requires an ach-agent image
+    # >= v0.10.0; one of engine|litellm_usage|litellm_headers|none — the harness
+    # validates and hard-fails on an unknown value). Omit for today's behavior
+    # (engine, the opencode estimate). litellm_usage prices real LiteLLM rates via
+    # GET /v2/model/info; litellm_headers is non-streaming only. Setting or changing
+    # it rolls the agent Deployment (config-hash change).
+    # cost: { source: litellm_usage }
   persistence:
     enabled: true
     size: 10Gi
