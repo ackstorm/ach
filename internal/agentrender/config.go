@@ -18,6 +18,7 @@ type AgentConfig struct {
 	Limits        *LimitsBlock    `json:"limits,omitempty"`
 	Persistence   *PersistBlock   `json:"persistence,omitempty"`
 	Health        *HealthBlock    `json:"health,omitempty"`
+	Cost          *CostBlock      `json:"cost,omitempty"`
 	Channels      []ChannelBlock  `json:"channels,omitempty"`
 	// McpServers is the harness-managed MCP server map keyed by name (schema
 	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
@@ -161,6 +162,11 @@ type PersistBlock struct {
 type HealthBlock struct {
 	Host string `json:"host,omitempty"`
 	Port int32  `json:"port,omitempty"`
+}
+
+// CostBlock is the rendered cost.source selector (schema $defs/CostBlock).
+type CostBlock struct {
+	Source string `json:"source,omitempty"`
 }
 
 type ChannelBlock struct {
