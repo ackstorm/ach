@@ -35,6 +35,8 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 │   │                          (templates/gateway-deployment.yaml = ach-gateway
 │   │                           Deployment+Service; the prod edge router)
+│   ├── crd-sources/          COPIED from config/crd/bases — see "Mirrored into
+│   ├── dashboards/           COPIED from examples/grafana    the chart" below
 │                            (deploy/kustomize/ deleted 2026-07-17 — Helm is the
 │                             only supported install; see ach-project-spec.md)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
@@ -69,6 +71,21 @@ ach/
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE
 ```
+
+## Mirrored into the chart (never hand-edit the copies)
+
+Helm cannot `.Files.Glob` outside the chart directory, so two surfaces are
+COPIED in by `make helm-sync` and must never be edited in place — the next sync
+reverts the edit:
+
+| Chart dir | Source of truth | Shipped as |
+|-----------|-----------------|------------|
+| `deploy/helm/ach/crd-sources/` | `config/crd/bases/` (minus the gated-off plugin CRDs) | `templates/crds.yaml` loop |
+| `deploy/helm/ach/dashboards/` | `examples/grafana/*.json` | `templates/grafana-dashboards.yaml` ConfigMaps |
+
+`make helm-sync-check` re-syncs and hard-fails on any resulting change — added,
+deleted, or modified (it reads `git status --porcelain`, not `git diff`, so a
+NEW file is caught too). It is pre-push gate 18 and a CI step.
 
 ## Synced fixtures vs examples (independent collections)
 

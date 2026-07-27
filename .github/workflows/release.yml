@@ -242,10 +242,12 @@ jobs:
           version: v3.12.0
 
       # Issue #44: regenerate code + CRDs, then HARD-FAIL if anything drifts
-      # from what's committed. helm-sync-check covers the chart's crd-sources/;
-      # the trailing `git diff --exit-code` also catches gen-code (zz_generated)
-      # and config/crd/bases drift, so a release can never ship stale generated
-      # artifacts. (Previously this step only regenerated and never gated.)
+      # from what's committed. helm-sync-check covers both of the chart's copied
+      # surfaces (crd-sources/ + dashboards/) and catches added/deleted files,
+      # not just modified ones; the trailing `git diff --exit-code` also catches
+      # gen-code (zz_generated) and config/crd/bases drift, so a release can
+      # never ship stale generated artifacts. (Previously this step only
+      # regenerated and never gated.)
       - name: Regenerate code + CRDs and gate on drift
         run: |
           make gen-code helm-sync-check

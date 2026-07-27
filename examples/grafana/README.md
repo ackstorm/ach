@@ -39,6 +39,14 @@ variable work without any scrape-time relabeling — the chart's PodMonitor
 deliberately does none. `environment` is available but not yet wired into any
 template variable (PROPOSED-METRICS.md §1).
 
+**On ach-agent older than v0.10.1** the samples carry no `agent` label at all,
+so the `$agent` variable comes up empty and every `by (agent)` panel reads
+`No data` — indistinguishable from an idle agent. Nothing in the chart pins or
+checks the harness version (the image comes from the CR), so if the agent
+dashboards are blank, check the harness version first. Either upgrade the
+harness, or group by `pod` instead, or re-add a PodMonitor `relabelings` block
+deriving `agent` from the pod name.
+
 ## Metric names
 
 These dashboards target the current normalized metric names. Control-plane

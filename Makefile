@@ -541,21 +541,35 @@ helm-sync: gen-manifests ## Sync generated CRDs + Grafana dashboards into the He
 	# ships copies so templates/grafana-dashboards.yaml can .Files.Glob them
 	# (Helm cannot read files outside the chart dir).
 	mkdir -p deploy/helm/ach/dashboards
+	# rm-before-copy, like the CRD half above: cp alone never prunes, so a
+	# dashboard deleted or renamed in examples/grafana would ship forever (and
+	# after a rename BOTH copies would ship, colliding on the Grafana uid).
+	rm -f deploy/helm/ach/dashboards/*.json
 	cp -f examples/grafana/*.json deploy/helm/ach/dashboards/
 
 .PHONY: helm-sync-check
 helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD or dashboard drift in the chart.
-	@if ! git diff --quiet deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; then \
+	# `git status --porcelain`, NOT `git diff`: diff sees neither untracked nor
+	# newly-staged-only paths, so a NEWLY ADDED dashboard/CRD sailed through the
+	# gate while the released chart shipped without it.
+	@drift="$$(git status --porcelain -- deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/)"; \
+	if [ -n "$$drift" ]; then \
 	  echo "CHART DRIFT: deploy/helm/ach/{crd-sources,dashboards}/ is out of sync with config/crd/bases + examples/grafana. Run \`make helm-sync\` and commit."; \
-	  git --no-pager diff --stat deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; \
+	  echo "$$drift"; \
 	  exit 1; \
 	fi
 
 .PHONY: helm-render-check
-helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service).
+helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service, dashboards on).
 	$(call container_target,_helm-render-check)
 _helm-render-check:
 	bash scripts/helm-render-check.sh
+
+.PHONY: qa-dashboards
+qa-dashboards: ## Validate the Grafana dashboard JSON against the current metric names.
+	$(call container_target,_qa-dashboards)
+_qa-dashboards:
+	bash examples/grafana/check-metric-names.sh
 
 ##@ E2E (cluster + mocks)
 

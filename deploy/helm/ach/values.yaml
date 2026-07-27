@@ -352,21 +352,37 @@ metrics:
   # metrics.dashboards: ship the ACH Grafana dashboards
   # (templates/grafana-dashboards.yaml) as one ConfigMap per dashboard, labelled
   # for the kube-prometheus-stack Grafana sidecar to auto-load. Needs NO
-  # Prometheus Operator CRD — plain ConfigMaps — so it is safe to enable
-  # wherever that sidecar runs (sidecar.dashboards.enabled=true, which is the
-  # kube-prometheus-stack default). The JSON lives in the chart's dashboards/
-  # dir, synced from examples/grafana by `make helm-sync`.
+  # Prometheus Operator CRD — plain ConfigMaps — so it works wherever that
+  # sidecar runs (sidecar.dashboards.enabled=true, the kube-prometheus-stack
+  # default). The JSON lives in the chart's dashboards/ dir, synced from
+  # examples/grafana by `make helm-sync`.
+  #
+  # ⚠ THE SIDECAR MUST WATCH THE NAMESPACE THESE LAND IN. kube-prometheus-stack
+  # defaults sidecar.dashboards.searchNamespace to null = the sidecar's OWN
+  # namespace, so with ACH and Prometheus split across namespaces (the usual
+  # layout) nothing is picked up. Fix it on either side: set the sidecar's
+  # searchNamespace to ALL (or to the ACH namespace), or point
+  # metrics.dashboards.namespace at the sidecar's namespace. There is no error
+  # when this is wrong — the dashboards simply never appear in Grafana.
   dashboards:
     enabled: false
+    # namespace: where the dashboard ConfigMaps are created. Empty → the
+    # release namespace. Set it to the monitoring namespace when the sidecar
+    # runs with the default (own-namespace-only) searchNamespace.
+    namespace: ""
     # label/labelValue: must match the sidecar's LABEL/LABEL_VALUE
     # (kube-prometheus-stack defaults: grafana_dashboard / "1").
     label: grafana_dashboard
     labelValue: "1"
-    # folder: value of the grafana_folder annotation — honoured only when the
-    # sidecar runs with sidecar.dashboards.folderAnnotation=grafana_folder.
-    # Empty → no annotation, dashboards land in the sidecar provider's folder.
+    # folder: value of the grafana_folder annotation. Honoured only when the
+    # sidecar runs with BOTH sidecar.dashboards.folderAnnotation=grafana_folder
+    # AND sidecar.dashboards.provider.foldersFromFilesStructure=true (both are
+    # off by default); with either missing the annotation is inert and the
+    # dashboards land in the sidecar provider's folder.
+    # Empty → no annotation at all.
     folder: ACH
-    # labels: extra labels on every dashboard ConfigMap.
+    # labels: extra labels on every dashboard ConfigMap. A key that collides
+    # with `label` above loses to it.
     labels: {}
 
 # extraEnv: list of additional env vars to inject into every component's

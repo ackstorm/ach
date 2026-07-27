@@ -12,7 +12,9 @@ done
 
 # Bare metric families from the pre-v0.6.22 naming scheme must not reappear.
 obsolete='(?<![A-Za-z0-9_])(environment_available|forwarder_[A-Za-z0-9_]+|content_service_[A-Za-z0-9_]+|platform_api_[A-Za-z0-9_]+|key_resolution_cache_[A-Za-z0-9_]+|litellm_unreachable_total|operator_external_ref_refresh_total|router_[A-Za-z0-9_]+|channel_inbound_events_total|engine_[A-Za-z0-9_]+|memory_degraded_total)'
-if rg --pcre2 -n "$obsolete" "${dashboards[@]}"; then
+# grep -P, not ripgrep: this runs as `make qa-dashboards` inside the devtools
+# container, which ships no rg. GNU grep's -P is PCRE, so the lookbehind holds.
+if grep -Pn "$obsolete" "${dashboards[@]}"; then
   echo "obsolete bare metric reference found" >&2
   exit 1
 fi
@@ -31,7 +33,7 @@ required=(
   ach_agent_memory_degraded_total
 )
 for metric in "${required[@]}"; do
-  rg -q --fixed-strings "$metric" "${dashboards[@]}" || {
+  grep -qF "$metric" "${dashboards[@]}" || {
     echo "expected metric reference missing: $metric" >&2
     exit 1
   }
