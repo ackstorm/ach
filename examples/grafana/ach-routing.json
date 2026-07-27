@@ -34,7 +34,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "query": "label_values(forwarder_requests_total, namespace)",
+        "query": "label_values(ach_forwarder_requests_total, namespace)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -94,7 +94,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -139,7 +139,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_requests_total{namespace=~\"$namespace\",key_type=\"pk\", outcome=\"forwarded\"}[5m]))",
+          "expr": "sum(rate(ach_forwarder_requests_total{namespace=~\"$namespace\",key_type=\"pk\", outcome=\"forwarded\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -198,7 +198,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(ach_forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -244,7 +244,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -289,7 +289,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (route) (rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (route) (rate(ach_forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -339,7 +339,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome, key_type) (rate(forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (outcome, key_type) (rate(ach_forwarder_requests_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -389,7 +389,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(ach_forwarder_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -439,7 +439,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(forwarder_jwt_signed_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_forwarder_jwt_signed_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -448,7 +448,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (reason) (rate(forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (reason) (rate(ach_forwarder_jwt_suppressed_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -511,7 +511,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (kind) (rate(content_service_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (kind) (rate(ach_content_service_requests_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -565,7 +565,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(content_service_requests_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (outcome) (rate(ach_content_service_requests_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -615,7 +615,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (kind) (rate(content_service_bytes_served_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (kind) (rate(ach_content_service_bytes_served_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -669,7 +669,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(content_service_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(ach_content_service_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -732,7 +732,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) / clamp_min(sum(rate(key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) + sum(rate(key_resolution_cache_misses_total{namespace=~\"$namespace\"}[5m])), 1)",
+          "expr": "sum(rate(ach_key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) / clamp_min(sum(rate(ach_key_resolution_cache_hits_total{namespace=~\"$namespace\"}[5m])) + sum(rate(ach_key_resolution_cache_misses_total{namespace=~\"$namespace\"}[5m])), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -784,7 +784,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(operator_external_ref_refresh_total{namespace=~\"$namespace\",result!~\"Synced|not_modified\"}[5m]))",
+          "expr": "sum by (result) (rate(ach_operator_external_ref_refresh_total{namespace=~\"$namespace\",result!~\"Synced|not_modified\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -907,7 +907,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (caller) (rate(litellm_unreachable_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (caller) (rate(ach_litellm_unreachable_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -958,7 +958,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(environment_available{namespace=~\"$namespace\"})",
+          "expr": "sum(ach_environment_available{namespace=~\"$namespace\"})",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"

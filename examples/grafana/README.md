@@ -26,23 +26,20 @@ relabels the operator-set pod label `ach.ackstorm.ai/agent` into an `agent`
 series label, so `label_values(ach_agent_sessions_total, agent)` returns
 `classifier`, `finops-advisor`, … instead of hashed pod names.
 
-## ⚠ Metric names track the CURRENTLY-DEPLOYED state (mixed prefixes)
+## Metric names
 
-These queries match what the running cluster emits **today**, which is mixed:
+These dashboards target the current normalized metric names. Control-plane
+metrics use `ach_` (for example `ach_forwarder_requests_total`,
+`ach_content_service_requests_total`, and `ach_platform_api_hydrate_duration_seconds_*`)
+and all Python-agent metric families use `ach_agent_` (including router,
+channel, engine, and memory metrics). The existing `ach_orphan_cleanup_*`
+family is unchanged.
 
-- Already prefixed live → used as-is: `ach_agent_*`, `ach_orphan_cleanup_*`.
-- Bare live → used bare here: `forwarder_*`, `content_service_*`,
-  `platform_api_*`, `key_resolution_cache_*`, `litellm_unreachable_total`,
-  `operator_external_ref_refresh_total`, `environment_available`, and the agent
-  `router_*` / `engine_*` / `channel_inbound_events_total` /
-  `memory_degraded_total`.
+Validate the JSON and metric-name contract with:
 
-## After the `ach_` rename is deployed
-
-The metric-name normalization (control-plane → `ach_`) is committed but **not yet
-deployed**. Once it ships, migrate the control-plane dashboards with a mechanical
-find/replace on the bare names above (prefix `ach_`). The agent `ach_agent_*`
-names are unaffected.
+```bash
+bash examples/grafana/check-metric-names.sh
+```
 
 ## Proposed metrics & label improvements
 

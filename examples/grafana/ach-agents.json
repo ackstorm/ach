@@ -333,7 +333,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(ach_agent_stats_degraded_total{namespace=~\"$namespace\"}[5m])) + sum(rate(memory_degraded_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_stats_degraded_total{namespace=~\"$namespace\"}[5m])) + sum(rate(ach_agent_memory_degraded_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -737,7 +737,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (channel) (rate(channel_inbound_events_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (channel) (rate(ach_agent_channel_inbound_events_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -800,7 +800,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(router_backpressure_rejects_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_router_backpressure_rejects_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -809,7 +809,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(rate(router_dedup_discards_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_router_dedup_discards_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -818,7 +818,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum(rate(router_expire_drops_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_router_expire_drops_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -827,7 +827,7 @@
         },
         {
           "refId": "D",
-          "expr": "sum(rate(router_persistence_degraded_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_router_persistence_degraded_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -877,7 +877,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(engine_launch_failures_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_engine_launch_failures_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -886,7 +886,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(rate(engine_watchdog_kills_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum(rate(ach_agent_engine_watchdog_kills_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -945,7 +945,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (agent) (rate(memory_degraded_total{namespace=~\"$namespace\"}[5m]))",
+          "expr": "sum by (agent) (rate(ach_agent_memory_degraded_total{namespace=~\"$namespace\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"

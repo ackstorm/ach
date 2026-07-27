@@ -339,7 +339,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(ach_agent_stats_degraded_total{namespace=~\"$namespace\", agent=~\"$agent\"}[5m])) + sum(rate(memory_degraded_total{namespace=~\"$namespace\", agent=~\"$agent\"}[5m]))",
+          "expr": "sum(rate(ach_agent_stats_degraded_total{namespace=~\"$namespace\", agent=~\"$agent\"}[5m])) + sum(rate(ach_agent_memory_degraded_total{namespace=~\"$namespace\", agent=~\"$agent\"}[5m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
