@@ -4,23 +4,23 @@
 
 **Goal:** Add optional, first-class `Environment.spec.runtime.mcpToolsets` support so EK-backed ach-agent workloads can discover, hydrate, authorize, and call administrator-owned LiteLLM Toolsets through `/toolset/{name}/mcp` without changing raw MCP-server behavior or exposing Toolsets to PK/user CLI consumers.
 
-**Architecture:** LiteLLM remains the Toolset source of truth and CRUD owner. ACH discovers names through `GET /v1/mcp/toolset`, projects those names into its existing snapshot/catalog and Environment row, grants the Environment's selected names on the existing `ach-env-<environment>` shell team's `object_permission.mcp_toolsets`, and enforces the same Environment-bound allowlist in the forwarder before proxying the full `/toolset/{name}/mcp...` path to LiteLLM. The hydrate response exposes a distinct `runtime.mcpToolsets` arm only to EK callers; PK responses retain their exact current shape, and local CLI adapters do not render Toolsets in this release.
+**Architecture:** LiteLLM remains the Toolset source of truth and CRUD owner. ACH discovers names through `GET /v1/mcp/toolset`, projects those names into its existing snapshot/catalog and Environment row, resolves the Environment's selected names to their `toolset_id`s and grants **the IDs** on the existing `ach-env-<environment>` shell team's `object_permission.mcp_toolsets` (LiteLLM enforces by ID, not name), and enforces the same Environment-bound allowlist in the forwarder before proxying the full `/toolset/{name}/mcp...` path to LiteLLM. The hydrate response exposes a distinct `runtime.mcpToolsets` arm only to EK callers; PK responses retain their exact current shape, and local CLI adapters do not render Toolsets in this release.
 
 **Tech Stack:** Go 1.24 through the Docker-backed Make targets, controller-runtime/Kubernetes CRDs, pgx/Postgres migrations, chi/`httputil.ReverseProxy`, Helm, stdlib tests/envtest/e2e, LiteLLM v1.93 Toolset APIs.
 
-**Compatibility Source:** [LiteLLM MCP Toolsets](https://docs.litellm.ai/docs/mcp_toolsets) is authoritative for `GET/POST /v1/mcp/toolset`, `/toolset/{name}/mcp`, and `object_permission.mcp_toolsets`. The user deployment is LiteLLM v1.93; ACH's checked-in e2e image starts at v1.87.1 and is upgraded and gated in Task 8.
+**Compatibility Source:** [LiteLLM MCP Toolsets](https://docs.litellm.ai/docs/mcp_toolsets) is the narrative reference, but the docs omit the route, list shape, and permission details — the **v1.93.0 source** is authoritative (verified at tag `v1.93.0`): `proxy_server.py` registers exactly `/toolset/{toolset_name}/mcp`; the management router serves `GET/POST /v1/mcp/toolset` (+ `DELETE /v1/mcp/toolset/{toolset_id}`) returning a **bare JSON array**; `schema.prisma` defines `object_permission.mcp_toolsets` as **toolset IDs** ("Toolset IDs granted to this key/team/user"). The production deployment is LiteLLM v1.93.0; ACH's checked-in e2e image is v1.87.1 (which also ships the Toolset feature) and Task 8 upgrades the e2e cluster pin to v1.93.0 to match production.
 
 ## Global Constraints
 
 - LiteLLM—not ACH—owns Toolset creation, update, deletion, membership, and per-tool selection; ACH implements discovery, cataloging, Environment references, name resolution, access control, and consumer exposure only.
 - Raw MCP servers in `runtime.mcpServers` and Toolsets in `runtime.mcpToolsets` are independent, coexisting axes. Never encode a Toolset under `/mcp/{name}`.
-- The only Toolset data-plane route is `/toolset/{name}/mcp` plus an arbitrary tail after `/mcp`; the forwarder preserves that upstream path and query exactly.
+- The only Toolset data-plane route is `/toolset/{name}/mcp`; the forwarder also accepts an arbitrary tail after `/mcp` and preserves the upstream path and query exactly. Note LiteLLM v1.93.0 registers only the exact `/toolset/{toolset_name}/mcp` path — tail forwarding is a permissive ACH surface, not a LiteLLM contract.
 - MVP runtime consumption is EK-only and intended for ach-agent. PK/user CLI Toolset hydration, CLI adapter projection, per-agent tool filters, glob expansion, ACH Toolset CRUD, BIP matching, and identity JWT forwarding are out of scope.
-- Toolset authorization comes from the Environment shell team's `object_permission.mcp_toolsets`, not from LiteLLM access groups. Existing access-group model/MCP/A2A grants remain unchanged.
+- Toolset authorization comes from the Environment shell team's `object_permission.mcp_toolsets`, not from LiteLLM access groups. The granted values are **LiteLLM toolset IDs** resolved from the Environment's names at reconcile time — LiteLLM's `/toolset/{name}/mcp` handler resolves the name to a toolset and denies unless its `toolset_id` is in the grant list. Existing access-group model/MCP/A2A grants remain unchanged.
 - User shell teams (`ach-user-<email>`) must continue sending an explicit empty `mcp_toolsets` list; only `ach-env-<environment>` receives selected Toolset names.
-- Keep `schemaVersion: "v1alpha1"`. PK hydrate JSON must remain byte-compatible by omitting `mcpToolsets`; EK hydrate JSON emits `mcpToolsets: []` or populated entries. Updated ACH CLI decoding accepts the additive arm but deliberately does not project it.
+- Keep `schemaVersion: "v1alpha1"`. PK hydrate JSON must remain byte-compatible by omitting `mcpToolsets`; EK hydrate JSON emits `mcpToolsets` **only when the Environment defines Toolsets** and omits the key otherwise — the CLI manifest decoder is strict (`DisallowUnknownFields`, `internal/cli/manifest/manifest.go:77`), so always emitting the key would break every old strict decoder hydrating with an EK even on Toolset-free Environments. Updated ACH CLI decoding accepts the additive arm but deliberately does not project it.
 - The ach-agent harness source is not in this repository. ACH's deliverable is its EK hydrate/data-plane contract: each item has a stable Toolset `id` and `/toolset/{name}/mcp` endpoint, and the harness uses its Environment key for that endpoint. Production activation is gated on an ach-agent image that consumes this additive arm; Environments without Toolsets remain compatible with older images.
-- Upgrade the checked-in e2e LiteLLM image from v1.87.1 to v1.93.0 while retaining Helm chart `1.84.0`; the new live compatibility tests are the release gate for that image/chart combination.
+- Upgrade the checked-in e2e cluster's LiteLLM image from v1.87.1 to v1.93.0 **to match the deployed production proxy** (v1.87.1 also ships the Toolset feature — the bump is version alignment, not feature availability) while retaining Helm chart `1.84.0`; the new live compatibility tests are the release gate for that image/chart combination.
 - Every changed Go, SQL, YAML, Markdown, generated CRD, Helm CRD copy, and generated API reference retains the repository's SPDX/license conventions.
 - Host Go is unavailable. Wrapped test/build/cluster targets run directly as `make <target>`. The standalone generator targets are the documented exception in `references/makefile.md`, so invoke `gen-code`, `gen-manifests`, `gen-crd-ref-docs`, and `helm-sync*` through `./scripts/dev.sh make ...`. Run host-only `make clean-cache` after the feature is finished.
 
@@ -64,7 +64,7 @@ Each task ends in a reviewable implementation commit. Do not combine commits: th
 **Files:**
 - Modify: `api/ach/v1alpha1/environment_types.go:9-54` (`RuntimeBlock`), `:170-224` (`UnresolvedRuntime`), `:235-242` (`Environment` comment)
 - Test: `internal/controller/ach/environment_available_test.go`
-- Generate later in Task 9: `api/ach/v1alpha1/zz_generated.deepcopy.go`, CRD/API reference copies
+- Generated in Step 4 and committed here: `api/ach/v1alpha1/zz_generated.deepcopy.go`, `config/crd/bases/ach.ackstorm.ai_environments.yaml` (Helm CRD copy + API reference sync happen in Task 9)
 
 **Interfaces:**
 - Produces: `RuntimeBlock.MCPToolsets []string` with JSON name `mcpToolsets`; `UnresolvedRuntime.MCPToolsets []string`.
@@ -109,7 +109,7 @@ Insert this field between `MCPServers` and `A2AAgents`:
 MCPToolsets []string `json:"mcpToolsets,omitempty"`
 ```
 
-Add the corresponding defaulted `MCPToolsets []string` to `UnresolvedRuntime`. Update the Environment prose from three runtime axes to four.
+Add the corresponding defaulted `MCPToolsets []string` to `UnresolvedRuntime`. Update the runtime-axis prose in both places: the `(models, mcpServers, a2aAgents)` list in the `Environment` doc comment (`environment_types.go:237-239`) and the "three runtime reference lists" phrase in the `UnresolvedRuntime` doc comment (`environment_types.go:210`).
 
 - [ ] **Step 4: Generate only the artifacts required to run admission tests**
 
@@ -209,7 +209,7 @@ ALTER TABLE environments DROP COLUMN runtime_mcp_toolsets;
 
 - [ ] **Step 4: Thread the column through every row query and UI write**
 
-Add `RuntimeMCPToolsets []string // spec.runtime.mcpToolsets` to `EnvironmentRow`. Add `runtime_mcp_toolsets` and its bound/scanned value to `upsertEnvironmentSQL`, `UpsertEnvironmentTx`, all three SELECT/Scan blocks, `internal/db/ui_objects.go` insert/update arguments, `store.RowToView`, and `objects.rowFromSpec/specFromRow`. Keep the arrays non-nil through the existing `orEmptyStrings` discipline.
+Add `RuntimeMCPToolsets []string // spec.runtime.mcpToolsets` to `EnvironmentRow`. Add `runtime_mcp_toolsets` and its bound/scanned value to `upsertEnvironmentSQL`, `UpsertEnvironmentTx`, all three SELECT/Scan blocks, `internal/db/ui_objects.go` insert/update arguments (via `uiEnvironmentArgs`), `store.RowToView`, and `objects.specToRow`/`objects.rowToSpec`. Keep the arrays non-nil: mirror the existing `RuntimeMCPServers` handling everywhere; the UI write path normalizes via `orEmptyStrings` (`ui_objects.go:49` — UI-path-only helper).
 
 Change the catalog replace signature to:
 
@@ -252,7 +252,7 @@ git commit -m "feat(storage): project environment MCP toolsets"
 - Modify: `internal/litellm/noop.go`
 - Modify: `internal/snapshot/snapshot.go:31-64`, `:199-305`
 - Modify: `internal/snapshot/snapshot_test.go`
-- Modify interface fakes: `internal/connection/client.go`, `internal/controller/ach/access_group_fake_test.go`, `internal/controller/ach/environment_accessgroup_test.go`, `internal/controller/ach/main_wiring_envtest_test.go`, `internal/controller/ach/suite_test.go`, `internal/orphan/runnable_test.go`, `internal/platformapi/admin/integration_helpers_test.go`, `internal/platformapi/auth/sso_test.go`, `internal/platformapi/teams/lookup_test.go`
+- Modify interface fakes (standalone full-method-set implementations that break on interface growth): `internal/connection/client.go`, `internal/controller/ach/main_wiring_envtest_test.go`, `internal/orphan/runnable_test.go`, `internal/platformapi/admin/integration_helpers_test.go`, `internal/platformapi/auth/sso_test.go`, `internal/platformapi/teams/lookup_test.go`, `internal/snapshot/snapshot_test.go` (its `fakeLiteLLM` is standalone). No change needed for fakes that embed `*litellm.NoopClient` or the interface (`access_group_fake_test.go`, `suite_test.go`, envkeys tests, `keystore/teamsresolver_test.go`) — they inherit the new method.
 
 **Interfaces:**
 - Produces: `ToolsetEntry{ToolsetID, ToolsetName, Description}`, `Client.ListMCPToolsets(context.Context) ([]ToolsetEntry, error)`, and `LiteLLMSnapshot.MCPToolsets map[string]struct{}`.
@@ -260,17 +260,13 @@ git commit -m "feat(storage): project environment MCP toolsets"
 
 - [ ] **Step 1: Write failing wire-contract tests**
 
-Test both accepted v1.93 list envelopes because LiteLLM deployments may return a bare array or `{ "toolsets": [...] }` during the upgrade window:
+Test the v1.93.0 list shape — a **bare JSON array** (verified in source; there is no `{"toolsets":[...]}` wrapper in v1.87.1 or v1.93.0):
 
 ```json
 [{"toolset_id":"ts-1","toolset_name":"developer-tools","description":"CI tools"}]
 ```
 
-```json
-{"toolsets":[{"toolset_id":"ts-1","toolset_name":"developer-tools"}]}
-```
-
-Assert `GET /v1/mcp/toolset`, master-key auth through `makeRequest`, empty result as `ErrNotFound`, and malformed JSON as a path-specific decode error.
+Assert `GET /v1/mcp/toolset`, master-key auth through `makeRequest` (the endpoint is **permission-filtered for non-admin keys** — a non-admin key with no grants gets `[]`, so discovery MUST use the master key), empty result as `ErrNotFound`, and malformed JSON as a path-specific decode error.
 
 - [ ] **Step 2: Run the LiteLLM tests red**
 
@@ -290,7 +286,7 @@ type ToolsetEntry struct {
 }
 ```
 
-`ListMCPToolsets` must issue only `GET /v1/mcp/toolset`, decode the two documented/tested response shapes, discard all fields except identity/catalog metadata, and return `ErrNotFound` for zero names. Add the method to `Client`, `RESTClient`, `NoopClient`, and every compile-time fake listed above.
+`ListMCPToolsets` must issue only `GET /v1/mcp/toolset`, decode the bare-array response, discard all fields except identity/catalog metadata (keep `ToolsetID` — Task 4 grants by ID), and return `ErrNotFound` for zero names. Add the method to `Client`, `RESTClient`, `NoopClient`, and every standalone fake listed above.
 
 - [ ] **Step 4: Write failing snapshot atomicity tests**
 
@@ -316,7 +312,7 @@ Expected: PASS for both response shapes and all-or-nothing stale preservation.
 - [ ] **Step 7: Commit discovery**
 
 ```bash
-git add internal/litellm internal/snapshot internal/connection/client.go internal/controller/ach/*test.go internal/orphan/runnable_test.go internal/platformapi/admin/integration_helpers_test.go internal/platformapi/auth/sso_test.go internal/platformapi/teams/lookup_test.go
+git add internal/litellm internal/snapshot internal/connection/client.go internal/controller/ach/main_wiring_envtest_test.go internal/orphan/runnable_test.go internal/platformapi/admin/integration_helpers_test.go internal/platformapi/auth/sso_test.go internal/platformapi/teams/lookup_test.go
 git commit -m "feat(litellm): discover MCP toolsets"
 ```
 
@@ -325,8 +321,8 @@ git commit -m "feat(litellm): discover MCP toolsets"
 ### Task 4: Resolve Toolset Names and Reconcile Environment Shell-Team Permissions
 
 **Files:**
-- Modify: `internal/litellm/types.go:112-149` (`TeamObjectPermission`)
-- Modify: `internal/litellm/shellteam.go:62-71`, `:120-149`
+- Modify: `internal/litellm/types.go:112-150` (`TeamObjectPermission` + its `MarshalJSON` nil→`[]` normalization)
+- Modify: `internal/litellm/shellteam.go:62-90` (`ShellTeamPermissions`/`denyAllTeamRequest`/`NewShellTeamRequest`), `:120-149` (`ShellTeamDrifted`)
 - Modify: `internal/litellm/shellteam_test.go`
 - Modify: `internal/controller/ach/environment_shellteam.go:27-137`
 - Modify: `internal/controller/ach/environment_shellteam_test.go`
@@ -334,12 +330,12 @@ git commit -m "feat(litellm): discover MCP toolsets"
 - Modify: `internal/controller/ach/environment_accessgroup_test.go`
 
 **Interfaces:**
-- Produces: `EnvironmentShellTeamPermissions(toolsets []string) *TeamObjectPermission`, `NewShellTeamRequest(env string, toolsets []string)`, and `ShellTeamDrifted(entry TeamListEntry, desiredToolsets []string) bool`.
+- Produces: `EnvironmentShellTeamPermissions(toolsetIDs []string) *TeamObjectPermission`, `NewShellTeamRequest(env string, toolsetIDs []string)`, and `ShellTeamDrifted(entry TeamListEntry, desiredToolsetIDs []string) bool`. All three take **LiteLLM toolset IDs** — LiteLLM enforces `object_permission.mcp_toolsets` by `toolset_id`, never by name.
 - Does not modify `AccessGroupCreateRequest`, `AccessGroupUpdateRequest`, or `AccessGroupResponse`.
 
 - [ ] **Step 1: Write failing permission-shape tests**
 
-Assert the Environment shell request serializes exactly:
+Assert the Environment shell request serializes exactly (values are **toolset IDs**, not names):
 
 ```json
 {
@@ -347,14 +343,14 @@ Assert the Environment shell request serializes exactly:
   "object_permission":{
     "mcp_servers":[],
     "mcp_access_groups":[],
-    "mcp_toolsets":["developer-tools"],
+    "mcp_toolsets":["ts-1"],
     "agents":["00000000-0000-0000-0000-000000000000"],
     "agent_access_groups":[]
   }
 }
 ```
 
-Also assert `denyAllTeamRequest` for a user shell writes `mcp_toolsets: []`, nil slices normalize to `[]`, order/duplicates normalize to a sorted unique set, and add/remove drift is detected.
+Also assert `denyAllTeamRequest` for a user shell writes `mcp_toolsets: []`, nil slices normalize to `[]` (via `TeamObjectPermission.MarshalJSON`), order/duplicates normalize to a sorted unique set, and add/remove drift is detected.
 
 - [ ] **Step 2: Run shell-team tests red**
 
@@ -370,7 +366,7 @@ Add this field to `TeamObjectPermission` and include it in nil-to-empty marshal 
 MCPToolsets []string `json:"mcp_toolsets"`
 ```
 
-Keep `ShellTeamPermissions()` as the deny-all/user-shell shape with empty Toolsets. Add `EnvironmentShellTeamPermissions(toolsets)` which copies, drops empty values, sorts, deduplicates, and assigns only `MCPToolsets` over that base.
+Keep `ShellTeamPermissions()` as the deny-all/user-shell shape with empty Toolsets. Add `EnvironmentShellTeamPermissions(toolsetIDs)` which copies, drops empty values, sorts, deduplicates, and assigns only `MCPToolsets` over that base.
 
 Change Environment shell create/repair/read-back drift checks to use the desired set. Preserve the ownership metadata gate, model sentinel, agent sentinel, and the current unverifiable-read logging behavior.
 
@@ -378,9 +374,9 @@ Change Environment shell create/repair/read-back drift checks to use the desired
 
 Cover these cases in `environment_accessgroup_test.go` and `environment_shellteam_test.go`:
 
-1. selected Toolset resolves and is written to `ach-env-demo`;
+1. selected Toolset name resolves to its `toolset_id` and the **ID** is written to `ach-env-demo`;
 2. raw MCP server IDs still go only to the access group;
-3. Toolset names never appear in `AccessMCPServerIDs` or any access-group payload;
+3. Toolset names/IDs never appear in `AccessMCPServerIDs` or any access-group payload;
 4. removing a Toolset repairs the shell to `mcp_toolsets: []`;
 5. an absent Toolset yields both `UnresolvedRuntime.MCPToolsets=[name]` and `AccessGroupSynced=False/UnresolvedReferences`;
 6. `ListMCPToolsets` failure yields `AccessGroupSynced=False/ResolveFailed`;
@@ -391,7 +387,7 @@ Cover these cases in `environment_accessgroup_test.go` and `environment_shelltea
 
 In the snapshot set-difference, add `env.Spec.Runtime.MCPToolsets \\ snap.MCPToolsets`, include its count in totals/messages, and write it into `EnvironmentRow.RuntimeMCPToolsets`.
 
-In `reconcileAccessGroup`, list Toolsets fresh, normalize `ErrNotFound`, build a name set, resolve the requested names without converting them to IDs, and fail `UnresolvedReferences` when any is missing. Pass the resolved names to `ensureShellTeam`. Do not add a Toolset field to any access-group request or drift function.
+In `reconcileAccessGroup`, list Toolsets fresh, normalize `ErrNotFound`, build a `name → toolset_id` map from the `ToolsetEntry` list, resolve each requested name to its ID, and fail `UnresolvedReferences` when any is missing. Pass the resolved **IDs** to `ensureShellTeam` (the CRD, status, catalog, and hydrate keep using names; only the LiteLLM grant is ID-typed). Do not add a Toolset field to any access-group request or drift function.
 
 - [ ] **Step 6: Run unit and envtest coverage**
 
@@ -473,7 +469,7 @@ git commit -m "feat(platform-api): catalog MCP toolsets"
 - Modify: `cmd/ach-cli/cmd/hydrate_test.go`
 
 **Interfaces:**
-- Produces for EK: `runtime.mcpToolsets: [{"id":"developer-tools","endpoint":"<base>/toolset/developer-tools/mcp"}]`.
+- Produces for EK: `runtime.mcpToolsets: [{"id":"developer-tools","endpoint":"<base>/toolset/developer-tools/mcp"}]` — **only when the Environment defines Toolsets**; a Toolset-free Environment omits the key so older strict decoders (including old ach-agent images) keep working.
 - Produces for PK: no `mcpToolsets` JSON member at all, retaining compatibility with older strict CLI decoders.
 - The current CLI decoder accepts the optional field but all five local adapters ignore it.
 
@@ -482,7 +478,7 @@ git commit -m "feat(platform-api): catalog MCP toolsets"
 Use one Environment row with a raw MCP server and a Toolset. Assert:
 
 - EK response contains both `mcpServers` and `mcpToolsets`, with Toolset path escaped through `url.PathEscape` and ending in `/mcp`;
-- empty EK Toolsets serialize as `"mcpToolsets":[]`;
+- an EK response for a Toolset-free Environment omits the `mcpToolsets` key entirely (old strict decoders keep working);
 - PK response contains `mcpServers` but no `mcpToolsets` key, for both empty and populated Environment Toolset lists;
 - wrong-environment EK behavior remains `403 wrong_environment`.
 
@@ -494,18 +490,18 @@ Expected: missing response field.
 
 - [ ] **Step 3: Implement caller-sensitive serialization**
 
-Represent the new arm as a pointer so nil means absent and a pointer to an empty slice means `[]`:
+Represent the new arm as a plain slice with `omitempty` — nil/empty means the key is absent, which is the required shape for both PK (always) and EK on a Toolset-free Environment:
 
 ```go
 type RuntimeBlock struct {
-    Models      []RuntimeItem  `json:"models"`
-    MCPServers  []RuntimeItem  `json:"mcpServers"`
-    MCPToolsets *[]RuntimeItem `json:"mcpToolsets,omitempty"`
-    A2AAgents   []RuntimeItem  `json:"a2aAgents"`
+    Models      []RuntimeItem `json:"models"`
+    MCPServers  []RuntimeItem `json:"mcpServers"`
+    MCPToolsets []RuntimeItem `json:"mcpToolsets,omitempty"`
+    A2AAgents   []RuntimeItem `json:"a2aAgents"`
 }
 ```
 
-After caller-type resolution, initialize `MCPToolsets` only for `keys.PrefixEk`, append one item per `row.RuntimeMCPToolsets`, and construct `BaseURL + "/toolset/" + url.PathEscape(name) + "/mcp"`. Never merge Toolsets into `MCPServers`.
+After caller-type resolution, populate `MCPToolsets` only for `keys.PrefixEk` and only when `len(row.RuntimeMCPToolsets) > 0`, appending one item per name with `BaseURL + "/toolset/" + url.PathEscape(name) + "/mcp"`. Never merge Toolsets into `MCPServers`.
 
 - [ ] **Step 4: Make the current CLI decoder additive but non-consuming**
 
@@ -631,8 +627,8 @@ git commit -m "feat(forwarder): proxy scoped MCP toolsets"
 ### Task 8: Upgrade the E2E LiteLLM Pin and Prove v1.93 Compatibility End-to-End
 
 **Files:**
-- Modify: `test/e2e/cluster/01-base/litellm.values.yaml:1-37`
-- Modify: `scripts/cluster.sh:79-82`, `:301-447`, `verify_all` around `:680-806`
+- Modify: `test/e2e/cluster/01-base/litellm.values.yaml:26-37` (image/chartVersion block)
+- Modify: `scripts/cluster.sh:79-84` (fixture name constants), `reconcile_litellm` at `:241-447`, `verify_all` at `:722-806`
 - Modify: `test/e2e/cluster/05-environment/demo.yaml`
 - Modify: `test/e2e/cluster/05-environment/demo-unresolved.yaml`
 - Modify: `test/e2e/runtime_catalog_test.go`
@@ -654,15 +650,15 @@ runtime:
     - demo-toolset
 ```
 
-Add `missing-toolset` to the unresolved fixture. Extend Environment tests to assert `unresolvedRuntime.mcpToolsets`, runtime catalog tests to find `mcp_toolset/demo-toolset`, and phase-4 invariants to test denied/allowed Toolset routes, PK rejection, and unchanged raw `/mcp` success.
+Add `nonexistent-toolset` to the unresolved fixture (matching its existing `nonexistent-*` naming convention). Extend Environment tests to assert `unresolvedRuntime.mcpToolsets`, runtime catalog tests to find `mcp_toolset/demo-toolset`, and phase-4 invariants to test denied/allowed Toolset routes, PK rejection, and unchanged raw `/mcp` success. (Note: `TestAccessGroupSynced_Demo_HappyPath` lives in `test/e2e/phase4_accessgroup_test.go` — extend its shell-team assertion there if needed.)
 
-- [ ] **Step 2: Run the focused e2e test against v1.87.1 and confirm the compatibility failure**
+- [ ] **Step 2: Run the focused e2e test and confirm the red state**
 
 Run: `make e2e-focus RUN='TestPhase4Invariants'`
 
-Expected: failure because v1.87.1 lacks the required Toolset API/route/permission behavior.
+Expected: failure because `demo-toolset` is not yet seeded in LiteLLM — the Environment reports `UnresolvedReferences` and `/toolset/demo-toolset/mcp` 404s. Do NOT expect a version-related failure: v1.87.1 already ships the Toolset API, route, and `mcp_toolsets` permission; the red state here is the missing fixture seed, and it reproduces on either version.
 
-- [ ] **Step 3: Pin the tested LiteLLM version**
+- [ ] **Step 3: Upgrade the e2e cluster's LiteLLM pin to v1.93.0**
 
 Change only the image tag to:
 
@@ -672,7 +668,7 @@ image:
   tag: v1.93.0
 ```
 
-Retain `chartVersion: 1.84.0`, `pullPolicy: IfNotPresent`, custom auth, database image overrides, and existing model/MCP/A2A fixture behavior. Update comments to state that v1.93.0 is the minimum tested release because it supplies `/v1/mcp/toolset`, `/toolset/{name}/mcp`, and `object_permission.mcp_toolsets`.
+Retain `chartVersion: 1.84.0`, `pullPolicy: IfNotPresent`, custom auth, database image overrides, and existing model/MCP/A2A fixture behavior. Update comments to state that v1.93.0 is pinned to **match the deployed production proxy** and is the release the Toolset gate is verified against (`/v1/mcp/toolset`, `/toolset/{name}/mcp`, and ID-typed `object_permission.mcp_toolsets` also exist in v1.87.1 — the bump is version alignment, not feature availability).
 
 - [ ] **Step 4: Seed Toolsets idempotently in `reconcile_litellm`**
 
@@ -686,13 +682,13 @@ After MCP servers exist, query `GET /v1/mcp/toolset`, delete every stale row nam
 }
 ```
 
-Use the existing bounded readiness/seed style and fail immediately if the server ID, Toolset ID/name, or POST response is absent. Extend `verify_all` to require `demo-toolset` from `/v1/mcp/toolset` before applying/gating Environments.
+Use the existing bounded readiness/seed style and fail immediately if the server ID, Toolset ID/name, or POST response is absent. Capture the created Toolset's `toolset_id` from the POST response (assert non-empty) — Step 5's `/team/info` assertion needs it, because the shell-team grant is the ID, not the name. Extend `verify_all` to require `demo-toolset` from `/v1/mcp/toolset` before applying/gating Environments.
 
 - [ ] **Step 5: Assert the live permission and data path**
 
 Using an EK bound to `demo`, assert:
 
-- `GET /team/info?team_id=ach-env-demo` contains `object_permission.mcp_toolsets=["demo-toolset"]` plus all existing deny-all fields;
+- `GET /team/info?team_id=ach-env-demo` contains `object_permission.mcp_toolsets=["<demo-toolset's toolset_id>"]` (the ID captured at seeding — LiteLLM grants are ID-typed) plus all existing deny-all fields;
 - MCP initialize and `tools/list` through `/toolset/demo-toolset/mcp` return the `echo` tool;
 - a JSON-RPC `tools/call` through `/toolset/demo-toolset/mcp` returns the echo payload;
 - `/toolset/disallowed/mcp` is `403 unauthorized_resource`;
@@ -800,22 +796,22 @@ git commit -m "docs: document EK MCP toolsets"
 
 - [ ] An Environment may omit `mcpToolsets`; omission behaves as an empty list and does not change existing environments.
 - [ ] Toolset names resolve through LiteLLM discovery and appear separately in CR status, Postgres, admin catalog, Objects API, and EK hydrate.
-- [ ] `ach-env-<environment>` is authoritative for `object_permission.mcp_toolsets`; access groups remain unchanged and user shells stay empty.
+- [ ] `ach-env-<environment>` is authoritative for `object_permission.mcp_toolsets`, granted as **LiteLLM toolset IDs** resolved from the Environment's names; access groups remain unchanged and user shells stay empty.
 - [ ] Removing a name from the Environment removes it from the shell team on the next successful reconcile.
 - [ ] `/toolset/{name}/mcp` and every tail under it preserve path/query to LiteLLM, accept only EK, and precheck exact Environment membership.
 - [ ] Toolset requests never perform BIP resolution, mint an ACH JWT, forward caller Authorization, expand globs, or apply a per-agent tool filter.
 - [ ] `/mcp/{name}` continues to serve raw MCP servers with its existing path-collapse and optional BIP/JWT behavior.
-- [ ] PK hydrate remains byte-compatible and local adapters do not render Toolsets; current CLI decoding tolerates an EK Toolset arm.
+- [ ] PK hydrate remains byte-compatible; EK hydrate omits `mcpToolsets` on Toolset-free Environments (old strict decoders keep working); local adapters do not render Toolsets; current CLI decoding tolerates an EK Toolset arm.
 - [ ] No ACH Toolset CRUD endpoint, CRD, database ownership table, or CLI management command exists.
-- [ ] LiteLLM v1.93.0 is pinned and the live gate proves list/create/permission/route semantics before release.
+- [ ] The e2e cluster's LiteLLM pin is v1.93.0 (matching the deployed production proxy) and the live gate proves list/create/permission/route semantics before release.
 
 ## Self-Review Record
 
 - **Spec coverage:** Every approved requirement maps to Tasks 1-9. Ownership and exclusions are in Global Constraints; Environment/API and resolution are Tasks 1/3/4; additive shell permission is Task 4; EK hydrate/ach-agent contract is Task 6; exact route/precheck/no-JWT behavior is Task 7; v1.87.1→v1.93.0 compatibility is Task 8; generated artifacts, docs, and mandatory gates are Task 9.
 - **Scope decomposition:** This is one vertical feature rather than independent projects. The task/commit boundaries are independently reviewable but only the ordered whole produces a usable capability.
 - **Completeness scan:** The plan contains no deferred implementation markers, unspecified error handling, generic “write tests” steps, or unnamed files/functions. The external fixture is fixed as `demo-toolset` using `demo-mcp-nojwt/echo`.
-- **Type consistency:** `MCPToolsets` is the Go field, `mcpToolsets` the CRD/hydrate/catalog JSON field, `runtime_mcp_toolsets` the Environment projection column, `mcp_toolset` the catalog kind, and `mcp_toolsets` the LiteLLM `object_permission` field throughout. `ListMCPToolsets`, `CheckMCPToolset`, and `/toolset/{name}/mcp` retain those exact names across producer and consumer tasks.
-- **Compatibility check:** PK responses omit the new field, EK responses use a distinct list, CLI adapters ignore it, access groups are untouched, raw MCP routes remain separate, and user shells receive an explicit empty Toolset list.
+- **Type consistency:** `MCPToolsets` is the Go field, `mcpToolsets` the CRD/hydrate/catalog JSON field, `runtime_mcp_toolsets` the Environment projection column, `mcp_toolset` the catalog kind, and `mcp_toolsets` the LiteLLM `object_permission` field throughout. Names are the ACH-facing identifier everywhere (CRD, status, catalog, hydrate, route); the LiteLLM grant alone carries `toolset_id`s, resolved from names at reconcile. `ListMCPToolsets`, `CheckMCPToolset`, and `/toolset/{name}/mcp` retain those exact names across producer and consumer tasks.
+- **Compatibility check:** PK responses omit the new field, EK responses add the arm only when populated (omitted on Toolset-free Environments, so old strict decoders survive), CLI adapters ignore it, access groups are untouched, raw MCP routes remain separate, and user shells receive an explicit empty Toolset list. LiteLLM wire semantics (ID-typed grants, bare-array list, exact `/toolset/{name}/mcp` route) verified against the v1.93.0 source, not the docs.
 - **Security check:** Authorization is fail-closed at both shell-team and forwarder layers; only Environment-bound EKs pass; no client Authorization or ACH identity JWT reaches identity-dependent Toolsets; ownership/adoption gates on shell teams remain intact.
 
 ## Execution Handoff
