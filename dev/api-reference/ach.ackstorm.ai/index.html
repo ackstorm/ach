@@ -1425,6 +1425,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#costspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CostSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#cronspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2557,6 +2568,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#costspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CostSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#cronspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3587,6 +3609,12 @@
 <td></td>
 </tr>
 <tr>
+<td><code>cost</code> <em><a href="#costspec">CostSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>capability</code> <em><a href="#capabilityspec">CapabilitySpec</a></em></td>
 <td>Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here.</td>
 <td></td>
@@ -3688,7 +3716,7 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 AgentProfile.spec.achagent names these defaults, and ACHAgentSpec embeds this
 type inline. Resolution is a per-field deep merge: a field set on the agent
 wins, while an omitted field inherits from the profile. Slices, maps, and
-nested blocks such as engine.pi are atomic and are not recursively merged.
+nested blocks such as engine.pi and cost are atomic and are not recursively merged.
 The resolvers are the source of truth for this behavior. Image is required on
 the profile, but optional on the agent and inherited when omitted.</p>
 <p><em>Appears in:</em>
@@ -3736,6 +3764,12 @@ the profile, but optional on the agent and inherited when omitted.</p>
 </tr>
 <tr>
 <td><code>health</code> <em><a href="#healthspec">HealthSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>cost</code> <em><a href="#costspec">CostSpec</a></em></td>
 <td></td>
 <td></td>
 <td></td>
@@ -3852,7 +3886,7 @@ the profile, but optional on the agent and inherited when omitted.</p>
 </table>
 <h4 id="agentprofilespec">AgentProfileSpec<a class="headerlink" href="#agentprofilespec" title="Permanent link">&para;</a></h4>
 <p>AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-(image/ach/model/engine/limits/health) live under the named achagent block and
+(image/ach/model/engine/limits/health/cost) live under the named achagent block and
 deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
 everything else here is profile-only infrastructure an agent cannot override.</p>
 <p><em>Appears in:</em>
@@ -4641,6 +4675,34 @@ or marketplace_plugins rows) and are served by the ACH Content Service.</p>
 <td>Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL).</td>
 <td>{  }</td>
 <td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="costspec">CostSpec<a class="headerlink" href="#costspec" title="Permanent link">&para;</a></h4>
+<p>CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
+Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
+hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
+litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
+litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
+ach-agent image &gt;= v0.10.0.</p>
+<p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a>
+- <a href="#agentdefaults">AgentDefaults</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
