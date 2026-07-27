@@ -160,9 +160,9 @@ parity checklist: `references/adding-a-cr-kind.md`.
   ConfigMap + single-replica Deployment (`internal/agentrender`, JSON tags
   schema-locked); salted config-hash roll; harness **self-hydrates** at boot —
   no init container; status from probes. Profile defaults under `spec.achagent`
-  (image, ach, model, engine, limits, health) deep-merge per-field with the
+  (image, ach, model, engine, limits, health, cost) deep-merge per-field with the
   agent's flat overrides (set agent field wins; `engine.forwardEnv`/`model.params`/
-  `model.thinking`/`engine.pi` atomic). Profile-only infra (not overridable):
+  `model.thinking`/`engine.pi`/`cost` atomic). Profile-only infra (not overridable):
   imagePullSecrets, resources, extraEnv, nodeSelector, tolerations, persistence,
   networkPolicy, terminationGracePeriodSeconds, podTemplate. `ach.baseUrl` = agent ?? profile
   ?? operator ACH_BASE_URL (empty blocks); `health` resolved ONCE

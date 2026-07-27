@@ -142,13 +142,13 @@ config-hash roll; optional profile spec.podTemplate raw overlay
 strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
-probe-backed `pod.status` only. The profile's `spec.achagent` block (image/ach/model/engine/limits/health) holds
+probe-backed `pod.status` only. The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
 spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
-(`agentrender.Resolve{Image,Model,Engine,Limits,Health}` + `ResolveAchBaseURL`):
+(`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost}` + `ResolveAchBaseURL`):
 a set agent field wins, an omitted one inherits the profile's. Slices/maps/
 nested blocks (`engine.forwardEnv`, `model.params`, `model.thinking`,
-`engine.pi`) are atomic — present on the agent ⇒ replace as a whole. Everything
+`engine.pi`, `cost`) are atomic — present on the agent ⇒ replace as a whole. Everything
 else on the profile is profile-only infrastructure an agent cannot override:
 `imagePullSecrets`, `resources`, `extraEnv`, `nodeSelector`, `tolerations`,
 `persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`.
