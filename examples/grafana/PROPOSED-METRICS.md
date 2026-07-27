@@ -10,19 +10,19 @@ Ordered by value/effort.
 > `router_*`, `channel_*`, `engine_*`, `memory_degraded_*`) are emitted by the
 > Python agent image and are **not** covered by the Go rename.
 
-## 0. `agent` series label — DONE (shipped in this change)
+## 0. `agent` series label — OPEN (scrape-time relabeling reverted)
 
 **Gap:** agent metrics carried only the hashed `pod` label (e.g.
 `achagent-classifier-7fc457cfb9-8bskq`), so dashboards could not group or filter
 by agent name.
 
-**Done:** the `PodMonitor` now relabels the operator-set pod label
-`ach.ackstorm.ai/agent` into an `agent` series label
-(`deploy/helm/ach/templates/podmonitor.yaml`). All `ach_agent_*` series now
-carry `agent="classifier"` etc.
+**Tried and reverted:** the chart's `PodMonitor` relabelled the operator-set pod
+label `ach.ackstorm.ai/agent` into an `agent` series label; that block was removed
+from `deploy/helm/ach/templates/podmonitor.yaml`. Only `ach_agent_info` carries
+`agent` today, so `by (agent)` grouping is unavailable on the other series.
 
-**Follow-up (optional, more robust):** have the agent app emit `agent` natively
-as a metric label instead of relying on scrape-time relabeling — survives any
+**Fix:** have the agent app emit `agent` natively as a metric label on every
+`ach_agent_*` series instead of relying on scrape-time relabeling — survives any
 change to pod labelling.
 
 ## 1. `environment` + `capability` labels — enables real capability control

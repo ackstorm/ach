@@ -45,10 +45,4 @@ spec:
       {{- with .Values.metrics.podMonitor.scrapeTimeout }}
       scrapeTimeout: {{ . | quote }}
       {{- end }}
-      relabelings:
-        # Surface the operator-set pod label ach.ackstorm.ai/agent as a clean
-        # `agent` series label. Without this, agent metrics only carry the
-        # hashed pod name, so dashboards can't group/filter by agent name.
-        - sourceLabels: [__meta_kubernetes_pod_label_ach_ackstorm_ai_agent]
-          targetLabel: agent
 {{- end }}
