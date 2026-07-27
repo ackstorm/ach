@@ -50,7 +50,7 @@ spec:
           spec:
             description: |-
               AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-              (image/ach/model/engine/limits/health) live under the named achagent block and
+              (image/ach/model/engine/limits/health/cost) live under the named achagent block and
               deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
               everything else here is profile-only infrastructure an agent cannot override.
             properties:
@@ -66,6 +66,18 @@ spec:
                       operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
                     properties:
                       baseUrl:
+                        type: string
+                    type: object
+                  cost:
+                    description: |-
+                      CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
+                      Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
+                      hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
+                      litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
+                      litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
+                      ach-agent image >= v0.10.0.
+                    properties:
+                      source:
                         type: string
                     type: object
                   engine:

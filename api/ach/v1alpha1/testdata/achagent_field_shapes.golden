@@ -49,6 +49,8 @@ spec.channels[].webhook.gitlabEvents	array
 spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note]
 spec.channels[].webhook.triggerUsers	array
 spec.channels[].webhook.triggerUsers[]	string
+spec.cost	object
+spec.cost.source	string
 spec.engine	object
 spec.engine.forwardEnv	array
 spec.engine.forwardEnv[]	string
