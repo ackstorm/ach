@@ -15,18 +15,29 @@ Six importable dashboards for the ACH observability surface. All share a
 
 ## Import
 
-Grafana → **Dashboards → New → Import → Upload JSON file** (or paste). Pick your
-Prometheus datasource when prompted (the `datasource` template variable drives
-every panel). Requires Prometheus scraping ACH — enable
+**Preferred — ship them with the release.** Set `metrics.dashboards.enabled=true`
+in the chart: `make helm-sync` copies these JSONs into
+`deploy/helm/ach/dashboards/` and `templates/grafana-dashboards.yaml` renders one
+ConfigMap per dashboard, labelled `grafana_dashboard: "1"` for the
+kube-prometheus-stack Grafana sidecar to auto-load. No Prometheus Operator CRD is
+involved (plain ConfigMaps), the dashboards update with every release, and
+`make helm-sync-check` fails the push on drift between this directory and the
+chart copies. Provisioned dashboards are read-only in the UI — edit them here.
+
+**Manual** — Grafana → **Dashboards → New → Import → Upload JSON file** (or
+paste). Pick your Prometheus datasource when prompted (the `datasource` template
+variable drives every panel).
+
+Either way this requires Prometheus scraping ACH — enable
 `metrics.serviceMonitor.enabled` (control-plane) and `metrics.podMonitor.enabled`
 (agents) in the Helm chart.
 
-The agent dashboards group by a clean `agent` label, which today only
-`ach_agent_info` carries natively — the chart's PodMonitor no longer relabels the
-operator-set pod label `ach.ackstorm.ai/agent` into an `agent` series label. Until
-the harness emits `agent` on every `ach_agent_*` series (PROPOSED-METRICS.md §0),
-the `by (agent)` panels and the `$agent` variable stay empty; group by `pod`
-instead, or re-add a `relabelings` block to your own PodMonitor.
+The agent dashboards group by a clean `agent` label, which the harness emits
+natively since ach-agent **v0.10.1** (`http/metrics.py` stamps `agent` **and**
+`environment` on every `ach_agent_*` sample), so `by (agent)` and the `$agent`
+variable work without any scrape-time relabeling — the chart's PodMonitor
+deliberately does none. `environment` is available but not yet wired into any
+template variable (PROPOSED-METRICS.md §1).
 
 ## Metric names
 

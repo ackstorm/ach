@@ -349,6 +349,25 @@ metrics:
     # (external_ref_driver.go) and ach_environment_available
     # (environment_controller.go) — so these alerts are enabled by default.
     includeP1Alerts: true
+  # metrics.dashboards: ship the ACH Grafana dashboards
+  # (templates/grafana-dashboards.yaml) as one ConfigMap per dashboard, labelled
+  # for the kube-prometheus-stack Grafana sidecar to auto-load. Needs NO
+  # Prometheus Operator CRD — plain ConfigMaps — so it is safe to enable
+  # wherever that sidecar runs (sidecar.dashboards.enabled=true, which is the
+  # kube-prometheus-stack default). The JSON lives in the chart's dashboards/
+  # dir, synced from examples/grafana by `make helm-sync`.
+  dashboards:
+    enabled: false
+    # label/labelValue: must match the sidecar's LABEL/LABEL_VALUE
+    # (kube-prometheus-stack defaults: grafana_dashboard / "1").
+    label: grafana_dashboard
+    labelValue: "1"
+    # folder: value of the grafana_folder annotation — honoured only when the
+    # sidecar runs with sidecar.dashboards.folderAnnotation=grafana_folder.
+    # Empty → no annotation, dashboards land in the sidecar provider's folder.
+    folder: ACH
+    # labels: extra labels on every dashboard ConfigMap.
+    labels: {}
 
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.

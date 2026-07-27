@@ -65,6 +65,7 @@ flowchart LR
 - [Installation](https://ackstorm.github.io/ach/getting-started/installation/)
 - [Architecture](https://ackstorm.github.io/ach/developer-guide/architecture/)
 - [Release process](https://ackstorm.github.io/ach/developer-guide/release-process/)
+- [Operator contract](https://github.com/ackstorm/ach-agent/blob/main/docs/schemas/operator-contract.md) — the frozen seam with the `ach-agent` harness, and its [JSON Schema](https://github.com/ackstorm/ach-agent/blob/main/docs/schemas/agent-config-v1.schema.json) (vendored here as `internal/agentrender/testdata/agent-config-v1.schema.json`, drift-guarded by `TestSchema_NoDrift`)
 - [CONTRIBUTING](CONTRIBUTING.md)
 - [SECURITY](SECURITY.md)
 - [MAINTAINERS](MAINTAINERS.md)
