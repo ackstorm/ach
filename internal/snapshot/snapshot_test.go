@@ -529,3 +529,80 @@ func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
+
+// TestSnapshotCarriesGuardrails: the guardrail map is keyed by guardrail_name
+// (the enforcement identifier) and carries Mode/DefaultOn for the catalog.
+func TestSnapshotCarriesGuardrails(t *testing.T) {
+	f := &fakeLiteLLM{
+		guardrails: []litellm.GuardrailEntry{
+			{GuardrailID: "uuid-1", GuardrailName: "pii-filter",
+				Mode: litellm.GuardrailMode{"pre_call"}, DefaultOn: false},
+			{GuardrailName: "credential-filter",
+				Mode: litellm.GuardrailMode{"pre_call"}, DefaultOn: true},
+		},
+	}
+	s := NewSnapshotter(f, logr.Discard())
+	s.RefreshForTest(context.Background())
+	snap := s.Snapshot()
+
+	if len(snap.Guardrails) != 2 {
+		t.Fatalf("guardrails = %v", snap.Guardrails)
+	}
+	pii, ok := snap.Guardrails["pii-filter"]
+	if !ok {
+		t.Fatal("pii-filter missing")
+	}
+	if pii.GuardrailID != "uuid-1" || pii.DefaultOn {
+		t.Errorf("pii-filter = %+v", pii)
+	}
+	cred, ok := snap.Guardrails["credential-filter"]
+	if !ok {
+		t.Fatal("credential-filter missing")
+	}
+	if !cred.DefaultOn {
+		t.Error("credential-filter DefaultOn want true")
+	}
+	if snap.Stale {
+		t.Error("snapshot unexpectedly stale")
+	}
+}
+
+// TestSnapshotGuardrailsErrNotFoundIsEmptySet: a proxy with zero guardrails is
+// a valid empty closed-set. Treating it as a failure would mean no Environment
+// could reach Available on a guardrail-free LiteLLM.
+func TestSnapshotGuardrailsErrNotFoundIsEmptySet(t *testing.T) {
+	s := NewSnapshotter(&fakeLiteLLM{guardrailsErr: litellm.ErrNotFound}, logr.Discard())
+	s.RefreshForTest(context.Background())
+	snap := s.Snapshot()
+
+	if snap.Stale {
+		t.Fatal("ErrNotFound must not mark the snapshot stale")
+	}
+	if len(snap.Guardrails) != 0 {
+		t.Fatalf("guardrails = %v", snap.Guardrails)
+	}
+}
+
+// TestSnapshotGuardrailsHardErrorPreservesPrior: a real failure must preserve
+// the prior snapshot with Stale=true — publishing an empty guardrail set would
+// flip every Environment referencing a guardrail to unresolved and block ek_
+// minting on a transient blip.
+func TestSnapshotGuardrailsHardErrorPreservesPrior(t *testing.T) {
+	f := &fakeLiteLLM{guardrails: []litellm.GuardrailEntry{{GuardrailName: "pii-filter"}}}
+	s := NewSnapshotter(f, logr.Discard())
+	s.RefreshForTest(context.Background())
+	if len(s.Snapshot().Guardrails) != 1 {
+		t.Fatal("precondition: first refresh should have published one guardrail")
+	}
+
+	f.guardrails, f.guardrailsErr = nil, errors.New("connection refused")
+	s.RefreshForTest(context.Background())
+
+	snap := s.Snapshot()
+	if !snap.Stale {
+		t.Error("hard ListGuardrails error must mark the snapshot stale")
+	}
+	if _, ok := snap.Guardrails["pii-filter"]; !ok {
+		t.Errorf("prior guardrail set must be preserved, got %v", snap.Guardrails)
+	}
+}

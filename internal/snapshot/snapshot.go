@@ -52,6 +52,16 @@ type LiteLLMSnapshot struct {
 	// TeamListEntry.TeamAlias field). Empty-alias entries are skipped.
 	Teams map[string]struct{}
 
+	// Guardrails maps guardrail_name -> its LiteLLM entry, unioned from the
+	// config-defined and DB-defined list endpoints. Name is the enforcement
+	// identifier, so this is what spec.runtime.guardrails resolves against.
+	//
+	// Unlike the four sets above this carries values, not struct{}: the entry's
+	// Mode and DefaultOn are surfaced in the admin runtime catalog. Set-
+	// difference is unaffected — `_, ok := snap.Guardrails[name]` reads the
+	// same either way.
+	Guardrails map[string]litellm.GuardrailEntry
+
 	// RefreshedAt is the wall-clock instant at which the most recent
 	// successful refresh (or stale-marker-only update) completed.
 	RefreshedAt time.Time
@@ -230,6 +240,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	mcps, errC := s.client.ListMCPServers(ctx)
 	agents, errA := s.client.ListA2AAgents(ctx)
 	teams, errT := s.client.ListAllTeams(ctx)
+	guardrails, errG := s.client.ListGuardrails(ctx)
 
 	// ErrNotFound → empty set, NOT an error (D-13 / Plan 02-01 contract).
 	if errors.Is(errM, litellm.ErrNotFound) {
@@ -244,8 +255,11 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	if errors.Is(errT, litellm.ErrNotFound) {
 		teams, errT = nil, nil
 	}
+	if errors.Is(errG, litellm.ErrNotFound) {
+		guardrails, errG = nil, nil
+	}
 
-	if errM != nil || errC != nil || errA != nil || errT != nil {
+	if errM != nil || errC != nil || errA != nil || errT != nil || errG != nil {
 		s.litellmUnreachableCount.Add(1)
 		if cur := s.snap.Load(); cur != nil {
 			// Preserve prior snapshot with Stale flipped.
@@ -257,6 +271,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 				"mcpErr", errC,
 				"a2aErr", errA,
 				"teamsErr", errT,
+				"guardrailsErr", errG,
 				"priorRefreshedAt", cur.RefreshedAt,
 			)
 			return false
@@ -273,6 +288,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 			"mcpErr", errC,
 			"a2aErr", errA,
 			"teamsErr", errT,
+			"guardrailsErr", errG,
 		)
 		return false
 	}
@@ -282,6 +298,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		MCPServers:  toSet(mcps, func(m litellm.MCPServerEntry) string { return m.ServerName }),
 		A2AAgents:   toSet(agents, func(a litellm.AgentEntry) string { return a.AgentName }),
 		Teams:       toSet(teams, func(t litellm.TeamListEntry) string { return t.TeamAlias }),
+		Guardrails:  guardrailsByName(guardrails),
 		RefreshedAt: time.Now(),
 		Stale:       false,
 	}
@@ -301,6 +318,7 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		"mcpServers", len(next.MCPServers),
 		"a2aAgents", len(next.A2AAgents),
 		"teams", len(next.Teams),
+		"guardrails", len(next.Guardrails),
 	)
 	return true
 }
@@ -313,6 +331,19 @@ func toSet[T any](items []T, key func(T) string) map[string]struct{} {
 	for _, it := range items {
 		if k := key(it); k != "" {
 			out[k] = struct{}{}
+		}
+	}
+	return out
+}
+
+// guardrailsByName indexes guardrail entries by their enforcement identifier.
+// A nil/empty input yields an empty (non-nil) map so callers never distinguish
+// "no guardrails" from "never refreshed" by nil-ness.
+func guardrailsByName(in []litellm.GuardrailEntry) map[string]litellm.GuardrailEntry {
+	out := make(map[string]litellm.GuardrailEntry, len(in))
+	for _, g := range in {
+		if g.GuardrailName != "" {
+			out[g.GuardrailName] = g
 		}
 	}
 	return out
