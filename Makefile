@@ -231,6 +231,13 @@ test-integration: ## Integration tests (build tag: integration; testcontainers).
 _test-integration:
 	go test -tags=integration -count=1 -timeout=15m ./...
 
+.PHONY: test-integration-pkg
+test-integration-pkg: ## Integration tests for one package. Usage: make test-integration-pkg PKG=./internal/db [FOCUS=TestX]
+	$(call container_target,_test-integration-pkg)
+_test-integration-pkg:
+	@test -n "$(PKG)" || (echo "ERROR: PKG=... required" >&2; exit 1)
+	go test -tags=integration -v -count=1 -timeout=15m $(if $(FOCUS),-run '$(FOCUS)',) $(PKG)
+
 .PHONY: test-unit-pkg
 test-unit-pkg: ## Unit tests for one package. Usage: make test-unit-pkg PKG=./internal/litellm/...
 	$(call container_target,_test-unit-pkg)

@@ -609,6 +609,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		RuntimeModels:                       env.Spec.Runtime.Models,
 		RuntimeMCPServers:                   env.Spec.Runtime.MCPServers,
 		RuntimeA2AAgents:                    env.Spec.Runtime.A2AAgents,
+		RuntimeGuardrails:                   env.Spec.Runtime.Guardrails,
 		AvailableCondition:                  availBytes,
 		AccessGroupSyncedCondition:          agSyncedBytes,
 		ExecutionResourcesResolvedCondition: execResolvedBytes,
