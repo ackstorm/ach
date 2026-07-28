@@ -443,7 +443,11 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   `spec.runtime.guardrails` (LiteLLM guardrail names) resolves against LiteLLM
   like the other runtime names; an unresolved one fails `AccessGroupSynced`,
   blocking new `ek_` mints but **not** existing keys, hydrate, or forwarded
-  traffic.
+  traffic. Guardrail coverage is **EK-only**. `ek_` keys live in the
+  Environment's shell team and inherit its guardrails; `pk_` keys live in
+  `ach-user-<email>` and reach the Environment through the access group,
+  which carries no guardrail field, so **human CLI traffic to the same
+  models is unguarded**. This is a known v1 limitation, not a bug.
 - **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
   mirrors the (now-gated-off) **Plugin** pipeline end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
   `skill/<name>.tar.gz` → `skills` projection → content-service

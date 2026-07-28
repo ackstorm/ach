@@ -39,9 +39,10 @@ func UserShellMetadata(email string) map[string]any {
 	}
 }
 
-// NewUserShellRequest is the POST /team/new body for a user's shell.
+// NewUserShellRequest is the POST /team/new body for a user's shell. It never
+// carries guardrails — see denyAllTeamRequest.
 func NewUserShellRequest(email string) *NewTeamRequest {
-	return denyAllTeamRequest(UserShellAlias(email), UserShellMetadata(email))
+	return denyAllTeamRequest(UserShellAlias(email), UserShellMetadata(email), nil)
 }
 
 // IsUserShellManaged reports whether e carries the ACH user-shell ownership

@@ -74,19 +74,24 @@ func ShellTeamPermissions() *TeamObjectPermission {
 // denyAllTeamRequest builds a POST /team/new body for a deny-all shell, shared
 // by the env shell (ach-env-<name>) and the user shell (ach-user-<email>).
 // team_id is set == alias so the id is deterministic and creation is idempotent.
-func denyAllTeamRequest(alias string, metadata map[string]any) *NewTeamRequest {
+//
+// guardrails is non-nil ONLY for the env shell: coverage is EK-only (D2), and a
+// user shell spans every Environment its owner is entitled to, so it has no
+// per-Environment attachment point.
+func denyAllTeamRequest(alias string, metadata map[string]any, guardrails []string) *NewTeamRequest {
 	return &NewTeamRequest{
 		TeamID:           alias,
 		TeamAlias:        alias,
 		Models:           []string{ShellTeamDenyAllModel},
 		ObjectPermission: ShellTeamPermissions(),
 		Metadata:         metadata,
+		Guardrails:       guardrails,
 	}
 }
 
 // NewShellTeamRequest is the POST /team/new body for an Environment's shell.
-func NewShellTeamRequest(env string) *NewTeamRequest {
-	return denyAllTeamRequest(ShellTeamAlias(env), ShellTeamMetadata(env))
+func NewShellTeamRequest(env string, guardrails []string) *NewTeamRequest {
+	return denyAllTeamRequest(ShellTeamAlias(env), ShellTeamMetadata(env), guardrails)
 }
 
 // teamMetadataStrings decodes a LiteLLM team metadata blob and keeps only its
@@ -113,6 +118,50 @@ func teamMetadataStrings(raw json.RawMessage) map[string]string {
 		}
 	}
 	return out
+}
+
+// TeamGuardrails reads the guardrail names LiteLLM stores under
+// metadata.guardrails. Absent, unparseable, or wrongly-typed metadata yields
+// nil — which ShellTeamDrifted reads as "none attached", so the repair writes
+// the desired set. Non-string members are skipped rather than failing the whole
+// read, matching teamMetadataStrings' tolerance of LiteLLM's mixed blob.
+func TeamGuardrails(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return nil
+	}
+	arr, ok := meta["guardrails"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// sameGuardrailSet compares two guardrail lists as DEDUPLICATED, order-
+// insensitive sets.
+//
+// Both properties are required. Order: LiteLLM's enforcement path builds the
+// effective list from a Python set, so ordering is not stable. Deduplication:
+// its storage path keeps what it was sent verbatim while enforcement dedupes,
+// so ["a","a"] upstream and ["a"] in spec describe the same state — comparing
+// lengths would report permanent phantom drift and rewrite the team on every
+// reconcile, forever.
+func sameGuardrailSet(a, b []string) bool {
+	norm := func(in []string) []string {
+		out := slices.Clone(in)
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	return slices.Equal(norm(a), norm(b))
 }
 
 // IsShellTeamManaged reports whether e's metadata carries the ACH shell-team
@@ -151,7 +200,18 @@ func IsShellTeamShaped(e TeamListEntry, env string) bool {
 // case is a genuine fail-open state. The only unverifiable read-back is
 // therefore the one where BOTH fields are absent (a bare team-list row);
 // everywhere else Models is checked unconditionally.
-func ShellTeamDrifted(e TeamListEntry) bool {
+//
+// Guardrails are compared as a deduplicated, order-insensitive set read from
+// metadata.guardrails, checked before the unverifiable-read-back early
+// return so removal converges.
+func ShellTeamDrifted(e TeamListEntry, wantGuardrails []string) bool {
+	// Guardrails are checked FIRST and unconditionally. Unlike models and
+	// object_permission they live in metadata, which every read path returns,
+	// so there is no unverifiable-read-back ambiguity here — and checking
+	// before the early return below is what makes REMOVAL converge (S2).
+	if !sameGuardrailSet(TeamGuardrails(e.Metadata), wantGuardrails) {
+		return true
+	}
 	if e.Models == nil && e.ObjectPermission == nil {
 		return false
 	}

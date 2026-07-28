@@ -60,7 +60,11 @@ type accessGroupFakeImpl struct {
 	teamUpdateCalls map[string]int
 	teamDeleteCalls map[string]int
 	lastTeamCreate  map[string]litellm.NewTeamRequest
-	teamCreateErr   error
+	// lastTeamUpdate captures the exact TeamUpdateRequest sent, keyed by
+	// team_id — lets guardrail tests assert what ACH transmitted without
+	// depending on the fake's read-back reconstruction.
+	lastTeamUpdate map[string]litellm.TeamUpdateRequest
+	teamCreateErr  error
 
 	// teamUpdateResult, when non-nil, is returned by UpdateTeam VERBATIM
 	// instead of the post-write entry state — models a LiteLLM whose POST
@@ -112,6 +116,7 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		teamUpdateCalls: map[string]int{},
 		teamDeleteCalls: map[string]int{},
 		lastTeamCreate:  map[string]litellm.NewTeamRequest{},
+		lastTeamUpdate:  map[string]litellm.TeamUpdateRequest{},
 		teamInfoErrByID: map[string]error{},
 	}
 }
@@ -139,6 +144,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.teamUpdateCalls = map[string]int{}
 	f.teamDeleteCalls = map[string]int{}
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
+	f.lastTeamUpdate = map[string]litellm.TeamUpdateRequest{}
 	f.teamCreateErr = nil
 	f.teamUpdateResult = nil
 	f.teamInfoErrByID = map[string]error{}
@@ -393,7 +399,7 @@ func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeam
 		TeamAlias:        req.TeamAlias,
 		Models:           req.Models,
 		ObjectPermission: req.ObjectPermission,
-		Metadata:         marshalTeamMetadata(req.Metadata),
+		Metadata:         marshalTeamMetadata(mergeGuardrailsIntoMetadata(req.Metadata, req.Guardrails)),
 	}
 	f.teamsByID[id] = entry
 	f.teamsByAlias[req.TeamAlias] = []litellm.TeamListEntry{entry}
@@ -405,12 +411,13 @@ func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpd
 	defer f.mu.Unlock()
 	f.order = append(f.order, "UpdateTeam")
 	f.teamUpdateCalls[req.TeamID]++
+	f.lastTeamUpdate[req.TeamID] = *req
 	entry := f.teamsByID[req.TeamID]
 	entry.TeamID = req.TeamID
 	entry.Models = req.Models
 	entry.ObjectPermission = req.ObjectPermission
 	if req.Metadata != nil {
-		entry.Metadata = marshalTeamMetadata(req.Metadata)
+		entry.Metadata = marshalTeamMetadata(mergeGuardrailsIntoMetadata(req.Metadata, req.Guardrails))
 	}
 	f.teamsByID[req.TeamID] = entry
 	if entry.TeamAlias != "" {
@@ -427,6 +434,24 @@ func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpd
 // marshalTeamMetadata mirrors how the real RESTClient receives metadata back
 // from LiteLLM: ACH sends a map[string]any on the request, LiteLLM echoes it
 // as the TeamListEntry.Metadata json.RawMessage on read-back.
+// mergeGuardrailsIntoMetadata simulates LiteLLM's measured contract: a
+// top-level `guardrails` request field is stored under team.metadata.guardrails
+// (references/litellm-permission-model.md §11). A non-empty list sets the key;
+// an empty/nil list clears it — the write is always the whole desired set
+// (Task 5), never an incremental patch.
+func mergeGuardrailsIntoMetadata(m map[string]any, guardrails []string) map[string]any {
+	out := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	if len(guardrails) > 0 {
+		out["guardrails"] = guardrails
+	} else {
+		delete(out, "guardrails")
+	}
+	return out
+}
+
 func marshalTeamMetadata(m map[string]any) json.RawMessage {
 	if len(m) == 0 {
 		return nil
