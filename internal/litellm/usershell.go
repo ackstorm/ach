@@ -3,7 +3,6 @@
 package litellm
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 )
@@ -48,13 +47,7 @@ func NewUserShellRequest(email string) *NewTeamRequest {
 // IsUserShellManaged reports whether e carries the ACH user-shell ownership
 // marker for email. Absent/unparseable metadata is NOT managed (fail safe).
 func IsUserShellManaged(e TeamListEntry, email string) bool {
-	if len(e.Metadata) == 0 {
-		return false
-	}
-	var meta map[string]string
-	if err := json.Unmarshal(e.Metadata, &meta); err != nil {
-		return false
-	}
+	meta := teamMetadataStrings(e.Metadata)
 	return meta[ShellTeamManagedMetadataKey] == UserShellManagedMetadataValue &&
 		meta[UserShellManagedUserKey] == NormalizeEmail(email)
 }

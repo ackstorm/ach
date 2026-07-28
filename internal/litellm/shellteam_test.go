@@ -148,6 +148,45 @@ func TestIsShellTeamManaged(t *testing.T) {
 	}
 }
 
+// TestIsShellTeamManagedNonStringSiblings: LiteLLM stores its own management
+// fields in the SAME metadata blob as ACH's ownership markers, and most of them
+// are not strings. Saving any team in the LiteLLM UI writes the whole default
+// block — guardrails ([]), model_rpm_limit ({}), disable_global_guardrails
+// (false) — even when no enterprise feature is configured (LiteLLM issue
+// #20304). Decoding the blob into map[string]string fails on the FIRST
+// non-string value and takes the ACH markers down with it, so a single UI save
+// would make the operator disown its own shell team: permanent repair churn on
+// every reconcile and the ownership gate silently degraded to IsShellTeamShaped.
+//
+// The two payloads below were captured verbatim from the live proxy on
+// 2026-07-28 (teams "test-do-not-use" and "run").
+func TestIsShellTeamManagedNonStringSiblings(t *testing.T) {
+	for name, siblings := range map[string]string{
+		"guardrail attached via UI": `"guardrails":["test1"],"model_rpm_limit":{},"model_tpm_limit":{},` +
+			`"disable_global_guardrails":false,"allowed_passthrough_routes":[],` +
+			`"opted_out_global_guardrails":[],"soft_budget_alerting_emails":[]`,
+		"UI saved with no guardrail": `"guardrails":[],"model_rpm_limit":{},"model_tpm_limit":{},` +
+			`"disable_global_guardrails":false,"allowed_passthrough_routes":[],` +
+			`"opted_out_global_guardrails":[],"soft_budget_alerting_emails":[]`,
+	} {
+		raw := []byte(`{"` + ShellTeamManagedMetadataKey + `":"` + ShellTeamManagedMetadataValue +
+			`","` + ShellTeamManagedEnvKey + `":"demo",` + siblings + `}`)
+		if !IsShellTeamManaged(TeamListEntry{Metadata: raw}, "demo") {
+			t.Errorf("%s: ACH-marked shell reported as not managed", name)
+		}
+		if IsShellTeamManaged(TeamListEntry{Metadata: raw}, "other-env") {
+			t.Errorf("%s: entry marked for a different environment reported as managed", name)
+		}
+	}
+
+	// A non-string value ON the marker key itself must never satisfy the gate.
+	raw := []byte(`{"` + ShellTeamManagedMetadataKey + `":["env-shell"],"` +
+		ShellTeamManagedEnvKey + `":"demo"}`)
+	if IsShellTeamManaged(TeamListEntry{Metadata: raw}, "demo") {
+		t.Error("non-string marker value reported as managed")
+	}
+}
+
 // TestIsShellTeamShaped: the Fix 2 migration-adoption check — alias plus the
 // exact deny-all Models sentinel, independent of metadata.
 func TestIsShellTeamShaped(t *testing.T) {
