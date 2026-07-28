@@ -182,3 +182,25 @@ the team model-access path — which is why ACH uses an impossible model name.
 - ACH must track which EKs belong to an environment so it can enumerate them at
   deletion time (it does: `environment_keys.environment`). Do not rely on
   `team_id` for that mapping — it disappears with the team.
+
+## 11. Guardrails (measured against api.ackstorm.ai / LiteLLM v1.93.0, 2026-07-28)
+
+- Access groups carry **no** guardrail field; `object_permission` has none
+  either. Only the key and the team can carry guardrails.
+- Team attachment is `metadata.guardrails`. Enforcement unions key ∪ team ∪
+  project and then **appends** the request body — a caller can add but never
+  subtract.
+- `guardrails` is in `LiteLLM_ManagementEndpoint_MetadataFields_Premium`: a
+  non-empty write is **403** without an Enterprise licence, at attach time and
+  again per request. Empty/omitted is exempt.
+- Unknown guardrail names are accepted and silently never run — **fail-open**.
+- Discovery needs BOTH list endpoints; neither is a superset. Measured: config
+  `[]`, v2 both live guardrails.
+- `mode` serialises as a bare string on one guardrail and an array on another
+  in the same response.
+- Opt-out (`opted_out_global_guardrails`, `disable_global_guardrails`) applies
+  **only** to `default_on` guardrails; a team-attached non-default guardrail
+  has no opt-out at any level.
+- `x-litellm-applied-guardrails` names what actually ran, per request.
+- Team metadata mixes non-string values alongside ACH's ownership markers —
+  the reason `teamMetadataStrings` exists.

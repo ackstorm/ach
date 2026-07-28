@@ -24,16 +24,18 @@ import (
 // callCount tracks per-call invocations so the ctx-cancel test can
 // assert that the ticker fired at least once after Start.
 type fakeLiteLLM struct {
-	mu         sync.Mutex
-	models     []litellm.ModelInfoResponse
-	mcps       []litellm.MCPServerEntry
-	agents     []litellm.AgentEntry
-	teams      []litellm.TeamListEntry
-	modelsErr  error
-	mcpsErr    error
-	agentsErr  error
-	teamsErr   error
-	modelCalls atomic.Int64
+	mu            sync.Mutex
+	models        []litellm.ModelInfoResponse
+	mcps          []litellm.MCPServerEntry
+	agents        []litellm.AgentEntry
+	teams         []litellm.TeamListEntry
+	guardrails    []litellm.GuardrailEntry
+	modelsErr     error
+	mcpsErr       error
+	agentsErr     error
+	teamsErr      error
+	guardrailsErr error
+	modelCalls    atomic.Int64
 }
 
 func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
@@ -54,6 +56,11 @@ func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.agents, f.agentsErr
+}
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.guardrails, f.guardrailsErr
 }
 func (f *fakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
 	return nil, nil

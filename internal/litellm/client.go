@@ -73,6 +73,14 @@ type Client interface {
 	// unchanged. Returns ErrNotFound on empty result.
 	ListA2AAgents(ctx context.Context) ([]AgentEntry, error)
 
+	// ListGuardrails issues GET /guardrails/list AND GET /v2/guardrails/list
+	// and returns their union, deduped by guardrail_name. Neither endpoint is
+	// a superset: the first serves config-file guardrails, the second the DB
+	// registry. Only a 404 degrades an endpoint to absent — any other error
+	// fails the call, because callers treat the result as authoritative.
+	// Returns ErrNotFound when the union is empty.
+	ListGuardrails(ctx context.Context) ([]GuardrailEntry, error)
+
 	// ListUserKeys issues
 	// GET /key/list?user_id=<userID>&return_full_object=true&include_team_keys=false
 	// and returns one entry per key owned by the specified user. Used by

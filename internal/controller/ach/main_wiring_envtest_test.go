@@ -91,6 +91,9 @@ func (f *wiringFakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEnt
 	defer f.mu.Unlock()
 	return f.agents, f.listErr
 }
+func (f *wiringFakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
 func (f *wiringFakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
 	return nil, nil
 }

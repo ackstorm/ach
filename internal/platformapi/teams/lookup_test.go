@@ -50,6 +50,9 @@ func (f *fakeLiteLLM) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntr
 func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
 	return nil, nil
 }
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
 func (f *fakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
 	return nil, nil
 }

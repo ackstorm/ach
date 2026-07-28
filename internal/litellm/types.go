@@ -4,6 +4,7 @@ package litellm
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -61,6 +62,15 @@ type NewTeamRequest struct {
 	Blocked          *bool                 `json:"blocked,omitempty"`
 	Tags             []string              `json:"tags,omitempty"`
 	ObjectPermission *TeamObjectPermission `json:"object_permission,omitempty"`
+	// Guardrails is LiteLLM's team-level guardrail list, stored in
+	// team.metadata.guardrails. Every key in the team inherits it: LiteLLM
+	// unions key + team + project guardrails and then APPENDS any request-body
+	// list, so a caller can add but never subtract.
+	//
+	// omitempty is load-bearing — LiteLLM premium-gates a NON-EMPTY guardrails
+	// write (403 without an Enterprise licence), so a guardrail-free shell must
+	// not send the field at all.
+	Guardrails []string `json:"guardrails,omitempty"`
 }
 
 // TeamListEntry is one row of a GET /v2/team/list response. Shape
@@ -161,6 +171,10 @@ type TeamUpdateRequest struct {
 	// repair so a pre-ownership-metadata shell gets adopted/stamped the
 	// first time it is next touched (references/litellm-permission-model.md).
 	Metadata map[string]any `json:"metadata,omitempty"`
+	// Guardrails mirrors NewTeamRequest.Guardrails. Sent on every shell repair
+	// so the attached set converges on spec.runtime.guardrails — including
+	// removal, where omitting the key clears it.
+	Guardrails []string `json:"guardrails,omitempty"`
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.
@@ -433,4 +447,75 @@ type KeyGenerateResponse struct {
 	UserID    string `json:"user_id,omitempty"`
 	KeyAlias  string `json:"key_alias,omitempty"`
 	ExpiresAt string `json:"expires,omitempty"`
+}
+
+// GuardrailMode is LiteLLM's guardrail `mode` (event hook), which the proxy
+// serialises as EITHER a bare string or an array of strings — both shapes
+// appear in a single /v2/guardrails/list response (measured against
+// api.ackstorm.ai / LiteLLM v1.93.0 on 2026-07-28: credential-filter ->
+// "pre_call", test1 -> ["pre_call"]). Modelling it as a plain string fails the
+// decode of the whole document, so this normalises both forms to a slice.
+//
+// ACH never dispatches on the mode — it is surfaced in the admin runtime
+// catalog so an author can see that e.g. a pre_call guardrail does not cover
+// MCP tool calls (which need pre_mcp_call).
+type GuardrailMode []string
+
+// UnmarshalJSON accepts "pre_call", ["pre_call","post_call"], [], null and
+// absent. Anything else is an error — silently dropping an unexpected shape
+// would hide a LiteLLM contract change.
+func (m *GuardrailMode) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*m = nil
+		return nil
+	}
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*m = GuardrailMode{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return fmt.Errorf("litellm: guardrail mode is neither string nor []string: %w", err)
+	}
+	*m = GuardrailMode(many)
+	return nil
+}
+
+// guardrailParams is the nested litellm_params object. `mode` and `default_on`
+// live HERE, not at the guardrail's top level.
+type guardrailParams struct {
+	Mode      GuardrailMode `json:"mode,omitempty"`
+	DefaultOn bool          `json:"default_on,omitempty"`
+}
+
+// GuardrailEntry is one guardrail known to LiteLLM, flattened from either
+// /guardrails/list (config-defined; GuardrailID empty) or /v2/guardrails/list
+// (DB-defined; GuardrailID is the uuid).
+//
+// GuardrailName is the load-bearing field: LiteLLM matches guardrails by name
+// at enforcement time, never by id (guardrail_name is @unique in its schema),
+// so ACH performs no name->id resolution. DefaultOn is decision-relevant for an
+// author: a default_on guardrail already runs on every request, so naming it in
+// an Environment changes nothing.
+// Ambiguous is set when BOTH list endpoints returned this name with
+// DIFFERENT mode/default_on. The name still resolves — membership is
+// unambiguous — but the attributes are not trustworthy, so downstream drops
+// them rather than displaying one of two contradictory values. See the
+// collision rule on ListGuardrails.
+type GuardrailEntry struct {
+	GuardrailID   string
+	GuardrailName string
+	Mode          GuardrailMode
+	DefaultOn     bool
+	Ambiguous     bool
+}
+
+// guardrailListResponse is the shared envelope of both list endpoints.
+type guardrailListResponse struct {
+	Guardrails []struct {
+		GuardrailID   string          `json:"guardrail_id"`
+		GuardrailName string          `json:"guardrail_name"`
+		LiteLLMParams guardrailParams `json:"litellm_params"`
+	} `json:"guardrails"`
 }
