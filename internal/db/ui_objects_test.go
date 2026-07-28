@@ -12,6 +12,7 @@ package db_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -249,5 +250,39 @@ func TestDeleteUIEnvironment(t *testing.T) {
 	// Not-found path.
 	if err := db.DeleteUIEnvironment(ctx, pool, "ach", "ghost"); !errors.Is(err, db.ErrUINotFound) {
 		t.Fatalf("DeleteUIEnvironment on missing row: got %v, want ErrUINotFound", err)
+	}
+}
+
+// TestInsertUIEnvironment_GuardrailsRoundTrip: a UI-drafted Environment carries
+// its guardrails through insert AND update, so a draft exported to YAML
+// reproduces what the author entered.
+func TestInsertUIEnvironment_GuardrailsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	row := baseGuardrailRow("ui-guardrails", []string{"pii-filter"})
+	row.ResourceVersion = ""
+	if err := db.InsertUIEnvironment(ctx, pool, row); err != nil {
+		t.Fatalf("InsertUIEnvironment: %v", err)
+	}
+	got, err := db.GetEnvironmentByName(ctx, pool, "ach-system", "ui-guardrails")
+	if err != nil || got == nil {
+		t.Fatalf("Get: got=%v err=%v", got, err)
+	}
+	if !slices.Equal(got.RuntimeGuardrails, []string{"pii-filter"}) {
+		t.Fatalf("after insert = %v", got.RuntimeGuardrails)
+	}
+
+	row.RuntimeGuardrails = []string{"a", "b"}
+	if err := db.UpdateUIEnvironment(ctx, pool, row); err != nil {
+		t.Fatalf("UpdateUIEnvironment: %v", err)
+	}
+	got, err = db.GetEnvironmentByName(ctx, pool, "ach-system", "ui-guardrails")
+	if err != nil || got == nil {
+		t.Fatalf("Get after update: got=%v err=%v", got, err)
+	}
+	if !slices.Equal(got.RuntimeGuardrails, []string{"a", "b"}) {
+		t.Fatalf("after update = %v", got.RuntimeGuardrails)
 	}
 }

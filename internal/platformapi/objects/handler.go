@@ -49,6 +49,7 @@ func specToRow(ns, name string, spec v1alpha1.EnvironmentSpec) db.EnvironmentRow
 		RuntimeModels:     spec.Runtime.Models,
 		RuntimeMCPServers: spec.Runtime.MCPServers,
 		RuntimeA2AAgents:  spec.Runtime.A2AAgents,
+		RuntimeGuardrails: spec.Runtime.Guardrails,
 		Notice:            spec.Notice,
 		Description:       spec.Description,
 	}
@@ -62,6 +63,7 @@ func rowToSpec(row db.EnvironmentRow) v1alpha1.EnvironmentSpec {
 			Models:     row.RuntimeModels,
 			MCPServers: row.RuntimeMCPServers,
 			A2AAgents:  row.RuntimeA2AAgents,
+			Guardrails: row.RuntimeGuardrails,
 		},
 		Context: v1alpha1.ContextBlock{
 			Prompts:   row.ContextPrompts,
