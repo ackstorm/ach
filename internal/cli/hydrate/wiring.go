@@ -446,7 +446,9 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 // Models are excluded: no adapter's RenderRuntime projects a model (access is
 // server-side via the gateway), so a models-only Environment has nothing to
 // write. Gating RenderRuntime on this predicate keeps a content-only hydrate
-// from emitting an empty {"mcpServers":{}} adapter file (D5).
+// from emitting an empty {"mcpServers":{}} adapter file (D5). Guardrails are
+// excluded for the same reason — LiteLLM applies them server-side and there
+// is nothing for an adapter to configure.
 func hasDirectRuntime(m *manifest.Manifest) bool {
 	if m == nil || m.Runtime == nil {
 		return false

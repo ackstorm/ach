@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -312,5 +313,32 @@ func TestFetch_ServerError_BubblesUp(t *testing.T) {
 		t.Errorf("err = %v (%T); want *httpclient.ServerError", err, err)
 	} else if sErr.Status != http.StatusUnauthorized {
 		t.Errorf("ServerError.Status = %d, want %d", sErr.Status, http.StatusUnauthorized)
+	}
+}
+
+// TestDecodeAcceptsGuardrailsArm: the strict decoder accepts the additive arm
+// and still accepts a response omitting it — the shape every pre-guardrails
+// Environment produces.
+func TestDecodeAcceptsGuardrailsArm(t *testing.T) {
+	const ctxBlock = `"context":{"prompts":[],"plugins":[],"artifacts":[],"skills":[]}`
+
+	withArm := `{"schemaVersion":"v1alpha1","environment":"demo","runtime":` +
+		`{"models":[],"mcpServers":[],"a2aAgents":[],"guardrails":["pii-filter"]},` + ctxBlock + `}`
+	m, err := manifest.Decode(strings.NewReader(withArm))
+	if err != nil {
+		t.Fatalf("decode with guardrails: %v", err)
+	}
+	if !slices.Equal(m.Runtime.Guardrails, []string{"pii-filter"}) {
+		t.Fatalf("guardrails = %v", m.Runtime.Guardrails)
+	}
+
+	withoutArm := `{"schemaVersion":"v1alpha1","environment":"demo","runtime":` +
+		`{"models":[],"mcpServers":[],"a2aAgents":[]},` + ctxBlock + `}`
+	m2, err := manifest.Decode(strings.NewReader(withoutArm))
+	if err != nil {
+		t.Fatalf("decode without guardrails: %v", err)
+	}
+	if len(m2.Runtime.Guardrails) != 0 {
+		t.Fatalf("guardrails = %v, want empty", m2.Runtime.Guardrails)
 	}
 }
