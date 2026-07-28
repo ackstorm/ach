@@ -316,7 +316,7 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   `ach_refresh` NOTIFY; the operator's refreshsignal listener maps it to a
   GenericEvent), object inventory (SYNC column: Available/Degraded |
   fresh/STALE/never | `fresh*` false-green for name-only prompts/artifacts |
-  projected), runtime catalog (`/platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`).
+  projected), runtime catalog (`/platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,guardrails,catalog}`).
 - UI Objects API (G2, Environment-only v1): `origin='ui'` DRAFT rows, YAML
   export → kubectl apply → operator takeover. `ACH_DISABLE_UI_WRITES=true`
   kills the write path.

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package runtime serves the admin-only runtime catalog (models / MCP servers
-// / A2A agents) projected from LiteLLM into runtime_catalog_entries. All routes
-// mount under /platform/admin and inherit admin.AdminOnly (pk_ + allowlist).
+// / A2A agents / teams / guardrails) projected from LiteLLM into
+// runtime_catalog_entries. All routes mount under /platform/admin and inherit
+// admin.AdminOnly (pk_ + allowlist).
 package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -48,6 +50,10 @@ type itemView struct {
 	Name   string `json:"name"`
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
+	// Attributes is kind-specific JSON, present for guardrails only today
+	// (mode, defaultOn). omitempty keeps the four pre-existing kinds'
+	// responses byte-identical, so no consumer breaks.
+	Attributes json.RawMessage `json:"attributes,omitempty"`
 }
 
 type connectorView struct {
@@ -70,7 +76,10 @@ func (d Deps) connector(ctx context.Context) connectorView {
 func toItems(rows []db.RuntimeCatalogRow) []itemView {
 	out := make([]itemView, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, itemView{Name: r.Name, Kind: r.Kind, Status: r.Status})
+		out = append(out, itemView{
+			Name: r.Name, Kind: r.Kind, Status: r.Status,
+			Attributes: json.RawMessage(r.Attributes),
+		})
 	}
 	return out
 }
@@ -105,6 +114,9 @@ func A2AAgentsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "a2a_agen
 // TeamsHandler serves GET /platform/admin/runtime/teams.
 func TeamsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "team") }
 
+// GuardrailsHandler serves GET /platform/admin/runtime/guardrails.
+func GuardrailsHandler(d Deps) http.HandlerFunc { return kindHandler(d, "guardrail") }
+
 // CatalogHandler serves GET /platform/admin/runtime/catalog (all kinds).
 func CatalogHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +128,8 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 				"failed to read runtime catalog", reqID)
 			return
 		}
-		models, mcps, agents, teams := make([]itemView, 0), make([]itemView, 0), make([]itemView, 0), make([]itemView, 0)
+		models, mcps, agents, teams, guardrails :=
+			make([]itemView, 0), make([]itemView, 0), make([]itemView, 0), make([]itemView, 0), make([]itemView, 0)
 		for _, it := range toItems(all) {
 			switch it.Kind {
 			case "model":
@@ -127,6 +140,8 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 				agents = append(agents, it)
 			case "team":
 				teams = append(teams, it)
+			case "guardrail":
+				guardrails = append(guardrails, it)
 			}
 		}
 		render.JSON(w, http.StatusOK, map[string]any{
@@ -135,6 +150,7 @@ func CatalogHandler(d Deps) http.HandlerFunc {
 			"mcpServers": mcps,
 			"a2aAgents":  agents,
 			"teams":      teams,
+			"guardrails": guardrails,
 		})
 	}
 }

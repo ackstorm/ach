@@ -4,6 +4,7 @@ package snapshot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -304,8 +305,11 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	}
 	s.snap.Store(next)
 	if s.pool != nil {
+		guardrailNames, guardrailAttrs := guardrailCatalogInputs(next.Guardrails)
 		if err := achdb.ReplaceRuntimeCatalog(ctx, s.pool, s.catalogNS, s.connectorName,
-			next.Models, next.MCPServers, next.A2AAgents, next.Teams, next.RefreshedAt); err != nil {
+			next.Models, next.MCPServers, next.A2AAgents, next.Teams, guardrailNames,
+			map[string]map[string][]byte{"guardrail": guardrailAttrs},
+			next.RefreshedAt); err != nil {
 			// Non-fatal: the in-memory snapshot is already published and the
 			// EnvironmentReconciler reads that, not the table. Log and move on;
 			// the next refresh retries the projection.
@@ -334,6 +338,37 @@ func toSet[T any](items []T, key func(T) string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+// guardrailCatalogInputs splits the snapshot's guardrail map into the name set
+// the catalog upserts and the per-name attribute JSON it stores. Marshalling
+// happens HERE rather than in internal/db so the db layer stays free of any
+// litellm dependency. A marshal failure degrades that one entry to no
+// attributes rather than failing the whole catalog write — the name is the
+// load-bearing part; mode/defaultOn are advisory.
+//
+// An Ambiguous entry (the same name from both list endpoints with conflicting
+// attributes — see litellm.ListGuardrails) keeps its NAME but gets no
+// attributes: the catalog must not display one of two contradictory values as
+// fact. The CLI already renders a missing attribute as "-".
+func guardrailCatalogInputs(in map[string]litellm.GuardrailEntry) (map[string]struct{}, map[string][]byte) {
+	names := make(map[string]struct{}, len(in))
+	attrs := make(map[string][]byte, len(in))
+	for name, g := range in {
+		names[name] = struct{}{}
+		if g.Ambiguous {
+			continue
+		}
+		b, err := json.Marshal(struct {
+			Mode      []string `json:"mode,omitempty"`
+			DefaultOn bool     `json:"defaultOn"`
+		}{Mode: []string(g.Mode), DefaultOn: g.DefaultOn})
+		if err != nil {
+			continue
+		}
+		attrs[name] = b
+	}
+	return names, attrs
 }
 
 // guardrailsByName indexes guardrail entries by their enforcement identifier.

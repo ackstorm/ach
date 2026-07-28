@@ -20,25 +20,31 @@ const RuntimeCatalogChannel = "ach_runtime_catalog_changed"
 type RuntimeCatalogRow struct {
 	Namespace          string
 	ConnectorName      string
-	Kind               string // "model" | "mcp_server" | "a2a_agent" | "team"
+	Kind               string // "model" | "mcp_server" | "a2a_agent" | "team" | "guardrail"
 	Name               string
 	Status             string // "active" | "missing"
 	FirstSeenAt        time.Time
 	LastSeenAt         time.Time
 	LastSuccessfulSync time.Time
 	DeletedAt          *time.Time
+	// Attributes is opaque per-entry JSON, populated for guardrails only today
+	// (mode, defaultOn). Stored as jsonb; nil means SQL NULL. The db layer never
+	// interprets it — the Snapshotter marshals it — which keeps internal/db
+	// free of any internal/litellm dependency.
+	Attributes []byte
 }
 
 const upsertRuntimeCatalogSQL = `
 INSERT INTO runtime_catalog_entries
     (namespace, connector_name, kind, name, status,
-     first_seen_at, last_seen_at, last_successful_sync, deleted_at)
-VALUES ($1, $2, $3, $4, 'active', $5, $5, $5, NULL)
+     first_seen_at, last_seen_at, last_successful_sync, deleted_at, attributes)
+VALUES ($1, $2, $3, $4, 'active', $5, $5, $5, NULL, $6)
 ON CONFLICT (namespace, connector_name, kind, name) DO UPDATE SET
     status               = 'active',
     last_seen_at         = EXCLUDED.last_seen_at,
     last_successful_sync = EXCLUDED.last_successful_sync,
-    deleted_at           = NULL
+    deleted_at           = NULL,
+    attributes           = EXCLUDED.attributes
 `
 
 const tombstoneRuntimeCatalogSQL = `
@@ -52,14 +58,18 @@ UPDATE runtime_catalog_entries
 `
 
 // ReplaceRuntimeCatalog upserts every currently-registered runtime name as
-// 'active' (last_successful_sync = syncedAt) then tombstones any previously-
-// active row this connector did NOT see this sync, all inside one
-// WithTxNotify transaction that fires RuntimeCatalogChannel on commit.
+// 'active' then tombstones any previously-active row this connector did NOT
+// see this sync, all inside one WithTxNotify transaction.
+//
+// attributes is keyed kind -> name -> opaque JSON (nil for entries without
+// any). It is keyed by KIND as well as name because a model and a guardrail may
+// share a name — a flat name->json map would cross-assign between kinds.
 func ReplaceRuntimeCatalog(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	ns, connector string,
-	models, mcpServers, a2aAgents, teams map[string]struct{},
+	models, mcpServers, a2aAgents, teams, guardrails map[string]struct{},
+	attributes map[string]map[string][]byte,
 	syncedAt time.Time,
 ) error {
 	return WithTxNotify(ctx, pool, RuntimeCatalogChannel, connector, func(tx pgx.Tx) error {
@@ -68,9 +78,15 @@ func ReplaceRuntimeCatalog(
 			"mcp_server": mcpServers,
 			"a2a_agent":  a2aAgents,
 			"team":       teams,
+			"guardrail":  guardrails,
 		} {
 			for name := range names {
-				if _, err := tx.Exec(ctx, upsertRuntimeCatalogSQL, ns, connector, kind, name, syncedAt); err != nil {
+				var attr []byte
+				if byName, ok := attributes[kind]; ok {
+					attr = byName[name]
+				}
+				if _, err := tx.Exec(ctx, upsertRuntimeCatalogSQL,
+					ns, connector, kind, name, syncedAt, attr); err != nil {
 					if isTransientPgErr(err) {
 						return err
 					}
@@ -90,7 +106,7 @@ func ReplaceRuntimeCatalog(
 
 const listRuntimeCatalogSQL = `
 SELECT namespace, connector_name, kind, name, status,
-       first_seen_at, last_seen_at, last_successful_sync, deleted_at
+       first_seen_at, last_seen_at, last_successful_sync, deleted_at, attributes
   FROM runtime_catalog_entries
  WHERE namespace      = $1
    AND connector_name = $2
@@ -114,7 +130,7 @@ func ListRuntimeCatalog(ctx context.Context, pool *pgxpool.Pool, ns, connector, 
 	for rows.Next() {
 		var r RuntimeCatalogRow
 		if err := rows.Scan(&r.Namespace, &r.ConnectorName, &r.Kind, &r.Name, &r.Status,
-			&r.FirstSeenAt, &r.LastSeenAt, &r.LastSuccessfulSync, &r.DeletedAt); err != nil {
+			&r.FirstSeenAt, &r.LastSeenAt, &r.LastSuccessfulSync, &r.DeletedAt, &r.Attributes); err != nil {
 			return nil, fmt.Errorf("db: ListRuntimeCatalog scan(%s/%s): %w", ns, connector, err)
 		}
 		out = append(out, r)

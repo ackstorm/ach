@@ -606,3 +606,23 @@ func TestSnapshotGuardrailsHardErrorPreservesPrior(t *testing.T) {
 		t.Errorf("prior guardrail set must be preserved, got %v", snap.Guardrails)
 	}
 }
+
+// TestGuardrailCatalogInputsAmbiguousKeepsNameDropsAttributes: a name the two
+// list endpoints disagree about is still catalogued (so Environments naming it
+// resolve) but carries no attributes — the catalog must not present a coin-flip
+// value as fact.
+func TestGuardrailCatalogInputsAmbiguousKeepsNameDropsAttributes(t *testing.T) {
+	names, attrs := guardrailCatalogInputs(map[string]litellm.GuardrailEntry{
+		"clear": {GuardrailName: "clear", Mode: litellm.GuardrailMode{"pre_call"}},
+		"murky": {GuardrailName: "murky", Mode: litellm.GuardrailMode{"pre_call"}, Ambiguous: true},
+	})
+	if _, ok := names["murky"]; !ok {
+		t.Error("ambiguous guardrail must still be catalogued by name")
+	}
+	if _, ok := attrs["murky"]; ok {
+		t.Errorf("ambiguous guardrail must carry no attributes, got %s", attrs["murky"])
+	}
+	if _, ok := attrs["clear"]; !ok {
+		t.Error("unambiguous guardrail lost its attributes")
+	}
+}

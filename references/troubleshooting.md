@@ -339,6 +339,10 @@ manifest, and the forwarder still proxies — none of those read
 Environment conditions. Fix the name; there is no revocation path for
 a typo.
 
+A guardrail listed with `defaultOn: true` in `ach-cli runtime guardrails`
+(or `GET /platform/admin/runtime/guardrails`) already runs on every
+request — naming it in an Environment changes nothing.
+
 ### Team has zero models/MCP tools although the access group lists it
 
 LiteLLM stores the team↔access-group relation twice: `access_group.assigned_team_ids`
