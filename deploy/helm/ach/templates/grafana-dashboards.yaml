@@ -1,30 +1,44 @@
 {{- if .Values.metrics.dashboards.enabled }}
 {{- $root := . }}
+{{- $ns := default $root.Release.Namespace $root.Values.metrics.dashboards.namespace }}
 {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
-{{- $name := base $path | trimSuffix ".json" }}
+{{- /* RFC1123: the filename is free-form on disk, the object name is not. */}}
+{{- $name := base $path | trimSuffix ".json" | lower | replace "_" "-" | replace "." "-" }}
+{{- $name = printf "ach-dashboard-%s" $name | trunc 63 | trimSuffix "-" }}
 ---
 # Grafana dashboard ConfigMap — opt-in via metrics.dashboards.enabled. One
-# ConfigMap per JSON in the chart's dashboards/ dir (synced from
-# examples/grafana by `make helm-sync`). Unlike the ServiceMonitor/PodMonitor,
+# ConfigMap per JSON in the chart's dashboards/ dir, which is where the
+# dashboards LIVE (edit them there; there is no second copy to keep in sync).
+# Unlike the ServiceMonitor/PodMonitor,
 # this needs NO Prometheus Operator CRD — the kube-prometheus-stack Grafana
 # sidecar watches plain ConfigMaps carrying the configured label and reloads
 # them, so the dashboards ship and update with the release instead of being
 # hand-imported (and drifting).
 #
-# The sidecar honours the grafana_folder annotation ONLY when it runs with
-# sidecar.dashboards.folderAnnotation=grafana_folder; without it the annotation
-# is inert and dashboards land in the sidecar provider's default folder.
+# The sidecar only sees these ConfigMaps if it watches the namespace they land
+# in: kube-prometheus-stack defaults sidecar.dashboards.searchNamespace to null
+# (= the sidecar's OWN namespace), so with ACH and Prometheus in different
+# namespaces the sidecar must run with searchNamespace=ALL (or the ACH
+# namespace), or metrics.dashboards.namespace must point at the sidecar's.
+# Nothing errors when this is wrong — the dashboards just never appear.
+#
+# The grafana_folder annotation needs BOTH sidecar.dashboards.folderAnnotation=
+# grafana_folder AND sidecar.dashboards.provider.foldersFromFilesStructure=true;
+# with either missing the annotation is inert and dashboards land in the sidecar
+# provider's default folder.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ach-dashboard-{{ $name }}
-  namespace: {{ $root.Release.Namespace }}
+  name: {{ $name }}
+  namespace: {{ $ns }}
   labels:
     {{- include "ach.commonLabels" $root | nindent 4 }}
-    {{ $root.Values.metrics.dashboards.label }}: {{ $root.Values.metrics.dashboards.labelValue | quote }}
-    {{- with $root.Values.metrics.dashboards.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    app.kubernetes.io/component: dashboards
+    {{- /* Merged, not appended: a user re-declaring the sidecar label in
+           metrics.dashboards.labels would otherwise emit a duplicate mapping
+           key and fail the whole release, not just this ConfigMap. */}}
+    {{- $sidecar := dict $root.Values.metrics.dashboards.label ($root.Values.metrics.dashboards.labelValue | toString) }}
+    {{- toYaml (mergeOverwrite (deepCopy (default (dict) $root.Values.metrics.dashboards.labels)) $sidecar) | nindent 4 }}
   {{- with $root.Values.metrics.dashboards.folder }}
   annotations:
     grafana_folder: {{ . | quote }}

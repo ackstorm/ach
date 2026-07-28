@@ -29,4 +29,13 @@ out="$(render --set contentService.standalone=true \
               --set operator.cache.storageClassName=rwx-test)"
 grep -q "name: ach-content-service" <<<"$out" || fail "standalone: ach-content-service Deployment missing"
 
-echo "helm-render-check OK (4 topologies)"
+# 5. Grafana dashboards enabled. Off by default, so topologies 1-4 never parse
+# past the `if` guard — a break in the template body would reach users untested.
+out="$(render --set metrics.dashboards.enabled=true)"
+grep -q "name: ach-dashboard-" <<<"$out" || fail "dashboards.enabled=true: no dashboard ConfigMap rendered"
+# A label key repeated in metrics.dashboards.labels must merge, not emit a
+# duplicate mapping key (which aborts the whole release, not just this object).
+render --set metrics.dashboards.enabled=true \
+       --set metrics.dashboards.labels.grafana_dashboard=1 >/dev/null
+
+echo "helm-render-check OK (5 topologies)"

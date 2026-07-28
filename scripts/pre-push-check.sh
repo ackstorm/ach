@@ -14,7 +14,7 @@
 #  15. license-header SPDX gate (every in-scope *.go starts with SPDX line)
 #  16. golangci-lint full sweep (full lint runs here; no pre-commit stage)
 #  17. make test-unit (pure-logic regression — ~5-10s warm)
-#  18. helm chart mirror drift (crd-sources/ + dashboards/ — helm-sync-check)
+#  18. helm chart mirror drift (crd-sources/ — helm-sync-check)
 #
 # Soft checks (warnings only):
 #   7. internal hostnames / private IPv4 in tracked files
@@ -363,30 +363,29 @@ else
   warn "scripts/dev.sh missing — skipping unit gate (rebuild devtools image)"
 fi
 
-# --- 18. helm chart mirror drift (crd-sources/ + dashboards/) ---
+# --- 18. helm chart mirror drift (crd-sources/) ---
 # `make helm-sync-check` runs controller-gen, copies the regenerated CRDs into
-# deploy/helm/ach/crd-sources/ and the Grafana dashboards from examples/grafana
-# into deploy/helm/ach/dashboards/ (the chart's ONLY mirrored surfaces — per-mode
-# Deployments are hand-authored), and fails if that leaves a diff. WHY: if a
-# contributor edits a CRD in api/ but forgets `make helm-sync`, the published
-# Helm chart ships a STALE CRD schema while the operator binary expects the new
-# one — a `helm upgrade` then silently drops/refuses the new field (issue #44).
-# Same for a dashboard edited in examples/grafana: the chart would keep shipping
-# the old JSON to the Grafana sidecar.
-hdr "18. helm chart mirror drift (crd-sources/ + dashboards/)"
+# deploy/helm/ach/crd-sources/ (the chart's ONLY mirrored surface — per-mode
+# Deployments are hand-authored and the Grafana dashboards LIVE in the chart),
+# and fails if that leaves a diff. WHY: if a contributor edits a CRD in api/ but
+# forgets `make helm-sync`, the published Helm chart ships a STALE CRD schema
+# while the operator binary expects the new one — a `helm upgrade` then silently
+# drops/refuses the new field (issue #44).
+hdr "18. helm chart mirror drift (crd-sources/)"
 if [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make helm-sync-check >/tmp/pre-push-helm-sync.log 2>&1; then
-    ok "chart CRDs + dashboards in sync with their sources"
+    ok "chart CRDs in sync with config/crd/bases"
   else
     fail "chart mirror drift — run \`make helm-sync\` and commit (see /tmp/pre-push-helm-sync.log)"
     sed -n '1,30p' /tmp/pre-push-helm-sync.log
   fi
-  # helm-sync rewrites the tracked crd-sources/*.yaml + dashboards/*.json in
-  # place; restore them to HEAD so the gate never mutates the working tree
-  # (mirrors gate 14's go.mod discipline). Non-destructive: `git checkout --`
-  # only touches tracked files, so an in-progress untracked new CRD or dashboard
-  # is left alone.
-  git checkout -- deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/ 2>/dev/null || true
+  # helm-sync rewrites the tracked crd-sources/*.yaml in place; restore them to
+  # HEAD so the gate never mutates the working tree (mirrors gate 14's go.mod
+  # discipline). Non-destructive: `git checkout --` only touches tracked files,
+  # so an in-progress untracked new CRD is left alone. Scoped to crd-sources/
+  # ONLY — dashboards/ is hand-authored source, and reverting it here would
+  # silently throw away the dashboard edit being pushed.
+  git checkout -- deploy/helm/ach/crd-sources/ 2>/dev/null || true
 else
   warn "scripts/dev.sh missing — skipping chart-mirror-drift gate (rebuild devtools image)"
 fi

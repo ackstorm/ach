@@ -161,11 +161,12 @@ the `type` label (`webhook|a2a|cron|…`).
 
 ## Dashboard provisioning — SHIPPED (chart `metrics.dashboards.enabled`)
 
-`examples/grafana/` is the source of truth; `make helm-sync` copies the JSON
-into `deploy/helm/ach/dashboards/` and `templates/grafana-dashboards.yaml`
-renders one labelled ConfigMap per dashboard, which the kube-prometheus-stack
-Grafana sidecar auto-loads. The pre-push gate (`make helm-sync-check`) fails on
-drift between the two directories.
+The dashboard JSON lives in `deploy/helm/ach/dashboards/` and
+`templates/grafana-dashboards.yaml` renders one labelled ConfigMap per
+dashboard, which the kube-prometheus-stack Grafana sidecar auto-loads — provided
+the sidecar watches that namespace (`searchNamespace` defaults to its own; see
+`metrics.dashboards.namespace`). `make qa-dashboards` gates the metric names in
+CI.
 
 ```yaml
 metrics:

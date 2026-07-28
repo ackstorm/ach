@@ -35,6 +35,10 @@ ach/
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 │   │                          (templates/gateway-deployment.yaml = ach-gateway
 │   │                           Deployment+Service; the prod edge router)
+│   ├── crd-sources/          COPIED from config/crd/bases — see "Mirrored into
+│   │                                                          the chart" below
+│   ├── dashboards/           the Grafana dashboard JSON LIVES here (not a copy;
+│   │                          docs + validator in examples/grafana/)
 │                            (deploy/kustomize/ deleted 2026-07-17 — Helm is the
 │                             only supported install; see ach-project-spec.md)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
@@ -69,6 +73,22 @@ ach/
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE
 ```
+
+## Mirrored into the chart (never hand-edit the copy)
+
+`deploy/helm/ach/crd-sources/` is COPIED from `config/crd/bases/` by
+`make helm-sync` (minus the gated-off plugin CRDs) because Helm cannot
+`.Files.Glob` outside the chart directory. Never edit it in place — the next
+sync reverts the edit. `templates/crds.yaml` ranges over it.
+
+`make helm-sync-check` re-syncs and hard-fails on any resulting change — added,
+deleted, or modified (it reads `git status --porcelain`, not `git diff`, so a
+NEW file is caught too). It is pre-push gate 18 and a CI step.
+
+**The Grafana dashboards are NOT mirrored.** `deploy/helm/ach/dashboards/*.json`
+is where they live and where you edit them; there is no second copy.
+`examples/grafana/` holds their docs (`README.md`, `PROPOSED-METRICS.md`) and
+the validator `check-metric-names.sh`, wired as `make qa-dashboards`.
 
 ## Synced fixtures vs examples (independent collections)
 

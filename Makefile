@@ -525,7 +525,7 @@ endef
 # --- helm / chart packaging ---
 
 .PHONY: helm-sync
-helm-sync: gen-manifests ## Sync generated CRDs + Grafana dashboards into the Helm chart (crd-sources/ + dashboards/ — the chart's ONLY copied surfaces; per-mode Deployments are hand-authored templates).
+helm-sync: gen-manifests ## Sync the generated CRDs into the Helm chart (crd-sources/ — the chart's ONLY copied surface; everything else is hand-authored).
 	# CRDs land in crd-sources/ (NOT the reserved crds/ dir name) so the
 	# templates/crds.yaml loop can range over them and emit each one as a
 	# Helm-managed template. helm-inject-crd-annotation.py adds
@@ -537,25 +537,30 @@ helm-sync: gen-manifests ## Sync generated CRDs + Grafana dashboards into the He
 	# the chart must not ship their CRDs (they remain in config/crd/bases for
 	# envtest + codegen). rm-after-copy yields a deterministic excluded set.
 	rm -f deploy/helm/ach/crd-sources/ach.ackstorm.ai_plugins.yaml deploy/helm/ach/crd-sources/ach.ackstorm.ai_pluginmarketplaces.yaml
-	# Grafana dashboards: examples/grafana is the source of truth; the chart
-	# ships copies so templates/grafana-dashboards.yaml can .Files.Glob them
-	# (Helm cannot read files outside the chart dir).
-	mkdir -p deploy/helm/ach/dashboards
-	cp -f examples/grafana/*.json deploy/helm/ach/dashboards/
 
 .PHONY: helm-sync-check
-helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD or dashboard drift in the chart.
-	@if ! git diff --quiet deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; then \
-	  echo "CHART DRIFT: deploy/helm/ach/{crd-sources,dashboards}/ is out of sync with config/crd/bases + examples/grafana. Run \`make helm-sync\` and commit."; \
-	  git --no-pager diff --stat deploy/helm/ach/crd-sources/ deploy/helm/ach/dashboards/; \
+helm-sync-check: helm-sync ## CI gate: fail if `make helm-sync` left uncommitted CRD drift in the chart.
+	# `git status --porcelain`, NOT `git diff`: diff sees neither untracked nor
+	# newly-staged-only paths, so a NEWLY ADDED CRD sailed through the gate
+	# while the released chart shipped without it.
+	@drift="$$(git status --porcelain -- deploy/helm/ach/crd-sources/)"; \
+	if [ -n "$$drift" ]; then \
+	  echo "CHART DRIFT: deploy/helm/ach/crd-sources/ is out of sync with config/crd/bases. Run \`make helm-sync\` and commit."; \
+	  echo "$$drift"; \
 	  exit 1; \
 	fi
 
 .PHONY: helm-render-check
-helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service).
+helm-render-check: ## Render-smoke the non-default Helm topologies (gateway off, ingress on, standalone content-service, dashboards on).
 	$(call container_target,_helm-render-check)
 _helm-render-check:
 	bash scripts/helm-render-check.sh
+
+.PHONY: qa-dashboards
+qa-dashboards: ## Validate the Grafana dashboard JSON against the current metric names.
+	$(call container_target,_qa-dashboards)
+_qa-dashboards:
+	bash examples/grafana/check-metric-names.sh
 
 ##@ E2E (cluster + mocks)
 
