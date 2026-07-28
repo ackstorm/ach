@@ -605,6 +605,7 @@ func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
 		Models:     len(m.Runtime.Models),
 		MCPServers: len(m.Runtime.MCPServers),
 		A2AAgents:  len(m.Runtime.A2AAgents),
+		Guardrails: len(m.Runtime.Guardrails),
 	}
 }
 

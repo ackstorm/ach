@@ -63,6 +63,9 @@ type BlockView struct {
 	Models     []RuntimeItem `json:"models,omitempty"`
 	MCPServers []RuntimeItem `json:"mcpServers,omitempty"`
 	A2AAgents  []RuntimeItem `json:"a2aAgents,omitempty"`
+	// Guardrails are plain names: LiteLLM applies them server-side, so unlike
+	// the other runtime axes there is no endpoint to surface.
+	Guardrails []string      `json:"guardrails,omitempty"`
 	Prompts    []ContextItem `json:"prompts,omitempty"`
 	Plugins    []ContextItem `json:"plugins,omitempty"`
 	Artifacts  []ContextItem `json:"artifacts,omitempty"`
@@ -262,6 +265,10 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	}
 	for _, a := range h.Runtime.A2AAgents {
 		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", orEM(a.Name), orEM(a.ID), orEM(a.Endpoint))
+	}
+	for _, g := range h.Runtime.Guardrails {
+		// No endpoint: a guardrail is applied by LiteLLM, never called.
+		_, _ = fmt.Fprintf(tw, "  guardrail\t%s\t%s\t%s\n", g, g, emDash)
 	}
 	_ = tw.Flush()
 

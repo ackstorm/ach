@@ -348,3 +348,22 @@ func TestFormatEnvDescribe_NotReady_ShowsConditionReasons(t *testing.T) {
 		t.Errorf("describe should not list True conditions in the problem summary:\n%s", out)
 	}
 }
+
+// TestFormatEnvDescribeShowsGuardrails: guardrails render with an em-dash in
+// the ENDPOINT column — they are applied by LiteLLM, never called, so the row
+// must not invent an endpoint.
+func TestFormatEnvDescribeShowsGuardrails(t *testing.T) {
+	h := &HydrateView{
+		Runtime: BlockView{
+			Models:     []RuntimeItem{{ID: "gpt-4", Endpoint: "http://x/v1"}},
+			Guardrails: []string{"pii-filter"},
+		},
+	}
+	out := FormatEnvDescribe(EnvView{Name: "demo"}, h, true)
+	if !strings.Contains(out, "guardrail") || !strings.Contains(out, "pii-filter") {
+		t.Fatalf("guardrail row missing:\n%s", out)
+	}
+	if strings.Contains(out, "/guardrail/") {
+		t.Fatalf("fabricated guardrail endpoint:\n%s", out)
+	}
+}

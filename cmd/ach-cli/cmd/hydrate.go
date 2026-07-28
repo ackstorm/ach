@@ -724,6 +724,9 @@ func compactSegments(r hydrate.Result) []string {
 	if rs.A2AAgents > 0 {
 		segs = append(segs, countNoun(rs.A2AAgents, "a2a agent", "a2a agents"))
 	}
+	if rs.Guardrails > 0 {
+		segs = append(segs, countNoun(rs.Guardrails, "guardrail", "guardrails"))
+	}
 	cs := r.ContextSummary
 	// Plugin segment only when there's a real plugin count — ProjectedByKind
 	// can carry component tallies, but a "0 plugins" prefix reads as a bug.
@@ -800,6 +803,12 @@ func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 			// never a ✓ "installed" line.
 			fmt.Fprintf(&b, "    • Models: %d (served server-side via the gateway — nothing to install locally)\n",
 				res.RuntimeSummary.Models)
+		}
+		if res.RuntimeSummary.Guardrails > 0 {
+			// Like models, guardrails are enforced server-side by LiteLLM —
+			// nothing is written locally, so this is informational (•).
+			fmt.Fprintf(&b, "    • Guardrails: %d (enforced server-side by LiteLLM — nothing to install locally)\n",
+				res.RuntimeSummary.Guardrails)
 		}
 		fmt.Fprintln(&b)
 	}
@@ -897,7 +906,7 @@ func hydrateTips(meta summaryMeta) []string {
 }
 
 func hasRuntimeSummary(s hydrate.RuntimeSummary) bool {
-	return s.Models > 0 || s.MCPServers > 0 || s.A2AAgents > 0
+	return s.Models > 0 || s.MCPServers > 0 || s.A2AAgents > 0 || s.Guardrails > 0
 }
 
 func hasContextSummary(s hydrate.ContextSummary) bool {

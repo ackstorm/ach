@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach-cli runtime` surfaces the admin runtime catalog — the set of
-// models, MCP servers, A2A agents, and teams known to the ACH platform API.
-// Four single-kind list views plus a combined catalog view:
+// models, MCP servers, A2A agents, teams, and guardrails known to the ACH
+// platform API. Five single-kind list views plus a combined catalog view:
 //
-//   - ach-cli runtime models list   → GET /platform/admin/runtime/models
-//   - ach-cli runtime mcp list      → GET /platform/admin/runtime/mcp-servers
-//   - ach-cli runtime a2a list      → GET /platform/admin/runtime/a2a-agents
-//   - ach-cli runtime teams list    → GET /platform/admin/runtime/teams
-//   - ach-cli runtime catalog       → GET /platform/admin/runtime/catalog
+//   - ach-cli runtime models list     → GET /platform/admin/runtime/models
+//   - ach-cli runtime mcp list        → GET /platform/admin/runtime/mcp-servers
+//   - ach-cli runtime a2a list        → GET /platform/admin/runtime/a2a-agents
+//   - ach-cli runtime teams list      → GET /platform/admin/runtime/teams
+//   - ach-cli runtime guardrails list → GET /platform/admin/runtime/guardrails
+//   - ach-cli runtime catalog         → GET /platform/admin/runtime/catalog
 //
 // Each command accepts -o table|json and the standard admin credential
 // flags (--profile, --api-key, --env-key, --verbose). All endpoints
@@ -22,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -31,11 +33,15 @@ import (
 )
 
 // runtimeItem is the per-row shape returned by the single-kind list
-// endpoints (/runtime/models, /runtime/mcp-servers, /runtime/a2a-agents).
+// endpoints (/runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
+// /runtime/teams, /runtime/guardrails).
 type runtimeItem struct {
 	Name   string `json:"name"`
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
+	// Attributes is kind-specific JSON, present for guardrails only today
+	// (mode, defaultOn).
+	Attributes json.RawMessage `json:"attributes,omitempty"`
 }
 
 // runtimeListResp is the envelope from the single-kind list endpoints.
@@ -49,14 +55,16 @@ type runtimeCatalogResp struct {
 	MCPServers []runtimeItem `json:"mcpServers"`
 	A2AAgents  []runtimeItem `json:"a2aAgents"`
 	Teams      []runtimeItem `json:"teams"`
+	Guardrails []runtimeItem `json:"guardrails"`
 }
 
-// newRuntimeCmd returns the `ach-cli runtime` parent command with its five
-// children: models, mcp, a2a, teams (each with a `list` leaf), and catalog.
+// newRuntimeCmd returns the `ach-cli runtime` parent command with its six
+// children: models, mcp, a2a, teams, guardrails (each with a `list` leaf),
+// and catalog.
 func newRuntimeCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "runtime",
-		Short: "Inspect the admin runtime catalog (models, MCP servers, A2A agents, teams)",
+		Short: "Inspect the admin runtime catalog (models, MCP servers, A2A agents, teams, guardrails)",
 		RunE:  helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(
@@ -64,6 +72,7 @@ func newRuntimeCmd() *cobra.Command {
 		newRuntimeKindCmd("mcp", "/platform/admin/runtime/mcp-servers", "List available MCP servers"),
 		newRuntimeKindCmd("a2a", "/platform/admin/runtime/a2a-agents", "List available A2A agents"),
 		newRuntimeKindCmd("teams", "/platform/admin/runtime/teams", "List available teams"),
+		newRuntimeKindCmd("guardrails", "/platform/admin/runtime/guardrails", "List available guardrails"),
 		newRuntimeCatalogCmd(),
 	)
 	return parent
@@ -172,20 +181,59 @@ func runRuntimeCatalog(ctx context.Context, cmd *cobra.Command, output string, f
 	if output == outputJSON {
 		return writeRuntimeJSON(cmd.OutOrStdout(), resp)
 	}
-	all := make([]runtimeItem, 0, len(resp.Models)+len(resp.MCPServers)+len(resp.A2AAgents)+len(resp.Teams))
+	capHint := len(resp.Models) + len(resp.MCPServers) + len(resp.A2AAgents) + len(resp.Teams) + len(resp.Guardrails)
+	all := make([]runtimeItem, 0, capHint)
 	all = append(all, resp.Models...)
 	all = append(all, resp.MCPServers...)
 	all = append(all, resp.A2AAgents...)
 	all = append(all, resp.Teams...)
+	all = append(all, resp.Guardrails...)
 	return writeRuntimeTable(cmd.OutOrStdout(), all)
 }
 
-// writeRuntimeTable renders items as a tab-separated table with KIND / NAME / STATUS columns.
+// guardrailAttrs is the attribute JSON the catalog stores for guardrail rows.
+type guardrailAttrs struct {
+	Mode      []string `json:"mode"`
+	DefaultOn bool     `json:"defaultOn"`
+}
+
+// writeRuntimeTable renders items as KIND / NAME / STATUS, plus MODE and
+// DEFAULT-ON when any row carries guardrail attributes. DEFAULT-ON is the
+// decision-relevant column: a default_on guardrail already runs on every
+// request, so naming it in an Environment changes nothing.
 func writeRuntimeTable(w io.Writer, items []runtimeItem) error {
-	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "KIND\tNAME\tSTATUS")
+	showAttrs := false
 	for _, it := range items {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", it.Kind, it.Name, it.Status)
+		if len(it.Attributes) > 0 {
+			showAttrs = true
+			break
+		}
+	}
+	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
+	if showAttrs {
+		_, _ = fmt.Fprintln(tw, "KIND\tNAME\tSTATUS\tMODE\tDEFAULT-ON")
+	} else {
+		_, _ = fmt.Fprintln(tw, "KIND\tNAME\tSTATUS")
+	}
+	for _, it := range items {
+		if !showAttrs {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", it.Kind, it.Name, it.Status)
+			continue
+		}
+		mode, dflt := "-", "-"
+		if len(it.Attributes) > 0 {
+			var a guardrailAttrs
+			if err := json.Unmarshal(it.Attributes, &a); err == nil {
+				if len(a.Mode) > 0 {
+					mode = strings.Join(a.Mode, ",")
+				}
+				dflt = "no"
+				if a.DefaultOn {
+					dflt = adminConfirmYes
+				}
+			}
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", it.Kind, it.Name, it.Status, mode, dflt)
 	}
 	return tw.Flush()
 }
