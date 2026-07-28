@@ -125,7 +125,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   `PluginMarketplace` parses `.claude-plugin/marketplace.json`
   (manifest-less plugins accepted — any convention component suffices).
 - **governance**: `Environment` — THE product boundary:
-  `runtime{models,mcpServers,a2aAgents}` + `context{prompts,plugins,artifacts,skills}`
+  `runtime{models,mcpServers,a2aAgents,guardrails}` + `context{prompts,plugins,artifacts,skills}`
   + `authorizedTeams` (≥1, CEL). Status: `ExecutionResourcesResolved`
   (LiteLLM name resolution + content-gating: `last_successful_refresh IS NULL`
   on a referenced skill/plugin row blocks it — prevents Available=True
