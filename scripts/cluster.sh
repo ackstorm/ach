@@ -780,6 +780,12 @@ verify_all() {
   # assert 403. (Mirrors the demo-unresolved exclusion idiom for not-Available
   # fixtures, but keeps a positive wait so the e2e suite never races the row.)
   kubectl -n ach-system wait --for=condition=ExecutionResourcesResolved --timeout="${to}" environment/env-team-denied
+  # P0-A guardrail barrier fixture — an unresolved guardrail name. Available is
+  # False BY DESIGN, so gate on the failure state instead: once
+  # ExecutionResourcesResolved is False the operator has completed a full
+  # reconcile pass over this Environment, which is what TestGuardrailUnresolved-
+  # BlocksEkMint needs before it asserts the 503.
+  kubectl -n ach-system wait --for=condition=ExecutionResourcesResolved=false --timeout="${to}" environment/guardrail-unresolved
   # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
   # has fetched + failed). kubectl wait supports condition=<type>=false.
   #

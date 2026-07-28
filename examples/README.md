@@ -69,6 +69,15 @@ asserts this invariant automatically. See `CLAUDE.md` "Common failure modes"
 entry "Hydrate output != examples/hydrate.json" for the host-normalization
 gotcha + remediation steps.
 
+> **`runtime.guardrails`** — an additive arm, absent from `runtime.models`/
+> `mcpServers`/`a2aAgents`. Unlike those, entries are plain strings, not
+> `{id, endpoint}` objects: a guardrail is applied server-side by LiteLLM and
+> is never called by the client, so there is no endpoint to publish. The key
+> is present ONLY when the Environment declares at least one guardrail — the
+> golden above omits it because `demo` declares none. The populated shape is
+> covered by `internal/platformapi/hydrate`'s in-package tests, not this
+> golden.
+
 ## Headless agent / CI (no browser)
 
 `ach login` needs a browser for SSO. On an agent or CI runner, seed the

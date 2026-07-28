@@ -70,6 +70,7 @@ ach/
 │       │                    plugins are gated off via featuregate.PluginsEnabled)
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
+│                            + guardrail-unresolved (P0-A provisioning barrier)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE
 ```
@@ -109,7 +110,13 @@ fixture for the SC2 `unauthorized_team` case: same context as `env-valid` but
 `authorizedTeams` names a sentinel team absent from LiteLLM + the e2e user, so
 it is `Available=False` BY DESIGN and `verify_all` gates it on
 `ExecutionResourcesResolved=True` (the condition set in the same reconcile that
-writes the projection row the content-service reads). Tests only create/delete throwaways for
+writes the projection row the content-service reads). `guardrail-unresolved` is
+a fourth Environment fixture exercising the P0-A provisioning barrier: it
+declares a guardrail name that does not exist on the (unlicensed) e2e LiteLLM,
+so it is `Available=False` BY DESIGN and `verify_all` gates it on the
+**failure** state (`ExecutionResourcesResolved=False`), mirroring the
+`prompt-invalid` idiom — the unresolved name makes `reconcileAccessGroup` bail
+before the (premium-gated) shell-team guardrail write ever runs. Tests only create/delete throwaways for
 mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
 `examples/` holds **curated, user-facing
 samples** (the ServiceMonitor, the alert rules, the ach-cli initContainer, the
