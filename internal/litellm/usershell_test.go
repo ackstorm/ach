@@ -47,4 +47,15 @@ func TestIsUserShellManagedAndShaped(t *testing.T) {
 	if !IsUserShellShaped(shapedOnly, "jc@example.com") {
 		t.Fatal("shape not recognised")
 	}
+
+	// Same blob-poisoning hazard as the env shell — see
+	// TestIsShellTeamManagedNonStringSiblings. A user shell is just as reachable
+	// from the LiteLLM UI as an env shell.
+	withUISiblings := managed
+	withUISiblings.Metadata = json.RawMessage(
+		`{"ach_managed":"user-shell","ach_user":"jc@example.com","guardrails":[],` +
+			`"model_rpm_limit":{},"disable_global_guardrails":false}`)
+	if !IsUserShellManaged(withUISiblings, "jc@example.com") {
+		t.Fatal("non-string sibling metadata fields must not break the ownership marker")
+	}
 }

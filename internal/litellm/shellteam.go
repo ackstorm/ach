@@ -89,17 +89,37 @@ func NewShellTeamRequest(env string) *NewTeamRequest {
 	return denyAllTeamRequest(ShellTeamAlias(env), ShellTeamMetadata(env))
 }
 
+// teamMetadataStrings decodes a LiteLLM team metadata blob and keeps only its
+// string-valued entries. Absent or unparseable metadata yields a nil map, whose
+// zero-value lookups make every ownership check fail safe.
+//
+// The blob must NOT be decoded as map[string]string. LiteLLM keeps its own
+// management fields in the SAME object as ACH's ownership markers, and most are
+// not strings: saving a team in the LiteLLM UI writes the full default block —
+// guardrails ([]), model_rpm_limit ({}), disable_global_guardrails (false) —
+// even when no enterprise feature is configured (LiteLLM issue #20304).
+// encoding/json fails the WHOLE document on the first type mismatch, so a
+// map[string]string decode would drop the ACH markers along with it and the
+// operator would disown its own shell teams.
+func teamMetadataStrings(raw json.RawMessage) map[string]string {
+	var meta map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
+		return nil
+	}
+	out := make(map[string]string, len(meta))
+	for k, v := range meta {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
 // IsShellTeamManaged reports whether e's metadata carries the ACH shell-team
 // ownership marker for env. Absent or unparseable metadata is NOT managed —
 // fail safe, so callers refuse to touch a team they cannot prove they own.
 func IsShellTeamManaged(e TeamListEntry, env string) bool {
-	if len(e.Metadata) == 0 {
-		return false
-	}
-	var meta map[string]string
-	if err := json.Unmarshal(e.Metadata, &meta); err != nil {
-		return false
-	}
+	meta := teamMetadataStrings(e.Metadata)
 	return meta[ShellTeamManagedMetadataKey] == ShellTeamManagedMetadataValue &&
 		meta[ShellTeamManagedEnvKey] == env
 }
