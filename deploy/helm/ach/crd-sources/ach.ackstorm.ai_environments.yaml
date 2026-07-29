@@ -177,6 +177,20 @@ spec:
                       Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM
                       runs on this Environment's ek_ traffic.
 
+                      REQUIRES A LITELLM ENTERPRISE LICENCE. Team-scoped guardrails are premium-
+                      gated: without LITELLM_LICENSE set on the proxy, a non-empty list here is
+                      rejected 403 TWICE — when the operator attaches it to the shell team
+                      (AccessGroupSynced=False, so the Environment never goes Available and NEW
+                      ek_ minting is blocked) and again on every request a key in that team
+                      makes. Leaving this empty is exempt and is the only supported shape on an
+                      unlicensed proxy. Measured on LiteLLM v1.93.0, 2026-07-29; see
+                      references/litellm-permission-model.md §11.
+
+                      GLOBAL default_on guardrails are NOT gated and run on every request with
+                      no licence and no ACH configuration — check `ach-cli runtime guardrails
+                      list` before adding a name here, because naming a default_on guardrail
+                      changes nothing except your exposure to the gate above.
+
                       WHICH traffic is each guardrail's own business, not ACH's: a guardrail
                       declares one or more modes, and ACH only attaches the name. A
                       pre_call/post_call guardrail inspects LLM completions and does NOT run on

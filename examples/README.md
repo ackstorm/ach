@@ -77,6 +77,13 @@ gotcha + remediation steps.
 > golden above omits it because `demo` declares none. The populated shape is
 > covered by `internal/platformapi/hydrate`'s in-package tests, not this
 > golden.
+>
+> Declaring guardrails at all **requires a LiteLLM Enterprise licence**:
+> team-scoped guardrails are premium-gated, so on an unlicensed proxy a
+> non-empty list 403s when the operator attaches it (the Environment never goes
+> `Available`) and again on every request. Empty is exempt. Global `default_on`
+> guardrails run ungated and need no ACH configuration — see
+> `references/litellm-permission-model.md` §11.
 
 ## Headless agent / CI (no browser)
 

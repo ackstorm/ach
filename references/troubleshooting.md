@@ -326,6 +326,36 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
 
+### ❌ Environment declaring guardrails stuck with a 403 on the shell team — no Enterprise licence
+
+Team-scoped guardrails are premium-gated in LiteLLM. Without `LITELLM_LICENSE`
+on the proxy, `ensureShellTeam` gets
+
+```
+403 This feature is only available for LiteLLM Enterprise users: guardrails.
+```
+
+which fails `AccessGroupSynced`, so the Environment never goes `Available` and
+new `ek_` minting stays blocked. `shellTeamWriteErr` appends the licence hint to
+the condition message on exactly this shape. The fix is a licence or an empty
+`spec.runtime.guardrails` — an empty/omitted list is exempt from the gate, which
+is why every Environment that declares none is unaffected.
+
+Two traps around this:
+
+- **The gate fires twice.** Even if the attach somehow lands, every request from
+  a key in a team carrying guardrails also 403s. A stored-but-unlicensed
+  guardrail bricks the team rather than degrading it.
+- **The LiteLLM UI can build that broken state.** The UI writes
+  `metadata.guardrails`, which is NOT gated (200), while ACH writes the
+  top-level `guardrails` field, which is. So a team guardrail set from the UI
+  saves fine and then 403s on every call. Inspect with
+  `GET /team/info?team_id=X` → `metadata.guardrails` — `GET /team/list` does not
+  return `metadata` at all, so it will look clean there.
+
+Global `default_on` guardrails are ungated and keep running throughout; confirm
+with the `x-litellm-applied-guardrails` response header.
+
 ### ❌ Environment stuck `AccessGroupSynced=False` / `UnresolvedReferences` naming a guardrail
 The guardrail does not exist on the proxy. LiteLLM accepts unknown
 guardrail names and silently never runs them, so ACH refuses to mint

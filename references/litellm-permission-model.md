@@ -192,7 +192,25 @@ the team model-access path — which is why ACH uses an impossible model name.
   subtract.
 - `guardrails` is in `LiteLLM_ManagementEndpoint_MetadataFields_Premium`: a
   non-empty write is **403** without an Enterprise licence, at attach time and
-  again per request. Empty/omitted is exempt.
+  again per request. Empty/omitted is exempt. Both halves measured directly
+  2026-07-29 (scratch teams + keys, since deleted):
+
+  | action | unlicensed result |
+  |---|---|
+  | `POST /team/new` top-level `"guardrails": ["x"]` | 403 `...Enterprise users: guardrails` |
+  | `POST /team/new` `"guardrails": []` or key absent | 200 |
+  | `POST /team/update` `metadata: {"guardrails": ["x"]}` | **200 — NOT gated** |
+  | `/chat/completions` with a key in a team carrying `metadata.guardrails` | **403 every request** |
+  | same, team with no team-scoped guardrails | 200, `x-litellm-applied-guardrails: credential-filter` |
+
+  The `metadata` write path being ungated is why the LiteLLM UI can save a team
+  guardrail on an unlicensed proxy and brick that team — the failure only shows
+  up per request. ACH is unaffected: it writes the top-level field, so it fails
+  loudly at attach instead.
+- **Global `default_on` guardrails are NOT gated** and run with no licence and
+  no ACH configuration. Only team/key/request-scoped guardrails are premium.
+  Naming a `default_on` guardrail in an Environment therefore buys nothing and
+  costs you the gate above.
 - Unknown guardrail names are accepted and silently never run — **fail-open**.
 - Discovery needs BOTH list endpoints; neither is a superset. Measured: config
   `[]`, v2 both live guardrails.

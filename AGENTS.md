@@ -440,7 +440,12 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   condition; `context.skills` is content-gated) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
   rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
-  `spec.runtime.guardrails` (LiteLLM guardrail names) resolves against LiteLLM
+  `spec.runtime.guardrails` (LiteLLM guardrail names) **requires a LiteLLM
+  Enterprise licence** — team-scoped guardrails are premium-gated, so on an
+  unlicensed proxy a non-empty list 403s at attach (the Environment never goes
+  Available) AND on every request from a key in that team. Empty is exempt;
+  global `default_on` guardrails run ungated and need no ACH config at all.
+  It resolves against LiteLLM
   like the other runtime names; an unresolved one fails `AccessGroupSynced`,
   blocking new `ek_` mints but **not** existing keys, hydrate, or forwarded
   traffic. Guardrail coverage is **EK-only**. `ek_` keys live in the
