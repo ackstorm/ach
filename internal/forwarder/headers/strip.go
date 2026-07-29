@@ -11,7 +11,9 @@ import (
 // Prefix constants for the D-06 case-insensitive strip pass. Both prefixes
 // are matched against strings.ToLower(key) of every key in the incoming
 // http.Header. Keys whose lowercased form starts with either prefix are
-// dropped before the D-07 write pass.
+// dropped before the D-07 write pass — EXCEPT the two keys in
+// litellmHeaderAllowlist, which survive the x-litellm- prefix strip (see
+// below).
 //
 // Hub spec §5.1 + FWD-04 mandate the strip on EVERY route — the function is
 // shared by /v1, /v2, /gemini, /mcp/{name}, /a2a/{name}.
@@ -19,6 +21,22 @@ const (
 	prefixXLiteLLM = "x-litellm-"
 	prefixXAch     = "x-ach-"
 )
+
+// litellmHeaderAllowlist carves an EXACT, closed-set exception out of the
+// x-litellm- prefix strip: litellm's get_chain_id_from_headers
+// (proxy/litellm_pre_call_utils.py) reads only these two keys to group spend
+// logs into a conversation (metadata["session_id"] /
+// data["litellm_session_id"]) — they grant no auth, pick no model, and don't
+// change who the spend is attributed to. Everything else under x-litellm-
+// (x-litellm-api-key, -team-id, -user-id/-email/-role/-key-alias, -tags,
+// -spend-logs-metadata, -model/-model-group, -priority/-timeout/
+// -stream-timeout, ...) stays stripped by the prefix check. Keep this an
+// allowlist, not a denylist — a new sensitive x-litellm-* header must be
+// stripped by default, not opted out.
+var litellmHeaderAllowlist = map[string]struct{}{
+	"x-litellm-session-id": {},
+	"x-litellm-trace-id":   {},
+}
 
 // hopByHopSet is the RFC 7230 §6.1 static hop-by-hop header set, built
 // once at package init for O(1) per-request lookup (D-06). They are
@@ -57,7 +75,9 @@ const googAPIKeyHeader = "X-Goog-Api-Key" //nolint:gosec // G101 false positive:
 //     - canonical "Authorization"
 //     - canonical "X-Goog-Api-Key" (native-Gemini credential; the /gemini
 //     Director re-sets it with the caller's own key)
-//     - case-insensitive prefix "x-litellm-"
+//     - case-insensitive prefix "x-litellm-", UNLESS the lowercased key is in
+//     litellmHeaderAllowlist (x-litellm-session-id / x-litellm-trace-id —
+//     spend-log grouping keys litellm reads, not auth/routing)
 //     - case-insensitive prefix "x-ach-"
 //     - canonical-case form is in the static hopByHopSet
 //     - canonical-case form is in the Connection-named set
@@ -105,7 +125,13 @@ func StripAndRewrite(h http.Header, litellmAPIKey string) {
 			continue
 		}
 		kl := strings.ToLower(k)
-		if strings.HasPrefix(kl, prefixXLiteLLM) || strings.HasPrefix(kl, prefixXAch) {
+		if strings.HasPrefix(kl, prefixXLiteLLM) {
+			if _, allowed := litellmHeaderAllowlist[kl]; !allowed {
+				delete(h, k)
+			}
+			continue
+		}
+		if strings.HasPrefix(kl, prefixXAch) {
 			delete(h, k)
 			continue
 		}

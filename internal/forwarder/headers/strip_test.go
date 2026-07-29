@@ -620,6 +620,89 @@ func TestStripAndRewrite_StripsGoogAPIKey(t *testing.T) {
 	}
 }
 
+// TestStripAndRewrite_SessionAndTraceIDAllowlist drives the x-litellm-session-id
+// / x-litellm-trace-id allowlist carved out of the otherwise fail-closed
+// x-litellm-* prefix strip: LiteLLM's get_chain_id_from_headers reads these two
+// keys purely for spend-log grouping (no auth, no routing, no attribution
+// change), so they survive the strip while every other x-litellm-* header
+// (credentials, identity, routing, resource limits) keeps being stripped.
+func TestStripAndRewrite_SessionAndTraceIDAllowlist(t *testing.T) {
+	const userKey = "sk-litellm-test-user-key"
+
+	t.Run("session_id_survives", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("X-Litellm-Session-Id", "sess-123")
+		headers.StripAndRewrite(h, userKey)
+		if got := h.Get("X-Litellm-Session-Id"); got != "sess-123" {
+			t.Errorf("x-litellm-session-id = %q; want sess-123", got)
+		}
+	})
+
+	t.Run("trace_id_survives", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("X-Litellm-Trace-Id", "trace-abc")
+		headers.StripAndRewrite(h, userKey)
+		if got := h.Get("X-Litellm-Trace-Id"); got != "trace-abc" {
+			t.Errorf("x-litellm-trace-id = %q; want trace-abc", got)
+		}
+	})
+
+	t.Run("session_id_survives_case_insensitive", func(t *testing.T) {
+		in := http.Header{
+			"X-LiTeLlM-SeSsIoN-Id": {"sess-mixed"},
+		}
+		want := http.Header{
+			"X-LiTeLlM-SeSsIoN-Id": {"sess-mixed"},
+			"X-Litellm-Api-Key":    {userKey},
+		}
+		got := cloneHeader(in)
+		headers.StripAndRewrite(got, userKey)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("mixed-case x-litellm-session-id not preserved\n got=%#v\nwant=%#v", got, want)
+		}
+	})
+
+	t.Run("sensitive_litellm_headers_still_stripped", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("X-Litellm-Api-Key", "client-key")
+		h.Set("X-Litellm-Team-Id", "team-x")
+		h.Set("X-Litellm-User-Id", "user-x")
+		h.Set("X-Litellm-User-Email", "x@example.com")
+		h.Set("X-Litellm-User-Role", "admin")
+		h.Set("X-Litellm-Key-Alias", "alias")
+		h.Set("X-Litellm-Tags", "tag1,tag2")
+		h.Set("X-Litellm-Spend-Logs-Metadata", "{}")
+		h.Set("X-Litellm-Model", "gpt-4")
+		h.Set("X-Litellm-Model-Group", "group-a")
+		h.Set("X-Litellm-Priority", "high")
+		h.Set("X-Litellm-Timeout", "30")
+		h.Set("X-Litellm-Stream-Timeout", "60")
+		headers.StripAndRewrite(h, userKey)
+		for _, key := range []string{
+			"X-Litellm-Team-Id", "X-Litellm-User-Id", "X-Litellm-User-Email",
+			"X-Litellm-User-Role", "X-Litellm-Key-Alias", "X-Litellm-Tags",
+			"X-Litellm-Spend-Logs-Metadata", "X-Litellm-Model", "X-Litellm-Model-Group",
+			"X-Litellm-Priority", "X-Litellm-Timeout", "X-Litellm-Stream-Timeout",
+		} {
+			if _, ok := h[key]; ok {
+				t.Errorf("%s must be stripped", key)
+			}
+		}
+		if got := h.Get("X-Litellm-Api-Key"); got != userKey {
+			t.Errorf("x-litellm-api-key must be overwritten with server value; got %q", got)
+		}
+	})
+
+	t.Run("unknown_litellm_header_stripped_by_default", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("X-Litellm-Cualquier-Cosa", "v")
+		headers.StripAndRewrite(h, userKey)
+		if _, ok := h["X-Litellm-Cualquier-Cosa"]; ok {
+			t.Errorf("unknown x-litellm-* header must still be stripped (fail-closed default)")
+		}
+	})
+}
+
 // cloneHeader returns a deep copy of h so each subtest mutates its own
 // instance — http.Header is a map[string][]string and shares the underlying
 // slice references when copied shallow.
