@@ -4803,7 +4803,7 @@ ach-agent image &gt;= v0.10.0.</p>
 <h4 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h4>
 <p>Environment is the Schema for the environments API (Hub §6).</p>
 <p>An Environment is the ACH product boundary: a bundle of runtime
-(models, mcpServers, a2aAgents) and context (prompts, plugins,
+(models, mcpServers, a2aAgents, guardrails) and context (prompts, plugins,
 artifacts) capabilities exposed to authorized Teams. The ACH
 Operator reconciles spec.runtime into a LiteLLM access group of
 the same name (§6.2). The CEL XValidation rules above enforce
@@ -6983,6 +6983,12 @@ so a manifest omitting a sub-field still surfaces an empty slice.</p>
 <td>{  }</td>
 <td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
 </tr>
+<tr>
+<td><code>guardrails</code> <em>string array</em></td>
+<td>Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM<br />runs on this Environment's ek_ traffic.<br />WHICH traffic is each guardrail's own business, not ACH's: a guardrail<br />declares one or more modes, and ACH only attaches the name. A<br />pre_call/post_call guardrail inspects LLM completions and does NOT run on<br />/mcp traffic — that needs a guardrail configured with pre_mcp_call or<br />during_mcp_call. Listing a name here is therefore not a blanket promise<br />of coverage; <code>ach-cli runtime guardrails</code> prints each one's MODE.<br />This axis INVERTS the semantics of its siblings: models, mcpServers and<br />a2aAgents are additive grants, a guardrail is a constraint. ACH attaches<br />the names to the Environment's deny-all shell team; LiteLLM unions them<br />across key, team and request body, so a caller can ADD to the set but<br />never subtract from it.<br />Coverage is EK-only. ek_ keys live in this Environment's shell team and<br />inherit its guardrails; pk_ keys live in ach-user-<email> and reach the<br />Environment through the access group, which carries no guardrail field.<br />See references/litellm-permission-model.md.<br />An unresolved name blocks AccessGroupSynced, which blocks NEW ek_<br />minting — it does NOT stop existing keys, hydrate, or forwarded traffic.<br />Entries must be unique: the operator compares the attached set against<br />LiteLLM's stored list to decide whether a repair is needed, and<br />duplicates make that comparison undecidable (LiteLLM's own duplicate<br />handling differs between its storage and enforcement paths).<br />ACH never creates, updates or deletes guardrail definitions.</td>
+<td>{  }</td>
+<td>MaxItems: 50 <br />items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
 </tbody>
 </table>
 <h4 id="s3source">S3Source<a class="headerlink" href="#s3source" title="Permanent link">&para;</a></h4>
@@ -7720,7 +7726,7 @@ v1alpha1).</p>
 </tbody>
 </table>
 <h4 id="unresolvedruntime">UnresolvedRuntime<a class="headerlink" href="#unresolvedruntime" title="Permanent link">&para;</a></h4>
-<p>UnresolvedRuntime mirrors the three runtime reference lists (§6.4) and
+<p>UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
 names the specific entries that did not resolve against LiteLLM.</p>
 <p><em>Appears in:</em>
 - <a href="#environmentstatus">EnvironmentStatus</a></p>
@@ -7749,6 +7755,12 @@ names the specific entries that did not resolve against LiteLLM.</p>
 <tr>
 <td><code>a2aAgents</code> <em>string array</em></td>
 <td></td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>guardrails</code> <em>string array</em></td>
+<td>Guardrails lists spec.runtime.guardrails entries not registered in<br />LiteLLM. LiteLLM accepts unknown guardrail names silently and never runs<br />them, so an unlisted name is a fail-OPEN hole. Surfacing it here and<br />failing AccessGroupSynced converts that into a blocked ek_ mint.</td>
 <td>{  }</td>
 <td></td>
 </tr>
