@@ -107,12 +107,15 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 		// column when a premium field (guardrails) arrives without a metadata
 		// object, which would wipe the ach_managed / ach_environment ownership
 		// markers and make the operator disown this shell on the next pass.
+		// append(...) guarantees a non-nil slice: TeamUpdateRequest.Guardrails
+		// has no omitempty, so a nil value would marshal to `null` instead of
+		// the explicit `[]` that removal relies on.
 		resp, err := r.LiteLLM.UpdateTeam(ctx, &litellm.TeamUpdateRequest{
 			TeamID:           existingID,
 			Models:           []string{litellm.ShellTeamDenyAllModel},
 			ObjectPermission: litellm.ShellTeamPermissions(),
 			Metadata:         litellm.ShellTeamMetadata(env.Name),
-			Guardrails:       env.Spec.Runtime.Guardrails,
+			Guardrails:       append([]string{}, env.Spec.Runtime.Guardrails...),
 		})
 		if err != nil {
 			return "", r.shellTeamWriteErr(env, alias, "repair", err)

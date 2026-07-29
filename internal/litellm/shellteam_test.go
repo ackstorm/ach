@@ -231,10 +231,11 @@ func TestNewShellTeamRequestCarriesGuardrails(t *testing.T) {
 }
 
 // TestTeamUpdateRequestGuardrailsAlwaysExplicit: unlike NewShellTeamRequest
-// (create path, omitempty), TeamUpdateRequest.Guardrails always serialises —
-// including [] on removal — because ACH does not rely on the unverified
-// "omitted key = keep prior value" assumption for this field (see
-// references/litellm-permission-model.md §11).
+// (create path, omitempty), TeamUpdateRequest.Guardrails has no omitempty —
+// ACH does not rely on the unverified "omitted key = keep prior value"
+// assumption for this field (see references/litellm-permission-model.md
+// §11). The caller (ensureShellTeam) is responsible for passing a non-nil
+// slice on removal; TestEnsureShellTeamCarriesGuardrails covers that.
 func TestTeamUpdateRequestGuardrailsAlwaysExplicit(t *testing.T) {
 	b, err := json.Marshal(TeamUpdateRequest{TeamID: "t-1", Guardrails: []string{"pii-filter"}})
 	if err != nil {
@@ -244,14 +245,12 @@ func TestTeamUpdateRequestGuardrailsAlwaysExplicit(t *testing.T) {
 		t.Fatalf("guardrails missing from %s", b)
 	}
 
-	for name, g := range map[string][]string{"nil": nil, "empty": {}} {
-		b, err := json.Marshal(TeamUpdateRequest{TeamID: "t-1", Guardrails: g})
-		if err != nil {
-			t.Fatalf("%s marshal: %v", name, err)
-		}
-		if !strings.Contains(string(b), `"guardrails":[]`) {
-			t.Errorf("%s must explicitly clear via [], got %s", name, b)
-		}
+	b, err = json.Marshal(TeamUpdateRequest{TeamID: "t-1", Guardrails: []string{}})
+	if err != nil {
+		t.Fatalf("empty marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"guardrails":[]`) {
+		t.Errorf("empty must explicitly clear via [], got %s", b)
 	}
 }
 

@@ -178,21 +178,10 @@ type TeamUpdateRequest struct {
 	// LiteLLM instance is unlicensed, so a real guardrail write always 403s
 	// there — see test/e2e/guardrails_test.go). Rather than trust that
 	// omission clears the set, ensureShellTeam always sends the field
-	// explicitly (nil coalesced to [] by MarshalJSON below) so convergence,
-	// including removal, does not depend on that unverified assumption.
+	// explicitly, including [] on removal, so convergence does not depend
+	// on that unverified assumption. The caller must pass a non-nil slice —
+	// omitempty is gone, but a nil slice still marshals to `null`, not `[]`.
 	Guardrails []string `json:"guardrails"`
-}
-
-// MarshalJSON normalizes a nil Guardrails to [] so removal is always an
-// explicit empty list on the wire, never an omitted/null field (see the
-// Guardrails field doc above).
-func (r TeamUpdateRequest) MarshalJSON() ([]byte, error) {
-	type alias TeamUpdateRequest
-	out := alias(r)
-	if out.Guardrails == nil {
-		out.Guardrails = []string{}
-	}
-	return json.Marshal(out)
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.
