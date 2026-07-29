@@ -67,6 +67,7 @@ var (
 	litellmCounter  *atomic.Int64
 	connCache       *connection.Cache
 	accessGroupFake *accessGroupFakeImpl
+	envSnapshotter  *snapshot.Snapshotter
 )
 
 // countingNoopClient wraps litellm.NoopClient and bumps an atomic counter
@@ -153,6 +154,14 @@ func (c *countingNoopClient) GetTeamInfo(ctx context.Context, teamID string) (*l
 
 func (c *countingNoopClient) DeleteTeam(ctx context.Context, teamID string) error {
 	return c.accessGroup.DeleteTeam(ctx, teamID)
+}
+
+// ListGuardrails routes to the per-suite fake so a test can seed a
+// resolvable guardrail name before refreshing envSnapshotter. Without this
+// override every declared guardrail falls through to the embedded
+// NoopClient's empty stub and is unresolved by construction.
+func (c *countingNoopClient) ListGuardrails(ctx context.Context) ([]litellm.GuardrailEntry, error) {
+	return c.accessGroup.ListGuardrails(ctx)
 }
 
 // Compile-time interface assertion — if litellm.Client grows a method, the
@@ -295,7 +304,7 @@ func setupAndRun(m *testing.M) int {
 	// §7: Snapshotter wired so the steady-state branch runs instead of
 	// the back-compat Unknown-placeholder shortcut. Synchronous refresh
 	// here avoids spawning the ticker goroutine in envtest.
-	envSnapshotter := snapshot.NewSnapshotter(llm, logr.Discard())
+	envSnapshotter = snapshot.NewSnapshotter(llm, logr.Discard())
 	envSnapshotter.RefreshForTest(context.Background())
 
 	if err := (&EnvironmentReconciler{

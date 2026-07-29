@@ -4,6 +4,7 @@ package ach
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,62 @@ func TestGuardrailUnresolvedBlocksEkProvisioning(t *testing.T) {
 	if avail := apimeta.FindStatusCondition(got.Status.Conditions, "Available"); avail != nil &&
 		avail.Status == metav1.ConditionTrue {
 		t.Error("Available must not be True with an unresolved guardrail")
+	}
+}
+
+// TestGuardrailResolvedAttachesToShellTeam exercises the full Reconcile ->
+// reconcileAccessGroup -> ensureShellTeam chain with a guardrail name that
+// DOES resolve — the counterpart to TestGuardrailUnresolvedBlocksEkProvisioning
+// (unresolved) and TestEnsureShellTeamCarriesGuardrails (shell-team unit,
+// bypasses snap.Guardrails name-matching). Without this, a regression in
+// guardrailsByName or the snapshot wiring would pass envtest silently.
+func TestGuardrailResolvedAttachesToShellTeam(t *testing.T) {
+	ctx := context.Background()
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("default", "t-uuid-default")
+	accessGroupFake.SeedGuardrail("pii-filter")
+	envSnapshotter.RefreshForTest(ctx)
+	t.Cleanup(func() {
+		accessGroupFake.Reset()
+		envSnapshotter.RefreshForTest(context.Background())
+	})
+
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-env-guardrail-resolved",
+			Namespace: WatchNamespace,
+		},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: []string{"default"},
+			Runtime:         achv1alpha1.RuntimeBlock{Guardrails: []string{"pii-filter"}},
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	var final *metav1.Condition
+	ok := Eventually(func() bool {
+		var got achv1alpha1.Environment
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		final = apimeta.FindStatusCondition(got.Status.Conditions, "Available")
+		return final != nil && final.Status == metav1.ConditionTrue
+	}, 15*time.Second, 250*time.Millisecond)
+	if !ok {
+		t.Fatalf("Available never True within 15s: %+v", final)
+	}
+
+	shellAlias := "ach-env-test-env-guardrail-resolved"
+	req, ok := accessGroupFake.lastTeamCreate[shellAlias]
+	if !ok {
+		t.Fatalf("no CreateTeam recorded for shell %s", shellAlias)
+	}
+	if !slices.Equal(req.Guardrails, []string{"pii-filter"}) {
+		t.Errorf("shell team CreateTeam.Guardrails = %v, want [pii-filter]", req.Guardrails)
 	}
 }
 

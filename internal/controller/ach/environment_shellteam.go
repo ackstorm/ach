@@ -145,15 +145,19 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 
 // shellTeamWriteErr annotates a shell-team write failure. LiteLLM premium-gates
 // team-level guardrails: a non-empty guardrails list returns 403 without an
-// Enterprise licence, both at attach time and again per request. Without this,
-// enabling the feature on an unlicensed proxy surfaces as an opaque 403 on an
-// otherwise healthy Environment.
+// Enterprise licence, both at attach time and again per request. On a 403 for
+// an Environment declaring guardrails this is the LIKELY cause — but the hint
+// is a correlation, not a confirmed diagnosis (a 403 can equally mean a
+// revoked admin key or another premium-gated field), so the message is
+// phrased as a next troubleshooting step, not a certain root cause.
 func (r *EnvironmentReconciler) shellTeamWriteErr(
 	env *achv1alpha1.Environment, alias, op string, err error,
 ) error {
 	if len(env.Spec.Runtime.Guardrails) > 0 && litellm.IsHTTPForbidden(err) {
-		return fmt.Errorf("%s shell team %s: %w (spec.runtime.guardrails requires a "+
-			"LiteLLM Enterprise licence — remove the guardrails or licence the proxy)",
+		return fmt.Errorf("%s shell team %s: %w (this Environment declares "+
+			"spec.runtime.guardrails, which requires a LiteLLM Enterprise licence — "+
+			"if licencing is not the cause, check the admin API key and other "+
+			"premium-gated fields)",
 			op, alias, err)
 	}
 	return fmt.Errorf("%s shell team %s: %w", op, alias, err)

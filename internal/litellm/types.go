@@ -171,10 +171,28 @@ type TeamUpdateRequest struct {
 	// repair so a pre-ownership-metadata shell gets adopted/stamped the
 	// first time it is next touched (references/litellm-permission-model.md).
 	Metadata map[string]any `json:"metadata,omitempty"`
-	// Guardrails mirrors NewTeamRequest.Guardrails. Sent on every shell repair
-	// so the attached set converges on spec.runtime.guardrails — including
-	// removal, where omitting the key clears it.
-	Guardrails []string `json:"guardrails,omitempty"`
+	// Guardrails mirrors NewTeamRequest.Guardrails, but deliberately has NO
+	// omitempty: this struct's own doc above says an omitted field is left
+	// untouched by LiteLLM, and references/litellm-permission-model.md §11
+	// never measured omit-vs-clear for guardrails specifically (the e2e
+	// LiteLLM instance is unlicensed, so a real guardrail write always 403s
+	// there — see test/e2e/guardrails_test.go). Rather than trust that
+	// omission clears the set, ensureShellTeam always sends the field
+	// explicitly (nil coalesced to [] by MarshalJSON below) so convergence,
+	// including removal, does not depend on that unverified assumption.
+	Guardrails []string `json:"guardrails"`
+}
+
+// MarshalJSON normalizes a nil Guardrails to [] so removal is always an
+// explicit empty list on the wire, never an omitted/null field (see the
+// Guardrails field doc above).
+func (r TeamUpdateRequest) MarshalJSON() ([]byte, error) {
+	type alias TeamUpdateRequest
+	out := alias(r)
+	if out.Guardrails == nil {
+		out.Guardrails = []string{}
+	}
+	return json.Marshal(out)
 }
 
 // TeamListResponse is the GET /v2/team/list envelope.

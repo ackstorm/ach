@@ -204,3 +204,9 @@ the team model-access path — which is why ACH uses an impossible model name.
 - `x-litellm-applied-guardrails` names what actually ran, per request.
 - Team metadata mixes non-string values alongside ACH's ownership markers —
   the reason `teamMetadataStrings` exists.
+- **Not measured**: whether `POST /team/update` omitting `guardrails` keeps
+  the prior set (this doc's general "omitted = keep" claim in §? for other
+  team fields) or clears it. Our unlicensed instance 403s on any non-empty
+  guardrail write, so removal-by-omission was never observable end-to-end.
+  ACH does not rely on this either way — `TeamUpdateRequest.Guardrails` has
+  no `omitempty`; the field is always sent explicitly (`[]` when clearing).

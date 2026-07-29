@@ -107,8 +107,8 @@ func NewShellTeamRequest(env string, guardrails []string) *NewTeamRequest {
 // map[string]string decode would drop the ACH markers along with it and the
 // operator would disown its own shell teams.
 func teamMetadataStrings(raw json.RawMessage) map[string]string {
-	var meta map[string]any
-	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
+	meta := decodeTeamMetadata(raw)
+	if meta == nil {
 		return nil
 	}
 	out := make(map[string]string, len(meta))
@@ -120,17 +120,29 @@ func teamMetadataStrings(raw json.RawMessage) map[string]string {
 	return out
 }
 
+// decodeTeamMetadata unmarshals a LiteLLM team metadata blob into its raw
+// map form, or nil if absent/unparseable. Shared by teamMetadataStrings and
+// TeamGuardrails so IsShellTeamManaged + ShellTeamDrifted's back-to-back
+// calls on the same TeamListEntry don't each decode the blob independently.
+func decodeTeamMetadata(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var meta map[string]any
+	if json.Unmarshal(raw, &meta) != nil {
+		return nil
+	}
+	return meta
+}
+
 // TeamGuardrails reads the guardrail names LiteLLM stores under
 // metadata.guardrails. Absent, unparseable, or wrongly-typed metadata yields
 // nil — which ShellTeamDrifted reads as "none attached", so the repair writes
 // the desired set. Non-string members are skipped rather than failing the whole
 // read, matching teamMetadataStrings' tolerance of LiteLLM's mixed blob.
 func TeamGuardrails(raw json.RawMessage) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-	var meta map[string]any
-	if err := json.Unmarshal(raw, &meta); err != nil {
+	meta := decodeTeamMetadata(raw)
+	if meta == nil {
 		return nil
 	}
 	arr, ok := meta["guardrails"].([]any)

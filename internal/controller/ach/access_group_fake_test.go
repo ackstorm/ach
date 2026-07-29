@@ -49,6 +49,10 @@ type accessGroupFakeImpl struct {
 	mcps         map[string]string
 	agents       map[string]string
 	teamsByAlias map[string][]litellm.TeamListEntry
+	// guardrails seeds ListGuardrails — name→entry, populated via
+	// SeedGuardrail before creating the Environment CR and BEFORE calling
+	// envSnapshotter.RefreshForTest, since Snapshot() is a cached read.
+	guardrails map[string]litellm.GuardrailEntry
 
 	// teamMirror is teamID → access_group_ids (the team-side mirror).
 	teamMirror map[string][]string
@@ -110,6 +114,7 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		mcps:            map[string]string{},
 		agents:          map[string]string{},
 		teamsByAlias:    map[string][]litellm.TeamListEntry{},
+		guardrails:      map[string]litellm.GuardrailEntry{},
 		teamMirror:      map[string][]string{},
 		teamsByID:       map[string]litellm.TeamListEntry{},
 		teamCreateCalls: map[string]int{},
@@ -135,6 +140,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.mcps = map[string]string{}
 	f.agents = map[string]string{}
 	f.teamsByAlias = map[string][]litellm.TeamListEntry{}
+	f.guardrails = map[string]litellm.GuardrailEntry{}
 	f.teamMirror = map[string][]string{}
 	f.mirrorHistory = nil
 	f.mirrorFrozen = false
@@ -556,6 +562,25 @@ func (f *accessGroupFakeImpl) SeedTeam(alias, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.teamsByAlias[alias] = append(f.teamsByAlias[alias], litellm.TeamListEntry{TeamID: id, TeamAlias: alias})
+}
+
+// SeedGuardrail registers a resolvable guardrail name for ListGuardrails.
+// Callers must refresh envSnapshotter (RefreshForTest) after seeding —
+// Snapshot() is a cached read, not live.
+func (f *accessGroupFakeImpl) SeedGuardrail(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.guardrails[name] = litellm.GuardrailEntry{GuardrailName: name}
+}
+
+func (f *accessGroupFakeImpl) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]litellm.GuardrailEntry, 0, len(f.guardrails))
+	for _, g := range f.guardrails {
+		out = append(out, g)
+	}
+	return out, nil
 }
 
 // SeedTeamMirror sets team.access_group_ids for one team — the LiteLLM

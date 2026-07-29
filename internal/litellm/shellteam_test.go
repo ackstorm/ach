@@ -230,6 +230,31 @@ func TestNewShellTeamRequestCarriesGuardrails(t *testing.T) {
 	}
 }
 
+// TestTeamUpdateRequestGuardrailsAlwaysExplicit: unlike NewShellTeamRequest
+// (create path, omitempty), TeamUpdateRequest.Guardrails always serialises —
+// including [] on removal — because ACH does not rely on the unverified
+// "omitted key = keep prior value" assumption for this field (see
+// references/litellm-permission-model.md §11).
+func TestTeamUpdateRequestGuardrailsAlwaysExplicit(t *testing.T) {
+	b, err := json.Marshal(TeamUpdateRequest{TeamID: "t-1", Guardrails: []string{"pii-filter"}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"guardrails":["pii-filter"]`) {
+		t.Fatalf("guardrails missing from %s", b)
+	}
+
+	for name, g := range map[string][]string{"nil": nil, "empty": {}} {
+		b, err := json.Marshal(TeamUpdateRequest{TeamID: "t-1", Guardrails: g})
+		if err != nil {
+			t.Fatalf("%s marshal: %v", name, err)
+		}
+		if !strings.Contains(string(b), `"guardrails":[]`) {
+			t.Errorf("%s must explicitly clear via [], got %s", name, b)
+		}
+	}
+}
+
 // TestUserShellNeverCarriesGuardrails: D2 — coverage is EK-only. A pk_ lives in
 // the user shell, which spans every Environment its owner is entitled to, so
 // there is no per-Environment attachment point on it.
