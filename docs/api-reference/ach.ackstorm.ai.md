@@ -691,7 +691,7 @@ _Appears in:_
 Environment is the Schema for the environments API (Hub §6).
 
 An Environment is the ACH product boundary: a bundle of runtime
-(models, mcpServers, a2aAgents) and context (prompts, plugins,
+(models, mcpServers, a2aAgents, guardrails) and context (prompts, plugins,
 artifacts) capabilities exposed to authorized Teams. The ACH
 Operator reconciles spec.runtime into a LiteLLM access group of
 the same name (§6.2). The CEL XValidation rules above enforce
@@ -1779,6 +1779,7 @@ _Appears in:_
 | `models` _string array_ | Models lists LiteLLM model names (model_name) included in this Environment.<br />Names are projected into LiteLLM API request bodies (not ACH URL routing),<br />so the looser deny-pattern admits provider-prefixed ("openai/gpt-4") and<br />tagged ("gpt-4o:latest") names while forbidding URL-injection metacharacters<br />? # % plus whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). Only Models uses the loose pattern; see MCPServers<br />and A2AAgents below for why those must use the strict (no-slash) pattern. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `mcpServers` _string array_ | MCPServers lists LiteLLM MCP server names (server_name).<br />Names are used as chi route parameters at the forwarder (/mcp/\{name\});<br />a slash-containing name would be admitted but always 403 (chi matches<br />raw "%2F"-encoded segment against the decoded DB value — never matches).<br />The strict deny-pattern therefore also forbids "/" and "\" in addition<br />to ? # % whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `a2aAgents` _string array_ | A2AAgents lists LiteLLM A2A agent names (agent_name).<br />Names are used as chi route parameters at the forwarder (/a2a/\{name\});<br />same routing constraint as MCPServers — slash-containing names always 403.<br />The strict deny-pattern forbids "/" and "\" in addition to ? # %<br />whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `guardrails` _string array_ | Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM<br />runs on this Environment's ek_ traffic.<br />WHICH traffic is each guardrail's own business, not ACH's: a guardrail<br />declares one or more modes, and ACH only attaches the name. A<br />pre_call/post_call guardrail inspects LLM completions and does NOT run on<br />/mcp traffic — that needs a guardrail configured with pre_mcp_call or<br />during_mcp_call. Listing a name here is therefore not a blanket promise<br />of coverage; `ach-cli runtime guardrails` prints each one's MODE.<br />This axis INVERTS the semantics of its siblings: models, mcpServers and<br />a2aAgents are additive grants, a guardrail is a constraint. ACH attaches<br />the names to the Environment's deny-all shell team; LiteLLM unions them<br />across key, team and request body, so a caller can ADD to the set but<br />never subtract from it.<br />Coverage is EK-only. ek_ keys live in this Environment's shell team and<br />inherit its guardrails; pk_ keys live in ach-user-<email> and reach the<br />Environment through the access group, which carries no guardrail field.<br />See references/litellm-permission-model.md.<br />An unresolved name blocks AccessGroupSynced, which blocks NEW ek_<br />minting — it does NOT stop existing keys, hydrate, or forwarded traffic.<br />Entries must be unique: the operator compares the attached set against<br />LiteLLM's stored list to decide whether a repair is needed, and<br />duplicates make that comparison undecidable (LiteLLM's own duplicate<br />handling differs between its storage and enforcement paths).<br />ACH never creates, updates or deletes guardrail definitions. | \{  \} | MaxItems: 50 <br />items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
 #### S3Source
@@ -2131,7 +2132,7 @@ _Appears in:_
 
 
 
-UnresolvedRuntime mirrors the three runtime reference lists (§6.4) and
+UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
 names the specific entries that did not resolve against LiteLLM.
 
 
@@ -2144,6 +2145,7 @@ _Appears in:_
 | `models` _string array_ |  | \{  \} |  |
 | `mcpServers` _string array_ |  | \{  \} |  |
 | `a2aAgents` _string array_ |  | \{  \} |  |
+| `guardrails` _string array_ | Guardrails lists spec.runtime.guardrails entries not registered in<br />LiteLLM. LiteLLM accepts unknown guardrail names silently and never runs<br />them, so an unlisted name is a fail-OPEN hole. Surfacing it here and<br />failing AccessGroupSynced converts that into a blocked ek_ mint. | \{  \} |  |
 
 
 #### WebhookAuthSpec

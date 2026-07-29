@@ -54,9 +54,10 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 	alias := litellm.ShellTeamAlias(env.Name)
 
 	if existingID == "" {
-		created, err := r.LiteLLM.CreateTeam(ctx, litellm.NewShellTeamRequest(env.Name))
+		created, err := r.LiteLLM.CreateTeam(ctx,
+			litellm.NewShellTeamRequest(env.Name, env.Spec.Runtime.Guardrails))
 		if err != nil {
-			return "", fmt.Errorf("create shell team %s: %w", alias, err)
+			return "", r.shellTeamWriteErr(env, alias, "create", err)
 		}
 		if created == nil || created.TeamID == "" {
 			return "", fmt.Errorf("create shell team %s: LiteLLM returned no team_id", alias)
@@ -100,22 +101,31 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 		)
 	}
 
-	if drifted := litellm.ShellTeamDrifted(*info); drifted || !managed {
+	if drifted := litellm.ShellTeamDrifted(*info, env.Spec.Runtime.Guardrails); drifted || !managed {
+		// Metadata is sent on EVERY repair and that is load-bearing, not
+		// incidental: LiteLLM's /team/update replaces the entire metadata
+		// column when a premium field (guardrails) arrives without a metadata
+		// object, which would wipe the ach_managed / ach_environment ownership
+		// markers and make the operator disown this shell on the next pass.
+		// append(...) guarantees a non-nil slice: TeamUpdateRequest.Guardrails
+		// has no omitempty, so a nil value would marshal to `null` instead of
+		// the explicit `[]` that removal relies on.
 		resp, err := r.LiteLLM.UpdateTeam(ctx, &litellm.TeamUpdateRequest{
 			TeamID:           existingID,
 			Models:           []string{litellm.ShellTeamDenyAllModel},
 			ObjectPermission: litellm.ShellTeamPermissions(),
 			Metadata:         litellm.ShellTeamMetadata(env.Name),
+			Guardrails:       append([]string{}, env.Spec.Runtime.Guardrails...),
 		})
 		if err != nil {
-			return "", fmt.Errorf("repair shell team %s: %w", alias, err)
+			return "", r.shellTeamWriteErr(env, alias, "repair", err)
 		}
 		// POST /team/update returns the applied state inline (unlike the
 		// list endpoints) — re-check it instead of trusting the 200. A
 		// LiteLLM that accepts the write but does not apply it would
 		// otherwise leave the Environment reporting AccessGroupSynced=True
 		// over a fail-open shell forever, silently.
-		if resp != nil && litellm.ShellTeamDrifted(*resp) {
+		if resp != nil && litellm.ShellTeamDrifted(*resp, env.Spec.Runtime.Guardrails) {
 			return "", fmt.Errorf("repair shell team %s: sentinels still drifted after update", alias)
 		}
 		if !managed {
@@ -134,6 +144,26 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 		logger.Info("shell team sentinels unverifiable from read-back; GetTeamInfo returned neither models nor object_permission", "alias", alias, "id", existingID)
 	}
 	return existingID, nil
+}
+
+// shellTeamWriteErr annotates a shell-team write failure. LiteLLM premium-gates
+// team-level guardrails: a non-empty guardrails list returns 403 without an
+// Enterprise licence, both at attach time and again per request. On a 403 for
+// an Environment declaring guardrails this is the LIKELY cause — but the hint
+// is a correlation, not a confirmed diagnosis (a 403 can equally mean a
+// revoked admin key or another premium-gated field), so the message is
+// phrased as a next troubleshooting step, not a certain root cause.
+func (r *EnvironmentReconciler) shellTeamWriteErr(
+	env *achv1alpha1.Environment, alias, op string, err error,
+) error {
+	if len(env.Spec.Runtime.Guardrails) > 0 && litellm.IsHTTPForbidden(err) {
+		return fmt.Errorf("%s shell team %s: %w (this Environment declares "+
+			"spec.runtime.guardrails, which requires a LiteLLM Enterprise licence — "+
+			"if licencing is not the cause, check the admin API key and other "+
+			"premium-gated fields)",
+			op, alias, err)
+	}
+	return fmt.Errorf("%s shell team %s: %w", op, alias, err)
 }
 
 // deleteShellTeam removes the Environment's shell team. Idempotent: an absent

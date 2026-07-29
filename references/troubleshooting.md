@@ -326,6 +326,23 @@ empty resource sets, but every ID in `access_mcp_server_ids` /
 reconciler converts names → IDs on-demand each reconcile (no
 Snapshotter cache), so the condition reflects fresh upstream state.
 
+### ❌ Environment stuck `AccessGroupSynced=False` / `UnresolvedReferences` naming a guardrail
+The guardrail does not exist on the proxy. LiteLLM accepts unknown
+guardrail names and silently never runs them, so ACH refuses to mint
+new `ek_` keys (`POST /platform/keys` → 503 `not_ready`) rather than
+hand out a key believing it is protected. Check
+`ach-cli runtime guardrails list` for the exact name.
+
+**Scope of that barrier:** it blocks NEW key minting only. Existing
+`ek_` keys keep serving unprotected, hydrate still returns the
+manifest, and the forwarder still proxies — none of those read
+Environment conditions. Fix the name; there is no revocation path for
+a typo.
+
+A guardrail listed with `defaultOn: true` in `ach-cli runtime guardrails`
+(or `GET /platform/admin/runtime/guardrails`) already runs on every
+request — naming it in an Environment changes nothing.
+
 ### Team has zero models/MCP tools although the access group lists it
 
 LiteLLM stores the team↔access-group relation twice: `access_group.assigned_team_ids`

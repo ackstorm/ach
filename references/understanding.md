@@ -125,7 +125,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   `PluginMarketplace` parses `.claude-plugin/marketplace.json`
   (manifest-less plugins accepted — any convention component suffices).
 - **governance**: `Environment` — THE product boundary:
-  `runtime{models,mcpServers,a2aAgents}` + `context{prompts,plugins,artifacts,skills}`
+  `runtime{models,mcpServers,a2aAgents,guardrails}` + `context{prompts,plugins,artifacts,skills}`
   + `authorizedTeams` (≥1, CEL). Status: `ExecutionResourcesResolved`
   (LiteLLM name resolution + content-gating: `last_successful_refresh IS NULL`
   on a referenced skill/plugin row blocks it — prevents Available=True
@@ -316,7 +316,7 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   `ach_refresh` NOTIFY; the operator's refreshsignal listener maps it to a
   GenericEvent), object inventory (SYNC column: Available/Degraded |
   fresh/STALE/never | `fresh*` false-green for name-only prompts/artifacts |
-  projected), runtime catalog (`/platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`).
+  projected), runtime catalog (`/platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,guardrails,catalog}`).
 - UI Objects API (G2, Environment-only v1): `origin='ui'` DRAFT rows, YAML
   export → kubectl apply → operator takeover. `ACH_DISABLE_UI_WRITES=true`
   kills the write path.

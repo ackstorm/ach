@@ -78,12 +78,20 @@ type ContextItem struct {
 	DownloadURL string `json:"downloadUrl"`
 }
 
-// RuntimeBlock is the {models, mcpServers, a2aAgents} envelope; every slice
-// is ALWAYS present and serialized as `[]` when empty per API-04.
+// RuntimeBlock is the runtime envelope. models/mcpServers/a2aAgents are ALWAYS
+// present and serialized as `[]` when empty per API-04.
+//
+// Guardrails is the exception on BOTH counts. It is []string, not []RuntimeItem,
+// because a guardrail is never addressed by a client — LiteLLM applies it — so
+// there is no endpoint to publish. And it is omitempty rather than
+// always-present because internal/cli/manifest decodes with
+// DisallowUnknownFields: emitting the key unconditionally would break every
+// ach-cli built before this field existed.
 type RuntimeBlock struct {
 	Models     []RuntimeItem `json:"models"`
 	MCPServers []RuntimeItem `json:"mcpServers"`
 	A2AAgents  []RuntimeItem `json:"a2aAgents"`
+	Guardrails []string      `json:"guardrails,omitempty"`
 }
 
 // ContextBlock is the {prompts, plugins, artifacts, skills} envelope; every
@@ -115,6 +123,8 @@ func emptyRuntime() RuntimeBlock {
 		Models:     []RuntimeItem{},
 		MCPServers: []RuntimeItem{},
 		A2AAgents:  []RuntimeItem{},
+		// Guardrails is deliberately left nil — nil is the omitted case, which
+		// is what keeps older CLIs decoding. Do not initialise it.
 	}
 }
 
@@ -314,6 +324,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 //   - models     -> ${BaseURL}/v1               (all models share one endpoint)
 //   - mcpServers -> ${BaseURL}/mcp/<name>
 //   - a2aAgents  -> ${BaseURL}/a2a/<name>
+//   - guardrails -> (no endpoint; names only — applied by LiteLLM, never called)
 //
 // Phase 4 Forwarder may extend the prefix scheme; Phase 3 freezes these.
 //
@@ -340,6 +351,8 @@ func toRuntimeBlockFromRow(row *db.EnvironmentRow, baseURL string) RuntimeBlock 
 			Endpoint: baseURL + "/a2a/" + url.PathEscape(name),
 		})
 	}
+	// Names only, and only when non-empty — see RuntimeBlock.Guardrails.
+	out.Guardrails = row.RuntimeGuardrails
 	return out
 }
 

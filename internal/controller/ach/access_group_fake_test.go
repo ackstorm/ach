@@ -49,6 +49,10 @@ type accessGroupFakeImpl struct {
 	mcps         map[string]string
 	agents       map[string]string
 	teamsByAlias map[string][]litellm.TeamListEntry
+	// guardrails seeds ListGuardrails — name→entry, populated via
+	// SeedGuardrail before creating the Environment CR and BEFORE calling
+	// envSnapshotter.RefreshForTest, since Snapshot() is a cached read.
+	guardrails map[string]litellm.GuardrailEntry
 
 	// teamMirror is teamID → access_group_ids (the team-side mirror).
 	teamMirror map[string][]string
@@ -60,7 +64,11 @@ type accessGroupFakeImpl struct {
 	teamUpdateCalls map[string]int
 	teamDeleteCalls map[string]int
 	lastTeamCreate  map[string]litellm.NewTeamRequest
-	teamCreateErr   error
+	// lastTeamUpdate captures the exact TeamUpdateRequest sent, keyed by
+	// team_id — lets guardrail tests assert what ACH transmitted without
+	// depending on the fake's read-back reconstruction.
+	lastTeamUpdate map[string]litellm.TeamUpdateRequest
+	teamCreateErr  error
 
 	// teamUpdateResult, when non-nil, is returned by UpdateTeam VERBATIM
 	// instead of the post-write entry state — models a LiteLLM whose POST
@@ -106,12 +114,14 @@ func newAccessGroupFake() *accessGroupFakeImpl {
 		mcps:            map[string]string{},
 		agents:          map[string]string{},
 		teamsByAlias:    map[string][]litellm.TeamListEntry{},
+		guardrails:      map[string]litellm.GuardrailEntry{},
 		teamMirror:      map[string][]string{},
 		teamsByID:       map[string]litellm.TeamListEntry{},
 		teamCreateCalls: map[string]int{},
 		teamUpdateCalls: map[string]int{},
 		teamDeleteCalls: map[string]int{},
 		lastTeamCreate:  map[string]litellm.NewTeamRequest{},
+		lastTeamUpdate:  map[string]litellm.TeamUpdateRequest{},
 		teamInfoErrByID: map[string]error{},
 	}
 }
@@ -130,6 +140,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.mcps = map[string]string{}
 	f.agents = map[string]string{}
 	f.teamsByAlias = map[string][]litellm.TeamListEntry{}
+	f.guardrails = map[string]litellm.GuardrailEntry{}
 	f.teamMirror = map[string][]string{}
 	f.mirrorHistory = nil
 	f.mirrorFrozen = false
@@ -139,6 +150,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.teamUpdateCalls = map[string]int{}
 	f.teamDeleteCalls = map[string]int{}
 	f.lastTeamCreate = map[string]litellm.NewTeamRequest{}
+	f.lastTeamUpdate = map[string]litellm.TeamUpdateRequest{}
 	f.teamCreateErr = nil
 	f.teamUpdateResult = nil
 	f.teamInfoErrByID = map[string]error{}
@@ -393,7 +405,7 @@ func (f *accessGroupFakeImpl) CreateTeam(_ context.Context, req *litellm.NewTeam
 		TeamAlias:        req.TeamAlias,
 		Models:           req.Models,
 		ObjectPermission: req.ObjectPermission,
-		Metadata:         marshalTeamMetadata(req.Metadata),
+		Metadata:         marshalTeamMetadata(mergeGuardrailsIntoMetadata(req.Metadata, req.Guardrails)),
 	}
 	f.teamsByID[id] = entry
 	f.teamsByAlias[req.TeamAlias] = []litellm.TeamListEntry{entry}
@@ -405,12 +417,13 @@ func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpd
 	defer f.mu.Unlock()
 	f.order = append(f.order, "UpdateTeam")
 	f.teamUpdateCalls[req.TeamID]++
+	f.lastTeamUpdate[req.TeamID] = *req
 	entry := f.teamsByID[req.TeamID]
 	entry.TeamID = req.TeamID
 	entry.Models = req.Models
 	entry.ObjectPermission = req.ObjectPermission
 	if req.Metadata != nil {
-		entry.Metadata = marshalTeamMetadata(req.Metadata)
+		entry.Metadata = marshalTeamMetadata(mergeGuardrailsIntoMetadata(req.Metadata, req.Guardrails))
 	}
 	f.teamsByID[req.TeamID] = entry
 	if entry.TeamAlias != "" {
@@ -427,6 +440,24 @@ func (f *accessGroupFakeImpl) UpdateTeam(_ context.Context, req *litellm.TeamUpd
 // marshalTeamMetadata mirrors how the real RESTClient receives metadata back
 // from LiteLLM: ACH sends a map[string]any on the request, LiteLLM echoes it
 // as the TeamListEntry.Metadata json.RawMessage on read-back.
+// mergeGuardrailsIntoMetadata simulates LiteLLM's measured contract: a
+// top-level `guardrails` request field is stored under team.metadata.guardrails
+// (references/litellm-permission-model.md §11). A non-empty list sets the key;
+// an empty/nil list clears it — the write is always the whole desired set
+// (Task 5), never an incremental patch.
+func mergeGuardrailsIntoMetadata(m map[string]any, guardrails []string) map[string]any {
+	out := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	if len(guardrails) > 0 {
+		out["guardrails"] = guardrails
+	} else {
+		delete(out, "guardrails")
+	}
+	return out
+}
+
 func marshalTeamMetadata(m map[string]any) json.RawMessage {
 	if len(m) == 0 {
 		return nil
@@ -531,6 +562,25 @@ func (f *accessGroupFakeImpl) SeedTeam(alias, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.teamsByAlias[alias] = append(f.teamsByAlias[alias], litellm.TeamListEntry{TeamID: id, TeamAlias: alias})
+}
+
+// SeedGuardrail registers a resolvable guardrail name for ListGuardrails.
+// Callers must refresh envSnapshotter (RefreshForTest) after seeding —
+// Snapshot() is a cached read, not live.
+func (f *accessGroupFakeImpl) SeedGuardrail(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.guardrails[name] = litellm.GuardrailEntry{GuardrailName: name}
+}
+
+func (f *accessGroupFakeImpl) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]litellm.GuardrailEntry, 0, len(f.guardrails))
+	for _, g := range f.guardrails {
+		out = append(out, g)
+	}
+	return out, nil
 }
 
 // SeedTeamMirror sets team.access_group_ids for one team — the LiteLLM

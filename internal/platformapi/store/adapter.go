@@ -121,6 +121,7 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 			Models:     r.RuntimeModels,
 			MCPServers: r.RuntimeMCPServers,
 			A2AAgents:  r.RuntimeA2AAgents,
+			Guardrails: r.RuntimeGuardrails,
 		},
 		ResourceVersion: r.ResourceVersion,
 		Description:     r.Description,

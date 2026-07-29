@@ -62,6 +62,15 @@ func IsHTTPNotFound(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
 
+// IsHTTPForbidden reports whether err is an *APIError carrying HTTP 403.
+// LiteLLM premium-gates team-level guardrails: a non-empty guardrails write
+// returns 403 on a proxy without an Enterprise licence. The Environment
+// reconciler uses this to turn an opaque 403 into an actionable message.
+func IsHTTPForbidden(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden
+}
+
 // Auth401Error is the typed error returned by Client.makeRequest when
 // LiteLLM responds with HTTP 401. The reconciler's §7.7 fast-path uses
 // errors.As(err, &auth401) to detect it and trigger cache-invalidate +

@@ -14,8 +14,13 @@ package ach
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
 
 // TestCELAdmission walks the valid + invalid fixture matrix and
@@ -234,6 +239,58 @@ func TestCELAdmission(t *testing.T) {
 				_ = DeleteByGVKName(context.Background(), tc.apiVersion, tc.kind,
 					"ach-system", tc.resourceName)
 			})
+		})
+	}
+}
+
+// TestEnvironmentGuardrailsAdmission: the guardrails axis carries the strict
+// route-segment deny-pattern, a 253-byte cap, and CEL uniqueness. Uniqueness
+// matters because Task 5's drift comparator compares deduplicated sets — a
+// duplicate in the spec would make "did LiteLLM change this?" undecidable.
+func TestEnvironmentGuardrailsAdmission(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name       string
+		guardrails []string
+		wantErr    bool
+	}{
+		{"plain", []string{"pii-filter"}, false},
+		{"dotted", []string{"pii-filter.v1"}, false},
+		{"two distinct", []string{"a", "b"}, false},
+		{"empty list", []string{}, false},
+		{"duplicate", []string{"a", "a"}, true},
+		{"slash", []string{"bad/name"}, true},
+		{"backslash", []string{`bad\name`}, true},
+		{"question", []string{"bad?name"}, true},
+		{"hash", []string{"bad#name"}, true},
+		{"percent", []string{"bad%name"}, true},
+		{"space", []string{"bad name"}, true},
+		{"tab", []string{"bad\tname"}, true},
+		{"too long", []string{strings.Repeat("a", 254)}, true},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cr := &achv1alpha1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("guardrail-admission-%d", i),
+					Namespace: WatchNamespace,
+				},
+				Spec: achv1alpha1.EnvironmentSpec{
+					AuthorizedTeams: []string{"default"},
+					Runtime:         achv1alpha1.RuntimeBlock{Guardrails: tc.guardrails},
+					Context:         achv1alpha1.ContextBlock{},
+				},
+			}
+			err := k8sClient.Create(ctx, cr)
+			if err == nil {
+				t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+			}
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected admission rejection for %v", tc.guardrails)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected rejection for %v: %v", tc.guardrails, err)
+			}
 		})
 	}
 }

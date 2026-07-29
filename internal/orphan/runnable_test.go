@@ -61,6 +61,9 @@ func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, er
 	return nil, nil
 }
 
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
 func (f *fakeLiteLLM) ListUserKeys(_ context.Context, userID string) ([]litellm.UserKeyInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

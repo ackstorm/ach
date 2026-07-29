@@ -195,6 +195,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |
 | `test-integration` | A | Integration tests (build tag: integration; testcontainers). |
+| `test-integration-pkg PKG=… [FOCUS=…]` | A | Integration tests for one package (build tag: integration). |
 | `test-unit-pkg PKG=…` | A | Unit tests for one package. |
 | `test-envtest-pkg PKG=… [FOCUS=…] [TIMEOUT=…]` | A | envtest for one package. |
 | `test-smoke-idempotency` | A | Accelerated AC-R1 idempotency smoke (10s). |

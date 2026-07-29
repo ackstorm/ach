@@ -42,6 +42,11 @@ import (
 // channel select the matching row to drive their read-side caches.
 const environmentsChannel = "ach_environments_changed"
 
+// reasonResourceUnresolved is the ExecutionResourcesResolved=False reason
+// when any spec.runtime.* or context.* entry did not resolve. Named (rather
+// than inline) because Task 4's envtest asserts against it directly.
+const reasonResourceUnresolved = "ResourceUnresolved"
+
 // ekDrainMaxIterations bounds the §6.5 step-4 drain loop. Phase 1 has
 // zero ek_ rows, so the first listing returns 0 and the loop exits on
 // iteration 0; the cap exists to document the W3-concrete contract for
@@ -223,7 +228,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Read the LiteLLM snapshot (lock-free) and compute set difference
-	// spec.runtime.X \ snapshot.X for X ∈ {Models, MCPServers, A2AAgents}.
+	// spec.runtime.X \ snapshot.X for X ∈ {Models, MCPServers, A2AAgents, Guardrails}.
 	// Lookup cost is O(n) in spec.runtime size, NOT in snapshot size.
 	snap := r.Snapshotter.Snapshot()
 	unresolved := achv1alpha1.UnresolvedRuntime{}
@@ -242,7 +247,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			unresolved.A2AAgents = append(unresolved.A2AAgents, a)
 		}
 	}
-	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) + len(unresolved.A2AAgents)
+	for _, g := range env.Spec.Runtime.Guardrails {
+		if _, ok := snap.Guardrails[g]; !ok {
+			unresolved.Guardrails = append(unresolved.Guardrails, g)
+		}
+	}
+	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) +
+		len(unresolved.A2AAgents) + len(unresolved.Guardrails)
 
 	// Context content closed-set (handoff item 4 / Task B9): a listed plugin or
 	// skill must resolve AND have content synced — see contextContentUnresolved.
@@ -260,12 +271,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	var message string
 	if totalUnresolved > 0 {
 		condStatus = metav1.ConditionFalse
-		reason = "ResourceUnresolved"
-		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, context_plugins=%d, context_skills=%d)",
+		reason = reasonResourceUnresolved
+		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, guardrails=%d, context_plugins=%d, context_skills=%d)",
 			totalUnresolved,
 			len(unresolved.Models),
 			len(unresolved.MCPServers),
 			len(unresolved.A2AAgents),
+			len(unresolved.Guardrails),
 			len(unresolvedContextPlugins),
 			len(unresolvedContextSkills),
 		)
@@ -316,7 +328,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// §7: real AccessGroupSynced reconciliation. The helper owns the
 	// closed-set Type/Reason mapping per Hub §6.6 and returns the
 	// metav1.Condition to publish.
-	agCond := r.reconcileAccessGroup(ctx, &env)
+	agCond := r.reconcileAccessGroup(ctx, &env, unresolved.Guardrails)
 	// Surface snapshot-stale prefix so operators see when the binding
 	// decision was made against cached LiteLLM data (Hub §6.4 / D-14).
 	if snap.Stale && agCond.Status == metav1.ConditionTrue {
@@ -597,6 +609,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		RuntimeModels:                       env.Spec.Runtime.Models,
 		RuntimeMCPServers:                   env.Spec.Runtime.MCPServers,
 		RuntimeA2AAgents:                    env.Spec.Runtime.A2AAgents,
+		RuntimeGuardrails:                   env.Spec.Runtime.Guardrails,
 		AvailableCondition:                  availBytes,
 		AccessGroupSyncedCondition:          agSyncedBytes,
 		ExecutionResourcesResolvedCondition: execResolvedBytes,
@@ -670,9 +683,18 @@ func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
 //     (ach-env-<name>) could not be created or repaired. ek_ keys minted
 //     against a missing shell would be fail-open on models, so the
 //     Environment must not go Available.
+//
+// unresolvedGuardrails is passed in rather than recomputed or read from
+// env.Status because it is resolved against the operator's snapshot in
+// Reconcile, not against the live list calls this function makes. It is a
+// PARAMETER so the barrier is visible at the call site: reading
+// env.Status.UnresolvedRuntime here would work today only because Reconcile
+// happens to populate it first, and a future reorder would silently disable
+// the only gate that blocks ek_ minting on a typo'd guardrail.
 func (r *EnvironmentReconciler) reconcileAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
+	unresolvedGuardrails []string,
 ) metav1.Condition {
 	logger := log.FromContext(ctx).WithValues("environment", env.Name)
 
@@ -766,14 +788,14 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// over the human authorized teams only (the shell has no members).
 	resolvedAuthorizedTeamIDs := slices.Clone(teamIDs)
 
-	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved) > 0 {
+	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved)+len(unresolvedGuardrails) > 0 {
 		return metav1.Condition{
 			Type:   "AccessGroupSynced",
 			Status: metav1.ConditionFalse,
 			Reason: "UnresolvedReferences",
 			Message: fmt.Sprintf(
-				"unresolved: mcpServers=%v a2aAgents=%v authorizedTeams=%v",
-				mcpUnresolved, agentUnresolved, teamUnresolved,
+				"unresolved: mcpServers=%v a2aAgents=%v authorizedTeams=%v guardrails=%v",
+				mcpUnresolved, agentUnresolved, teamUnresolved, unresolvedGuardrails,
 			),
 			ObservedGeneration: env.Generation,
 			LastTransitionTime: metav1.Now(),

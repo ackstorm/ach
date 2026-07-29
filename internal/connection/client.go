@@ -73,6 +73,14 @@ func (c *Client) ListA2AAgents(ctx context.Context) ([]litellm.AgentEntry, error
 	return client.ListA2AAgents(ctx)
 }
 
+func (c *Client) ListGuardrails(ctx context.Context) ([]litellm.GuardrailEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.ListGuardrails(ctx)
+}
+
 func (c *Client) ListUserKeys(ctx context.Context, userID string) ([]litellm.UserKeyInfo, error) {
 	client, err := c.current()
 	if err != nil {

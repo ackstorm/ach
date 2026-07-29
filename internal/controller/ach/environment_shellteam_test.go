@@ -306,7 +306,7 @@ func TestShellTeamFailedCondition(t *testing.T) {
 func TestReconcileDeletionOrder(t *testing.T) {
 	fake := newAccessGroupFake()
 	// Seed a shell team so deleteShellTeam has something to delete.
-	if _, err := fake.CreateTeam(context.Background(), litellm.NewShellTeamRequest("demo")); err != nil {
+	if _, err := fake.CreateTeam(context.Background(), litellm.NewShellTeamRequest("demo", nil)); err != nil {
 		t.Fatalf("seed CreateTeam: %v", err)
 	}
 	fake.order = nil
@@ -365,4 +365,96 @@ func TestReconcileDeletionOrder(t *testing.T) {
 	if !slices.Equal(fake.order, wantOrder) {
 		t.Fatalf("call order = %v, want %v", fake.order, wantOrder)
 	}
+}
+
+// TestEnsureShellTeamCarriesGuardrails covers three paths: create carries the
+// guardrails AND the metadata; repair of a guardrail-less existing team writes
+// them; and an Environment declaring NONE against a team that HAS them fires
+// an update clearing them (the S2 regression).
+func TestEnsureShellTeamCarriesGuardrails(t *testing.T) {
+	t.Run("create carries guardrails and metadata", func(t *testing.T) {
+		fake := newAccessGroupFake()
+		r := &EnvironmentReconciler{LiteLLM: fake}
+		env := &achv1alpha1.Environment{}
+		env.Name = "demo"
+		env.Spec.Runtime.Guardrails = []string{"pii-filter"}
+
+		if _, err := r.ensureShellTeam(context.Background(), env, "", logr.Discard()); err != nil {
+			t.Fatalf("ensureShellTeam: %v", err)
+		}
+		req := fake.lastTeamCreate["ach-env-demo"]
+		if !slices.Equal(req.Guardrails, []string{"pii-filter"}) {
+			t.Fatalf("create Guardrails = %v, want [pii-filter]", req.Guardrails)
+		}
+		if req.Metadata[litellm.ShellTeamManagedMetadataKey] != litellm.ShellTeamManagedMetadataValue {
+			t.Fatalf("create Metadata missing ownership marker: %v", req.Metadata)
+		}
+	})
+
+	t.Run("repair writes guardrails onto a guardrail-less existing team", func(t *testing.T) {
+		fake := newAccessGroupFake()
+		fake.teamsByID["t-existing"] = litellm.TeamListEntry{
+			TeamID:           "t-existing",
+			TeamAlias:        "ach-env-demo",
+			Models:           []string{litellm.ShellTeamDenyAllModel},
+			ObjectPermission: litellm.ShellTeamPermissions(),
+			Metadata:         shellTeamMetadataJSON(t, "demo"),
+		}
+		r := &EnvironmentReconciler{LiteLLM: fake}
+		env := &achv1alpha1.Environment{}
+		env.Name = "demo"
+		env.Spec.Runtime.Guardrails = []string{"pii-filter"}
+
+		if _, err := r.ensureShellTeam(context.Background(), env, "t-existing", logr.Discard()); err != nil {
+			t.Fatalf("ensureShellTeam: %v", err)
+		}
+		if fake.teamUpdateCalls["t-existing"] != 1 {
+			t.Fatalf("UpdateTeam calls = %d, want 1", fake.teamUpdateCalls["t-existing"])
+		}
+		req := fake.lastTeamUpdate["t-existing"]
+		if !slices.Equal(req.Guardrails, []string{"pii-filter"}) {
+			t.Fatalf("update Guardrails = %v, want [pii-filter]", req.Guardrails)
+		}
+		if req.Metadata == nil {
+			t.Fatal("update Metadata must not be nil — required to keep the ownership marker alive")
+		}
+	})
+
+	t.Run("declaring none clears an existing guardrail set", func(t *testing.T) {
+		fake := newAccessGroupFake()
+		metaWithGuardrail, err := json.Marshal(map[string]any{
+			litellm.ShellTeamManagedMetadataKey: litellm.ShellTeamManagedMetadataValue,
+			litellm.ShellTeamManagedEnvKey:      "demo",
+			"guardrails":                        []string{"pii-filter"},
+		})
+		if err != nil {
+			t.Fatalf("marshal metadata: %v", err)
+		}
+		fake.teamsByID["t-existing"] = litellm.TeamListEntry{
+			TeamID:           "t-existing",
+			TeamAlias:        "ach-env-demo",
+			Models:           []string{litellm.ShellTeamDenyAllModel},
+			ObjectPermission: litellm.ShellTeamPermissions(),
+			Metadata:         metaWithGuardrail,
+		}
+		r := &EnvironmentReconciler{LiteLLM: fake}
+		env := &achv1alpha1.Environment{}
+		env.Name = "demo"
+		// No guardrails declared.
+
+		if _, err := r.ensureShellTeam(context.Background(), env, "t-existing", logr.Discard()); err != nil {
+			t.Fatalf("ensureShellTeam: %v", err)
+		}
+		if fake.teamUpdateCalls["t-existing"] != 1 {
+			t.Fatalf("UpdateTeam calls = %d, want 1 (removal must fire a repair)", fake.teamUpdateCalls["t-existing"])
+		}
+		req := fake.lastTeamUpdate["t-existing"]
+		if len(req.Guardrails) != 0 {
+			t.Fatalf("update Guardrails = %v, want empty (omitted)", req.Guardrails)
+		}
+		got := litellm.TeamGuardrails(fake.teamsByID["t-existing"].Metadata)
+		if len(got) != 0 {
+			t.Fatalf("stored guardrails after clear = %v, want empty", got)
+		}
+	})
 }

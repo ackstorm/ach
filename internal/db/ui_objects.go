@@ -54,7 +54,7 @@ func orEmptyStrings(s []string) []string {
 }
 
 // uiEnvironmentArgs is the shared positional binding for the UI insert/update
-// SQL ($1..$12): the PK plus every spec-derived column. resource_version,
+// SQL ($1..$13): the PK plus every spec-derived column. resource_version,
 // origin, locked, and the operator-computed condition columns are NOT bound
 // here — the SQL pins them as literals (resource_version=”, origin='ui',
 // locked=FALSE) or leaves them NULL/default.
@@ -71,6 +71,7 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 		orEmptyStrings(row.ContextSkills),
 		row.Notice,
 		row.Description,
+		orEmptyStrings(row.RuntimeGuardrails),
 	}
 }
 
@@ -79,12 +80,12 @@ const insertUIEnvironmentSQL = `
 	    (namespace, name,
 	     authorized_teams, context_prompts, context_plugins, context_artifacts,
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
-	     context_skills, notice, description,
+	     context_skills, notice, description, runtime_guardrails,
 	     resource_version, updated_at, origin, locked)
 	VALUES ($1, $2,
 	        $3, $4, $5, $6,
 	        $7, $8, $9,
-	        $10, $11, $12,
+	        $10, $11, $12, $13,
 	        '', now(), 'ui', FALSE)
 	ON CONFLICT (namespace, name) DO NOTHING
 	RETURNING namespace
@@ -132,6 +133,7 @@ const updateUIEnvironmentSQL = `
 	    context_skills      = $10,
 	    notice              = $11,
 	    description         = $12,
+	    runtime_guardrails  = $13,
 	    updated_at          = now()
 	 WHERE namespace = $1 AND name = $2 AND origin = 'ui'
 	RETURNING namespace

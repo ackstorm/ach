@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,12 +83,56 @@ func TestCatalogHandler_EmptyConnectorIsActiveEmpty(t *testing.T) {
 		MCPServers []map[string]any `json:"mcpServers"`
 		A2AAgents  []map[string]any `json:"a2aAgents"`
 		Teams      []map[string]any `json:"teams"`
+		Guardrails []map[string]any `json:"guardrails"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Models == nil || body.MCPServers == nil || body.A2AAgents == nil || body.Teams == nil {
+	if body.Models == nil || body.MCPServers == nil || body.A2AAgents == nil || body.Teams == nil || body.Guardrails == nil {
 		t.Fatalf("empty categories must serialize as [] not null: %s", rec.Body.String())
+	}
+}
+
+// TestGuardrailsHandler_AttributesRoundTrip: a guardrail row's attribute JSON
+// round-trips into the response body, while a model row's attributes key is
+// entirely absent (the omitempty no-breakage guarantee).
+func TestGuardrailsHandler_AttributesRoundTrip(t *testing.T) {
+	cat := fakeCatalog{
+		rows: []db.RuntimeCatalogRow{
+			{Kind: "guardrail", Name: "pii-filter", Status: "active",
+				Attributes: []byte(`{"mode":["pre_call"],"defaultOn":true}`)},
+			{Kind: "model", Name: "gpt-4o", Status: "active"},
+		},
+		hasSync: true,
+	}
+
+	h := GuardrailsHandler(Deps{Catalog: cat, Namespace: "ach-system", Connector: "default"})
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/platform/admin/runtime/guardrails", nil))
+	var grBody struct {
+		Items []struct {
+			Name       string          `json:"name"`
+			Attributes json.RawMessage `json:"attributes"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &grBody); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(grBody.Items) != 1 || grBody.Items[0].Name != "pii-filter" {
+		t.Fatalf("items = %+v", grBody.Items)
+	}
+	var attrs struct {
+		DefaultOn bool `json:"defaultOn"`
+	}
+	if err := json.Unmarshal(grBody.Items[0].Attributes, &attrs); err != nil || !attrs.DefaultOn {
+		t.Fatalf("attributes = %s (decode err=%v)", grBody.Items[0].Attributes, err)
+	}
+
+	h = ModelsHandler(Deps{Catalog: cat, Namespace: "ach-system", Connector: "default"})
+	rec = httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/platform/admin/runtime/models", nil))
+	if strings.Contains(rec.Body.String(), "attributes") {
+		t.Fatalf("model row must omit attributes entirely: %s", rec.Body.String())
 	}
 }
 

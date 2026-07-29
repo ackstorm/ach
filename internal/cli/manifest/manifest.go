@@ -39,6 +39,11 @@ type RuntimeBlock struct {
 	Models     []ContentRef `json:"models"`
 	MCPServers []ContentRef `json:"mcpServers"`
 	A2AAgents  []ContentRef `json:"a2aAgents"`
+	// Guardrails is additive and OPTIONAL — the server omits it entirely when the
+	// Environment declares none, which is what lets a pre-guardrails ach-cli decode
+	// a post-guardrails server response. It is a plain []string: a guardrail has no
+	// endpoint because LiteLLM applies it server-side. No adapter projects it.
+	Guardrails []string `json:"guardrails,omitempty"`
 }
 
 // ContextBlock carries the context arms of the manifest.

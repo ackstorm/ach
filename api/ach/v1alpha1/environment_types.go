@@ -51,6 +51,44 @@ type RuntimeBlock struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	A2AAgents []string `json:"a2aAgents,omitempty"`
+
+	// Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM
+	// runs on this Environment's ek_ traffic.
+	//
+	// WHICH traffic is each guardrail's own business, not ACH's: a guardrail
+	// declares one or more modes, and ACH only attaches the name. A
+	// pre_call/post_call guardrail inspects LLM completions and does NOT run on
+	// /mcp traffic — that needs a guardrail configured with pre_mcp_call or
+	// during_mcp_call. Listing a name here is therefore not a blanket promise
+	// of coverage; `ach-cli runtime guardrails` prints each one's MODE.
+	//
+	// This axis INVERTS the semantics of its siblings: models, mcpServers and
+	// a2aAgents are additive grants, a guardrail is a constraint. ACH attaches
+	// the names to the Environment's deny-all shell team; LiteLLM unions them
+	// across key, team and request body, so a caller can ADD to the set but
+	// never subtract from it.
+	//
+	// Coverage is EK-only. ek_ keys live in this Environment's shell team and
+	// inherit its guardrails; pk_ keys live in ach-user-<email> and reach the
+	// Environment through the access group, which carries no guardrail field.
+	// See references/litellm-permission-model.md.
+	//
+	// An unresolved name blocks AccessGroupSynced, which blocks NEW ek_
+	// minting — it does NOT stop existing keys, hydrate, or forwarded traffic.
+	//
+	// Entries must be unique: the operator compares the attached set against
+	// LiteLLM's stored list to decide whether a repair is needed, and
+	// duplicates make that comparison undecidable (LiteLLM's own duplicate
+	// handling differs between its storage and enforcement paths).
+	//
+	// ACH never creates, updates or deletes guardrail definitions.
+	// +optional
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, y == x))",message="spec.runtime.guardrails entries must be unique"
+	Guardrails []string `json:"guardrails,omitempty"`
 }
 
 // ContextBlock is the content-resource half of an Environment (Hub §6, §6.1).
@@ -207,7 +245,7 @@ type EnvironmentStatus struct {
 	LitellmAccessGroup string `json:"litellmAccessGroup,omitempty"`
 }
 
-// UnresolvedRuntime mirrors the three runtime reference lists (§6.4) and
+// UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
 // names the specific entries that did not resolve against LiteLLM.
 type UnresolvedRuntime struct {
 	// +optional
@@ -221,6 +259,15 @@ type UnresolvedRuntime struct {
 	// +optional
 	// +kubebuilder:default={}
 	A2AAgents []string `json:"a2aAgents,omitempty"`
+
+	// Guardrails lists spec.runtime.guardrails entries not registered in
+	// LiteLLM. LiteLLM accepts unknown guardrail names silently and never runs
+	// them, so an unlisted name is a fail-OPEN hole. Surfacing it here and
+	// failing AccessGroupSynced converts that into a blocked ek_ mint.
+	//
+	// +optional
+	// +kubebuilder:default={}
+	Guardrails []string `json:"guardrails,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -235,7 +282,7 @@ type UnresolvedRuntime struct {
 // Environment is the Schema for the environments API (Hub §6).
 //
 // An Environment is the ACH product boundary: a bundle of runtime
-// (models, mcpServers, a2aAgents) and context (prompts, plugins,
+// (models, mcpServers, a2aAgents, guardrails) and context (prompts, plugins,
 // artifacts) capabilities exposed to authorized Teams. The ACH
 // Operator reconciles spec.runtime into a LiteLLM access group of
 // the same name (§6.2). The CEL XValidation rules above enforce

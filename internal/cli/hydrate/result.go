@@ -87,6 +87,7 @@ type RuntimeSummary struct {
 	Models     int
 	MCPServers int
 	A2AAgents  int
+	Guardrails int
 }
 
 // ContextSummary is the context half of the hydrate success summary.

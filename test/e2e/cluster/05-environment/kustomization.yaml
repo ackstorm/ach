@@ -14,3 +14,8 @@ resources:
   # but authorizedTeams names a sentinel team absent from LiteLLM + the e2e
   # user (Available=False by design; gated on ExecutionResourcesResolved).
   - env-team-denied.yaml
+  # P0-A provisioning-barrier fixture — names a guardrail that does not exist
+  # on the proxy. Available=False BY DESIGN (both ExecutionResourcesResolved
+  # and AccessGroupSynced are False); gated on its EXPECTED FAILURE state in
+  # verify_all, like prompt-invalid.
+  - env-guardrail-unresolved.yaml

@@ -17,6 +17,14 @@ spec:
     models: []
     mcpServers: []
     a2aAgents: []
+    # Guardrail names LiteLLM runs on this Environment's ek_ traffic. What each
+    # one covers depends on ITS mode: a pre_call guardrail inspects completions
+    # and does not run on /mcp — see `ach-cli runtime guardrails`.
+    # Requires a LiteLLM Enterprise licence. Names must already exist on the
+    # proxy: an unknown name blocks NEW ek_ minting (503 not_ready) rather
+    # than failing open — but it does not stop existing keys.
+    # guardrails:
+    #   - credential-filter
   context:
     prompts: []
     plugins: []

@@ -60,6 +60,13 @@ func (c *NoopClient) ListA2AAgents(_ context.Context) ([]AgentEntry, error) {
 	return nil, nil
 }
 
+// ListGuardrails is the snapshot-Runnable call. NoopClient returns (nil, nil) —
+// an empty guardrail set, NOT an error.
+func (c *NoopClient) ListGuardrails(_ context.Context) ([]GuardrailEntry, error) {
+	c.Log.Info("stub: would list LiteLLM guardrails")
+	return nil, nil
+}
+
 // ListUserKeys is the Plan 08 orphan-cleanup call. NoopClient returns
 // (nil, nil) — no keys reported, the orphan loop is a no-op against
 // NoopClient (which is the desired behavior for unit tests).

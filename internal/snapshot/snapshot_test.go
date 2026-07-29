@@ -24,16 +24,18 @@ import (
 // callCount tracks per-call invocations so the ctx-cancel test can
 // assert that the ticker fired at least once after Start.
 type fakeLiteLLM struct {
-	mu         sync.Mutex
-	models     []litellm.ModelInfoResponse
-	mcps       []litellm.MCPServerEntry
-	agents     []litellm.AgentEntry
-	teams      []litellm.TeamListEntry
-	modelsErr  error
-	mcpsErr    error
-	agentsErr  error
-	teamsErr   error
-	modelCalls atomic.Int64
+	mu            sync.Mutex
+	models        []litellm.ModelInfoResponse
+	mcps          []litellm.MCPServerEntry
+	agents        []litellm.AgentEntry
+	teams         []litellm.TeamListEntry
+	guardrails    []litellm.GuardrailEntry
+	modelsErr     error
+	mcpsErr       error
+	agentsErr     error
+	teamsErr      error
+	guardrailsErr error
+	modelCalls    atomic.Int64
 }
 
 func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
@@ -54,6 +56,11 @@ func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.agents, f.agentsErr
+}
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.guardrails, f.guardrailsErr
 }
 func (f *fakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
 	return nil, nil
@@ -522,3 +529,100 @@ func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
+
+// TestSnapshotCarriesGuardrails: the guardrail map is keyed by guardrail_name
+// (the enforcement identifier) and carries Mode/DefaultOn for the catalog.
+func TestSnapshotCarriesGuardrails(t *testing.T) {
+	f := &fakeLiteLLM{
+		guardrails: []litellm.GuardrailEntry{
+			{GuardrailID: "uuid-1", GuardrailName: "pii-filter",
+				Mode: litellm.GuardrailMode{"pre_call"}, DefaultOn: false},
+			{GuardrailName: "credential-filter",
+				Mode: litellm.GuardrailMode{"pre_call"}, DefaultOn: true},
+		},
+	}
+	s := NewSnapshotter(f, logr.Discard())
+	s.RefreshForTest(context.Background())
+	snap := s.Snapshot()
+
+	if len(snap.Guardrails) != 2 {
+		t.Fatalf("guardrails = %v", snap.Guardrails)
+	}
+	pii, ok := snap.Guardrails["pii-filter"]
+	if !ok {
+		t.Fatal("pii-filter missing")
+	}
+	if pii.GuardrailID != "uuid-1" || pii.DefaultOn {
+		t.Errorf("pii-filter = %+v", pii)
+	}
+	cred, ok := snap.Guardrails["credential-filter"]
+	if !ok {
+		t.Fatal("credential-filter missing")
+	}
+	if !cred.DefaultOn {
+		t.Error("credential-filter DefaultOn want true")
+	}
+	if snap.Stale {
+		t.Error("snapshot unexpectedly stale")
+	}
+}
+
+// TestSnapshotGuardrailsErrNotFoundIsEmptySet: a proxy with zero guardrails is
+// a valid empty closed-set. Treating it as a failure would mean no Environment
+// could reach Available on a guardrail-free LiteLLM.
+func TestSnapshotGuardrailsErrNotFoundIsEmptySet(t *testing.T) {
+	s := NewSnapshotter(&fakeLiteLLM{guardrailsErr: litellm.ErrNotFound}, logr.Discard())
+	s.RefreshForTest(context.Background())
+	snap := s.Snapshot()
+
+	if snap.Stale {
+		t.Fatal("ErrNotFound must not mark the snapshot stale")
+	}
+	if len(snap.Guardrails) != 0 {
+		t.Fatalf("guardrails = %v", snap.Guardrails)
+	}
+}
+
+// TestSnapshotGuardrailsHardErrorPreservesPrior: a real failure must preserve
+// the prior snapshot with Stale=true — publishing an empty guardrail set would
+// flip every Environment referencing a guardrail to unresolved and block ek_
+// minting on a transient blip.
+func TestSnapshotGuardrailsHardErrorPreservesPrior(t *testing.T) {
+	f := &fakeLiteLLM{guardrails: []litellm.GuardrailEntry{{GuardrailName: "pii-filter"}}}
+	s := NewSnapshotter(f, logr.Discard())
+	s.RefreshForTest(context.Background())
+	if len(s.Snapshot().Guardrails) != 1 {
+		t.Fatal("precondition: first refresh should have published one guardrail")
+	}
+
+	f.guardrails, f.guardrailsErr = nil, errors.New("connection refused")
+	s.RefreshForTest(context.Background())
+
+	snap := s.Snapshot()
+	if !snap.Stale {
+		t.Error("hard ListGuardrails error must mark the snapshot stale")
+	}
+	if _, ok := snap.Guardrails["pii-filter"]; !ok {
+		t.Errorf("prior guardrail set must be preserved, got %v", snap.Guardrails)
+	}
+}
+
+// TestGuardrailCatalogInputsAmbiguousKeepsNameDropsAttributes: a name the two
+// list endpoints disagree about is still catalogued (so Environments naming it
+// resolve) but carries no attributes — the catalog must not present a coin-flip
+// value as fact.
+func TestGuardrailCatalogInputsAmbiguousKeepsNameDropsAttributes(t *testing.T) {
+	names, attrs := guardrailCatalogInputs(map[string]litellm.GuardrailEntry{
+		"clear": {GuardrailName: "clear", Mode: litellm.GuardrailMode{"pre_call"}},
+		"murky": {GuardrailName: "murky", Mode: litellm.GuardrailMode{"pre_call"}, Ambiguous: true},
+	})
+	if _, ok := names["murky"]; !ok {
+		t.Error("ambiguous guardrail must still be catalogued by name")
+	}
+	if _, ok := attrs["murky"]; ok {
+		t.Errorf("ambiguous guardrail must carry no attributes, got %s", attrs["murky"])
+	}
+	if _, ok := attrs["clear"]; !ok {
+		t.Error("unambiguous guardrail lost its attributes")
+	}
+}

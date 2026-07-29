@@ -747,6 +747,9 @@ func (f *fakeLiteLLM) ListMCPServers(context.Context) ([]litellm.MCPServerEntry,
 	return nil, nil
 }
 func (f *fakeLiteLLM) ListA2AAgents(context.Context) ([]litellm.AgentEntry, error) { return nil, nil }
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
 func (f *fakeLiteLLM) ListUserKeys(context.Context, string) ([]litellm.UserKeyInfo, error) {
 	return nil, nil
 }

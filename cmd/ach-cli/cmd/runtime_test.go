@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -62,4 +63,48 @@ func TestRuntimeKindList_RendersTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteRuntimeTable(t *testing.T) {
+	t.Run("no attributes renders 3-column header", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "model", Name: "gpt-4o", Status: "active"},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "KIND") || strings.Contains(out, "MODE") {
+			t.Fatalf("expected 3-column header, got:\n%s", out)
+		}
+	})
+
+	t.Run("guardrail row renders mode and default-on", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "guardrail", Name: "pii-filter", Status: "active",
+				Attributes: json.RawMessage(`{"mode":["pre_call"],"defaultOn":true}`)},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "pre_call") || !strings.Contains(out, "yes") {
+			t.Fatalf("expected mode/default-on rendered, got:\n%s", out)
+		}
+	})
+
+	t.Run("malformed attributes degrade to dashes", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "guardrail", Name: "broken", Status: "active",
+				Attributes: json.RawMessage(`not json`)},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+		fields := strings.Fields(lines[len(lines)-1])
+		if len(fields) != 5 || fields[3] != "-" || fields[4] != "-" {
+			t.Fatalf("expected MODE/DEFAULT-ON columns = '-', got fields %v from:\n%s", fields, buf.String())
+		}
+	})
 }

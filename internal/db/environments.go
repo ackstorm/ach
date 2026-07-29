@@ -61,6 +61,7 @@ type EnvironmentRow struct {
 	RuntimeModels     []string // spec.runtime.models
 	RuntimeMCPServers []string // spec.runtime.mcpServers
 	RuntimeA2AAgents  []string // spec.runtime.a2aAgents
+	RuntimeGuardrails []string // spec.runtime.guardrails
 
 	// Raw jsonb-encoded condition payloads (caller JSON-marshals).
 	AvailableCondition                  []byte
@@ -106,12 +107,12 @@ const upsertEnvironmentSQL = `
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     available_condition, access_group_synced_condition,
 	     execution_resources_resolved_condition,
-	     resource_version, context_skills, notice, description, updated_at, origin, locked)
+	     resource_version, context_skills, notice, description, runtime_guardrails, updated_at, origin, locked)
 	VALUES ($1, $2,
 	        $3, $4, $5, $6,
 	        $7, $8, $9,
 	        $10, $11, $12,
-	        $13, $14, $15, $16, now(), 'cr', TRUE)
+	        $13, $14, $15, $16, $17, now(), 'cr', TRUE)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    authorized_teams                       = EXCLUDED.authorized_teams,
 	    context_prompts                        = EXCLUDED.context_prompts,
@@ -123,6 +124,7 @@ const upsertEnvironmentSQL = `
 	    runtime_models                         = EXCLUDED.runtime_models,
 	    runtime_mcp_servers                    = EXCLUDED.runtime_mcp_servers,
 	    runtime_a2a_agents                     = EXCLUDED.runtime_a2a_agents,
+	    runtime_guardrails                     = EXCLUDED.runtime_guardrails,
 	    available_condition                    = EXCLUDED.available_condition,
 	    access_group_synced_condition          = EXCLUDED.access_group_synced_condition,
 	    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
@@ -157,6 +159,10 @@ func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) err
 		row.ContextSkills,
 		row.Notice,
 		row.Description,
+		// orEmptyStrings: runtime_guardrails is `text[] NOT NULL` — a nil Go
+		// slice binds to SQL NULL (the column is present in every INSERT, so
+		// the DEFAULT never applies), which would violate the constraint.
+		orEmptyStrings(row.RuntimeGuardrails),
 	)
 }
 
@@ -174,7 +180,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 		SELECT namespace, name,
 		       authorized_teams, context_prompts, context_plugins, context_artifacts,
 		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
 		       deletion_timestamp, resource_version, updated_at
@@ -186,7 +192,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 		&r.Namespace, &r.Name,
 		&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
 		&r.ContextSkills, &r.Notice, &r.Description,
-		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
+		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
 		&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 		&r.ExecutionResourcesResolvedCondition,
 		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
@@ -213,7 +219,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 		SELECT namespace, name,
 		       authorized_teams, context_prompts, context_plugins, context_artifacts,
 		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
 		       deletion_timestamp, resource_version, updated_at
@@ -236,7 +242,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 			&r.Namespace, &r.Name,
 			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
 			&r.ContextSkills, &r.Notice, &r.Description,
-			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
+			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
 			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 			&r.ExecutionResourcesResolvedCondition,
 			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
@@ -265,7 +271,7 @@ func ListEnvironmentsIncludingDraining(ctx context.Context, pool *pgxpool.Pool, 
 		SELECT namespace, name,
 		       authorized_teams, context_prompts, context_plugins, context_artifacts,
 		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
 		       deletion_timestamp, resource_version, updated_at
@@ -288,7 +294,7 @@ func ListEnvironmentsIncludingDraining(ctx context.Context, pool *pgxpool.Pool, 
 			&r.Namespace, &r.Name,
 			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
 			&r.ContextSkills, &r.Notice, &r.Description,
-			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents,
+			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
 			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 			&r.ExecutionResourcesResolvedCondition,
 			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
