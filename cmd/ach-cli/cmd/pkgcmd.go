@@ -117,6 +117,17 @@ func resolveRoot(global bool, dest string) (string, error) {
 	return cwd, nil
 }
 
+// remapGlobalWrites resolves adapter-owned --global destinations before local
+// conflict detection and commit. Project-scope paths remain rule-relative.
+func remapGlobalWrites(global bool, root, adapterID string, writes []manager.PlannedWrite) {
+	if !global {
+		return
+	}
+	for i := range writes {
+		writes[i].Path = adapter.RemapGlobalPath(adapterID, root, writes[i].Path)
+	}
+}
+
 // collectIgnoreEntries appends the top-level .gitignore pattern (e.g. ".claude/")
 // for each just-installed file to dst, so the credential-bearing agent config is
 // kept out of git.
@@ -437,11 +448,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("install: project for %s: %v", targetID, err),
 						}
 					}
-					if flagGlobal {
-						for i := range writes {
-							writes[i].Path = adapter.RemapGlobalPath(targetID, root, writes[i].Path)
-						}
-					}
+					remapGlobalWrites(flagGlobal, root, targetID, writes)
 
 					// Conflict resolution (pre-commit): de-collide against files
 					// owned by OTHER installed refs at this target per --conflict.
@@ -801,11 +808,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("update: project for %s: %v", e.Target, err),
 						}
 					}
-					if flagGlobal {
-						for i := range writes {
-							writes[i].Path = adapter.RemapGlobalPath(e.Target, root, writes[i].Path)
-						}
-					}
+					remapGlobalWrites(flagGlobal, root, e.Target, writes)
 					// Conflict resolution against OTHER refs' files at this target
 					// (the ref's own old files were removed by Uninstall above and
 					// ownersAt excludes the same ref, so no self-collision).
