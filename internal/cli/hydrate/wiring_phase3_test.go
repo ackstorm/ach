@@ -75,6 +75,12 @@ func TestPublishFile_ThreadsSourceHash(t *testing.T) {
 // not just .opencode/opencode.json. Project scope keeps .opencode/, and
 // non-opencode platforms are untouched.
 func TestRemapGlobalPath_AllOpencodeDirs(t *testing.T) {
+	for _, v := range []string{
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
+	} {
+		t.Setenv(v, "")
+	}
 	cases := []struct {
 		platform, in, want string
 	}{
@@ -89,7 +95,7 @@ func TestRemapGlobalPath_AllOpencodeDirs(t *testing.T) {
 		{"opencode", "AGENTS.md", "AGENTS.md"},
 	}
 	for _, tc := range cases {
-		got := adapter.RemapGlobalPath(tc.platform, tc.in)
+		got := adapter.RemapGlobalPath(tc.platform, "/home/u", tc.in)
 		if got != tc.want {
 			t.Errorf("remapGlobalPath(%q, %q) = %q; want %q", tc.platform, tc.in, got, tc.want)
 		}

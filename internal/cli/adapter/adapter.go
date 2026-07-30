@@ -81,6 +81,11 @@ type Match struct {
 // it with the resolved <ach-dir> at publication time.
 type FileWrite struct {
 	// Path is the workspace-relative target path (e.g. ".claude/.mcp.json").
+	//
+	// Under --global scope, RemapGlobalPath may replace this with an absolute
+	// path when the adapter's own config-dir env var redirects it (e.g.
+	// CLAUDE_CONFIG_DIR). Join it with adapter.ResolveDest, never bare
+	// filepath.Join.
 	Path string
 
 	// Content is the byte sequence to write at Path.

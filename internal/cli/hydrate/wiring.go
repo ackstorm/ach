@@ -404,7 +404,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 		for _, fw := range fws {
 			if d.global {
-				fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
+				fw.Path = adapter.RemapGlobalPath(d.platformID, toolRoot, fw.Path)
 			}
 			entry, err := d.publishRuntimeFile(fw, s, toolRoot)
 			if err != nil {
@@ -660,7 +660,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		}
 		for _, fw := range pr.FileWrites {
 			if d.global {
-				fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
+				fw.Path = adapter.RemapGlobalPath(d.platformID, toolRoot, fw.Path)
 			}
 			all = append(all, projectedWrite{plugin: ent.Name(), fw: fw})
 		}
@@ -834,7 +834,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	// standalone-Skill hydrate misreport as "Plugins: 0 total (N skills)".
 	for _, fw := range pr.FileWrites {
 		if d.global {
-			fw.Path = adapter.RemapGlobalPath(d.platformID, fw.Path)
+			fw.Path = adapter.RemapGlobalPath(d.platformID, toolRoot, fw.Path)
 		}
 		// Look up the prior projected entry in the SKILLS bucket so an
 		// unchanged re-hydrate hits the publishFile no-op skip.
@@ -1061,7 +1061,7 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 // a Plugins-bucket prior so re-hydration of an unchanged projected file
 // hits the no-op skip path (FMT-05 byte no-op).
 func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.FileEntry, toolRoot string) (FileWrite, error) {
-	finalAbs := filepath.Join(toolRoot, fw.Path)
+	finalAbs := adapter.ResolveDest(toolRoot, fw.Path)
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
 
 	// Composite pre-staging (D-06): build the per-plugin marked block ONCE so
@@ -1402,14 +1402,11 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 		if _, ok := keep[e.Target]; ok {
 			continue
 		}
-		abs := e.Target
-		if !filepath.IsAbs(abs) {
-			base := achDir
-			if te.ResolveAgainstToolRoot {
-				base = toolRoot
-			}
-			abs = filepath.Join(base, e.Target)
+		base := achDir
+		if te.ResolveAgainstToolRoot {
+			base = toolRoot
 		}
+		abs := adapter.ResolveDest(base, e.Target)
 		dels = append(dels, del{entry: e, abs: abs})
 		parentDirs[filepath.Dir(abs)] = struct{}{}
 	}

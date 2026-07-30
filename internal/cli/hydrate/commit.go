@@ -850,10 +850,7 @@ func (c *commit) pruneMissing(entries []state.FileEntry, base string, pruned int
 	}
 	kept := entries[:0]
 	for _, e := range entries {
-		target := e.Target
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(base, target)
-		}
+		target := adapter.ResolveDest(base, e.Target)
 		if _, err := os.Stat(target); err != nil && errors.Is(err, fs.ErrNotExist) {
 			pruned++
 			continue

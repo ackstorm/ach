@@ -284,6 +284,12 @@ func TestComposeNextState_IsPure_AndReflectsRender(t *testing.T) {
 // not the project ~/.opencode/, so ALL .opencode/* projected paths remap (not
 // just opencode.json); the other adapters' paths pass through.
 func TestRemapGlobalPath(t *testing.T) {
+	for _, v := range []string{
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
+	} {
+		t.Setenv(v, "")
+	}
 	cases := []struct{ platform, in, want string }{
 		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
 		{"opencode", ".opencode/plugins/foo/x.md", ".config/opencode/plugins/foo/x.md"}, // D-22: all .opencode/* remap
@@ -292,7 +298,7 @@ func TestRemapGlobalPath(t *testing.T) {
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 	}
 	for _, tc := range cases {
-		if got := adapter.RemapGlobalPath(tc.platform, tc.in); got != tc.want {
+		if got := adapter.RemapGlobalPath(tc.platform, "/home/u", tc.in); got != tc.want {
 			t.Errorf("RemapGlobalPath(%q, %q) = %q, want %q", tc.platform, tc.in, got, tc.want)
 		}
 	}
