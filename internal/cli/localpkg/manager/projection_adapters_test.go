@@ -279,7 +279,7 @@ func TestProject_Codex_AgentTOMLTransform(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if _, err := manager.Commit(root, false, "codex", "rich-plugin", writes); err != nil {
+	if _, err := manager.Commit(root, "rich-plugin", writes); err != nil {
 		t.Fatalf("Commit(codex): %v", err)
 	}
 
@@ -320,7 +320,7 @@ func TestProject_ClaudeCode_MCPMergeContent(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if _, err := manager.Commit(root, false, "claude-code", "rich-plugin", writes); err != nil {
+	if _, err := manager.Commit(root, "rich-plugin", writes); err != nil {
 		t.Fatalf("Commit(claude-code): %v", err)
 	}
 

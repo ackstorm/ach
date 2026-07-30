@@ -437,6 +437,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("install: project for %s: %v", targetID, err),
 						}
 					}
+					if flagGlobal {
+						for i := range writes {
+							writes[i].Path = adapter.RemapGlobalPath(targetID, root, writes[i].Path)
+						}
+					}
 
 					// Conflict resolution (pre-commit): de-collide against files
 					// owned by OTHER installed refs at this target per --conflict.
@@ -459,7 +464,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						continue
 					}
 
-					recs, err := manager.Commit(root, flagGlobal, targetID, name, resolved)
+					recs, err := manager.Commit(root, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -796,6 +801,11 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("update: project for %s: %v", e.Target, err),
 						}
 					}
+					if flagGlobal {
+						for i := range writes {
+							writes[i].Path = adapter.RemapGlobalPath(e.Target, root, writes[i].Path)
+						}
+					}
 					// Conflict resolution against OTHER refs' files at this target
 					// (the ref's own old files were removed by Uninstall above and
 					// ownersAt excludes the same ref, so no self-collision).
@@ -808,7 +818,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						}
 					}
 
-					recs, err := manager.Commit(root, flagGlobal, e.Target, name, resolved)
+					recs, err := manager.Commit(root, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,

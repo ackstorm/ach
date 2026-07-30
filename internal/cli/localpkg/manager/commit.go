@@ -27,19 +27,19 @@ const (
 )
 
 // Commit writes planned writes under root (the tool root: project cwd or $HOME
-// for --global), honoring MergeKind, and returns the relative paths written
-// (for uninstall tracking). adapterID is used for the opencode global path
-// remap. compositeID is used as the marker id for MergeComposite writes
-// (typically the plugin/skill name).
-func Commit(root string, global bool, adapterID, compositeID string, writes []PlannedWrite) ([]store.FileRec, error) {
+// for --global), honoring MergeKind, and returns the destinations written (for
+// uninstall tracking). A write's Path is normally relative to root, but under
+// --global it may be an absolute path that adapter.RemapGlobalPath redirected
+// to the adapter's own config dir. The remap runs at the call site, before
+// conflict resolution, so every downstream consumer keys on one path string.
+// compositeID is used as the marker id for MergeComposite writes (typically
+// the plugin/skill name).
+func Commit(root, compositeID string, writes []PlannedWrite) ([]store.FileRec, error) {
 	recs := make([]store.FileRec, 0, len(writes))
 
 	for _, w := range writes {
 		rel := w.Path
-		if global {
-			rel = adapter.RemapGlobalPath(adapterID, w.Path)
-		}
-		abs := filepath.Join(root, rel)
+		abs := adapter.ResolveDest(root, rel)
 
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return nil, fmt.Errorf("commit: mkdir parent for %s: %w", rel, err)
@@ -203,7 +203,7 @@ func classifyReplace(f store.FileRec, body []byte) uninstallOp {
 // it). Returns the list of skipped RelPaths and any unexpected error.
 func Uninstall(root string, files []store.FileRec) (skipped []string, err error) {
 	for _, f := range files {
-		abs := filepath.Join(root, f.RelPath)
+		abs := adapter.ResolveDest(root, f.RelPath)
 		body, rerr := os.ReadFile(abs)
 		if rerr != nil {
 			if errors.Is(rerr, os.ErrNotExist) {
@@ -230,6 +230,9 @@ func Uninstall(root string, files []store.FileRec) (skipped []string, err error)
 				// uninstall — skip pruning above it and move on.
 				continue
 			}
+			// A redirected --global destination may be outside root. In that
+			// case pruneEmptyDirs stops immediately, leaving the external
+			// directory boundary untouched.
 			pruneEmptyDirs(root, filepath.Dir(abs))
 		}
 	}
@@ -250,7 +253,7 @@ type UninstallVerdict struct {
 func UninstallPlan(root string, files []store.FileRec) ([]UninstallVerdict, error) {
 	out := make([]UninstallVerdict, 0, len(files))
 	for _, f := range files {
-		body, rerr := os.ReadFile(filepath.Join(root, f.RelPath))
+		body, rerr := os.ReadFile(adapter.ResolveDest(root, f.RelPath))
 		if rerr != nil {
 			if errors.Is(rerr, os.ErrNotExist) {
 				out = append(out, UninstallVerdict{RelPath: f.RelPath, Op: opAbsent.String()})
