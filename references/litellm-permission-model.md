@@ -221,10 +221,35 @@ the team model-access path — which is why ACH uses an impossible model name.
   has no opt-out at any level.
 - `x-litellm-applied-guardrails` names what actually ran, per request.
 - Team metadata mixes non-string values alongside ACH's ownership markers —
-  the reason `teamMetadataStrings` exists.
+  the reason `teamMetadataStrings` exists (§12).
 - **Not measured**: whether `POST /team/update` omitting `guardrails` keeps
   the prior set (this doc's general "omitted = keep" claim in §? for other
   team fields) or clears it. Our unlicensed instance 403s on any non-empty
   guardrail write, so removal-by-omission was never observable end-to-end.
   ACH does not rely on this either way — `TeamUpdateRequest.Guardrails` has
   no `omitempty`; the field is always sent explicitly (`[]` when clearing).
+
+## 12. Team metadata is a shared blob — LiteLLM writes non-string fields into it.
+
+ACH stores its shell-team ownership markers (`ShellTeamManagedMetadataKey`,
+`ShellTeamManagedEnvKey`/`UserShellManagedMetadataValue`) as string entries in
+`TeamListEntry.Metadata`. That JSON object is NOT exclusive to ACH: saving a
+team in the LiteLLM UI (any save, no enterprise feature required) writes
+LiteLLM's own management fields into the SAME blob — `guardrails` (`[]`),
+`model_rpm_limit`/`model_tpm_limit` (`{}`), `disable_global_guardrails`
+(`false`), `allowed_passthrough_routes`/`opted_out_global_guardrails`/
+`soft_budget_alerting_emails` (`[]`) — even when nothing enterprise-related is
+configured (LiteLLM issue #20304). Measured against two live teams saved
+through the UI on 2026-07-28.
+
+Consequence: decoding the blob as `map[string]string` is wrong.
+`encoding/json` fails the WHOLE document on the first type mismatch, so one UI
+save of a team makes `json.Unmarshal` fail, both ownership checks
+(`IsShellTeamManaged`/`IsUserShellManaged`) fall through their fail-safe `false`
+branch, and the operator disowns its own shell team — recreating a duplicate on
+the next reconcile, unbounded. ACH decodes into `map[string]any` and keeps only
+the string-valued entries (`internal/litellm/shellteam.go`
+`teamMetadataStrings`), so LiteLLM's non-string siblings are silently ignored
+instead of poisoning the whole decode. Apply the same pattern to any future
+code reading `TeamListEntry.Metadata` — never `map[string]string` on that
+field.
