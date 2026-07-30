@@ -352,7 +352,9 @@ marker-block (covers credential-bearing files) → cleanup.
   own config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   `GEMINI_CLI_HOME`, `PI_CODING_AGENT_DIR`, `XDG_CONFIG_HOME`) — see
   `internal/cli/CLAUDE.md` "Global-scope root resolution". Credential
-  injected ONLY via context (`WithCredential`) — adapters can't read env.
+  injected ONLY via context (`WithCredential`) — adapters can't read env for
+  credentials (the `--global` root resolution above is path scope, not an
+  adapter, and reads only the user's own config-dir vars).
   Runtime config wires MCP + A2A as http entries with
   `x-ach-key` + `x-ach-environment` headers. **Models are never projected**
   (server-side access-group is the mechanism).

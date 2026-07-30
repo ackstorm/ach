@@ -380,6 +380,25 @@ func TestPluginCmd_Update_SHADrift(t *testing.T) {
 
 // ---- Group E: --global install scope ----------------------------------------
 
+// pinConfigDirEnv neutralizes every per-adapter config-dir override that
+// adapter.RemapGlobalPath consults, so a --global assertion against a
+// $HOME-relative path cannot be redirected by the developer's own shell.
+// CLAUDE_CONFIG_DIR in particular is set by anyone running a redirected Claude
+// Code profile. Callers set the specific vars they want AFTER calling this.
+//
+// scripts/dev.sh forwards a closed -e allowlist that excludes these, so the
+// containerized run is hermetic already — this keeps a HOST-side `go test`
+// honest too.
+func pinConfigDirEnv(t *testing.T) {
+	t.Helper()
+	for _, v := range []string{
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
+	} {
+		t.Setenv(v, "")
+	}
+}
+
 // TestPluginCmd_Install_Global_Claude verifies that `--global` (no --dest)
 // installs under $HOME for claude-code.
 func TestPluginCmd_Install_Global_Claude(t *testing.T) {
@@ -387,6 +406,7 @@ func TestPluginCmd_Install_Global_Claude(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 
+	pinConfigDirEnv(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// Keep store writes inside the per-test HOME for full isolation.
@@ -426,6 +446,7 @@ func TestPluginCmd_Install_Global_OpencodeRemap(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 
+	pinConfigDirEnv(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -472,6 +493,7 @@ func TestPluginCmd_Install_Global_ConfigDirConflictNamespace(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 
+	pinConfigDirEnv(t)
 	home := t.TempDir()
 	configRoot := filepath.Join(home, "skills")
 	t.Setenv("HOME", home)
