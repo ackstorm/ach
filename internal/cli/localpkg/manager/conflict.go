@@ -43,7 +43,7 @@ type ConflictAction struct {
 //
 // Non-clashing writes and non-MergeReplace writes (additive merges) always pass
 // through unchanged and record no action.
-func ResolveConflicts(writes []PlannedWrite, owners map[string]string, policy ConflictPolicy, plugin string) ([]PlannedWrite, []ConflictAction, error) {
+func ResolveConflicts(writes []PlannedWrite, owners map[string]string, policy ConflictPolicy, plugin, root string) ([]PlannedWrite, []ConflictAction, error) {
 	out := make([]PlannedWrite, 0, len(writes))
 	var actions []ConflictAction
 
@@ -63,7 +63,7 @@ func ResolveConflicts(writes []PlannedWrite, owners map[string]string, policy Co
 			return nil, nil, fmt.Errorf("%s already owned by %s (--conflict refuse)", w.Path, owner)
 		case ConflictNamespace:
 			nw := w
-			nw.Path = namespace.Leaf(w.Path, plugin)
+			nw.Path = namespace.LeafAtRoot(root, w.Path, plugin)
 			out = append(out, nw)
 			actions = append(actions, ConflictAction{Policy: policy, Path: w.Path, NewPath: nw.Path, Owner: owner})
 		}

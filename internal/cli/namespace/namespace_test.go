@@ -3,6 +3,7 @@
 package namespace_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/namespace"
@@ -29,5 +30,15 @@ func TestLeaf(t *testing.T) {
 				t.Errorf("Leaf(%q, %q) = %q; want %q", c.path, c.plugin, got, c.want)
 			}
 		})
+	}
+}
+
+func TestLeafAbsolutePathWithRootNamedSkills(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "skills")
+	p := filepath.Join(root, ".claude", "commands", "review.md")
+	want := filepath.Join(root, ".claude", "commands", "codex-review.md")
+	got := namespace.LeafAtRoot(root, p, "codex")
+	if got != want {
+		t.Fatalf("Leaf(%q, %q) = %q; want %q", p, "codex", got, want)
 	}
 }

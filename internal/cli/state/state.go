@@ -30,7 +30,8 @@ type File struct {
 }
 
 // FileEntry is the per-file projection record under each resource
-// bucket (and under adapter.files). `target` is workspace-relative,
+// bucket (and under adapter.files). `target` is normally workspace-relative;
+// global adapter destinations may be absolute under the adapter root,
 // `hash` is the xxh3 of bytes on disk, `sourceHash` is the xxh3 of the
 // upstream input bytes (before any adapter transformation). For
 // pass-through resources hash == sourceHash; for adapter-transformed

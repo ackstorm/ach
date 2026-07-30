@@ -55,15 +55,30 @@ func RemapGlobalPath(adapterID, home, path string) string {
 		relative = s.fallback + rest
 	}
 
-	dir := configDir(s.envVar)
-	if dir == "" {
+	root := GlobalRoot(adapterID, home)
+	if root == home {
 		return relative
 	}
-	abs := filepath.Join(dir, s.envSuffix, rest)
+	abs := filepath.Join(root, rest)
 	if home != "" && abs == filepath.Join(home, relative) {
 		return relative
 	}
 	return abs
+}
+
+// GlobalRoot returns the adapter-owned root used by a --global destination.
+// It is also the boundary for conflict namespacing when a remapped path is
+// absolute, which may differ from the process-wide $HOME root.
+func GlobalRoot(adapterID, home string) string {
+	s, ok := globalScopes[adapterID]
+	if !ok {
+		return home
+	}
+	dir := configDir(s.envVar)
+	if dir == "" {
+		return home
+	}
+	return filepath.Join(dir, s.envSuffix)
 }
 
 // configDir returns a usable absolute config directory, or "" when the

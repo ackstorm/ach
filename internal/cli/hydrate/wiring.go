@@ -531,7 +531,7 @@ type projectedWrite struct {
 // pre-Phase-1 CR-01 fail-fast; ConflictNamespace (default) leaf-prefixes every
 // colliding write; ConflictSkip keeps the earliest-sorted plugin; Overwrite
 // keeps the latest. Plugins were sorted in Pass A so all outcomes are stable.
-func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite) error {
+func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, toolRoot string) error {
 	byTarget := map[string][]int{}
 	for i := range all {
 		if all[i].fw.Merge != adapter.MergeReplace {
@@ -572,7 +572,7 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite) er
 			// Leaf-prefix EVERY colliding write (including the first) so both
 			// plugins survive; deterministic because plugins are sorted.
 			for _, i := range idxs {
-				all[i].fw.Path = namespace.Leaf(all[i].fw.Path, all[i].plugin)
+				all[i].fw.Path = namespace.LeafAtRoot(toolRoot, all[i].fw.Path, all[i].plugin)
 			}
 		case ConflictSkip:
 			// Keep the lowest index (earliest-sorted plugin); skip the rest.
@@ -675,7 +675,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 
 	// Resolve — apply d.conflict to every cross-plugin Target collision,
 	// mutating `all` in place (namespacing paths or marking writes skipped).
-	if rerr := d.resolvePluginCollisions(all); rerr != nil {
+	if rerr := d.resolvePluginCollisions(all, adapter.GlobalRoot(d.platformID, toolRoot)); rerr != nil {
 		return rerr
 	}
 
@@ -845,7 +845,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		// Source carries the skill name for per-resource grouping in 'env status'
 		// (U5). The adapter destination path always contains a /skills/<name>/
 		// segment, so we extract it regardless of adapter prefix depth.
-		entry.Source = skillNameFromPath(entry.Target)
+		entry.Source = skillNameFromPath(entry.Target, adapter.GlobalRoot(d.platformID, toolRoot))
 		result.ProjectedSkillFiles = append(result.ProjectedSkillFiles, entry)
 	}
 	return nil
@@ -856,8 +856,14 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 // (e.g. ".claude/skills/docx/SKILL.md", ".pi/agent/skills/docx/SKILL.md"),
 // so the skill name is always the segment that follows "skills". Returns ""
 // when the path does not contain a "skills" segment (should not occur in
-// practice, but handled defensively so a routing change never panics).
-func skillNameFromPath(path string) string {
+// practice, but handled defensively so a routing change never panics). root is
+// used to strip an absolute redirected config root before route inspection.
+func skillNameFromPath(path, root string) string {
+	if filepath.IsAbs(path) && filepath.IsAbs(root) {
+		if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			path = rel
+		}
+	}
 	parts := strings.Split(filepath.ToSlash(path), "/")
 	for i, p := range parts {
 		if p == "skills" && i+1 < len(parts) {
@@ -1433,7 +1439,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	// returning an error which we silently swallow. Skipped under
 	// DryRun — a preview must never remove directories.
 	if !opts.DryRun {
-		pruneEmptyDirs(parentDirs, achDir)
+		pruneEmptyDirs(parentDirs, achDir, toolRoot)
 	}
 
 	return stats, nil
@@ -1656,14 +1662,31 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 
 // pruneEmptyDirs walks parent dirs deepest-first calling os.Remove.
 // Honors ENOTEMPTY silently (non-empty dir → preserved). Stops at
-// achDir's parent so the engine never escapes the workspace root.
-func pruneEmptyDirs(parents map[string]struct{}, achDir string) {
-	// Expand the set to include each parent's parents up to achDir's
-	// parent so a deep-nested prune cascades cleanly.
+// roots are cleanup boundaries and are never removed. Paths outside every
+// boundary are left alone; this is important for redirected --global targets,
+// whose absolute paths may point at an external adapter config directory.
+func pruneEmptyDirs(parents map[string]struct{}, roots ...string) {
+	cleanRoots := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if root != "" {
+			cleanRoots = append(cleanRoots, filepath.Clean(root))
+		}
+	}
 	all := map[string]struct{}{}
-	parentRoot := filepath.Dir(achDir)
 	for p := range parents {
-		for p != "" && p != "." && p != parentRoot && p != string(filepath.Separator) {
+		p = filepath.Clean(p)
+		boundary := ""
+		for _, root := range cleanRoots {
+			rel, err := filepath.Rel(root, p)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				boundary = root
+				break
+			}
+		}
+		if boundary == "" {
+			continue
+		}
+		for p != "" && p != "." && p != boundary && p != string(filepath.Separator) {
 			if _, ok := all[p]; ok {
 				break
 			}

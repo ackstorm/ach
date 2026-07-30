@@ -206,6 +206,13 @@ Hard-won details — do NOT re-derive:
 - **Recorded destinations MAY be absolute under `--global`.** Join them with
   `adapter.ResolveDest`, NEVER bare `filepath.Join`. Applies to
   `state.FileEntry.Target` and `store.FileRec.RelPath`.
+- **Conflict namespacing is rooted to the configured destination.** An absolute
+  config root whose name contains `skills` must not be mistaken for the
+  adapter's `skills/<name>/` route when the resource leaf is prefixed.
+- **Sync cleanup is boundary-safe.** `env hydrate --sync` prunes empty
+  directories only beneath its known ACH and tool roots. Redirected external
+  config roots remain intact after managed files are removed; stale empty
+  directories there are harmless and are not traversed.
 - The remap MUST stay downstream of `route.Project` — its T-01-01 guard rejects
   absolute destinations and is what proves the path is `..`-free before a root
   is prepended.

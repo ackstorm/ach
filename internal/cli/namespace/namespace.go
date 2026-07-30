@@ -10,6 +10,7 @@ package namespace
 
 import (
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -44,6 +45,26 @@ func Leaf(p, plugin string) string {
 	}
 	segments[len(segments)-1] = plugin + "-" + leaf
 	return strings.Join(segments, "/")
+}
+
+// LeafAtRoot applies Leaf to a destination while preserving an absolute root.
+// Projected paths are normally relative, but --global config-dir overrides are
+// recorded as absolute paths. Applying Leaf directly to such a path can mistake
+// a directory named "skills" in the configured root for the adapter's skills
+// route and namespace outside that root.
+func LeafAtRoot(root, p, plugin string) string {
+	if !filepath.IsAbs(p) || !filepath.IsAbs(root) {
+		return Leaf(p, plugin)
+	}
+	root = filepath.Clean(root)
+	rel, err := filepath.Rel(root, filepath.Clean(p))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		// Callers should only provide destinations under root. Preserve an
+		// unexpected outside path rather than rewriting its root segment.
+		return p
+	}
+	namespaced := Leaf(filepath.ToSlash(rel), plugin)
+	return filepath.Join(root, filepath.FromSlash(namespaced))
 }
 
 // shouldSkipPrefix reports whether seg (minus any file extension) already

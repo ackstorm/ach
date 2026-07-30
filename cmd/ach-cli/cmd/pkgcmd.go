@@ -128,6 +128,13 @@ func remapGlobalWrites(global bool, root, adapterID string, writes []manager.Pla
 	}
 }
 
+func conflictRoot(global bool, root, adapterID string) string {
+	if !global {
+		return root
+	}
+	return adapter.GlobalRoot(adapterID, root)
+}
+
 // collectIgnoreEntries appends the top-level .gitignore pattern (e.g. ".claude/")
 // for each just-installed file to dst, so the credential-bearing agent config is
 // kept out of git.
@@ -454,7 +461,8 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					// owned by OTHER installed refs at this target per --conflict.
 					// Only MergeReplace writes clash; additive merges pass through.
 					owners := ownersAt(installed, ref, targetID)
-					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name)
+					namespaceRoot := conflictRoot(flagGlobal, root, targetID)
+					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, namespaceRoot)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -532,7 +540,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	}
 	c.Flags().StringArrayVar(&flagTargets, "target", nil,
 		"Adapter(s) to install for (comma-separated or repeatable): claude, codex, gemini, opencode")
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Install to $HOME instead of --dest / cwd")
+	c.Flags().BoolVar(&flagGlobal, "global", false, "Install to the adapter's global config root instead of --dest / cwd")
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
@@ -656,7 +664,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 		},
 	}
 	c.Flags().StringArrayVar(&flagTargets, "target", nil, "Limit uninstall to this adapter (optional)")
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Uninstall from $HOME root")
+	c.Flags().BoolVar(&flagGlobal, "global", false, "Uninstall from the adapter's global config root")
 	c.Flags().StringVar(&flagDest, "dest", "", "Root directory (default: cwd)")
 	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Print the removal plan, but change nothing")
 	return c
@@ -813,7 +821,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					// (the ref's own old files were removed by Uninstall above and
 					// ownersAt excludes the same ref, so no self-collision).
 					owners := ownersAt(installed, ref, e.Target)
-					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name)
+					namespaceRoot := conflictRoot(flagGlobal, root, e.Target)
+					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, namespaceRoot)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -872,7 +881,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Update from $HOME root")
+	c.Flags().BoolVar(&flagGlobal, "global", false, "Update from the adapter's global config root")
 	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")

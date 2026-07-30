@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
@@ -96,5 +97,45 @@ func TestPruneMissing_AbsoluteTarget(t *testing.T) {
 	}
 	if len(kept) != 1 || kept[0].Target != live {
 		t.Errorf("kept = %+v; want only %q", kept, live)
+	}
+}
+
+// TestSync_RedirectedDestDoesNotPruneOutsideToolRoot proves --sync cleanup
+// cannot remove the configured external adapter root after deleting its last
+// managed file. The external root is a destination boundary, not a directory
+// owned by the hydrate engine.
+func TestSync_RedirectedDestDoesNotPruneOutsideToolRoot(t *testing.T) {
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+	redirectedRoot := t.TempDir()
+	target := filepath.Join(redirectedRoot, "skills", "gone.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("managed\n")
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prev := &state.File{
+		SchemaVersion: "3",
+		Plugins:       []state.FileEntry{{Target: target, Hash: hash.HashBytes(content)}},
+	}
+	if _, err := Sync(prev, &state.File{SchemaVersion: "3"}, achDir, toolRoot, SyncOptions{}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("managed file should be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(redirectedRoot); err != nil {
+		t.Fatalf("redirected root must remain intact, stat err = %v", err)
+	}
+}
+
+func TestSkillNameFromPath_RedirectedRootContainingSkills(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "skills")
+	path := filepath.Join(root, ".claude", "skills", "demo", "SKILL.md")
+	if got, want := skillNameFromPath(path, root), "demo"; got != want {
+		t.Fatalf("skillNameFromPath(%q, %q) = %q; want %q", path, root, got, want)
 	}
 }

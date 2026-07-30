@@ -146,3 +146,21 @@ func TestResolveDest(t *testing.T) {
 		t.Errorf("absolute: = %q; want %q", got, want)
 	}
 }
+
+func TestGlobalRoot(t *testing.T) {
+	home := "/home/u"
+	for _, v := range []string{
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
+	} {
+		t.Setenv(v, "")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/skills")
+	if got, want := GlobalRoot("claude-code", home), "/tmp/skills"; got != want {
+		t.Fatalf("GlobalRoot(claude-code) = %q; want %q", got, want)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "/tmp/config")
+	if got, want := GlobalRoot("opencode", home), "/tmp/config/opencode"; got != want {
+		t.Fatalf("GlobalRoot(opencode) = %q; want %q", got, want)
+	}
+}

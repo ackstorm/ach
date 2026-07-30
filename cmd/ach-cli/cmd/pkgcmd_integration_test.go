@@ -462,3 +462,54 @@ func TestPluginCmd_Install_Global_OpencodeRemap(t *testing.T) {
 		t.Errorf("un-remapped path %s should not exist: err=%v", original, err)
 	}
 }
+
+// TestPluginCmd_Install_Global_ConfigDirConflictNamespace verifies the full
+// Project → global remap → conflict resolution → Commit chain when the
+// redirected config root itself contains a "skills" segment. Namespacing must
+// change the projected leaf under that root, never the root segment.
+func TestPluginCmd_Install_Global_ConfigDirConflictNamespace(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	home := t.TempDir()
+	configRoot := filepath.Join(home, "skills")
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", configRoot)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	urlA := makeDirectPluginRepo(t)
+	urlB := makeDirectPluginRepo(t)
+	for name, url := range map[string]string{"a": urlA, "b": urlB} {
+		seedRepo(t, store.RepoEntry{
+			Name: name, Source: "git:" + url, Kind: "git", CloneURL: url, GitRef: "main",
+			Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+			AddedAt:  "2026-01-01T00:00:00Z",
+		})
+	}
+
+	var output bytes.Buffer
+	install := func(ref string) {
+		var buf bytes.Buffer
+		cmd := newPluginCmd()
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs([]string{"install", ref, "--global", "--target", "claude"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("plugin install %s: %v (output: %s)", ref, err, buf.String())
+		}
+		output.WriteString(buf.String())
+	}
+	install("a@a")
+	install("b@b")
+
+	if _, err := os.Stat(filepath.Join(configRoot, "commands", "x.md")); err != nil {
+		t.Fatalf("first install missing under redirected root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configRoot, "commands", "b-x.md")); err != nil {
+		t.Fatalf("namespaced second install missing under redirected root: %v; output=%s", err, output.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, "b-skills", "commands", "x.md")); !os.IsNotExist(err) {
+		t.Fatalf("namespace rewrote the root segment outside config root: err=%v", err)
+	}
+}
