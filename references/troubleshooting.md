@@ -500,6 +500,32 @@ mode is identical to a real schema drift (`schemaVersion` bump, new field,
 etc.), so documenting the gotcha protects future debuggers from chasing a
 phantom regression.
 
+### ❌ `--global` content landed somewhere the agent doesn't read it
+
+**Symptom:** `ach-cli env hydrate --global` / `skill install --global` reports
+success, but the agent CLI never sees the skill/MCP server.
+
+**Cause A — the var was not exported to ach-cli.** ach-cli READS the tool's
+config-dir var; it never sets it. If you run your agent under a redirected
+profile (e.g. `ackstorm/agent-profile`) but the var is not set in the shell that
+runs ach-cli, ach-cli writes to `$HOME` while the agent reads the profile dir.
+Check: `env | grep -E 'CLAUDE_CONFIG_DIR|CODEX_HOME|GEMINI_CLI_HOME|PI_CODING_AGENT_DIR|XDG_CONFIG_HOME'`.
+Fix: export the var in the same shell (or via direnv) before hydrating.
+
+**Cause B — the value is relative.** A relative value is deliberately ignored
+and ach-cli falls back to `$HOME`. Use an absolute path.
+
+**Cause C — the path is outside the redirected prefix.** Only the adapter's own
+config prefix redirects. `CODEX_HOME` does NOT move `.agents/skills/**`, and
+`CLAUDE_CONFIG_DIR` does not move `.mcp.json`/`CLAUDE.md`. See the table in
+`internal/cli/CLAUDE.md` "Global-scope root resolution".
+
+**Orphans after switching profiles.** Changing the var between runs leaves the
+previously written files at the OLD location — a plain `env hydrate` writes the
+new copies and forgets the old entries. Remedy: run `ach-cli env hydrate --sync`
+(prunes the old destinations), or `ach-cli env uninstall <name>` BEFORE
+switching the variable.
+
 ### ❌ `ach-cli env hydrate` exits 1 "environment is required" ✅ pass the positional `<name>` (engine namespaces state by env)
 The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
 (`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under

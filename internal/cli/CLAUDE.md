@@ -128,7 +128,7 @@ plaintext (project-root `.mcp.json`, `.codex/config.toml`,
 `.opencode/opencode.json`, `.gemini/settings.json`, `.pi/mcp.json`). mode `0600`
 guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
-in PROJECT scope only (`--global` writes under `$HOME`, no repo):
+in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
 
 - `env hydrate` → `commit.go` `step12bGitignore` (entries = `.ach/` + the
   top-level dir/file of every projected/written file).
@@ -166,6 +166,55 @@ merge) — don't conflate them.
 
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
 asserted in e2e — not a bug).
+
+### Global-scope root resolution (`--global`)
+
+`--global` does NOT mean "$HOME-relative". Each agent CLI exposes its own
+config-dir env var, and `ach-cli` honors it so installed content lands where
+that tool actually reads it. One table drives both write paths:
+`internal/cli/adapter/globalpath.go` (`globalScopes` + `RemapGlobalPath`).
+
+| adapter | env var | shape | redirected prefix | NOT redirected |
+|---|---|---|---|---|
+| claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json`, `CLAUDE.md` |
+| codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
+| gemini-cli | `GEMINI_CLI_HOME` | **parent** (`$VAR/.gemini/`) | `.gemini/` | `GEMINI.md` |
+| opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
+| pimono | `PI_CODING_AGENT_DIR` | dir itself | `.pi/agent/` | `.pi/mcp.json` |
+
+Hard-won details — do NOT re-derive:
+
+- **Gemini's var is `GEMINI_CLI_HOME`, and it is a PARENT.** `GEMINI_CONFIG_DIR`
+  was proposed upstream (gemini-cli #2815) and never shipped. A `settings.json`
+  written at `$GEMINI_CLI_HOME/settings.json` is silently ignored (#23622) — it
+  must go to `$GEMINI_CLI_HOME/.gemini/settings.json`.
+- **Pi's config dir defaults to `~/.pi/agent`, not `~/.pi`.** That is why the
+  redirected prefix is `.pi/agent/` and why `.pi/mcp.json` is outside it.
+  (`ackstorm/agent-profile` documents `~/.pi` — off by one level.)
+- **Redirection is keyed on the PATH PREFIX, not the adapter.** `.agents/` is a
+  cross-tool convention dir that `CODEX_HOME` does not own, so codex's skills
+  stay under `$HOME/.agents/skills/`. One adapter can therefore write to two
+  roots in a single run.
+- **A relative env value is IGNORED** (falls back to `$HOME`). The real tools
+  resolve it against their own cwd, which is not ach-cli's.
+- **Anti-churn rule:** when an override resolves to the location the relative
+  form already names (`XDG_CONFIG_HOME=$HOME/.config` — very common), the
+  RELATIVE form is returned. Recorded destinations are what `Sync`'s
+  set-difference compares, and Render (write) precedes Sync (delete), so
+  flipping relative→absolute for the same file would make Sync delete what
+  Render just wrote.
+- **Recorded destinations MAY be absolute under `--global`.** Join them with
+  `adapter.ResolveDest`, NEVER bare `filepath.Join`. Applies to
+  `state.FileEntry.Target` and `store.FileRec.RelPath`.
+- The remap MUST stay downstream of `route.Project` — its T-01-01 guard rejects
+  absolute destinations and is what proves the path is `..`-free before a root
+  is prepended.
+- **Known ceilings:** `OPENCODE_CONFIG` (a file) and `OPENCODE_CONFIG_DIR` (a
+  dir, additive per `paths.ts` but replacing per `global.ts` — verify against
+  the real binary first) are NOT honored. Changing the var between runs without
+  `env hydrate --sync` leaves the old files as orphans.
+- `ach-cli` only READS these vars; it never sets them. If your shell does not
+  export the var, `--global` behaves exactly as before.
 
 ### Transform provenance — WHO is the reference
 

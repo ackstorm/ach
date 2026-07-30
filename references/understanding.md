@@ -347,8 +347,11 @@ marker-block (covers credential-bearing files) → cleanup.
 - **Adapters** (closed set, init-registered, case-fold+alias lookup):
   claudecode (canonical pass-through → `.claude/` + root `.mcp.json` +
   CLAUDE.md), codex (TOML `.codex/config.toml`, `tools:`→`allowed_tools:`),
-  gemini (`.gemini/settings.json`), opencode (`.opencode/opencode.json`,
-  `--global` remaps to `.config/opencode/`), pimono (`.pi/`). Credential
+  gemini (`.gemini/settings.json`), opencode (`.opencode/opencode.json`),
+  pimono (`.pi/`). Under `--global` each adapter's paths resolve through its
+  own config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `GEMINI_CLI_HOME`, `PI_CODING_AGENT_DIR`, `XDG_CONFIG_HOME`) — see
+  `internal/cli/CLAUDE.md` "Global-scope root resolution". Credential
   injected ONLY via context (`WithCredential`) — adapters can't read env.
   Runtime config wires MCP + A2A as http entries with
   `x-ach-key` + `x-ach-environment` headers. **Models are never projected**
