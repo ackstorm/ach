@@ -24,8 +24,18 @@
 
 set -euo pipefail
 
-IMAGE="${ACH_DEVTOOLS_IMAGE:-ach-devtools:latest}"
 WORKSPACE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Content-address the local image on sha256(Dockerfile.devtools) — the SAME
+# key .github/workflows/devtools-image.yml uses for the GHCR image. The tag
+# used to be a fixed `:latest`, and the build below only fires when the image
+# is ABSENT, so editing Dockerfile.devtools changed nothing: every caller kept
+# running the stale toolchain (old Go, old pinned tools, old GOFLAGS) with no
+# signal, while CI ran the new one. Keying on the hash makes an edit miss the
+# cache and rebuild by itself. Old images linger as garbage — `make
+# clean-docker` reclaims them.
+DEVTOOLS_HASH="$(sha256sum "${WORKSPACE}/Dockerfile.devtools" | cut -c1-12)"
+IMAGE="${ACH_DEVTOOLS_IMAGE:-ach-devtools:${DEVTOOLS_HASH}}"
 
 # If we are already inside the devtools container, run the command directly.
 # Auto-wrapping make targets (Makefile `container_target` macro) re-invoke

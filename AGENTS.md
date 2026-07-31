@@ -265,8 +265,21 @@ make shell                       # interactive shell in the devtools container
 `scripts/dev.sh` mounts the repo + docker socket, preserves host UID:GID, and
 persists Go caches under `.gocache/` (per-workspace, so **each git worktree gets
 its own**). CI uses a pre-baked GHCR image keyed by
-`sha256(Dockerfile.devtools)[:12]` (local-build fallback on miss). Tool versions
+`sha256(Dockerfile.devtools)[:12]` (local-build fallback on miss); **the local
+tag is keyed on that same hash**, so editing `Dockerfile.devtools` misses the
+cache and rebuilds on the next call. (It was a fixed `:latest` until
+2026-07-31, and dev.sh only builds when the image is ABSENT — so a Dockerfile
+edit silently changed nothing locally while CI ran the new image. Old
+hash-tagged images linger; `make clean-docker` reclaims them.) Tool versions
 pinned in `Dockerfile.devtools` + `go.mod`.
+
+The container sets **`GOFLAGS=-mod=readonly`** (the Go ≥1.16 default, pinned so
+a stray environment cannot loosen it). Under `-mod=mod` any module-graph-walking
+command silently rewrote `go.sum` — `go list -m all` alone appended ~279
+pruned-graph `/go.mod` hashes that `go mod tidy` does not record, arming the
+pre-push `go mod tidy` drift gate from an ordinary dev command with no signal.
+If a go command now fails on a missing `go.sum` entry, the fix is an explicit
+`go mod tidy`, never loosening the flag.
 
 **Keep the environment clean — `make clean-cache` after each feature.** Go marks
 its module cache read-only (`0444`/`0555`), so a plain `rm -rf .gocache` (or

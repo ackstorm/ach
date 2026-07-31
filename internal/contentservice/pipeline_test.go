@@ -184,8 +184,11 @@ func setupIntegration(t *testing.T) *testFixtures {
 	pool, pgCleanup := setupPostgresIntegration(t, ctx)
 	pepper := []byte("integration-test-pepper-32-bytes!")
 
-	// Resolver: real keystore.NewDBResolver wrapping the pool.
-	baseResolver, err := keystore.NewDBResolver(pool, pepper)
+	// Resolver: real keystore.NewDBResolver wrapping the pool. The pk_ extend
+	// hook is nil: production wires the LiteLLM expiry mirror, but it is
+	// best-effort and off the resolve path, so this pipeline test needs no
+	// LiteLLM stub to exercise the real resolver.
+	baseResolver, err := keystore.NewDBResolver(pool, pepper, nil)
 	if err != nil {
 		t.Fatalf("NewDBResolver: %v", err)
 	}

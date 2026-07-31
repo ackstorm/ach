@@ -27,9 +27,17 @@ ARG KIND_VERSION=v0.25.0
 ARG HELM_VERSION=v3.16.3
 ARG GOVULNCHECK_VERSION=v1.3.0
 
+# GOFLAGS=-mod=readonly (the Go >=1.16 default, pinned here so it survives a
+# stray environment): under -mod=mod any module-graph-walking command silently
+# rewrites go.sum. `go list -m all` alone appended ~279 pruned-graph /go.mod
+# hashes that `go mod tidy` does not record — arming the pre-push `go mod tidy`
+# drift gate from an ordinary dev command, with no signal at the time it
+# happened. readonly makes such a command fail loudly instead; the fix is then
+# an explicit `go mod tidy`. Verified no-op for build/vet/test across every
+# build tag (integration, e2e, longidempotency), golangci-lint and govulncheck.
 ENV DEBIAN_FRONTEND=noninteractive \
     GOTOOLCHAIN=local \
-    GOFLAGS=-mod=mod \
+    GOFLAGS=-mod=readonly \
     GOBIN=/usr/local/bin
 
 # OS deps: docker CLI + compose v1 (matches host's docker-compose), build essentials
