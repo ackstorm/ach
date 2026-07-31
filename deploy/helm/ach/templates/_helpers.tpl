@@ -29,6 +29,32 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end -}}
 
 {{/*
+ach.initContainers renders the pod's `initContainers:` block from the global
+`.Values.initContainers` plus the component's own list, mirroring how extraEnv
+composes global + per-component. Global entries run FIRST, then the
+component's — initContainers execute in list order, so the global ones are the
+shared preconditions every component waits on.
+
+Emits nothing at all when both lists are empty, so a pod spec never carries a
+stray `initContainers: []`.
+
+Usage (the caller owns the indentation, as with extraEnv):
+
+    {{- include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.forwarder.initContainers) | nindent 6 }}
+
+Entries are passed through verbatim — a raw container spec, NOT templated.
+Reference values from your own values file rather than expecting `{{ ... }}`
+inside an entry to be evaluated.
+*/}}
+{{- define "ach.initContainers" -}}
+{{- $all := concat (.global | default list) (.component | default list) -}}
+{{- with $all }}
+initContainers:
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{/*
 ach.litellmConnectionEnv — derives the LiteLLM coordinates that
 platform-api + content-service read from env (ACH_LITELLM_BASE_URL +
 ACH_LITELLM_MASTER_KEY) from the single litellmConnection values block,

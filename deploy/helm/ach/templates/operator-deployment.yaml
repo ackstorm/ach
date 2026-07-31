@@ -66,6 +66,9 @@ spec:
         app.kubernetes.io/component: operator
     spec:
       serviceAccountName: ach-operator
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.operator.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true

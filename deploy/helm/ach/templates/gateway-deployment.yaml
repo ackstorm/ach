@@ -34,6 +34,9 @@ spec:
         app.kubernetes.io/component: gateway
     spec:
       serviceAccountName: ach-gateway
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.gateway.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true

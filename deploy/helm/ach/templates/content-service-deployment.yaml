@@ -86,6 +86,9 @@ spec:
         app.kubernetes.io/component: content-service
     spec:
       serviceAccountName: ach-content-service
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.contentService.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true

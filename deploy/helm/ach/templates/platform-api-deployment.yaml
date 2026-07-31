@@ -59,6 +59,9 @@ spec:
         app.kubernetes.io/component: platform-api
     spec:
       serviceAccountName: ach-platform-api
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.platformApi.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true

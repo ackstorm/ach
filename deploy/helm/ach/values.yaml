@@ -64,6 +64,11 @@ operator:
   enabled: true
   replicas: 1
   resources: {}
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers` (see the top-level key). Raw container
+  # specs, passed through verbatim. NOTE: in the default topology
+  # content-service is a sidecar in this Pod, so these gate it too.
+  initContainers: []
   args:
     - operator
     - --metrics-bind-address=:8080
@@ -111,6 +116,9 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
 
 # forwarder: bridges in-cluster MCP servers and external clients.
 # §5.1 reverse-proxy plane + §9 JWT trust path. Boots two listeners:
@@ -120,6 +128,9 @@ forwarder:
   replicas: 1
   resources: {}
   args: ["forwarder"]
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
   # jwtSecretName names the Secret holding current/next Ed25519 signing
   # material per D-10 (data keys: current.kid, current.seed, next.kid?,
   # next.seed?). The operator MINTS + persists this Secret on boot
@@ -212,6 +223,9 @@ gateway:
   # refuses to start without it; the achagents projection is the allowlist
   # for /agents/{ns}/{service}/... routing to per-agent Services.
   extraEnv: []
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
 
 # contentService: serves agent-rendered content (assets, snapshots).
 contentService:
@@ -225,6 +239,11 @@ contentService:
   replicas: 1
   resources: {}
   args: ["content-service"]
+  # initContainers: extra init containers for the STANDALONE content-service
+  # Deployment, appended after any global `initContainers`. Inert while
+  # standalone=false — as a sidecar it shares the operator Pod, so use
+  # operator.initContainers instead. Raw container specs, verbatim.
+  initContainers: []
 
 # migrate: pre-install Job that runs schema migrations against Postgres.
 migrate:
@@ -389,3 +408,46 @@ metrics:
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.
 extraEnv: []
+
+# initContainers: init containers injected into EVERY ach Deployment
+# (operator — which also carries the content-service sidecar — plus
+# platform-api, forwarder, gateway, and the standalone content-service when
+# contentService.standalone=true). Each item is a raw container spec, passed
+# through verbatim; nothing inside it is templated, so reference concrete
+# values rather than expecting {{ ... }} to be evaluated.
+#
+# Per-Deployment lists live under the component's own key
+# (e.g. forwarder.initContainers) and are appended AFTER these. Init
+# containers run sequentially in list order, so global entries are the shared
+# preconditions every component waits on before its own.
+#
+# The migrate Job is deliberately NOT covered: it is the schema-migration
+# pre-install hook and gating it on the same preconditions as the services
+# risks a deadlock (a probe that waits for a migrated schema would wait on
+# the very Job it blocks).
+#
+# Example — hold every component until Postgres answers. Note the BOUNDED
+# retry with an explicit failure exit: a naked `until ...; do sleep N; done`
+# can never terminate if the target never appears, and the Pod would sit in
+# Init: forever instead of surfacing the fault. A failed init container is
+# retried by the kubelet under the Pod's restartPolicy, so exiting non-zero
+# is the correct way to give up.
+#
+#   initContainers:
+#     - name: wait-for-postgres
+#       image: postgres:16-alpine
+#       command:
+#         - sh
+#         - -c
+#         - |
+#           for i in $(seq 1 60); do
+#             pg_isready -h ach-postgresql -p 5432 && exit 0
+#             sleep 2
+#           done
+#           echo "postgres not ready after 120s" >&2; exit 1
+#       securityContext:
+#         allowPrivilegeEscalation: false
+#         runAsNonRoot: true
+#         capabilities:
+#           drop: ["ALL"]
+initContainers: []

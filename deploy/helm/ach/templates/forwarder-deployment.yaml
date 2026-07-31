@@ -40,6 +40,9 @@ spec:
         app.kubernetes.io/component: forwarder
     spec:
       serviceAccountName: ach-forwarder
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.forwarder.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true
