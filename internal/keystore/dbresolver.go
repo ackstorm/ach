@@ -36,11 +36,29 @@ type dbResolver struct {
 	ekFn   dbLookupFn
 }
 
+// PkExtendHook is called whenever a pk_ resolve actually slid the sliding
+// window forward (db.PkKeyInfo.Extended), so the backing LiteLLM key's expiry
+// can be re-based to match. litellmToken is the opaque LiteLLM token ACH
+// persists; it is never the plaintext bearer.
+//
+// The hook is invoked with a request-detached context and MUST return
+// promptly — it sits in the auth path of every service. The production
+// implementation (NewLiteLLMPkExtendHook) does the LiteLLM round-trip in the
+// background for exactly that reason. It has no error return: ACH's own row is
+// the authority for the auth decision, and a missed LiteLLM update only means
+// the LiteLLM key keeps its previous expiry until the next attempt, which the
+// 5-minute debounce naturally retries.
+type PkExtendHook func(ctx context.Context, litellmToken string)
+
 // NewDBResolver constructs the production dbResolver wired to the
 // pgxpool helpers from Plan 03-03 (db.PkCheckAndExtend, db.EkResolve).
 // Returns ErrEmptyPepper on a nil/zero-length pepper for the same
 // reasoning as NewCachedResolver.
-func NewDBResolver(pool *pgxpool.Pool, pepper []byte) (Resolver, error) {
+//
+// extendHook may be nil — content-service passes nil because it holds no
+// LiteLLM client; platform-api and the forwarder wire the LiteLLM
+// POST /key/update mirror.
+func NewDBResolver(pool *pgxpool.Pool, pepper []byte, extendHook PkExtendHook) (Resolver, error) {
 	if len(pepper) == 0 {
 		return nil, ErrEmptyPepper
 	}
@@ -49,7 +67,7 @@ func NewDBResolver(pool *pgxpool.Pool, pepper []byte) (Resolver, error) {
 	}
 	return &dbResolver{
 		pepper: append([]byte(nil), pepper...),
-		pkFn:   pkLookupFor(pool),
+		pkFn:   pkLookupFor(pool, extendHook),
 		ekFn:   ekLookupFor(pool),
 	}, nil
 }
@@ -112,7 +130,13 @@ func (r *dbResolver) Resolve(ctx context.Context, plaintext string) (*KeyInfo, e
 // that calls db.PkCheckAndExtend and maps the resulting *db.PkKeyInfo
 // to *KeyInfo (or returns (nil, nil) on the revoked/expired/unknown
 // path).
-func pkLookupFor(pool *pgxpool.Pool) dbLookupFn {
+//
+// When the call actually slid the sliding window forward and an extendHook is
+// wired, the hook mirrors the new expiry onto the backing LiteLLM key. The
+// context is detached from the request so a client that hangs up cannot abort
+// the mirror mid-flight; the 5-minute debounce inside PkCheckAndExtend caps
+// this to at most one LiteLLM round-trip per key per 5 minutes.
+func pkLookupFor(pool *pgxpool.Pool, extendHook PkExtendHook) dbLookupFn {
 	return func(ctx context.Context, credentialHashHex string) (*KeyInfo, error) {
 		row, err := db.PkCheckAndExtend(ctx, pool, credentialHashHex)
 		if err != nil {
@@ -120,6 +144,9 @@ func pkLookupFor(pool *pgxpool.Pool) dbLookupFn {
 		}
 		if row == nil {
 			return nil, nil
+		}
+		if row.Extended && extendHook != nil && row.LiteLLMToken != nil {
+			extendHook(context.WithoutCancel(ctx), *row.LiteLLMToken)
 		}
 		expires := row.ExpiresAt
 		return &KeyInfo{

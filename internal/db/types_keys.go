@@ -21,6 +21,13 @@ package db
 
 import "time"
 
+// PkSlidingWindow is the pk_ sliding-window TTL. It is the single canonical
+// value: PkCheckAndExtend's SQL slides expires_at by it, the SSO mint path
+// stamps the ACH row and the LiteLLM key Duration with it, and
+// keystore.NewLiteLLMPkExtendHook re-bases the LiteLLM key by it. The SQL
+// carries `interval '7 days'` inline — keep the two in step.
+const PkSlidingWindow = 7 * 24 * time.Hour
+
 // PkKeyInfo is the typed row shape returned by PkCheckAndExtend, GetPersonalKey,
 // RevokePersonalKey, and the elements of ListPersonalKeysByOwner. The Hub §7.1
 // sliding-window contract guarantees that a non-nil PkKeyInfo means the key
@@ -47,6 +54,12 @@ type PkKeyInfo struct {
 	CreatedAt          time.Time  // row-creation wall-clock (read by ListPersonalKeysByOwner)
 	LastUsedAt         *time.Time // NULL on freshly minted rows
 	RevokedAt          *time.Time // NULL while status='active'
+	// Extended reports whether THIS PkCheckAndExtend call actually slid the
+	// window forward (i.e. the 5-minute debounce elapsed) rather than
+	// returning the row untouched. Set only by PkCheckAndExtend; the other
+	// read paths leave it false. Callers use it to mirror the new expiry onto
+	// the backing LiteLLM key — see keystore.PkExtendHook.
+	Extended bool
 }
 
 // EkKeyInfo is the typed row shape returned by EkResolve, GetEnvironmentKey,

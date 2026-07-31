@@ -29,6 +29,14 @@
 // cheap SSO round-trip, so the cap converts the only unbounded credential into a
 // bounded one. The 90d/7d intervals are inline constants (promote to config if a
 // deployer ever needs to tune them).
+//
+// The slide is ACH-side only. The backing LiteLLM key is minted once with a
+// fixed Duration, so mirroring the new expiry onto it is the caller's job —
+// PkKeyInfo.Extended reports whether this call actually moved the window, and
+// keystore.PkExtendHook fires the LiteLLM POST /key/update off the back of it.
+// Without that mirror the LiteLLM key dies at mint+7d while ACH keeps the pk_
+// valid for up to 90 days, and LLM traffic 401s at LiteLLM against a key ACH
+// reports as active.
 
 package db
 
@@ -62,7 +70,9 @@ import (
 func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex string) (*PkKeyInfo, error) {
 	const sql = `
 		WITH candidate AS (
-		    SELECT key_id, owner_email
+		    SELECT key_id, owner_email,
+		           (last_used_at IS NULL
+		            OR last_used_at < now() - interval '5 minutes') AS should_extend
 		      FROM personal_keys
 		     WHERE credential_hash = $1
 		       AND status = 'active'
@@ -72,14 +82,11 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		)
 		UPDATE personal_keys SET
 		    last_used_at = CASE
-		        WHEN personal_keys.last_used_at IS NULL
-		          OR personal_keys.last_used_at < now() - interval '5 minutes'
-		        THEN now()
+		        WHEN candidate.should_extend THEN now()
 		        ELSE personal_keys.last_used_at
 		    END,
 		    expires_at = CASE
-		        WHEN personal_keys.last_used_at IS NULL
-		          OR personal_keys.last_used_at < now() - interval '5 minutes'
+		        WHEN candidate.should_extend
 		        THEN LEAST(now() + interval '7 days',
 		                   personal_keys.created_at + interval '90 days')
 		        ELSE personal_keys.expires_at
@@ -91,12 +98,13 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		          personal_keys.expires_at,
 		          personal_keys.litellm_user_id,
 		          personal_keys.litellm_token,
-		          personal_keys.litellm_key_material_enc
+		          personal_keys.litellm_key_material_enc,
+		          candidate.should_extend
 	`
 	r := &PkKeyInfo{}
 	err := pool.QueryRow(ctx, sql, credentialHashHex).Scan(
 		&r.KeyID, &r.OwnerEmail, &r.ExpiresAt, &r.LiteLLMUserID, &r.LiteLLMToken,
-		&r.LiteLLMKeyMaterial,
+		&r.LiteLLMKeyMaterial, &r.Extended,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -69,6 +69,11 @@ func TestPkCheckAndExtend_Active_LastUsedStale(t *testing.T) {
 	if !info.ExpiresAt.Equal(expiresAt) {
 		t.Errorf("info.ExpiresAt=%v != row.expires_at=%v", info.ExpiresAt, expiresAt)
 	}
+	// Extended drives the LiteLLM expiry mirror (keystore.PkExtendHook); the
+	// window moved, so it must be true.
+	if !info.Extended {
+		t.Error("info.Extended=false; want true (the window slid)")
+	}
 }
 
 // TestPkCheckAndExtend_Active_LastUsedFresh verifies the debounce: last_used_at
@@ -114,6 +119,11 @@ func TestPkCheckAndExtend_Active_LastUsedFresh(t *testing.T) {
 	}
 	if !newExpires.Equal(origExpires) {
 		t.Errorf("expires_at extended on debounce path: orig=%v new=%v", origExpires, newExpires)
+	}
+	// Nothing moved, so the LiteLLM mirror must NOT fire — otherwise every
+	// request would issue a POST /key/update.
+	if info.Extended {
+		t.Error("info.Extended=true on the debounce path; want false")
 	}
 }
 

@@ -80,3 +80,18 @@ func (c *RESTClient) RevokeKey(ctx context.Context, keyID string) error {
 	_, err := c.makeRequest(ctx, "POST", "/key/delete", map[string]any{"keys": []string{keyID}})
 	return err
 }
+
+// KeyExtend issues POST /key/update with body {"key": keyID, "duration":
+// duration}, re-basing the key's expiry to now()+duration. LiteLLM's
+// UpdateKeyRequest accepts `key` as either the plaintext sk-… or the stored
+// opaque token — ACH always passes the latter (litellm_token), matching
+// RevokeKey.
+//
+// Like RevokeKey this emits no audit event; the caller owns that.
+func (c *RESTClient) KeyExtend(ctx context.Context, keyID, duration string) error {
+	_, err := c.makeRequest(ctx, "POST", "/key/update", map[string]any{
+		"key":      keyID,
+		"duration": duration,
+	})
+	return err
+}

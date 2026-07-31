@@ -262,7 +262,8 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 
 	platformStore := store.New(pool, cfg.Namespace, logr.Discard())
 
-	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper,
+		keystore.NewLiteLLMPkExtendHook(liteLLM, db.PkSlidingWindow, ctrl.Log.WithName("pk-extend")))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}

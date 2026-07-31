@@ -210,6 +210,16 @@ Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
   7-day sliding window, 5-min debounce, **90-day hard cap** from created_at),
   `EkResolve` (debounced last_used). `(nil,nil)` = revoked/expired/unknown,
   deliberately indistinguishable (→ 401 `expired_or_revoked`).
+- The pk_ slide is **mirrored onto LiteLLM**: `PkCheckAndExtend` returns
+  `Extended`, and `keystore.NewLiteLLMPkExtendHook` fires a background
+  `POST /key/update` (best-effort, off the request path) so the LiteLLM key's
+  expiry tracks the ACH row's. Without the mirror the LiteLLM key dies at
+  mint+7d while ACH still honours the pk_ for up to 90 days — LLM traffic 401s
+  at LiteLLM against a key `ach-cli` reports as active. `db.PkSlidingWindow` is
+  the one canonical window value (mint, slide, and mirror all read it).
+- **Nothing ever writes `status='expired'`** — expiry lives only in the auth
+  predicate. Any read path reporting liveness (e.g. `db.ListKeys`) must DERIVE
+  it from `expires_at` + the 90d cap, or it will report dead keys as active.
 
 ## 6. Identity + security model
 

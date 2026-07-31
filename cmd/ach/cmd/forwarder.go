@@ -301,7 +301,12 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		return out, fmt.Errorf("informer Secret: %w", err)
 	}
 
-	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
+	// The pk_ sliding window is ACH-side; the extend hook mirrors each slide
+	// onto the backing LiteLLM key so it does not die at mint+window while ACH
+	// still honours the pk_ (see db.PkCheckAndExtend). Best-effort, off the
+	// request path.
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper,
+		keystore.NewLiteLLMPkExtendHook(ll, db.PkSlidingWindow, ctrl.Log.WithName("pk-extend")))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}

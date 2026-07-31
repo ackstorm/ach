@@ -180,7 +180,8 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	auditLog := audit.NewLogger(os.Stdout)
 
 	// ─── keystore.Resolver chain (Phase 3 D-08) ───
-	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper)
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper,
+		keystore.NewLiteLLMPkExtendHook(liteLLM, db.PkSlidingWindow, liteLLMLog.WithName("pk-extend")))
 	if err != nil {
 		return fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}

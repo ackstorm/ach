@@ -842,6 +842,8 @@ type keyListItemWire struct {
 	CreatedAt   string  `json:"created_at"`
 	LastUsedAt  *string `json:"last_used_at,omitempty"`
 	RevokedAt   *string `json:"revoked_at,omitempty"`
+	// No expiry field: a pk_'s window slides on every use, so any date here
+	// would be stale on arrival. Status carries the liveness instead.
 }
 
 // ListAllHandler serves GET /platform/keys — the caller's own pk_ + ek_ keys.

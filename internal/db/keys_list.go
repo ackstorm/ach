@@ -49,11 +49,25 @@ func ListKeys(ctx context.Context, pool *pgxpool.Pool, f KeyListFilter, limit in
 
 	// $1 owner filter (nil=all), $2 type filter, $3 status filter,
 	// $4 environment filter, $5 cursor ts (nil=no cursor), $6 cursor id, $7 limit+1.
+	//
+	// pk_ expiry is enforced ONLY by the PkCheckAndExtend auth predicate — nothing
+	// ever writes status='expired' back to the column — so an expired pk_ still
+	// reads status='active' on disk. Derive it here against the SAME predicate
+	// (expires_at AND the created_at + 90d hard cap) so the listing never reports
+	// a dead key as active and so ?status=expired is not a dead filter.
+	//
+	// The expiry DATE is deliberately not projected: the window slides on every
+	// use, so any date shown to a user is stale the moment they read it. Liveness
+	// is the only honest thing to report. environment_keys have no expires_at
+	// column at all — an ek_ is perpetual, hence never 'expired'.
 	const q = `
 WITH combined AS (
     SELECT key_id, 'pk'::text AS key_type, owner_email,
            NULL::text AS environment, NULL::text AS name,
-           status, created_at, last_used_at, revoked_at
+           CASE WHEN status = 'active'
+                 AND LEAST(expires_at, created_at + interval '90 days') <= now()
+                THEN 'expired' ELSE status END AS status,
+           created_at, last_used_at, revoked_at
     FROM personal_keys
     UNION ALL
     SELECT key_id, 'ek'::text AS key_type, owner_email,

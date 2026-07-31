@@ -94,6 +94,12 @@ type Client interface {
 	// LiteLLM-internal key_id (NOT the plaintext bearer key).
 	RevokeKey(ctx context.Context, keyID string) error
 
+	// KeyExtend is deliberately NOT part of this interface — only the
+	// concrete *RESTClient implements it, and the sole caller (the keystore
+	// pk_ extend hook, wired in cmd/ach) already holds the concrete type.
+	// Widening Client would force the method onto every fake in the tree
+	// for no gain.
+
 	// Phase 3 — added per D-25. Consumed by the Platform API SSO handler
 	// (Plan 03-07) and the env-keys create handler (Plan 03-08).
 

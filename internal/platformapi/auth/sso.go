@@ -266,8 +266,10 @@ type callbackResponse struct {
 
 // pkExpiryWindow is the sliding-window TTL for newly minted pk_ rows.
 // Hub §7: 7 days. PkCheckAndExtend (Plan 03-03) extends this on every
-// auth call where last_used_at is older than 5 minutes.
-const pkExpiryWindow = 7 * 24 * time.Hour
+// auth call where last_used_at is older than 5 minutes, and
+// keystore.NewLiteLLMPkExtendHook mirrors each slide onto the LiteLLM key —
+// so all three must use the one canonical value.
+const pkExpiryWindow = db.PkSlidingWindow
 
 // durationString renders a Go duration as a LiteLLM key duration ("168h").
 // LiteLLM accepts an <int><unit> string; hours dodge day-unit differences.

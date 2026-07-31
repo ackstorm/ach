@@ -164,6 +164,14 @@ the team model-access path — which is why ACH uses an impossible model name.
   opposite of `pk_` below (168h sliding window, re-minted on every SSO login)
   because an `ek_` has no renewal path — a finite window with no re-mint would
   silently break long-running agents once it elapsed.
+- A `pk_`'s 168h window is **slid on both sides**. ACH slides its own
+  `personal_keys.expires_at` in `PkCheckAndExtend`; because LiteLLM stamps the
+  key's expiry once at `/key/generate` time, `keystore.NewLiteLLMPkExtendHook`
+  must mirror each slide with `POST /key/update {"key": <litellm_token>,
+  "duration": "168h"}`. Skip the mirror and the LiteLLM key expires at mint+7d
+  while ACH keeps honouring the `pk_` up to the 90-day cap: `ach-cli` reports
+  the key active, platform-api accepts it, and only the forwarded LLM call
+  fails — 401 from LiteLLM. Measured in prod 2026-07-31 before the fix.
 - The environment's grants live only in the access group; the shell team is
   constant boilerplate, identical for every environment.
 - `pk_` keys are now minted with `team_id: ach-user-<email>` — a

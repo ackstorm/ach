@@ -562,6 +562,7 @@ type adminKeyListItem struct {
 	CreatedAt   string  `json:"created_at"`
 	LastUsedAt  *string `json:"last_used_at,omitempty"`
 	RevokedAt   *string `json:"revoked_at,omitempty"`
+	// No expiry field — mirrors keyListItemWire; see the note there.
 }
 
 // adminDefaultLimit is the default page size for ListKeysHandler.

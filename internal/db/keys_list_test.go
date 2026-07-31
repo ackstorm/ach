@@ -189,3 +189,62 @@ func TestListKeys_FiltersByEnvironment(t *testing.T) {
 		t.Errorf("got[0].Environment=%v; want env1", got[0].Environment)
 	}
 }
+
+// TestListKeys_DerivesExpiredStatus pins the fix for the "ach keys list lies"
+// bug: nothing ever writes status='expired' to personal_keys (expiry is only
+// enforced by the PkCheckAndExtend auth predicate), so a dead pk_ used to list
+// as active. ListKeys must derive the status — both for the past-expires_at
+// case and for the created_at + 90d hard cap — and expose the effective
+// expires_at. environment_keys are perpetual: ExpiresAt stays nil.
+func TestListKeys_DerivesExpiredStatus(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email, expires_at, created_at, status)
+		VALUES
+		    ('pkid_live', 'h_live', 'exp@x.example', now() + interval '1 day',   now() - interval '1 hour',  'active'),
+		    ('pkid_gone', 'h_gone', 'exp@x.example', now() - interval '1 hour',  now() - interval '8 days',  'active'),
+		    ('pkid_cap',  'h_cap',  'exp@x.example', now() + interval '1 day',   now() - interval '91 days', 'active')`)
+	mustExec(t, ctx, pool, `
+		INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name)
+		VALUES ('ekid_perp', 'h_perp', 'envA', 'exp@x.example', 'perp')`)
+
+	owner := "exp@x.example"
+	all, _, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	byID := map[string]db.KeyListItem{}
+	for _, k := range all {
+		byID[k.KeyID] = k
+	}
+	for id, want := range map[string]string{
+		"pkid_live": "active",
+		"pkid_gone": "expired", // expires_at in the past
+		"pkid_cap":  "expired", // past created_at + 90 days
+		"ekid_perp": "active",
+	} {
+		if got := byID[id].Status; got != want {
+			t.Errorf("%s status=%q; want %q", id, got, want)
+		}
+	}
+	// ?status=expired must no longer be a dead filter, and ?status=active must
+	// hide the two dead pk_ rows.
+	expired, _, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner, Status: "expired"}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys status=expired: %v", err)
+	}
+	if len(expired) != 2 {
+		t.Errorf("status=expired len=%d; want 2, got %+v", len(expired), expired)
+	}
+	active, _, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner, Status: "active"}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys status=active: %v", err)
+	}
+	if len(active) != 2 {
+		t.Errorf("status=active len=%d; want 2 (pkid_live + ekid_perp), got %+v", len(active), active)
+	}
+}
