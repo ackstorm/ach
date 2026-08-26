@@ -318,7 +318,9 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
-  `qa-security` + `pre-push`; `make hooks` installs `.git/hooks/pre-push ->
+  `qa-fuzz-short` + `pre-push` (NOT `qa-security` — pre-push gate 13 already
+  runs the same `govulncheck-gate.sh`, so calling both ran the identical
+  whole-module analysis twice); `make hooks` installs `.git/hooks/pre-push ->
   scripts/pre-push-check.sh` (and removes any stale pre-commit hook from a prior
   install). Inner loop: `make test-unit-pkg PKG=...`,
   `make test-envtest-pkg PKG=... [FOCUS=TestX]`.

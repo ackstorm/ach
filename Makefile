@@ -348,8 +348,13 @@ pre-push: ## Host-only — 18-gate pre-publication check (gitleaks + trufflehog 
 	./scripts/pre-push-check.sh
 
 .PHONY: verify
-verify: ## Host-only — full pre-publication gate bundle: in-container security + host pre-push. Single command for all gates.
-	$(MAKE) qa-security
+verify: ## Host-only — full pre-publication gate bundle: fuzz-short + host pre-push. Single command for all gates.
+# Deliberately NOT `qa-security` here: qa-security = govulncheck-gate + fuzz-short,
+# and pre-push gate 13 already runs the SAME scripts/govulncheck-gate.sh. Calling
+# both ran the identical whole-module reachability analysis twice per `make verify`
+# (govulncheck can never be scoped to a diff, so each run is the full cost).
+# Run fuzz-short directly — it is the only part of qa-security pre-push lacks.
+	$(MAKE) qa-fuzz-short
 	$(MAKE) pre-push
 
 .PHONY: hooks
