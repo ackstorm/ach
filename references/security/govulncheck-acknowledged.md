@@ -1,7 +1,7 @@
 # Acknowledged govulncheck residuals
 
-**Date:** 2026-07-13
-**Toolchain at acknowledgement:** Go 1.26.5 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.53.0`
+**Date:** 2026-08-26
+**Toolchain at acknowledgement:** Go 1.26.6 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.53.0`
 **Scanner:** `govulncheck@v1.3.0` (pinned in `Dockerfile.devtools::GOVULNCHECK_VERSION`)
 **Invocation:** `./scripts/dev.sh govulncheck ./...`
 
@@ -31,6 +31,13 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-08-26: Bumped Go toolchain 1.26.5 → **1.26.6** (`go.mod` `toolchain` +
+  `Dockerfile.devtools` pinned to `golang:1.26.6-bookworm`). Cleared seven
+  stdlib advisories surfaced by a govulncheck DB refresh: `GO-2026-5026`,
+  `GO-2026-5972`, `GO-2026-6088`, `GO-2026-6089`, `GO-2026-6090`,
+  `GO-2026-6091` and `GO-2026-6218`. All fixed in go1.26.6; stdlib-only and
+  independent of any first-party change. `govulncheck ./...` now reports 0
+  reachable. Ack-list stays empty; gate expects 0.
 - 2026-07-13: Bumped Go toolchain 1.26.4 → **1.26.5** (`go.mod` `toolchain` +
   `Dockerfile.devtools` pinned to `golang:1.26.5-bookworm`). Cleared
   `GO-2026-5856` (crypto/tls Encrypted Client Hello privacy leak), surfaced by
@@ -71,5 +78,5 @@ reviewer-approved row + justification before merge.
   one-directionally (new reachable advisories block; cleared rows only warn)
   as a pre-push gate (gate 13 in `scripts/pre-push-check.sh`).
 - `Dockerfile.devtools` — pinned `GOVULNCHECK_VERSION` + base Go version.
-- `go.mod` — `toolchain go1.26.4` directive pins CI's Go runtime to
+- `go.mod` — `toolchain go1.26.6` directive pins CI's Go runtime to
   match the devtools image.

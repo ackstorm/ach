@@ -2,7 +2,7 @@ module github.com/ackstorm/ach
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 godebug default=go1.23
 
