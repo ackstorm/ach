@@ -265,8 +265,11 @@ field.
 ## 13. The JWT `groups` claim exports team ALIASES, never shell teams.
 
 The Forwarder's `/mcp` + `/a2a` identity JWT
-(`docs/developer-guide/jwt-forwarder.md`) carries the caller's LiteLLM team
-**names** — never team UUIDs — in its optional `groups` claim; that's the only
+(`docs/developer-guide/jwt-forwarder.md`) carries whatever LiteLLM's
+`team_alias` resolves to (falling back to `team_id` when the alias is
+empty) in its optional `groups` claim; ACH performs no UUID→alias
+translation of its own, so an `authorizedTeams` entry authored as a raw
+team UUID ships through unchanged. That's the only
 identifier ACH exports to a backend for group-owned-resource authorization.
 `ach-env-<name>` and `ach-user-<email>` (§6, §10) are ACH's own permission
 plumbing and are filtered out before minting

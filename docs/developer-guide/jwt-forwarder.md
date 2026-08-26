@@ -80,7 +80,7 @@ verify offline.
 | `iss`         | Forwarder `ACH_BASE_URL` (HTTPS-only in prod per FWD-10) | Hub §9.1 |
 | `sub`         | Bare `<owner-email>` (no namespace prefix)       | Hub §9.1   |
 | `email`       | Bare `<owner-email>` (mirrors `sub`); **omitted when empty** — additive, for consumers that key by email | — |
-| `groups`      | Caller's LiteLLM team **aliases** (never UUIDs), deduplicated + sorted, ACH's internal shell teams stripped; **omitted entirely when empty** — additive, see below | — |
+| `groups`      | Caller's LiteLLM team aliases (ACH does no UUID→alias translation — see below), deduplicated + sorted, ACH's internal shell teams stripped; **omitted entirely when empty** — additive, see below | — |
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
@@ -109,7 +109,8 @@ to be steady-state.
 ### The `groups` claim
 
 The Forwarder emits `groups` — the caller's LiteLLM **team aliases** — on
-every minted token. Backends use it to authorize group-owned resources.
+minted tokens whose resolved set is non-empty. Backends use it to authorize
+group-owned resources.
 
 | Key type | `groups` |
 |----------|----------|
@@ -121,13 +122,22 @@ Both are sorted, deduplicated, and stripped of ACH's internal shell teams
 is empty — consumers must read an absent claim as "no groups", never as an
 error.
 
-Values are aliases, not team UUIDs. Renaming a LiteLLM team therefore
-changes the claim; a backend keying on the old alias stops matching.
+Values are whatever LiteLLM's `team_alias` resolves to (falling back to
+`team_id` if the alias is empty) — ACH performs no UUID→alias translation
+of its own, so an `authorizedTeams` entry authored as a raw team UUID
+ships through unchanged. Renaming a LiteLLM team therefore changes the
+claim; a backend keying on the old alias stops matching.
 
 **Staleness.** There is no revocation channel: a backend trusts the claim
-for the token's life. With `exp = iat + 120` and a 60s team-membership
-cache, removing a user from a LiteLLM team takes effect at the backend
-after at most ~180s.
+for the token's life. Two distinct vectors, two distinct bounds. Removing a
+user from a LiteLLM team affects the `pk_` path only (the 60s
+team-membership cache) and takes effect at the backend after at most
+`exp` (120s) + 60s ≈ 180s. Dropping a team from
+`Environment.spec.authorizedTeams` affects **both** key types — `ek_`
+groups read the Environment row directly, and `pk_` groups intersect
+against it — and bounds on `exp` (120s) + the `envstore` package's 5-minute
+NOTIFY-loss safety-net refresh (`internal/forwarder/envstore/store.go`)
+≈ ~7 minutes worst case.
 
 ---
 

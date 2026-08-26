@@ -60,11 +60,21 @@ Create the groups in ach-memory with `id` set to the LiteLLM team alias
 
 ## 6. Caveats
 
-- **~180s revocation window.** There is no revocation channel: `exp = iat +
-  120` plus a 60s LiteLLM team-membership cache means removing a user from a
-  team takes effect at ach-memory after at most ~180s.
+- **Two staleness windows, not one.** There is no revocation channel.
+  Removing a user from a LiteLLM team affects `pk_` only and takes effect
+  at ach-memory after at most `exp` (120s) + the 60s LiteLLM
+  team-membership cache ≈ 180s. Dropping a team from the Environment's
+  `authorizedTeams` affects **both** `pk_` and `ek_` and takes effect after
+  at most `exp` (120s) + the forwarder's `envstore` 5-minute
+  NOTIFY-loss safety-net refresh ≈ ~7 minutes worst case.
 - **An `ek_` is more privileged than any single human.** It carries the
   union of every team on its Environment, not one caller's teams.
+- **An `ek_`'s identity is the minting admin, not the agent.** `sub` (and
+  `email`) on an `ek_`-minted token is the `owner_email` of the key row —
+  the human who ran `ach-cli keys create` — never the agent process using
+  the key. Every pod sharing one `ek_` therefore transacts against
+  ach-memory as that one human's identity while simultaneously carrying
+  the union of every team on the Environment (the caveat above).
 - **Renaming a LiteLLM team orphans the matching group.** The claim carries
   the team alias, not a stable id — rename the team in ach-memory too, or
   the group stops matching.
