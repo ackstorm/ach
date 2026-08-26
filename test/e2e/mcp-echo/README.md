@@ -15,7 +15,10 @@ Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
 > **JWT claims.** Backends verify `iss` / `aud` / `exp` only — `nbf` is
 > **absent** (intentional; `exp` is the sole time bound), so do not require it.
 > `sub` is the bare `<owner-email>` (no namespace prefix); the additive `email`
-> claim mirrors `sub`.
+> claim mirrors `sub`. The verifier also captures `iss` / `aud` / `sub` / `kid`
+> and the additive `groups` claim (the caller's LiteLLM team aliases) — `groups`
+> is **optional**: absent means the caller belongs to no team, never a
+> verification error.
 
 ## Environment
 
