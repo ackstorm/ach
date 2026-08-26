@@ -25,7 +25,12 @@ import (
 // Returns nil rather than an empty slice when nothing survives, so the
 // signer's len(Groups) > 0 test omits the claim entirely.
 func filterShellTeams(in []string) []string {
-	var out []string //nolint:prealloc // must stay nil (not empty) when nothing survives
+	// out is left nil when nothing survives — a preallocated `make([]string,
+	// 0, len(in))` would instead return a non-nil, zero-length slice,
+	// breaking that (signer.go's len(Groups) > 0 gate would still behave
+	// the same either way, but the doc'd nil-on-empty contract above and
+	// TestFilterShellTeams_EmptyResultIsNil would not).
+	var out []string //nolint:prealloc // preallocating would defeat the nil-on-empty return above
 	for _, t := range in {
 		if strings.HasPrefix(t, litellm.ShellTeamPrefix) ||
 			strings.HasPrefix(t, litellm.UserShellPrefix) {

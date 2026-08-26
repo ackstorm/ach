@@ -552,8 +552,11 @@ func TestHandlerMCP_PkGroupsClaim(t *testing.T) {
 	signer := &mockSigner{returnToken: "ACH-TOKEN"}
 	deps := mkDeps(t, upstream, signer, precheck.Deps{
 		EnvProvider: newEnvProvider(env),
-		// The caller's own ach-user-* shell is always in their LiteLLM team
-		// list; team-q is a membership no Environment authorizes here.
+		// ach-user-u@e is dropped by the precheck intersection against the
+		// Environment's authorizedTeams (team-a/team-x) before
+		// filterShellTeams ever sees it — this test exercises the
+		// intersection, not the shell filter (see G1 for that). team-q is
+		// a membership no Environment here authorizes.
 		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "ach-user-u@e", "team-q"}},
 	}, newBIPResolver(bipRow))
 

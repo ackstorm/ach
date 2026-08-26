@@ -17,6 +17,21 @@ func TestFilterShellTeams_DropsShellPrefixes(t *testing.T) {
 	}
 }
 
+// G4: a prefix boundary. An alias that IS exactly the shell prefix (no
+// suffix) must still be dropped, while an alias that merely CONTAINS a
+// shell prefix mid-string must survive — this pins strings.HasPrefix
+// semantics against a regression to strings.Contains, which would
+// silently drop legitimate teams.
+func TestFilterShellTeams_PrefixBoundary(t *testing.T) {
+	got := filterShellTeams([]string{
+		"ach-env-",
+		"team-ach-env-x",
+	})
+	if len(got) != 1 || got[0] != "team-ach-env-x" {
+		t.Fatalf("got %v; want [team-ach-env-x]", got)
+	}
+}
+
 // G2: the result is deduplicated and sorted so the claim is deterministic
 // for a given input set (EnvProvider.List iterates a map).
 func TestFilterShellTeams_DedupesAndSorts(t *testing.T) {
