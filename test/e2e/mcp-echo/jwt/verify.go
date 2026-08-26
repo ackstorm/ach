@@ -22,12 +22,13 @@ type Expectations struct {
 // Verified is the surface returned to callers (middleware / tool) on
 // a successful Verify.
 type Verified struct {
-	Iss string
-	Sub string
-	Aud string
-	Kid string
-	Iat int64
-	Exp int64
+	Iss    string
+	Sub    string
+	Aud    string
+	Kid    string
+	Iat    int64
+	Exp    int64
+	Groups []string
 }
 
 // Verifier resolves Ed25519 public keys via a KeyCache and validates
@@ -102,7 +103,19 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Verified, error) {
 		return Verified{}, fmt.Errorf("%w: missing exp", ErrInvalidToken)
 	}
 
-	return Verified{Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp}, nil
+	// "groups" is optional: an absent claim means the caller belongs to no
+	// group, which is not an error. Non-string entries are skipped rather
+	// than rejected — a malformed claim must not turn into a 401.
+	var groups []string
+	if raw, ok := claims["groups"].([]any); ok {
+		for _, g := range raw {
+			if s, ok := g.(string); ok {
+				groups = append(groups, s)
+			}
+		}
+	}
+
+	return Verified{Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp, Groups: groups}, nil
 }
 
 func claimInt(m jwtv5.MapClaims, k string) int64 {

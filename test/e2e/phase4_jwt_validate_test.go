@@ -67,12 +67,13 @@ const (
 // into /__capture/last (echojwt.Verified → json keys are PascalCase by
 // default, see test/e2e/mcp-echo/capture.go).
 type jwtClaimsCapture struct {
-	Iss string `json:"Iss"`
-	Sub string `json:"Sub"`
-	Aud string `json:"Aud"`
-	Kid string `json:"Kid"`
-	Iat int64  `json:"Iat"`
-	Exp int64  `json:"Exp"`
+	Iss    string   `json:"Iss"`
+	Sub    string   `json:"Sub"`
+	Aud    string   `json:"Aud"`
+	Kid    string   `json:"Kid"`
+	Iat    int64    `json:"Iat"`
+	Exp    int64    `json:"Exp"`
+	Groups []string `json:"Groups"`
 }
 
 type captureSnap struct {
@@ -121,11 +122,12 @@ func testJWTValidateDirect(t *testing.T, mcpEchoLocal string) {
 
 	now := time.Now().Unix()
 	tok := mintAchJWT(t, kid, seed, jwtv5.MapClaims{
-		"iss": expectedIss,
-		"sub": "ach-system/e2e-direct@test",
-		"aud": expectedAud,
-		"iat": now,
-		"exp": now + 120,
+		"iss":    expectedIss,
+		"sub":    "ach-system/e2e-direct@test",
+		"aud":    expectedAud,
+		"iat":    now,
+		"exp":    now + 120,
+		"groups": []string{"default"}, // mirrors the demo Environment's sole authorizedTeams entry, per assertCapturedClaims
 	})
 
 	resetMcpEchoCapture(t, mcpEchoLocal)
@@ -382,6 +384,12 @@ func assertCapturedClaims(t *testing.T, snap captureSnap, wantIss, wantAud, want
 	}
 	if snap.JWTClaims.Sub == "" {
 		t.Fatalf("sub empty — Forwarder/test should set ach-system/<owner>")
+	}
+	// The demo Environment authorizes exactly one team ("default"), so both
+	// the ek_ and pk_ paths mint the same single-entry groups claim. ACH's
+	// shell teams (ach-env-*/ach-user-*) must never appear.
+	if len(snap.JWTClaims.Groups) != 1 || snap.JWTClaims.Groups[0] != "default" {
+		t.Fatalf("groups = %v; want [default]", snap.JWTClaims.Groups)
 	}
 }
 

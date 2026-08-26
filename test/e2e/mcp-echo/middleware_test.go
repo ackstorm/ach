@@ -37,7 +37,8 @@ func newSignedTokenFor(t *testing.T, iss, aud string) (jwksURL string, token str
 	now := time.Now().Unix()
 	tok := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, jwtv5.MapClaims{
 		"iss": iss, "aud": aud, "sub": "ns/alice@example.com",
-		"iat": now, "exp": now + 60,
+		"groups": []string{"team-a", "team-b"},
+		"iat":    now, "exp": now + 60,
 	})
 	tok.Header["kid"] = kid
 	tok.Header["typ"] = "JWT"
@@ -194,5 +195,24 @@ func TestJWTMiddleware_OptionalStillRejectsBadToken(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status: got %d want 401 (bad token must 401 even in optional mode)", w.Code)
+	}
+}
+
+// The "groups" claim is captured so the e2e suite can assert it survived
+// the forwarder mint and LiteLLM's MCP gateway.
+func TestVerify_CapturesGroupsClaim(t *testing.T) {
+	jwksURL, token, cleanup := newSignedTokenFor(t, "https://ach.example.com", "mcp:x")
+	defer cleanup()
+
+	v := echojwt.NewVerifier(
+		echojwt.NewKeyCache(jwksURL),
+		echojwt.Expectations{Issuer: "https://ach.example.com", Audience: []string{"mcp:x"}},
+	)
+	got, err := v.Verify(context.Background(), token)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(got.Groups) != 2 || got.Groups[0] != "team-a" || got.Groups[1] != "team-b" {
+		t.Fatalf("Groups = %v; want [team-a team-b]", got.Groups)
 	}
 }
