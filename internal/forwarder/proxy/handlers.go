@@ -103,7 +103,7 @@ func HandlerA2A(deps HandlerDeps) http.HandlerFunc {
 	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a")
 }
 
-type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) error
+type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) ([]string, error)
 
 func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
@@ -114,7 +114,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		keyTypeLabel := keyTypeFor(r.Context())
 
 		// 1. Precheck — §5.1 step-4.
-		if err := check(r.Context(), kc, name, deps.PrecheckDeps); err != nil {
+		if _, err := check(r.Context(), kc, name, deps.PrecheckDeps); err != nil {
 			outcome, status, code := classifyPrecheckErr(err)
 			metrics.IncRequests(routeLabel, keyTypeLabel, outcome)
 			if errors.Is(err, precheck.ErrLiteLLMUnreachable) {
