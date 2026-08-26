@@ -1,6 +1,10 @@
 name: govulncheck
 on:
-  pull_request:
+  # NO `pull_request:` trigger — `ci.yml`'s security job already runs
+  # `make qa-security`, which runs this same `scripts/govulncheck-gate.sh` on
+  # every PR. Both triggers meant the identical whole-module analysis ran twice
+  # per PR. This workflow exists for the weekly cron, which catches advisories
+  # that a vuln-DB refresh surfaces against an unchanged `main`.
   schedule: # Mondays at 05:08 UTC
     - cron: '08 05 * * 1'
   workflow_dispatch:
