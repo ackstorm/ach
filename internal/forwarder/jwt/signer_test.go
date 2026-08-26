@@ -473,3 +473,57 @@ func TestEd25519Signer_RoundTripVerify(t *testing.T) {
 		t.Fatal("jwt.Parse marked token invalid; want valid")
 	}
 }
+
+// Test — Sign emits "groups" when non-empty and omits it entirely when empty.
+func TestEd25519Signer_Sign_GroupsClaim(t *testing.T) {
+	s := NewEd25519Signer()
+	slot, err := newSignerSlot("kid-g1", freshSeed(t))
+	if err != nil {
+		t.Fatalf("newSignerSlot: %v", err)
+	}
+	s.loadCurrent(slot)
+
+	decode := func(t *testing.T, c Claims) map[string]any {
+		t.Helper()
+		tok, err := s.Sign(context.Background(), c)
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1])
+		if err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		var claims map[string]any
+		if err := json.Unmarshal(payload, &claims); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		return claims
+	}
+
+	// Non-empty Groups → "groups" present, order preserved as supplied.
+	withGroups := decode(t, Claims{
+		Iss:    "i",
+		Sub:    "u@example.com",
+		Aud:    "mcp:ach-memory",
+		Groups: []string{"team-a", "team-b"},
+	})
+	raw, ok := withGroups["groups"].([]any)
+	if !ok {
+		t.Fatalf("groups claim = %v; want a JSON array", withGroups["groups"])
+	}
+	if len(raw) != 2 || raw[0] != "team-a" || raw[1] != "team-b" {
+		t.Fatalf("groups = %v; want [team-a team-b]", raw)
+	}
+
+	// Nil Groups → key omitted entirely (ach-memory reads absent as "no groups").
+	none := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x"})
+	if _, ok := none["groups"]; ok {
+		t.Fatalf("groups must be omitted when nil, got %v", none["groups"])
+	}
+
+	// Empty (non-nil) Groups → also omitted; never an empty array on the wire.
+	empty := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x", Groups: []string{}})
+	if _, ok := empty["groups"]; ok {
+		t.Fatalf("groups must be omitted when empty, got %v", empty["groups"])
+	}
+}

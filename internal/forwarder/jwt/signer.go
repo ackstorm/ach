@@ -52,6 +52,12 @@ type Claims struct {
 	// Email is the JWT "email" claim: the bare owner email (no namespace
 	// prefix), for consumers that key by email. Optional; omitted when empty.
 	Email string
+	// Groups is the JWT "groups" claim: the caller's LiteLLM team aliases,
+	// for backends that authorize group-owned resources (ach-memory reads
+	// this claim by default). Values are aliases, never team UUIDs, and
+	// ACH's internal shell teams (ach-env-*/ach-user-*) are filtered out
+	// upstream in the proxy. Optional; the claim is omitted when empty.
+	Groups []string
 }
 
 // JWK is the RFC 7517 JSON Web Key wire shape for a single Ed25519
@@ -158,8 +164,8 @@ func (s *Ed25519Signer) Loaded() bool {
 // Sign returns a compact JWS over the supplied claims plus iat/exp
 // synthesized per FWD-07 / Hub §9.1. The header is
 // {"alg":"EdDSA","typ":"JWT","kid":"<current.kid>"}; the payload is
-// {"iss","sub","aud","iat","exp"} — explicitly NO jti per Hub §9.1 +
-// §20 (accepted v1alpha1 threat model).
+// {"iss","sub","aud","iat","exp"} plus the optional "email" and "groups"
+// — explicitly NO jti per Hub §9.1 + §20 (accepted v1alpha1 threat model).
 //
 // The signing slot is the result of s.current.Load() at Sign-entry; a
 // concurrent loadCurrent racing the in-flight Sign uses whichever slot
@@ -182,6 +188,12 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	// by email. Additive; omitted when empty. (G18: sub is NOT namespace-qualified.)
 	if c.Email != "" {
 		claims["email"] = c.Email
+	}
+	// "groups" carries the caller's team aliases for backend-side
+	// authorization. Additive; omitted when empty so a consumer can treat
+	// an absent claim as "no groups" rather than parsing an empty array.
+	if len(c.Groups) > 0 {
+		claims["groups"] = c.Groups
 	}
 	token := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, claims)
 	token.Header["kid"] = slot.kid
