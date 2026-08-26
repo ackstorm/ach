@@ -507,3 +507,71 @@ func TestClassifyPrecheckErr(t *testing.T) {
 		}
 	}
 }
+
+// H-groups: the minted JWT carries the Environment's authorizedTeams as
+// "groups", with ACH's internal shell teams filtered out.
+func TestHandlerMCP_EkGroupsClaim(t *testing.T) {
+	upstream, rec := upstreamSpy()
+	defer upstream.Close()
+
+	// "ach-env-demo" is the Environment's own shell team; it must not reach
+	// the backend even when someone lists it in authorizedTeams by hand.
+	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team-b", "ach-env-demo", "team-a"})
+	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
+
+	signer := &mockSigner{returnToken: "ACH-TOKEN"}
+	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver(bipRow))
+
+	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	r := requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, "")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "server-x")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	HandlerMCP(deps)(w, r)
+
+	if rec.Calls() != 1 {
+		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
+	}
+	got := signer.lastClaims.Groups
+	if len(got) != 2 || got[0] != "team-a" || got[1] != "team-b" {
+		t.Errorf("groups = %v; want [team-a team-b] (sorted, shell filtered)", got)
+	}
+}
+
+// H-groups-pk: the pk_ path mints the caller∩Environment intersection.
+func TestHandlerMCP_PkGroupsClaim(t *testing.T) {
+	upstream, rec := upstreamSpy()
+	defer upstream.Close()
+
+	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team-a", "team-x"})
+	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
+
+	signer := &mockSigner{returnToken: "ACH-TOKEN"}
+	deps := mkDeps(t, upstream, signer, precheck.Deps{
+		EnvProvider: newEnvProvider(env),
+		// The caller's own ach-user-* shell is always in their LiteLLM team
+		// list; team-q is a membership no Environment authorizes here.
+		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "ach-user-u@e", "team-q"}},
+	}, newBIPResolver(bipRow))
+
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
+	r := requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, "")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "server-x")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	HandlerMCP(deps)(w, r)
+
+	if rec.Calls() != 1 {
+		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
+	}
+	got := signer.lastClaims.Groups
+	if len(got) != 1 || got[0] != "team-a" {
+		t.Errorf("groups = %v; want [team-a] (intersection only)", got)
+	}
+}

@@ -113,8 +113,10 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		reqID := middleware.RequestIDFromCtx(r.Context())
 		keyTypeLabel := keyTypeFor(r.Context())
 
-		// 1. Precheck — §5.1 step-4.
-		if _, err := check(r.Context(), kc, name, deps.PrecheckDeps); err != nil {
+		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
+		//    JWT "groups" claim (filtered at the mint below).
+		granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
+		if err != nil {
 			outcome, status, code := classifyPrecheckErr(err)
 			metrics.IncRequests(routeLabel, keyTypeLabel, outcome)
 			if errors.Is(err, precheck.ErrLiteLLMUnreachable) {
@@ -146,10 +148,11 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 
 		// 3. Sign + stash for Director.
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
-			Iss:   deps.BaseURL,
-			Sub:   kc.OwnerEmail,
-			Aud:   audPrefix + name,
-			Email: kc.OwnerEmail,
+			Iss:    deps.BaseURL,
+			Sub:    kc.OwnerEmail,
+			Aud:    audPrefix + name,
+			Email:  kc.OwnerEmail,
+			Groups: filterShellTeams(granted),
 		})
 		if err != nil {
 			metrics.IncJWTSuppressed(kind, "signing_failure")
