@@ -80,6 +80,7 @@ verify offline.
 | `iss`         | Forwarder `ACH_BASE_URL` (HTTPS-only in prod per FWD-10) | Hub §9.1 |
 | `sub`         | Bare `<owner-email>` (no namespace prefix)       | Hub §9.1   |
 | `email`       | Bare `<owner-email>` (mirrors `sub`); **omitted when empty** — additive, for consumers that key by email | — |
+| `groups`      | Caller's LiteLLM team **aliases** (never UUIDs), deduplicated + sorted, ACH's internal shell teams stripped; **omitted entirely when empty** — additive, see below | — |
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
@@ -96,14 +97,37 @@ email is empty. The legacy `<namespace>/<email>` `sub` form is **gone**
 
 **`nbf` is intentionally omitted.** With a 120 s `exp` it would add only
 clock-skew risk for no security gain — `exp` is the sole time bound. The minted
-claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`):
-**no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` / `exp` only and MUST
-NOT require `nbf`.
+claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`
+and `groups`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
+`exp` only and MUST NOT require `nbf`.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
 Forwarder and the backend MUST stay well under 120 s for the trust path
 to be steady-state.
+
+### The `groups` claim
+
+The Forwarder emits `groups` — the caller's LiteLLM **team aliases** — on
+every minted token. Backends use it to authorize group-owned resources.
+
+| Key type | `groups` |
+|----------|----------|
+| `pk_` | the caller's LiteLLM teams ∩ `authorizedTeams` of active Environments whose `runtime.mcpServers` (or `runtime.a2aAgents`) contains `<name>` |
+| `ek_` | its Environment's `authorizedTeams` |
+
+Both are sorted, deduplicated, and stripped of ACH's internal shell teams
+(`ach-env-*`, `ach-user-*`). The claim is **omitted entirely** when the set
+is empty — consumers must read an absent claim as "no groups", never as an
+error.
+
+Values are aliases, not team UUIDs. Renaming a LiteLLM team therefore
+changes the claim; a backend keying on the old alias stops matching.
+
+**Staleness.** There is no revocation channel: a backend trusts the claim
+for the token's life. With `exp = iat + 120` and a 60s team-membership
+cache, removing a user from a LiteLLM team takes effect at the backend
+after at most ~180s.
 
 ---
 

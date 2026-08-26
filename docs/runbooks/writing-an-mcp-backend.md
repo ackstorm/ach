@@ -50,6 +50,16 @@ operator implements the verifying side.
    `<namespace>/<email>` form is gone (pre-release hard-cut); do not split
    `sub` on `/`. Key on `iss` + `sub`.
 
+## Handling the `groups` claim
+
+`groups` is optional — read it as an array of strings and treat an absent
+claim as an empty set, never as a verification failure. Don't fail
+verification if the claim is present but malformed; drop it and treat the
+caller as ungrouped instead. Key authorization decisions on the team-alias
+values themselves. For how `pk_`/`ek_` resolve into the set, see the
+[`groups` claim table](../developer-guide/jwt-forwarder.md#the-groups-claim)
+in the developer guide — this runbook does not restate the resolution rules.
+
 ## Reference implementation
 
 A runnable, stdlib-only Go reference lives at

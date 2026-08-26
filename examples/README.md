@@ -27,6 +27,7 @@ for the object the operator reconciles in e2e, look there.
 | `prometheus-alertrules.yaml`          | `PrometheusRule`                           | Recommended ACH alert rules (LiteLLM unreachable, stale content cache, pk_ on runtime route, external-ref refresh failures, Environment unavailable). |
 | `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli env hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
+| `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
 | `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo

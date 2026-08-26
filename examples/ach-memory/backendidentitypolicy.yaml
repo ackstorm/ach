@@ -1,0 +1,14 @@
+# BackendIdentityPolicy — opt the ach-memory MCP backend into the ACH JWT.
+#
+# Without this CR the Forwarder strips the caller's Authorization header and
+# writes none of its own, so ach-memory sees an unauthenticated request.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-ach-memory
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: ach-memory
+  forwardIdentityJWT: true
