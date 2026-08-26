@@ -51,16 +51,21 @@ const (
 //     Environment.spec.authorizedTeams[] of at least one Environment whose
 //     spec.runtime.mcpServers[] contains <name>.
 //
+// On success the first return is the set of teams that GRANTED the access —
+// the Environment's authorizedTeams for ek_, the caller∩Environment
+// intersection for pk_. The proxy filters and normalizes it into the JWT
+// "groups" claim; the authorization decision itself is unchanged.
+//
 // On failure returns a typed sentinel; the caller (Plan 04-07 handler)
 // translates the sentinel to an HTTP outcome via render.Error.
-func CheckMCP(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) error {
+func CheckMCP(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) ([]string, error) {
 	return check(ctx, kc, name, deps, mcpResourceKind)
 }
 
 // CheckA2A runs the §5.1 step-4 pre-check for /a2a/<name> requests.
 // Mirrors CheckMCP but reads Environment.spec.runtime.a2aAgents[]
 // instead of .mcpServers[].
-func CheckA2A(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) error {
+func CheckA2A(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) ([]string, error) {
 	return check(ctx, kc, name, deps, a2aResourceKind)
 }
 
@@ -75,14 +80,14 @@ func runtimeList(row *db.EnvironmentRow, kind resourceKind) []string {
 	return nil
 }
 
-func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) error {
+func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
 	switch kc.KeyType {
 	case keys.PrefixEk:
 		return checkEk(ctx, kc, name, deps, kind)
 	case keys.PrefixPk:
 		return checkPk(ctx, kc, name, deps, kind)
 	default:
-		return ErrInvalidKeyType
+		return nil, ErrInvalidKeyType
 	}
 }
 
@@ -95,20 +100,22 @@ func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps
 // layer (db.ListEnvironments excludes deletion_timestamp IS NOT NULL),
 // so a Get miss here means "absent OR terminating" — both collapse to
 // the narrow ErrUnauthorizedResource outcome regardless.
-func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) error {
+func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
 	row, ok := deps.EnvProvider.Get(kc.Environment)
 	if !ok {
-		return ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
+		return nil, ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
 	}
 	if row.DeletionTimestamp != nil {
-		return ErrUnauthorizedResource // terminating env cannot grant access (D-15)
+		return nil, ErrUnauthorizedResource // terminating env cannot grant access (D-15)
 	}
 	for _, n := range runtimeList(row, kind) {
 		if n == name {
-			return nil
+			// An ek_ has no human behind it: its groups are the whole
+			// authorizedTeams set of the one Environment it is bound to.
+			return row.AuthorizedTeams, nil
 		}
 	}
-	return ErrUnauthorizedResource
+	return nil, ErrUnauthorizedResource
 }
 
 // checkPk implements the pk_ path. The caller's LiteLLM teams come from
@@ -120,13 +127,13 @@ func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps
 // Union semantics: the caller is authorized if AT LEAST ONE active
 // Environment hosts <name> AND has a non-empty intersection of
 // authorizedTeams with the caller's teams. Terminating envs are skipped.
-func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) error {
+func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
 	callerTeams, err := deps.TeamsResolver.Resolve(ctx, kc.OwnerEmail)
 	if err != nil {
-		return ErrLiteLLMUnreachable
+		return nil, ErrLiteLLMUnreachable
 	}
 	if len(callerTeams) == 0 {
-		return ErrUnauthorizedTeam // ∅ ∩ anything = ∅
+		return nil, ErrUnauthorizedTeam // ∅ ∩ anything = ∅
 	}
 	teamSet := make(map[string]struct{}, len(callerTeams))
 	for _, t := range callerTeams {
@@ -139,6 +146,12 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 	// data layer; we still keep the in-row check below as defense in
 	// depth in case a future EnvProvider implementation surfaces
 	// drain-mode rows.
+	//
+	// The walk no longer stops at the first grant: the accumulated set is
+	// what the proxy mints into the "groups" claim, so a caller entitled
+	// through several Environments carries all of those teams. The
+	// authorization verdict is unchanged — non-empty means authorized.
+	var granted []string
 	envs := deps.EnvProvider.List()
 	for i := range envs {
 		row := &envs[i]
@@ -157,9 +170,12 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 		}
 		for _, t := range row.AuthorizedTeams {
 			if _, ok := teamSet[t]; ok {
-				return nil
+				granted = append(granted, t)
 			}
 		}
 	}
-	return ErrUnauthorizedTeam
+	if len(granted) == 0 {
+		return nil, ErrUnauthorizedTeam
+	}
+	return granted, nil
 }
