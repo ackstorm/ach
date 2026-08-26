@@ -824,6 +824,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="1.2 JWS contract — what the Forwarder mints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The groups claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1300,6 +1317,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="1.2 JWS contract — what the Forwarder mints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The groups claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1547,6 +1581,11 @@ verify offline.</p>
 <td>—</td>
 </tr>
 <tr>
+<td><code>groups</code></td>
+<td>Caller's LiteLLM team aliases (ACH does no UUID→alias translation — see below), deduplicated + sorted, ACH's internal shell teams stripped; <strong>omitted entirely when empty</strong> — additive, see below</td>
+<td>—</td>
+</tr>
+<tr>
 <td><code>aud</code></td>
 <td><code>mcp:&lt;bare-name&gt;</code> on <code>/mcp/&lt;bare-name&gt;</code><br><code>a2a:&lt;bare-name&gt;</code> on <code>/a2a/&lt;bare-name&gt;</code></td>
 <td>Hub §9.1</td>
@@ -1581,35 +1620,76 @@ email is empty. The legacy <code>&lt;namespace&gt;/&lt;email&gt;</code> <code>su
 (pre-release hard-cut) — do not split <code>sub</code> on <code>/</code>; key on <code>iss</code> + <code>sub</code>.</p>
 <p><strong><code>nbf</code> is intentionally omitted.</strong> With a 120 s <code>exp</code> it would add only
 clock-skew risk for no security gain — <code>exp</code> is the sole time bound. The minted
-claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>):
-<strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> / <code>exp</code> only and MUST
-NOT require <code>nbf</code>.</p>
+claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>
+and <code>groups</code>): <strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> /
+<code>exp</code> only and MUST NOT require <code>nbf</code>.</p>
 <p>The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
 Forwarder and the backend MUST stay well under 120 s for the trust path
 to be steady-state.</p>
+<h3 id="the-groups-claim">The <code>groups</code> claim<a class="headerlink" href="#the-groups-claim" title="Permanent link">&para;</a></h3>
+<p>The Forwarder emits <code>groups</code> — the caller's LiteLLM <strong>team aliases</strong> — on
+minted tokens whose resolved set is non-empty. Backends use it to authorize
+group-owned resources.</p>
+<table>
+<thead>
+<tr>
+<th>Key type</th>
+<th><code>groups</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pk_</code></td>
+<td>the caller's LiteLLM teams ∩ <code>authorizedTeams</code> of active Environments whose <code>runtime.mcpServers</code> (or <code>runtime.a2aAgents</code>) contains <code>&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td><code>ek_</code></td>
+<td>its Environment's <code>authorizedTeams</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both are sorted, deduplicated, and stripped of ACH's internal shell teams
+(<code>ach-env-*</code>, <code>ach-user-*</code>). The claim is <strong>omitted entirely</strong> when the set
+is empty — consumers must read an absent claim as "no groups", never as an
+error.</p>
+<p>Values are whatever LiteLLM's <code>team_alias</code> resolves to (falling back to
+<code>team_id</code> if the alias is empty) — ACH performs no UUID→alias translation
+of its own, so an <code>authorizedTeams</code> entry authored as a raw team UUID
+ships through unchanged. Renaming a LiteLLM team therefore changes the
+claim; a backend keying on the old alias stops matching.</p>
+<p><strong>Staleness.</strong> There is no revocation channel: a backend trusts the claim
+for the token's life. Two distinct vectors, two distinct bounds. Removing a
+user from a LiteLLM team affects the <code>pk_</code> path only (the 60s
+team-membership cache) and takes effect at the backend after at most
+<code>exp</code> (120s) + 60s ≈ 180s. Dropping a team from
+<code>Environment.spec.authorizedTeams</code> affects <strong>both</strong> key types — <code>ek_</code>
+groups read the Environment row directly, and <code>pk_</code> groups intersect
+against it — and bounds on <code>exp</code> (120s) + the <code>envstore</code> package's 5-minute
+NOTIFY-loss safety-net refresh (<code>internal/forwarder/envstore/store.go</code>)
+≈ ~7 minutes worst case.</p>
 <hr />
 <h2 id="13-jwks-endpoint">1.3 JWKS endpoint<a class="headerlink" href="#13-jwks-endpoint" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>GET &lt;iss&gt;/.well-known/jwks.json
 </code></pre></div>
 <p>Response shape (RFC 7517 §5):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;keys&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">"keys"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">&quot;kty&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;OKP&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">&quot;crv&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Ed25519&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">&quot;use&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sig&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">&quot;alg&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;EdDSA&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">&quot;kid&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ach-jwt-01J…&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w">   </span><span class="s2">&quot;&lt;base64url-no-pad of the 32-byte public key&gt;&quot;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">"kty"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OKP"</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">"crv"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ed25519"</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sig"</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">"alg"</span><span class="p">:</span><span class="w"> </span><span class="s2">"EdDSA"</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">"kid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-jwt-01J…"</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">"x"</span><span class="p">:</span><span class="w">   </span><span class="s2">"&lt;base64url-no-pad of the 32-byte public key&gt;"</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p">},</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">&quot;kty&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;OKP&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="nt">&quot;crv&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Ed25519&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">&quot;use&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sig&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">&quot;alg&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;EdDSA&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">&quot;kid&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ach-jwt-01K…&quot;</span><span class="p">,</span><span class="w">   </span><span class="c1">// OPTIONAL — only during a rotation window</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">      </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w">   </span><span class="s2">&quot;...&quot;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">"kty"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OKP"</span><span class="p">,</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="nt">"crv"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ed25519"</span><span class="p">,</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sig"</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">"alg"</span><span class="p">:</span><span class="w"> </span><span class="s2">"EdDSA"</span><span class="p">,</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">"kid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-jwt-01K…"</span><span class="p">,</span><span class="w">   </span><span class="c1">// OPTIONAL — only during a rotation window</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">      </span><span class="nt">"x"</span><span class="p">:</span><span class="w">   </span><span class="s2">"..."</span>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="p">}</span>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="p">]</span>
 <a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="p">}</span>
@@ -1648,7 +1728,7 @@ a route and sets <code>forwardIdentityJWT: true</code>:</p>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MCPServer</span><span class="w">       </span><span class="c1"># or &quot;A2AAgent&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MCPServer</span><span class="w">       </span><span class="c1"># or "A2AAgent"</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-mcp-echo</span><span class="w">   </span><span class="c1"># bare name; matches /mcp/&lt;name&gt; route</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </code></pre></div>
@@ -1748,15 +1828,15 @@ own credential, but it breaks the ACH JWT trust path.</p>
 LiteLLM with <code>extra_headers: ["authorization"]</code> (and <code>allow_all_keys: true</code>
 so the per-user virtual key is accepted — see §2.6.1):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Authorization: Bearer &lt;master-key&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="s1">    &quot;server_name&quot;: &quot;demo-mcp-echo&quot;,</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="s1">    &quot;transport&quot;:   &quot;http&quot;,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s1">    &quot;url&quot;:         &quot;http://ach-mcp-echo.ach-system.svc&quot;,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">    &quot;extra_headers&quot;: [&quot;authorization&quot;],</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s1">    &quot;allow_all_keys&quot;: true</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="s1">  }&#39;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: Bearer &lt;master-key&gt;'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="s1">    "server_name": "demo-mcp-echo",</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="s1">    "transport":   "http",</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s1">    "url":         "http://ach-mcp-echo.ach-system.svc",</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">    "extra_headers": ["authorization"],</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s1">    "allow_all_keys": true</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="s1">  }'</span>
 </code></pre></div>
 <p>What the opt-in does:</p>
 <ul>
@@ -1819,12 +1899,12 @@ The verifier (<code>jwt/verify.go</code>) and JWKS cache (<code>jwt/jwks.go</cod
 <p>The full round-trip can be exercised on a <code>kind</code> cluster:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">&quot;--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true&quot;</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">"--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true"</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">"</span>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
@@ -1832,13 +1912,13 @@ The verifier (<code>jwt/verify.go</code>) and JWKS cache (<code>jwt/jwks.go</cod
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
 <a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
 <a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;x-ach-key: </span><span class="nv">$PK</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Accept: application/json, text/event-stream&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,</span>
-<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="s1">       &quot;method&quot;:&quot;tools/call&quot;,</span>
-<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="s1">       &quot;params&quot;:{&quot;name&quot;:&quot;demo-mcp-echo.echo&quot;,</span>
-<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="s1">                 &quot;arguments&quot;:{&quot;text&quot;:&quot;hello&quot;}}}&#39;</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"x-ach-key: </span><span class="nv">$PK</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Accept: application/json, text/event-stream'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"jsonrpc":"2.0","id":1,</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="s1">       "method":"tools/call",</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="s1">       "params":{"name":"demo-mcp-echo.echo",</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="s1">                 "arguments":{"text":"hello"}}}'</span>
 <a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
 <a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
 <a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>

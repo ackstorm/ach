@@ -1000,6 +1000,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#handling-the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handling the groups claim
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reference-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1203,6 +1214,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#handling-the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handling the groups claim
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reference-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1287,6 +1309,16 @@ operator implements the verifying side.</p>
 <td>Hub §9.1</td>
 </tr>
 <tr>
+<td><code>email</code></td>
+<td>Mirrors <code>sub</code>; additive, omitted when empty</td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>LiteLLM team aliases; additive, omitted entirely when the resolved set is empty — see <a href="../../developer-guide/jwt-forwarder/#the-groups-claim">The <code>groups</code> claim</a></td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
 <td><code>aud</code></td>
 <td><code>mcp:&lt;bare-name&gt;</code> on <code>/mcp/&lt;bare-name&gt;</code></td>
 <td>Hub §9.1</td>
@@ -1351,6 +1383,14 @@ only — do NOT require <code>nbf</code>. ACH also emits no <code>jti</code>.
    <code>&lt;namespace&gt;/&lt;email&gt;</code> form is gone (pre-release hard-cut); do not split
    <code>sub</code> on <code>/</code>. Key on <code>iss</code> + <code>sub</code>.</p>
 </blockquote>
+<h2 id="handling-the-groups-claim">Handling the <code>groups</code> claim<a class="headerlink" href="#handling-the-groups-claim" title="Permanent link">&para;</a></h2>
+<p><code>groups</code> is optional — read it as an array of strings and treat an absent
+claim as an empty set, never as a verification failure. Don't fail
+verification if the claim is present but malformed; drop it and treat the
+caller as ungrouped instead. Key authorization decisions on the team-alias
+values themselves. For how <code>pk_</code>/<code>ek_</code> resolve into the set, see the
+<a href="../../developer-guide/jwt-forwarder/#the-groups-claim"><code>groups</code> claim table</a>
+in the developer guide — this runbook does not restate the resolution rules.</p>
 <h2 id="reference-implementation">Reference implementation<a class="headerlink" href="#reference-implementation" title="Permanent link">&para;</a></h2>
 <p>A runnable, stdlib-only Go reference lives at
 <a href="https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo"><code>test/e2e/mcp-echo/</code></a>.

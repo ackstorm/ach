@@ -1358,35 +1358,35 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 <h2 id="3-architecture">3. Architecture<a class="headerlink" href="#3-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="31-topology">3.1 Topology<a class="headerlink" href="#31-topology" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>flowchart LR
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    subgraph cluster[&quot;Kubernetes cluster&quot;]
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        CRDS[&quot;CRDs&lt;br/&gt;(Environment, Skill, ACHAgent, …)&quot;]
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        subgraph oppod[&quot;ach operator Pod&quot;]
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>            OP[&quot;operator&lt;br/&gt;(reconcile)&quot;]
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>            CS[&quot;content-service&lt;br/&gt;(sidecar, artifact PVC)&quot;]
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    subgraph cluster["Kubernetes cluster"]
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        CRDS["CRDs&lt;br/&gt;(Environment, Skill, ACHAgent, …)"]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        subgraph oppod["ach operator Pod"]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>            OP["operator&lt;br/&gt;(reconcile)"]
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>            CS["content-service&lt;br/&gt;(sidecar, artifact PVC)"]
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        end
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        PA[&quot;ach platform-api&lt;br/&gt;(REST + Dex SSO + /platform/hydrate)&quot;]
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        FW[&quot;ach forwarder&lt;br/&gt;(JWT trust path, BIP+Env caches)&quot;]
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        GW[&quot;ach gateway (optional)&lt;br/&gt;(edge proxy + /agents/{ns}/{svc} routes)&quot;]
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        AG[&quot;ACHAgent Pod&lt;br/&gt;(ach-agent harness, self-hydrates at boot)&quot;]
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        PG[(&quot;Postgres&lt;br/&gt;(source of truth)&quot;)]
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        DEX[&quot;Dex (SSO)&quot;]
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        PA["ach platform-api&lt;br/&gt;(REST + Dex SSO + /platform/hydrate)"]
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        FW["ach forwarder&lt;br/&gt;(JWT trust path, BIP+Env caches)"]
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        GW["ach gateway (optional)&lt;br/&gt;(edge proxy + /agents/{ns}/{svc} routes)"]
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        AG["ACHAgent Pod&lt;br/&gt;(ach-agent harness, self-hydrates at boot)"]
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        PG[("Postgres&lt;br/&gt;(source of truth)")]
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        DEX["Dex (SSO)"]
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    end
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    CLI[&quot;ach-cli&lt;br/&gt;(developer workspace)&quot;]
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    EXT[&quot;External callers&lt;br/&gt;(webhooks, a2a peers)&quot;]
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    LLM[&quot;LiteLLM + backends&quot;]
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    CLI["ach-cli&lt;br/&gt;(developer workspace)"]
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    EXT["External callers&lt;br/&gt;(webhooks, a2a peers)"]
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    LLM["LiteLLM + backends"]
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
 <a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    CRDS -- reconcile --&gt; OP
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    OP -- &quot;project rows + NOTIFY&quot; --&gt; PG
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    PG -. &quot;READ ROWS + LISTEN ach_*_changed&quot; .-&gt; PA &amp; FW &amp; CS &amp; GW
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    OP -- &quot;config.json + Deployment&quot; --&gt; AG
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    CLI -- &quot;login / env hydrate&quot; --&gt; PA
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    OP -- "project rows + NOTIFY" --&gt; PG
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    PG -. "READ ROWS + LISTEN ach_*_changed" .-&gt; PA &amp; FW &amp; CS &amp; GW
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    OP -- "config.json + Deployment" --&gt; AG
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    CLI -- "login / env hydrate" --&gt; PA
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    PA --- DEX
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    PA -- &quot;hydrate manifest → content&quot; --&gt; CS
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    AG -- &quot;self-hydrate (ek_)&quot; --&gt; PA
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    AG -- &quot;backend calls&quot; --&gt; FW
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    FW -- &quot;per-target JWT mint&quot; --&gt; LLM
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>    EXT -- &quot;webhook / a2a&quot; --&gt; GW
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>    GW -- &quot;route via achagents projection&lt;br/&gt;(HMAC verified by harness)&quot; --&gt; AG
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    PA -- "hydrate manifest → content" --&gt; CS
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    AG -- "self-hydrate (ek_)" --&gt; PA
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    AG -- "backend calls" --&gt; FW
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    FW -- "per-target JWT mint" --&gt; LLM
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>    EXT -- "webhook / a2a" --&gt; GW
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>    GW -- "route via achagents projection&lt;br/&gt;(HMAC verified by harness)" --&gt; AG
 </code></pre></div>
 <ul>
 <li><strong>One Go binary, five logic modes</strong> (<code>ach operator|platform-api|forwarder|content-service|migrate</code>), each an independent Helm Deployment sharing one image. A sixth mode, <code>gateway</code>, is an optional logic-free edge proxy that also serves opt-in per-agent routes.</li>
