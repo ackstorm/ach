@@ -261,3 +261,14 @@ the string-valued entries (`internal/litellm/shellteam.go`
 instead of poisoning the whole decode. Apply the same pattern to any future
 code reading `TeamListEntry.Metadata` — never `map[string]string` on that
 field.
+
+## 13. The JWT `groups` claim exports team ALIASES, never shell teams.
+
+The Forwarder's `/mcp` + `/a2a` identity JWT
+(`docs/developer-guide/jwt-forwarder.md`) carries the caller's LiteLLM team
+**names** — never team UUIDs — in its optional `groups` claim; that's the only
+identifier ACH exports to a backend for group-owned-resource authorization.
+`ach-env-<name>` and `ach-user-<email>` (§6, §10) are ACH's own permission
+plumbing and are filtered out before minting
+(`internal/forwarder/proxy/groups.go`) — they never leave the forwarder, so
+a backend never sees ACH's internal shell-team names.
