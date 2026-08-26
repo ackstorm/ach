@@ -19,6 +19,8 @@ operator implements the verifying side.
 | Header `kid` | Stable id of the signing slot | FWD-08 |
 | `iss` | Forwarder `ACH_BASE_URL` (HTTPS-only) | FWD-10 |
 | `sub` | `<owner-email>` | Hub §9.1 |
+| `email` | Mirrors `sub`; additive, omitted when empty | Hub §9.1 |
+| `groups` | LiteLLM team aliases; additive, omitted entirely when the resolved set is empty — see [The `groups` claim](../developer-guide/jwt-forwarder.md#the-groups-claim) | Hub §9.1 |
 | `aud` | `mcp:<bare-name>` on `/mcp/<bare-name>` | Hub §9.1 |
 | `exp - iat` | 120 seconds | FWD-07 |
 | `nbf` | Not emitted | Hub §9.1 |

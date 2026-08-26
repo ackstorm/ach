@@ -244,15 +244,20 @@ Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
 - **JWT trust path** (`/mcp`, `/a2a`; authoritative:
   `docs/developer-guide/jwt-forwarder.md`): BIP opts in → forwarder mints
   EdDSA `{iss=ACH_BASE_URL, sub=<bare owner-email> (hard-cut from the old
-  ns/email form — do NOT split on '/'), email (additive, omitted when
-  empty), groups (additive, LiteLLM team ALIASES — never UUIDs — omitted
-  when empty; pk_=caller's teams ∩ union of authorizedTeams across active
-  Envs whose runtime.mcpServers/a2aAgents contains <name>, ek_=own Env's
-  authorizedTeams; ach-env-*/ach-user-* shell teams stripped), aud=mcp:<name>
-  |a2a:<name>, iat, exp=iat+120}`. **No nbf, no jti.** Staleness: exp(120s) +
-  60s teams-cache = ~180s worst case for a team-membership change to reach a
-  backend — same window the pk_ precheck already runs on, not new exposure.
-  JWKS `Cache-Control: max-age=3600` forces ≥24h rotation overlap. Fail-closed
+  ns/email form — do NOT split on '/'; on ek_ this is the minting admin's
+  email, not the agent), email (additive, omitted when empty), groups
+  (additive, LiteLLM team aliases as authored — ACH does no UUID→alias
+  translation — omitted when empty; pk_=caller's teams ∩ union of
+  authorizedTeams across active Envs whose runtime.mcpServers/a2aAgents
+  contains <name>, ek_=own Env's authorizedTeams; ach-env-*/ach-user-* shell
+  teams stripped), aud=mcp:<name>|a2a:<name>, iat, exp=iat+120}`. **No nbf,
+  no jti.** Staleness, two vectors: exp(120s)+60s teams-cache=~180s worst
+  case for a LiteLLM team-membership change (pk_ only, same window the pk_
+  precheck already runs on); exp(120s)+envstore's 5-min NOTIFY-loss safety-net
+  refresh (`internal/forwarder/envstore/store.go`)=~7min worst case for an
+  authorizedTeams edit (both key types — ek_ reads the row directly, pk_
+  intersects against it). JWKS `Cache-Control: max-age=3600` forces ≥24h
+  rotation overlap. Fail-closed
   default: no BIP → Authorization stripped, nothing attached (no smuggling).
   LiteLLM MCP gateway needs `extra_headers: ["authorization"]` +
   `allow_all_keys: true` on the server registration or the JWT never reaches
