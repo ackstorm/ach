@@ -112,6 +112,11 @@ func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps
 		if n == name {
 			// An ek_ has no human behind it: its groups are the whole
 			// authorizedTeams set of the one Environment it is bound to.
+			//
+			// This slice aliases the envstore cache row's backing array
+			// (Store.Get copies the row struct, not the slice) — callers
+			// MUST NOT mutate it in place (e.g. an in-place sort); build a
+			// fresh slice instead, as filterShellTeams already does.
 			return row.AuthorizedTeams, nil
 		}
 	}
