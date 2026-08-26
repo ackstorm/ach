@@ -246,6 +246,13 @@ human running the suite. Docs-only PRs
 only if branch protection on `main` is enabled** (needs a paid plan / public
 repo); until then direct pushes to `main` are unguarded.
 
+`govulncheck.yml` is **cron-only** (Mondays + `workflow_dispatch`) — it has NO
+`pull_request` trigger. `ci.yml`'s security job already runs `make qa-security`,
+which runs the same `scripts/govulncheck-gate.sh`, on every PR; carrying both
+triggers ran the identical whole-module analysis twice per PR. The cron earns
+its keep by catching advisories that a vuln-DB refresh surfaces against an
+unchanged `main` — which is exactly how the go1.26.5 → 1.26.6 bump was found.
+
 ## Toolchain — host has NO Go (always Docker)
 
 The host has no Go toolchain on PATH. **Every `make` target auto-routes — the
@@ -307,7 +314,7 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make test-envtest-fast`| envtest without -race, ~3m | dev inner loop |
 | `make e2e-full`         | kind + Helm + e2e binary build + stdlib testing, ~6m | final gate before commit |
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) | dev loop on one sub-test |
-| `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; before commit |
+| `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; **rarely — CI owns it, see below** |
 | `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
@@ -320,6 +327,14 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
   `--no-verify` push).
 - The fast pre-commit gate was retired — lint + unit now run inside the
   pre-push gate and in CI.
+- **Don't run `qa-security` by hand as routine.** `ci.yml`'s security job runs
+  it on every PR, and `pre-push` gate 13 runs the same
+  `scripts/govulncheck-gate.sh` before every push — so a local run is a third
+  copy of an analysis that is already covered twice. `govulncheck ./...`
+  analyses the WHOLE module every time (reachability is a whole-program
+  property, so it can never be scoped to the diff) and it cannot be
+  incremental. Run it locally only when you are actively chasing a specific
+  advisory or bumping the toolchain.
 
 ## Waiting for state — use blessed make targets
 
