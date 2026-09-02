@@ -18,15 +18,20 @@ Two CRDs run an ACH agent as a Kubernetes workload:
 Both resources accept Pod-native `spec.env`. Entries merge by name and the
 `ACHAgent` entry wins atomically. `engine.forwardEnv` sends selected names to the
 agent engine; `channels[].prepare.forwardEnv` independently sends selected names
-only to that channel's prepare script. Unknown names are ignored and remain unset.
+only to that channel's prepare script, while `channels[].cleanup.forwardEnv` does
+the same independently for cleanup. Unknown names are ignored and remain unset.
 
 `prepare` and `cleanup` are generic configuration-owned shell hooks. The
-operator and harness do not clone, cache, lock, or delete repositories. Cleanup
-runs after the session engine stops on idle-TTL expiry (or immediately when the
-TTL is zero) and is also attempted during graceful shutdown; abrupt Pod/node
-termination cannot guarantee it. If you use a shared bare mirror and per-session
-worktrees, implement both the Git operations and cross-session locking inside
-these scripts.
+operator and harness do not clone, cache, lock, or delete repositories. Prepare
+runs on the lane before the session engine is acquired or reused for each invocation
+and is fail-closed. Cleanup runs best-effort when the reserved session is torn down:
+after an acquired engine stops, or after prepare/engine-acquire failure before
+acquisition completes. Graceful shutdown attempts cleanup; abrupt Pod/node termination
+cannot guarantee it. Prepare and engine cwd are `ACH_WORKSPACE`; cleanup cwd is its
+parent. Workspace growth is bounded only when configured cleanup succeeds; absent or
+failed cleanup can leave workspaces behind. If you use a shared bare mirror and
+per-session worktrees, implement both the Git operations and cross-session locking
+inside these scripts.
 
 The operator collapses the two into a single `agent-config-v1` config, writes it
 to a ConfigMap (`config.json`), and applies a single-replica Deployment that
