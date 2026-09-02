@@ -3637,6 +3637,12 @@
 <td></td>
 </tr>
 <tr>
+<td><code>env</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core">EnvVar</a> array</em></td>
+<td>Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>capability</code> <em><a href="#capabilityspec">CapabilitySpec</a></em></td>
 <td>Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here.</td>
 <td></td>
@@ -3942,8 +3948,8 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 <td></td>
 </tr>
 <tr>
-<td><code>extraEnv</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core">EnvVar</a> array</em></td>
-<td>ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN).</td>
+<td><code>env</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core">EnvVar</a> array</em></td>
+<td>Env are pod-level environment variables inherited by ACHAgents using this profile.<br />Reserved ACH_* names are forbidden because the operator owns that namespace. Only<br />literal values and secretKeyRef sources are supported.</td>
 <td></td>
 <td></td>
 </tr>
@@ -3979,7 +3985,7 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 </tr>
 <tr>
 <td><code>podTemplate</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
-<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
+<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5674,7 +5680,7 @@ operator. v1alpha1 admits only LiteLLMConnection/default per namespace.</p>
 <h4 id="localmcpspec">LocalMcpSpec<a class="headerlink" href="#localmcpspec" title="Permanent link">&para;</a></h4>
 <p>LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
 env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
-defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).</p>
+defensively); wire their values into the pod via profile/agent spec.env.</p>
 <p><em>Appears in:</em>
 - <a href="#mcpserverspec">McpServerSpec</a></p>
 <table>
@@ -6598,16 +6604,10 @@ webhook payload to a shell hook safe — there is no injection surface.</p>
 <td>MinLength: 1 <br />Required: {} <br /></td>
 </tr>
 <tr>
-<td><code>env</code> <em>object (keys:string, values:string)</em></td>
-<td>Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs<br />here and never in the payload: a forged webhook that could choose the host would<br />harvest the credential.</td>
+<td><code>forwardEnv</code> <em>string array</em></td>
+<td>ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset.</td>
 <td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>secretEnv</code> <em>object (keys:string, values:<a href="#secretkeyref">SecretKeyRef</a>)</em></td>
-<td>SecretEnv maps a script env var name → the Secret holding its value. The operator<br />injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only<br />that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone<br />credentials read-only.</td>
-<td></td>
-<td></td>
+<td>items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /></td>
 </tr>
 <tr>
 <td><code>timeoutSeconds</code> <em>integer</em></td>
@@ -6956,7 +6956,7 @@ refresh attempts.</p>
 <h4 id="remotemcpspec">RemoteMcpSpec<a class="headerlink" href="#remotemcpspec" title="Permanent link">&para;</a></h4>
 <p>RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
 headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
-the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+the pod via profile/agent spec.env. SECURITY: opencode receives the
 resolved header, so a co-resident same-uid agent CAN read it — front the server via
 ACH hydrate instead if that is unacceptable.</p>
 <p><em>Appears in:</em>
@@ -7129,7 +7129,6 @@ prefix listing (directory scope).</p>
 - <a href="#hindsightspec">HindsightSpec</a>
 - <a href="#identityspec">IdentitySpec</a>
 - <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a>
-- <a href="#preparespec">PrepareSpec</a>
 - <a href="#webhookauthspec">WebhookAuthSpec</a></p>
 <table>
 <thead>
