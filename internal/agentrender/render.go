@@ -17,8 +17,9 @@ import (
 
 // Inbound channel types that carry an auth secret.
 const (
-	channelTypeWebhook = "webhook"
-	channelTypeA2A     = "a2a"
+	channelTypeWebhook       = "webhook"
+	channelTypeWebhookScript = "webhook-script"
+	channelTypeA2A           = "a2a"
 )
 
 // Health-server defaults. The operator OWNS the probe port: it always pins
@@ -176,7 +177,7 @@ func ChannelSecretEnv(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) []Chan
 	for i := range a.Spec.Channels {
 		ch := &a.Spec.Channels[i]
 		switch ch.Type {
-		case channelTypeWebhook:
+		case channelTypeWebhook, channelTypeWebhookScript:
 			if ch.Webhook != nil && ch.Webhook.Auth.SecretRef != nil {
 				out = append(out, ChannelSecretEnvRef{EnvName: channelSecretEnvName(ch), SecretName: ch.Webhook.Auth.SecretRef.Name, Key: ch.Webhook.Auth.SecretRef.Key})
 			}
@@ -193,6 +194,7 @@ func ChannelSecretEnv(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) []Chan
 		}{
 			{phase: "PREPARE", spec: ch.Prepare},
 			{phase: "CLEANUP", spec: ch.Cleanup},
+			{phase: "SCRIPT", spec: ch.Script},
 		}
 		for _, hook := range hooks {
 			if hook.spec == nil {
@@ -585,9 +587,9 @@ func renderHook(ch *achv1alpha1.ChannelSpec, hook *achv1alpha1.PrepareSpec, reso
 }
 
 func renderChannel(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderHook(ch, ch.Prepare, resolvedEnv, "PREPARE"), Cleanup: renderHook(ch, ch.Cleanup, resolvedEnv, "CLEANUP")}
+	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderHook(ch, ch.Prepare, resolvedEnv, "PREPARE"), Cleanup: renderHook(ch, ch.Cleanup, resolvedEnv, "CLEANUP"), Script: renderHook(ch, ch.Script, resolvedEnv, "SCRIPT")}
 	switch ch.Type {
-	case channelTypeWebhook:
+	case channelTypeWebhook, channelTypeWebhookScript:
 		if ch.Webhook != nil {
 			w := &WebhookBlock{Auth: WebhookAuthBlock{Type: ch.Webhook.Auth.Type, Header: ch.Webhook.Auth.Header}, GitlabEvents: ch.Webhook.GitlabEvents, BotUsername: ch.Webhook.BotUsername, TriggerUsers: ch.Webhook.TriggerUsers}
 			if ch.Webhook.Auth.SecretRef != nil {
@@ -629,7 +631,7 @@ func ReferencedSecrets(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) map[s
 	for i := range a.Spec.Channels {
 		ch := &a.Spec.Channels[i]
 		switch ch.Type {
-		case channelTypeWebhook:
+		case channelTypeWebhook, channelTypeWebhookScript:
 			if ch.Webhook != nil && ch.Webhook.Auth.SecretRef != nil {
 				add(ch.Webhook.Auth.SecretRef.Name, ch.Webhook.Auth.SecretRef.Key)
 			}

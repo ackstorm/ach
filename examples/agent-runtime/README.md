@@ -13,7 +13,7 @@ Two CRDs run an ACH agent as a Kubernetes workload:
   else is the author's responsibility).
 - **`ACHAgent`** — an agent instance. References a profile, supplies its ACH
   identity (`ek_`), the target Hub Environment, an optional persona prompt, and
-  one or more inbound channels (webhook / cron / queue / a2a).
+  one or more inbound channels (webhook / webhook-script / cron / queue / a2a).
 
 Both resources accept Pod-native `spec.env`. Entries merge by name and the
 `ACHAgent` entry wins atomically. `engine.forwardEnv` sends selected names to the

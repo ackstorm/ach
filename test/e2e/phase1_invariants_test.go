@@ -99,7 +99,18 @@ func testSC2PodTopology(t *testing.T) {
 // was removed here; the test now runs unconditionally and fails
 // loud if LiteLLM is missing.
 func testSC3EnvironmentDrain(t *testing.T) {
-	// Ensure the example Environment exists. apply is idempotent.
+	// SC#1 may have left its copy terminating. Wait for that deletion before
+	// recreating it; apply cannot revive an object with deletionTimestamp set.
+	if out, err := runCmdLonger(45*time.Second, "kubectl", "delete",
+		"environment", "example",
+		"-n", namespace,
+		"--ignore-not-found=true",
+		"--wait=true",
+		"--timeout=30s",
+	); err != nil {
+		t.Fatalf("SC#3 clear prior env: %v\n%s", err, out)
+	}
+
 	if out, err := runCmd("kubectl", "apply", "-f",
 		"../../config/samples/ach_v1alpha1_environment.yaml",
 	); err != nil {

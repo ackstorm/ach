@@ -108,8 +108,13 @@ func renderMatrix() map[string]renderCase {
 	m := map[string]renderCase{
 		"minimal": base("minimal", cron),
 		"webhook": base("wh", []achv1alpha1.ChannelSpec{{Name: "w", Type: "webhook", Source: "gitlab", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}}}}),
-		"queue":   base("q", []achv1alpha1.ChannelSpec{{Name: "q", Type: "queue", Queue: &achv1alpha1.QueueSpec{Key: "k"}}}),
-		"a2a":     base("a", []achv1alpha1.ChannelSpec{{Name: "a", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "s", Key: "k"}}}}}),
+		"webhook-script": base("whs", []achv1alpha1.ChannelSpec{{
+			Name: "register", Type: "webhook-script", Source: "gitlab",
+			Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}, GitlabEvents: []string{"project_create", "push", "merge_request"}},
+			Script:  &achv1alpha1.PrepareSpec{Script: "payload=$(cat)"},
+		}}),
+		"queue": base("q", []achv1alpha1.ChannelSpec{{Name: "q", Type: "queue", Queue: &achv1alpha1.QueueSpec{Key: "k"}}}),
+		"a2a":   base("a", []achv1alpha1.ChannelSpec{{Name: "a", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "s", Key: "k"}}}}}),
 	}
 	cleanup := base("cleanup", cron)
 	cleanup.agent.Spec.Env = []corev1.EnvVar{{Name: "MODE", Value: "review"}}

@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- Add `channels[].type: webhook-script`, including CRD validation, environment/Secret
+  forwarding, generated schema, and renderer support for deterministic no-model webhooks.
+
 ### Changed
 - Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
 

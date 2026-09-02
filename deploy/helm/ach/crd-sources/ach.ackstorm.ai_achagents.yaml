@@ -156,8 +156,9 @@ spec:
                           type: array
                           x-kubernetes-list-type: set
                         script:
-                          description: Script is the static /bin/sh program, run as
-                            `sh -eu` fed on stdin.
+                          description: |-
+                            Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
+                            webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
                           minLength: 1
                           type: string
                         timeoutSeconds:
@@ -208,8 +209,9 @@ spec:
                           type: array
                           x-kubernetes-list-type: set
                         script:
-                          description: Script is the static /bin/sh program, run as
-                            `sh -eu` fed on stdin.
+                          description: |-
+                            Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
+                            webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
                           minLength: 1
                           type: string
                         timeoutSeconds:
@@ -233,6 +235,39 @@ spec:
                           type: string
                       required:
                       - key
+                      type: object
+                    script:
+                      description: |-
+                        Script is the deterministic handler for type=webhook-script. The normalized webhook
+                        JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is
+                        temporary and removed after each event.
+                      properties:
+                        forwardEnv:
+                          description: |-
+                            ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
+                            Literal values become the hook's env; secretKeyRef values become its secretEnv via
+                            generated Pod aliases. Unknown names are ignored and remain unset.
+                          items:
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        script:
+                          description: |-
+                            Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
+                            webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
+                          minLength: 1
+                          type: string
+                        timeoutSeconds:
+                          description: |-
+                            TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process
+                            group. Harness default is 120 when omitted.
+                          format: int64
+                          maximum: 3600
+                          minimum: 1
+                          type: integer
+                      required:
+                      - script
                       type: object
                     session:
                       description: |-
@@ -289,13 +324,14 @@ spec:
                     type:
                       enum:
                       - webhook
+                      - webhook-script
                       - cron
                       - queue
                       - a2a
                       type: string
                     webhook:
-                      description: 'WebhookSpec configures a webhook channel (config:
-                        channels[].webhook + channels[].source).'
+                      description: WebhookSpec configures webhook ingress for model
+                        and deterministic-script channels.
                       properties:
                         auth:
                           description: 'WebhookAuthSpec configures webhook auth (config:
@@ -349,14 +385,20 @@ spec:
                             - merge_request
                             - issue
                             - note
+                            - push
+                            - project_create
+                            - project_rename
+                            - project_transfer
+                            - project_update
+                            - repository_update
                             type: string
                           type: array
                         triggerUsers:
                           description: |-
-                            TriggerUsers is an actor allowlist: only these GitLab usernames may
-                            trigger the agent (every routed kind: mr/issue/note). Omit → any author
-                            triggers. gitlab source only; ignored for github/generic. Rendered
-                            verbatim to channels[].webhook.triggerUsers.
+                            TriggerUsers is an actor allowlist: only these GitLab usernames may trigger
+                            the handler. Omit → any author triggers. System events without a username are
+                            rejected when this list is set, so webhook-script registrars should omit it.
+                            GitLab source only; ignored for github/generic.
                           items:
                             type: string
                           type: array
@@ -369,11 +411,17 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: 'channels: the block matching type is required'
-                    rule: (self.type=='webhook' && has(self.webhook)) || (self.type=='cron'
-                      && has(self.cron)) || (self.type=='queue' && has(self.queue))
-                      || (self.type=='a2a' && has(self.a2a))
+                    rule: ((self.type=='webhook' || self.type=='webhook-script') &&
+                      has(self.webhook)) || (self.type=='cron' && has(self.cron))
+                      || (self.type=='queue' && has(self.queue)) || (self.type=='a2a'
+                      && has(self.a2a))
                   - message: channels.source is only valid for webhook channels
-                    rule: self.type=='webhook' || !has(self.source)
+                    rule: self.type=='webhook' || self.type=='webhook-script' || !has(self.source)
+                  - message: channels.script is required only for webhook-script
+                    rule: 'self.type==''webhook-script'' ? has(self.script) : !has(self.script)'
+                  - message: webhook-script forbids prompt, prepare, and cleanup
+                    rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.prepare)
+                      && !has(self.cleanup))
                   - message: channels.cleanup requires channels.prepare
                     rule: '!has(self.cleanup) || has(self.prepare)'
                 minItems: 1

@@ -40,13 +40,18 @@ spec.channels[].prepare.timeoutSeconds	integer
 spec.channels[].prompt	string
 spec.channels[].queue	object
 spec.channels[].queue.key	string
+spec.channels[].script	object
+spec.channels[].script.forwardEnv	array
+spec.channels[].script.forwardEnv[]	string
+spec.channels[].script.script	string
+spec.channels[].script.timeoutSeconds	integer
 spec.channels[].session	object
 spec.channels[].session.key	string
 spec.channels[].session.maxTokens	integer
 spec.channels[].session.overflow	string enum[compact,rotate]
 spec.channels[].session.type	string enum[auto,custom,none]
 spec.channels[].source	string enum[generic,github,gitlab]
-spec.channels[].type	string enum[a2a,cron,queue,webhook]
+spec.channels[].type	string enum[a2a,cron,queue,webhook,webhook-script]
 spec.channels[].webhook	object
 spec.channels[].webhook.auth	object
 spec.channels[].webhook.auth.header	string
@@ -56,7 +61,7 @@ spec.channels[].webhook.auth.secretRef.name	string
 spec.channels[].webhook.auth.type	string enum[gitlab_token,header_token,hmac,none]
 spec.channels[].webhook.botUsername	string
 spec.channels[].webhook.gitlabEvents	array
-spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note]
+spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note,project_create,project_rename,project_transfer,project_update,push,repository_update]
 spec.channels[].webhook.triggerUsers	array
 spec.channels[].webhook.triggerUsers[]	string
 spec.cost	object

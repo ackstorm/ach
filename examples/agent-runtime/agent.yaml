@@ -70,6 +70,22 @@ spec:
           test -n "$ACH_WORKSPACE"
           rm -rf -- "$ACH_WORKSPACE"
         timeoutSeconds: 30
+    # Deterministic System Hook handler: authenticated and queued like a webhook, but
+    # runs only this script. The normalized webhook JSON is on stdin; no model starts.
+    - name: gitlab-register
+      type: webhook-script
+      source: gitlab
+      concurrency: 4
+      webhook:
+        auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
+        gitlabEvents:
+          [project_create, project_rename, project_transfer, project_update,
+           repository_update, push, merge_request]
+      script:
+        script: |
+          payload=$(cat)
+          printf 'received %s for project %s\n' "$ACH_EVENT_KIND" "$ACH_EVENT_PROJECT_ID"
+        timeoutSeconds: 120
     - name: daily-security
       type: cron
       # session is a block since v0.6.3 (was a bare string `session: none`).

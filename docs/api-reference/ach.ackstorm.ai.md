@@ -572,7 +572,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `type` _string_ |  |  | Enum: [webhook cron queue a2a] <br />Required: \{\} <br /> |
+| `type` _string_ |  |  | Enum: [webhook webhook-script cron queue a2a] <br />Required: \{\} <br /> |
 | `source` _string_ |  |  | Enum: [gitlab github generic] <br /> |
 | `concurrency` _integer_ |  | 1 | Minimum: 1 <br /> |
 | `session` _[SessionSpec](#sessionspec)_ |  |  |  |
@@ -583,6 +583,7 @@ _Appears in:_
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
 | `prepare` _[PrepareSpec](#preparespec)_ | Prepare runs on the channel lane before the session engine is acquired or reused for<br />an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing<br />is posted. It re-runs for every event on a session workspace that persists, so scripts<br />such as clone-or-fetch must be idempotent. Valid for every channel type. |  |  |
 | `cleanup` _[PrepareSpec](#preparespec)_ | Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,<br />or after prepare/engine-acquire failure before acquisition completes. It is best-effort:<br />failures are logged and counted without changing invocation delivery. Graceful shutdown<br />attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare. |  |  |
+| `script` _[PrepareSpec](#preparespec)_ | Script is the deterministic handler for type=webhook-script. The normalized webhook<br />JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is<br />temporary and removed after each event. |  |  |
 
 
 #### CodememSpec
@@ -1563,10 +1564,10 @@ _Appears in:_
 
 
 
-PrepareSpec configures a static /bin/sh channel lifecycle hook shared by prepare and
-cleanup. The harness does not render {{ }} in hook scripts; event data reaches them only
-as environment variables (ACH_WORKSPACE, ACH_EVENT_*), so payload values are never
-interpolated into shell source. Valid on every channel type.
+PrepareSpec configures a static /bin/sh program used by prepare, cleanup, and the
+deterministic webhook-script handler. The harness does not render {{ }} in scripts;
+event data reaches them as environment variables, and webhook-script additionally
+receives normalized JSON on stdin.
 
 
 
@@ -1575,7 +1576,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `script` _string_ | Script is the static /bin/sh program, run as `sh -eu` fed on stdin. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `script` _string_ | Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;<br />webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become the hook's env; secretKeyRef values become its secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
 | `timeoutSeconds` _integer_ | TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
 
@@ -2194,7 +2195,7 @@ _Appears in:_
 
 
 
-WebhookSpec configures a webhook channel (config: channels[].webhook + channels[].source).
+WebhookSpec configures webhook ingress for model and deterministic-script channels.
 
 
 
@@ -2204,8 +2205,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `auth` _[WebhookAuthSpec](#webhookauthspec)_ |  |  | Required: \{\} <br /> |
-| `gitlabEvents` _string array_ |  |  | items:Enum: [merge_request issue note] <br /> |
+| `gitlabEvents` _string array_ |  |  | items:Enum: [merge_request issue note push project_create project_rename project_transfer project_update repository_update] <br /> |
 | `botUsername` _string_ | BotUsername is the GitLab username the agent posts AS (the egress PAT's<br />user — a distinct fact from the agent name). When set, the harness drops<br />inbound events authored by this user plus gitlab-generated system notes<br />pre-enqueue (loop-guard). Omit → guard off. gitlab source only; ignored<br />for github/generic. Rendered verbatim to channels[].webhook.botUsername. |  |  |
-| `triggerUsers` _string array_ | TriggerUsers is an actor allowlist: only these GitLab usernames may<br />trigger the agent (every routed kind: mr/issue/note). Omit → any author<br />triggers. gitlab source only; ignored for github/generic. Rendered<br />verbatim to channels[].webhook.triggerUsers. |  |  |
+| `triggerUsers` _string array_ | TriggerUsers is an actor allowlist: only these GitLab usernames may trigger<br />the handler. Omit → any author triggers. System events without a username are<br />rejected when this list is set, so webhook-script registrars should omit it.<br />GitLab source only; ignored for github/generic. |  |  |
 
 

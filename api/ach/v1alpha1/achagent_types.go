@@ -152,12 +152,12 @@ type WebhookAuthSpec struct {
 	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
 }
 
-// WebhookSpec configures a webhook channel (config: channels[].webhook + channels[].source).
+// WebhookSpec configures webhook ingress for model and deterministic-script channels.
 type WebhookSpec struct {
 	// +kubebuilder:validation:Required
 	Auth WebhookAuthSpec `json:"auth"`
 	// +optional
-	// +kubebuilder:validation:items:Enum=merge_request;issue;note
+	// +kubebuilder:validation:items:Enum=merge_request;issue;note;push;project_create;project_rename;project_transfer;project_update;repository_update
 	GitlabEvents []string `json:"gitlabEvents,omitempty"`
 	// BotUsername is the GitLab username the agent posts AS (the egress PAT's
 	// user — a distinct fact from the agent name). When set, the harness drops
@@ -166,10 +166,10 @@ type WebhookSpec struct {
 	// for github/generic. Rendered verbatim to channels[].webhook.botUsername.
 	// +optional
 	BotUsername *string `json:"botUsername,omitempty"`
-	// TriggerUsers is an actor allowlist: only these GitLab usernames may
-	// trigger the agent (every routed kind: mr/issue/note). Omit → any author
-	// triggers. gitlab source only; ignored for github/generic. Rendered
-	// verbatim to channels[].webhook.triggerUsers.
+	// TriggerUsers is an actor allowlist: only these GitLab usernames may trigger
+	// the handler. Omit → any author triggers. System events without a username are
+	// rejected when this list is set, so webhook-script registrars should omit it.
+	// GitLab source only; ignored for github/generic.
 	// +optional
 	TriggerUsers []string `json:"triggerUsers,omitempty"`
 }
@@ -235,12 +235,13 @@ type SessionSpec struct {
 	Overflow string `json:"overflow,omitempty"`
 }
 
-// PrepareSpec configures a static /bin/sh channel lifecycle hook shared by prepare and
-// cleanup. The harness does not render {{ }} in hook scripts; event data reaches them only
-// as environment variables (ACH_WORKSPACE, ACH_EVENT_*), so payload values are never
-// interpolated into shell source. Valid on every channel type.
+// PrepareSpec configures a static /bin/sh program used by prepare, cleanup, and the
+// deterministic webhook-script handler. The harness does not render {{ }} in scripts;
+// event data reaches them as environment variables, and webhook-script additionally
+// receives normalized JSON on stdin.
 type PrepareSpec struct {
-	// Script is the static /bin/sh program, run as `sh -eu` fed on stdin.
+	// Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
+	// webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Script string `json:"script"`
@@ -260,15 +261,17 @@ type PrepareSpec struct {
 }
 
 // ChannelSpec is one inbound channel (config: channels[]).
-// +kubebuilder:validation:XValidation:rule="(self.type=='webhook' && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
-// +kubebuilder:validation:XValidation:rule="self.type=='webhook' || !has(self.source)",message="channels.source is only valid for webhook channels"
+// +kubebuilder:validation:XValidation:rule="((self.type=='webhook' || self.type=='webhook-script') && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
+// +kubebuilder:validation:XValidation:rule="self.type=='webhook' || self.type=='webhook-script' || !has(self.source)",message="channels.source is only valid for webhook channels"
+// +kubebuilder:validation:XValidation:rule="self.type=='webhook-script' ? has(self.script) : !has(self.script)",message="channels.script is required only for webhook-script"
+// +kubebuilder:validation:XValidation:rule="self.type!='webhook-script' || (!has(self.prompt) && !has(self.prepare) && !has(self.cleanup))",message="webhook-script forbids prompt, prepare, and cleanup"
 // +kubebuilder:validation:XValidation:rule="!has(self.cleanup) || has(self.prepare)",message="channels.cleanup requires channels.prepare"
 type ChannelSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=webhook;cron;queue;a2a
+	// +kubebuilder:validation:Enum=webhook;webhook-script;cron;queue;a2a
 	Type string `json:"type"`
 	// +optional
 	// +kubebuilder:validation:Enum=gitlab;github;generic
@@ -301,6 +304,11 @@ type ChannelSpec struct {
 	// attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.
 	// +optional
 	Cleanup *PrepareSpec `json:"cleanup,omitempty"`
+	// Script is the deterministic handler for type=webhook-script. The normalized webhook
+	// JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is
+	// temporary and removed after each event.
+	// +optional
+	Script *PrepareSpec `json:"script,omitempty"`
 }
 
 // ExposeSpec controls how an agent is reachable. Both axes default false —

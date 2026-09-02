@@ -112,6 +112,8 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 			shared := crdProperty(t, cleanup, field)
 			assertDescriptionOmits(t, "CRD cleanup."+field, shared, "prepare.env", "prepare.secretEnv", "before the engine exists", "fail-closed", "nothing is posted")
 		}
+		script := crdProperty(t, items, "script")
+		assertDescriptionContains(t, "CRD script", script, "deterministic handler", "never invokes the agent engine", "temporary")
 	}
 
 	doc, err := os.ReadFile("../../../docs/api-reference/ach.ackstorm.ai.md")

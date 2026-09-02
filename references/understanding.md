@@ -32,7 +32,7 @@ Two consumption surfaces:
    local AI tools (Claude Code, Codex, Gemini CLI, OpenCode, Pi) configured
    with exactly the models/keys/skills the team is authorized for.
 2. **Running agents** — an `ACHAgent` CR deploys a long-running agent
-   (webhook/cron/queue/a2a-driven) that self-hydrates against ACH at boot and
+   (webhook/webhook-script/cron/queue/a2a-driven) that self-hydrates against ACH at boot and
    is reachable through a governed gateway.
 
 Design scale envelope: single-cluster, single-org — hundreds of developers,

@@ -715,6 +715,43 @@ func TestPrepare_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
 	}
 }
 
+func TestWebhookScript_RendersAuthScriptAndForwardEnv(t *testing.T) {
+	tc := renderMatrix()["minimal"]
+	tc.profile.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_BASE_URL", Value: "https://git.example.com"}}
+	tc.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "gitlab-api"}, Key: "token",
+	}}}}
+	tc.agent.Spec.Channels = []achv1alpha1.ChannelSpec{{
+		Name: "gitlab-register", Type: "webhook-script", Source: "gitlab",
+		Webhook: &achv1alpha1.WebhookSpec{
+			Auth:         achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "system-hook", Key: "secret"}},
+			GitlabEvents: []string{"project_create", "push", "merge_request"},
+		},
+		Script: &achv1alpha1.PrepareSpec{
+			Script: "payload=$(cat)", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"},
+		},
+	}}
+
+	cfg, err := Render(tc.profile, tc.agent, "https://ach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Channels[0]
+	if got.Webhook == nil || got.Script == nil || got.Script.Env["GITLAB_BASE_URL"] != "https://git.example.com" {
+		t.Fatalf("webhook-script did not render: %+v", got)
+	}
+	if got.Script.SecretEnv["GITLAB_TOKEN"].Env != "ACH_SECRET_GITLAB_REGISTER_SCRIPT_GITLAB_TOKEN" {
+		t.Fatalf("script secret alias = %#v", got.Script.SecretEnv)
+	}
+	if _, found := got.Script.Env["MISSING"]; found {
+		t.Fatal("missing forwardEnv name must remain unset")
+	}
+	refs := ChannelSecretEnv(tc.profile, tc.agent)
+	if len(refs) != 2 {
+		t.Fatalf("webhook-script auth + script refs = %+v", refs)
+	}
+}
+
 func TestCleanup_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
 	tc := renderMatrix()["minimal"]
 	tc.profile.Spec.Env = []corev1.EnvVar{
