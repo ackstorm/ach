@@ -94,6 +94,7 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 	if len(roots) == 0 {
 		t.Fatal("no schema fields found — CRD layout changed, fix the navigation")
 	}
+	cleanupWants := []string{"when a reserved session is torn down", "after an acquired engine is stopped", "after prepare/engine-acquire failure before acquisition completes", "best-effort"}
 	for _, root := range roots {
 		spec := crdProperty(t, root, "spec")
 		channels := crdProperty(t, spec, "channels")
@@ -101,9 +102,12 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 		if !ok {
 			t.Fatal("spec.channels items schema missing")
 		}
+		prepare := crdProperty(t, items, "prepare")
+		assertDescriptionContains(t, "CRD prepare", prepare, "before the session engine is acquired or reused", "fail-closed")
+		assertDescriptionOmits(t, "CRD prepare", prepare, "before engine creation")
 		cleanup := crdProperty(t, items, "cleanup")
-		assertDescriptionContains(t, "CRD cleanup", cleanup, "after the session engine stops", "best-effort")
-		assertDescriptionOmits(t, "CRD cleanup", cleanup, "channels[].prepare", "before the engine exists", "fail-closed", "nothing is posted")
+		assertDescriptionContains(t, "CRD cleanup", cleanup, cleanupWants...)
+		assertDescriptionOmits(t, "CRD cleanup", cleanup, "channels[].prepare", "after the session engine stops", "before the engine exists", "fail-closed", "nothing is posted")
 		for _, field := range []string{"script", "forwardEnv", "timeoutSeconds"} {
 			shared := crdProperty(t, cleanup, field)
 			assertDescriptionOmits(t, "CRD cleanup."+field, shared, "prepare.env", "prepare.secretEnv", "before the engine exists", "fail-closed", "nothing is posted")
@@ -124,7 +128,7 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 	if cleanupRow == "" {
 		t.Fatal("cleanup API-reference row missing")
 	}
-	for _, want := range []string{"after the session engine stops", "best-effort"} {
+	for _, want := range cleanupWants {
 		if !strings.Contains(cleanupRow, want) {
 			t.Errorf("cleanup API-reference row missing %q: %s", want, cleanupRow)
 		}

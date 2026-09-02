@@ -581,8 +581,8 @@ _Appears in:_
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
-| `prepare` _[PrepareSpec](#preparespec)_ | Prepare runs before engine creation and is fail-closed: a non-zero exit abandons the<br />invocation, so nothing is posted. It re-runs for every event on a session workspace<br />that persists, so scripts such as clone-or-fetch must be idempotent. Valid for every<br />channel type. |  |  |
-| `cleanup` _[PrepareSpec](#preparespec)_ | Cleanup runs after the session engine stops and is best-effort: failures are logged<br />and counted without changing invocation delivery. Graceful shutdown attempts cleanup;<br />abrupt Pod or node termination cannot guarantee it. Requires prepare. |  |  |
+| `prepare` _[PrepareSpec](#preparespec)_ | Prepare runs on the channel lane before the session engine is acquired or reused for<br />an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing<br />is posted. It re-runs for every event on a session workspace that persists, so scripts<br />such as clone-or-fetch must be idempotent. Valid for every channel type. |  |  |
+| `cleanup` _[PrepareSpec](#preparespec)_ | Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,<br />or after prepare/engine-acquire failure before acquisition completes. It is best-effort:<br />failures are logged and counted without changing invocation delivery. Graceful shutdown<br />attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare. |  |  |
 
 
 #### CodememSpec

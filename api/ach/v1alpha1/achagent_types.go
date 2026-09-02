@@ -289,15 +289,16 @@ type ChannelSpec struct {
 	Queue *QueueSpec `json:"queue,omitempty"`
 	// +optional
 	A2A *A2ASpec `json:"a2a,omitempty"`
-	// Prepare runs before engine creation and is fail-closed: a non-zero exit abandons the
-	// invocation, so nothing is posted. It re-runs for every event on a session workspace
-	// that persists, so scripts such as clone-or-fetch must be idempotent. Valid for every
-	// channel type.
+	// Prepare runs on the channel lane before the session engine is acquired or reused for
+	// an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing
+	// is posted. It re-runs for every event on a session workspace that persists, so scripts
+	// such as clone-or-fetch must be idempotent. Valid for every channel type.
 	// +optional
 	Prepare *PrepareSpec `json:"prepare,omitempty"`
-	// Cleanup runs after the session engine stops and is best-effort: failures are logged
-	// and counted without changing invocation delivery. Graceful shutdown attempts cleanup;
-	// abrupt Pod or node termination cannot guarantee it. Requires prepare.
+	// Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,
+	// or after prepare/engine-acquire failure before acquisition completes. It is best-effort:
+	// failures are logged and counted without changing invocation delivery. Graceful shutdown
+	// attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.
 	// +optional
 	Cleanup *PrepareSpec `json:"cleanup,omitempty"`
 }
