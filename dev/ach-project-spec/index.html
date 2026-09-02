@@ -1353,7 +1353,7 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 </tr>
 </tbody>
 </table>
-<p>Scale of the codebase: ~146k lines of Go across operator, platform API, forwarder, content service, gateway, and two binaries; 18-gate pre-push publication check; unit + envtest in CI, full e2e (kind + Helm) as a local merge gate.</p>
+<p>Scale of the codebase: ~146k lines of Go across operator, platform API, forwarder, content service, gateway, and two binaries; 16-gate pre-push publication check; unit + envtest in CI, full e2e (kind + Helm) as a local merge gate.</p>
 <hr />
 <h2 id="3-architecture">3. Architecture<a class="headerlink" href="#3-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="31-topology">3.1 Topology<a class="headerlink" href="#31-topology" title="Permanent link">&para;</a></h3>
@@ -1444,7 +1444,7 @@ operator writes.</p>
 <li><strong>Identity</strong>: Dex/OIDC SSO → <code>provisionUser</code> → LiteLLM virtual key. Personal keys (<code>pk_</code>) and environment keys (<code>ek_</code>) with distinct scopes; revocation is idempotent and audited.</li>
 <li><strong>Backend access</strong>: forwarder mints short-lived per-target JWTs from <code>BackendIdentityPolicy</code> — cached in-memory, refreshed via LISTEN/NOTIFY + periodic resync. Agents authenticate to LiteLLM with the caller's own virtual key.</li>
 <li><strong>Agent secrets</strong>: inbound channel-auth secrets injected as env vars via <code>secretKeyRef</code>, never file-mounted. The honest rationale is operational: no secret material on the pod filesystem/PVC and a simpler harness contract (read env at boot, no volume plumbing). It is <strong>not</strong> an isolation boundary — a same-uid process can read <code>/proc/&lt;pid&gt;/environ</code> just as it could read a mounted file. Config-hash rolling is salted.</li>
-<li><strong>Supply chain</strong>: 18-gate pre-push (gitleaks, trufflehog, SPDX headers, govulncheck with an explicit acknowledged-list, large-file and sensitive-pattern checks); pinned toolchain in a devtools container.</li>
+<li><strong>Supply chain</strong>: 16-gate pre-push (changed-commit gitleaks, SPDX headers, large-file and sensitive-pattern checks); govulncheck remains a dedicated CI gate with an explicit acknowledged-list; pinned toolchain in a devtools container.</li>
 <li><strong>Trust boundaries</strong>: gateway is deliberately auth-free (agents verify HMAC themselves); content service enforces team-based authz per request with a closed error vocabulary and one audit event per request.</li>
 <li><strong>Rate limiting</strong>: not the gateway's job — inbound abuse absorption belongs to the Ingress/edge in front of it (out of scope for ACH), and model-cost limits ride on LiteLLM budgets per key/team.</li>
 </ul>
@@ -1518,7 +1518,7 @@ operator writes.</p>
 <h2 id="appendix-b-delivery-quality-machinery">Appendix B — Delivery &amp; quality machinery<a class="headerlink" href="#appendix-b-delivery-quality-machinery" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Release: goreleaser (two binaries + multi-service image), Helm chart, manifest bump automation; releases cut from clean checkouts with tag hygiene rules.</li>
-<li>Test ladder: unit (~10s) → envtest (~3-7m) → e2e kind+Helm (~6-10m, kept-cluster debug loop) → 18-gate pre-push.</li>
+<li>Test ladder: unit (~10s) → envtest (~3-7m) → e2e kind+Helm (~6-10m, kept-cluster debug loop) → 16-gate pre-push.</li>
 <li>Toolchain: no host Go required; everything routes through a pinned devtools container; per-worktree build caches.</li>
 </ul>
 

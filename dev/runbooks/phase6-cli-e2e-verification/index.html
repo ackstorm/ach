@@ -1442,7 +1442,7 @@ is missing from <code>ach</code>, or the cross-check passes when it should fail:
 capture the full <code>--help</code> output and tag this check as FAIL.</p>
 <hr />
 <h2 id="check-2-make-pre-push-17-gate-sweep-passes-on-current-head">CHECK 2 — <code>make pre-push</code> 17-gate sweep passes on current HEAD<a class="headerlink" href="#check-2-make-pre-push-17-gate-sweep-passes-on-current-head" title="Permanent link">&para;</a></h2>
-<p><strong>Why human:</strong> the pre-push gate is host-only (gitleaks + trufflehog spawn
+<p><strong>Why human:</strong> the pre-push gate is host-only (gitleaks spawns
 container peers on host docker). Cannot run inside the GSD orchestrator
 context. Already gated successfully on push of <code>e86e9a5</code> but a clean
 re-run on the target machine confirms reproducibility.</p>
