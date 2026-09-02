@@ -5,6 +5,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- Add singular `channels[].cleanup` hooks with independent environment forwarding and secret aliases.
 - `ACHAgent.spec.channels[].prepare`: a per-invocation workspace hook rendered to the
   harness's `channels[].prepare` (ach-agent CONTRACT §9.1, requires ach-agent >= v0.13.0).
   A `/bin/sh` script the harness runs on its router lane before each turn, with cwd set to

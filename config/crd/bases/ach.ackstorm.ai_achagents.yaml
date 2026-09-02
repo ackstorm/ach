@@ -137,6 +137,51 @@ spec:
                       required:
                       - auth
                       type: object
+                    cleanup:
+                      description: |-
+                        PrepareSpec is the per-invocation workspace hook (config: channels[].prepare;
+                        ach-agent CONTRACT v3 §9.1). A /bin/sh script the harness runs on the router lane —
+                        after dedup + backpressure admitted the event, before the engine exists — with cwd set
+                        to that session's workspace, which then becomes the engine's cwd. Its canonical use is
+                        cloning the repo a merge-request event names, so the agent reviews a real checkout and
+                        the clone credential stays in the harness process instead of being handed to the agent.
+
+                        Script is STATIC text: the harness does not render {{ }} in it, and no webhook payload
+                        value is ever interpolated into shell source. Event data reaches the script only as
+                        environment variables (ACH_WORKSPACE, ACH_EVENT_*), which is what makes handing a
+                        webhook payload to a shell hook safe — there is no injection surface.
+
+                        Valid on ANY channel type (a cron channel may want a workspace too).
+                      properties:
+                        forwardEnv:
+                          description: |-
+                            ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
+                            Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via
+                            generated Pod aliases. Unknown names are ignored and remain unset.
+                          items:
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        script:
+                          description: |-
+                            Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every
+                            event on the same session_key against a workspace that persists (the clone cache),
+                            so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the
+                            invocation (fail-closed): nothing is posted.
+                          minLength: 1
+                          type: string
+                        timeoutSeconds:
+                          description: |-
+                            TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
+                            and abandons the invocation. Harness default is 120 when omitted.
+                          format: int64
+                          maximum: 3600
+                          minimum: 1
+                          type: integer
+                      required:
+                      - script
+                      type: object
                     concurrency:
                       default: 1
                       format: int64
@@ -341,6 +386,8 @@ spec:
                       || (self.type=='a2a' && has(self.a2a))
                   - message: channels.source is only valid for webhook channels
                     rule: self.type=='webhook' || !has(self.source)
+                  - message: channels.cleanup requires channels.prepare
+                    rule: '!has(self.cleanup) || has(self.prepare)'
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:

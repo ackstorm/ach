@@ -582,6 +582,7 @@ _Appears in:_
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
 | `prepare` _[PrepareSpec](#preparespec)_ | Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every<br />channel type, hence outside the type↔block coherence the harness enforces. |  |  |
+| `cleanup` _[PrepareSpec](#preparespec)_ |  |  |  |
 
 
 #### CodememSpec

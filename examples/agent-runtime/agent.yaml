@@ -45,7 +45,9 @@ spec:
       type: webhook
       source: gitlab
       concurrency: 4
-      prompt: "Review this merge request: {{ payload.object_attributes.url }}"
+      prompt: >-
+        Review this event. The channel prepare hook maintains a repository checkout at
+        $ACH_WORKSPACE/repo; inspect and test that working tree before replying.
       webhook:
         auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
         gitlabEvents: [merge_request, note]
@@ -62,6 +64,12 @@ spec:
           git -C "$ACH_WORKSPACE/repo" checkout --detach "$ACH_EVENT_HEAD_SHA"
         forwardEnv: [GITLAB_TOKEN, GITLAB_BASE_URL]
         timeoutSeconds: 120
+      cleanup:
+        script: |
+          set -eu
+          test -n "$ACH_WORKSPACE"
+          rm -rf -- "$ACH_WORKSPACE"
+        timeoutSeconds: 30
     - name: daily-security
       type: cron
       # session is a block since v0.6.3 (was a bare string `session: none`).

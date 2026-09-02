@@ -22,6 +22,11 @@ spec.channels[].a2a.auth.header	string
 spec.channels[].a2a.auth.secretRef	object
 spec.channels[].a2a.auth.secretRef.key	string
 spec.channels[].a2a.auth.secretRef.name	string
+spec.channels[].cleanup	object
+spec.channels[].cleanup.forwardEnv	array
+spec.channels[].cleanup.forwardEnv[]	string
+spec.channels[].cleanup.script	string
+spec.channels[].cleanup.timeoutSeconds	integer
 spec.channels[].concurrency	integer
 spec.channels[].cron	object
 spec.channels[].cron.schedule	string

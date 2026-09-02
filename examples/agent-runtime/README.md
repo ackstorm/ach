@@ -20,6 +20,14 @@ Both resources accept Pod-native `spec.env`. Entries merge by name and the
 agent engine; `channels[].prepare.forwardEnv` independently sends selected names
 only to that channel's prepare script. Unknown names are ignored and remain unset.
 
+`prepare` and `cleanup` are generic configuration-owned shell hooks. The
+operator and harness do not clone, cache, lock, or delete repositories. Cleanup
+runs after the session engine stops on idle-TTL expiry (or immediately when the
+TTL is zero) and is also attempted during graceful shutdown; abrupt Pod/node
+termination cannot guarantee it. If you use a shared bare mirror and per-session
+worktrees, implement both the Git operations and cross-session locking inside
+these scripts.
+
 The operator collapses the two into a single `agent-config-v1` config, writes it
 to a ConfigMap (`config.json`), and applies a single-replica Deployment that
 mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness

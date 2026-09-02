@@ -111,6 +111,13 @@ func renderMatrix() map[string]renderCase {
 		"queue":   base("q", []achv1alpha1.ChannelSpec{{Name: "q", Type: "queue", Queue: &achv1alpha1.QueueSpec{Key: "k"}}}),
 		"a2a":     base("a", []achv1alpha1.ChannelSpec{{Name: "a", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "s", Key: "k"}}}}}),
 	}
+	cleanup := base("cleanup", cron)
+	cleanup.agent.Spec.Env = []corev1.EnvVar{{Name: "MODE", Value: "review"}}
+	cleanup.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{Script: "true"}
+	cleanup.agent.Spec.Channels[0].Cleanup = &achv1alpha1.PrepareSpec{
+		Script: "true", ForwardEnv: []string{"MODE"},
+	}
+	m["cleanup"] = cleanup
 	promptText := base("pt", cron)
 	promptText.agent.Spec.Prompt = &achv1alpha1.AgentPromptSpec{System: achv1alpha1.PromptSystemSpec{Type: "text", Text: "hi"}}
 	m["prompt-text"] = promptText
