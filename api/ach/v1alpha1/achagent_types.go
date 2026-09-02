@@ -235,36 +235,24 @@ type SessionSpec struct {
 	Overflow string `json:"overflow,omitempty"`
 }
 
-// PrepareSpec is the per-invocation workspace hook (config: channels[].prepare;
-// ach-agent CONTRACT v3 §9.1). A /bin/sh script the harness runs on the router lane —
-// after dedup + backpressure admitted the event, before the engine exists — with cwd set
-// to that session's workspace, which then becomes the engine's cwd. Its canonical use is
-// cloning the repo a merge-request event names, so the agent reviews a real checkout and
-// the clone credential stays in the harness process instead of being handed to the agent.
-//
-// Script is STATIC text: the harness does not render {{ }} in it, and no webhook payload
-// value is ever interpolated into shell source. Event data reaches the script only as
-// environment variables (ACH_WORKSPACE, ACH_EVENT_*), which is what makes handing a
-// webhook payload to a shell hook safe — there is no injection surface.
-//
-// Valid on ANY channel type (a cron channel may want a workspace too).
+// PrepareSpec configures a static /bin/sh channel lifecycle hook shared by prepare and
+// cleanup. The harness does not render {{ }} in hook scripts; event data reaches them only
+// as environment variables (ACH_WORKSPACE, ACH_EVENT_*), so payload values are never
+// interpolated into shell source. Valid on every channel type.
 type PrepareSpec struct {
-	// Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every
-	// event on the same session_key against a workspace that persists (the clone cache),
-	// so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the
-	// invocation (fail-closed): nothing is posted.
+	// Script is the static /bin/sh program, run as `sh -eu` fed on stdin.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Script string `json:"script"`
 	// ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
-	// Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via
+	// Literal values become the hook's env; secretKeyRef values become its secretEnv via
 	// generated Pod aliases. Unknown names are ignored and remain unset.
 	// +optional
 	// +listType=set
 	// +kubebuilder:validation:items:Pattern=`^[A-Za-z_][A-Za-z0-9_]*$`
 	ForwardEnv []string `json:"forwardEnv,omitempty"`
-	// TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
-	// and abandons the invocation. Harness default is 120 when omitted.
+	// TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process
+	// group. Harness default is 120 when omitted.
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=3600
@@ -301,10 +289,15 @@ type ChannelSpec struct {
 	Queue *QueueSpec `json:"queue,omitempty"`
 	// +optional
 	A2A *A2ASpec `json:"a2a,omitempty"`
-	// Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every
-	// channel type, hence outside the type↔block coherence the harness enforces.
+	// Prepare runs before engine creation and is fail-closed: a non-zero exit abandons the
+	// invocation, so nothing is posted. It re-runs for every event on a session workspace
+	// that persists, so scripts such as clone-or-fetch must be idempotent. Valid for every
+	// channel type.
 	// +optional
 	Prepare *PrepareSpec `json:"prepare,omitempty"`
+	// Cleanup runs after the session engine stops and is best-effort: failures are logged
+	// and counted without changing invocation delivery. Graceful shutdown attempts cleanup;
+	// abrupt Pod or node termination cannot guarantee it. Requires prepare.
 	// +optional
 	Cleanup *PrepareSpec `json:"cleanup,omitempty"`
 }

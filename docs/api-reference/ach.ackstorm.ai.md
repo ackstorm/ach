@@ -581,8 +581,8 @@ _Appears in:_
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
-| `prepare` _[PrepareSpec](#preparespec)_ | Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every<br />channel type, hence outside the type↔block coherence the harness enforces. |  |  |
-| `cleanup` _[PrepareSpec](#preparespec)_ |  |  |  |
+| `prepare` _[PrepareSpec](#preparespec)_ | Prepare runs before engine creation and is fail-closed: a non-zero exit abandons the<br />invocation, so nothing is posted. It re-runs for every event on a session workspace<br />that persists, so scripts such as clone-or-fetch must be idempotent. Valid for every<br />channel type. |  |  |
+| `cleanup` _[PrepareSpec](#preparespec)_ | Cleanup runs after the session engine stops and is best-effort: failures are logged<br />and counted without changing invocation delivery. Graceful shutdown attempts cleanup;<br />abrupt Pod or node termination cannot guarantee it. Requires prepare. |  |  |
 
 
 #### CodememSpec
@@ -1563,19 +1563,10 @@ _Appears in:_
 
 
 
-PrepareSpec is the per-invocation workspace hook (config: channels[].prepare;
-ach-agent CONTRACT v3 §9.1). A /bin/sh script the harness runs on the router lane —
-after dedup + backpressure admitted the event, before the engine exists — with cwd set
-to that session's workspace, which then becomes the engine's cwd. Its canonical use is
-cloning the repo a merge-request event names, so the agent reviews a real checkout and
-the clone credential stays in the harness process instead of being handed to the agent.
-
-Script is STATIC text: the harness does not render {{ }} in it, and no webhook payload
-value is ever interpolated into shell source. Event data reaches the script only as
-environment variables (ACH_WORKSPACE, ACH_EVENT_*), which is what makes handing a
-webhook payload to a shell hook safe — there is no injection surface.
-
-Valid on ANY channel type (a cron channel may want a workspace too).
+PrepareSpec configures a static /bin/sh channel lifecycle hook shared by prepare and
+cleanup. The harness does not render {{ }} in hook scripts; event data reaches them only
+as environment variables (ACH_WORKSPACE, ACH_EVENT_*), so payload values are never
+interpolated into shell source. Valid on every channel type.
 
 
 
@@ -1584,9 +1575,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `script` _string_ | Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every<br />event on the same session_key against a workspace that persists (the clone cache),<br />so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the<br />invocation (fail-closed): nothing is posted. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
-| `timeoutSeconds` _integer_ | TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group<br />and abandons the invocation. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
+| `script` _string_ | Script is the static /bin/sh program, run as `sh -eu` fed on stdin. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become the hook's env; secretKeyRef values become its secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
+| `timeoutSeconds` _integer_ | TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
 
 
 #### Prompt

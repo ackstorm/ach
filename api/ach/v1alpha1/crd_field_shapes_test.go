@@ -80,6 +80,90 @@ func TestACHAgentCRD_FieldShapesStable(t *testing.T) {
 	}
 }
 
+func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
+	const crdPath = "../../../config/crd/bases/ach.ackstorm.ai_achagents.yaml"
+	raw, err := os.ReadFile(crdPath)
+	if err != nil {
+		t.Fatalf("read CRD: %v", err)
+	}
+	var crd map[string]any
+	if err := yaml.Unmarshal(raw, &crd); err != nil {
+		t.Fatalf("unmarshal CRD: %v", err)
+	}
+	roots := openAPISchemas(crd)
+	if len(roots) == 0 {
+		t.Fatal("no schema fields found — CRD layout changed, fix the navigation")
+	}
+	for _, root := range roots {
+		spec := crdProperty(t, root, "spec")
+		channels := crdProperty(t, spec, "channels")
+		items, ok := channels["items"].(map[string]any)
+		if !ok {
+			t.Fatal("spec.channels items schema missing")
+		}
+		cleanup := crdProperty(t, items, "cleanup")
+		assertDescriptionContains(t, "CRD cleanup", cleanup, "after the session engine stops", "best-effort")
+		assertDescriptionOmits(t, "CRD cleanup", cleanup, "channels[].prepare", "before the engine exists", "fail-closed", "nothing is posted")
+		for _, field := range []string{"script", "forwardEnv", "timeoutSeconds"} {
+			shared := crdProperty(t, cleanup, field)
+			assertDescriptionOmits(t, "CRD cleanup."+field, shared, "prepare.env", "prepare.secretEnv", "before the engine exists", "fail-closed", "nothing is posted")
+		}
+	}
+
+	doc, err := os.ReadFile("../../../docs/api-reference/ach.ackstorm.ai.md")
+	if err != nil {
+		t.Fatalf("read API reference: %v", err)
+	}
+	var cleanupRow string
+	for _, line := range strings.Split(string(doc), "\n") {
+		if strings.HasPrefix(line, "| `cleanup` _[PrepareSpec](#preparespec)_") {
+			cleanupRow = line
+			break
+		}
+	}
+	if cleanupRow == "" {
+		t.Fatal("cleanup API-reference row missing")
+	}
+	for _, want := range []string{"after the session engine stops", "best-effort"} {
+		if !strings.Contains(cleanupRow, want) {
+			t.Errorf("cleanup API-reference row missing %q: %s", want, cleanupRow)
+		}
+	}
+}
+
+func crdProperty(t *testing.T, node map[string]any, name string) map[string]any {
+	t.Helper()
+	properties, ok := node["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties missing before %q", name)
+	}
+	property, ok := properties[name].(map[string]any)
+	if !ok {
+		t.Fatalf("schema property %q missing", name)
+	}
+	return property
+}
+
+func assertDescriptionContains(t *testing.T, name string, node map[string]any, wants ...string) {
+	t.Helper()
+	description, _ := node["description"].(string)
+	for _, want := range wants {
+		if !strings.Contains(description, want) {
+			t.Errorf("%s description missing %q: %q", name, want, description)
+		}
+	}
+}
+
+func assertDescriptionOmits(t *testing.T, name string, node map[string]any, forbidden ...string) {
+	t.Helper()
+	description, _ := node["description"].(string)
+	for _, phrase := range forbidden {
+		if strings.Contains(description, phrase) {
+			t.Errorf("%s description contains prepare-only %q: %q", name, phrase, description)
+		}
+	}
+}
+
 // openAPISchemas returns every version's openAPIV3Schema node in the CRD.
 func openAPISchemas(crd map[string]any) []map[string]any {
 	spec, _ := crd["spec"].(map[string]any)
