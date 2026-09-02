@@ -4584,7 +4584,7 @@ condition is written.</p>
 <td><code>type</code> <em>string</em></td>
 <td></td>
 <td></td>
-<td>Enum: [webhook cron queue a2a] <br />Required: {} <br /></td>
+<td>Enum: [webhook webhook-script cron queue a2a] <br />Required: {} <br /></td>
 </tr>
 <tr>
 <td><code>source</code> <em>string</em></td>
@@ -4643,6 +4643,12 @@ condition is written.</p>
 <tr>
 <td><code>cleanup</code> <em><a href="#preparespec">PrepareSpec</a></em></td>
 <td>Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,<br />or after prepare/engine-acquire failure before acquisition completes. It is best-effort:<br />failures are logged and counted without changing invocation delivery. Graceful shutdown<br />attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>script</code> <em><a href="#preparespec">PrepareSpec</a></em></td>
+<td>Script is the deterministic handler for type=webhook-script. The normalized webhook<br />JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is<br />temporary and removed after each event.</td>
 <td></td>
 <td></td>
 </tr>
@@ -6580,10 +6586,10 @@ when set, MUST NOT exceed spec.refresh.maxStaleness.</p>
 </tbody>
 </table>
 <h4 id="preparespec">PrepareSpec<a class="headerlink" href="#preparespec" title="Permanent link">&para;</a></h4>
-<p>PrepareSpec configures a static /bin/sh channel lifecycle hook shared by prepare and
-cleanup. The harness does not render {{ }} in hook scripts; event data reaches them only
-as environment variables (ACH_WORKSPACE, ACH_EVENT_*), so payload values are never
-interpolated into shell source. Valid on every channel type.</p>
+<p>PrepareSpec configures a static /bin/sh program used by prepare, cleanup, and the
+deterministic webhook-script handler. The harness does not render {{ }} in scripts;
+event data reaches them as environment variables, and webhook-script additionally
+receives normalized JSON on stdin.</p>
 <p><em>Appears in:</em>
 - <a href="#channelspec">ChannelSpec</a></p>
 <table>
@@ -6598,7 +6604,7 @@ interpolated into shell source. Valid on every channel type.</p>
 <tbody>
 <tr>
 <td><code>script</code> <em>string</em></td>
-<td>Script is the static /bin/sh program, run as <code>sh -eu</code> fed on stdin.</td>
+<td>Script is the static /bin/sh program. Lifecycle hooks feed it to <code>sh -eu -s</code>;<br />webhook-script uses <code>sh -eu -c</code> so stdin remains available for webhook JSON.</td>
 <td></td>
 <td>MinLength: 1 <br />Required: {} <br /></td>
 </tr>
@@ -7878,7 +7884,7 @@ names the specific entries that did not resolve against LiteLLM.</p>
 </tbody>
 </table>
 <h4 id="webhookspec">WebhookSpec<a class="headerlink" href="#webhookspec" title="Permanent link">&para;</a></h4>
-<p>WebhookSpec configures a webhook channel (config: channels[].webhook + channels[].source).</p>
+<p>WebhookSpec configures webhook ingress for model and deterministic-script channels.</p>
 <p><em>Appears in:</em>
 - <a href="#channelspec">ChannelSpec</a></p>
 <table>
@@ -7901,7 +7907,7 @@ names the specific entries that did not resolve against LiteLLM.</p>
 <td><code>gitlabEvents</code> <em>string array</em></td>
 <td></td>
 <td></td>
-<td>items:Enum: [merge_request issue note] <br /></td>
+<td>items:Enum: [merge_request issue note push project_create project_rename project_transfer project_update repository_update] <br /></td>
 </tr>
 <tr>
 <td><code>botUsername</code> <em>string</em></td>
@@ -7911,7 +7917,7 @@ names the specific entries that did not resolve against LiteLLM.</p>
 </tr>
 <tr>
 <td><code>triggerUsers</code> <em>string array</em></td>
-<td>TriggerUsers is an actor allowlist: only these GitLab usernames may<br />trigger the agent (every routed kind: mr/issue/note). Omit → any author<br />triggers. gitlab source only; ignored for github/generic. Rendered<br />verbatim to channels[].webhook.triggerUsers.</td>
+<td>TriggerUsers is an actor allowlist: only these GitLab usernames may trigger<br />the handler. Omit → any author triggers. System events without a username are<br />rejected when this list is set, so webhook-script registrars should omit it.<br />GitLab source only; ignored for github/generic.</td>
 <td></td>
 <td></td>
 </tr>
