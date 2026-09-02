@@ -46,6 +46,13 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 	if baseURL == "" {
 		return AgentConfig{}, fmt.Errorf("no ACH base URL: set ACHAgent.spec.ach.baseUrl, AgentProfile.spec.achagent.ach.baseUrl, or operator ACH_BASE_URL")
 	}
+	aliases := make(map[string]struct{})
+	for _, ref := range ChannelSecretEnv(p, a) {
+		if _, found := aliases[ref.EnvName]; found {
+			return AgentConfig{}, fmt.Errorf("duplicate generated channel secret env alias %q", ref.EnvName)
+		}
+		aliases[ref.EnvName] = struct{}{}
+	}
 	params, err := decodeParams(model.Params)
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("model.params: %w", err)

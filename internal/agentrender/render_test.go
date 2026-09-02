@@ -756,6 +756,40 @@ func TestCleanup_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
 	}
 }
 
+func TestRender_RejectsCollidingChannelSecretAliases(t *testing.T) {
+	secret := func(name, secret, key string) corev1.EnvVar {
+		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: key,
+		}}}
+	}
+	tc := renderMatrix()["minimal"]
+	tc.profile.Spec.Env = []corev1.EnvVar{
+		secret("TOKEN_CLEANUP_X", "prepare-credential", "prepare-key"),
+		secret("X", "cleanup-credential", "cleanup-key"),
+	}
+	tc.agent.Spec.Channels = []achv1alpha1.ChannelSpec{
+		{
+			Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+			Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"TOKEN_CLEANUP_X"}},
+		},
+		{
+			Name: "c-prepare-token", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+			Prepare: &achv1alpha1.PrepareSpec{Script: "true"},
+			Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"X"}},
+		},
+	}
+
+	_, err := Render(tc.profile, tc.agent, "https://ach")
+	if err == nil || !strings.Contains(err.Error(), "duplicate generated channel secret env alias") {
+		t.Fatalf("Render error = %v", err)
+	}
+	for _, secretData := range []string{"prepare-credential", "prepare-key", "cleanup-credential", "cleanup-key"} {
+		if strings.Contains(err.Error(), secretData) {
+			t.Fatalf("Render error leaked secret reference data: %v", err)
+		}
+	}
+}
+
 func TestPrepare_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
 	secret := func(name, secret string) corev1.EnvVar {
 		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "key"}}}
