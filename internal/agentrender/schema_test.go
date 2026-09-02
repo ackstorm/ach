@@ -163,6 +163,17 @@ func renderMatrix() map[string]renderCase {
 			URL: "https://mcp.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${env:OTHER_MCP_TOKEN}"}}},
 	}
 	m["mcp-servers"] = mcp
+	prep := base("prep", []achv1alpha1.ChannelSpec{{
+		Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
+		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}},
+		Prepare: &achv1alpha1.PrepareSpec{
+			Script:         "git clone \"$REPO_BASE_URL/$ACH_EVENT_PROJECT_PATH.git\" \"$ACH_WORKSPACE/repo\"",
+			Env:            map[string]string{"REPO_BASE_URL": "https://gitlab.example.com"},
+			SecretEnv:      map[string]achv1alpha1.SecretKeyRef{"GITLAB_TOKEN": {Name: "gl-clone", Key: "token"}},
+			TimeoutSeconds: ptr(int64(120)),
+		},
+	}})
+	m["channel-prepare"] = prep
 	return m
 }
 

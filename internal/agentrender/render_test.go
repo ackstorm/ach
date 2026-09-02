@@ -665,3 +665,55 @@ func TestRenderCost_AgentWinsProfileInherits(t *testing.T) {
 		}
 	})
 }
+
+// TestPrepare_SecretsBecomeGeneratedEnvNames pins the outbound-credential seam: the
+// ConfigMap gets env NAMES, the PodSpec gets the secretKeyRefs, and the value never
+// appears in either. Order must be stable — a map-ordered env list would rewrite the
+// PodSpec on every reconcile.
+func TestPrepare_SecretsBecomeGeneratedEnvNames(t *testing.T) {
+	ch := achv1alpha1.ChannelSpec{
+		Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
+		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "hook", Key: "secret"}}},
+		Prepare: &achv1alpha1.PrepareSpec{
+			Script:    "true",
+			Env:       map[string]string{"REPO_BASE_URL": "https://gitlab.example.com"},
+			SecretEnv: map[string]achv1alpha1.SecretKeyRef{"GITLAB_TOKEN": {Name: "gl", Key: "token"}, "ARTIFACTORY": {Name: "af", Key: "pw"}},
+		},
+	}
+	cb := renderChannel(&ch)
+	if cb.Prepare == nil {
+		t.Fatal("prepare block not rendered")
+	}
+	if got := cb.Prepare.SecretEnv["GITLAB_TOKEN"].Env; got != "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN" {
+		t.Errorf("secretEnv env name = %q", got)
+	}
+	if cb.Prepare.Env["REPO_BASE_URL"] != "https://gitlab.example.com" {
+		t.Errorf("literal env dropped: %v", cb.Prepare.Env)
+	}
+
+	a := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{ch}}}
+	refs := ChannelSecretEnv(a)
+	// inbound auth first, then prepare secrets sorted by var name (ARTIFACTORY < GITLAB_TOKEN).
+	want := []string{"ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK", "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_ARTIFACTORY", "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN"}
+	if len(refs) != len(want) {
+		t.Fatalf("ChannelSecretEnv = %+v, want %d refs", refs, len(want))
+	}
+	for i, w := range want {
+		if refs[i].EnvName != w {
+			t.Errorf("ref[%d].EnvName = %q, want %q", i, refs[i].EnvName, w)
+		}
+	}
+	if got := ReferencedSecrets(a)["gl"]; len(got) != 1 || got[0] != "token" {
+		t.Errorf("ReferencedSecrets missing the prepare clone secret: %v", ReferencedSecrets(a))
+	}
+}
+
+// TestPrepare_OnCronChannel: prepare is not tied to webhook — a scheduled agent may want a
+// workspace too, so it must render outside the type switch.
+func TestPrepare_OnCronChannel(t *testing.T) {
+	ch := achv1alpha1.ChannelSpec{Name: "nightly", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "0 8 * * *"},
+		Prepare: &achv1alpha1.PrepareSpec{Script: "true"}}
+	if renderChannel(&ch).Prepare == nil {
+		t.Fatal("prepare must render for a cron channel")
+	}
+}

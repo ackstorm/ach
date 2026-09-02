@@ -580,6 +580,7 @@ _Appears in:_
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
+| `prepare` _[PrepareSpec](#preparespec)_ | Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every<br />channel type, hence outside the type↔block coherence the harness enforces. |  |  |
 
 
 #### CodememSpec
@@ -1556,6 +1557,37 @@ _Appears in:_
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
 
 
+#### PrepareSpec
+
+
+
+PrepareSpec is the per-invocation workspace hook (config: channels[].prepare;
+ach-agent CONTRACT v3 §9.1). A /bin/sh script the harness runs on the router lane —
+after dedup + backpressure admitted the event, before the engine exists — with cwd set
+to that session's workspace, which then becomes the engine's cwd. Its canonical use is
+cloning the repo a merge-request event names, so the agent reviews a real checkout and
+the clone credential stays in the harness process instead of being handed to the agent.
+
+Script is STATIC text: the harness does not render {{ }} in it, and no webhook payload
+value is ever interpolated into shell source. Event data reaches the script only as
+environment variables (ACH_WORKSPACE, ACH_EVENT_*), which is what makes handing a
+webhook payload to a shell hook safe — there is no injection surface.
+
+Valid on ANY channel type (a cron channel may want a workspace too).
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `script` _string_ | Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every<br />event on the same session_key against a workspace that persists (the clone cache),<br />so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the<br />invocation (fail-closed): nothing is posted. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `env` _object (keys:string, values:string)_ | Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs<br />here and never in the payload: a forged webhook that could choose the host would<br />harvest the credential. |  |  |
+| `secretEnv` _object (keys:string, values:[SecretKeyRef](#secretkeyref))_ | SecretEnv maps a script env var name → the Secret holding its value. The operator<br />injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only<br />that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone<br />credentials read-only. |  |  |
+| `timeoutSeconds` _integer_ | TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group<br />and abandons the invocation. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
+
+
 #### Prompt
 
 
@@ -1822,6 +1854,7 @@ _Appears in:_
 - [HindsightSpec](#hindsightspec)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
+- [PrepareSpec](#preparespec)
 - [WebhookAuthSpec](#webhookauthspec)
 
 | Field | Description | Default | Validation |

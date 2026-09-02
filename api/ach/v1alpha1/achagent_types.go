@@ -234,6 +234,46 @@ type SessionSpec struct {
 	Overflow string `json:"overflow,omitempty"`
 }
 
+// PrepareSpec is the per-invocation workspace hook (config: channels[].prepare;
+// ach-agent CONTRACT v3 §9.1). A /bin/sh script the harness runs on the router lane —
+// after dedup + backpressure admitted the event, before the engine exists — with cwd set
+// to that session's workspace, which then becomes the engine's cwd. Its canonical use is
+// cloning the repo a merge-request event names, so the agent reviews a real checkout and
+// the clone credential stays in the harness process instead of being handed to the agent.
+//
+// Script is STATIC text: the harness does not render {{ }} in it, and no webhook payload
+// value is ever interpolated into shell source. Event data reaches the script only as
+// environment variables (ACH_WORKSPACE, ACH_EVENT_*), which is what makes handing a
+// webhook payload to a shell hook safe — there is no injection surface.
+//
+// Valid on ANY channel type (a cron channel may want a workspace too).
+type PrepareSpec struct {
+	// Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every
+	// event on the same session_key against a workspace that persists (the clone cache),
+	// so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the
+	// invocation (fail-closed): nothing is posted.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Script string `json:"script"`
+	// Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs
+	// here and never in the payload: a forged webhook that could choose the host would
+	// harvest the credential.
+	// +optional
+	Env map[string]string `json:"env,omitempty"`
+	// SecretEnv maps a script env var name → the Secret holding its value. The operator
+	// injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only
+	// that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone
+	// credentials read-only.
+	// +optional
+	SecretEnv map[string]SecretKeyRef `json:"secretEnv,omitempty"`
+	// TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
+	// and abandons the invocation. Harness default is 120 when omitted.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=3600
+	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
+}
+
 // ChannelSpec is one inbound channel (config: channels[]).
 // +kubebuilder:validation:XValidation:rule="(self.type=='webhook' && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook' || !has(self.source)",message="channels.source is only valid for webhook channels"
@@ -263,6 +303,10 @@ type ChannelSpec struct {
 	Queue *QueueSpec `json:"queue,omitempty"`
 	// +optional
 	A2A *A2ASpec `json:"a2a,omitempty"`
+	// Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every
+	// channel type, hence outside the type↔block coherence the harness enforces.
+	// +optional
+	Prepare *PrepareSpec `json:"prepare,omitempty"`
 }
 
 // ExposeSpec controls how an agent is reachable. Both axes default false —

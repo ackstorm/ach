@@ -5,6 +5,17 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- `ACHAgent.spec.channels[].prepare`: a per-invocation workspace hook rendered to the
+  harness's `channels[].prepare` (ach-agent CONTRACT §9.1, requires ach-agent >= v0.13.0).
+  A `/bin/sh` script the harness runs on its router lane before each turn, with cwd set to
+  that session's workspace — the intended way to clone the repo a merge-request event names
+  so a review agent gets a real `.git` checkout. `script` is static text (no templating, so
+  no payload value is ever interpolated into shell source); event data reaches it only as
+  `ACH_EVENT_*` env vars. `secretEnv` maps a script env var to a Secret: the operator injects
+  it via `secretKeyRef` under a generated `ACH_SECRET_<CHANNEL>_PREPARE_<VAR>` name and renders
+  only that NAME into the ConfigMap, so the clone credential lives in the harness process env
+  (same env-not-file wiring as inbound webhook/a2a auth) and never on a same-uid-readable file.
+  Valid on every channel type. Purely additive to the CRD.
 - Real CRD types for Environment, Plugin, PluginMarketplace, Artifact, Prompt, BackendIdentityPolicy, LiteLLMConnection (ported from ach-old; placeholder `Foo string` Spec/Status replaced with real fields).
 - Shared `ExternalRef` types (RefreshBlock, SourceAuthSecretRef, 6 source kinds: GitHub, GitLab, Bitbucket, S3, GCS, HTTP).
 - Reconciler logic for all 7 CRDs with shared external_ref refresh loop, alphabetical conflict detection (PluginMarketplace + BackendIdentityPolicy), AuthorizedTeams enforcement (Environment), endpoint reachability + pepper Secret probe (LiteLLMConnection).

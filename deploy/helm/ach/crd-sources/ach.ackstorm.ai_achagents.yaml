@@ -157,6 +157,61 @@ spec:
                     name:
                       minLength: 1
                       type: string
+                    prepare:
+                      description: |-
+                        Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every
+                        channel type, hence outside the type↔block coherence the harness enforces.
+                      properties:
+                        env:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs
+                            here and never in the payload: a forged webhook that could choose the host would
+                            harvest the credential.
+                          type: object
+                        script:
+                          description: |-
+                            Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every
+                            event on the same session_key against a workspace that persists (the clone cache),
+                            so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the
+                            invocation (fail-closed): nothing is posted.
+                          minLength: 1
+                          type: string
+                        secretEnv:
+                          additionalProperties:
+                            description: SecretKeyRef identifies a key in a same-namespace
+                              Secret.
+                            properties:
+                              key:
+                                description: Key is the data key inside the Secret.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name is the Kubernetes Secret name.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                          description: |-
+                            SecretEnv maps a script env var name → the Secret holding its value. The operator
+                            injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only
+                            that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone
+                            credentials read-only.
+                          type: object
+                        timeoutSeconds:
+                          description: |-
+                            TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
+                            and abandons the invocation. Harness default is 120 when omitted.
+                          format: int64
+                          maximum: 3600
+                          minimum: 1
+                          type: integer
+                      required:
+                      - script
+                      type: object
                     prompt:
                       type: string
                     queue:
