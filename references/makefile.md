@@ -216,7 +216,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `qa-lint-fix` | A | golangci-lint with `--fix`. |
 | `qa-lint-config` | A | Verify golangci-lint config. |
 | `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs BASE_REF. |
-| `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 16). |
+| `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 14). |
 | `qa-fuzz-short` | A | Go fuzz targets, 60s budget each. |
 | `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (local-only, on demand). |
 | `fmt-check` | A | Fail if any Go file is not gofmt-clean (no mutation). |
@@ -250,7 +250,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-push` | 18-gate publication check (scanners + lint + unit + SPDX + govulncheck + …). Installed git hook. |
+| `pre-push` | 16-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. |
 | `verify` | `qa-security` + `pre-push` — full gate bundle. |
 | `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 

@@ -73,7 +73,7 @@ capture the full `--help` output and tag this check as FAIL.
 
 ## CHECK 2 — `make pre-push` 17-gate sweep passes on current HEAD
 
-**Why human:** the pre-push gate is host-only (gitleaks + trufflehog spawn
+**Why human:** the pre-push gate is host-only (gitleaks spawns
 container peers on host docker). Cannot run inside the GSD orchestrator
 context. Already gated successfully on push of `e86e9a5` but a clean
 re-run on the target machine confirms reproducibility.

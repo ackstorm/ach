@@ -323,7 +323,7 @@ FUZZ_TIME_SHORT ?= 60s
 FUZZ_TIME_LONG  ?= 10m
 
 .PHONY: qa-security
-qa-security: ## govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 16).
+qa-security: ## govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 14).
 	$(call container_target,_qa-security)
 _qa-security:
 	bash scripts/govulncheck-gate.sh
@@ -344,16 +344,13 @@ _qa-fuzz-long:
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
 
 .PHONY: pre-push
-pre-push: ## Host-only — 18-gate pre-publication check (gitleaks + trufflehog + lint + unit + SPDX + govulncheck + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
+pre-push: ## Host-only — 16-gate pre-publication check (changed-commit gitleaks + lint + unit + SPDX + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
 	./scripts/pre-push-check.sh
 
 .PHONY: verify
 verify: ## Host-only — full pre-publication gate bundle: fuzz-short + host pre-push. Single command for all gates.
-# Deliberately NOT `qa-security` here: qa-security = govulncheck-gate + fuzz-short,
-# and pre-push gate 13 already runs the SAME scripts/govulncheck-gate.sh. Calling
-# both ran the identical whole-module reachability analysis twice per `make verify`
-# (govulncheck can never be scoped to a diff, so each run is the full cost).
-# Run fuzz-short directly — it is the only part of qa-security pre-push lacks.
+# `govulncheck` stays in its dedicated CI workflow; local verification avoids
+# repeating the whole-module analysis on every push.
 	$(MAKE) qa-fuzz-short
 	$(MAKE) pre-push
 

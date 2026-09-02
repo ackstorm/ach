@@ -4,7 +4,7 @@
 # Installs:
 #   pre-push   -> scripts/pre-push-check.sh
 #     Runs the full 17-gate pre-publication check before every `git push`.
-#     Includes gitleaks/trufflehog/SPDX/govulncheck plus the defensive
+#     Includes changed-commit gitleaks/SPDX plus the defensive
 #     full-sweep golangci-lint + make unit.
 #
 # Idempotent — safe to re-run.

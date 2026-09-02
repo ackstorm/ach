@@ -36,7 +36,7 @@ Positioning in one line: **"IAM + package manager + fleet manager for AI agents,
 | Plugins / PluginMarketplace | ⏸ built, feature-gated OFF (`featuregate.PluginsEnabled=false`) |
 | Release pipeline (goreleaser, Helm chart, signed multi-service image) | ✅ shipped |
 
-Scale of the codebase: ~146k lines of Go across operator, platform API, forwarder, content service, gateway, and two binaries; 18-gate pre-push publication check; unit + envtest in CI, full e2e (kind + Helm) as a local merge gate.
+Scale of the codebase: ~146k lines of Go across operator, platform API, forwarder, content service, gateway, and two binaries; 16-gate pre-push publication check; unit + envtest in CI, full e2e (kind + Helm) as a local merge gate.
 
 ---
 
@@ -106,7 +106,7 @@ operator writes.
 - **Identity**: Dex/OIDC SSO → `provisionUser` → LiteLLM virtual key. Personal keys (`pk_`) and environment keys (`ek_`) with distinct scopes; revocation is idempotent and audited.
 - **Backend access**: forwarder mints short-lived per-target JWTs from `BackendIdentityPolicy` — cached in-memory, refreshed via LISTEN/NOTIFY + periodic resync. Agents authenticate to LiteLLM with the caller's own virtual key.
 - **Agent secrets**: inbound channel-auth secrets injected as env vars via `secretKeyRef`, never file-mounted. The honest rationale is operational: no secret material on the pod filesystem/PVC and a simpler harness contract (read env at boot, no volume plumbing). It is **not** an isolation boundary — a same-uid process can read `/proc/<pid>/environ` just as it could read a mounted file. Config-hash rolling is salted.
-- **Supply chain**: 18-gate pre-push (gitleaks, trufflehog, SPDX headers, govulncheck with an explicit acknowledged-list, large-file and sensitive-pattern checks); pinned toolchain in a devtools container.
+- **Supply chain**: 16-gate pre-push (changed-commit gitleaks, SPDX headers, large-file and sensitive-pattern checks); govulncheck remains a dedicated CI gate with an explicit acknowledged-list; pinned toolchain in a devtools container.
 - **Trust boundaries**: gateway is deliberately auth-free (agents verify HMAC themselves); content service enforces team-based authz per request with a closed error vocabulary and one audit event per request.
 - **Rate limiting**: not the gateway's job — inbound abuse absorption belongs to the Ingress/edge in front of it (out of scope for ACH), and model-cost limits ride on LiteLLM budgets per key/team.
 
@@ -186,5 +186,5 @@ Grouped by horizon. Items marked ⭐ are my (Claude's) additions beyond what's a
 ## Appendix B — Delivery & quality machinery
 
 - Release: goreleaser (two binaries + multi-service image), Helm chart, manifest bump automation; releases cut from clean checkouts with tag hygiene rules.
-- Test ladder: unit (~10s) → envtest (~3-7m) → e2e kind+Helm (~6-10m, kept-cluster debug loop) → 18-gate pre-push.
+- Test ladder: unit (~10s) → envtest (~3-7m) → e2e kind+Helm (~6-10m, kept-cluster debug loop) → 16-gate pre-push.
 - Toolchain: no host Go required; everything routes through a pinned devtools container; per-worktree build caches.

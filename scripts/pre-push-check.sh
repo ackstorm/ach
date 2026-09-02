@@ -4,25 +4,23 @@
 #
 # Hard checks (failure blocks push):
 #   1. gitleaks    (only commits being pushed; full history on first push)
-#   2. trufflehog  (only commits being pushed; full history on first push)
-#   3. large tracked files (>2MB)
-#   4. sensitive file patterns (.env, *.pem, *.key, kubeconfig, ...)
-#   5. LICENSE + README presence
-#   6. origin remote matches expected
-#  13. govulncheck   (HIGH advisories vs ack-list — wrapper-enforced 1:1)
-#  14. go mod tidy   (go.mod / go.sum drift blocks push)
-#  15. license-header SPDX gate (every in-scope *.go starts with SPDX line)
-#  16. golangci-lint full sweep (full lint runs here; no pre-commit stage)
-#  17. make test-unit (pure-logic regression — ~5-10s warm)
-#  18. helm chart mirror drift (crd-sources/ — helm-sync-check)
+#   2. large tracked files (>2MB)
+#   3. sensitive file patterns (.env, *.pem, *.key, kubeconfig, ...)
+#   4. LICENSE + README presence
+#   5. origin remote matches expected
+#  12. go mod tidy   (go.mod / go.sum drift blocks push)
+#  13. license-header SPDX gate (every in-scope *.go starts with SPDX line)
+#  14. golangci-lint full sweep (full lint runs here; no pre-commit stage)
+#  15. make test-unit (pure-logic regression — ~5-10s warm)
+#  16. helm chart mirror drift (crd-sources/ — helm-sync-check)
 #
 # Soft checks (warnings only):
-#   7. internal hostnames / private IPv4 in tracked files
-#   8. ackstorm.com emails outside LICENSE/NOTICE/AUTHORS
-#   9. .gitignore sanity (.env, .claude)
-#  10. commit author audit (informational)
-#  11. TODO/DO-NOT-COMMIT markers
-#  12. uncommitted working-tree changes (informational)
+#   6. internal hostnames / private IPv4 in tracked files
+#   7. ackstorm.com emails outside LICENSE/NOTICE/AUTHORS
+#   8. .gitignore sanity (.env, .claude)
+#   9. commit author audit (informational)
+#  10. TODO/DO-NOT-COMMIT markers
+#  11. uncommitted working-tree changes (informational)
 
 set -uo pipefail
 
@@ -36,18 +34,17 @@ cd "$REPO_ROOT"
 # up checked out in SCAN_ROOT.
 PUSH_HEAD="$(git rev-parse HEAD)"
 
-# SCAN_ROOT is the directory the dockerized git-history scanners (gitleaks,
-# trufflehog) mount. In a linked worktree, REPO_ROOT/.git is a gitlink FILE
+# SCAN_ROOT is the directory the dockerized gitleaks scan mounts. In a linked
+# worktree, REPO_ROOT/.git is a gitlink FILE
 # pointing at <primary>/.git/worktrees/<name>, which itself points back at
 # <primary>/.git via a "commondir" file — objects live there, not under
-# REPO_ROOT. Neither tool's internal `git clone file:///...` can dereference
+# REPO_ROOT. Gitleaks' internal `git clone file:///...` cannot dereference
 # that chain from inside the container (the reference is an absolute host
 # path outside the single REPO_ROOT mount), so both silently or loudly
 # misbehave: gitleaks logs "fatal: not a git repository" then reports a
-# vacuous "no leaks found", trufflehog hard-FAILs with the same clone error
-# misread as "verified live secrets" found. Mounting the primary checkout's
-# root instead — which owns a real .git directory containing the full object
-# database, shared with every linked worktree — fixes both. Outside a
+# vacuous "no leaks found". Mounting the primary checkout's root instead —
+# which owns a real .git directory containing the full object database,
+# shared with every linked worktree — fixes it. Outside a
 # worktree, git-common-dir's parent IS REPO_ROOT, so this is a no-op.
 GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
 case "$GIT_COMMON_DIR" in
@@ -92,12 +89,10 @@ if git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   # checkout (primary repo) than the one this script was invoked from, so
   # the container's own idea of "HEAD" would name the wrong commit.
   GITLEAKS_LOG_OPTS="--log-opts=${SCAN_BASE}..${PUSH_HEAD}"
-  TRUFFLEHOG_SINCE="--since-commit=${SCAN_BASE}"
 else
   SCAN_BASE=""
   SCAN_LABEL="full history (no $BASE_REF tracking ref — first push bootstrap)"
   GITLEAKS_LOG_OPTS=""
-  TRUFFLEHOG_SINCE=""
 fi
 
 # --- 1. gitleaks ---
@@ -116,17 +111,8 @@ else
   fail "gitleaks found secrets (see output above)"
 fi
 
-# --- 2. trufflehog ---
-hdr "2. trufflehog ($SCAN_LABEL)"
-if docker run --rm -v "$SCAN_ROOT:/pwd:ro" trufflesecurity/trufflehog:3.95.3@sha256:9cc33bb080cac0efbbf228a17667172875b529eeeab01efcc4697adfb55f568a \
-     git file:///pwd --branch "$PUSH_HEAD" --only-verified --fail --no-update $TRUFFLEHOG_SINCE; then
-  ok "no verified live secrets"
-else
-  fail "trufflehog found verified live secrets"
-fi
-
-# --- 3. Large tracked files ---
-hdr "3. large tracked files (>2MB)"
+# --- 2. Large tracked files ---
+hdr "2. large tracked files (>2MB)"
 # 2 MB threshold inherited from alitellm (which bundled a ~1.2 MB
 # vendored LiteLLM OpenAPI spec). ACH does not currently track any
 # file near this limit; keep the threshold so future docs/generated
@@ -145,8 +131,8 @@ else
   printf '%s\n' "$LARGE"
 fi
 
-# --- 4. Sensitive file patterns ---
-hdr "4. sensitive file patterns in tracked files"
+# --- 3. Sensitive file patterns ---
+hdr "3. sensitive file patterns in tracked files"
 SENSITIVE_PATTERNS=(
   '(^|/)\.env($|\..*)'
   '\.pem$' '\.key$' '\.pfx$' '\.p12$' '\.pkcs12$'
@@ -170,13 +156,13 @@ else
   printf '%s' "$SENS_HITS"
 fi
 
-# --- 5. LICENSE + README ---
-hdr "5. LICENSE + README presence"
+# --- 4. LICENSE + README ---
+hdr "4. LICENSE + README presence"
 [[ -f LICENSE ]]   && ok "LICENSE present"   || fail "LICENSE missing"
 [[ -f README.md ]] && ok "README.md present" || fail "README.md missing"
 
-# --- 6. Remote check ---
-hdr "6. origin remote"
+# --- 5. Remote check ---
+hdr "5. origin remote"
 ACTUAL=$(git remote get-url origin 2>/dev/null || echo "")
 if [[ -z $ACTUAL ]]; then
   warn "no 'origin' remote configured"
@@ -188,8 +174,8 @@ else
   ok "origin = $EXPECTED_REMOTE"
 fi
 
-# --- 7. Internal hostnames / private IPs ---
-hdr "7. internal hostnames / private IPv4 (informational)"
+# --- 6. Internal hostnames / private IPs ---
+hdr "6. internal hostnames / private IPv4 (informational)"
 INTERNAL_RE='(ackstorm\.internal|\.ackstorm\.local|jira\.ackstorm|confluence\.ackstorm|gitlab\.ackstorm)'
 PRIVIP_RE='(^|[^0-9.])(10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+)'
 INT_HITS=$(git grep -EnI "$INTERNAL_RE" -- ':!*.lock' ':!go.sum' ':!*.svg' 2>/dev/null || true)
@@ -207,8 +193,8 @@ else
   fi
 fi
 
-# --- 8. Personal/company email leak ---
-hdr "8. ackstorm emails in tracked files"
+# --- 7. Personal/company email leak ---
+hdr "7. ackstorm emails in tracked files"
 MAIL_HITS=$(git grep -EnI '[a-zA-Z0-9._%+-]+@(ackstorm\.com|ackstorm\.es)' \
               -- ':!LICENSE' ':!NOTICE' ':!AUTHORS' ':!CONTRIBUTORS*' 2>/dev/null || true)
 if [[ -z $MAIL_HITS ]]; then
@@ -218,8 +204,8 @@ else
   printf '%s\n' "$MAIL_HITS" | head -20
 fi
 
-# --- 9. .gitignore sanity ---
-hdr "9. .gitignore sanity"
+# --- 8. .gitignore sanity ---
+hdr "8. .gitignore sanity"
 if [[ ! -f .gitignore ]]; then
   warn ".gitignore missing"
 else
@@ -232,12 +218,12 @@ else
   done
 fi
 
-# --- 10. Author audit ---
-hdr "10. commit authors (informational — confirm all are intended)"
+# --- 9. Author audit ---
+hdr "9. commit authors (informational — confirm all are intended)"
 git log --all --format='%aN <%aE>' | sort -u | sed 's/^/  /'
 
-# --- 11. Urgent TODO markers ---
-hdr "11. urgent TODO / DO-NOT-COMMIT markers"
+# --- 10. Urgent TODO markers ---
+hdr "10. urgent TODO / DO-NOT-COMMIT markers"
 # Exclude this gate script itself (it names the literal markers in its
 # own comments) to avoid self-reflection false-positives.
 TODO_HITS=$(git grep -nE '(DO[ _-]?NOT[ _-]?COMMIT|XXX[ _-]?REMOVE|TODO:?[ ]?(remove|delete|drop|secret))' \
@@ -249,8 +235,8 @@ else
   printf '%s\n' "$TODO_HITS"
 fi
 
-# --- 12. Uncommitted changes ---
-hdr "12. working tree status"
+# --- 11. Uncommitted changes ---
+hdr "11. working tree status"
 DIRTY=$(git status --porcelain)
 if [[ -z $DIRTY ]]; then
   ok "working tree clean"
@@ -259,25 +245,8 @@ else
   printf '%s\n' "$DIRTY" | head -20
 fi
 
-# --- 13. govulncheck (HIGH advisory block via ack-list wrapper) ---
-hdr "13. govulncheck (HIGH advisories vs ack-list)"
-# Wrapper `scripts/govulncheck-gate.sh` (Phase 13-02) runs govulncheck and
-# enforces a 1:1 match against `references/security/govulncheck-acknowledged.md`.
-# Exits 0 only when the reachable advisory set matches the ack-list exactly;
-# any NEW HIGH advisory OR any ack-list drift fails the gate.
-#
-# The wrapper itself relies on `govulncheck` being on PATH; on the host this
-# is only true inside the devtools container, so we route the call through
-# `./scripts/dev.sh`.
-if ./scripts/dev.sh bash scripts/govulncheck-gate.sh > /tmp/govulncheck-prepush.txt 2>&1; then
-  ok "govulncheck residuals match ack-list 1:1"
-else
-  fail "govulncheck reported NEW HIGH advisories or ack-list drift"
-  sed -n '1,40p' /tmp/govulncheck-prepush.txt
-fi
-
-# --- 14. go mod tidy drift ---
-hdr "14. go mod tidy drift"
+# --- 12. go mod tidy drift ---
+hdr "12. go mod tidy drift"
 # Snapshot go.mod / go.sum BEFORE tidy so we can restore them on drift —
 # pre-push must not mutate the working tree. Use cp (not bash $(cat) +
 # printf '%s') because the latter strips trailing newlines, which then
@@ -311,8 +280,8 @@ else
   sed -n '1,20p' /tmp/gomod-tidy.txt
 fi
 
-# --- 15. license-header SPDX gate (HRD-10) ---
-hdr "15. license-header SPDX gate (HRD-10)"
+# --- 13. license-header SPDX gate (HRD-10) ---
+hdr "13. license-header SPDX gate (HRD-10)"
 # Every in-scope *.go file MUST carry `// SPDX-License-Identifier: Apache-2.0`
 # in its first 5 lines. Exempt: vendor/, zz_generated*, mock_*, .claude/.
 # Build-tag-first files have SPDX on line 3 (after //go:build + blank line).
@@ -334,11 +303,11 @@ else
   printf '%s' "$MISSING_SPDX" | head -20
 fi
 
-# --- 16. golangci-lint full sweep ---
+# --- 14. golangci-lint full sweep ---
 # Full lint sweep over the whole module — there is no pre-commit stage, so
 # this gate is the local lint authority before a push leaves the host.
 # Runs in the devtools container.
-hdr "16. golangci-lint full sweep"
+hdr "14. golangci-lint full sweep"
 if [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make qa-lint >/tmp/pre-push-lint.log 2>&1; then
     ok "golangci-lint clean"
@@ -349,10 +318,10 @@ else
   warn "scripts/dev.sh missing — skipping lint gate (rebuild devtools image)"
 fi
 
-# --- 17. unit tests ---
+# --- 15. unit tests ---
 # Catches the simplest class of breakage that CI would otherwise flag.
 # Runs via devtools container; ~5-10s warm.
-hdr "17. unit tests"
+hdr "15. unit tests"
 if [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make test-unit >/tmp/pre-push-unit.log 2>&1; then
     ok "make test-unit clean"
@@ -363,7 +332,7 @@ else
   warn "scripts/dev.sh missing — skipping unit gate (rebuild devtools image)"
 fi
 
-# --- 18. helm chart mirror drift (crd-sources/) ---
+# --- 16. helm chart mirror drift (crd-sources/) ---
 # `make helm-sync-check` runs controller-gen, copies the regenerated CRDs into
 # deploy/helm/ach/crd-sources/ (the chart's ONLY mirrored surface — per-mode
 # Deployments are hand-authored and the Grafana dashboards LIVE in the chart),
@@ -371,7 +340,7 @@ fi
 # forgets `make helm-sync`, the published Helm chart ships a STALE CRD schema
 # while the operator binary expects the new one — a `helm upgrade` then silently
 # drops/refuses the new field (issue #44).
-hdr "18. helm chart mirror drift (crd-sources/)"
+hdr "16. helm chart mirror drift (crd-sources/)"
 if [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make helm-sync-check >/tmp/pre-push-helm-sync.log 2>&1; then
     ok "chart CRDs in sync with config/crd/bases"

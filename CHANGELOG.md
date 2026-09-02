@@ -4,6 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
+
 ### Added
 - Add singular `channels[].cleanup` hooks with independent environment forwarding and secret aliases.
 - `ACHAgent.spec.channels[].prepare`: a per-invocation workspace hook rendered to the
