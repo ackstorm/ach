@@ -27,6 +27,11 @@ spec.channels[].cron	object
 spec.channels[].cron.schedule	string
 spec.channels[].cron.timezone	string
 spec.channels[].name	string
+spec.channels[].prepare	object
+spec.channels[].prepare.env	object
+spec.channels[].prepare.script	string
+spec.channels[].prepare.secretEnv	object
+spec.channels[].prepare.timeoutSeconds	integer
 spec.channels[].prompt	string
 spec.channels[].queue	object
 spec.channels[].queue.key	string

@@ -180,6 +180,17 @@ type ChannelBlock struct {
 	Cron        *CronBlock    `json:"cron,omitempty"`
 	Queue       *QueueBlock   `json:"queue,omitempty"`
 	A2A         *A2ABlock     `json:"a2a,omitempty"`
+	Prepare     *PrepareBlock `json:"prepare,omitempty"`
+}
+
+// PrepareBlock is the rendered channels[].prepare (schema $defs/PrepareBlock) — the
+// per-invocation workspace hook. SecretEnv carries env NAMES only; the values reach the
+// harness process through secretKeyRef env injection (see ChannelSecretEnv).
+type PrepareBlock struct {
+	Script         string                       `json:"script"`
+	Env            map[string]string            `json:"env,omitempty"`
+	SecretEnv      map[string]SecretSourceBlock `json:"secretEnv,omitempty"`
+	TimeoutSeconds *int64                       `json:"timeoutSeconds,omitempty"`
 }
 
 // SessionBlock is the rendered channels[].session (schema $defs/SessionBlock).

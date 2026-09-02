@@ -133,6 +133,15 @@ func channelSecretEnvName(ch *achv1alpha1.ChannelSpec) string {
 	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_" + sanitizeEnvSegment(ch.Type)
 }
 
+// prepareSecretEnvName is the deterministic env var name carrying one
+// channels[].prepare.secretEnv entry: ACH_SECRET_<CHANNEL>_PREPARE_<VAR>. Collision-free
+// vs ACH_SECRET_<CHANNEL>_<TYPE>, whose last segment is always a channel type enum
+// (WEBHOOK/CRON/QUEUE/A2A) and so can never be PREPARE_<something>. In the ACH_SECRET_
+// namespace so sanitizeForwardEnv strips it from engine.forwardEnv for free.
+func prepareSecretEnvName(ch *achv1alpha1.ChannelSpec, varName string) string {
+	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_PREPARE_" + sanitizeEnvSegment(varName)
+}
+
 func sanitizeEnvSegment(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToUpper(s) {
@@ -168,6 +177,15 @@ func ChannelSecretEnv(a achv1alpha1.ACHAgent) []ChannelSecretEnvRef {
 		case channelTypeA2A:
 			if ch.A2A != nil {
 				out = append(out, ChannelSecretEnvRef{EnvName: channelSecretEnvName(ch), SecretName: ch.A2A.Auth.SecretRef.Name, Key: ch.A2A.Auth.SecretRef.Key})
+			}
+		}
+		// prepare.secretEnv — the OUTBOUND credentials (clone/push). Valid on every channel
+		// type, so it sits outside the switch. Sorted: map order is random in Go, and an
+		// unstable env list would rewrite the PodSpec on every reconcile.
+		if ch.Prepare != nil {
+			for _, v := range slices.Sorted(maps.Keys(ch.Prepare.SecretEnv)) {
+				ref := ch.Prepare.SecretEnv[v]
+				out = append(out, ChannelSecretEnvRef{EnvName: prepareSecretEnvName(ch, v), SecretName: ref.Name, Key: ref.Key})
 			}
 		}
 	}
@@ -491,8 +509,25 @@ func renderSession(s *achv1alpha1.SessionSpec) *SessionBlock {
 	return sb
 }
 
+// renderPrepare emits channels[].prepare. secretEnv becomes {VAR: {env: NAME}} — the NAME
+// the operator injects via secretKeyRef in the PodSpec; the credential value itself never
+// touches the ConfigMap.
+func renderPrepare(ch *achv1alpha1.ChannelSpec) *PrepareBlock {
+	if ch.Prepare == nil {
+		return nil
+	}
+	pb := &PrepareBlock{Script: ch.Prepare.Script, Env: ch.Prepare.Env, TimeoutSeconds: ch.Prepare.TimeoutSeconds}
+	if len(ch.Prepare.SecretEnv) > 0 {
+		pb.SecretEnv = make(map[string]SecretSourceBlock, len(ch.Prepare.SecretEnv))
+		for v := range ch.Prepare.SecretEnv {
+			pb.SecretEnv[v] = SecretSourceBlock{Env: prepareSecretEnvName(ch, v)}
+		}
+	}
+	return pb
+}
+
 func renderChannel(ch *achv1alpha1.ChannelSpec) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt}
+	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderPrepare(ch)}
 	switch ch.Type {
 	case channelTypeWebhook:
 		if ch.Webhook != nil {
@@ -539,6 +574,11 @@ func ReferencedSecrets(a achv1alpha1.ACHAgent) map[string][]string {
 		case channelTypeA2A:
 			if ch.A2A != nil {
 				add(ch.A2A.Auth.SecretRef.Name, ch.A2A.Auth.SecretRef.Key)
+			}
+		}
+		if ch.Prepare != nil {
+			for _, ref := range ch.Prepare.SecretEnv {
+				add(ref.Name, ref.Key)
 			}
 		}
 	}
