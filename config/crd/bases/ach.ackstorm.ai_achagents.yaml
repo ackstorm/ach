@@ -161,14 +161,16 @@ spec:
                         Prepare is the per-invocation workspace hook (see PrepareSpec). Valid for every
                         channel type, hence outside the type↔block coherence the harness enforces.
                       properties:
-                        env:
-                          additionalProperties:
-                            type: string
+                        forwardEnv:
                           description: |-
-                            Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs
-                            here and never in the payload: a forged webhook that could choose the host would
-                            harvest the credential.
-                          type: object
+                            ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
+                            Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via
+                            generated Pod aliases. Unknown names are ignored and remain unset.
+                          items:
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
                         script:
                           description: |-
                             Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every
@@ -177,29 +179,6 @@ spec:
                             invocation (fail-closed): nothing is posted.
                           minLength: 1
                           type: string
-                        secretEnv:
-                          additionalProperties:
-                            description: SecretKeyRef identifies a key in a same-namespace
-                              Secret.
-                            properties:
-                              key:
-                                description: Key is the data key inside the Secret.
-                                minLength: 1
-                                type: string
-                              name:
-                                description: Name is the Kubernetes Secret name.
-                                minLength: 1
-                                type: string
-                            required:
-                            - key
-                            - name
-                            type: object
-                          description: |-
-                            SecretEnv maps a script env var name → the Secret holding its value. The operator
-                            injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only
-                            that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone
-                            credentials read-only.
-                          type: object
                         timeoutSeconds:
                           description: |-
                             TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
@@ -419,6 +398,179 @@ spec:
                   workDir:
                     type: string
                 type: object
+              env:
+                description: |-
+                  Env are pod-level environment variables merged over AgentProfile.spec.env by name.
+                  An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are
+                  forbidden; only literal values and secretKeyRef sources are supported.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: |-
+                        Name of the environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    value:
+                      description: |-
+                        Variable references $(VAR_NAME) are expanded
+                        using the previously defined environment variables in the container and
+                        any service environment variables. If a variable cannot be resolved,
+                        the reference in the input string will be unchanged. Double $$ are reduced
+                        to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                        "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                        Escaped references will never be expanded, regardless of whether the variable
+                        exists or not.
+                        Defaults to "".
+                      type: string
+                    valueFrom:
+                      description: Source for the environment variable's value. Cannot
+                        be used if value is not empty.
+                      properties:
+                        configMapKeyRef:
+                          description: Selects a key of a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key
+                                must be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fieldRef:
+                          description: |-
+                            Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                            spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                          properties:
+                            apiVersion:
+                              description: Version of the schema the FieldPath is
+                                written in terms of, defaults to "v1".
+                              type: string
+                            fieldPath:
+                              description: Path of the field to select in the specified
+                                API version.
+                              type: string
+                          required:
+                          - fieldPath
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fileKeyRef:
+                          description: |-
+                            FileKeyRef selects a key of the env file.
+                            Requires the EnvFiles feature gate to be enabled.
+                          properties:
+                            key:
+                              description: |-
+                                The key within the env file. An invalid key will prevent the pod from starting.
+                                The keys defined within a source may consist of any printable ASCII characters except '='.
+                                During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                              type: string
+                            optional:
+                              default: false
+                              description: |-
+                                Specify whether the file or its key must be defined. If the file or key
+                                does not exist, then the env var is not published.
+                                If optional is set to true and the specified key does not exist,
+                                the environment variable will not be set in the Pod's containers.
+
+                                If optional is set to false and the specified key does not exist,
+                                an error will be returned during Pod creation.
+                              type: boolean
+                            path:
+                              description: |-
+                                The path within the volume from which to select the file.
+                                Must be relative and may not contain the '..' path or start with '..'.
+                              type: string
+                            volumeName:
+                              description: The name of the volume mount containing
+                                the env file.
+                              type: string
+                          required:
+                          - key
+                          - path
+                          - volumeName
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        resourceFieldRef:
+                          description: |-
+                            Selects a resource of the container: only resources limits and requests
+                            (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                          properties:
+                            containerName:
+                              description: 'Container name: required for volumes,
+                                optional for env vars'
+                              type: string
+                            divisor:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Specifies the output format of the exposed
+                                resources, defaults to "1"
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            resource:
+                              description: 'Required: resource to select'
+                              type: string
+                          required:
+                          - resource
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        secretKeyRef:
+                          description: Selects a key of a secret in the pod's namespace
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: env must not set reserved ACH_* vars
+                  rule: self.all(e, !e.name.startsWith('ACH_'))
+                - message: env valueFrom supports only secretKeyRef
+                  rule: self.all(e, !has(e.valueFrom) || (has(e.valueFrom.secretKeyRef)
+                    && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.fieldRef)
+                    && !has(e.valueFrom.resourceFieldRef) && !has(e.valueFrom.fileKeyRef)))
+                - message: env value and valueFrom are mutually exclusive
+                  rule: self.all(e, !has(e.valueFrom) || !has(e.value) || e.value
+                    == '')
               expose:
                 description: |-
                   Expose controls reachability (Service + gateway route). Omit for a fully
@@ -524,7 +676,7 @@ spec:
                       description: |-
                         LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
                         env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
-                        defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).
+                        defensively); wire their values into the pod via profile/agent spec.env.
                       properties:
                         args:
                           items:
@@ -547,7 +699,7 @@ spec:
                       description: |-
                         RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
                         headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
-                        the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+                        the pod via profile/agent spec.env. SECURITY: opencode receives the
                         resolved header, so a co-resident same-uid agent CAN read it — front the server via
                         ACH hydrate instead if that is unacceptable.
                       properties:

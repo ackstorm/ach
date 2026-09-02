@@ -131,6 +131,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
+| `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
@@ -266,13 +267,13 @@ _Appears in:_
 | `achagent` _[AgentDefaults](#agentdefaults)_ | Achagent holds the agent-overridable defaults. image is required here<br />(object-level CEL); the other fields are optional defaults. |  | Required: \{\} <br /> |
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
-| `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are<br />forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN). |  |  |
+| `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables inherited by ACHAgents using this profile.<br />Reserved ACH_* names are forbidden because the operator owns that namespace. Only<br />literal values and secretKeyRef sources are supported. |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
 | `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
-| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
 
 #### AgentProfileStatus
@@ -1118,7 +1119,7 @@ _Appears in:_
 
 LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
 env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
-defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).
+defensively); wire their values into the pod via profile/agent spec.env.
 
 
 
@@ -1583,8 +1584,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `script` _string_ | Script is the /bin/sh program, run as `sh -eu` fed on stdin. It re-runs for every<br />event on the same session_key against a workspace that persists (the clone cache),<br />so it MUST be idempotent — clone-or-fetch, not clone. A non-zero exit abandons the<br />invocation (fail-closed): nothing is posted. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `env` _object (keys:string, values:string)_ | Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs<br />here and never in the payload: a forged webhook that could choose the host would<br />harvest the credential. |  |  |
-| `secretEnv` _object (keys:string, values:[SecretKeyRef](#secretkeyref))_ | SecretEnv maps a script env var name → the Secret holding its value. The operator<br />injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only<br />that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone<br />credentials read-only. |  |  |
+| `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
 | `timeoutSeconds` _integer_ | TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group<br />and abandons the invocation. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
 
 
@@ -1751,7 +1751,7 @@ _Appears in:_
 
 RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
 headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
-the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+the pod via profile/agent spec.env. SECURITY: opencode receives the
 resolved header, so a co-resident same-uid agent CAN read it — front the server via
 ACH hydrate instead if that is unacceptable.
 
@@ -1854,7 +1854,6 @@ _Appears in:_
 - [HindsightSpec](#hindsightspec)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
-- [PrepareSpec](#preparespec)
 - [WebhookAuthSpec](#webhookauthspec)
 
 | Field | Description | Default | Validation |

@@ -214,11 +214,16 @@ type AgentProfileSpec struct {
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ExtraEnv are additional pod-level env vars (e.g. HTTPS_PROXY). Reserved ACH_* names are
-	// forbidden — the operator owns them (the ek arrives via identity.secretRef as ACH_TOKEN).
+	// Env are pod-level environment variables inherited by ACHAgents using this profile.
+	// Reserved ACH_* names are forbidden because the operator owns that namespace. Only
+	// literal values and secretKeyRef sources are supported.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self.all(e, !e.name.startsWith('ACH_'))",message="extraEnv must not set reserved ACH_* vars"
-	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !e.name.startsWith('ACH_'))",message="env must not set reserved ACH_* vars"
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || (has(e.valueFrom.secretKeyRef) && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.fieldRef) && !has(e.valueFrom.resourceFieldRef) && !has(e.valueFrom.fileKeyRef)))",message="env valueFrom supports only secretKeyRef"
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || !has(e.value) || e.value == '')",message="env value and valueFrom are mutually exclusive"
+	Env []corev1.EnvVar `json:"env,omitempty"`
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// +optional
@@ -237,7 +242,7 @@ type AgentProfileSpec struct {
 	// (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
 	// everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
 	// (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
-	// extraEnv ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
+	// env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator
 	// re-pins the selector label and the config-hash annotation.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields

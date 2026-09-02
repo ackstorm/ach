@@ -11,6 +11,7 @@ package ach
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -486,6 +487,135 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-nokey", Namespace: WatchNamespace}, Data: map[string][]byte{"other": []byte("x")}})
 	mustApply(t, ctx, memAgent("aa-mem-nokey", "hs-nokey"))
 	waitAgentCond(t, ctx, "aa-mem-nokey", condChannelSecretsResolved, metav1.ConditionFalse)
+}
+
+func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-env", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-clone-env", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("one")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-env", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}},
+			Env: []corev1.EnvVar{
+				{Name: "GITLAB_BASE_URL", Value: "https://git.example.com"},
+				{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "aa-clone-env"}, Key: "token"}}},
+				{Name: "SHARED", Value: "profile"},
+			},
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-env", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-env"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-env", Key: "ek"}},
+			Env:        []corev1.EnvVar{{Name: "SHARED", Value: "agent"}},
+			Channels: []achv1alpha1.ChannelSpec{{
+				Name: "review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+				Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}},
+			}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-env", condWorkloadApplied, metav1.ConditionTrue)
+
+	key := types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-env")}
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, key, &dep); err != nil {
+		t.Fatal(err)
+	}
+	wantEnv := map[string]string{"GITLAB_BASE_URL": "https://git.example.com", "SHARED": "agent"}
+	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN": false}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		if want, ok := wantEnv[e.Name]; ok {
+			if e.Value != want {
+				t.Errorf("Pod env %s = %q, want %q", e.Name, e.Value, want)
+			}
+			delete(wantEnv, e.Name)
+		}
+		if _, ok := wantSecrets[e.Name]; ok && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil && e.ValueFrom.SecretKeyRef.Name == "aa-clone-env" && e.ValueFrom.SecretKeyRef.Key == "token" {
+			wantSecrets[e.Name] = true
+		}
+	}
+	if len(wantEnv) > 0 {
+		t.Errorf("Pod env missing literals: %v", wantEnv)
+	}
+	for name, found := range wantSecrets {
+		if !found {
+			t.Errorf("Pod env missing secretKeyRef %s", name)
+		}
+	}
+
+	var cm corev1.ConfigMap
+	if err := k8sClient.Get(ctx, key, &cm); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cm.Data[configFileName], `"one"`) {
+		t.Fatal("secret plaintext leaked into ConfigMap")
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(cm.Data[configFileName]), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	prepare := cfg["channels"].([]any)[0].(map[string]any)["prepare"].(map[string]any)
+	if prepare["env"].(map[string]any)["GITLAB_BASE_URL"] != "https://git.example.com" {
+		t.Fatalf("prepare literals = %v", prepare["env"])
+	}
+	if prepare["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN" {
+		t.Fatalf("prepare secret aliases = %v", prepare["secretEnv"])
+	}
+	if _, ok := prepare["env"].(map[string]any)["MISSING"]; ok {
+		t.Fatal("unknown forwardEnv name must remain unset")
+	}
+
+	oldHash := dep.Spec.Template.Annotations[configHashAnnotation]
+	var secret corev1.Secret
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-clone-env"}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	secret.Data["token"] = []byte("two")
+	if err := k8sClient.Update(ctx, &secret); err != nil {
+		t.Fatal(err)
+	}
+	if !Eventually(func() bool {
+		if err := k8sClient.Get(ctx, key, &dep); err != nil {
+			return false
+		}
+		return dep.Spec.Template.Annotations[configHashAnnotation] != oldHash
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("profile env Secret rotation did not roll the Deployment hash")
+	}
+}
+
+func TestACHAgent_EnvAdmissionRejectsReservedAndUnsupportedSources(t *testing.T) {
+	ctx := context.Background()
+	profile := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-env-invalid", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent: achv1alpha1.AgentDefaults{Image: "img:test"},
+			Env:      []corev1.EnvVar{{Name: "FROM_CONFIGMAP", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "cm"}, Key: "key"}}}},
+		},
+	}
+	if err := k8sClient.Create(ctx, profile); err == nil {
+		t.Fatal("configMapKeyRef must be rejected; only secretKeyRef is supported")
+	}
+	profile.Name = "aa-prof-env-both"
+	profile.Spec.Env = []corev1.EnvVar{{Name: "BOTH", Value: "literal", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "secret"}, Key: "key"}}}}
+	if err := k8sClient.Create(ctx, profile); err == nil {
+		t.Fatal("value and valueFrom must be rejected together")
+	}
+
+	agent := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+		"profileRef": map[string]any{"name": "p"},
+		"identity":   map[string]any{"secretRef": map[string]any{"name": "ek", "key": "ek"}},
+		"env":        []any{map[string]any{"name": "ACH_TOKEN", "value": "leak"}},
+		"channels":   []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}},
+	}}}
+	agent.SetGroupVersionKind(achv1alpha1.GroupVersion.WithKind("ACHAgent"))
+	agent.SetNamespace(WatchNamespace)
+	agent.SetName("aa-env-reserved")
+	if err := k8sClient.Create(ctx, agent); err == nil {
+		t.Fatal("reserved ACH_* env must be rejected")
+	}
 }
 
 // Renders on presence, prunes on removal. The flip edits the AgentProfile, so this also

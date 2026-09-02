@@ -3,6 +3,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -255,17 +256,13 @@ type PrepareSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Script string `json:"script"`
-	// Env holds literal, non-secret values (e.g. the clone origin). The ORIGIN belongs
-	// here and never in the payload: a forged webhook that could choose the host would
-	// harvest the credential.
+	// ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
+	// Literal values become prepare.env; secretKeyRef values become prepare.secretEnv via
+	// generated Pod aliases. Unknown names are ignored and remain unset.
 	// +optional
-	Env map[string]string `json:"env,omitempty"`
-	// SecretEnv maps a script env var name → the Secret holding its value. The operator
-	// injects each via secretKeyRef under a generated ACH_SECRET_* name and renders only
-	// that NAME into the config, exactly like webhook/a2a inbound auth. Keep clone
-	// credentials read-only.
-	// +optional
-	SecretEnv map[string]SecretKeyRef `json:"secretEnv,omitempty"`
+	// +listType=set
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z_][A-Za-z0-9_]*$`
+	ForwardEnv []string `json:"forwardEnv,omitempty"`
 	// TimeoutSeconds bounds the script; on expiry the harness SIGKILLs its process group
 	// and abandons the invocation. Harness default is 120 when omitted.
 	// +optional
@@ -373,7 +370,7 @@ type RepoCheckoutSpec struct {
 
 // LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
 // env lists extra var NAMES to forward to the subprocess (ACH_*/ek_ are stripped
-// defensively); wire their values into the pod via profile.spec.extraEnv (secretKeyRef).
+// defensively); wire their values into the pod via profile/agent spec.env.
 type LocalMcpSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -386,7 +383,7 @@ type LocalMcpSpec struct {
 
 // RemoteMcpSpec is a passthrough remote MCP endpoint opencode connects to directly.
 // headers values are ${env:NAME} refs (NAMES, never secret values); wire the env into
-// the pod via profile.spec.extraEnv (secretKeyRef). SECURITY: opencode receives the
+// the pod via profile/agent spec.env. SECURITY: opencode receives the
 // resolved header, so a co-resident same-uid agent CAN read it — front the server via
 // ACH hydrate instead if that is unacceptable.
 type RemoteMcpSpec struct {
@@ -407,6 +404,16 @@ type ACHAgentSpec struct {
 	// spec.achagent defaults (image/ach/model/engine/limits/health). Per-field
 	// deep merge: a set field here wins, an omitted one inherits the profile's.
 	AgentDefaults `json:",inline"`
+	// Env are pod-level environment variables merged over AgentProfile.spec.env by name.
+	// An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are
+	// forbidden; only literal values and secretKeyRef sources are supported.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !e.name.startsWith('ACH_'))",message="env must not set reserved ACH_* vars"
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || (has(e.valueFrom.secretKeyRef) && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.fieldRef) && !has(e.valueFrom.resourceFieldRef) && !has(e.valueFrom.fileKeyRef)))",message="env valueFrom supports only secretKeyRef"
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || !has(e.value) || e.value == '')",message="env value and valueFrom are mutually exclusive"
+	Env []corev1.EnvVar `json:"env,omitempty"`
 	// Capability is optional: both of its fields are optional, so the block
 	// validates nothing on its own. Render always emits a capability block
 	// (the harness schema requires one) — capability.ach.baseUrl comes from

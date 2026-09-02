@@ -42,7 +42,7 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
 	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
-	p.Spec.ExtraEnv = mkEnv("HTTPS_PROXY", "http://p")
+	p.Spec.Env = mkEnv("HTTPS_PROXY", "http://p")
 
 	env := buildAgentEnv(a, p, "")
 
@@ -137,17 +137,33 @@ func TestHealthOverride_ConfigProbeServiceAgree(t *testing.T) {
 	}
 }
 
-func TestBuildAgentEnv_RejectsReservedExtraEnv(t *testing.T) {
+func TestBuildAgentEnv_RejectsReservedEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name = "d"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "u"}
-	p.Spec.ExtraEnv = mkEnv("ACH_TOKEN", "ek_LEAK") // reserved — must be dropped
+	p.Spec.Env = mkEnv("ACH_TOKEN", "ek_LEAK") // reserved — must be dropped
 	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name == "ACH_TOKEN" && e.Value == "ek_LEAK" {
-			t.Fatal("reserved ACH_* extraEnv leaked into the pod spec")
+			t.Fatal("reserved ACH_* env leaked into the pod spec")
 		}
+	}
+}
+
+func TestBuildAgentEnv_AgentOverridesProfileEnv(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Env = mkEnv("SHARED", "agent")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Env = append(mkEnv("PROFILE", "p"), mkEnv("SHARED", "profile")...)
+
+	values := map[string]string{}
+	for _, e := range buildAgentEnv(a, p, "") {
+		values[e.Name] = e.Value
+	}
+	if values["PROFILE"] != "p" || values["SHARED"] != "agent" {
+		t.Fatalf("merged Pod env = %v", values)
 	}
 }
 
@@ -246,6 +262,35 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup != nil {
 		t.Errorf("fsGroup should be unset (uid/perms reverted); securityContext=%+v", sc)
+	}
+}
+
+func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "gl-clone"}, Key: "token",
+	}}}}
+	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
+		Name: "gitlab-mr-review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+		Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}},
+	}}
+	p := &achv1alpha1.AgentProfile{}
+
+	var original, alias *corev1.EnvVar
+	env := buildAgentEnv(a, p, "")
+	for i := range env {
+		e := &env[i]
+		switch e.Name {
+		case "GITLAB_TOKEN":
+			original = e
+		case "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN":
+			alias = e
+		}
+	}
+	if original == nil || alias == nil || alias.ValueFrom == nil || alias.ValueFrom.SecretKeyRef == nil ||
+		alias.ValueFrom.SecretKeyRef.Name != "gl-clone" || alias.ValueFrom.SecretKeyRef.Key != "token" {
+		t.Fatalf("original=%+v alias=%+v", original, alias)
 	}
 }
 

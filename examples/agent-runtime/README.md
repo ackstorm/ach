@@ -15,6 +15,11 @@ Two CRDs run an ACH agent as a Kubernetes workload:
   identity (`ek_`), the target Hub Environment, an optional persona prompt, and
   one or more inbound channels (webhook / cron / queue / a2a).
 
+Both resources accept Pod-native `spec.env`. Entries merge by name and the
+`ACHAgent` entry wins atomically. `engine.forwardEnv` sends selected names to the
+agent engine; `channels[].prepare.forwardEnv` independently sends selected names
+only to that channel's prepare script. Unknown names are ignored and remain unset.
+
 The operator collapses the two into a single `agent-config-v1` config, writes it
 to a ConfigMap (`config.json`), and applies a single-replica Deployment that
 mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness
@@ -35,7 +40,11 @@ kubectl -n engineering create secret generic ops-ek \
 kubectl -n engineering create secret generic gitlab-webhook \
   --from-literal=secret=<gitlab-webhook-token>
 
-# 3. (agent-memory.yaml only) the Hindsight admin bearer, injected as
+# 3. Read-only token used by the GitLab channel's prepare clone.
+kubectl -n engineering create secret generic gitlab-clone \
+  --from-literal=token=<gitlab-read-token>
+
+# 4. (agent-memory.yaml only) the Hindsight admin bearer, injected as
 #    ACH_SECRET_MEMORY_HINDSIGHT — NOT the ek_.
 kubectl -n engineering create secret generic hindsight-admin \
   --from-literal=token=<hindsight-admin-bearer>
@@ -78,7 +87,7 @@ kubectl -n engineering logs deploy/achagent-gitlab-reviewer
   (a hydrated prompt by name) need no extra delivery.
 - The webhook/a2a **Service is ClusterIP only**. Front it with the platform
   Ingress/gateway — the operator creates no Ingress.
-- Reserved `ACH_*` env vars cannot be set via `AgentProfile.spec.extraEnv`; the
+- Reserved `ACH_*` env vars cannot be set via either resource's `spec.env`; the
   operator owns that namespace (the ek arrives via `identity.secretRef` as
   `ACH_TOKEN`).
 

@@ -138,7 +138,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	setCond(&conds, condIdentityResolved, metav1.ConditionTrue, "IdentityFound", "", agent.Generation)
 
 	// 3. Channel Secrets + keys.
-	refSecrets := agentrender.ReferencedSecrets(agent)
+	refSecrets := agentrender.ReferencedSecrets(profile, agent)
 	if failReason, failMsg := r.checkChannelSecrets(ctx, agent.Namespace, refSecrets); failReason != "" {
 		setCond(&conds, condChannelSecretsResolved, metav1.ConditionFalse, failReason, failMsg, agent.Generation)
 		return r.finish(ctx, &agent, conds)
@@ -470,13 +470,20 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
 		return nil
 	}
+	profiles := map[string]achv1alpha1.AgentProfile{}
+	var profileList achv1alpha1.AgentProfileList
+	if err := r.List(ctx, &profileList, client.InNamespace(obj.GetNamespace())); err == nil {
+		for i := range profileList.Items {
+			profiles[profileList.Items[i].Name] = profileList.Items[i]
+		}
+	}
 	name := obj.GetName()
 	var reqs []reconcile.Request
 	for i := range list.Items {
 		a := &list.Items[i]
 		hit := a.Spec.Identity.SecretRef.Name == name
 		if !hit {
-			if _, ok := agentrender.ReferencedSecrets(*a)[name]; ok {
+			if _, ok := agentrender.ReferencedSecrets(profiles[a.Spec.ProfileRef.Name], *a)[name]; ok {
 				hit = true
 			}
 		}

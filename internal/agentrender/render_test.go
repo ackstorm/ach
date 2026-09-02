@@ -4,9 +4,11 @@ package agentrender
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -227,7 +229,7 @@ func TestReferencedSecrets_NameToKeys(t *testing.T) {
 		{Name: "w2", Type: "webhook", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "hmac", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s1", Key: "ka"}}}},
 		{Name: "cr", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}},
 	}}}
-	got := ReferencedSecrets(a)
+	got := ReferencedSecrets(achv1alpha1.AgentProfile{}, a)
 	if len(got) != 1 || len(got["s1"]) != 2 || got["s1"][0] != "ka" || got["s1"][1] != "kb" {
 		t.Errorf("ReferencedSecrets = %v, want {s1:[ka kb]}", got)
 	}
@@ -239,7 +241,7 @@ func TestChannelSecretEnv_NamesAndRefs(t *testing.T) {
 		{Name: "peer-intake", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "peer", Key: "apikey"}}}},
 		{Name: "daily", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}, // no secret
 	}}}
-	got := ChannelSecretEnv(a)
+	got := ChannelSecretEnv(achv1alpha1.AgentProfile{}, a)
 	if len(got) != 2 {
 		t.Fatalf("ChannelSecretEnv len = %d, want 2", len(got))
 	}
@@ -260,8 +262,8 @@ func TestMemorySecretEnv_HindsightAuth(t *testing.T) {
 		t.Errorf("MemorySecretEnv = %+v, want ACH_SECRET_MEMORY_HINDSIGHT → hs/token", ref)
 	}
 	// It must join ReferencedSecrets so the reconciler key-check + hash + watch cover it.
-	if keys := ReferencedSecrets(withAuth)["hs"]; len(keys) != 1 || keys[0] != "token" {
-		t.Errorf("ReferencedSecrets missing memory secret: %v", ReferencedSecrets(withAuth))
+	if keys := ReferencedSecrets(achv1alpha1.AgentProfile{}, withAuth)["hs"]; len(keys) != 1 || keys[0] != "token" {
+		t.Errorf("ReferencedSecrets missing memory secret: %v", ReferencedSecrets(achv1alpha1.AgentProfile{}, withAuth))
 	}
 	// No auth → no ref (internal/no-auth Hindsight URL).
 	noAuth := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
@@ -355,7 +357,7 @@ func TestRender_ForwardEnvStripsACHPrefix(t *testing.T) {
 }
 
 func TestRenderChannel_NilSessionOmitted(t *testing.T) {
-	cb := renderChannel(&achv1alpha1.ChannelSpec{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}})
+	cb := renderChannel(&achv1alpha1.ChannelSpec{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}, nil)
 	b, err := json.Marshal(cb)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -379,7 +381,7 @@ func TestRenderChannel_GitlabWebhookLoopGuard(t *testing.T) {
 			BotUsername:  &bot,
 			TriggerUsers: []string{"alice", "bob"},
 		},
-	})
+	}, nil)
 	if cb.Webhook.BotUsername == nil || *cb.Webhook.BotUsername != bot {
 		t.Errorf("botUsername not passed through verbatim: %+v", cb.Webhook.BotUsername)
 	}
@@ -391,7 +393,7 @@ func TestRenderChannel_GitlabWebhookLoopGuard(t *testing.T) {
 	plain := renderChannel(&achv1alpha1.ChannelSpec{
 		Name: "gl2", Type: "webhook", Source: "gitlab",
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}},
-	})
+	}, nil)
 	b, err := json.Marshal(plain.Webhook)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -666,45 +668,65 @@ func TestRenderCost_AgentWinsProfileInherits(t *testing.T) {
 	})
 }
 
-// TestPrepare_SecretsBecomeGeneratedEnvNames pins the outbound-credential seam: the
-// ConfigMap gets env NAMES, the PodSpec gets the secretKeyRefs, and the value never
-// appears in either. Order must be stable — a map-ordered env list would rewrite the
-// PodSpec on every reconcile.
-func TestPrepare_SecretsBecomeGeneratedEnvNames(t *testing.T) {
-	ch := achv1alpha1.ChannelSpec{
-		Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
-		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "hook", Key: "secret"}}},
-		Prepare: &achv1alpha1.PrepareSpec{
-			Script:    "true",
-			Env:       map[string]string{"REPO_BASE_URL": "https://gitlab.example.com"},
-			SecretEnv: map[string]achv1alpha1.SecretKeyRef{"GITLAB_TOKEN": {Name: "gl", Key: "token"}, "ARTIFACTORY": {Name: "af", Key: "pw"}},
-		},
+func TestResolveEnv_AgentWinsByName(t *testing.T) {
+	profile := []corev1.EnvVar{{Name: "PROFILE", Value: "p"}, {Name: "SHARED", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "profile-secret"}, Key: "value"}}}}
+	agent := []corev1.EnvVar{{Name: "SHARED", Value: "agent"}, {Name: "AGENT", Value: "a"}}
+	got := ResolveEnv(agent, profile)
+	want := []corev1.EnvVar{{Name: "PROFILE", Value: "p"}, {Name: "SHARED", Value: "agent"}, {Name: "AGENT", Value: "a"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ResolveEnv = %+v, want %+v", got, want)
 	}
-	cb := renderChannel(&ch)
-	if cb.Prepare == nil {
-		t.Fatal("prepare block not rendered")
-	}
-	if got := cb.Prepare.SecretEnv["GITLAB_TOKEN"].Env; got != "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN" {
-		t.Errorf("secretEnv env name = %q", got)
-	}
-	if cb.Prepare.Env["REPO_BASE_URL"] != "https://gitlab.example.com" {
-		t.Errorf("literal env dropped: %v", cb.Prepare.Env)
+}
+
+func TestPrepare_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
+	tc := renderMatrix()["minimal"]
+	tc.profile.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_BASE_URL", Value: "https://gitlab.example.com"}}
+	tc.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "gl"}, Key: "token",
+	}}}}
+	tc.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{
+		Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "DOES_NOT_EXIST"},
 	}
 
-	a := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{ch}}}
-	refs := ChannelSecretEnv(a)
-	// inbound auth first, then prepare secrets sorted by var name (ARTIFACTORY < GITLAB_TOKEN).
-	want := []string{"ACH_SECRET_GITLAB_MR_REVIEW_WEBHOOK", "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_ARTIFACTORY", "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN"}
-	if len(refs) != len(want) {
-		t.Fatalf("ChannelSecretEnv = %+v, want %d refs", refs, len(want))
+	cfg, err := Render(tc.profile, tc.agent, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i, w := range want {
-		if refs[i].EnvName != w {
-			t.Errorf("ref[%d].EnvName = %q, want %q", i, refs[i].EnvName, w)
-		}
+	prep := cfg.Channels[0].Prepare
+	if prep == nil || prep.Env["GITLAB_BASE_URL"] != "https://gitlab.example.com" {
+		t.Fatalf("literal prepare env not resolved: %+v", prep)
 	}
-	if got := ReferencedSecrets(a)["gl"]; len(got) != 1 || got[0] != "token" {
-		t.Errorf("ReferencedSecrets missing the prepare clone secret: %v", ReferencedSecrets(a))
+	if got := prep.SecretEnv["GITLAB_TOKEN"].Env; got != "ACH_SECRET_C_PREPARE_GITLAB_TOKEN" {
+		t.Fatalf("secret prepare alias = %q", got)
+	}
+	if _, ok := prep.Env["DOES_NOT_EXIST"]; ok {
+		t.Fatal("missing forwardEnv name must remain unset")
+	}
+	if _, ok := prep.SecretEnv["DOES_NOT_EXIST"]; ok {
+		t.Fatal("missing forwardEnv name must not become secretEnv")
+	}
+
+	refs := ChannelSecretEnv(tc.profile, tc.agent)
+	if len(refs) != 1 || refs[0].EnvName != "ACH_SECRET_C_PREPARE_GITLAB_TOKEN" || refs[0].SecretName != "gl" || refs[0].Key != "token" {
+		t.Fatalf("prepare Pod secret alias = %+v", refs)
+	}
+	if got := ReferencedSecrets(tc.profile, tc.agent)["gl"]; len(got) != 1 || got[0] != "token" {
+		t.Fatalf("referenced env secret = %v", ReferencedSecrets(tc.profile, tc.agent))
+	}
+}
+
+func TestPrepare_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
+	secret := func(name, secret string) corev1.EnvVar {
+		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "key"}}}
+	}
+	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Env: []corev1.EnvVar{secret("token", "lower"), secret("TOKEN", "upper")}}}
+	a := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{{
+		Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
+		Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"token", "TOKEN"}},
+	}}}}
+	refs := ChannelSecretEnv(p, a)
+	if len(refs) != 2 || refs[0].EnvName == refs[1].EnvName {
+		t.Fatalf("case-distinct env names collapsed to the same alias: %+v", refs)
 	}
 }
 
@@ -713,7 +735,7 @@ func TestPrepare_SecretsBecomeGeneratedEnvNames(t *testing.T) {
 func TestPrepare_OnCronChannel(t *testing.T) {
 	ch := achv1alpha1.ChannelSpec{Name: "nightly", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "0 8 * * *"},
 		Prepare: &achv1alpha1.PrepareSpec{Script: "true"}}
-	if renderChannel(&ch).Prepare == nil {
+	if renderChannel(&ch, nil).Prepare == nil {
 		t.Fatal("prepare must render for a cron channel")
 	}
 }

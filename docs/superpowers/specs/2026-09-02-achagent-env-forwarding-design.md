@@ -1,7 +1,7 @@
 # ACHAgent environment forwarding design
 
 **Date:** 2026-09-02  
-**Status:** Proposed  
+**Status:** Approved  
 **Compatibility:** Breaking change to the `v1alpha1` CRD
 
 ## Goal

@@ -35,6 +35,14 @@ spec:
     # GET /v2/model/info; litellm_headers is non-streaming only. Setting or changing
     # it rolls the agent Deployment (config-hash change).
     # cost: { source: litellm_usage }
+  # Pod environment inherited by every agent using this profile. Merely declaring a
+  # variable does not expose it to the engine or prepare scripts; their forwardEnv
+  # lists opt in independently.
+  env:
+    - name: HTTPS_PROXY
+      value: http://proxy.example.com:8080
+    - name: SSL_CERT_FILE
+      value: /etc/ssl/certs/ca-certificates.crt
   persistence:
     enabled: true
     size: 10Gi

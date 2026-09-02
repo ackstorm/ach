@@ -77,7 +77,7 @@ func computeConfigHash(configJSON, envJSON, podTemplateJSON []byte, image, secre
 }
 
 // buildAgentEnv is the SINGLE source of the agent container env. The ek is a secretKeyRef
-// (never inline); reserved ACH_* names in extraEnv are dropped (the operator owns them).
+// (never inline); profile env is merged with agent env and reserved ACH_* names are dropped.
 func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, defaultBaseURL string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{Name: "ACH_BASE_URL", Value: agentrender.ResolveAchBaseURL(a.Spec.Ach, p.Spec.Achagent.Ach, defaultBaseURL)},
@@ -88,17 +88,17 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 			Key:                  a.Spec.Identity.SecretRef.Key,
 		}}},
 	}
-	for _, e := range p.Spec.ExtraEnv {
+	for _, e := range agentrender.ResolveEnv(a.Spec.Env, p.Spec.Env) {
 		if strings.HasPrefix(e.Name, "ACH_") {
 			continue // reserved — defense-in-depth behind the CEL marker
 		}
 		env = append(env, e)
 	}
-	// Inbound channel-auth secrets (webhook/a2a) are injected as env vars, NOT
+	// Channel auth and generated prepare aliases are injected as env vars, NOT
 	// mounted files: the agent runs same-uid as the harness and can read mounted
 	// secret files, but not the harness process env (PR_SET_DUMPABLE=0). Value via
 	// secretKeyRef only — never an inline literal in the PodSpec.
-	for _, ref := range agentrender.ChannelSecretEnv(*a) {
+	for _, ref := range agentrender.ChannelSecretEnv(*p, *a) {
 		env = append(env, corev1.EnvVar{Name: ref.EnvName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretName},
 			Key:                  ref.Key,

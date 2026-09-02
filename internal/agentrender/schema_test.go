@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -168,11 +169,14 @@ func renderMatrix() map[string]renderCase {
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}},
 		Prepare: &achv1alpha1.PrepareSpec{
 			Script:         "git clone \"$REPO_BASE_URL/$ACH_EVENT_PROJECT_PATH.git\" \"$ACH_WORKSPACE/repo\"",
-			Env:            map[string]string{"REPO_BASE_URL": "https://gitlab.example.com"},
-			SecretEnv:      map[string]achv1alpha1.SecretKeyRef{"GITLAB_TOKEN": {Name: "gl-clone", Key: "token"}},
+			ForwardEnv:     []string{"REPO_BASE_URL", "GITLAB_TOKEN"},
 			TimeoutSeconds: ptr(int64(120)),
 		},
 	}})
+	prep.profile.Spec.Env = []corev1.EnvVar{{Name: "REPO_BASE_URL", Value: "https://gitlab.example.com"}}
+	prep.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "gl-clone"}, Key: "token",
+	}}}}
 	m["channel-prepare"] = prep
 	return m
 }

@@ -9,6 +9,13 @@ spec:
   profileRef: { name: standard }
   identity:
     secretRef: { name: ops-ek, key: ek }
+  # Agent env merges over profile env by name. The full agent entry wins.
+  env:
+    - name: GITLAB_TOKEN
+      valueFrom:
+        secretKeyRef: { name: gitlab-clone, key: token }
+    - name: GITLAB_BASE_URL
+      value: https://gitlab.example.com
   capability:
     environment: engineering-prod
     filter:
@@ -42,6 +49,19 @@ spec:
       webhook:
         auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
         gitlabEvents: [merge_request, note]
+      prepare:
+        script: |
+          AUTH=$(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+          export GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH"
+          if [ ! -d "$ACH_WORKSPACE/repo/.git" ]; then
+            git clone --filter=blob:none --no-checkout --no-recurse-submodules \
+              "$GITLAB_BASE_URL/$ACH_EVENT_PROJECT_PATH.git" "$ACH_WORKSPACE/repo"
+          fi
+          git -C "$ACH_WORKSPACE/repo" fetch origin "refs/merge-requests/$ACH_EVENT_MR_IID/head"
+          git -C "$ACH_WORKSPACE/repo" checkout --detach "$ACH_EVENT_HEAD_SHA"
+        forwardEnv: [GITLAB_TOKEN, GITLAB_BASE_URL]
+        timeoutSeconds: 120
     - name: daily-security
       type: cron
       # session is a block since v0.6.3 (was a bare string `session: none`).
@@ -65,7 +85,7 @@ spec:
         # tmpBase: /tmp/gitlab         # optional (harness default)
         # ttlSeconds: 3600             # optional (harness default)
     # local — opencode LAUNCHES a stdio MCP subprocess (bring-your-own tool).
-    # env lists var NAMES to forward; wire their values via profile.spec.extraEnv.
+    # env lists var NAMES to forward; wire their values via profile/agent spec.env.
     # - name: filesystem
     #   type: local
     #   local:
@@ -73,7 +93,7 @@ spec:
     #     args: [run, -i, --rm, --mount, "type=bind,src=/data,dst=/projects/data,ro", mcp/filesystem, /projects]
     #     env: [SOME_VAR]
     # remote — opencode CONNECTS directly to a remote MCP endpoint. headers values are
-    # ${env:NAME} refs (never secret values); wire the env via profile.spec.extraEnv.
+    # ${env:NAME} refs (never secret values); wire the env via profile/agent spec.env.
     # SECURITY: the co-resident agent can read the resolved header — front via ACH
     # hydrate instead if that matters.
     # - name: other
