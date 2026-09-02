@@ -135,11 +135,11 @@ func channelSecretEnvName(ch *achv1alpha1.ChannelSpec) string {
 	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_" + sanitizeEnvSegment(ch.Type)
 }
 
-// prepareSecretEnvName is the deterministic env var name carrying one rendered
-// channels[].prepare.secretEnv entry. varName already passed the shell-env-name CRD
+// hookSecretEnvName is the deterministic env var name carrying one rendered
+// channel hook secretEnv entry. varName already passed the shell-env-name CRD
 // pattern, so preserve its case: `token` and `TOKEN` are distinct variables.
-func prepareSecretEnvName(ch *achv1alpha1.ChannelSpec, varName string) string {
-	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_PREPARE_" + varName
+func hookSecretEnvName(ch *achv1alpha1.ChannelSpec, phase, varName string) string {
+	return "ACH_SECRET_" + sanitizeEnvSegment(ch.Name) + "_" + phase + "_" + varName
 }
 
 func sanitizeEnvSegment(s string) string {
@@ -161,7 +161,7 @@ type ChannelSecretEnvRef struct {
 	Key        string
 }
 
-// ChannelSecretEnv returns generated aliases for channel auth and prepare secrets.
+// ChannelSecretEnv returns generated aliases for channel auth and hook secrets.
 // The operator wires each via secretKeyRef; rendered config references only EnvName.
 func ChannelSecretEnv(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) []ChannelSecretEnvRef {
 	var out []ChannelSecretEnvRef
@@ -178,16 +178,26 @@ func ChannelSecretEnv(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) []Chan
 				out = append(out, ChannelSecretEnvRef{EnvName: channelSecretEnvName(ch), SecretName: ch.A2A.Auth.SecretRef.Name, Key: ch.A2A.Auth.SecretRef.Key})
 			}
 		}
-		// Prepare credentials need a second, generated alias so harness secret redaction
-		// cannot strip an independently engine-forwarded original name.
-		if ch.Prepare != nil {
-			for _, name := range slices.Sorted(slices.Values(ch.Prepare.ForwardEnv)) {
+		// Hook credentials need a generated alias so harness secret redaction cannot
+		// strip an independently engine-forwarded original name.
+		hooks := []struct {
+			phase string
+			spec  *achv1alpha1.PrepareSpec
+		}{
+			{phase: "PREPARE", spec: ch.Prepare},
+			{phase: "CLEANUP", spec: ch.Cleanup},
+		}
+		for _, hook := range hooks {
+			if hook.spec == nil {
+				continue
+			}
+			for _, name := range slices.Sorted(slices.Values(hook.spec.ForwardEnv)) {
 				e, ok := env[name]
 				if !ok || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
 					continue
 				}
 				ref := e.ValueFrom.SecretKeyRef
-				out = append(out, ChannelSecretEnvRef{EnvName: prepareSecretEnvName(ch, name), SecretName: ref.Name, Key: ref.Key})
+				out = append(out, ChannelSecretEnvRef{EnvName: hookSecretEnvName(ch, hook.phase, name), SecretName: ref.Name, Key: ref.Key})
 			}
 		}
 	}
@@ -538,37 +548,37 @@ func renderSession(s *achv1alpha1.SessionSpec) *SessionBlock {
 	return sb
 }
 
-// renderPrepare emits channels[].prepare. secretEnv becomes {VAR: {env: NAME}} — the NAME
-// the operator injects via secretKeyRef in the PodSpec; the credential value itself never
-// touches the ConfigMap.
-func renderPrepare(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) *PrepareBlock {
-	if ch.Prepare == nil {
+// renderHook emits a channel hook. secretEnv becomes {VAR: {env: NAME}} — the NAME the
+// operator injects via secretKeyRef in the PodSpec; the credential value never touches
+// the ConfigMap.
+func renderHook(ch *achv1alpha1.ChannelSpec, hook *achv1alpha1.PrepareSpec, resolvedEnv []corev1.EnvVar, phase string) *PrepareBlock {
+	if hook == nil {
 		return nil
 	}
-	pb := &PrepareBlock{Script: ch.Prepare.Script, TimeoutSeconds: ch.Prepare.TimeoutSeconds}
+	out := &PrepareBlock{Script: hook.Script, TimeoutSeconds: hook.TimeoutSeconds}
 	env := indexEnv(resolvedEnv)
-	for _, name := range ch.Prepare.ForwardEnv {
+	for _, name := range hook.ForwardEnv {
 		e, ok := env[name]
 		if !ok {
 			continue
 		}
 		if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
-			if pb.SecretEnv == nil {
-				pb.SecretEnv = map[string]SecretSourceBlock{}
+			if out.SecretEnv == nil {
+				out.SecretEnv = map[string]SecretSourceBlock{}
 			}
-			pb.SecretEnv[name] = SecretSourceBlock{Env: prepareSecretEnvName(ch, name)}
+			out.SecretEnv[name] = SecretSourceBlock{Env: hookSecretEnvName(ch, phase, name)}
 		} else {
-			if pb.Env == nil {
-				pb.Env = map[string]string{}
+			if out.Env == nil {
+				out.Env = map[string]string{}
 			}
-			pb.Env[name] = e.Value
+			out.Env[name] = e.Value
 		}
 	}
-	return pb
+	return out
 }
 
 func renderChannel(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderPrepare(ch, resolvedEnv)}
+	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderHook(ch, ch.Prepare, resolvedEnv, "PREPARE"), Cleanup: renderHook(ch, ch.Cleanup, resolvedEnv, "CLEANUP")}
 	switch ch.Type {
 	case channelTypeWebhook:
 		if ch.Webhook != nil {

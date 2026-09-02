@@ -715,6 +715,47 @@ func TestPrepare_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
 	}
 }
 
+func TestCleanup_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
+	tc := renderMatrix()["minimal"]
+	tc.profile.Spec.Env = []corev1.EnvVar{
+		{Name: "GITLAB_BASE_URL", Value: "https://git.example.com"},
+		{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "gitlab"},
+				Key:                  "token",
+			},
+		}},
+	}
+	tc.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{Script: "true"}
+	tc.agent.Spec.Channels[0].Cleanup = &achv1alpha1.PrepareSpec{
+		Script:     "rm -rf -- \"$ACH_WORKSPACE\"",
+		ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"},
+	}
+
+	cfg, err := Render(tc.profile, tc.agent, "https://ach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Channels[0].Cleanup
+	if got == nil || got.Env["GITLAB_BASE_URL"] != "https://git.example.com" {
+		t.Fatalf("cleanup literal env = %#v", got)
+	}
+	if got.SecretEnv["GITLAB_TOKEN"].Env != "ACH_SECRET_C_CLEANUP_GITLAB_TOKEN" {
+		t.Fatalf("cleanup secret env = %#v", got.SecretEnv)
+	}
+	if _, found := got.Env["MISSING"]; found {
+		t.Fatal("missing forwardEnv name must remain absent")
+	}
+	if _, found := got.SecretEnv["MISSING"]; found {
+		t.Fatal("missing forwardEnv name must not become secretEnv")
+	}
+	refs := ChannelSecretEnv(tc.profile, tc.agent)
+	if len(refs) != 1 || refs[0].EnvName != "ACH_SECRET_C_CLEANUP_GITLAB_TOKEN" ||
+		refs[0].SecretName != "gitlab" || refs[0].Key != "token" {
+		t.Fatalf("cleanup Pod secret alias = %+v", refs)
+	}
+}
+
 func TestPrepare_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
 	secret := func(name, secret string) corev1.EnvVar {
 		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "key"}}}

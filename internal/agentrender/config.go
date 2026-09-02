@@ -181,6 +181,7 @@ type ChannelBlock struct {
 	Queue       *QueueBlock   `json:"queue,omitempty"`
 	A2A         *A2ABlock     `json:"a2a,omitempty"`
 	Prepare     *PrepareBlock `json:"prepare,omitempty"`
+	Cleanup     *PrepareBlock `json:"cleanup,omitempty"`
 }
 
 // PrepareBlock is the rendered channels[].prepare (schema $defs/PrepareBlock) — the

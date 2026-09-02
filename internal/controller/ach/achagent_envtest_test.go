@@ -513,6 +513,7 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 			Channels: []achv1alpha1.ChannelSpec{{
 				Name: "review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
 				Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}},
+				Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}},
 			}},
 		},
 	})
@@ -524,7 +525,7 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEnv := map[string]string{"GITLAB_BASE_URL": "https://git.example.com", "SHARED": "agent"}
-	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN": false}
+	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_CLEANUP_GITLAB_TOKEN": false}
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		if want, ok := wantEnv[e.Name]; ok {
 			if e.Value != want {
@@ -566,6 +567,16 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 	if _, ok := prepare["env"].(map[string]any)["MISSING"]; ok {
 		t.Fatal("unknown forwardEnv name must remain unset")
 	}
+	cleanup := cfg["channels"].([]any)[0].(map[string]any)["cleanup"].(map[string]any)
+	if cleanup["env"].(map[string]any)["GITLAB_BASE_URL"] != "https://git.example.com" {
+		t.Fatalf("cleanup literals = %v", cleanup["env"])
+	}
+	if cleanup["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_CLEANUP_GITLAB_TOKEN" {
+		t.Fatalf("cleanup secret aliases = %v", cleanup["secretEnv"])
+	}
+	if _, ok := cleanup["env"].(map[string]any)["MISSING"]; ok {
+		t.Fatal("unknown cleanup forwardEnv name must remain unset")
+	}
 
 	oldHash := dep.Spec.Template.Annotations[configHashAnnotation]
 	var secret corev1.Secret
@@ -583,6 +594,30 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 		return dep.Spec.Template.Annotations[configHashAnnotation] != oldHash
 	}, 10*time.Second, 200*time.Millisecond) {
 		t.Fatal("profile env Secret rotation did not roll the Deployment hash")
+	}
+}
+
+func TestACHAgent_CleanupRequiresPrepare(t *testing.T) {
+	ctx := context.Background()
+	agent := &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "cleanup-without-prepare", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "unused"},
+			Identity: achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{
+				Name: "unused", Key: "ek",
+			}},
+			Channels: []achv1alpha1.ChannelSpec{{
+				Name:    "nightly",
+				Type:    "cron",
+				Cron:    &achv1alpha1.CronSpec{Schedule: "0 1 * * *"},
+				Cleanup: &achv1alpha1.PrepareSpec{Script: "true"},
+			}},
+		},
+	}
+
+	err := k8sClient.Create(ctx, agent)
+	if err == nil || !strings.Contains(err.Error(), "channels.cleanup requires channels.prepare") {
+		t.Fatalf("Create error = %v", err)
 	}
 }
 

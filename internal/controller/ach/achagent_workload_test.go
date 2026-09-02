@@ -274,10 +274,11 @@ func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
 		Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}},
+		Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 
-	var original, alias *corev1.EnvVar
+	var original, prepareAlias, cleanupAlias *corev1.EnvVar
 	env := buildAgentEnv(a, p, "")
 	for i := range env {
 		e := &env[i]
@@ -285,12 +286,20 @@ func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
 		case "GITLAB_TOKEN":
 			original = e
 		case "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN":
-			alias = e
+			prepareAlias = e
+		case "ACH_SECRET_GITLAB_MR_REVIEW_CLEANUP_GITLAB_TOKEN":
+			cleanupAlias = e
 		}
 	}
-	if original == nil || alias == nil || alias.ValueFrom == nil || alias.ValueFrom.SecretKeyRef == nil ||
-		alias.ValueFrom.SecretKeyRef.Name != "gl-clone" || alias.ValueFrom.SecretKeyRef.Key != "token" {
-		t.Fatalf("original=%+v alias=%+v", original, alias)
+	for name, alias := range map[string]*corev1.EnvVar{
+		"prepare": prepareAlias,
+		"cleanup": cleanupAlias,
+	} {
+		if alias == nil || alias.ValueFrom == nil || alias.ValueFrom.SecretKeyRef == nil ||
+			alias.ValueFrom.SecretKeyRef.Name != "gl-clone" ||
+			alias.ValueFrom.SecretKeyRef.Key != "token" {
+			t.Fatalf("%s alias=%+v original=%+v", name, alias, original)
+		}
 	}
 }
 

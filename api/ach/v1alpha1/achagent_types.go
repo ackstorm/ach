@@ -274,6 +274,7 @@ type PrepareSpec struct {
 // ChannelSpec is one inbound channel (config: channels[]).
 // +kubebuilder:validation:XValidation:rule="(self.type=='webhook' && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook' || !has(self.source)",message="channels.source is only valid for webhook channels"
+// +kubebuilder:validation:XValidation:rule="!has(self.cleanup) || has(self.prepare)",message="channels.cleanup requires channels.prepare"
 type ChannelSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -304,6 +305,8 @@ type ChannelSpec struct {
 	// channel type, hence outside the type↔block coherence the harness enforces.
 	// +optional
 	Prepare *PrepareSpec `json:"prepare,omitempty"`
+	// +optional
+	Cleanup *PrepareSpec `json:"cleanup,omitempty"`
 }
 
 // ExposeSpec controls how an agent is reachable. Both axes default false —
