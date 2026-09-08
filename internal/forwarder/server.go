@@ -69,6 +69,26 @@ func New(deps Deps) http.Handler {
 		BaseURL: deps.BaseURL,
 	}
 
+	// RFC 9728 protected-resource metadata (issue #177). The segment sits
+	// BETWEEN authority and resource path (§3, following RFC 8414), so the
+	// tail is the resource path: "/mcp/{name}" → "/.well-known/
+	// oauth-protected-resource/mcp/{name}". Proxied verbatim to LiteLLM,
+	// which synthesizes the document for its MCP gateway.
+	//
+	// ANONYMOUS by design (§5): a client fetches this precisely because it
+	// holds no credential yet — gating it makes the OAuth ceremony
+	// unstartable. Outside the Authn group, like JWKS.
+	//
+	// The document's "resource" must name ACH, not LiteLLM's internal Service
+	// DNS name, or RFC 9728 §3.2 makes every compliant client reject it.
+	// LiteLLM derives it from X-Forwarded-Host/-Proto (set by the gateway hop,
+	// passed through untouched by headers.StripAndRewrite) — but ONLY when its
+	// general_settings set use_x_forwarded_for: true AND list the forwarder's
+	// Pod CIDR in mcp_trusted_proxy_ranges. Without that opt-in LiteLLM falls
+	// back to its literal request URL and discovery fails closed. See
+	// test/e2e/cluster/01-base/litellm.values.yaml.
+	r.Handle("/.well-known/oauth-protected-resource/*", proxy.New(hdeps.Deps))
+
 	r.Group(func(r chi.Router) {
 		r.Use(pamw.Authn(deps.Resolver, nil, nil)) // no allowlist, no audit
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))

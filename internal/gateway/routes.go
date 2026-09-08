@@ -15,7 +15,8 @@ type Route struct {
 // ServiceRoutes returns the production route table for the given
 // namespace. Upstreams are in-cluster Service DNS names. The forwarder
 // owns five route families (/v1, /v2, /gemini, /mcp, /a2a) plus /.well-known
-// (JWKS); platform-api owns /platform; content-service owns /content.
+// (JWKS + the RFC 9728 protected-resource document, both anonymous);
+// platform-api owns /platform; content-service owns /content.
 //
 // Deliberately absent: /metrics (unauthenticated per service — never
 // front it) and /dex (browser reaches Dex via ACH_DEX_ISSUER_URL in

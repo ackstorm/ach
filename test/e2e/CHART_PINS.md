@@ -8,4 +8,4 @@ These versions are consumed by `scripts/cluster.sh` through `test/e2e/cluster/01
 | ToolHive CRDs | `oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds` | `0.0.55` |
 | ToolHive operator | `oci://ghcr.io/stacklok/toolhive/toolhive-operator` | `0.5.5` |
 
-LiteLLM image is pinned separately to `ghcr.io/berriai/litellm-database:v1.83.10-stable`.
+LiteLLM image is pinned separately to `ghcr.io/berriai/litellm-database:v1.99.1`.

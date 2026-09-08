@@ -26,7 +26,28 @@ func newReverseProxy(target *url.URL, logger *slog.Logger) *httputil.ReverseProx
 
 	orig := rp.Director
 	rp.Director = func(req *http.Request) {
+		host := req.Host
 		orig(req)
+		// Publish the public hostname the client dialled in a header the
+		// upstream can opt into (issue #177): req.Host is cleared below, so
+		// without this a backend behind ACH cannot learn which front door it
+		// was reached at, and serves RFC 9728 metadata naming the wrong
+		// resource. Set (never append) — an inbound client-supplied value is
+		// overwritten, so it cannot be spoofed past this hop.
+		if host != "" {
+			req.Header.Set("X-Forwarded-Host", host)
+		}
+		// Scheme, unlike Host, is NOT preserved end-to-end: TLS terminates at
+		// the Ingress, so the gateway only ever sees plaintext. Trust the
+		// Ingress's value when present and fill in only when it is absent
+		// (direct-to-gateway, dev) — the reverse of the Host rule above.
+		if req.Header.Get("X-Forwarded-Proto") == "" {
+			proto := "http"
+			if req.TLS != nil {
+				proto = "https"
+			}
+			req.Header.Set("X-Forwarded-Proto", proto)
+		}
 		req.Host = ""
 	}
 

@@ -186,6 +186,123 @@ correct by design. During a rotation, both slots are published for
 
 ---
 
+## 1.4 Public hostname forwarding + RFC 9728 discovery
+
+Both proxy hops clear `req.Host` so the upstream `Host` header is the
+internal Service name and a client-supplied `Host` never leaks
+(`internal/gateway/proxy.go`, `internal/forwarder/proxy/proxy.go`). That
+stays true — but on its own it left a backend behind ACH with **no way to
+learn which public hostname it was reached at**, which breaks OAuth
+discovery for any MCP backend fronted by more than one door (issue #177).
+
+The gateway hop therefore publishes the public hostname in a header the
+upstream can opt into:
+
+| Header              | Set by            | Rule |
+|---------------------|-------------------|------|
+| `X-Forwarded-Host`  | gateway hop       | **Always overwritten** from the incoming `Host`. A client-supplied value is discarded, so it cannot be spoofed past the front door. |
+| `X-Forwarded-Proto` | gateway hop       | Filled in **only when absent** (`https` iff the gateway itself terminated TLS). |
+
+The asymmetry is deliberate: an Ingress preserves the original `Host`
+end-to-end, so the gateway's `req.Host` is authoritative — but TLS
+terminates at the Ingress, so the gateway only ever sees plaintext and
+must trust the Ingress's `X-Forwarded-Proto` when it is present.
+
+Neither header is stripped by `headers.StripAndRewrite`, so both survive
+the forwarder hop unchanged and reach LiteLLM and the backend.
+
+### Why a backend needs this
+
+RFC 9728 §3.2: a client rejects protected-resource metadata whose
+`resource` is not the resource it is addressing. A backend that serves
+several front doors must publish the `resource` matching the one the
+client actually used — it needs `X-Forwarded-Host` to pick.
+
+**Match against it; never echo it.** The value names a document the
+client goes on to trust. Select from a configured allowlist of public
+URLs (normalizing default ports) and fall back to the canonical URL on a
+miss.
+
+### The metadata route
+
+RFC 9728 §3 places the well-known segment *between the authority and the
+resource path* (following RFC 8414, not RFC 8615) — so for resource
+`https://ach.example.com/mcp/my-server` the document lives at
+`https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server`,
+a **sibling** of `/mcp/my-server`, not a child.
+
+The forwarder mounts that subtree **outside** the Authn group, alongside
+JWKS:
+
+```go
+r.Handle("/.well-known/oauth-protected-resource/*", proxy.New(hdeps.Deps))
+```
+
+Anonymous by design (RFC 9728 §5): a client fetches this document
+precisely because it does not yet hold a credential — gating it on
+`x-ach-key` makes the ceremony unstartable.
+
+> `/.well-known/jwks.json` is registered explicitly and therefore
+> **shadows** the one LiteLLM also serves. That is required, not
+> incidental: backends point `AUTH_JWT_JWKS_URI` at ACH and must receive
+> ACH's Ed25519 signing keys, never LiteLLM's.
+
+### Required LiteLLM configuration
+
+`/mcp/*` traffic traverses LiteLLM (§3), and LiteLLM builds the
+document's `resource` / `authorization_servers` from the request base URL
+(`get_request_base_url`). It honors `X-Forwarded-Host` / `-Proto` /
+`-Port` **only** when `general_settings` sets **both** of these:
+
+```yaml
+general_settings:
+  use_x_forwarded_for: true
+  mcp_trusted_proxy_ranges: ["<ach-forwarder Pod CIDR>"]
+```
+
+With `use_x_forwarded_for` alone LiteLLM deliberately fails closed
+(`litellm/proxy/auth/ip_address_utils.py`, `is_request_from_trusted_proxy`)
+— it cannot distinguish a trusted reverse proxy from a direct attacker,
+and these URLs become `redirect_uri`s. **Never set the range to
+`0.0.0.0/0`**; scope it to the forwarder's Pod CIDR.
+
+Measured on LiteLLM `v1.99.1`, through ACH:
+
+| LiteLLM config | `resource` returned |
+|---|---|
+| neither key | `http://litellm.<ns>.svc.cluster.local:4000/mcp` ❌ |
+| both keys | `https://ach.example.com/mcp` ✅ |
+
+This failure is **silent** — no error is logged at any hop. The client
+simply refuses with `does not match expected …`, which looks identical to
+the route not existing at all.
+
+### Scope
+
+The forwarder serves the protected-resource document only. The rest of
+LiteLLM's OAuth surface —
+`/.well-known/oauth-authorization-server*`,
+`/.well-known/openid-configuration`, and the ceremony endpoints under
+`/v1/mcp/oauth/{authorize,token,register}` — is **not** exposed
+anonymously: the first two are unmounted (404) and the last sits inside
+the Authn group (`401 missing_key`). Completing a full OAuth grant
+through ACH would require opening that surface, which is an open design
+decision, not an oversight.
+
+Deployments that control their ingress can bypass ACH for the metadata
+path entirely — an `Exact` match outranks the catch-all prefix route, and
+Istio preserves the original `Host`:
+
+```yaml
+hostnames: [ach.example.com]
+rules:
+  - matches:
+      - path: {type: Exact, value: /.well-known/oauth-protected-resource/mcp/my-server}
+    backendRefs: [{name: my-server-headless, port: 8000}]
+```
+
+---
+
 ## 2. BackendIdentityPolicy (BIP) — turning JWT mint on
 
 JWT mint is **opt-in per target**. A `BackendIdentityPolicy` CR selects

@@ -639,6 +639,60 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ MCP client refuses: "Protected resource `<X>` does not match expected `<Y>`"
+
+```
+Protected resource https://api.example.com/mcp/my-server
+does not match expected https://ach.example.com/mcp/my-server (or origin)
+```
+RFC 9728 §3.2 — the client rejects protected-resource metadata whose
+`resource` is not the resource it addressed. It dialled ACH; the document
+names some other host. Observed with OpenCode; the check is standard, not
+client-specific. **This fails silently at every hop** — nothing is logged
+by the gateway, the forwarder, or LiteLLM, so it looks identical to the
+route not existing.
+
+Walk it in this order:
+
+1. **Is the document reachable at all?** It is a SIBLING of the resource
+   path, not a child (RFC 9728 §3 follows RFC 8414, not RFC 8615):
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server
+   ```
+   404 on a build before v0.8.4 means the forwarder mounted only
+   `jwks.json` under `/.well-known/` — upgrade, or route the path straight
+   to the backend at the ingress (see jwt-forwarder.md §1.4).
+
+2. **Does the document name ACH?**
+   ```bash
+   curl -s https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server | jq -r .resource
+   ```
+   If it names LiteLLM's internal Service DNS name
+   (`http://litellm.<ns>.svc.cluster.local:4000/...`), LiteLLM is ignoring
+   `X-Forwarded-Host`. It honors that header ONLY when `general_settings`
+   sets BOTH `use_x_forwarded_for: true` AND a `mcp_trusted_proxy_ranges`
+   CIDR containing the forwarder's Pod IP — with the first alone it fails
+   closed by design. Never widen the range to `0.0.0.0/0`.
+
+3. **Is the scheme wrong but the host right** (`http://ach.example.com`)?
+   The Ingress is not sending `X-Forwarded-Proto`. The gateway only fills
+   it in when absent — it never overwrites the Ingress's value, because
+   TLS terminates there and the gateway sees plaintext.
+
+4. **Backend serving its own document?** It must select `resource` from an
+   allowlist of public URLs matched against `X-Forwarded-Host` — matched,
+   never echoed: the value names a document the client goes on to trust.
+   A single static resource URL pins the backend to exactly one front door.
+
+WHY IT FAILS: both proxy hops clear `req.Host` so the upstream `Host` is
+the internal Service name (`internal/gateway/proxy.go`,
+`internal/forwarder/proxy/proxy.go`) — deliberate, and unchanged. The
+public hostname travels in `X-Forwarded-Host` instead, which the gateway
+hop SETS (overwriting any client-supplied value, so it cannot be spoofed)
+and `headers.StripAndRewrite` passes through untouched.
+`TestXForwardedHostSurvivesBothHops` guards the composed path.
+
 ### ❌ Cost stuck at 0 under `litellm_usage`
 
 Check `/v2/model/info` reachability through the gateway. A control plane

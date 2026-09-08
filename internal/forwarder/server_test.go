@@ -76,3 +76,46 @@ func TestV2RegisteredInsideAuthnGroup(t *testing.T) {
 		}
 	}
 }
+
+// TestProtectedResourceMetadataIsAnonymous pins issue #177: the RFC 9728
+// protected-resource document must be reachable WITHOUT x-ach-key (§5 assumes
+// an unauthenticated GET — a client fetches it precisely because it holds no
+// credential yet), and must be proxied to LiteLLM with the path and the
+// X-Forwarded-Host published by the gateway hop both intact.
+//
+// Status discriminates: 404 => not mounted; 401 => wrongly inside the Authn
+// group; 200 => reached the upstream anonymously (PASS).
+func TestProtectedResourceMetadataIsAnonymous(t *testing.T) {
+	var gotPath, gotFwdHost string
+	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotFwdHost = r.Header.Get("X-Forwarded-Host")
+		_, _ = io.WriteString(w, `{"resource":"ok"}`)
+	}))
+	defer litellm.Close()
+
+	upstream, err := url.Parse(litellm.URL)
+	if err != nil {
+		t.Fatalf("parse upstream: %v", err)
+	}
+	h := forwarder.New(forwarder.Deps{
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream: upstream,
+	})
+
+	const path = "/.well-known/oauth-protected-resource/mcp/mcp-gitlab-ro"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("X-Forwarded-Host", "ach.example.com")
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s: got %d, want 200 (mounted, anonymous)", path, rec.Code)
+	}
+	if gotPath != path {
+		t.Errorf("upstream path: got %q want %q", gotPath, path)
+	}
+	if gotFwdHost != "ach.example.com" {
+		t.Errorf("X-Forwarded-Host did not survive the forwarder hop: got %q", gotFwdHost)
+	}
+}

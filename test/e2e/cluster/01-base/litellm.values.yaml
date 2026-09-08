@@ -2,12 +2,15 @@
 #
 # Used by:  scripts/cluster.sh hydrate_litellm
 # Chart:    oci://docker.litellm.ai/berriai/litellm-helm  (upstream, OCI, BETA)
-# Image:    v1.87.1 (bumped from v1.83.10-stable, 2026-06-10). v1.83.10's MCP
-#           gateway rejected non-admin virtual keys on /mcp/<name> with an
-#           admin-only-route exception; v1.87.1 is required so the forwarder's
-#           per-user x-litellm-api-key (litellm_key_material) is accepted on the
-#           MCP gateway. NOTE: litellm-database publishes a bare `v1.87.1` tag,
-#           NOT a `-stable` variant — keep the suffix off.
+# Image:    v1.99.1 (bumped from v1.87.1, 2026-09-08; v1.87.1 was itself a bump
+#           from v1.83.10-stable, 2026-06-10). v1.83.10's MCP gateway rejected
+#           non-admin virtual keys on /mcp/<name> with an admin-only-route
+#           exception; >=v1.87.1 is required so the forwarder's per-user
+#           x-litellm-api-key (litellm_key_material) is accepted on the MCP
+#           gateway. v1.99.1 additionally ships the MCP OAuth surface — the
+#           RFC 9728 /.well-known/oauth-protected-resource document the
+#           forwarder proxies for issue #177. NOTE: litellm-database publishes
+#           a bare `v1.99.1` tag, NOT a `-stable` variant — keep the suffix off.
 #
 # WARNING: the upstream litellm-helm chart is in BETA. When bumping
 # `chartVersion`, re-run `make e2e-full` and inspect any failed scenarios
@@ -27,7 +30,7 @@ chartVersion: 1.84.0
 
 image:
   repository: ghcr.io/berriai/litellm-database
-  tag: v1.87.1
+  tag: v1.99.1
   # Override chart default `Always`: cluster.sh pre-pulls + kind-loads
   # this image into the node before `helm install`. With `Always`,
   # kubelet round-trips ghcr.io on every Pod start (and every
@@ -129,6 +132,20 @@ service:
 # the SC2 e2e can assert at the backend instead of log-scraping LiteLLM. Scoped
 # to demo-model so prod LLM groups never leak ACH-internal env names upstream.
 proxy_config:
+  general_settings:
+    # Issue #177 — RFC 9728 discovery through ACH. LiteLLM builds the
+    # protected-resource document's `resource` (and the resource_metadata URL
+    # in its 401 challenge) from the request's base URL, and honors
+    # X-Forwarded-Host/-Proto/-Port ONLY when BOTH of these are set
+    # (litellm/proxy/auth/ip_address_utils.py is_request_from_trusted_proxy).
+    # Without them a client reaching an MCP server THROUGH ach-forwarder gets a
+    # document naming litellm's own internal Service DNS name and rejects it
+    # per RFC 9728 §3.2. The range is the kind pod CIDR — in a real deployment
+    # this must be the ach-forwarder Pod CIDR, never 0.0.0.0/0: an untrusted
+    # caller that can set X-Forwarded-Host would otherwise poison the OAuth
+    # discovery + redirect_uri URLs LiteLLM publishes.
+    use_x_forwarded_for: true
+    mcp_trusted_proxy_ranges: ["10.244.0.0/16"]
   litellm_settings:
     model_group_settings:
       forward_client_headers_to_llm_api:

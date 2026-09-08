@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/forwarder"
 )
 
 func TestNewReverseProxyPreservesPathAndClearsHost(t *testing.T) {
@@ -154,5 +156,78 @@ func TestGateway_PreservesAtInPluginPath(t *testing.T) {
 				t.Errorf("upstream saw escaped path %q; want it to contain %q (separator was mangled)", gotEscapedPath, tc.want)
 			}
 		})
+	}
+}
+
+// Issue #177: the public hostname the client dialled must survive the hop in
+// X-Forwarded-Host, and a client-supplied value must NOT (it is overwritten,
+// not appended). Without this a backend behind ACH serves RFC 9728 metadata
+// naming its own canonical URL, which every spec-compliant MCP client rejects.
+func TestNewReverseProxySetsXForwardedHost(t *testing.T) {
+	var got []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Values("X-Forwarded-Host")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+
+	target, _ := url.Parse(backend.URL)
+	rp := newReverseProxy(target, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "http://ach.example.com/.well-known/oauth-protected-resource/mcp/demo", nil)
+	req.Host = "ach.example.com"
+	req.Header.Set("X-Forwarded-Host", "spoofed.evil")
+	rp.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(got) != 1 || got[0] != "ach.example.com" {
+		t.Fatalf("X-Forwarded-Host: got %v want [ach.example.com]", got)
+	}
+}
+
+// TestXForwardedHostSurvivesBothHops composes the real gateway hop onto the
+// real forwarder hop and asserts the public hostname reaches the upstream.
+//
+// Issue #177 asks for exactly this: "Worth a test asserting the header
+// survives both hops, since a regression there is invisible — the backend
+// silently falls back to its canonical URL and the client failure looks
+// identical to this bug being unfixed." Each hop is covered in isolation
+// elsewhere (this file for the gateway, headers.StripAndRewrite's table for
+// the forwarder); only a composed test catches a strip introduced BETWEEN them.
+//
+// The anonymous /.well-known route is used as the vehicle because it is the
+// one forwarder route that needs no key resolver — the header handling it
+// exercises is the shared Director path every route uses.
+func TestXForwardedHostSurvivesBothHops(t *testing.T) {
+	var gotFwdHost, gotFwdProto string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFwdHost = r.Header.Get("X-Forwarded-Host")
+		gotFwdProto = r.Header.Get("X-Forwarded-Proto")
+		_, _ = io.WriteString(w, "{}")
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	fwd := httptest.NewServer(forwarder.New(forwarder.Deps{
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream: upstreamURL,
+	}))
+	defer fwd.Close()
+
+	fwdURL, _ := url.Parse(fwd.URL)
+	gw := newReverseProxy(fwdURL, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "http://ach.example.com/.well-known/oauth-protected-resource/mcp/demo", nil)
+	req.Host = "ach.example.com"
+	rec := httptest.NewRecorder()
+	gw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", rec.Code)
+	}
+	if gotFwdHost != "ach.example.com" {
+		t.Errorf("X-Forwarded-Host after gateway+forwarder: got %q want ach.example.com", gotFwdHost)
+	}
+	if gotFwdProto != "http" {
+		t.Errorf("X-Forwarded-Proto after gateway+forwarder: got %q want http", gotFwdProto)
 	}
 }
