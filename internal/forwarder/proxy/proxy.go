@@ -55,6 +55,13 @@ type Deps struct {
 	// rest (keycrypt blob); Director decrypts it once per request before
 	// forwarding. Required (validated at process start by dekenv.Load).
 	KeyEncryptionKey []byte
+
+	// BaseURL is ACH's own public base URL (ACH_BASE_URL) — the same value
+	// used as the JWT "iss" claim. ModifyResponse stamps its scheme+authority
+	// onto the resource_metadata pointer in outbound 401/403 auth challenges
+	// (issue #177, see challenge.go). Empty or unparseable disables the
+	// rewrite; it is NOT required for any other part of the proxy.
+	BaseURL string
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
@@ -66,9 +73,22 @@ type Deps struct {
 //  3. Strip + rewrite headers (Plan 04-01 — pure function).
 //  4. JWT attach LAST — strip has already cleared any client Authorization.
 //
-// ModifyResponse is intentionally nil for streaming pass-through (D-05).
-// Director does NOT touch req.Body to preserve SSE semantics.
+// ModifyResponse is HEADER-ONLY (issue #177): it rewrites the
+// resource_metadata pointer in a 401/403 WWW-Authenticate challenge so it names
+// ACH rather than LiteLLM's own front door. It runs BEFORE the body is copied
+// and buffers nothing, so streaming pass-through (D-05) is unaffected — the
+// constraint that comment always encoded is that the BODY is never touched, and
+// it still is not. Director likewise does NOT touch req.Body, preserving SSE
+// semantics. With an empty/unparseable BaseURL the hook is nil, exactly as before.
 func New(deps Deps) *httputil.ReverseProxy {
+	publicBase := parsePublicBase(deps.BaseURL)
+	var modifyResponse func(*http.Response) error
+	if publicBase != nil {
+		modifyResponse = func(resp *http.Response) error {
+			rewriteChallengeHost(resp, publicBase)
+			return nil
+		}
+	}
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = deps.LiteLLMUpstream.Scheme
@@ -129,7 +149,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 				req.Header.Set("Authorization", "Bearer "+token)
 			}
 		},
-		ModifyResponse: nil,
+		ModifyResponse: modifyResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// Client went away mid-proxy (SSE stream on /mcp, /v1, or /v2 closed
 			// by the caller): the inbound request context is canceled, NOT

@@ -211,7 +211,7 @@ must trust the Ingress's `X-Forwarded-Proto` when it is present.
 Neither header is stripped by `headers.StripAndRewrite`, so both survive
 the forwarder hop unchanged and reach LiteLLM and the backend.
 
-### Why a backend needs this
+### Why a backend needs this — and when it cannot have it
 
 RFC 9728 §3.2: a client rejects protected-resource metadata whose
 `resource` is not the resource it is addressing. A backend that serves
@@ -222,6 +222,23 @@ client actually used — it needs `X-Forwarded-Host` to pick.
 client goes on to trust. Select from a configured allowlist of public
 URLs (normalizing default ports) and fall back to the canonical URL on a
 miss.
+
+> **This applies only to a backend ACH proxies to DIRECTLY.** On the full
+> `/mcp/{name}` path — `client → gateway → forwarder → LiteLLM → toolhive
+> → MCP pod` — the header has exactly one reachable consumer, LiteLLM, and
+> it never reaches the pod:
+>
+> - toolhive's transparent proxy calls `SetXForwarded()` unconditionally
+>   and `SetURL()` rewrites `Host`, so a client-supplied `X-Forwarded-*`
+>   never survives;
+> - vMCP rejects `X-Forwarded-*` unconditionally
+>   ([stacklok/toolhive#6523](https://github.com/stacklok/toolhive/issues/6523)),
+>   and keeps that exclusion by design — those headers are smuggling and
+>   spoofing vectors.
+>
+> A backend that cannot learn its front door should **omit**
+> `resource_metadata` rather than advertise a document the client will
+> reject. §1.5 is what makes that safe: ACH supplies the pointer itself.
 
 ### The metadata route
 
@@ -266,12 +283,30 @@ With `use_x_forwarded_for` alone LiteLLM deliberately fails closed
 and these URLs become `redirect_uri`s. **Never set the range to
 `0.0.0.0/0`**; scope it to the forwarder's Pod CIDR.
 
-Measured on LiteLLM `v1.99.1`, through ACH:
+Measured on LiteLLM `v1.99.1`, through ACH, **with `PROXY_BASE_URL` unset**:
 
 | LiteLLM config | `resource` returned |
 |---|---|
 | neither key | `http://litellm.<ns>.svc.cluster.local:4000/mcp` ❌ |
 | both keys | `https://ach.example.com/mcp` ✅ |
+
+> **⚠ `PROXY_BASE_URL` short-circuits all of the above.**
+> `get_request_base_url` returns it verbatim **before** any `X-Forwarded-*`
+> handling:
+>
+> ```python
+> configured: Final = _resolve_proxy_base_url_env()
+> if configured:
+>     return configured          # returns BEFORE the trusted-proxy branch
+> ```
+>
+> Most real deployments set it — the admin UI, OAuth callbacks and spend
+> links need it — and on those `use_x_forwarded_for`,
+> `mcp_trusted_proxy_ranges` and `X-Forwarded-Host` are **unreachable code**
+> on this path. Unsetting it is not a workaround either: an Ingress behind a
+> TLS-terminating L4 load balancer truthfully reports `http`, so the pointer
+> becomes `http://ach.example.com/…` — a wrong scheme traded for a wrong
+> host. §1.5 is what actually closes this.
 
 This failure is **silent** — no error is logged at any hop. The client
 simply refuses with `does not match expected …`, which looks identical to
@@ -300,6 +335,113 @@ rules:
       - path: {type: Exact, value: /.well-known/oauth-protected-resource/mcp/my-server}
     backendRefs: [{name: my-server-headless, port: 8000}]
 ```
+
+---
+
+## 1.5 Auth-challenge rewrite — pointing `resource_metadata` at ACH
+
+Header forwarding (§1.4) gets the public hostname as far as LiteLLM. On the
+`/mcp` path that is not enough, for two upstream reasons measured on
+`v1.99.1`:
+
+1. **LiteLLM composes the challenge itself.** Its pre-session probe loop
+   (`proxy/_experimental/mcp_server/server.py`) discards the upstream's
+   `WWW-Authenticate` and synthesizes a replacement:
+
+   ```python
+   for (srv, _, challenge_server_name), (probe_status, _) in zip(probe_targets, probe_results):
+       if probe_status == 401:
+           www_authenticate = get_passthrough_www_authenticate(
+               scope=scope, server_name=challenge_server_name, invalid_token=True,
+           )
+   ```
+
+   (The `is_true_passthrough` block ~200 lines earlier does the opposite and
+   relays it — an upstream inconsistency, not something ACH can configure
+   around.) So even a backend that correctly selects its own `resource` from
+   `X-Forwarded-Host` cannot reach the client: its header is replaced.
+
+2. **That synthesized pointer comes from `PROXY_BASE_URL`** when set — see
+   the callout in §1.4.
+
+Together: the challenge is composed by LiteLLM, from a static env var, and
+the backend's answer is discarded. **No header-propagation rule can
+influence it.**
+
+The forwarder is the last hop that knows which front door the client
+dialled, and it knows its own public name without trusting any header:
+`ACH_BASE_URL`, validated `http(s)://` at process start and already used as
+the JWT `iss`. Consuming no header is the point — it is the one mechanism
+immune to both the `PROXY_BASE_URL` precedence above and the toolhive
+`X-Forwarded-*` rejection in §1.4.
+
+Two branches, one invariant: **a challenge leaving ACH names an ACH
+document, always** — whether upstream sent the wrong pointer, or none at
+all. ACH guarantees this alone, with no cooperation from LiteLLM, toolhive,
+or the backend, which is what makes the forwarder the right layer for it.
+
+**Branch 1 — rewrite** (`internal/forwarder/proxy/challenge.go`), when a
+pointer is present:
+
+```
+upstream:  WWW-Authenticate: Bearer error="invalid_token",
+             resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+client:    WWW-Authenticate: Bearer error="invalid_token",
+             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+```
+
+Only the **scheme and authority** change. The path tail names the backend
+the document describes and is upstream's to choose.
+
+**Branch 2 — insert**, when no pointer is present and the route is
+`/mcp/{name}` or `/a2a/{name}`:
+
+```
+upstream:  WWW-Authenticate: Bearer error="invalid_token", scope="read"
+client:    WWW-Authenticate: Bearer error="invalid_token", scope="read",
+             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+```
+
+Branch 2 is not hypothetical housekeeping: branch 1 alone **silently
+no-ops** the day LiteLLM stops discarding the backend's challenge. ACH
+would then receive a bare `Bearer error="invalid_token", …`, find nothing
+to rewrite, and pass it through — leaving the client to derive the metadata
+URL from the resource it dialled (§3.1). That derivation is legal and some
+clients do it, but it is not something to depend on, and the failure mode
+is the same silent one this issue opened with.
+
+The inserted pointer names the document the forwarder already serves at
+that path (§1.4), so both branches produce the same URL. Only `Bearer`
+challenges are touched — appending an OAuth auth-param to a `Basic`
+challenge would be meaningless. A 401 carrying no challenge at all gets a
+minimal `Bearer` one (RFC 7235 requires a challenge on 401); a 403 does
+not, so an upstream that sent none keeps none.
+
+Deliberately narrow — the client FOLLOWS this URL, so a broader rewrite
+would be a redirect-injection primitive rather than a fix:
+
+| Condition | Behaviour |
+|---|---|
+| status is not 401/403 | untouched |
+| no `resource_metadata`, route is not `/mcp/{name}` or `/a2a/{name}` | untouched |
+| no `resource_metadata`, `Basic`-only challenge | untouched |
+| no `resource_metadata`, 403 with no challenge | untouched |
+| value does not parse as a URL | untouched |
+| path lacks `/.well-known/oauth-protected-resource` | untouched |
+| quoted-string unterminated | untouched |
+| param name merely *ends* in `resource_metadata` | untouched |
+| `ACH_BASE_URL` empty/unparseable | hook not installed at all |
+
+Every other auth-param (`error`, `error_description`, `scope`, `realm`) and
+all surrounding whitespace survive byte for byte — only the quoted value is
+substituted.
+
+> **`ModifyResponse` is header-only.** It was previously `nil`, documented
+> as deliberate "for streaming pass-through (D-05)". The constraint that
+> comment encoded is that the **body** is never touched, and it still is
+> not: `ModifyResponse` runs before the body is copied and buffers nothing,
+> so SSE and streamable-http pass-through are unaffected. The proxy suite's
+> streaming test runs with the hook installed precisely to keep that honest.
 
 ---
 

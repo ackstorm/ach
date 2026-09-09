@@ -685,6 +685,19 @@ Walk it in this order:
    never echoed: the value names a document the client goes on to trust.
    A single static resource URL pins the backend to exactly one front door.
 
+5. **Is the 401 challenge itself naming the wrong host?**
+   ```
+   www-authenticate: Bearer error="invalid_token",
+     resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+   ```
+   On the `/mcp` path LiteLLM COMPOSES this header itself — its probe loop
+   discards the backend's and synthesizes one from `PROXY_BASE_URL`, which
+   short-circuits all `X-Forwarded-*` handling. Since v0.8.5 the forwarder
+   rewrites the pointer's scheme+authority to `ACH_BASE_URL` on the way out
+   (jwt-forwarder.md §1.5). If it still names the wrong host, check
+   `ACH_BASE_URL` on the forwarder Deployment — an empty or unparseable
+   value disables the rewrite silently.
+
 WHY IT FAILS: both proxy hops clear `req.Host` so the upstream `Host` is
 the internal Service name (`internal/gateway/proxy.go`,
 `internal/forwarder/proxy/proxy.go`) — deliberate, and unchanged. The

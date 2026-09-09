@@ -58,6 +58,11 @@ func newDepsWithUpstream(t *testing.T, upstream *httptest.Server) Deps {
 	return Deps{
 		LiteLLMUpstream: mustParseURL(t, upstream.URL),
 		Logger:          slog.Default(),
+		// Non-empty so New() installs the #177 ModifyResponse hook: every
+		// test built on this helper — including the SSE streaming and
+		// pass-through ones — then exercises the header rewrite path rather
+		// than silently running with ModifyResponse nil.
+		BaseURL: "https://ach.example.com",
 	}
 }
 

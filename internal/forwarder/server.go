@@ -59,6 +59,7 @@ func New(deps Deps) http.Handler {
 			LiteLLMUpstream:  deps.LiteLLMUpstream,
 			Logger:           deps.Logger,
 			KeyEncryptionKey: deps.KeyEncryptionKey,
+			BaseURL:          deps.BaseURL,
 		},
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,
