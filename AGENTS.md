@@ -269,6 +269,20 @@ make shell                       # interactive shell in the devtools container
 ./scripts/dev.sh go build ./...  # raw go, when no make target fits
 ```
 
+`scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
+`/ach-agent` when one exists — `TestSchema_NoDrift` reads the frozen
+`agent-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+path is absent in the container, so the test skipped on the ReadFile error and
+the contract guard silently compared NOTHING (it had never once run). No sibling
+checkout ⇒ it still skips, by design.
+
+`scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
+`/ach-agent` when one exists — `TestSchema_NoDrift` reads the frozen
+`agent-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+path is absent in the container, so the test skipped on the ReadFile error and
+the contract guard silently compared NOTHING (it had never once run). No sibling
+checkout ⇒ it still skips, by design.
+
 `scripts/dev.sh` mounts the repo + docker socket, preserves host UID:GID, and
 persists Go caches under `.gocache/` (per-workspace, so **each git worktree gets
 its own**). CI uses a pre-baked GHCR image keyed by

@@ -332,7 +332,7 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
 	a.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
-		Endpoint: "http://ach-memory", Auth: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"},
+		Endpoint: "http://ach-memory.ach.svc:8000/mcp/", Auth: &achv1alpha1.AchMemoryAuthSpec{Type: "bearer", SecretRef: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"

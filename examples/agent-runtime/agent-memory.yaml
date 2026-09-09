@@ -1,15 +1,13 @@
 # ACHAgent with the ach-memory backend (config: memory.achMemory).
 #
-# Prereqs (in addition to the ops-ek secret from README.md):
-#   kubectl -n engineering create secret generic ach-memory-key \
-#     --from-literal=token=<ach-memory-user-key>
+# No extra secret is needed for the arm shown below — see `auth` for why.
 #
-# The operator injects that token into the pod as the env var
-# ACH_SECRET_MEMORY_AUTH (via secretKeyRef, never a file) and renders only the
-# env NAME into config.json (memory.achMemory.auth.env). The harness reads
-# os.environ[NAME] to authenticate to ach-memory. It is an ach-memory USER key —
-# NOT the agent's ek_, and NOT a bank-wide admin secret. Omit `auth` entirely for
-# an internal / no-auth ach-memory URL.
+# endpoint is the COMPLETE MCP endpoint and is rendered VERBATIM: the harness
+# appends nothing, not `/mcp`, not a trailing slash. Give it the full path.
+# Behind ACH's gateway that is `<ACH_BASE_URL>/mcp/<mcp-server-name>`; against
+# ach-memory directly it is that service's own MCP path, e.g.
+# `http://ach-memory.engineering.svc:8000/mcp/`. Do not append a path here —
+# a client that appends its own is how requests end up at /mcp/mcp/.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: ACHAgent
 metadata:
@@ -24,8 +22,29 @@ spec:
   memory:
     type: ach-memory
     achMemory:
-      endpoint: http://ach-memory.engineering.svc:8080
-      auth: { name: ach-memory-key, key: token }
+      endpoint: https://api.ackstorm.ai/mcp/ach-memory
+      # auth has two arms, and the choice is not cosmetic:
+      #
+      #   type: ach     — reach ach-memory THROUGH ACH. The harness sends its own
+      #                   ek_ as ACH's `x-ach-key`; ACH forwards to LiteLLM, which
+      #                   resolves the principal, so the memory identity IS the
+      #                   agent's ACH identity. No second credential, so no
+      #                   secretRef. This is the arm production agents want.
+      #                   `Authorization: Bearer` is NOT interchangeable here —
+      #                   ACH's scheme is the header, and a Bearer 401s.
+      #
+      #   type: bearer  — talk to ach-memory DIRECTLY with a minted ach-memory
+      #                   user key. Requires secretRef; the operator injects it as
+      #                   ACH_SECRET_MEMORY_AUTH and renders only the env NAME.
+      #                     auth:
+      #                       type: bearer
+      #                       secretRef: { name: ach-memory-key, key: token }
+      #                   The key that first bootstraps a project OWNS it —
+      #                   rotating to a DIFFERENT ach-memory user orphans the bank.
+      #
+      # Omit `auth` entirely for an internal URL that needs no header at all.
+      auth:
+        type: ach
       # project is the memory-bank slug. OMIT IT (the norm): the harness derives
       # {POD_NAMESPACE}-{agent.name} at boot — here engineering-memory-reviewer.
       # Set it only to share one bank across agents. Static either way: the slug

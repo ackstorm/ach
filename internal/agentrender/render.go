@@ -68,7 +68,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 		Agent:         AgentBlock{Name: a.Name},
 		Model:         ModelBlock{Name: model.Name, Type: model.Type, Params: params, Thinking: thinking},
 		Capability: CapabilityBlock{
-			Type:   "ach",
+			Type:   promptSystemTypeAch,
 			Ach:    AchBlock{BaseURL: baseURL, Environment: a.Spec.Capability.Environment},
 			Filter: renderFilter(a.Spec.Capability.Filter),
 		},
@@ -131,6 +131,16 @@ func Marshal(cfg AgentConfig) ([]byte, error) { return json.Marshal(cfg) }
 // memoryAuthSecretEnvName is the fixed env var carrying the memory-backend auth
 // secret. In the ACH_SECRET_ namespace so sanitizeForwardEnv strips it from
 // engine.forwardEnv for free; collision-free vs ACH_SECRET_<CH>_<TYPE> (TYPE is never HINDSIGHT).
+// memory.achMemory.auth arms. Textually identical to the prompt system type
+// "ach" (promptSystemTypeAch) but a different domain — kept separate on purpose.
+const (
+	memoryAuthTypeAch    = "ach"
+	memoryAuthTypeBearer = "bearer"
+)
+
+// promptSystemTypeAch is prompt.system.type=="ach" (an ACH-hosted Prompt CR).
+const promptSystemTypeAch = "ach"
+
 const memoryAuthSecretEnvName = "ACH_SECRET_MEMORY_AUTH" // #nosec G101 -- env var NAME, not a credential value
 
 // channelSecretEnvName is the deterministic env var name carrying a channel's
@@ -240,14 +250,17 @@ func indexEnv(env []corev1.EnvVar) map[string]corev1.EnvVar {
 	return out
 }
 
-// MemorySecretEnv returns the ach-memory user-key secret to inject via secretKeyRef,
+// MemorySecretEnv returns the ach-memory user-key secret to inject via secretKeyRef.
+// Bearer arm ONLY: the ach arm authenticates with the harness's own ek_, so there is no
+// second secret to inject.
 // or nil when the agent has no memory auth. Same wiring as channel secrets (env, not file).
 func MemorySecretEnv(a achv1alpha1.ACHAgent) *ChannelSecretEnvRef {
 	m := a.Spec.Memory
-	if m == nil || m.Type != "ach-memory" || m.AchMemory == nil || m.AchMemory.Auth == nil {
+	if m == nil || m.Type != "ach-memory" || m.AchMemory == nil ||
+		m.AchMemory.Auth == nil || m.AchMemory.Auth.Type != memoryAuthTypeBearer || m.AchMemory.Auth.SecretRef == nil {
 		return nil
 	}
-	return &ChannelSecretEnvRef{EnvName: memoryAuthSecretEnvName, SecretName: m.AchMemory.Auth.Name, Key: m.AchMemory.Auth.Key}
+	return &ChannelSecretEnvRef{EnvName: memoryAuthSecretEnvName, SecretName: m.AchMemory.Auth.SecretRef.Name, Key: m.AchMemory.Auth.SecretRef.Key}
 }
 
 func decodeParams(raw *apiextensionsv1.JSON) (map[string]any, error) {
@@ -318,7 +331,7 @@ func renderPrompt(p *achv1alpha1.AgentPromptSpec) *PromptBlock {
 		sys.Text = p.System.Text
 	case "file":
 		sys.File = p.System.File
-	case "ach":
+	case promptSystemTypeAch:
 		sys.Ach = p.System.Ach
 		sys.File = p.System.AchFile // legal: SystemAch allows optional file subpath
 	}
@@ -334,8 +347,12 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 	case "ach-memory":
 		if m.AchMemory != nil {
 			ab := &AchMemoryBlock{Endpoint: m.AchMemory.Endpoint, Project: m.AchMemory.Project}
-			if m.AchMemory.Auth != nil {
-				ab.Auth = &SecretSourceBlock{Env: memoryAuthSecretEnvName}
+			if auth := m.AchMemory.Auth; auth != nil {
+				// env is the bearer arm's only field; the ach arm renders {type: ach} alone.
+				ab.Auth = &AchMemoryAuthBlock{Type: auth.Type}
+				if auth.Type == memoryAuthTypeBearer {
+					ab.Auth.Env = memoryAuthSecretEnvName
+				}
 			}
 			out.AchMemory = ab
 		}

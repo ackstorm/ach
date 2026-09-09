@@ -217,6 +217,20 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "memory.achMemory is required",
 		},
+		// memory.achMemory.auth is discriminated on type: the bearer arm needs the
+		// user-key Secret, and the ach arm (harness sends its own ek_) must not carry one.
+		{
+			name:           "invalid_achagent_memory_bearer_without_secretref",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_bearer_without_secretref.yaml",
+			shouldFail:     true,
+			errMustContain: "secretRef is required when type=bearer",
+		},
+		{
+			name:           "invalid_achagent_memory_ach_arm_with_secretref",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_ach_arm_with_secretref.yaml",
+			shouldFail:     true,
+			errMustContain: "meaningless when type=ach",
+		},
 	}
 
 	for _, tc := range cases {

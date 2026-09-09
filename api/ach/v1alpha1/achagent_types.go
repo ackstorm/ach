@@ -71,17 +71,44 @@ type AgentPromptSpec struct {
 	Compose string `json:"compose,omitempty"`
 }
 
+// AchMemoryAuthSpec selects HOW the harness authenticates to ach-memory
+// (config: memory.achMemory.auth). Omit the whole block for an internal URL that
+// needs no auth header at all.
+//
+// The two arms carry different credentials, and the choice is not cosmetic:
+//   - ach    → the harness sends its OWN ek_ as ACH's `x-ach-key` to ACH's MCP
+//     gateway, which forwards to LiteLLM and resolves the principal. There is no
+//     second credential, so this arm takes no secretRef. `Authorization: Bearer`
+//     is NOT interchangeable — ACH's scheme is the header, and a Bearer 401s.
+//   - bearer → a minted ach-memory USER key in an env var, for talking to
+//     ach-memory directly. Needs the usual secretKeyRef plumbing.
+//
+// +kubebuilder:validation:XValidation:rule="self.type!='bearer' || has(self.secretRef)",message="memory.achMemory.auth.secretRef is required when type=bearer"
+// +kubebuilder:validation:XValidation:rule="self.type!='ach' || !has(self.secretRef)",message="memory.achMemory.auth.secretRef is meaningless when type=ach (the harness sends its own ek_)"
+type AchMemoryAuthSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=ach;bearer
+	Type string `json:"type"`
+	// SecretRef is the ach-memory user key, bearer arm only. Same env-only mechanism
+	// as webhook/a2a: the operator injects the value into the pod from this Secret and
+	// renders only the env NAME. NOTE: the key that first bootstraps a project OWNS it —
+	// rotating this to a DIFFERENT ach-memory user orphans the bank.
+	// +optional
+	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
+}
+
 // AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).
 type AchMemorySpec struct {
+	// Endpoint is the COMPLETE MCP endpoint, rendered VERBATIM — the harness appends
+	// nothing, not `/mcp`, not a trailing slash. Whether ach-memory sits at a root
+	// (`https://memory.internal/mcp/`) or behind ACH's gateway
+	// (`https://api.ackstorm.ai/mcp/ach-memory`) is the operator's call. Do NOT append a
+	// path here: a client that appends its own is how requests end up at `/mcp/mcp/`.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Endpoint string `json:"endpoint"`
-	// Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,
-	// and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only
-	// secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from
-	// this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL.
 	// +optional
-	Auth *SecretKeyRef `json:"auth,omitempty"`
+	Auth *AchMemoryAuthSpec `json:"auth,omitempty"`
 	// Project overrides the memory-bank slug. Empty (the norm) → the harness derives
 	// {POD_NAMESPACE}-{agent.name} at boot, one bank per agent. Static: the slug SELECTS a
 	// bank, so a payload-derived one would let an inbound event pick which bank the agent

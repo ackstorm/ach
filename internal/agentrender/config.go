@@ -124,9 +124,16 @@ type MemoryBlock struct {
 }
 
 type AchMemoryBlock struct {
-	Endpoint string             `json:"endpoint"`
-	Auth     *SecretSourceBlock `json:"auth,omitempty"`
-	Project  string             `json:"project,omitempty"`
+	Endpoint string              `json:"endpoint"`
+	Auth     *AchMemoryAuthBlock `json:"auth,omitempty"`
+	Project  string              `json:"project,omitempty"`
+}
+
+// AchMemoryAuthBlock is the rendered memory.achMemory.auth discriminated union.
+// Env is set on the bearer arm ONLY — the ach arm carries no second credential.
+type AchMemoryAuthBlock struct {
+	Type string `json:"type"`
+	Env  string `json:"env,omitempty"`
 }
 
 type CodememBlock struct {

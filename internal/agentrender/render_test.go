@@ -255,7 +255,7 @@ func TestChannelSecretEnv_NamesAndRefs(t *testing.T) {
 
 func TestMemorySecretEnv_AchMemoryAuth(t *testing.T) {
 	withAuth := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
-		Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m", Auth: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
+		Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m/mcp/", Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}}},
 	}}}
 	ref := MemorySecretEnv(withAuth)
 	if ref == nil || ref.EnvName != "ACH_SECRET_MEMORY_AUTH" || ref.SecretName != "am" || ref.Key != "token" {
@@ -267,10 +267,19 @@ func TestMemorySecretEnv_AchMemoryAuth(t *testing.T) {
 	}
 	// No auth → no ref (internal/no-auth ach-memory URL).
 	noAuth := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
-		Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m"},
+		Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m/mcp/"},
 	}}}
 	if ref := MemorySecretEnv(noAuth); ref != nil {
 		t.Errorf("MemorySecretEnv(no auth) = %+v, want nil", ref)
+	}
+	// ach arm → no ref: the harness sends its own ek_, there is no second secret.
+	achArm := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{
+		Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+			Endpoint: "https://api.ackstorm.ai/mcp/ach-memory", Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeAch},
+		},
+	}}}
+	if ref := MemorySecretEnv(achArm); ref != nil {
+		t.Errorf("MemorySecretEnv(ach arm) = %+v, want nil", ref)
 	}
 	// Non-ach-memory memory → no ref.
 	if ref := MemorySecretEnv(achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Memory: &achv1alpha1.MemorySpec{Type: "codemem"}}}); ref != nil {
@@ -280,8 +289,8 @@ func TestMemorySecretEnv_AchMemoryAuth(t *testing.T) {
 
 func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 	out := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
-		Endpoint: "http://m", Project: "team-reviewer",
-		Auth: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"},
+		Endpoint: "http://m/mcp/", Project: "team-reviewer",
+		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
 	}})
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -293,14 +302,30 @@ func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 	}
 	am := m["achMemory"].(map[string]any)
 	// auth renders ONLY the operator-generated env name, never the secretRef.
-	if auth := am["auth"].(map[string]any); auth["env"] != "ACH_SECRET_MEMORY_AUTH" {
-		t.Errorf("auth = %v, want {env: ACH_SECRET_MEMORY_AUTH}", auth)
+	if auth := am["auth"].(map[string]any); auth["type"] != "bearer" || auth["env"] != "ACH_SECRET_MEMORY_AUTH" {
+		t.Errorf("auth = %v, want {type: bearer, env: ACH_SECRET_MEMORY_AUTH}", auth)
 	}
-	if am["endpoint"] != "http://m" || am["project"] != "team-reviewer" {
+	// endpoint is rendered VERBATIM — the harness appends nothing.
+	if am["endpoint"] != "http://m/mcp/" || am["project"] != "team-reviewer" {
 		t.Errorf("endpoint/project = %v/%v", am["endpoint"], am["project"])
 	}
 	// project omitted when unset — the harness derives {POD_NAMESPACE}-{agent.name}.
-	noAuth := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m"}})
+	// ach arm renders {type: ach} with NO env — there is no second credential.
+	achArm := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "https://api.ackstorm.ai/mcp/ach-memory", Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeAch},
+	}})
+	ab, _ := json.Marshal(achArm)
+	var aM map[string]any
+	_ = json.Unmarshal(ab, &aM)
+	aAuth := aM["achMemory"].(map[string]any)["auth"].(map[string]any)
+	if aAuth["type"] != "ach" {
+		t.Errorf("ach arm type = %v, want ach", aAuth["type"])
+	}
+	if _, present := aAuth["env"]; present {
+		t.Errorf("ach arm must not render env: %s", ab)
+	}
+
+	noAuth := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m/mcp/"}})
 	nb, _ := json.Marshal(noAuth)
 	var nm map[string]any
 	_ = json.Unmarshal(nb, &nm)

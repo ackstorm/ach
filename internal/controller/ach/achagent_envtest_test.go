@@ -437,8 +437,8 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-mem", Key: "ek"}},
 				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
 				Memory: &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
-					Endpoint: "http://ach-memory",
-					Auth:     &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					Endpoint: "http://ach-memory.ach.svc:8000/mcp/",
+					Auth:     &achv1alpha1.AchMemoryAuthSpec{Type: "bearer", SecretRef: &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"}},
 				}},
 				Channels: []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 			},

@@ -57,10 +57,12 @@ kubectl -n engineering create secret generic gitlab-webhook \
 kubectl -n engineering create secret generic gitlab-clone \
   --from-literal=token=<gitlab-read-token>
 
-# 4. (agent-memory.yaml only) the ach-memory user key, injected as
-#    ACH_SECRET_MEMORY_AUTH — NOT the ek_.
-kubectl -n engineering create secret generic ach-memory-key \
-  --from-literal=token=<ach-memory-user-key>
+# 4. NOT needed for agent-memory.yaml as shipped: it uses memory auth type=ach,
+#    where the harness sends its own ek_ and ACH resolves the principal. Only the
+#    `type: bearer` arm (talking to ach-memory directly) needs a user key, which
+#    the operator injects as ACH_SECRET_MEMORY_AUTH — NOT the ek_:
+# kubectl -n engineering create secret generic ach-memory-key \
+#   --from-literal=token=<ach-memory-user-key>
 ```
 
 ## Apply
@@ -68,8 +70,8 @@ kubectl -n engineering create secret generic ach-memory-key \
 ```bash
 kubectl apply -f profile.yaml
 kubectl apply -f agent.yaml
-# Optional: an agent with the ach-memory backend (auth + a per-agent memory
-# bank the harness derives at boot). Shares the `standard` profile.
+# Optional: an agent with the ach-memory backend, reached through ACH with the
+# agent's own ek_ (auth type: ach). Shares the `standard` profile.
 kubectl apply -f agent-memory.yaml
 ```
 

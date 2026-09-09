@@ -177,6 +177,33 @@ _Appears in:_
 | `baseUrl` _string_ |  |  |  |
 
 
+#### AchMemoryAuthSpec
+
+
+
+AchMemoryAuthSpec selects HOW the harness authenticates to ach-memory
+(config: memory.achMemory.auth). Omit the whole block for an internal URL that
+needs no auth header at all.
+
+The two arms carry different credentials, and the choice is not cosmetic:
+  - ach    → the harness sends its OWN ek_ as ACH's `x-ach-key` to ACH's MCP
+    gateway, which forwards to LiteLLM and resolves the principal. There is no
+    second credential, so this arm takes no secretRef. `Authorization: Bearer`
+    is NOT interchangeable — ACH's scheme is the header, and a Bearer 401s.
+  - bearer → a minted ach-memory USER key in an env var, for talking to
+    ach-memory directly. Needs the usual secretKeyRef plumbing.
+
+
+
+_Appears in:_
+- [AchMemorySpec](#achmemoryspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ |  |  | Enum: [ach bearer] <br />Required: \{\} <br /> |
+| `secretRef` _[SecretKeyRef](#secretkeyref)_ | SecretRef is the ach-memory user key, bearer arm only. Same env-only mechanism<br />as webhook/a2a: the operator injects the value into the pod from this Secret and<br />renders only the env NAME. NOTE: the key that first bootstraps a project OWNS it —<br />rotating this to a DIFFERENT ach-memory user orphans the bank. |  |  |
+
+
 #### AchMemorySpec
 
 
@@ -190,8 +217,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `endpoint` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `auth` _[SecretKeyRef](#secretkeyref)_ | Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,<br />and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only<br />secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from<br />this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL. |  |  |
+| `endpoint` _string_ | Endpoint is the COMPLETE MCP endpoint, rendered VERBATIM — the harness appends<br />nothing, not `/mcp`, not a trailing slash. Whether ach-memory sits at a root<br />(`https://memory.internal/mcp/`) or behind ACH's gateway<br />(`https://api.ackstorm.ai/mcp/ach-memory`) is the operator's call. Do NOT append a<br />path here: a client that appends its own is how requests end up at `/mcp/mcp/`. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `auth` _[AchMemoryAuthSpec](#achmemoryauthspec)_ |  |  |  |
 | `project` _string_ | Project overrides the memory-bank slug. Empty (the norm) → the harness derives<br />\{POD_NAMESPACE\}-\{agent.name\} at boot, one bank per agent. Static: the slug SELECTS a<br />bank, so a payload-derived one would let an inbound event pick which bank the agent<br />reads and writes — the harness rejects \{\{ \}\} here, and so does the CEL below. |  |  |
 
 
@@ -1821,7 +1848,7 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 
 _Appears in:_
 - [A2AAuthSpec](#a2aauthspec)
-- [AchMemorySpec](#achmemoryspec)
+- [AchMemoryAuthSpec](#achmemoryauthspec)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
 - [WebhookAuthSpec](#webhookauthspec)

@@ -134,13 +134,19 @@ func renderMatrix() map[string]renderCase {
 	m["prompt-ach"] = promptAch
 	memA := base("ma", cron)
 	memA.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
-		Endpoint: "http://ach-memory", Project: "team-reviewer",
-		Auth: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"},
+		Endpoint: "http://ach-memory.ach.svc:8000/mcp/", Project: "team-reviewer",
+		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
 	}}
-	m["memory-ach-memory"] = memA
+	m["memory-ach-memory-bearer"] = memA
+	memAch := base("mach", cron)
+	memAch.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "https://api.ackstorm.ai/mcp/ach-memory",
+		Auth:     &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeAch},
+	}}
+	m["memory-ach-memory-ach-arm"] = memAch
 	memAmin := base("mamin", cron)
 	memAmin.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
-		Endpoint: "http://ach-memory",
+		Endpoint: "http://ach-memory.ach.svc:8000/mcp/",
 	}}
 	m["memory-ach-memory-minimal"] = memAmin
 	memC := base("mc", cron)
