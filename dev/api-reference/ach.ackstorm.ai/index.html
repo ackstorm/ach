@@ -1205,6 +1205,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#achmemoryauthspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AchMemoryAuthSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#achmemoryspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2341,6 +2352,17 @@
     <span class="md-ellipsis">
       
         AchEndpointSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#achmemoryauthspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AchMemoryAuthSpec
       
     </span>
   </a>
@@ -3717,6 +3739,43 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 </tr>
 </tbody>
 </table>
+<h4 id="achmemoryauthspec">AchMemoryAuthSpec<a class="headerlink" href="#achmemoryauthspec" title="Permanent link">&para;</a></h4>
+<p>AchMemoryAuthSpec selects HOW the harness authenticates to ach-memory
+(config: memory.achMemory.auth). Omit the whole block for an internal URL that
+needs no auth header at all.</p>
+<p>The two arms carry different credentials, and the choice is not cosmetic:
+  - ach    → the harness sends its OWN ek_ as ACH's <code>x-ach-key</code> to ACH's MCP
+    gateway, which forwards to LiteLLM and resolves the principal. There is no
+    second credential, so this arm takes no secretRef. <code>Authorization: Bearer</code>
+    is NOT interchangeable — ACH's scheme is the header, and a Bearer 401s.
+  - bearer → a minted ach-memory USER key in an env var, for talking to
+    ach-memory directly. Needs the usual secretKeyRef plumbing.</p>
+<p><em>Appears in:</em>
+- <a href="#achmemoryspec">AchMemorySpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>Enum: [ach bearer] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>secretRef</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
+<td>SecretRef is the ach-memory user key, bearer arm only. Same env-only mechanism<br />as webhook/a2a: the operator injects the value into the pod from this Secret and<br />renders only the env NAME. NOTE: the key that first bootstraps a project OWNS it —<br />rotating this to a DIFFERENT ach-memory user orphans the bank.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
 <h4 id="achmemoryspec">AchMemorySpec<a class="headerlink" href="#achmemoryspec" title="Permanent link">&para;</a></h4>
 <p>AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).</p>
 <p><em>Appears in:</em>
@@ -3733,13 +3792,13 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 <tbody>
 <tr>
 <td><code>endpoint</code> <em>string</em></td>
-<td></td>
+<td>Endpoint is the COMPLETE MCP endpoint, rendered VERBATIM — the harness appends<br />nothing, not <code>/mcp</code>, not a trailing slash. Whether ach-memory sits at a root<br />(<code>https://memory.internal/mcp/</code>) or behind ACH's gateway<br />(<code>https://api.ackstorm.ai/mcp/ach-memory</code>) is the operator's call. Do NOT append a<br />path here: a client that appends its own is how requests end up at <code>/mcp/mcp/</code>.</td>
 <td></td>
 <td>MinLength: 1 <br />Required: {} <br /></td>
 </tr>
 <tr>
-<td><code>auth</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
-<td>Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,<br />and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only<br />secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from<br />this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL.</td>
+<td><code>auth</code> <em><a href="#achmemoryauthspec">AchMemoryAuthSpec</a></em></td>
+<td></td>
 <td></td>
 <td></td>
 </tr>
@@ -7050,7 +7109,7 @@ prefix listing (directory scope).</p>
 <p>SecretKeyRef identifies a key in a same-namespace Secret.</p>
 <p><em>Appears in:</em>
 - <a href="#a2aauthspec">A2AAuthSpec</a>
-- <a href="#achmemoryspec">AchMemorySpec</a>
+- <a href="#achmemoryauthspec">AchMemoryAuthSpec</a>
 - <a href="#identityspec">IdentitySpec</a>
 - <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a>
 - <a href="#webhookauthspec">WebhookAuthSpec</a></p>
