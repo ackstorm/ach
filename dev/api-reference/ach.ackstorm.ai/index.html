@@ -1205,6 +1205,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#achmemoryspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AchMemorySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentdefaults" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1601,17 +1612,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#hindsightspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        HindsightSpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#identityspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1737,17 +1737,6 @@
     <span class="md-ellipsis">
       
         MemorySpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mentalmodelspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MentalModelSpec
       
     </span>
   </a>
@@ -2359,6 +2348,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#achmemoryspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AchMemorySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentdefaults" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2755,17 +2755,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#hindsightspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        HindsightSpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#identityspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2891,17 +2880,6 @@
     <span class="md-ellipsis">
       
         MemorySpec
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mentalmodelspec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MentalModelSpec
       
     </span>
   </a>
@@ -3734,6 +3712,40 @@ operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result block
 <tr>
 <td><code>baseUrl</code> <em>string</em></td>
 <td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="achmemoryspec">AchMemorySpec<a class="headerlink" href="#achmemoryspec" title="Permanent link">&para;</a></h4>
+<p>AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).</p>
+<p><em>Appears in:</em>
+- <a href="#memoryspec">MemorySpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>endpoint</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>auth</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
+<td>Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,<br />and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only<br />secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from<br />this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>project</code> <em>string</em></td>
+<td>Project overrides the memory-bank slug. Empty (the norm) → the harness derives<br />{POD_NAMESPACE}-{agent.name} at boot, one bank per agent. Static: the slug SELECTS a<br />bank, so a payload-derived one would let an inbound event pick which bank the agent<br />reads and writes — the harness rejects {{ }} here, and so does the CEL below.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5403,52 +5415,6 @@ Service targetPort and the container probes. Harness default port is 8080.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="hindsightspec">HindsightSpec<a class="headerlink" href="#hindsightspec" title="Permanent link">&para;</a></h4>
-<p>HindsightSpec is the hindsight memory backend (config: memory.hindsight).</p>
-<p><em>Appears in:</em>
-- <a href="#memoryspec">MemorySpec</a></p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-<th>Default</th>
-<th>Validation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>endpoint</code> <em>string</em></td>
-<td></td>
-<td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
-</tr>
-<tr>
-<td><code>bank</code> <em>string</em></td>
-<td>Bank is the static, harness-owned memory bank id. NEVER template it from<br />inbound payload (untrusted → cross-tenant memory); per-repo partitioning is<br />via tags, harness-side.</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>auth</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
-<td>Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).<br />Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the<br />value into the pod from this Secret and renders only the env NAME. Omit for an<br />internal/no-auth Hindsight URL.</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>mission</code> <em>string</em></td>
-<td>Mission is passed to create_bank at provisioning (free text).</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>mentalModels</code> <em><a href="#mentalmodelspec">MentalModelSpec</a> array</em></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-</tbody>
-</table>
 <h4 id="identityspec">IdentitySpec<a class="headerlink" href="#identityspec" title="Permanent link">&para;</a></h4>
 <p>IdentitySpec carries the ACH ek_ (config: injected as ACH_TOKEN env via secretKeyRef).</p>
 <p><em>Appears in:</em>
@@ -5871,7 +5837,7 @@ mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP se
 </table>
 <h4 id="memoryspec">MemorySpec<a class="headerlink" href="#memoryspec" title="Permanent link">&para;</a></h4>
 <p>MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
-Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+Asymmetry is intentional and mirrors the schema: AchMemoryMemory REQUIRES the achMemory block
 (endpoint has no default); CodememMemory requires only <code>type</code> — {"type":"codemem"} is valid
 (dbPath/project are derived/defaulted by the harness).</p>
 <p><em>Appears in:</em>
@@ -5890,10 +5856,10 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <td><code>type</code> <em>string</em></td>
 <td></td>
 <td></td>
-<td>Enum: [hindsight codemem] <br />Required: {} <br /></td>
+<td>Enum: [codemem ach-memory] <br />Required: {} <br /></td>
 </tr>
 <tr>
-<td><code>hindsight</code> <em><a href="#hindsightspec">HindsightSpec</a></em></td>
+<td><code>achMemory</code> <em><a href="#achmemoryspec">AchMemorySpec</a></em></td>
 <td></td>
 <td></td>
 <td></td>
@@ -5903,53 +5869,6 @@ Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hi
 <td></td>
 <td></td>
 <td></td>
-</tr>
-</tbody>
-</table>
-<h4 id="mentalmodelspec">MentalModelSpec<a class="headerlink" href="#mentalmodelspec" title="Permanent link">&para;</a></h4>
-<p>MentalModelSpec is one Hindsight mental model the harness provisions at boot
-(config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.</p>
-<p><em>Appears in:</em>
-- <a href="#hindsightspec">HindsightSpec</a></p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-<th>Default</th>
-<th>Validation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>id</code> <em>string</em></td>
-<td></td>
-<td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
-</tr>
-<tr>
-<td><code>name</code> <em>string</em></td>
-<td></td>
-<td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
-</tr>
-<tr>
-<td><code>sourceQuery</code> <em>string</em></td>
-<td>SourceQuery is the question the harness runs to build/refresh the model.</td>
-<td></td>
-<td>MinLength: 1 <br />Required: {} <br /></td>
-</tr>
-<tr>
-<td><code>autoRefresh</code> <em>boolean</em></td>
-<td>AutoRefresh triggers a refresh after consolidation (harness default false).</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td><code>maxTokens</code> <em>integer</em></td>
-<td>MaxTokens caps the rendered summary (harness default 2048). Omit to use it.</td>
-<td></td>
-<td>Minimum: 1 <br /></td>
 </tr>
 </tbody>
 </table>
@@ -7131,7 +7050,7 @@ prefix listing (directory scope).</p>
 <p>SecretKeyRef identifies a key in a same-namespace Secret.</p>
 <p><em>Appears in:</em>
 - <a href="#a2aauthspec">A2AAuthSpec</a>
-- <a href="#hindsightspec">HindsightSpec</a>
+- <a href="#achmemoryspec">AchMemorySpec</a>
 - <a href="#identityspec">IdentitySpec</a>
 - <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a>
 - <a href="#webhookauthspec">WebhookAuthSpec</a></p>
