@@ -55,16 +55,19 @@ An empty or absent `models` list means every model. An empty or absent `agents`
 list means every agent. Both fail OPEN. `mcp_servers` is the exception and fails
 closed. This is why ACH's shell team carries sentinels rather than empty lists:
 
-    models                                = ["__deny_all__"]
-    object_permission.mcp_servers         = []
-    object_permission.mcp_access_groups   = []
-    object_permission.agents              = ["00000000-0000-0000-0000-000000000000"]
-    object_permission.agent_access_groups = []
+    models                                 = ["__deny_all__"]
+    object_permission.mcp_servers          = []
+    object_permission.mcp_access_groups    = []
+    object_permission.mcp_tool_permissions = {}
+    object_permission.agents               = ["00000000-0000-0000-0000-000000000000"]
+    object_permission.agent_access_groups  = []
 
-These sentinels cover four axes — `models`, `mcp_servers`, `mcp_access_groups`,
-and `agents` (+ `agent_access_groups`). `object_permission`'s other fields
-(`vector_stores`, `mcp_tool_permissions`, `mcp_toolsets`, `blocked_tools`,
-`search_tools`, `mcp_tool_search_enabled`) are left alone (§9).
+These sentinels cover four axes — `models`, `mcp_servers` (+
+`mcp_access_groups` and `mcp_tool_permissions`, both of which grant servers on
+the same code path, §12), and `agents` (+ `agent_access_groups`).
+`object_permission`'s other fields (`vector_stores`, `mcp_toolsets`,
+`blocked_tools`, `search_tools`, `mcp_tool_search_enabled`) are left alone —
+§12 says why each one is safe to leave.
 
 Measured on env `test-env` (`gemini.gemini-flash-latest`, `mcp-slack`,
 `finops-advisor`):
@@ -122,7 +125,7 @@ window must NEVER be logged as a successful revocation.
 every key optional: `mcp_servers`, `mcp_access_groups`, `mcp_tool_permissions`,
 `mcp_toolsets`, `blocked_tools`, `vector_stores`, `agents`,
 `agent_access_groups`, `models`, `search_tools`, `mcp_tool_search_enabled`.
-ACH manages only the four it measured; the rest are left alone.
+ACH manages the five it measured (§5); the rest are left alone (§12).
 
 | endpoint | accepts `object_permission` | returns it inline |
 |---|---|---|
@@ -275,3 +278,51 @@ identifier ACH exports to a backend for group-owned-resource authorization.
 plumbing and are filtered out before minting
 (`internal/forwarder/proxy/groups.go`) — they never leave the forwarder, so
 a backend never sees ACH's internal shell-team names.
+
+## 12. Which object_permission fields can GRANT (measured against LiteLLM v1.99.1, 2026-09-09)
+
+Read from the v1.99.1 tree, prompted by a live incident: an admin granted an
+MCP server to a shell team through the LiteLLM UI, the operator reverted
+`mcp_servers` on the next reconcile, and the grant kept working anyway.
+
+`mcp_tool_permissions` is a per-server map of allowed tool names, so it reads
+as a NARROWING field. It is also a GRANT: a team's allowed-server set is
+
+    expand_permission_list(mcp_servers)
+    | legacy mcp_access_groups servers
+    | expand_tool_permissions(mcp_tool_permissions).keys()      # ← the grant
+    | team access_group_ids → access_mcp_server_ids
+
+(`_team_granted_servers`, `_experimental/mcp_server/auth/user_api_key_auth_mcp.py`).
+An entry there reaches its server even when `mcp_servers` is the empty deny-all
+list, and `get_allowed_tools_for_server` then caps that server's tools to the
+map's values — so a leftover entry both **widens** the server set past what the
+Environment granted and **narrows** the tools of a server the access group
+granted in full. Neither is visible in the UI's "MCP Servers / Access Groups"
+panel. This is why the shell team now sends `mcp_tool_permissions = {}` and
+`ShellTeamDrifted` treats any content as drift.
+
+The other unmanaged fields, and why each is safe to leave alone at v1.99.1:
+
+| field | grants? | why ACH leaves it |
+|---|---|---|
+| `mcp_toolsets` | key path only | absent from `_team_granted_servers` and from the team branch of `get_allowed_tools_for_server` — inert on a TEAM |
+| `models` | no | no reader in the auth path; team model access is `team.models` (already sentinelled) + access-group `access_model_names` |
+| `vector_stores` | yes, but | strict allow-list: `_object_permission_allows_vector_store` returns False on empty/null, so the empty default is already closed |
+| `search_tools`, `mcp_tool_search_enabled` | no | no enforcement reader in the auth path |
+| `blocked_tools` | no | deny-list — a hand-edit can only restrict |
+
+Re-check this table on a LiteLLM upgrade: `models` and `search_tools` are
+inert TODAY, not inert by design.
+
+### Access-group grants are cached per replica for 600s
+
+`get_access_object` caches the group under `access_group_id:<id>` with
+`DEFAULT_ACCESS_GROUP_CACHE_TTL` (default **600**, `litellm/constants.py`).
+`PUT /v1/access_group/{id}` re-caches only on the replica that served the
+write, so with N replicas an Environment's new grant is live on one pod and
+absent on the others until their own TTL expires. Symptom: the operator
+reports `AccessGroupSynced=True`, the group row is correct, and a share of
+requests still 403 for up to ten minutes. It is cache, not the permission
+model — do not go looking for a mirror bug. Deployments should pin the TTL
+down (ackstorm prod runs `DEFAULT_ACCESS_GROUP_CACHE_TTL=60`).

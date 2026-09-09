@@ -129,10 +129,18 @@ func (e TeamListEntry) MemberEmails() []string {
 // an absent one means the same, so the deny-all shell team MUST transmit
 // its lists explicitly. See references/litellm-permission-model.md §5.
 type TeamObjectPermission struct {
-	MCPServers        []string `json:"mcp_servers"`
-	MCPAccessGroups   []string `json:"mcp_access_groups"`
-	Agents            []string `json:"agents"`
-	AgentAccessGroups []string `json:"agent_access_groups"`
+	MCPServers      []string `json:"mcp_servers"`
+	MCPAccessGroups []string `json:"mcp_access_groups"`
+	// MCPToolPermissions is a per-server allow-list of tool names. It reads
+	// like a NARROWING field but LiteLLM also treats it as a GRANT: a team's
+	// allowed-server set unions the keys of this map
+	// (_team_granted_servers, litellm v1.99.1), so a server named here is
+	// reachable even when mcp_servers is the empty deny-all list. That makes
+	// it part of the shell team's ceiling, not an unrelated setting — ACH
+	// sends it as an explicit empty map and treats any content as drift.
+	MCPToolPermissions map[string][]string `json:"mcp_tool_permissions"`
+	Agents             []string            `json:"agents"`
+	AgentAccessGroups  []string            `json:"agent_access_groups"`
 }
 
 // MarshalJSON normalises every nil field to an empty list before encoding.
@@ -155,6 +163,9 @@ func (p TeamObjectPermission) MarshalJSON() ([]byte, error) {
 	}
 	if out.AgentAccessGroups == nil {
 		out.AgentAccessGroups = []string{}
+	}
+	if out.MCPToolPermissions == nil {
+		out.MCPToolPermissions = map[string][]string{}
 	}
 	return json.Marshal(out)
 }

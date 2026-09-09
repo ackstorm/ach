@@ -62,12 +62,16 @@ func ShellTeamAlias(env string) string { return ShellTeamPrefix + env }
 // ShellTeamPermissions is the deny-all object_permission block. MCP lists are
 // explicit empties (mcp_servers is the one dimension that fails CLOSED when
 // empty); the agent list carries the sentinel because empty fails OPEN.
+// mcp_tool_permissions is an empty map for the reason on the field itself:
+// LiteLLM counts its KEYS as granted servers, so leaving it unmanaged left a
+// hand-written entry granting a server the Environment never listed.
 func ShellTeamPermissions() *TeamObjectPermission {
 	return &TeamObjectPermission{
-		MCPServers:        []string{},
-		MCPAccessGroups:   []string{},
-		Agents:            []string{ShellTeamDenyAllAgent},
-		AgentAccessGroups: []string{},
+		MCPServers:         []string{},
+		MCPAccessGroups:    []string{},
+		MCPToolPermissions: map[string][]string{},
+		Agents:             []string{ShellTeamDenyAllAgent},
+		AgentAccessGroups:  []string{},
 	}
 }
 
@@ -236,6 +240,7 @@ func ShellTeamDrifted(e TeamListEntry, wantGuardrails []string) bool {
 	}
 	return len(op.MCPServers) != 0 ||
 		len(op.MCPAccessGroups) != 0 ||
+		len(op.MCPToolPermissions) != 0 ||
 		len(op.AgentAccessGroups) != 0 ||
 		!slices.Equal(op.Agents, []string{ShellTeamDenyAllAgent})
 }

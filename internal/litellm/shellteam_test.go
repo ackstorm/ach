@@ -91,6 +91,19 @@ func TestShellTeamDrifted(t *testing.T) {
 				Agents:     []string{ShellTeamDenyAllAgent},
 			},
 		},
+		// The LiteLLM UI writes a hand-grant here rather than into
+		// mcp_servers, and LiteLLM unions the map's KEYS into the team's
+		// granted servers — so this reaches mcp-slack past an mcp_servers
+		// that is still the empty deny-all list. Measured in prod on
+		// v1.99.1 (references/litellm-permission-model.md §12).
+		"an mcp server was granted through tool permissions": {
+			Models: []string{ShellTeamDenyAllModel},
+			ObjectPermission: &TeamObjectPermission{
+				MCPServers:         []string{},
+				MCPToolPermissions: map[string][]string{"mcp-slack": {"slack_post_message"}},
+				Agents:             []string{ShellTeamDenyAllAgent},
+			},
+		},
 	}
 	for name, e := range cases {
 		if !ShellTeamDrifted(e, nil) {
