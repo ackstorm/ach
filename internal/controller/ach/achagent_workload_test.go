@@ -303,22 +303,45 @@ func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
 	}
 }
 
+// POD_NAMESPACE feeds the ach-memory project slug ({POD_NAMESPACE}-{agent.name}).
+// Without it the harness degrades to the bare agent name — same bank, different
+// key, no error anywhere — so assert the downward-API ref explicitly.
+func TestBuildAgentEnv_PodNamespaceFromDownwardAPI(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img"
+
+	for _, e := range buildAgentEnv(a, p, "") {
+		if e.Name != "POD_NAMESPACE" {
+			continue
+		}
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.FieldRef == nil ||
+			e.ValueFrom.FieldRef.FieldPath != "metadata.namespace" {
+			t.Fatalf("POD_NAMESPACE must be a downward-API fieldRef to metadata.namespace, got %+v", e)
+		}
+		return
+	}
+	t.Fatal("POD_NAMESPACE not injected")
+}
+
 func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
-	a.Spec.Memory = &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
-		Endpoint: "http://h", Auth: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"},
+	a.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "http://ach-memory", Auth: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
 	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 
-	// The hindsight admin secret rides in env (secretKeyRef), never inline, never a file.
+	// The ach-memory user key rides in env (secretKeyRef), never inline, never a file.
 	var found bool
 	for _, e := range buildAgentEnv(a, p, "") {
-		if e.Name != "ACH_SECRET_MEMORY_HINDSIGHT" {
+		if e.Name != "ACH_SECRET_MEMORY_AUTH" {
 			continue
 		}
 		found = true
@@ -332,10 +355,10 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 	}
 
 	// No auth → no such env var.
-	a.Spec.Memory.Hindsight.Auth = nil
+	a.Spec.Memory.AchMemory.Auth = nil
 	for _, e := range buildAgentEnv(a, p, "") {
-		if e.Name == "ACH_SECRET_MEMORY_HINDSIGHT" {
-			t.Errorf("no-auth hindsight must not inject ACH_SECRET_MEMORY_HINDSIGHT")
+		if e.Name == "ACH_SECRET_MEMORY_AUTH" {
+			t.Errorf("no-auth ach-memory must not inject ACH_SECRET_MEMORY_AUTH")
 		}
 	}
 }

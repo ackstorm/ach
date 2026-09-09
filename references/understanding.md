@@ -151,8 +151,10 @@ parity checklist: `references/adding-a-cr-kind.md`.
   an isolation boundary (same-uid reads /proc/pid/environ); channels
   webhook (gitlab/github/generic auth, botUsername loop-guard, triggerUsers
   allowlist) / cron / queue / a2a; session spec (none/auto/custom + compact/
-  rotate overflow); memory hindsight (bank NEVER templated from payload —
-  cross-tenant risk) / codemem; harness MCP servers repoCheckout (harness-
+  rotate overflow); memory ach-memory (project slug NEVER templated from
+  payload — cross-tenant risk; empty ⇒ harness derives {POD_NAMESPACE}-{agent
+  .name}, so the Deployment carries POD_NAMESPACE via the downward API) /
+  codemem; harness MCP servers repoCheckout (harness-
   hosted, ek-injected) / local (stdio passthrough, ACH_*/ek stripped from env
   fwd) / remote (headers = ${env:NAME} refs; co-resident same-uid CAN read —
   front via ACH if unacceptable); `expose.service` + `expose.gateway` both

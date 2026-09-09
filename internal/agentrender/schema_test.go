@@ -132,21 +132,17 @@ func renderMatrix() map[string]renderCase {
 	promptAch := base("pa", cron)
 	promptAch.agent.Spec.Prompt = &achv1alpha1.AgentPromptSpec{System: achv1alpha1.PromptSystemSpec{Type: "ach", Ach: "persona", AchFile: "main.md"}}
 	m["prompt-ach"] = promptAch
-	memH := base("mh", cron)
-	memH.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
-		Endpoint: "http://h", Bank: "b", Mission: "reviewer",
-		Auth: &achv1alpha1.SecretKeyRef{Name: "hs", Key: "token"},
-		MentalModels: []achv1alpha1.MentalModelSpec{
-			{ID: "arch", Name: "Arch", SourceQuery: "what arch?", AutoRefresh: true, MaxTokens: ptr(int64(2048))},
-			{ID: "conv", Name: "Conv", SourceQuery: "what conventions?"},
-		},
+	memA := base("ma", cron)
+	memA.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "http://ach-memory", Project: "team-reviewer",
+		Auth: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"},
 	}}
-	m["memory-hindsight"] = memH
-	memHmin := base("mhmin", cron)
-	memHmin.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
-		Endpoint: "http://h", MentalModels: []achv1alpha1.MentalModelSpec{{ID: "x", Name: "X", SourceQuery: "q?"}},
+	m["memory-ach-memory"] = memA
+	memAmin := base("mamin", cron)
+	memAmin.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "http://ach-memory",
 	}}
-	m["memory-hindsight-minimal"] = memHmin
+	m["memory-ach-memory-minimal"] = memAmin
 	memC := base("mc", cron)
 	memC.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "codemem"}
 	m["memory-codemem-bare"] = memC

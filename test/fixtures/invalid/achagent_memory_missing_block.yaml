@@ -1,0 +1,32 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: ACHAgent.spec.memory must carry the sub-block matching its type.
+# Expected error substring: "memory.achMemory is required"
+#
+# This manifest is otherwise valid but declares memory.type=ach-memory with NO
+# achMemory: block. endpoint has no default, so the harness could not boot the
+# backend — the discriminator CEL rule
+#   (self.type=='ach-memory' && has(self.achMemory)) || (self.type=='codemem')
+# rejects it. (codemem is deliberately asymmetric: {"type":"codemem"} is valid,
+# because the harness derives dbPath/project.)
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-memory-missing-block
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"
+  memory:
+    type: ach-memory
+    # achMemory block deliberately omitted → CEL rejection

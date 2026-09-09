@@ -57,10 +57,10 @@ kubectl -n engineering create secret generic gitlab-webhook \
 kubectl -n engineering create secret generic gitlab-clone \
   --from-literal=token=<gitlab-read-token>
 
-# 4. (agent-memory.yaml only) the Hindsight admin bearer, injected as
-#    ACH_SECRET_MEMORY_HINDSIGHT — NOT the ek_.
-kubectl -n engineering create secret generic hindsight-admin \
-  --from-literal=token=<hindsight-admin-bearer>
+# 4. (agent-memory.yaml only) the ach-memory user key, injected as
+#    ACH_SECRET_MEMORY_AUTH — NOT the ek_.
+kubectl -n engineering create secret generic ach-memory-key \
+  --from-literal=token=<ach-memory-user-key>
 ```
 
 ## Apply
@@ -68,12 +68,9 @@ kubectl -n engineering create secret generic hindsight-admin \
 ```bash
 kubectl apply -f profile.yaml
 kubectl apply -f agent.yaml
-# Optional: an agent with the Hindsight memory backend (auth + mission +
-# mentalModels the harness provisions at boot). Shares the `standard` profile.
+# Optional: an agent with the ach-memory backend (auth + a per-agent memory
+# bank the harness derives at boot). Shares the `standard` profile.
 kubectl apply -f agent-memory.yaml
-# Optional: a GitLab MR reviewer wired to Hindsight over an internal (no-auth)
-# URL — webhook channel + four mentalModels. No hindsight-admin secret needed.
-kubectl apply -f agent-gitlab-hindsight.yaml
 ```
 
 ## Status
@@ -163,7 +160,7 @@ spec:
   from the pod:
   - **redis**, if any `channels[].type: queue`, or if the stats sink (`ACH_STATS_REDIS_URL`) is
     configured
-  - the **memory backend**, if `memory.hindsight.endpoint` is set
+  - the **memory backend**, if `memory.achMemory.endpoint` is set
   Miss one and it won't error — memory and stats are fail-open by design, so the agent just
   degrades silently (no session recall, no metrics) instead of failing loudly.
   A2A peers need no rule of their own: they arrive from hydration and are dialled through

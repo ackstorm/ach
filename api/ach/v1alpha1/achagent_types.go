@@ -71,49 +71,24 @@ type AgentPromptSpec struct {
 	Compose string `json:"compose,omitempty"`
 }
 
-// MentalModelSpec is one Hindsight mental model the harness provisions at boot
-// (config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
-type MentalModelSpec struct {
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	ID string `json:"id"`
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-	// SourceQuery is the question the harness runs to build/refresh the model.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	SourceQuery string `json:"sourceQuery"`
-	// AutoRefresh triggers a refresh after consolidation (harness default false).
-	// +optional
-	AutoRefresh bool `json:"autoRefresh,omitempty"`
-	// MaxTokens caps the rendered summary (harness default 2048). Omit to use it.
-	// +optional
-	// +kubebuilder:validation:Minimum=1
-	MaxTokens *int64 `json:"maxTokens,omitempty"`
-}
-
-// HindsightSpec is the hindsight memory backend (config: memory.hindsight).
-type HindsightSpec struct {
+// AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).
+type AchMemorySpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Endpoint string `json:"endpoint"`
-	// Bank is the static, harness-owned memory bank id. NEVER template it from
-	// inbound payload (untrusted → cross-tenant memory); per-repo partitioning is
-	// via tags, harness-side.
-	// +optional
-	Bank string `json:"bank,omitempty"`
-	// Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).
-	// Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the
-	// value into the pod from this Secret and renders only the env NAME. Omit for an
-	// internal/no-auth Hindsight URL.
+	// Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,
+	// and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only
+	// secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from
+	// this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL.
 	// +optional
 	Auth *SecretKeyRef `json:"auth,omitempty"`
-	// Mission is passed to create_bank at provisioning (free text).
+	// Project overrides the memory-bank slug. Empty (the norm) → the harness derives
+	// {POD_NAMESPACE}-{agent.name} at boot, one bank per agent. Static: the slug SELECTS a
+	// bank, so a payload-derived one would let an inbound event pick which bank the agent
+	// reads and writes — the harness rejects {{ }} here, and so does the CEL below.
 	// +optional
-	Mission string `json:"mission,omitempty"`
-	// +optional
-	MentalModels []MentalModelSpec `json:"mentalModels,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="!self.contains('{{')",message="memory.achMemory.project must be static — templating ({{ }}) is not allowed"
+	Project string `json:"project,omitempty"`
 }
 
 // CodememSpec is the codemem memory backend (config: memory.codemem). All fields optional.
@@ -125,16 +100,16 @@ type CodememSpec struct {
 }
 
 // MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
-// Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+// Asymmetry is intentional and mirrors the schema: AchMemoryMemory REQUIRES the achMemory block
 // (endpoint has no default); CodememMemory requires only `type` — {"type":"codemem"} is valid
 // (dbPath/project are derived/defaulted by the harness).
-// +kubebuilder:validation:XValidation:rule="(self.type=='hindsight' && has(self.hindsight)) || (self.type=='codemem')",message="memory.hindsight is required when type=hindsight"
+// +kubebuilder:validation:XValidation:rule="(self.type=='ach-memory' && has(self.achMemory)) || (self.type=='codemem')",message="memory.achMemory is required when type=ach-memory"
 type MemorySpec struct {
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=hindsight;codemem
+	// +kubebuilder:validation:Enum=codemem;ach-memory
 	Type string `json:"type"`
 	// +optional
-	Hindsight *HindsightSpec `json:"hindsight,omitempty"`
+	AchMemory *AchMemorySpec `json:"achMemory,omitempty"`
 	// +optional
 	Codemem *CodememSpec `json:"codemem,omitempty"`
 }

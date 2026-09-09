@@ -209,6 +209,14 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "mcpServers",
 		},
+		// ACHAgent.spec.memory is discriminated on type: ach-memory REQUIRES the
+		// achMemory block (endpoint has no default); codemem does not.
+		{
+			name:           "invalid_achagent_memory_missing_block",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_missing_block.yaml",
+			shouldFail:     true,
+			errMustContain: "memory.achMemory is required",
+		},
 	}
 
 	for _, tc := range cases {

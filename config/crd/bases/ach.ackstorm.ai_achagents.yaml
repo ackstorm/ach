@@ -846,29 +846,20 @@ spec:
               memory:
                 description: |-
                   MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
-                  Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+                  Asymmetry is intentional and mirrors the schema: AchMemoryMemory REQUIRES the achMemory block
                   (endpoint has no default); CodememMemory requires only `type` — {"type":"codemem"} is valid
                   (dbPath/project are derived/defaulted by the harness).
                 properties:
-                  codemem:
-                    description: 'CodememSpec is the codemem memory backend (config:
-                      memory.codemem). All fields optional.'
-                    properties:
-                      dbPath:
-                        type: string
-                      project:
-                        type: string
-                    type: object
-                  hindsight:
-                    description: 'HindsightSpec is the hindsight memory backend (config:
-                      memory.hindsight).'
+                  achMemory:
+                    description: 'AchMemorySpec is the ach-memory memory backend (config:
+                      memory.achMemory).'
                     properties:
                       auth:
                         description: |-
-                          Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).
-                          Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the
-                          value into the pod from this Secret and renders only the env NAME. Omit for an
-                          internal/no-auth Hindsight URL.
+                          Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,
+                          and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only
+                          secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from
+                          this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL.
                         properties:
                           key:
                             description: Key is the data key inside the Secret.
@@ -882,66 +873,43 @@ spec:
                         - key
                         - name
                         type: object
-                      bank:
-                        description: |-
-                          Bank is the static, harness-owned memory bank id. NEVER template it from
-                          inbound payload (untrusted → cross-tenant memory); per-repo partitioning is
-                          via tags, harness-side.
-                        type: string
                       endpoint:
                         minLength: 1
                         type: string
-                      mentalModels:
-                        items:
-                          description: |-
-                            MentalModelSpec is one Hindsight mental model the harness provisions at boot
-                            (config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
-                          properties:
-                            autoRefresh:
-                              description: AutoRefresh triggers a refresh after consolidation
-                                (harness default false).
-                              type: boolean
-                            id:
-                              minLength: 1
-                              type: string
-                            maxTokens:
-                              description: MaxTokens caps the rendered summary (harness
-                                default 2048). Omit to use it.
-                              format: int64
-                              minimum: 1
-                              type: integer
-                            name:
-                              minLength: 1
-                              type: string
-                            sourceQuery:
-                              description: SourceQuery is the question the harness
-                                runs to build/refresh the model.
-                              minLength: 1
-                              type: string
-                          required:
-                          - id
-                          - name
-                          - sourceQuery
-                          type: object
-                        type: array
-                      mission:
-                        description: Mission is passed to create_bank at provisioning
-                          (free text).
+                      project:
+                        description: |-
+                          Project overrides the memory-bank slug. Empty (the norm) → the harness derives
+                          {POD_NAMESPACE}-{agent.name} at boot, one bank per agent. Static: the slug SELECTS a
+                          bank, so a payload-derived one would let an inbound event pick which bank the agent
+                          reads and writes — the harness rejects {{ }} here, and so does the CEL below.
                         type: string
+                        x-kubernetes-validations:
+                        - message: memory.achMemory.project must be static — templating
+                            ({{ }}) is not allowed
+                          rule: '!self.contains(''{{'')'
                     required:
                     - endpoint
                     type: object
+                  codemem:
+                    description: 'CodememSpec is the codemem memory backend (config:
+                      memory.codemem). All fields optional.'
+                    properties:
+                      dbPath:
+                        type: string
+                      project:
+                        type: string
+                    type: object
                   type:
                     enum:
-                    - hindsight
                     - codemem
+                    - ach-memory
                     type: string
                 required:
                 - type
                 type: object
                 x-kubernetes-validations:
-                - message: memory.hindsight is required when type=hindsight
-                  rule: (self.type=='hindsight' && has(self.hindsight)) || (self.type=='codemem')
+                - message: memory.achMemory is required when type=ach-memory
+                  rule: (self.type=='ach-memory' && has(self.achMemory)) || (self.type=='codemem')
               model:
                 description: 'ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).'
                 properties:

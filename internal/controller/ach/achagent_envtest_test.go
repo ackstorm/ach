@@ -418,7 +418,7 @@ func TestACHAgent_ExposeServiceDisabled_PrunesService(t *testing.T) {
 	}
 }
 
-// TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef proves the hindsight admin
+// TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef proves the ach-memory user-key
 // secret round-trips: the ConfigMap renders auth.env = the operator-generated
 // name, and the Deployment carries a matching secretKeyRef env var (never inline,
 // never a file). A missing referenced key drives ChannelSecretsResolved=False via
@@ -436,10 +436,9 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 				ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-mem"},
 				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-mem", Key: "ek"}},
 				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-				Memory: &achv1alpha1.MemorySpec{Type: "hindsight", Hindsight: &achv1alpha1.HindsightSpec{
-					Endpoint: "http://h", Mission: "reviewer",
-					Auth:         &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
-					MentalModels: []achv1alpha1.MentalModelSpec{{ID: "arch", Name: "Arch", SourceQuery: "what arch?"}},
+				Memory: &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+					Endpoint: "http://ach-memory",
+					Auth:     &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
 				}},
 				Channels: []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 			},
@@ -459,9 +458,9 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
 		t.Fatalf("config.json invalid: %v", err)
 	}
-	auth := cfg["memory"].(map[string]any)["hindsight"].(map[string]any)["auth"].(map[string]any)
-	if auth["env"] != "ACH_SECRET_MEMORY_HINDSIGHT" {
-		t.Errorf("config memory.hindsight.auth.env = %v, want ACH_SECRET_MEMORY_HINDSIGHT", auth["env"])
+	auth := cfg["memory"].(map[string]any)["achMemory"].(map[string]any)["auth"].(map[string]any)
+	if auth["env"] != "ACH_SECRET_MEMORY_AUTH" {
+		t.Errorf("config memory.achMemory.auth.env = %v, want ACH_SECRET_MEMORY_AUTH", auth["env"])
 	}
 
 	var dep appsv1.Deployment
@@ -470,17 +469,17 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	}
 	var found bool
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
-		if e.Name != "ACH_SECRET_MEMORY_HINDSIGHT" {
+		if e.Name != "ACH_SECRET_MEMORY_AUTH" {
 			continue
 		}
 		found = true
 		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
 			e.ValueFrom.SecretKeyRef.Name != "hs-admin" || e.ValueFrom.SecretKeyRef.Key != "token" {
-			t.Errorf("deployment env ACH_SECRET_MEMORY_HINDSIGHT must be secretKeyRef hs-admin/token, got %+v", e)
+			t.Errorf("deployment env ACH_SECRET_MEMORY_AUTH must be secretKeyRef hs-admin/token, got %+v", e)
 		}
 	}
 	if !found {
-		t.Error("deployment missing ACH_SECRET_MEMORY_HINDSIGHT env var")
+		t.Error("deployment missing ACH_SECRET_MEMORY_AUTH env var")
 	}
 
 	// Referenced key missing from the secret → ChannelSecretsResolved=False.

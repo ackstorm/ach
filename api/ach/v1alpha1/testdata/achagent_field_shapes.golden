@@ -139,24 +139,16 @@ spec.mcpServers[].repoCheckout.tmpBase	string
 spec.mcpServers[].repoCheckout.ttlSeconds	integer
 spec.mcpServers[].type	string enum[local,remote,repoCheckout]
 spec.memory	object
+spec.memory.achMemory	object
+spec.memory.achMemory.auth	object
+spec.memory.achMemory.auth.key	string
+spec.memory.achMemory.auth.name	string
+spec.memory.achMemory.endpoint	string
+spec.memory.achMemory.project	string
 spec.memory.codemem	object
 spec.memory.codemem.dbPath	string
 spec.memory.codemem.project	string
-spec.memory.hindsight	object
-spec.memory.hindsight.auth	object
-spec.memory.hindsight.auth.key	string
-spec.memory.hindsight.auth.name	string
-spec.memory.hindsight.bank	string
-spec.memory.hindsight.endpoint	string
-spec.memory.hindsight.mentalModels	array
-spec.memory.hindsight.mentalModels[]	object
-spec.memory.hindsight.mentalModels[].autoRefresh	boolean
-spec.memory.hindsight.mentalModels[].id	string
-spec.memory.hindsight.mentalModels[].maxTokens	integer
-spec.memory.hindsight.mentalModels[].name	string
-spec.memory.hindsight.mentalModels[].sourceQuery	string
-spec.memory.hindsight.mission	string
-spec.memory.type	string enum[codemem,hindsight]
+spec.memory.type	string enum[ach-memory,codemem]
 spec.model	object
 spec.model.name	string
 spec.model.params	

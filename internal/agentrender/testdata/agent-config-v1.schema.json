@@ -41,6 +41,57 @@
       "title": "A2ABlock",
       "type": "object"
     },
+    "AchMemoryMemory": {
+      "additionalProperties": false,
+      "description": "CONTRACT §2 memory block — ach-memory backend (fail-open §31).\n\nStrict nested form: ``{type: ach-memory, achMemory: {endpoint: ...}}``. Scope is not\nconfigurable (the harness pins ``project``) and the exposed tool set is fixed in code —\na memory tool the operator did not ask for is a tool nobody reviewed.",
+      "properties": {
+        "achMemory": {
+          "$ref": "#/$defs/AchMemoryParams"
+        },
+        "type": {
+          "const": "ach-memory",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "achMemory"
+      ],
+      "title": "AchMemoryMemory",
+      "type": "object"
+    },
+    "AchMemoryParams": {
+      "additionalProperties": false,
+      "description": "ach-memory backend params — the ``memory.achMemory`` sub-block (CONTRACT §2).",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endpoint": {
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "project": {
+          "default": "",
+          "title": "Project",
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "title": "AchMemoryParams",
+      "type": "object"
+    },
     "AgentBlock": {
       "additionalProperties": false,
       "description": "CONTRACT §2 agent block.",
@@ -168,10 +219,10 @@
         },
         {
           "else": {
-            "not": {
-              "required": [
-                "script"
-              ]
+            "properties": {
+              "script": {
+                "type": "null"
+              }
             }
           },
           "if": {
@@ -185,26 +236,16 @@
             ]
           },
           "then": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "prompt"
-                  ]
-                },
-                {
-                  "required": [
-                    "prepare"
-                  ]
-                },
-                {
-                  "required": [
-                    "cleanup"
-                  ]
-                }
-              ]
-            },
             "properties": {
+              "cleanup": {
+                "type": "null"
+              },
+              "prepare": {
+                "type": "null"
+              },
+              "prompt": {
+                "type": "null"
+              },
               "script": {
                 "not": {
                   "type": "null"
@@ -607,6 +648,19 @@
           "default": 1,
           "title": "Maxconcurrentinvocations",
           "type": "integer"
+        },
+        "maxConcurrentScripts": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxconcurrentscripts"
         },
         "maxInvocationSeconds": {
           "default": 600,
@@ -1280,6 +1334,7 @@
         {
           "discriminator": {
             "mapping": {
+              "ach-memory": "#/$defs/AchMemoryMemory",
               "codemem": "#/$defs/CodememMemory",
               "hindsight": "#/$defs/HindsightMemory"
             },
@@ -1291,6 +1346,9 @@
             },
             {
               "$ref": "#/$defs/CodememMemory"
+            },
+            {
+              "$ref": "#/$defs/AchMemoryMemory"
             }
           ]
         },

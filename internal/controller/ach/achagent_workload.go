@@ -83,6 +83,10 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 		{Name: "ACH_BASE_URL", Value: agentrender.ResolveAchBaseURL(a.Spec.Ach, p.Spec.Achagent.Ach, defaultBaseURL)},
 		{Name: "ACH_ENVIRONMENT", Value: a.Spec.Capability.Environment},
 		{Name: "ACH_CONFIG_PATH", Value: configFilePath},
+		// POD_NAMESPACE feeds the ach-memory project slug ({POD_NAMESPACE}-{agent.name}).
+		// Without it the harness silently degrades to the bare agent name — the same bank
+		// under a different key, with no error anywhere.
+		{Name: "POD_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
 		{Name: "ACH_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: a.Spec.Identity.SecretRef.Name},
 			Key:                  a.Spec.Identity.SecretRef.Key,
@@ -104,7 +108,7 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 			Key:                  ref.Key,
 		}}})
 	}
-	// Hindsight admin-auth secret (memory.hindsight.auth) — same env-not-file wiring.
+	// ach-memory user-key secret (memory.achMemory.auth) — same env-not-file wiring.
 	if ref := agentrender.MemorySecretEnv(*a); ref != nil {
 		env = append(env, corev1.EnvVar{Name: ref.EnvName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretName},

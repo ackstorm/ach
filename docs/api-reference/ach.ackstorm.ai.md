@@ -177,6 +177,24 @@ _Appears in:_
 | `baseUrl` _string_ |  |  |  |
 
 
+#### AchMemorySpec
+
+
+
+AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).
+
+
+
+_Appears in:_
+- [MemorySpec](#memoryspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `endpoint` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `auth` _[SecretKeyRef](#secretkeyref)_ | Auth is the ach-memory USER key for the harness→ach-memory path (Bearer). NOT the ek_,<br />and NOT a bank-wide admin secret — it is scoped to one ach-memory user. Same env-only<br />secretKeyRef mechanism as webhook/a2a: the operator injects the value into the pod from<br />this Secret and renders only the env NAME. Omit for an internal/no-auth ach-memory URL. |  |  |
+| `project` _string_ | Project overrides the memory-bank slug. Empty (the norm) → the harness derives<br />\{POD_NAMESPACE\}-\{agent.name\} at boot, one bank per agent. Static: the slug SELECTS a<br />bank, so a payload-derived one would let an inbound event pick which bank the agent<br />reads and writes — the harness rejects \{\{ \}\} here, and so does the CEL below. |  |  |
+
+
 #### AgentDefaults
 
 
@@ -980,26 +998,6 @@ _Appears in:_
 | `port` _integer_ |  |  | Maximum: 65535 <br />Minimum: 1 <br /> |
 
 
-#### HindsightSpec
-
-
-
-HindsightSpec is the hindsight memory backend (config: memory.hindsight).
-
-
-
-_Appears in:_
-- [MemorySpec](#memoryspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `endpoint` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `bank` _string_ | Bank is the static, harness-owned memory bank id. NEVER template it from<br />inbound payload (untrusted → cross-tenant memory); per-repo partitioning is<br />via tags, harness-side. |  |  |
-| `auth` _[SecretKeyRef](#secretkeyref)_ | Auth is the admin secret for the harness→Hindsight path (Bearer, NOT the ek_).<br />Same env-only secretKeyRef mechanism as webhook/a2a: the operator injects the<br />value into the pod from this Secret and renders only the env NAME. Omit for an<br />internal/no-auth Hindsight URL. |  |  |
-| `mission` _string_ | Mission is passed to create_bank at provisioning (free text). |  |  |
-| `mentalModels` _[MentalModelSpec](#mentalmodelspec) array_ |  |  |  |
-
-
 #### IdentitySpec
 
 
@@ -1230,7 +1228,7 @@ _Appears in:_
 
 
 MemorySpec is a discriminated memory backend (config: memory). Omit for no memory (fail-open).
-Asymmetry is intentional and mirrors the schema: HindsightMemory REQUIRES the hindsight block
+Asymmetry is intentional and mirrors the schema: AchMemoryMemory REQUIRES the achMemory block
 (endpoint has no default); CodememMemory requires only `type` — {"type":"codemem"} is valid
 (dbPath/project are derived/defaulted by the harness).
 
@@ -1241,30 +1239,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `type` _string_ |  |  | Enum: [hindsight codemem] <br />Required: \{\} <br /> |
-| `hindsight` _[HindsightSpec](#hindsightspec)_ |  |  |  |
+| `type` _string_ |  |  | Enum: [codemem ach-memory] <br />Required: \{\} <br /> |
+| `achMemory` _[AchMemorySpec](#achmemoryspec)_ |  |  |  |
 | `codemem` _[CodememSpec](#codememspec)_ |  |  |  |
-
-
-#### MentalModelSpec
-
-
-
-MentalModelSpec is one Hindsight mental model the harness provisions at boot
-(config: memory.hindsight.mentalModels[]). Was a bare id string pre-facade.
-
-
-
-_Appears in:_
-- [HindsightSpec](#hindsightspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `id` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `sourceQuery` _string_ | SourceQuery is the question the harness runs to build/refresh the model. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `autoRefresh` _boolean_ | AutoRefresh triggers a refresh after consolidation (harness default false). |  |  |
-| `maxTokens` _integer_ | MaxTokens caps the rendered summary (harness default 2048). Omit to use it. |  | Minimum: 1 <br /> |
 
 
 #### ModelSpec
@@ -1844,7 +1821,7 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 
 _Appears in:_
 - [A2AAuthSpec](#a2aauthspec)
-- [HindsightSpec](#hindsightspec)
+- [AchMemorySpec](#achmemoryspec)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
 - [WebhookAuthSpec](#webhookauthspec)

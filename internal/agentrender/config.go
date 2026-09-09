@@ -119,25 +119,14 @@ type PromptSystemBlock struct {
 
 type MemoryBlock struct {
 	Type      string          `json:"type"`
-	Hindsight *HindsightBlock `json:"hindsight,omitempty"`
+	AchMemory *AchMemoryBlock `json:"achMemory,omitempty"`
 	Codemem   *CodememBlock   `json:"codemem,omitempty"`
 }
 
-type HindsightBlock struct {
-	Endpoint     string             `json:"endpoint"`
-	Bank         string             `json:"bank,omitempty"`
-	Auth         *SecretSourceBlock `json:"auth,omitempty"`
-	Mission      string             `json:"mission,omitempty"`
-	MentalModels []MentalModelBlock `json:"mentalModels,omitempty"`
-}
-
-// MentalModelBlock is one rendered memory.hindsight.mentalModels[] entry.
-type MentalModelBlock struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	SourceQuery string `json:"sourceQuery"`
-	AutoRefresh bool   `json:"autoRefresh,omitempty"`
-	MaxTokens   *int64 `json:"maxTokens,omitempty"`
+type AchMemoryBlock struct {
+	Endpoint string             `json:"endpoint"`
+	Auth     *SecretSourceBlock `json:"auth,omitempty"`
+	Project  string             `json:"project,omitempty"`
 }
 
 type CodememBlock struct {
