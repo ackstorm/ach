@@ -12,6 +12,19 @@ name: devtools-image
 #     CI run can consume the new image)
 #   - workflow_dispatch for manual rebuilds (first push to seed `:latest`,
 #     forced rebuild via UI, etc.)
+#   - schedule (weekly) as a SELF-HEALING BACKSTOP — see below.
+#
+# Why the cron exists: the path triggers fire exactly once per Dockerfile
+# change, and nothing retries. On 2026-08-26 the Go 1.26.6 bump changed the
+# Dockerfile (hash -> e55bfa0ac4f2) and its run ended in `startup_failure`
+# after 9s. No image was ever pushed for that hash, and because the Dockerfile
+# did not change again, the workflow never ran again either. Every CI and
+# release job since cold-built the image instead — a silent ~25 min tax per
+# release, visible only as a `::warning::` annotation nobody was looking for.
+# The weekly run reconciles whatever is on main with what is in GHCR, so a
+# cancelled run, a startup_failure, or a GHCR outage self-heals within a week
+# instead of never. It skips the build when the image is already present, so
+# the steady-state cost is one manifest lookup.
 
 on:
   push:
@@ -25,6 +38,8 @@ on:
       - 'Dockerfile.devtools'
       - '.github/workflows/devtools-image.yml'
       - '.github/actions/setup-devtools/**'
+  schedule:
+    - cron: '0 4 * * 1'  # Mondays 04:00 UTC, mirroring govulncheck.yml's cadence
   workflow_dispatch:
 
 permissions:
@@ -63,7 +78,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Reconciliation guard for the scheduled run: if GHCR already holds this
+      # hash there is nothing to heal, so skip the build. A dispatch or a
+      # Dockerfile change always rebuilds (an operator asking for a rebuild, or
+      # a genuinely new hash, must not be short-circuited).
+      - name: Check whether this hash is already published
+        id: exists
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] \
+             && docker manifest inspect "${{ steps.ref.outputs.image }}" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::devtools image ${{ steps.ref.outputs.hash }} already published — nothing to reconcile"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build + push devtools image
+        if: steps.exists.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -82,7 +113,11 @@ jobs:
             echo "### Devtools image"
             echo ""
             echo "- Hash: \`${{ steps.ref.outputs.hash }}\`"
-            echo "- Pushed: \`${{ steps.ref.outputs.image }}\`"
+            if [ "${{ steps.exists.outputs.skip }}" = "true" ]; then
+              echo "- Already published (scheduled reconcile, no rebuild)"
+            else
+              echo "- Pushed: \`${{ steps.ref.outputs.image }}\`"
+            fi
             if [ "${{ github.ref }}" = "refs/heads/main" ]; then
               echo "- Also tagged: \`${{ steps.ref.outputs.latest }}\`"
             fi

@@ -53,7 +53,12 @@ runs:
           docker tag "${{ steps.ref.outputs.image }}" ach-devtools:latest
           echo "::notice::Pulled pre-built devtools image ${{ steps.ref.outputs.hash }}"
         else
-          echo "::notice::No pre-built devtools image for hash ${{ steps.ref.outputs.hash }} — will build locally"
+          # WARNING, not notice: a miss costs every downstream job a cold
+          # image build (~25 min on a release). It is correct but expensive,
+          # and it means devtools-image.yml never published this hash — see
+          # that workflow's scheduled reconcile. Warnings surface in the run
+          # summary where a notice gets lost.
+          echo "::warning::No pre-built devtools image for hash ${{ steps.ref.outputs.hash }} — building locally (slow; devtools-image.yml has not published this hash)"
         fi
 
     - name: Ensure devtools image exists (build locally if pull missed)
