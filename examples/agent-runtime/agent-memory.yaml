@@ -2,12 +2,9 @@
 #
 # No extra secret is needed for the arm shown below — see `auth` for why.
 #
-# endpoint is the COMPLETE MCP endpoint and is rendered VERBATIM: the harness
-# appends nothing, not `/mcp`, not a trailing slash. Give it the full path.
-# Behind ACH's gateway that is `<ACH_BASE_URL>/mcp/<mcp-server-name>`; against
-# ach-memory directly it is that service's own MCP path, e.g.
-# `http://ach-memory.engineering.svc:8000/mcp/`. Do not append a path here —
-# a client that appends its own is how requests end up at /mcp/mcp/.
+# WHERE ach-memory is: set EXACTLY ONE of `mcpServerId` or `endpoint`. Neither or
+# both is rejected at admission — they are not additive, and which one wins decides
+# whether the agent keeps a second path to the bank (see mcpServerId below).
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: ACHAgent
 metadata:
@@ -22,7 +19,25 @@ spec:
   memory:
     type: ach-memory
     achMemory:
-      endpoint: https://api.ackstorm.ai/mcp/ach-memory
+      # mcpServerId names the hydrated runtime.mcpServers[].id serving ach-memory.
+      # PREFER IT when the Environment grants ach-memory: the harness reads the
+      # address out of the same manifest ACH granted (so it cannot drift), and it
+      # EXCLUDES that server from the harness's MCP proxy. That exclusion is the
+      # point. With `endpoint`, an Environment that ALSO grants ach-memory hands
+      # the agent the same service twice — the facade, which pins scope and injects
+      # project_slug beneath the agent, and the proxied server, where project_slug
+      # is just an argument and the ek_ is attached. The facade's containment is
+      # then advisory only: the agent reaches another tenant's bank by calling the
+      # copy next to it. Naming the id closes that second path.
+      # Not hydrated in this Environment → NO memory (fail-open), never a guessed
+      # URL. ACH does not cross-validate the id (same as repoCheckout's
+      # sourceMcpServerId): the Environment may resolve in another cluster.
+      mcpServerId: ach-memory
+      # endpoint is the alternative, for a deployment with no ACH manifest to
+      # resolve against. COMPLETE MCP endpoint, rendered VERBATIM: the harness
+      # appends nothing, not `/mcp`, not a trailing slash — a client that appends
+      # its own is how requests end up at /mcp/mcp/.
+      # endpoint: http://ach-memory.engineering.svc:8000/mcp/
       # auth has two arms, and the choice is not cosmetic:
       #
       #   type: ach     — reach ach-memory THROUGH ACH. The harness sends its own

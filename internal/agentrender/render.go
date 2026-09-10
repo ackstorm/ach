@@ -134,6 +134,7 @@ func Marshal(cfg AgentConfig) ([]byte, error) { return json.Marshal(cfg) }
 // memory.achMemory.auth arms. Textually identical to the prompt system type
 // "ach" (promptSystemTypeAch) but a different domain — kept separate on purpose.
 const (
+	memoryTypeAchMemory  = "ach-memory"
 	memoryAuthTypeAch    = "ach"
 	memoryAuthTypeBearer = "bearer"
 )
@@ -256,7 +257,7 @@ func indexEnv(env []corev1.EnvVar) map[string]corev1.EnvVar {
 // or nil when the agent has no memory auth. Same wiring as channel secrets (env, not file).
 func MemorySecretEnv(a achv1alpha1.ACHAgent) *ChannelSecretEnvRef {
 	m := a.Spec.Memory
-	if m == nil || m.Type != "ach-memory" || m.AchMemory == nil ||
+	if m == nil || m.Type != memoryTypeAchMemory || m.AchMemory == nil ||
 		m.AchMemory.Auth == nil || m.AchMemory.Auth.Type != memoryAuthTypeBearer || m.AchMemory.Auth.SecretRef == nil {
 		return nil
 	}
@@ -344,9 +345,13 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 	}
 	out := &MemoryBlock{Type: m.Type}
 	switch m.Type {
-	case "ach-memory":
+	case memoryTypeAchMemory:
 		if m.AchMemory != nil {
-			ab := &AchMemoryBlock{Endpoint: m.AchMemory.Endpoint, Project: m.AchMemory.Project}
+			ab := &AchMemoryBlock{
+				Endpoint:    m.AchMemory.Endpoint,
+				McpServerID: m.AchMemory.McpServerID,
+				Project:     m.AchMemory.Project,
+			}
 			if auth := m.AchMemory.Auth; auth != nil {
 				// env is the bearer arm's only field; the ach arm renders {type: ach} alone.
 				ab.Auth = &AchMemoryAuthBlock{Type: auth.Type}

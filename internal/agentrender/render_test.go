@@ -344,6 +344,24 @@ func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 		t.Errorf("unset header emitted: %s", bb)
 	}
 
+	// mcpServerId is the OTHER arm of the where-is-ach-memory choice: it renders
+	// instead of endpoint, and its presence is what tells the harness to drop that
+	// server from the MCP proxy so the facade is the only path to the bank.
+	byID := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		McpServerID: "ach-memory",
+		Auth:        &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeAch},
+	}})
+	ib, _ := json.Marshal(byID)
+	var im map[string]any
+	_ = json.Unmarshal(ib, &im)
+	iam := im["achMemory"].(map[string]any)
+	if iam["mcpServerId"] != "ach-memory" {
+		t.Errorf("mcpServerId = %v, want ach-memory", iam["mcpServerId"])
+	}
+	if _, present := iam["endpoint"]; present {
+		t.Errorf("mcpServerId arm must not render endpoint: %s", ib)
+	}
+
 	noAuth := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m/mcp/"}})
 	nb, _ := json.Marshal(noAuth)
 	var nm map[string]any

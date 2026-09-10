@@ -237,6 +237,18 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "header is meaningless when type=ach",
 		},
+		{
+			name:           "invalid_achagent_memory_neither_endpoint_nor_id",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_neither_endpoint_nor_id.yaml",
+			shouldFail:     true,
+			errMustContain: "set exactly one of endpoint or mcpServerId",
+		},
+		{
+			name:           "invalid_achagent_memory_both_endpoint_and_id",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_both_endpoint_and_id.yaml",
+			shouldFail:     true,
+			errMustContain: "set exactly one of endpoint or mcpServerId",
+		},
 	}
 
 	for _, tc := range cases {

@@ -147,6 +147,7 @@ spec.memory.achMemory.auth.secretRef.key	string
 spec.memory.achMemory.auth.secretRef.name	string
 spec.memory.achMemory.auth.type	string enum[ach,bearer]
 spec.memory.achMemory.endpoint	string
+spec.memory.achMemory.mcpServerId	string
 spec.memory.achMemory.project	string
 spec.memory.codemem	object
 spec.memory.codemem.dbPath	string

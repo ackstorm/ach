@@ -123,10 +123,14 @@ type MemoryBlock struct {
 	Codemem   *CodememBlock   `json:"codemem,omitempty"`
 }
 
+// AchMemoryBlock renders memory.achMemory. Endpoint and McpServerID are the two
+// arms of a WHERE-is-ach-memory choice — exactly one is set (CEL-enforced), so both
+// are omitempty and the harness treats neither-or-both as a hard config error.
 type AchMemoryBlock struct {
-	Endpoint string              `json:"endpoint"`
-	Auth     *AchMemoryAuthBlock `json:"auth,omitempty"`
-	Project  string              `json:"project,omitempty"`
+	Endpoint    string              `json:"endpoint,omitempty"`
+	McpServerID string              `json:"mcpServerId,omitempty"`
+	Auth        *AchMemoryAuthBlock `json:"auth,omitempty"`
+	Project     string              `json:"project,omitempty"`
 }
 
 // AchMemoryAuthBlock is the rendered memory.achMemory.auth discriminated union.

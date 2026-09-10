@@ -149,6 +149,12 @@ func renderMatrix() map[string]renderCase {
 		Endpoint: "http://ach-memory.ach.svc:8000/mcp/",
 	}}
 	m["memory-ach-memory-minimal"] = memAmin
+	memAID := base("maid", cron)
+	memAID.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		McpServerID: "ach-memory",
+		Auth:        &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeAch},
+	}}
+	m["memory-ach-memory-mcpserverid"] = memAID
 	memC := base("mc", cron)
 	memC.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "codemem"}
 	m["memory-codemem-bare"] = memC

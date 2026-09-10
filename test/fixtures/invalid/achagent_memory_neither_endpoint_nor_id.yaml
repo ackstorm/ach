@@ -1,0 +1,31 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: memory.achMemory needs exactly one of endpoint / mcpServerId.
+# Expected error substring: "set exactly one of endpoint or mcpServerId"
+#
+# Neither is set, so nothing says WHERE ach-memory is. The harness would have to
+# guess a URL; it refuses to, and fail-open memory means the agent would run with
+# no memory at all while the CR looked complete.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-memory-no-endpoint
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"
+  memory:
+    type: ach-memory
+    achMemory:
+      auth:
+        type: ach

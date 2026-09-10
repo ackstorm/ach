@@ -1,0 +1,33 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: memory.achMemory needs exactly one of endpoint / mcpServerId.
+# Expected error substring: "set exactly one of endpoint or mcpServerId"
+#
+# Both are set. They are not additive: mcpServerId also EXCLUDES that server from
+# the harness's MCP proxy, so which one wins decides whether the agent keeps a
+# second, unscoped path to every tenant's bank. An ambiguous CR must not admit.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-memory-both-endpoint-and-id
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"
+  memory:
+    type: ach-memory
+    achMemory:
+      endpoint: https://api.ackstorm.ai/mcp/ach-memory
+      mcpServerId: ach-memory   # both arms set → CEL rejection
+      auth:
+        type: ach

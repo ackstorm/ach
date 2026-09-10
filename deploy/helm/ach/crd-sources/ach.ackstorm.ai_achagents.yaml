@@ -932,6 +932,28 @@ spec:
                           (`https://memory.internal/mcp/`) or behind ACH's gateway
                           (`https://api.ackstorm.ai/mcp/ach-memory`) is the operator's call. Do NOT append a
                           path here: a client that appends its own is how requests end up at `/mcp/mcp/`.
+                          Use this for a deployment with no ACH manifest to resolve against; otherwise
+                          prefer mcpServerId, which cannot drift and closes the second path.
+                        minLength: 1
+                        type: string
+                      mcpServerId:
+                        description: |-
+                          McpServerID names the hydrated runtime.mcpServers[].id serving ach-memory, as an
+                          ALTERNATIVE to endpoint: the harness reads the address out of the same manifest
+                          ACH granted, so it cannot drift from it.
+
+                          It ALSO EXCLUDES that server from the harness's MCP proxy, and that is the point.
+                          With endpoint, an Environment that ALSO grants ach-memory hands the agent the same
+                          service by TWO paths — the harness facade, which pins scope and injects
+                          project_slug beneath the agent, and the proxied server, where project_slug is an
+                          ordinary argument and the ek_ is attached. The facade's containment is then merely
+                          advisory: the agent reaches another tenant's bank by calling the copy next to it.
+                          Naming the id is what lets the harness close that second path.
+
+                          Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may
+                          resolve in another cluster, and the operator holds no ek_, so it cannot check that
+                          this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),
+                          never a guessed URL.
                         minLength: 1
                         type: string
                       project:
@@ -945,9 +967,10 @@ spec:
                         - message: memory.achMemory.project must be static — templating
                             ({{ }}) is not allowed
                           rule: '!self.contains(''{{'')'
-                    required:
-                    - endpoint
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'memory.achMemory: set exactly one of endpoint or mcpServerId'
+                      rule: has(self.endpoint) != has(self.mcpServerId)
                   codemem:
                     description: 'CodememSpec is the codemem memory backend (config:
                       memory.codemem). All fields optional.'

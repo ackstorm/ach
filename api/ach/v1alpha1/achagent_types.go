@@ -117,15 +117,38 @@ type AchMemoryAuthSpec struct {
 }
 
 // AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).
+//
+// +kubebuilder:validation:XValidation:rule="has(self.endpoint) != has(self.mcpServerId)",message="memory.achMemory: set exactly one of endpoint or mcpServerId"
 type AchMemorySpec struct {
 	// Endpoint is the COMPLETE MCP endpoint, rendered VERBATIM — the harness appends
 	// nothing, not `/mcp`, not a trailing slash. Whether ach-memory sits at a root
 	// (`https://memory.internal/mcp/`) or behind ACH's gateway
 	// (`https://api.ackstorm.ai/mcp/ach-memory`) is the operator's call. Do NOT append a
 	// path here: a client that appends its own is how requests end up at `/mcp/mcp/`.
-	// +kubebuilder:validation:Required
+	// Use this for a deployment with no ACH manifest to resolve against; otherwise
+	// prefer mcpServerId, which cannot drift and closes the second path.
+	// +optional
 	// +kubebuilder:validation:MinLength=1
-	Endpoint string `json:"endpoint"`
+	Endpoint string `json:"endpoint,omitempty"`
+	// McpServerID names the hydrated runtime.mcpServers[].id serving ach-memory, as an
+	// ALTERNATIVE to endpoint: the harness reads the address out of the same manifest
+	// ACH granted, so it cannot drift from it.
+	//
+	// It ALSO EXCLUDES that server from the harness's MCP proxy, and that is the point.
+	// With endpoint, an Environment that ALSO grants ach-memory hands the agent the same
+	// service by TWO paths — the harness facade, which pins scope and injects
+	// project_slug beneath the agent, and the proxied server, where project_slug is an
+	// ordinary argument and the ek_ is attached. The facade's containment is then merely
+	// advisory: the agent reaches another tenant's bank by calling the copy next to it.
+	// Naming the id is what lets the harness close that second path.
+	//
+	// Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may
+	// resolve in another cluster, and the operator holds no ek_, so it cannot check that
+	// this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),
+	// never a guessed URL.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	McpServerID string `json:"mcpServerId,omitempty"`
 	// +optional
 	Auth *AchMemoryAuthSpec `json:"auth,omitempty"`
 	// Project overrides the memory-bank slug. Empty (the norm) → the harness derives
