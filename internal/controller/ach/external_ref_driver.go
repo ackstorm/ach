@@ -139,6 +139,16 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	if st.LastSuccessfulRefresh != nil {
 		gateLastRefresh = st.LastSuccessfulRefresh.Time
 	}
+	// The force-refresh path was entirely unobservable: the only log line in this
+	// driver was the skip below, so a refresh that ran slow, failed, or never ran at
+	// all left identical traces — nothing. Announce entry and outcome at INFO so the
+	// next stuck annotation diagnoses itself instead of needing a repro hunt.
+	_, hasForceAnnotation := cr.GetAnnotations()["ach.ackstorm.ai/force-refresh"]
+	if hasForceAnnotation {
+		logger.Info("force-refresh annotation observed; bypassing the §10.3 interval gate",
+			"lastRefresh", gateLastRefresh)
+	}
+
 	if shouldSkipFetch(view.Refresh, gateLastRefresh, st.ObservedGeneration, cr.GetGeneration(), cr.GetAnnotations(), forceRefreshRequestedAt, time.Now()) {
 		remaining := time.Until(gateLastRefresh.Add(requeueDurationFromRefresh(view.Refresh)))
 		if remaining < time.Second {
@@ -167,7 +177,15 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 		Fetchers:      cfg.fetchers,
 		Log:           logger,
 	}
+	fetchStart := time.Now()
 	result := materializeExternalRef(ctx, deps)
+	if hasForceAnnotation {
+		// Duration is the point: a forced fetch that outruns its caller's patience
+		// (SC11a allows 30s) is indistinguishable from one that never ran without it.
+		logger.Info("force-refresh fetch complete",
+			"took", time.Since(fetchStart).String(),
+			"notModified", result.NotModified, "err", result.Err)
+	}
 
 	// G7: ach_operator_external_ref_refresh_total{kind,type,result}. result is
 	// the fetch-classification reason on failure, "not_modified" on a 304/
