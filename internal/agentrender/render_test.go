@@ -290,7 +290,7 @@ func TestMemorySecretEnv_AchMemoryAuth(t *testing.T) {
 func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 	out := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
 		Endpoint: "http://m/mcp/", Project: "team-reviewer",
-		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
+		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, Header: "x-litellm-api-key", SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
 	}})
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -302,8 +302,10 @@ func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 	}
 	am := m["achMemory"].(map[string]any)
 	// auth renders ONLY the operator-generated env name, never the secretRef.
-	if auth := am["auth"].(map[string]any); auth["type"] != "bearer" || auth["env"] != "ACH_SECRET_MEMORY_AUTH" {
-		t.Errorf("auth = %v, want {type: bearer, env: ACH_SECRET_MEMORY_AUTH}", auth)
+	// header rides through verbatim: it selects WHICH ach-memory identity provider
+	// the token is for, so a rewritten one silently 401s under fail-open memory.
+	if auth := am["auth"].(map[string]any); auth["type"] != "bearer" || auth["env"] != "ACH_SECRET_MEMORY_AUTH" || auth["header"] != "x-litellm-api-key" {
+		t.Errorf("auth = %v, want {type: bearer, env: ACH_SECRET_MEMORY_AUTH, header: x-litellm-api-key}", auth)
 	}
 	// endpoint is rendered VERBATIM — the harness appends nothing.
 	if am["endpoint"] != "http://m/mcp/" || am["project"] != "team-reviewer" {
@@ -323,6 +325,23 @@ func TestRenderMemory_AchMemoryBlock(t *testing.T) {
 	}
 	if _, present := aAuth["env"]; present {
 		t.Errorf("ach arm must not render env: %s", ab)
+	}
+	if _, present := aAuth["header"]; present {
+		t.Errorf("ach arm must not render header: %s", ab)
+	}
+
+	// bearer with header unset omits it, so the harness applies its own
+	// "Authorization" default rather than ACH restating a value it does not own.
+	bareBearer := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
+		Endpoint: "http://m/mcp/",
+		Auth:     &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
+	}})
+	bb, _ := json.Marshal(bareBearer)
+	var bm map[string]any
+	_ = json.Unmarshal(bb, &bm)
+	bAuth := bm["achMemory"].(map[string]any)["auth"].(map[string]any)
+	if _, present := bAuth["header"]; present {
+		t.Errorf("unset header emitted: %s", bb)
 	}
 
 	noAuth := renderMemory(&achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{Endpoint: "http://m/mcp/"}})

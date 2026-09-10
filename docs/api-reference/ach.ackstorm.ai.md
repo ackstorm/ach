@@ -190,8 +190,9 @@ The two arms carry different credentials, and the choice is not cosmetic:
     gateway, which forwards to LiteLLM and resolves the principal. There is no
     second credential, so this arm takes no secretRef. `Authorization: Bearer`
     is NOT interchangeable — ACH's scheme is the header, and a Bearer 401s.
-  - bearer → a minted ach-memory USER key in an env var, for talking to
-    ach-memory directly. Needs the usual secretKeyRef plumbing.
+  - bearer → a token in an env var, for talking to ach-memory directly. Needs
+    the usual secretKeyRef plumbing, plus a `header` naming WHICH of
+    ach-memory's two identity providers the token is for.
 
 
 
@@ -202,6 +203,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `type` _string_ |  |  | Enum: [ach bearer] <br />Required: \{\} <br /> |
 | `secretRef` _[SecretKeyRef](#secretkeyref)_ | SecretRef is the ach-memory user key, bearer arm only. Same env-only mechanism<br />as webhook/a2a: the operator injects the value into the pod from this Secret and<br />renders only the env NAME. NOTE: the key that first bootstraps a project OWNS it —<br />rotating this to a DIFFERENT ach-memory user orphans the bank. |  |  |
+| `header` _string_ | Header names the request header the token rides on, bearer arm only. It picks<br />WHICH of ach-memory's two identity providers you are talking to, and therefore<br />what the token must BE — ach-memory mints no credentials of its own:<br />  - "Authorization" (the harness default when this is empty) → the JWT provider.<br />    The token must be a JWT that provider's issuer signed. Sent as `Bearer <token>`.<br />  - anything else, e.g. "x-litellm-api-key" → the platform provider, whose header<br />    name that deployment sets. The token is whatever its resolver can name, and it<br />    is sent RAW — the `Bearer` scheme word belongs to Authorization, and a resolver<br />    forwarding the value verbatim would otherwise get it as part of the key.<br />Get this wrong and the 401 is INVISIBLE: memory is fail-open, so a refused<br />credential surfaces as memory silently never working, not as an error.<br />Constrained to an RFC 9110 field-name token so a CRLF injection is refused here<br />rather than by the harness's HTTP client. |  | MaxLength: 64 <br />Pattern: `^[A-Za-z0-9!#$%&'*+.^_`\|~-]+$` <br /> |
 
 
 #### AchMemorySpec

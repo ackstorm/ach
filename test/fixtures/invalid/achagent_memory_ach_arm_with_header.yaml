@@ -1,0 +1,34 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: memory.achMemory.auth type=ach takes no header.
+# Expected error substring: "header is meaningless when type=ach"
+#
+# header names WHICH of ach-memory's two identity providers a bearer token is
+# for. The ach arm talks to ach-memory THROUGH ACH's gateway on x-ach-key, so
+# there is no token to place and no provider to choose — a header here would be
+# silently ignored while the author believed they had redirected the credential.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-memory-ach-arm-header
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"
+  memory:
+    type: ach-memory
+    achMemory:
+      endpoint: https://api.ackstorm.ai/mcp/ach-memory
+      auth:
+        type: ach
+        header: x-litellm-api-key   # meaningless on the ach arm → CEL rejection

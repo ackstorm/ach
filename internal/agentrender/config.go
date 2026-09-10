@@ -130,10 +130,13 @@ type AchMemoryBlock struct {
 }
 
 // AchMemoryAuthBlock is the rendered memory.achMemory.auth discriminated union.
-// Env is set on the bearer arm ONLY — the ach arm carries no second credential.
+// Env and Header are set on the bearer arm ONLY — the ach arm carries no second
+// credential. Header is omitted when the author left it unset, so the harness
+// applies its own "Authorization" default rather than ACH restating it.
 type AchMemoryAuthBlock struct {
-	Type string `json:"type"`
-	Env  string `json:"env,omitempty"`
+	Type   string `json:"type"`
+	Env    string `json:"env,omitempty"`
+	Header string `json:"header,omitempty"`
 }
 
 type CodememBlock struct {

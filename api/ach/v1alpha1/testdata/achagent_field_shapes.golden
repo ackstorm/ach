@@ -141,6 +141,7 @@ spec.mcpServers[].type	string enum[local,remote,repoCheckout]
 spec.memory	object
 spec.memory.achMemory	object
 spec.memory.achMemory.auth	object
+spec.memory.achMemory.auth.header	string
 spec.memory.achMemory.auth.secretRef	object
 spec.memory.achMemory.auth.secretRef.key	string
 spec.memory.achMemory.auth.secretRef.name	string

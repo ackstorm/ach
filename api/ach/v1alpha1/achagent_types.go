@@ -80,11 +80,13 @@ type AgentPromptSpec struct {
 //     gateway, which forwards to LiteLLM and resolves the principal. There is no
 //     second credential, so this arm takes no secretRef. `Authorization: Bearer`
 //     is NOT interchangeable — ACH's scheme is the header, and a Bearer 401s.
-//   - bearer → a minted ach-memory USER key in an env var, for talking to
-//     ach-memory directly. Needs the usual secretKeyRef plumbing.
+//   - bearer → a token in an env var, for talking to ach-memory directly. Needs
+//     the usual secretKeyRef plumbing, plus a `header` naming WHICH of
+//     ach-memory's two identity providers the token is for.
 //
 // +kubebuilder:validation:XValidation:rule="self.type!='bearer' || has(self.secretRef)",message="memory.achMemory.auth.secretRef is required when type=bearer"
 // +kubebuilder:validation:XValidation:rule="self.type!='ach' || !has(self.secretRef)",message="memory.achMemory.auth.secretRef is meaningless when type=ach (the harness sends its own ek_)"
+// +kubebuilder:validation:XValidation:rule="self.type!='ach' || !has(self.header)",message="memory.achMemory.auth.header is meaningless when type=ach (the harness sends its own ek_ as x-ach-key)"
 type AchMemoryAuthSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=ach;bearer
@@ -95,6 +97,23 @@ type AchMemoryAuthSpec struct {
 	// rotating this to a DIFFERENT ach-memory user orphans the bank.
 	// +optional
 	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
+	// Header names the request header the token rides on, bearer arm only. It picks
+	// WHICH of ach-memory's two identity providers you are talking to, and therefore
+	// what the token must BE — ach-memory mints no credentials of its own:
+	//   - "Authorization" (the harness default when this is empty) → the JWT provider.
+	//     The token must be a JWT that provider's issuer signed. Sent as `Bearer <token>`.
+	//   - anything else, e.g. "x-litellm-api-key" → the platform provider, whose header
+	//     name that deployment sets. The token is whatever its resolver can name, and it
+	//     is sent RAW — the `Bearer` scheme word belongs to Authorization, and a resolver
+	//     forwarding the value verbatim would otherwise get it as part of the key.
+	// Get this wrong and the 401 is INVISIBLE: memory is fail-open, so a refused
+	// credential surfaces as memory silently never working, not as an error.
+	// Constrained to an RFC 9110 field-name token so a CRLF injection is refused here
+	// rather than by the harness's HTTP client.
+	// +optional
+	// +kubebuilder:validation:Pattern="^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
+	// +kubebuilder:validation:MaxLength=64
+	Header string `json:"header,omitempty"`
 }
 
 // AchMemorySpec is the ach-memory memory backend (config: memory.achMemory).

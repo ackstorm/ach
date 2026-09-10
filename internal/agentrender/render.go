@@ -352,6 +352,7 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 				ab.Auth = &AchMemoryAuthBlock{Type: auth.Type}
 				if auth.Type == memoryAuthTypeBearer {
 					ab.Auth.Env = memoryAuthSecretEnvName
+					ab.Auth.Header = auth.Header
 				}
 			}
 			out.AchMemory = ab

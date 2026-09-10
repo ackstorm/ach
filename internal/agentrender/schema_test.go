@@ -135,7 +135,7 @@ func renderMatrix() map[string]renderCase {
 	memA := base("ma", cron)
 	memA.agent.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
 		Endpoint: "http://ach-memory.ach.svc:8000/mcp/", Project: "team-reviewer",
-		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
+		Auth: &achv1alpha1.AchMemoryAuthSpec{Type: memoryAuthTypeBearer, Header: "x-litellm-api-key", SecretRef: &achv1alpha1.SecretKeyRef{Name: "am", Key: "token"}},
 	}}
 	m["memory-ach-memory-bearer"] = memA
 	memAch := base("mach", cron)

@@ -59,10 +59,12 @@ kubectl -n engineering create secret generic gitlab-clone \
 
 # 4. NOT needed for agent-memory.yaml as shipped: it uses memory auth type=ach,
 #    where the harness sends its own ek_ and ACH resolves the principal. Only the
-#    `type: bearer` arm (talking to ach-memory directly) needs a user key, which
-#    the operator injects as ACH_SECRET_MEMORY_AUTH — NOT the ek_:
+#    `type: bearer` arm (talking to ach-memory directly) needs a token, which the
+#    operator injects as ACH_SECRET_MEMORY_AUTH — NOT the ek_. WHAT that token is
+#    depends on `auth.header`: a JWT for the default `Authorization`, or whatever
+#    the platform provider's resolver names for e.g. `x-litellm-api-key`.
 # kubectl -n engineering create secret generic ach-memory-key \
-#   --from-literal=token=<ach-memory-user-key>
+#   --from-literal=token=<ach-memory-token>
 ```
 
 ## Apply

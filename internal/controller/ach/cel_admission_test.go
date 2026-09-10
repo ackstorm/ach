@@ -231,6 +231,12 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "meaningless when type=ach",
 		},
+		{
+			name:           "invalid_achagent_memory_ach_arm_with_header",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_memory_ach_arm_with_header.yaml",
+			shouldFail:     true,
+			errMustContain: "header is meaningless when type=ach",
+		},
 	}
 
 	for _, tc := range cases {
