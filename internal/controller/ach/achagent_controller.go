@@ -171,7 +171,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		podTemplateJSON = profile.Spec.PodTemplate.Raw
 	}
 	resolvedImage := agentrender.ResolveImage(agent.Spec.Image, profile.Spec.Achagent.Image)
-	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash, resolvePlacement(&profile))
+	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash, resolvePlacement(&agent, &profile))
 
 	// buildDeployment currently fails only on the podTemplate overlay, so mapping every error to
 	// reason PodTemplateInvalid is correct today — revisit if the builder gains other error paths.

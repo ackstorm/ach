@@ -73,13 +73,11 @@ func agentSelectorLabels(agentName string) map[string]string {
 	return map[string]string{agentLabelKey: agentName}
 }
 
-// resolvePlacement returns the profile's pod topology; the CRD defaults it to standalone
-// but a Go zero value (tests, pre-default objects) must mean the same thing.
-func resolvePlacement(p *achv1alpha1.AgentProfile) string {
-	if p.Spec.Placement == "" {
-		return achv1alpha1.PlacementStandalone
-	}
-	return p.Spec.Placement
+// resolvePlacement is the pod topology via the shared agentrender.ResolvePlacement
+// (agent overrides profile, empty ⇒ standalone) so buildService, buildDeployment and the
+// config hash can never disagree.
+func resolvePlacement(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) string {
+	return agentrender.ResolvePlacement(a.Spec.Placement, p.Spec.Achagent.Placement)
 }
 
 // resolveHealthPort returns the probe/Service targetPort via the shared
@@ -211,7 +209,7 @@ func buildPVC(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) (*corev1.Per
 // is Channels port 8080").
 func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.Service {
 	target := resolveHealthPort(a, p)
-	if resolvePlacement(p) == achv1alpha1.PlacementDistributed {
+	if resolvePlacement(a, p) == achv1alpha1.PlacementDistributed {
 		target = channelsPort
 	}
 	return &corev1.Service{
@@ -448,7 +446,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
 	}}
-	if resolvePlacement(p) == achv1alpha1.PlacementDistributed {
+	if resolvePlacement(a, p) == achv1alpha1.PlacementDistributed {
 		uid := agentUID
 		podSC.RunAsUser, podSC.RunAsGroup, podSC.FSGroup = &uid, &uid, &uid
 		volumes = distributedVolumes(a, p)

@@ -1,0 +1,35 @@
+# Same cron-only agent with placement=distributed set PER AGENT (overrides the
+# profile, which leaves it unset ⇒ standalone for e2e-agent). Asserts the
+# operator renders the three-role pod shape from one profile; pod-Ready needs an
+# ach-agent image implementing the HTTP role-port probes (> v0.16.2), which is
+# not loaded into kind — see the DEFERRED note in kustomization.yaml.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: e2e-agent-dist
+  namespace: ach-system
+spec:
+  profileRef:
+    name: e2e-profile
+  placement: distributed
+  identity:
+    secretRef:
+      name: e2e-agent-ek
+      key: ek
+  capability:
+    environment: demo
+  engine:
+    forwardEnv: [E2E_FORWARDED]
+  env:
+    - name: E2E_FORWARDED
+      value: "1"
+    - name: E2E_NOT_FORWARDED
+      value: "1"
+  channels:
+    - name: daily
+      type: cron
+      session:
+        type: none
+      cron:
+        schedule: "0 8 * * 1-5"
+      prompt: "Scan for CVEs."

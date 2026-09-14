@@ -577,7 +577,7 @@ func distributedFixture(persistent bool) (*achv1alpha1.ACHAgent, *achv1alpha1.Ag
 	}
 	a.Spec.Engine = &achv1alpha1.EngineSpec{ForwardEnv: []string{"DEBUG", "GH_TOKEN", "MISSING", "ACH_TOKEN"}}
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Placement = achv1alpha1.PlacementDistributed
+	p.Spec.Achagent.Placement = achv1alpha1.PlacementDistributed
 	p.Spec.Achagent.Image = "ghcr.io/ackstorm/ach-agent:role"
 	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
 	if persistent {
@@ -610,15 +610,37 @@ func TestComputeConfigHash_PlacementIsAnInput(t *testing.T) {
 	}
 }
 
-func TestResolvePlacement_DefaultsToStandalone(t *testing.T) {
-	if got := resolvePlacement(&achv1alpha1.AgentProfile{}); got != achv1alpha1.PlacementStandalone {
-		t.Fatalf("got %q", got)
+func TestResolvePlacement_AgentOverridesProfileDefaultsStandalone(t *testing.T) {
+	a, p := &achv1alpha1.ACHAgent{}, &achv1alpha1.AgentProfile{}
+	if got := resolvePlacement(a, p); got != achv1alpha1.PlacementStandalone {
+		t.Fatalf("unset ⇒ standalone, got %q", got)
+	}
+	p.Spec.Achagent.Placement = achv1alpha1.PlacementDistributed
+	if got := resolvePlacement(a, p); got != achv1alpha1.PlacementDistributed {
+		t.Fatalf("profile value must apply when agent is unset, got %q", got)
+	}
+	a.Spec.Placement = achv1alpha1.PlacementStandalone
+	if got := resolvePlacement(a, p); got != achv1alpha1.PlacementStandalone {
+		t.Fatalf("agent value must win, got %q", got)
+	}
+}
+
+func TestBuildDeployment_AgentPlacementOverridesProfile(t *testing.T) {
+	a, p := distributedFixture(false)
+	p.Spec.Achagent.Placement = ""
+	a.Spec.Placement = achv1alpha1.PlacementDistributed
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(dep.Spec.Template.Spec.Containers); n != 3 {
+		t.Fatalf("agent-level placement must render distributed, got %d containers", n)
 	}
 }
 
 func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
 	a, p := distributedFixture(true)
-	p.Spec.Placement = "" // unset ⇒ standalone
+	p.Spec.Achagent.Placement = "" // unset on both ⇒ standalone
 	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
 		t.Fatal(err)

@@ -28,6 +28,16 @@ spec:
     health:
       host: 0.0.0.0
       port: 8000
+    # Pod topology (agent-overridable via ACHAgent.spec.placement). standalone (default) =
+    # one `agent` container, exactly the rendering before placement existed. distributed =
+    # three containers from the same image in ONE single-replica Recreate Deployment —
+    # channels (public ingress 8080), harness (the only container that mounts
+    # config.json), engine (receives ONLY the env named by engine.forwardEnv). Probes are
+    # httpGet on fixed role ports (channels 8080, harness 8090, engine 8081); the health
+    # block above is ignored in this mode. Needs an ach-agent image newer than v0.16.2
+    # (HTTP role-port probe contract). The profile's resources apply to EACH container: a
+    # distributed pod requests and limits 3× what is declared.
+    # placement: distributed
     # Where the per-invocation cost figure comes from (requires an ach-agent image
     # >= v0.10.0; one of engine|litellm_usage|litellm_headers|none — the harness
     # validates and hard-fails on an unknown value). Omit for today's behavior
@@ -38,15 +48,6 @@ spec:
   # Pod environment inherited by every agent using this profile. Merely declaring a
   # variable does not expose it to the engine or prepare scripts; their forwardEnv
   # lists opt in independently.
-  # Pod topology. standalone (default) = one `agent` container, exactly the rendering
-  # before placement existed. distributed = three containers from the same image in ONE
-  # single-replica Recreate Deployment — channels (public ingress 8080), harness (the only
-  # container that mounts config.json), engine (receives ONLY the env named by
-  # engine.forwardEnv). Probes are httpGet on fixed role ports (channels 8080, harness
-  # 8090, engine 8081); the health block above is ignored in this mode. Needs an ach-agent
-  # image newer than v0.16.2 (HTTP role-port probe contract). resources above apply to
-  # EACH container: a distributed pod requests and limits 3× what is declared.
-  # placement: distributed
   env:
     - name: HTTPS_PROXY
       value: http://proxy.example.com:8080

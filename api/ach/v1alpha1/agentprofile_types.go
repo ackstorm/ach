@@ -65,6 +65,18 @@ type AgentDefaults struct {
 	Health *HealthSpec `json:"health,omitempty"`
 	// +optional
 	Cost *CostSpec `json:"cost,omitempty"`
+	// Placement selects the pod topology; resolves ACHAgent.spec.placement ??
+	// AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
+	// value cannot shadow the profile's). standalone renders one `agent` container
+	// exactly as before. distributed renders three containers from the same image in
+	// ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args
+	// `--role <name>`, image entrypoint preserved). Operator-only: never rendered into
+	// config.json. Requires an ach-agent image with role support AND the HTTP role-port
+	// probe contract (> v0.16.2). In distributed mode the profile's spec.resources
+	// applies to EACH container, so the pod requests/limits total 3× the declared values.
+	// +optional
+	// +kubebuilder:validation:Enum=standalone;distributed
+	Placement string `json:"placement,omitempty"`
 }
 
 // ThinkingSpec is the normalized reasoning intent each engine translates for itself
@@ -204,7 +216,7 @@ type NetworkPolicySpec struct {
 	Egress []networkingv1.NetworkPolicyEgressRule `json:"egress,omitempty"`
 }
 
-// Placement values for AgentProfileSpec.Placement.
+// Placement values for AgentDefaults.Placement.
 const (
 	// PlacementStandalone runs the whole ach-agent in ONE container (the pre-placement
 	// rendering, unchanged).
@@ -227,17 +239,6 @@ type AgentProfileSpec struct {
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// Placement selects the pod topology. standalone (default) renders one `agent`
-	// container exactly as before. distributed renders three containers from the same
-	// image in ONE single-replica Recreate Deployment — `channels`, `harness`, `engine`
-	// (args `--role <name>`, image entrypoint preserved). Profile-only: never rendered
-	// into config.json. Requires an ach-agent image with role support AND the HTTP
-	// role-port probe contract (> v0.16.2). In distributed mode spec.resources applies
-	// to EACH container, so the pod requests/limits total 3× the declared values.
-	// +optional
-	// +kubebuilder:validation:Enum=standalone;distributed
-	// +kubebuilder:default=standalone
-	Placement string `json:"placement,omitempty"`
 	// Env are pod-level environment variables inherited by ACHAgents using this profile.
 	// Reserved ACH_* names are forbidden because the operator owns that namespace. Only
 	// literal values and secretKeyRef sources are supported.

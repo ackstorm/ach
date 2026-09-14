@@ -809,6 +809,22 @@ verify_all() {
   kubectl -n ach-system get deploy achagent-e2e-agent \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_TOKEN")].valueFrom.secretKeyRef.name}' \
     | grep -q .
+  # Standalone stays the single `agent` container.
+  kubectl -n ach-system get deploy achagent-e2e-agent \
+    -o jsonpath='{.spec.template.spec.containers[*].name}' \
+    | grep -qx 'agent'
+  # Distributed (placement set on the ACHAgent, profile unset): three role containers,
+  # config.json mounted in harness only, engine env = forwardEnv-selected only.
+  kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-dist
+  kubectl -n ach-system get deploy achagent-e2e-agent-dist \
+    -o jsonpath='{.spec.template.spec.containers[*].name}' \
+    | grep -qx 'channels harness engine'
+  kubectl -n ach-system get deploy achagent-e2e-agent-dist -o json \
+    | jq -e '[.spec.template.spec.containers[] | select(any(.volumeMounts[]; .subPath=="config.json")) | .name] == ["harness"]
+             and ([.spec.template.spec.containers[] | select(.name=="engine") | .env[].name] == ["E2E_FORWARDED"])' >/dev/null
+  kubectl -n ach-system get deploy achagent-e2e-agent-dist \
+    -o jsonpath='{.spec.template.spec.securityContext.fsGroup}' \
+    | grep -qx '10001'
   echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }
 

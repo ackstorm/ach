@@ -2,7 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only
-# ACHAgent + its ek Secret. Applied after the CRDs (stage 02) exist. Order
+# ACHAgent (standalone) + the same agent with spec.placement=distributed
+# (agent-dist.yaml, three-role pod shape) + their shared ek Secret. Applied after the CRDs (stage 02) exist. Order
 # within the stage does not matter — the operator re-reconciles on the profile
 # and secret watches until both resolve.
 #
@@ -17,3 +18,4 @@ resources:
   - ek-secret.yaml
   - profile.yaml
   - agent.yaml
+  - agent-dist.yaml

@@ -39,7 +39,8 @@ mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness
 **self-hydrates** against ACH at boot — there is no init container and no CLI
 step.
 
-With `spec.placement: distributed` on the profile, that Deployment's one pod runs three
+With `placement: distributed` (profile `spec.achagent.placement`, or per-agent
+`ACHAgent.spec.placement` — agent wins), that Deployment's one pod runs three
 containers from the same image — `channels` (ingress, port 8080), `harness` (mounts
 `config.json`, owns `<base>/state` + `<base>/workspace`) and `engine` (owns `<base>/home`,
 shares `<base>/workspace`; env limited to `engine.forwardEnv`) — wired through

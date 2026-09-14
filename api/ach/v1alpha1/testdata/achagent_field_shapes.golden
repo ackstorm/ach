@@ -160,6 +160,7 @@ spec.model.thinking	object
 spec.model.thinking.effort	string
 spec.model.thinking.enabled	boolean
 spec.model.type	string enum[anthropic,gemini,openai]
+spec.placement	string enum[distributed,standalone]
 spec.profileRef	object
 spec.profileRef.name	string
 spec.prompt	object

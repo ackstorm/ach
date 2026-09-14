@@ -199,6 +199,21 @@ spec:
                     - name
                     - type
                     type: object
+                  placement:
+                    description: |-
+                      Placement selects the pod topology; resolves ACHAgent.spec.placement ??
+                      AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
+                      value cannot shadow the profile's). standalone renders one `agent` container
+                      exactly as before. distributed renders three containers from the same image in
+                      ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args
+                      `--role <name>`, image entrypoint preserved). Operator-only: never rendered into
+                      config.json. Requires an ach-agent image with role support AND the HTTP role-port
+                      probe contract (> v0.16.2). In distributed mode the profile's spec.resources
+                      applies to EACH container, so the pod requests/limits total 3× the declared values.
+                    enum:
+                    - standalone
+                    - distributed
+                    type: string
                 type: object
               env:
                 description: |-
@@ -622,20 +637,6 @@ spec:
                 x-kubernetes-validations:
                 - message: persistence.size is required when persistence.enabled=true
                   rule: '!self.enabled || (has(self.size) && size(self.size) > 0)'
-              placement:
-                default: standalone
-                description: |-
-                  Placement selects the pod topology. standalone (default) renders one `agent`
-                  container exactly as before. distributed renders three containers from the same
-                  image in ONE single-replica Recreate Deployment — `channels`, `harness`, `engine`
-                  (args `--role <name>`, image entrypoint preserved). Profile-only: never rendered
-                  into config.json. Requires an ach-agent image with role support AND the HTTP
-                  role-port probe contract (> v0.16.2). In distributed mode spec.resources applies
-                  to EACH container, so the pod requests/limits total 3× the declared values.
-                enum:
-                - standalone
-                - distributed
-                type: string
               podTemplate:
                 description: |-
                   PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod

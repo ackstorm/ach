@@ -131,6 +131,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args<br />`--role <name>`, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (> v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values. |  | Enum: [standalone distributed] <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
@@ -252,6 +253,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args<br />`--role <name>`, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (> v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values. |  | Enum: [standalone distributed] <br /> |
 
 
 #### AgentProfile
@@ -315,7 +317,6 @@ _Appears in:_
 | `achagent` _[AgentDefaults](#agentdefaults)_ | Achagent holds the agent-overridable defaults. image is required here<br />(object-level CEL); the other fields are optional defaults. |  | Required: \{\} <br /> |
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology. standalone (default) renders one `agent`<br />container exactly as before. distributed renders three containers from the same<br />image in ONE single-replica Recreate Deployment — `channels`, `harness`, `engine`<br />(args `--role <name>`, image entrypoint preserved). Profile-only: never rendered<br />into config.json. Requires an ach-agent image with role support AND the HTTP<br />role-port probe contract (> v0.16.2). In distributed mode spec.resources applies<br />to EACH container, so the pod requests/limits total 3× the declared values. | standalone | Enum: [standalone distributed] <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables inherited by ACHAgents using this profile.<br />Reserved ACH_* names are forbidden because the operator owns that namespace. Only<br />literal values and secretKeyRef sources are supported. |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |

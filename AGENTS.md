@@ -143,8 +143,9 @@ strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
 probe-backed `pod.status` only.
-`AgentProfile.spec.placement` (`standalone` default | `distributed`, profile-only, never in
-config.json) picks the pod topology: standalone is the single `agent` container rendering,
+`placement` (`standalone` default | `distributed`; `ACHAgent.spec.placement ??
+AgentProfile.spec.achagent.placement`, agent wins; operator-only, never in config.json)
+picks the pod topology: standalone is the single `agent` container rendering,
 unchanged; distributed renders `channels`/`harness`/`engine` containers (`args: [--role,
 <name>]`, same image, `command` never set) in the same single-replica `Recreate`
 Deployment — channels+harness get the operator env verbatim, engine gets only the
@@ -157,17 +158,16 @@ PVC subPath (or one emptyDir when not persistent, `<base>=/tmp/ach-agent`); IPC 
 profile/agent `health.port` is ignored in this mode; never exec/socket probes); pod
 uid/gid/fsGroup 10001; Service targetPort 8080 (channels); profile `resources` per
 container (pod total 3×). Placement is a config-hash input. Requires an ach-agent image
-newer than `v0.16.2` (HTTP role-port probe contract). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost) holds
+newer than `v0.16.2` (HTTP role-port probe contract). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
 spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
-(`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost}` + `ResolveAchBaseURL`):
+(`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost,Placement}` + `ResolveAchBaseURL`):
 a set agent field wins, an omitted one inherits the profile's. Slices/maps/
 nested blocks (`engine.forwardEnv`, `model.params`, `model.thinking`,
 `engine.pi`, `cost`) are atomic — present on the agent ⇒ replace as a whole. Everything
 else on the profile is profile-only infrastructure an agent cannot override:
 `imagePullSecrets`, `resources`, `extraEnv`, `nodeSelector`, `tolerations`,
-`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`,
-`placement`.
+`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`.
 `ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.achagent.ach ??
 operator ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent); `health`
 is resolved ONCE via `agentrender.ResolveHealth` so the config health block,
@@ -482,11 +482,13 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 ## Repository-specific patterns
 
-- **ACHAgent placement**: `resolvePlacement` defaults `""`→`standalone`; the distributed
+- **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`); the distributed
   matrix lives in `distributedContainers`/`distributedVolumes` (`achagent_workload.go`) and
-  is asserted by `TestBuildDeployment_Distributed*`. The e2e fixture stays standalone until
-  ach-agent publishes the image implementing the HTTP role-port probes (> v0.16.2); then
-  pin it and flip `test/e2e/cluster/06-agent/profile.yaml` in ONE commit.
+  is asserted by `TestBuildDeployment_Distributed*`. The e2e stage 06 ships BOTH shapes:
+  `e2e-agent` (standalone) + `e2e-agent-dist` (`spec.placement: distributed`), gated on
+  WorkloadApplied + rendered shape only (image not loaded into kind). Pod-Ready validation
+  of the distributed pod needs the ach-agent image implementing the HTTP role-port probes
+  (> v0.16.2) against a real cluster.
 
 - **Single-binary cobra layout**: each long-running mode is a subcommand under
   `cmd/ach/cmd/<mode>.go` wiring its `internal/<service>/` impl. New modes go

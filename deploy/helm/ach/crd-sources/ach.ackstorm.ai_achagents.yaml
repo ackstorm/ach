@@ -1025,6 +1025,21 @@ spec:
                 - name
                 - type
                 type: object
+              placement:
+                description: |-
+                  Placement selects the pod topology; resolves ACHAgent.spec.placement ??
+                  AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
+                  value cannot shadow the profile's). standalone renders one `agent` container
+                  exactly as before. distributed renders three containers from the same image in
+                  ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args
+                  `--role <name>`, image entrypoint preserved). Operator-only: never rendered into
+                  config.json. Requires an ach-agent image with role support AND the HTTP role-port
+                  probe contract (> v0.16.2). In distributed mode the profile's spec.resources
+                  applies to EACH container, so the pod requests/limits total 3× the declared values.
+                enum:
+                - standalone
+                - distributed
+                type: string
               profileRef:
                 description: LocalObjectRef references a resource by name in the CR's
                   namespace.

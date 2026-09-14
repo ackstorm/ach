@@ -407,6 +407,19 @@ func renderCost(c *achv1alpha1.CostSpec) *CostBlock {
 	return &CostBlock{Source: c.Source}
 }
 
+// ResolvePlacement is the pod-topology resolution: agent wins when set, else the
+// profile's spec.achagent.placement, else standalone. Consumed by the workload builder
+// only — Render never emits it (config.json has no placement field).
+func ResolvePlacement(agent, profile string) string {
+	switch {
+	case agent != "":
+		return agent
+	case profile != "":
+		return profile
+	}
+	return achv1alpha1.PlacementStandalone
+}
+
 // ResolveImage is the per-agent image resolution: agent wins when set, else the
 // profile's spec.achagent.image. Empty result blocks the agent (Render errors).
 func ResolveImage(agent, profile string) string {
