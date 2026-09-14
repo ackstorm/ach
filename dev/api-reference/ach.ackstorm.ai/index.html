@@ -3637,6 +3637,12 @@
 <td></td>
 </tr>
 <tr>
+<td><code>placement</code> <em>string</em></td>
+<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — <code>channels</code>, <code>harness</code>, <code>engine</code> (args<br /><code>--role &lt;name&gt;</code>, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (&gt; v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values.</td>
+<td></td>
+<td>Enum: [standalone distributed] <br /></td>
+</tr>
+<tr>
 <td><code>env</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core">EnvVar</a> array</em></td>
 <td>Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported.</td>
 <td></td>
@@ -3886,6 +3892,12 @@ the profile, but optional on the agent and inherited when omitted.</p>
 <td></td>
 <td></td>
 </tr>
+<tr>
+<td><code>placement</code> <em>string</em></td>
+<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — <code>channels</code>, <code>harness</code>, <code>engine</code> (args<br /><code>--role &lt;name&gt;</code>, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (&gt; v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values.</td>
+<td></td>
+<td>Enum: [standalone distributed] <br /></td>
+</tr>
 </tbody>
 </table>
 <h4 id="agentprofile">AgentProfile<a class="headerlink" href="#agentprofile" title="Permanent link">&para;</a></h4>
@@ -4069,7 +4081,7 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 </tr>
 <tr>
 <td><code>podTemplate</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
-<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
+<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />(standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5458,8 +5470,11 @@ but the constraint is no longer machine-enforced at admission or fetch.</p>
 </tbody>
 </table>
 <h4 id="healthspec">HealthSpec<a class="headerlink" href="#healthspec" title="Permanent link">&para;</a></h4>
-<p>HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
-Service targetPort and the container probes. Harness default port is 8080.</p>
+<p>HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+placement it drives the Service targetPort and the container probes. In distributed
+placement it is NOT used by the operator: the Service targets channels on 8080 and every
+role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+bound by ach-agent. Harness default port is 8080.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentdefaults">AgentDefaults</a></p>
