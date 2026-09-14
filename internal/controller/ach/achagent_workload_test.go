@@ -3,8 +3,12 @@
 package ach
 
 import (
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -17,16 +21,16 @@ import (
 func mkEnv(name, val string) []corev1.EnvVar { return []corev1.EnvVar{{Name: name, Value: val}} }
 
 func TestComputeConfigHash_ChangesWithInputs(t *testing.T) {
-	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec1")
+	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone)
 	if len(base) != 16 {
 		t.Fatalf("hash len = %d", len(base))
 	}
 	for name, h := range map[string]string{
-		"config":      computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), nil, "img:1", "sec1"),
-		"env":         computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), nil, "img:1", "sec1"),
-		"podTemplate": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), []byte(`{"spec":{}}`), "img:1", "sec1"),
-		"image":       computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:2", "sec1"),
-		"secret":      computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec2"),
+		"config":      computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone),
+		"env":         computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone),
+		"podTemplate": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), []byte(`{"spec":{}}`), "img:1", "sec1", achv1alpha1.PlacementStandalone),
+		"image":       computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:2", "sec1", achv1alpha1.PlacementStandalone),
+		"secret":      computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec2", achv1alpha1.PlacementStandalone),
 	} {
 		if h == base {
 			t.Errorf("%s change did not alter hash", name)
@@ -556,5 +560,323 @@ func TestBuildDeployment_AgentImageAndEngineOverride(t *testing.T) {
 	}
 	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
 		t.Errorf("rendered engine forwardEnv = %v, want inherited [HTTPS_PROXY]", cfg.Engine.ForwardEnv)
+	}
+}
+
+// distributedFixture is a distributed profile with persistence toggled by the caller.
+func distributedFixture(persistent bool) (*achv1alpha1.ACHAgent, *achv1alpha1.AgentProfile) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Capability.Environment = "prod"
+	a.Spec.Env = []corev1.EnvVar{
+		{Name: "DEBUG", Value: "1"},
+		{Name: "GH_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "gh"}, Key: "token"}}},
+		{Name: "NOT_FORWARDED", Value: "x"},
+	}
+	a.Spec.Engine = &achv1alpha1.EngineSpec{ForwardEnv: []string{"DEBUG", "GH_TOKEN", "MISSING", "ACH_TOKEN"}}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Placement = achv1alpha1.PlacementDistributed
+	p.Spec.Achagent.Image = "ghcr.io/ackstorm/ach-agent:role"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	if persistent {
+		p.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, Size: "1Gi", MountPath: "/var/lib/ach-agent"}
+	}
+	return a, p
+}
+
+func containerByName(dep *appsv1.Deployment, name string) corev1.Container {
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		if c.Name == name {
+			return c
+		}
+	}
+	return corev1.Container{}
+}
+
+func envNames(in []corev1.EnvVar) []string {
+	out := make([]string, 0, len(in))
+	for _, e := range in {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func TestComputeConfigHash_PlacementIsAnInput(t *testing.T) {
+	base := computeConfigHash([]byte(`{}`), []byte(`[]`), nil, "img", "sec", achv1alpha1.PlacementStandalone)
+	if computeConfigHash([]byte(`{}`), []byte(`[]`), nil, "img", "sec", achv1alpha1.PlacementDistributed) == base {
+		t.Fatal("placement change did not alter hash")
+	}
+}
+
+func TestResolvePlacement_DefaultsToStandalone(t *testing.T) {
+	if got := resolvePlacement(&achv1alpha1.AgentProfile{}); got != achv1alpha1.PlacementStandalone {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
+	a, p := distributedFixture(true)
+	p.Spec.Placement = "" // unset ⇒ standalone
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := dep.Spec.Template.Spec
+	if len(ps.Containers) != 1 || ps.Containers[0].Name != agentContainerName || ps.Containers[0].Args != nil {
+		t.Fatalf("standalone must render the single %q container with no args: %+v", agentContainerName, ps.Containers)
+	}
+	if ps.Containers[0].StartupProbe.HTTPGet == nil || ps.Containers[0].StartupProbe.HTTPGet.Port.IntVal != 8000 {
+		t.Error("standalone probes must stay HTTP on the configured health port (default 8000)")
+	}
+	if ps.SecurityContext.RunAsUser != nil || ps.SecurityContext.FSGroup != nil {
+		t.Error("standalone must not pin uid/fsGroup")
+	}
+	for _, v := range ps.Volumes {
+		if strings.HasPrefix(v.Name, "ach-agent-ipc-") || strings.HasPrefix(v.Name, "tmp-") {
+			t.Errorf("standalone must not render distributed volume %q", v.Name)
+		}
+	}
+	if got := ps.Containers[0].VolumeMounts[1]; got.MountPath != "/var/lib/ach-agent" || got.SubPath != "" {
+		t.Errorf("standalone PVC mount must stay the whole base dir, got %+v", got)
+	}
+	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != 8000 {
+		t.Errorf("standalone Service targetPort must stay the health port (default 8000), got %d", tp)
+	}
+}
+
+// assertRoleProbes checks the contract §4 httpGet schedule on one distributed container.
+func assertRoleProbes(t *testing.T, c corev1.Container) {
+	t.Helper()
+	port := rolePorts[c.Name]
+	for name, tc := range map[string]struct {
+		pr                  *corev1.Probe
+		path                string
+		delay, period, fail int32
+	}{
+		"startup":   {c.StartupProbe, "/readyz", 15, 5, 6},
+		"readiness": {c.ReadinessProbe, "/readyz", 0, 10, 3},
+		"liveness":  {c.LivenessProbe, "/healthz", 0, 20, 3},
+	} {
+		pr := tc.pr
+		if pr == nil || pr.Exec != nil || pr.HTTPGet == nil || pr.HTTPGet.Path != tc.path || pr.HTTPGet.Port.IntVal != port {
+			t.Errorf("%s: %s probe must be httpGet %s on :%d, got %+v", c.Name, name, tc.path, port, pr)
+			continue
+		}
+		if pr.InitialDelaySeconds != tc.delay || pr.PeriodSeconds != tc.period || pr.TimeoutSeconds != 3 || pr.FailureThreshold != tc.fail {
+			t.Errorf("%s: %s probe timings = %+v", c.Name, name, pr)
+		}
+	}
+}
+
+func TestBuildDeployment_DistributedContainerMatrix(t *testing.T) {
+	a, p := distributedFixture(false)
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := dep.Spec.Template.Spec.Containers
+	if len(cs) != 3 {
+		t.Fatalf("want 3 containers, got %d", len(cs))
+	}
+	if got := []string{cs[0].Name, cs[1].Name, cs[2].Name}; !slices.Equal(got, []string{"channels", "harness", "engine"}) {
+		t.Fatalf("containers = %v", got)
+	}
+	for _, c := range cs {
+		if c.Command != nil {
+			t.Errorf("%s: command must be unset (image entrypoint preserved)", c.Name)
+		}
+		if !slices.Equal(c.Args, []string{"--role", c.Name}) {
+			t.Errorf("%s: args = %v", c.Name, c.Args)
+		}
+		if c.Image != p.Spec.Achagent.Image {
+			t.Errorf("%s: image = %q", c.Name, c.Image)
+		}
+		assertRoleProbes(t, c)
+		if c.SecurityContext == nil || *c.SecurityContext.AllowPrivilegeEscalation || c.SecurityContext.Capabilities == nil {
+			t.Errorf("%s: restricted securityContext required", c.Name)
+		}
+		if !reflect.DeepEqual(c.Resources, cs[0].Resources) {
+			t.Errorf("%s: resources must equal profile resources on every container", c.Name)
+		}
+		hasConfig := slices.ContainsFunc(c.VolumeMounts, func(m corev1.VolumeMount) bool { return m.Name == configVolumeName })
+		if hasConfig != (c.Name == roleHarness) {
+			t.Errorf("%s: config.json mounted=%v (harness only)", c.Name, hasConfig)
+		}
+	}
+	if got := containerByName(dep, roleChannels).Ports; len(got) != 1 || got[0].ContainerPort != 8080 {
+		t.Errorf("channels must expose 8080, got %+v", got)
+	}
+	if got := containerByName(dep, roleHarness).Ports; len(got) != 1 || got[0].Name != "health" || got[0].ContainerPort != 8090 {
+		t.Errorf("harness must declare the named health port 8090, got %+v", got)
+	}
+	if got := containerByName(dep, roleEngine).Ports; len(got) != 1 || got[0].ContainerPort != 8081 {
+		t.Errorf("engine must declare its health port 8081, got %+v", got)
+	}
+}
+
+func TestBuildDeployment_DistributedPodShape(t *testing.T) {
+	a, p := distributedFixture(false)
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := dep.Spec.Template.Spec
+	sc := ps.SecurityContext
+	if sc.RunAsUser == nil || *sc.RunAsUser != 10001 || sc.RunAsGroup == nil || *sc.RunAsGroup != 10001 || sc.FSGroup == nil || *sc.FSGroup != 10001 {
+		t.Errorf("pod securityContext must pin uid/gid/fsGroup 10001, got %+v", sc)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot || sc.SeccompProfile == nil {
+		t.Error("runAsNonRoot + seccomp must stay")
+	}
+	if ps.ShareProcessNamespace != nil || ps.HostNetwork || ps.HostPID || ps.HostIPC {
+		t.Error("no shared PID / host namespaces")
+	}
+	if ps.AutomountServiceAccountToken == nil || *ps.AutomountServiceAccountToken {
+		t.Error("automountServiceAccountToken must stay false")
+	}
+	if *dep.Spec.Replicas != 1 || dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Error("one replica + Recreate")
+	}
+	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != 8080 {
+		t.Errorf("distributed Service must target channels 8080, got %d", tp)
+	}
+}
+
+func TestBuildDeployment_DistributedEnvRouting(t *testing.T) {
+	a, p := distributedFixture(false)
+	env := buildAgentEnv(a, p, "")
+	dep, err := buildDeployment(a, p, "h", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness, channels, engine := containerByName(dep, roleHarness), containerByName(dep, roleChannels), containerByName(dep, roleEngine)
+	if !reflect.DeepEqual(harness.Env, env) || !reflect.DeepEqual(channels.Env, env) {
+		t.Error("channels and harness must receive the existing operator env verbatim")
+	}
+	if !slices.Contains(envNames(harness.Env), "ACH_CONFIG_PATH") {
+		t.Error("harness must retain ACH_CONFIG_PATH")
+	}
+	if got := envNames(engine.Env); !slices.Equal(got, []string{"DEBUG", "GH_TOKEN"}) {
+		t.Fatalf("engine env = %v (forwardEnv-selected only; MISSING absent, ACH_* never, NOT_FORWARDED absent)", got)
+	}
+	if engine.Env[1].ValueFrom == nil || engine.Env[1].ValueFrom.SecretKeyRef == nil || engine.Env[1].ValueFrom.SecretKeyRef.Name != "gh" {
+		t.Errorf("engine GH_TOKEN must stay a secretKeyRef: %+v", engine.Env[1])
+	}
+	if len(engine.EnvFrom) != 0 {
+		t.Error("engine must not use envFrom")
+	}
+	// No forwardEnv at all ⇒ engine env is empty.
+	a.Spec.Engine = nil
+	dep, _ = buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if got := containerByName(dep, roleEngine).Env; len(got) != 0 {
+		t.Errorf("engine env without forwardEnv must be empty, got %v", envNames(got))
+	}
+}
+
+// mountKey is one row of the contract's mount matrix.
+type mountKey struct{ container, path string }
+
+func mountMatrix(dep *appsv1.Deployment) map[mountKey]corev1.VolumeMount {
+	out := map[mountKey]corev1.VolumeMount{}
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		for _, m := range c.VolumeMounts {
+			out[mountKey{c.Name, m.MountPath}] = m
+		}
+	}
+	return out
+}
+
+func TestBuildDeployment_DistributedMountMatrix(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		persistent bool
+		base       string
+	}{
+		{"persistent", true, "/var/lib/ach-agent"},
+		{"ephemeral", false, "/tmp/ach-agent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, p := distributedFixture(tc.persistent)
+			dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := mountMatrix(dep)
+			want := map[mountKey]struct {
+				ro      bool
+				subPath string
+			}{
+				{"harness", tc.base + "/state"}:         {false, "state"},
+				{"harness", tc.base + "/workspace"}:     {false, "workspace"},
+				{"engine", tc.base + "/home"}:           {false, "home"},
+				{"engine", tc.base + "/workspace"}:      {false, "workspace"},
+				{"harness", "/run/ach-agent/transfer"}:  {false, ""},
+				{"engine", "/run/ach-agent/transfer"}:   {false, ""},
+				{"harness", "/run/ach-agent/channels"}:  {false, ""},
+				{"channels", "/run/ach-agent/channels"}: {true, ""},
+				{"harness", "/run/ach-agent/engine"}:    {true, ""},
+				{"engine", "/run/ach-agent/engine"}:     {false, ""},
+				{"harness", "/tmp"}:                     {false, ""},
+				{"engine", "/tmp"}:                      {false, ""},
+				{"channels", "/tmp"}:                    {false, ""},
+				{"harness", configFilePath}:             {true, configFileName},
+			}
+			for k, w := range want {
+				m, ok := got[k]
+				if !ok {
+					t.Errorf("missing mount %s:%s", k.container, k.path)
+					continue
+				}
+				if m.ReadOnly != w.ro || m.SubPath != w.subPath {
+					t.Errorf("%s:%s = ro=%v subPath=%q, want ro=%v subPath=%q", k.container, k.path, m.ReadOnly, m.SubPath, w.ro, w.subPath)
+				}
+				delete(got, k)
+			}
+			for k := range got {
+				t.Errorf("unexpected mount %s:%s (no tool-specific or whole-base mounts)", k.container, k.path)
+			}
+			// Backing: one data volume (PVC or emptyDir), three IPC emptyDirs, three private /tmp emptyDirs.
+			vols := map[string]corev1.Volume{}
+			for _, v := range dep.Spec.Template.Spec.Volumes {
+				vols[v.Name] = v
+			}
+			data := vols[pvcVolumeName]
+			if tc.persistent && (data.PersistentVolumeClaim == nil || data.PersistentVolumeClaim.ClaimName != agentResourceName(a.Name)) {
+				t.Errorf("persistent data volume must be the PVC, got %+v", data)
+			}
+			if !tc.persistent && data.EmptyDir == nil {
+				t.Errorf("ephemeral data volume must be an emptyDir, got %+v", data)
+			}
+			for _, n := range []string{"ach-agent-ipc-transfer", "ach-agent-ipc-channels", "ach-agent-ipc-engine", "tmp-channels", "tmp-harness", "tmp-engine"} {
+				if vols[n].EmptyDir == nil {
+					t.Errorf("volume %q must be an emptyDir, got %+v", n, vols[n])
+				}
+			}
+			// The /tmp emptyDirs are private: each container mounts its own.
+			for _, c := range dep.Spec.Template.Spec.Containers {
+				for _, m := range c.VolumeMounts {
+					if m.MountPath == "/tmp" && m.Name != "tmp-"+c.Name {
+						t.Errorf("%s: /tmp must be its own emptyDir, got %q", c.Name, m.Name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestBuildDeployment_DistributedPodTemplateOverlayMergesByRole(t *testing.T) {
+	a, p := distributedFixture(false)
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"containers":[{"name":"engine","resources":{"limits":{"cpu":"4"}}}]}}`)}
+	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dep.Spec.Template.Spec.Containers) != 3 {
+		t.Fatalf("overlay by container name must not add a container: %d", len(dep.Spec.Template.Spec.Containers))
+	}
+	if got := containerByName(dep, roleEngine).Resources.Limits[corev1.ResourceCPU]; got.String() != "4" {
+		t.Errorf("engine cpu limit = %s, overlay must merge into the engine container", got.String())
 	}
 }
