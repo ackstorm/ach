@@ -38,6 +38,15 @@ spec:
   # Pod environment inherited by every agent using this profile. Merely declaring a
   # variable does not expose it to the engine or prepare scripts; their forwardEnv
   # lists opt in independently.
+  # Pod topology. standalone (default) = one `agent` container, exactly the rendering
+  # before placement existed. distributed = three containers from the same image in ONE
+  # single-replica Recreate Deployment — channels (public ingress 8080), harness (the only
+  # container that mounts config.json), engine (receives ONLY the env named by
+  # engine.forwardEnv). Probes are httpGet on fixed role ports (channels 8080, harness
+  # 8090, engine 8081); the health block above is ignored in this mode. Needs an ach-agent
+  # image newer than v0.16.2 (HTTP role-port probe contract). resources above apply to
+  # EACH container: a distributed pod requests and limits 3× what is declared.
+  # placement: distributed
   env:
     - name: HTTPS_PROXY
       value: http://proxy.example.com:8080
@@ -88,7 +97,8 @@ spec:
       #     - protocol: TCP
       #       port: 443
   # Optional raw overlay strategic-merged over the operator-rendered pod template.
-  # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent").
+  # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent" in
+  # standalone, "channels" | "harness" | "engine" in distributed).
   podTemplate:
     spec:
       securityContext:

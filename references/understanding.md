@@ -146,7 +146,9 @@ parity checklist: `references/adding-a-cr-kind.md`.
   extraEnv (ACH_* CEL-forbidden), persistence PVC (Retain/Delete), egress-only
   default-deny `networkPolicy` opt-in (DNS rule + declared peers), raw
   `podTemplate` strategic-merge overlay — pass-through by design, selector +
-  config-hash re-pinned after merge) + `ACHAgent` (instance: `identity.secretRef`
+  config-hash re-pinned after merge; `placement` standalone|distributed — distributed
+  splits the pod into channels/harness/engine containers with per-role env/mount
+  routing and httpGet probes on 8080/8090/8081, see CLAUDE.md "ACHAgent placement") + `ACHAgent` (instance: `identity.secretRef`
   ek_ → `ACH_TOKEN` env via secretKeyRef — never file-mounted, explicitly NOT
   an isolation boundary (same-uid reads /proc/pid/environ); channels
   webhook (gitlab/github/generic auth, botUsername loop-guard, triggerUsers

@@ -39,6 +39,15 @@ mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness
 **self-hydrates** against ACH at boot — there is no init container and no CLI
 step.
 
+With `spec.placement: distributed` on the profile, that Deployment's one pod runs three
+containers from the same image — `channels` (ingress, port 8080), `harness` (mounts
+`config.json`, owns `<base>/state` + `<base>/workspace`) and `engine` (owns `<base>/home`,
+shares `<base>/workspace`; env limited to `engine.forwardEnv`) — wired through
+`/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`, uid/gid/
+fsGroup 10001, each probed over HTTP on its own port (8080/8090/8081). `<base>` is
+`persistence.mountPath` (PVC subPaths) or `/tmp/ach-agent` (emptyDir). Profile `resources`
+apply per container (pod total = 3×). Requires an ach-agent image newer than `v0.16.2`.
+
 ## Prerequisites — Secrets you create yourself
 
 The operator never mints credentials; it only references Secrets in the same

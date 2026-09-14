@@ -142,7 +142,22 @@ config-hash roll; optional profile spec.podTemplate raw overlay
 strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
-probe-backed `pod.status` only. The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost) holds
+probe-backed `pod.status` only.
+`AgentProfile.spec.placement` (`standalone` default | `distributed`, profile-only, never in
+config.json) picks the pod topology: standalone is the single `agent` container rendering,
+unchanged; distributed renders `channels`/`harness`/`engine` containers (`args: [--role,
+<name>]`, same image, `command` never set) in the same single-replica `Recreate`
+Deployment — channels+harness get the operator env verbatim, engine gets only the
+`engine.forwardEnv`-selected entries (secretKeyRef preserved, never `ACH_*`); `config.json`
+mounts into harness only; data = `<base>/{state→harness, home→engine, workspace→both}` via
+PVC subPath (or one emptyDir when not persistent, `<base>=/tmp/ach-agent`); IPC dirs
+`/run/ach-agent/{transfer (H+E), channels (H rw, C ro), engine (E rw, H ro)}`; private
+`/tmp` per container; probes are httpGet `/readyz`+`/healthz` on fixed role ports
+(`rolePorts` in `achagent_workload.go`: channels 8080, harness 8090, engine 8081 — the
+profile/agent `health.port` is ignored in this mode; never exec/socket probes); pod
+uid/gid/fsGroup 10001; Service targetPort 8080 (channels); profile `resources` per
+container (pod total 3×). Placement is a config-hash input. Requires an ach-agent image
+newer than `v0.16.2` (HTTP role-port probe contract). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
 spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
 (`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost}` + `ResolveAchBaseURL`):
@@ -151,11 +166,13 @@ nested blocks (`engine.forwardEnv`, `model.params`, `model.thinking`,
 `engine.pi`, `cost`) are atomic — present on the agent ⇒ replace as a whole. Everything
 else on the profile is profile-only infrastructure an agent cannot override:
 `imagePullSecrets`, `resources`, `extraEnv`, `nodeSelector`, `tolerations`,
-`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`.
+`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`,
+`placement`.
 `ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.achagent.ach ??
 operator ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent); `health`
 is resolved ONCE via `agentrender.ResolveHealth` so the config health block,
-Service targetPort, and container probes never drift.
+Service targetPort, and container probes never drift (standalone; distributed uses the
+fixed role ports above).
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging
@@ -464,6 +481,12 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 2.4 — accept-disposition); a future mtime-recheck would close it.
 
 ## Repository-specific patterns
+
+- **ACHAgent placement**: `resolvePlacement` defaults `""`→`standalone`; the distributed
+  matrix lives in `distributedContainers`/`distributedVolumes` (`achagent_workload.go`) and
+  is asserted by `TestBuildDeployment_Distributed*`. The e2e fixture stays standalone until
+  ach-agent publishes the image implementing the HTTP role-port probes (> v0.16.2); then
+  pin it and flip `test/e2e/cluster/06-agent/profile.yaml` in ONE commit.
 
 - **Single-binary cobra layout**: each long-running mode is a subcommand under
   `cmd/ach/cmd/<mode>.go` wiring its `internal/<service>/` impl. New modes go
