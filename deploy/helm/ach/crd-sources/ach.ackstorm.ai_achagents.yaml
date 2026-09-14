@@ -676,8 +676,11 @@ spec:
                   rule: '!self.gateway || self.service'
               health:
                 description: |-
-                  HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
-                  Service targetPort and the container probes. Harness default port is 8080.
+                  HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+                  placement it drives the Service targetPort and the container probes. In distributed
+                  placement it is NOT used by the operator: the Service targets channels on 8080 and every
+                  role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+                  bound by ach-agent. Harness default port is 8080.
                 properties:
                   host:
                     type: string

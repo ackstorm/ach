@@ -315,13 +315,14 @@ _Appears in:_
 | `achagent` _[AgentDefaults](#agentdefaults)_ | Achagent holds the agent-overridable defaults. image is required here<br />(object-level CEL); the other fields are optional defaults. |  | Required: \{\} <br /> |
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
+| `placement` _string_ | Placement selects the pod topology. standalone (default) renders one `agent`<br />container exactly as before. distributed renders three containers from the same<br />image in ONE single-replica Recreate Deployment — `channels`, `harness`, `engine`<br />(args `--role <name>`, image entrypoint preserved). Profile-only: never rendered<br />into config.json. Requires an ach-agent image with role support AND the HTTP<br />role-port probe contract (> v0.16.2). In distributed mode spec.resources applies<br />to EACH container, so the pod requests/limits total 3× the declared values. | standalone | Enum: [standalone distributed] <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables inherited by ACHAgents using this profile.<br />Reserved ACH_* names are forbidden because the operator owns that namespace. Only<br />literal values and secretKeyRef sources are supported. |  |  |
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
 | `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
-| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name, scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />(standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
 
 #### AgentProfileStatus
@@ -1013,8 +1014,11 @@ _Appears in:_
 
 
 
-HealthSpec is the harness HTTP surface (config: health{host,port}). Also drives the
-Service targetPort and the container probes. Harness default port is 8080.
+HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+placement it drives the Service targetPort and the container probes. In distributed
+placement it is NOT used by the operator: the Service targets channels on 8080 and every
+role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+bound by ach-agent. Harness default port is 8080.
 
 
 
