@@ -121,6 +121,37 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
   {namespace(default), refuse, replace, skip}; only `MergeReplace` clashes
   count. `namespace` renames via `internal/cli/namespace.Leaf`.
 
+### Multi-Environment workspaces — cross-env skill de-collision
+
+Several specialist Environments (slides / sheets / images / frontend) hydrated
+into ONE workspace is a supported, intended shape: `ach-cli env save` writes
+`ach.yaml` and a bare `ach-cli env hydrate` hydrates each listed env
+best-effort. State is per-env (`.ach/<env>/state-<platform>.json`) but the
+adapter tree is single-path by construction, so the envs **union** in the same
+`.claude/` (`state.ResolvePath`'s doc comment is the contract).
+
+The union only collides on one axis: two envs shipping a skill of the SAME
+name project to the same `.claude/skills/<name>/`. `state.ForeignSkillNames`
+reads the sibling envs' per-platform state and `projectSkills` stages a
+claimed name as `<env>-<name>` instead — the incumbent (first hydrated, so
+`ach.yaml` order) keeps the bare name. Two properties worth not re-deriving:
+
+- **Prefixing is at SKILL granularity, not per file** — it is applied to
+  `skillstage.Nest`'s name argument, so every file of the skill moves
+  together. A per-file check would split a skill across two dirs when the
+  incumbent's copy has fewer files.
+- **Sticky via our own state** (`s.Skills[].Source`): a name we already
+  project prefixed stays prefixed after the other env drops its copy, so the
+  name a user types does not flap between hydrates.
+
+Only the per-platform `state-<platform>.json` is consulted — a claim for a
+different target writes a different tree. NOT covered: `Plugin` (same problem,
+dormant behind `featuregate.PluginsEnabled=false`); prompts/artifacts extract
+to the per-env `<achDir>` so they cannot collide; adapter runtime files are
+key-owned deep merges, which co-own safely by design. There is still no
+cross-env reference counting, so `env uninstall <a>` removes a file `<b>` also
+projected (self-heals on `<b>`'s next hydrate).
+
 ### Credential safety — the `.gitignore` block (`internal/cli/gitignore`)
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in

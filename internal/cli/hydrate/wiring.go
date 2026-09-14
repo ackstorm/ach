@@ -784,6 +784,28 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	// `skills/**` rule. Names are sorted for run-to-run determinism.
 	projRoot := filepath.Join(achDir, "skill-projected")
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+
+	// Cross-environment de-collision. Several specialist Environments hydrated
+	// into one workspace union in the same .claude/ by design, but same-named
+	// skills from two of them resolve to the same destination dir — last
+	// hydrate wins and the two flip-flop. A name another environment already
+	// owns is staged (and therefore projected) as <env>-<name> instead; the
+	// incumbent keeps the bare name. Sticky via our own prior state, so a name
+	// we already project prefixed does not flap back when the other
+	// environment later drops its copy. Deliberately NOT unconditional: a
+	// single-environment workspace — the common case — keeps bare names.
+	envName := filepath.Base(achDir)
+	if verr := validatePluginName(envName); verr != nil {
+		return fmt.Errorf("adapter %s environment directory %q: %w", d.platformID, envName, verr)
+	}
+	foreign := state.ForeignSkillNames(achDir, d.platformID)
+	ownPrefixed := map[string]bool{}
+	if s != nil {
+		for _, e := range s.Skills {
+			ownPrefixed[e.Source] = true
+		}
+	}
+
 	nested := false
 	for _, ent := range entries {
 		if !ent.IsDir() {
@@ -808,7 +830,15 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		// The shared skillstage.Nest performs this rebase (it creates
 		// projRoot/skills/ on first success), returning nested=false when the
 		// extracted tree carries no routable SKILL.md.
-		okNested, nerr := skillstage.Nest(projRoot, ent.Name(), filepath.Join(skillRoot, ent.Name()))
+		//
+		// stageName carries the cross-environment prefix when one applies; it
+		// is the name that reaches the destination path, so every file of the
+		// skill moves together and the skill can never split across two dirs.
+		stageName := ent.Name()
+		if prefixed := envName + "-" + stageName; ownPrefixed[prefixed] || foreign[stageName] != "" {
+			stageName = prefixed
+		}
+		okNested, nerr := skillstage.Nest(projRoot, stageName, filepath.Join(skillRoot, ent.Name()))
 		if nerr != nil {
 			return fmt.Errorf("adapter %s nest skill %s: %w", d.platformID, ent.Name(), nerr)
 		}
