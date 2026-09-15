@@ -829,9 +829,18 @@ verify_all() {
   kubectl -n ach-system get deploy achagent-e2e-agent-dist -o json \
     | jq -e '[.spec.template.spec.containers[] | select(any(.volumeMounts[]; .subPath=="config.json")) | .name] == ["harness"]
              and ([.spec.template.spec.containers[] | select(.name=="engine") | .env[].name] == ["E2E_FORWARDED"])' >/dev/null
-  kubectl -n ach-system get deploy achagent-e2e-agent-dist \
-    -o jsonpath='{.spec.template.spec.securityContext.fsGroup}' \
-    | grep -qx '10001'
+  # Persistent standalone: whole PVC at the mountPath, single container.
+  kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
+  kubectl -n ach-system get deploy achagent-e2e-agent-pvc -o json \
+    | jq -e '[.spec.template.spec.containers[].name] == ["agent"]
+             and any(.spec.template.spec.volumes[]; .persistentVolumeClaim != null)' >/dev/null
+  # Every placement pins pod uid/gid/fsGroup 10001 — a fresh root-owned cloud
+  # PVC is unwritable by the image uid without it (ach-agent finding 2026-09-15).
+  for a in e2e-agent e2e-agent-dist e2e-agent-pvc; do
+    kubectl -n ach-system get deploy "achagent-${a}" \
+      -o jsonpath='{.spec.template.spec.securityContext.runAsUser} {.spec.template.spec.securityContext.fsGroup}' \
+      | grep -qx '10001 10001'
+  done
   echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }
 

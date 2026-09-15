@@ -44,11 +44,20 @@ With `placement: distributed` (profile `spec.achagent.placement`, or per-agent
 containers from the same image — `channels` (ingress, port 8080), `harness` (mounts
 `config.json`, owns `<base>/state` + `<base>/workspace`) and `engine` (owns `<base>/home`,
 shares `<base>/workspace`; env limited to `engine.forwardEnv`) — wired through
-`/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`, uid/gid/
-fsGroup 10001, `enableServiceLinks: false`, each probed over HTTP on its own port
+`/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`,
+`enableServiceLinks: false`, each probed over HTTP on its own port
 (8080/8090/8081). `<base>` is
 `persistence.mountPath` (PVC subPaths) or `/tmp/ach-agent` (emptyDir). Profile `resources`
 apply per container (pod total = 3×). Requires an ach-agent image newer than `v0.16.2`.
+
+Both placements run the pod as uid/gid/fsGroup 10001 (the image uid), so a fresh
+PVC — root-owned 0755 on cloud provisioners such as EBS — is writable without a
+`podTemplate` overlay. Switching an **existing** default-layout PVC from
+`standalone` to `distributed` keeps the data (same PVC, state/home/workspace
+re-homed under the subPaths) but does **not** carry native tool sessions over:
+the engine's tool keeps its pre-switch workspace association (ach-agent issue,
+under investigation), so treat the first turn after the switch as a fresh
+conversation.
 
 ## Prerequisites — Secrets you create yourself
 

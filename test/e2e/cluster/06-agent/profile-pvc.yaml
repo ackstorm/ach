@@ -1,0 +1,22 @@
+# Same as e2e-profile but with persistence ON (kind's default `standard`
+# local-path StorageClass): the persistent-standalone shape ach-agent found
+# unwritable in EKS on v0.8.11 (fresh root-owned EBS PVC, pod had no fsGroup).
+# kind hands out 0777 hostPath dirs, so this fixture cannot reproduce that
+# failure; the gate is the rendered fsGroup (stage 07) + WorkloadReady=True +
+# a write under the mountPath as uid 10001 (TestAgentRuntimeReady).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: AgentProfile
+metadata:
+  name: e2e-profile-pvc
+  namespace: ach-system
+spec:
+  persistence:
+    enabled: true
+    size: 1Gi
+  achagent:
+    image: ghcr.io/ackstorm/ach-agent:v0.16.4
+    ach:
+      baseUrl: http://ach-gateway.ach-system.svc
+    model:
+      name: demo-model
+      type: openai

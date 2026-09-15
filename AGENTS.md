@@ -155,10 +155,15 @@ PVC subPath (or one emptyDir when not persistent, `<base>=/tmp/ach-agent`); IPC 
 `/run/ach-agent/{transfer (H+E), channels (H rw, C ro), engine (E rw, H ro)}`; private
 `/tmp` per container; probes are httpGet `/readyz`+`/healthz` on fixed role ports
 (`rolePorts` in `achagent_workload.go`: channels 8080, harness 8090, engine 8081 — the
-profile/agent `health.port` is ignored in this mode; never exec/socket probes); pod
-uid/gid/fsGroup 10001, `enableServiceLinks: false`; Service targetPort 8080 (channels); profile `resources` per
+profile/agent `health.port` is ignored in this mode; never exec/socket probes);
+`enableServiceLinks: false`; Service targetPort 8080 (channels); profile `resources` per
 container (pod total 3×). Placement is a config-hash input. Requires an ach-agent image
-newer than `v0.16.2` (HTTP role-port probe contract). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
+newer than `v0.16.2` (HTTP role-port probe contract). BOTH placements pin pod
+uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud PVC (EBS)
+was unwritable on a persistent standalone pod (ach-agent finding 2026-09-15; kind's
+local-path dirs are 0777 and never show it). Switching an existing default-layout PVC
+standalone→distributed keeps data but not native tool-session continuity (ach-agent
+side, open) — do not advertise transparent continuity. The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
 spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
 (`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost,Placement}` + `ResolveAchBaseURL`):
@@ -484,12 +489,14 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 - **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`); the distributed
   matrix lives in `distributedContainers`/`distributedVolumes` (`achagent_workload.go`) and
-  is asserted by `TestBuildDeployment_Distributed*`. The e2e stage 06 ships BOTH shapes:
-  `e2e-agent` (standalone) + `e2e-agent-dist` (`spec.placement: distributed`, image
-  `v0.16.3`, model `demo-model`). Two evidence tracks: `scripts/cluster.sh` gates the
-  rendered shape (`WorkloadApplied`); `test/e2e/agent_runtime_ready_test.go` mints a real
-  `ek_`, swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on both + the
-  distributed isolation matrix. Pods can hydrate because the e2e origin is
+  is asserted by `TestBuildDeployment_Distributed*`. The e2e stage 06 ships THREE shapes:
+  `e2e-agent` (standalone, ephemeral) + `e2e-agent-dist` (`spec.placement: distributed`) +
+  `e2e-agent-pvc` (standalone on the persistent `e2e-profile-pvc`), image `v0.16.4`, model
+  `demo-model`. Two evidence tracks: `scripts/cluster.sh` gates the
+  rendered shape (`WorkloadApplied`, uid/fsGroup 10001 on all three);
+  `test/e2e/agent_runtime_ready_test.go` mints a real
+  `ek_`, swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on all three + the
+  distributed isolation matrix + a PVC write as uid 10001 on the persistent one. Pods can hydrate because the e2e origin is
   `http://ach.e2e.local:8080` on BOTH sides (devtools `--add-host` → 127.0.0.1; CoreDNS
   rewrite → `ach-local-gateway:8080`) — never `localhost:8080`, which a pod resolves to
   itself.

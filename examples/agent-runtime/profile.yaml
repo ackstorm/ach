@@ -99,11 +99,13 @@ spec:
       #       port: 443
   # Optional raw overlay strategic-merged over the operator-rendered pod template.
   # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent" in
-  # standalone, "channels" | "harness" | "engine" in distributed).
+  # standalone, "channels" | "harness" | "engine" in distributed). The overlay WINS on
+  # conflict: the operator already sets runAsUser/runAsGroup/fsGroup 10001 (the image
+  # uid — a fresh root-owned cloud PVC is unwritable without fsGroup), so do not override
+  # them; add policy-only knobs like fsGroupChangePolicy.
   podTemplate:
     spec:
       securityContext:
-        fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
       # Sandboxed runtime: the agent container runs opencode, which has a shell tool.
       # runtimeClassName puts the whole pod behind a gVisor/Kata boundary instead of a

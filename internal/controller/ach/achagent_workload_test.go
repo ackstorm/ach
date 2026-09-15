@@ -254,7 +254,7 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 		t.Fatal("channel auth secret not injected as env var")
 	}
 
-	// And it must NOT be mounted as a file, nor pull in fsGroup (uid/perms reverted).
+	// And it must NOT be mounted as a file (fsGroup exists for the PVC, not for secrets).
 	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
 		t.Fatalf("buildDeployment: %v", err)
@@ -263,9 +263,6 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 		if v.Secret != nil {
 			t.Errorf("secret volume present; auth secrets are env-injected now: %+v", v)
 		}
-	}
-	if sc := dep.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup != nil {
-		t.Errorf("fsGroup should be unset (uid/perms reverted); securityContext=%+v", sc)
 	}
 }
 
@@ -652,8 +649,12 @@ func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
 	if ps.Containers[0].StartupProbe.HTTPGet == nil || ps.Containers[0].StartupProbe.HTTPGet.Port.IntVal != 8000 {
 		t.Error("standalone probes must stay HTTP on the configured health port (default 8000)")
 	}
-	if ps.SecurityContext.RunAsUser != nil || ps.SecurityContext.FSGroup != nil {
-		t.Error("standalone must not pin uid/fsGroup")
+	// fsGroup on standalone too: a fresh root-owned cloud PVC is otherwise
+	// unwritable by uid 10001 (ach-agent finding, 2026-09-15).
+	for name, got := range map[string]*int64{"runAsUser": ps.SecurityContext.RunAsUser, "runAsGroup": ps.SecurityContext.RunAsGroup, "fsGroup": ps.SecurityContext.FSGroup} {
+		if got == nil || *got != agentUID {
+			t.Errorf("standalone pod %s = %v, want %d", name, got, agentUID)
+		}
 	}
 	if ps.EnableServiceLinks != nil {
 		t.Error("standalone must leave enableServiceLinks unset (rendering unchanged)")

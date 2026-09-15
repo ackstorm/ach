@@ -1,0 +1,24 @@
+# The standalone cron-only agent again, on the persistent profile (PVC mounted
+# whole at /var/lib/ach-agent). See profile-pvc.yaml for what it evidences.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: e2e-agent-pvc
+  namespace: ach-system
+spec:
+  profileRef:
+    name: e2e-profile-pvc
+  identity:
+    secretRef:
+      name: e2e-agent-ek
+      key: ek
+  capability:
+    environment: demo
+  channels:
+    - name: daily
+      type: cron
+      session:
+        type: none
+      cron:
+        schedule: "0 8 * * 1-5"
+      prompt: "Scan for CVEs."

@@ -424,14 +424,21 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 	podLabels := agentLabels(a)
 	maps.Copy(podLabels, agentSelectorLabels(a.Name))
 
-	// Standalone: the pre-placement single container, unchanged. Distributed: the
-	// three-role matrix; the pod pins uid/gid/fsGroup 10001 so the shared data/IPC
-	// emptyDirs and PVC subPaths are writable by every role, and drops the kubelet
-	// Service-link env (~90 ACH_*_SERVICE_* vars from the ach-* Services in the
-	// namespace would otherwise land in every container, engine included — contract
-	// 2026-09-15; discovery is explicit env + DNS, this is not a network control).
+	// Both placements pin uid/gid/fsGroup 10001: the image runs as that uid and a
+	// fresh cloud PVC (EBS, root-owned 0755) is unwritable without fsGroup — found
+	// by ach-agent on a persistent standalone pod (2026-09-15; kind's local-path
+	// provisioner hands out 0777 dirs and never showed it). Standalone: the single
+	// container, otherwise unchanged. Distributed: the three-role matrix, whose
+	// shared data/IPC emptyDirs and PVC subPaths rely on the same fsGroup, plus
+	// dropped kubelet Service-link env (~90 ACH_*_SERVICE_* vars from the ach-*
+	// Services in the namespace would otherwise land in every container, engine
+	// included — discovery is explicit env + DNS, this is not a network control).
 	var enableServiceLinks *bool
-	podSC := &corev1.PodSecurityContext{RunAsNonRoot: &trueVal, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+	uid := agentUID
+	podSC := &corev1.PodSecurityContext{
+		RunAsNonRoot: &trueVal, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid,
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}
 	containers := []corev1.Container{{
 		Name:  agentContainerName,
 		Image: agentrender.ResolveImage(a.Spec.Image, p.Spec.Achagent.Image),
@@ -451,8 +458,6 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		},
 	}}
 	if resolvePlacement(a, p) == achv1alpha1.PlacementDistributed {
-		uid := agentUID
-		podSC.RunAsUser, podSC.RunAsGroup, podSC.FSGroup = &uid, &uid, &uid
 		volumes = distributedVolumes(a, p)
 		containers = distributedContainers(a, p, env, resources)
 		enableServiceLinks = &falseVal

@@ -18,10 +18,10 @@ import (
 // TestAgentRuntimeReady is the runtime-readiness evidence for stage 06, kept
 // separate from the rendering gate in scripts/cluster.sh (WorkloadApplied):
 // it mints a real ek_ for the demo Environment, hands it to the fixture Secret,
-// and requires BOTH agents (standalone + distributed) to reach
-// WorkloadReady=True — i.e. hydration, native configuration and directory
-// preparation completed inside the pods against a reachable ACH origin.
-// Nothing here bypasses hydration or relaxes readiness.
+// and requires ALL THREE agents (standalone ephemeral, distributed, standalone
+// persistent) to reach WorkloadReady=True — i.e. hydration, native
+// configuration and directory preparation completed inside the pods against a
+// reachable ACH origin. Nothing here bypasses hydration or relaxes readiness.
 func TestAgentRuntimeReady(t *testing.T) {
 	baseURL := phase6PlatformAPIURL(t)
 	pk := phase6AcquirePk(t)
@@ -48,7 +48,7 @@ func TestAgentRuntimeReady(t *testing.T) {
 		t.Fatalf("patch secret e2e-agent-ek: %v (output withheld: contains the ek)", err)
 	}
 
-	for _, name := range []string{"e2e-agent", "e2e-agent-dist"} {
+	for _, name := range []string{"e2e-agent", "e2e-agent-dist", "e2e-agent-pvc"} {
 		t.Run(name+"_ready", func(t *testing.T) {
 			out, err := exec.Command("kubectl", "-n", "ach-system", "wait",
 				"--for=condition=WorkloadReady=true", "--timeout=300s", "achagent/"+name).CombinedOutput()
@@ -59,6 +59,20 @@ func TestAgentRuntimeReady(t *testing.T) {
 			}
 		})
 	}
+
+	// Persistent standalone: the PVC must be writable by the image uid. A fresh
+	// root-owned EBS PVC was not on v0.8.11 (no fsGroup); kind's local-path dirs
+	// are 0777 so this cannot reproduce that, but it pins the pod running as
+	// 10001 and writing under the mountPath the harness already prepared.
+	t.Run("persistent_standalone_writable", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		stdout, stderr, err := kubectlExec(ctx, "ach-system", "achagent-e2e-agent-pvc", "agent", "sh", "-c",
+			`touch /var/lib/ach-agent/.e2e-probe && rm /var/lib/ach-agent/.e2e-probe && echo $(id -u):$(id -g)`)
+		if err != nil || strings.TrimSpace(stdout) != "10001:10001" {
+			t.Errorf("PVC write as image uid failed: err=%v stdout=%q stderr=%q", err, stdout, stderr)
+		}
+	})
 
 	t.Run("distributed_isolation", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
