@@ -426,7 +426,11 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 
 	// Standalone: the pre-placement single container, unchanged. Distributed: the
 	// three-role matrix; the pod pins uid/gid/fsGroup 10001 so the shared data/IPC
-	// emptyDirs and PVC subPaths are writable by every role.
+	// emptyDirs and PVC subPaths are writable by every role, and drops the kubelet
+	// Service-link env (~90 ACH_*_SERVICE_* vars from the ach-* Services in the
+	// namespace would otherwise land in every container, engine included — contract
+	// 2026-09-15; discovery is explicit env + DNS, this is not a network control).
+	var enableServiceLinks *bool
 	podSC := &corev1.PodSecurityContext{RunAsNonRoot: &trueVal, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 	containers := []corev1.Container{{
 		Name:  agentContainerName,
@@ -451,6 +455,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		podSC.RunAsUser, podSC.RunAsGroup, podSC.FSGroup = &uid, &uid, &uid
 		volumes = distributedVolumes(a, p)
 		containers = distributedContainers(a, p, env, resources)
+		enableServiceLinks = &falseVal
 	}
 
 	dep := &appsv1.Deployment{
@@ -467,6 +472,7 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            agentResourceName(a.Name),
 					AutomountServiceAccountToken:  &falseVal,
+					EnableServiceLinks:            enableServiceLinks,
 					TerminationGracePeriodSeconds: &grace,
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,

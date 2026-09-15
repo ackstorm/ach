@@ -45,7 +45,8 @@ containers from the same image — `channels` (ingress, port 8080), `harness` (m
 `config.json`, owns `<base>/state` + `<base>/workspace`) and `engine` (owns `<base>/home`,
 shares `<base>/workspace`; env limited to `engine.forwardEnv`) — wired through
 `/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`, uid/gid/
-fsGroup 10001, each probed over HTTP on its own port (8080/8090/8081). `<base>` is
+fsGroup 10001, `enableServiceLinks: false`, each probed over HTTP on its own port
+(8080/8090/8081). `<base>` is
 `persistence.mountPath` (PVC subPaths) or `/tmp/ach-agent` (emptyDir). Profile `resources`
 apply per container (pod total = 3×). Requires an ach-agent image newer than `v0.16.2`.
 

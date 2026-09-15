@@ -156,7 +156,7 @@ PVC subPath (or one emptyDir when not persistent, `<base>=/tmp/ach-agent`); IPC 
 `/tmp` per container; probes are httpGet `/readyz`+`/healthz` on fixed role ports
 (`rolePorts` in `achagent_workload.go`: channels 8080, harness 8090, engine 8081 — the
 profile/agent `health.port` is ignored in this mode; never exec/socket probes); pod
-uid/gid/fsGroup 10001; Service targetPort 8080 (channels); profile `resources` per
+uid/gid/fsGroup 10001, `enableServiceLinks: false`; Service targetPort 8080 (channels); profile `resources` per
 container (pod total 3×). Placement is a config-hash input. Requires an ach-agent image
 newer than `v0.16.2` (HTTP role-port probe contract). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its

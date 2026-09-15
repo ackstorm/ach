@@ -655,6 +655,9 @@ func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
 	if ps.SecurityContext.RunAsUser != nil || ps.SecurityContext.FSGroup != nil {
 		t.Error("standalone must not pin uid/fsGroup")
 	}
+	if ps.EnableServiceLinks != nil {
+		t.Error("standalone must leave enableServiceLinks unset (rendering unchanged)")
+	}
 	for _, v := range ps.Volumes {
 		if strings.HasPrefix(v.Name, "ach-agent-ipc-") || strings.HasPrefix(v.Name, "tmp-") {
 			t.Errorf("standalone must not render distributed volume %q", v.Name)
@@ -757,6 +760,9 @@ func TestBuildDeployment_DistributedPodShape(t *testing.T) {
 	}
 	if ps.AutomountServiceAccountToken == nil || *ps.AutomountServiceAccountToken {
 		t.Error("automountServiceAccountToken must stay false")
+	}
+	if ps.EnableServiceLinks == nil || *ps.EnableServiceLinks {
+		t.Error("distributed must set enableServiceLinks=false")
 	}
 	if *dep.Spec.Replicas != 1 || dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 		t.Error("one replica + Recreate")
