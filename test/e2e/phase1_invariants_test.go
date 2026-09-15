@@ -15,8 +15,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ackstorm/ach/internal/featuregate"
 )
 
 // TestPhase1Invariants is the single top-level e2e test. It branches
@@ -279,13 +277,6 @@ func testSC5RBACMatrix(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// Plugin CRD is only installed when plugins are enabled
-			// (featuregate.PluginsEnabled). With plugins disabled the
-			// resource type does not exist, so `kubectl auth can-i` warns
-			// and the answer is meaningless — skip the plugin RBAC rows.
-			if strings.HasPrefix(tc.resource, "plugins.") && !featuregate.PluginsEnabled {
-				t.Skip("plugins disabled via featuregate.PluginsEnabled — Plugin CRD not installed")
-			}
 			subject := "system:serviceaccount:" + namespace + ":" + tc.sa
 			out, _ := runCmd("kubectl", "auth", "can-i", tc.verb, tc.resource,
 				"-n", namespace,
