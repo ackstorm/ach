@@ -255,12 +255,16 @@ unchanged `main` — which is exactly how the go1.26.5 → 1.26.6 bump was found
 ## Toolchain — host has NO Go (always Docker)
 
 The host has no Go toolchain on PATH. **Every `make` target auto-routes — the
-host needs only docker.** Toolchain targets (`test-*`, `qa-*`, `gen-*`,
+host needs only docker.** Toolchain targets (`test-*`, `qa-*`,
 `build-server`/`-cli`/`-e2e`/`-all`, `cluster-*`, `e2e-run`) wrap into the
 `ach-devtools` container via the `container_target` macro; host+docker targets
 (`build-image*`, the gates) and `kubectl`-only targets (`wait-*`, `logs-*`) run
-on the host. Never prefix a `make` target with `./scripts/dev.sh` — see
-`references/makefile.md` for the 3-context model.
+on the host. Never prefix a wrapped `make` target with `./scripts/dev.sh`.
+**Exception — the generator targets are NOT wrapped**: `gen-code`,
+`gen-manifests`, `gen-crd-ref-docs`, `helm-sync`, `helm-sync-check` call
+controller-gen directly, so standalone they need `./scripts/dev.sh make
+helm-sync` (a bare `make helm-sync` on the host fails with `go: executable
+file not found`). See `references/makefile.md` for the 3-context model.
 
 ```bash
 make build-all                   # build both binaries (auto-routes to devtools)
