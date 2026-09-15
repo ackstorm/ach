@@ -316,6 +316,11 @@ func distributedContainers(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile,
 	if p.Spec.Persistence != nil && p.Spec.Persistence.Enabled {
 		base = p.Spec.Persistence.MountPath
 	}
+	// The workspace stays at its standalone location, base/home/workspace (subPath
+	// home/workspace): a placement flip on a populated PVC must keep the absolute
+	// path and the physical directory so native tool sessions survive it (ach-agent
+	// v0.16.5 contract). The engine sees it through its home mount; the harness
+	// mounts only that nested dir, never the rest of engine home.
 	data := func(sub string) corev1.VolumeMount {
 		return corev1.VolumeMount{Name: pvcVolumeName, MountPath: base + "/" + sub, SubPath: sub}
 	}
@@ -341,10 +346,10 @@ func distributedContainers(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile,
 		{roleHarness, env,
 			// Named so the PodMonitor (monitoring.coreos.com/v1) can scrape /metrics by port name.
 			[]corev1.ContainerPort{{Name: "health", ContainerPort: rolePorts[roleHarness], Protocol: corev1.ProtocolTCP}},
-			[]corev1.VolumeMount{tmp(roleHarness), configMount, data("state"), data("workspace"), ipc("transfer", false), ipc("channels", false), ipc("engine", true)}},
+			[]corev1.VolumeMount{tmp(roleHarness), configMount, data("state"), data("home/workspace"), ipc("transfer", false), ipc("channels", false), ipc("engine", true)}},
 		{roleEngine, engineEnv(env, a, p),
 			[]corev1.ContainerPort{{Name: "engine", ContainerPort: rolePorts[roleEngine], Protocol: corev1.ProtocolTCP}},
-			[]corev1.VolumeMount{tmp(roleEngine), data("home"), data("workspace"), ipc("transfer", false), ipc("engine", false)}},
+			[]corev1.VolumeMount{tmp(roleEngine), data("home"), ipc("transfer", false), ipc("engine", false)}},
 	}
 
 	falseVal := false

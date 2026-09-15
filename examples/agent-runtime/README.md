@@ -42,22 +42,21 @@ step.
 With `placement: distributed` (profile `spec.achagent.placement`, or per-agent
 `ACHAgent.spec.placement` — agent wins), that Deployment's one pod runs three
 containers from the same image — `channels` (ingress, port 8080), `harness` (mounts
-`config.json`, owns `<base>/state` + `<base>/workspace`) and `engine` (owns `<base>/home`,
-shares `<base>/workspace`; env limited to `engine.forwardEnv`) — wired through
+`config.json`, owns `<base>/state`, shares `<base>/home/workspace`) and `engine` (owns
+`<base>/home`, workspace included; env limited to `engine.forwardEnv`) — wired through
 `/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`,
 `enableServiceLinks: false`, each probed over HTTP on its own port
 (8080/8090/8081). `<base>` is
 `persistence.mountPath` (PVC subPaths) or `/tmp/ach-agent` (emptyDir). Profile `resources`
-apply per container (pod total = 3×). Requires an ach-agent image newer than `v0.16.2`.
+apply per container (pod total = 3×). Requires ach-agent `v0.16.5` or newer.
 
 Both placements run the pod as uid/gid/fsGroup 10001 (the image uid), so a fresh
 PVC — root-owned 0755 on cloud provisioners such as EBS — is writable without a
-`podTemplate` overlay. Switching an **existing** default-layout PVC from
-`standalone` to `distributed` keeps the data (same PVC, state/home/workspace
-re-homed under the subPaths) but does **not** carry native tool sessions over:
-the engine's tool keeps its pre-switch workspace association (ach-agent issue,
-under investigation), so treat the first turn after the switch as a fresh
-conversation.
+`podTemplate` overlay. The workspace lives at `<base>/home/workspace` in both
+placements, so switching an **existing** default-layout PVC between `standalone`
+and `distributed` changes only the pod shape: same PVC, same workspace path and
+contents, native tool sessions intact. Custom layouts, or a PVC populated by an
+older distributed image under `<base>/workspace`, are not relocated.
 
 ## Prerequisites — Secrets you create yourself
 

@@ -828,7 +828,9 @@ verify_all() {
     | grep -qx 'channels harness engine'
   kubectl -n ach-system get deploy achagent-e2e-agent-dist -o json \
     | jq -e '[.spec.template.spec.containers[] | select(any(.volumeMounts[]; .subPath=="config.json")) | .name] == ["harness"]
-             and ([.spec.template.spec.containers[] | select(.name=="engine") | .env[].name] == ["E2E_FORWARDED"])' >/dev/null
+             and ([.spec.template.spec.containers[] | select(.name=="engine") | .env[].name] == ["E2E_FORWARDED"])
+             and ([.spec.template.spec.containers[] | select(.name=="harness") | .volumeMounts[] | select(.subPath=="home/workspace") | .mountPath] == ["/tmp/ach-agent/home/workspace"])
+             and ([.spec.template.spec.containers[].volumeMounts[] | select(.subPath=="workspace")] == [])' >/dev/null
   # Persistent standalone: whole PVC at the mountPath, single container.
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
   kubectl -n ach-system get deploy achagent-e2e-agent-pvc -o json \

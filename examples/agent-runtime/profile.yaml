@@ -34,8 +34,9 @@ spec:
     # channels (public ingress 8080), harness (the only container that mounts
     # config.json), engine (receives ONLY the env named by engine.forwardEnv). Probes are
     # httpGet on fixed role ports (channels 8080, harness 8090, engine 8081); the health
-    # block above is ignored in this mode. Needs an ach-agent image newer than v0.16.2
-    # (HTTP role-port probe contract). The profile's resources apply to EACH container: a
+    # block above is ignored in this mode. Needs ach-agent v0.16.5 or newer (HTTP
+    # role-port probes + workspace kept at <base>/home/workspace, so flipping placement on
+    # a populated PVC preserves it). The profile's resources apply to EACH container: a
     # distributed pod requests and limits 3× what is declared.
     # placement: distributed
     # Where the per-invocation cost figure comes from (requires an ach-agent image

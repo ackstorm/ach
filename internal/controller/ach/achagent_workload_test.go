@@ -837,20 +837,21 @@ func TestBuildDeployment_DistributedMountMatrix(t *testing.T) {
 				ro      bool
 				subPath string
 			}{
-				{"harness", tc.base + "/state"}:         {false, "state"},
-				{"harness", tc.base + "/workspace"}:     {false, "workspace"},
-				{"engine", tc.base + "/home"}:           {false, "home"},
-				{"engine", tc.base + "/workspace"}:      {false, "workspace"},
-				{"harness", "/run/ach-agent/transfer"}:  {false, ""},
-				{"engine", "/run/ach-agent/transfer"}:   {false, ""},
-				{"harness", "/run/ach-agent/channels"}:  {false, ""},
-				{"channels", "/run/ach-agent/channels"}: {true, ""},
-				{"harness", "/run/ach-agent/engine"}:    {true, ""},
-				{"engine", "/run/ach-agent/engine"}:     {false, ""},
-				{"harness", "/tmp"}:                     {false, ""},
-				{"engine", "/tmp"}:                      {false, ""},
-				{"channels", "/tmp"}:                    {false, ""},
-				{"harness", configFilePath}:             {true, configFileName},
+				{"harness", tc.base + "/state"}: {false, "state"},
+				// Workspace keeps its standalone location under home (v0.16.5);
+				// the engine reaches it through home, so no engine workspace mount.
+				{"harness", tc.base + "/home/workspace"}: {false, "home/workspace"},
+				{"engine", tc.base + "/home"}:            {false, "home"},
+				{"harness", "/run/ach-agent/transfer"}:   {false, ""},
+				{"engine", "/run/ach-agent/transfer"}:    {false, ""},
+				{"harness", "/run/ach-agent/channels"}:   {false, ""},
+				{"channels", "/run/ach-agent/channels"}:  {true, ""},
+				{"harness", "/run/ach-agent/engine"}:     {true, ""},
+				{"engine", "/run/ach-agent/engine"}:      {false, ""},
+				{"harness", "/tmp"}:                      {false, ""},
+				{"engine", "/tmp"}:                       {false, ""},
+				{"channels", "/tmp"}:                     {false, ""},
+				{"harness", configFilePath}:              {true, configFileName},
 			}
 			for k, w := range want {
 				m, ok := got[k]

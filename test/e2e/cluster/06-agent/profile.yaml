@@ -1,6 +1,6 @@
 # Minimal AgentProfile — no persistence (ephemeral base /tmp/ach-agent), no
 # health override (harness default 8000). Image is pulled from ghcr and must
-# implement the HTTP role-port probes (>= v0.16.3; pinned v0.16.4): TestAgentRuntimeReady
+# implement the HTTP role-port probes (>= v0.16.5: workspace at base/home/workspace; pinned by digest): TestAgentRuntimeReady
 # requires all stage-06 agents to reach WorkloadReady=True. Model must be one
 # the demo Environment hydrates (demo-model), or the harness exits at boot.
 apiVersion: ach.ackstorm.ai/v1alpha1
@@ -10,7 +10,7 @@ metadata:
   namespace: ach-system
 spec:
   achagent:
-    image: ghcr.io/ackstorm/ach-agent:v0.16.4
+    image: ghcr.io/ackstorm/ach-agent:v0.16.5@sha256:9ef89f09eed0b33ceb77cb7a35f90dadd3141d10a864460674cf5f5d429f45ec
     ach:
       baseUrl: http://ach-gateway.ach-system.svc
     model:
