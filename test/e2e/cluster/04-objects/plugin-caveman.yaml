@@ -1,0 +1,20 @@
+# Plugin — pulls JuliusBrussee/caveman, a third-party Claude Code
+# plugin (the repo ships a .claude-plugin/plugin.json manifest at the
+# root). The Plugin reconciler streams the full repo as a tarball into
+# `plugin/caveman.tar.gz` under the operator cache PVC; the Content
+# Service serves the archive on demand.
+#
+# No GitHub PAT required — JuliusBrussee/caveman is a public repo.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: caveman
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 1h
+    maxStaleness: 24h
+  github:
+    repo: JuliusBrussee/caveman
+    ref: main

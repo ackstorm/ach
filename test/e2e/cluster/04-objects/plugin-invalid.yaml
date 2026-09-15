@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 — INVALID plugin (negative-path fixture). Points at a
+# nonexistent GitHub repo so the operator's fetch fails and the CR
+# settles at SourceReachable=False. Part of the SYNCED set, but
+# EXCLUDED from the happy-state gate — verify_all instead asserts it
+# reaches the expected FAILURE state. The e2e suite asserts the
+# condition + the Postgres projection row reflects the failure.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: plugin-invalid
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 1h
+    maxStaleness: 24h
+  github:
+    repo: ackstorm/ach-nonexistent-fixture-repo
+    ref: main

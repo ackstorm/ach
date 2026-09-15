@@ -11,7 +11,6 @@ import (
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
-	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
@@ -51,9 +50,6 @@ type dbLister struct {
 func NewLister(pool *pgxpool.Pool, ns string) Lister { return dbLister{pool: pool, ns: ns} }
 
 func (l dbLister) Plugins(ctx context.Context) ([]db.PluginRow, error) {
-	if !featuregate.PluginsEnabled {
-		return nil, nil
-	}
 	return db.ListPlugins(ctx, l.pool, l.ns)
 }
 func (l dbLister) Prompts(ctx context.Context) ([]db.PromptRow, error) {
@@ -66,15 +62,9 @@ func (l dbLister) Skills(ctx context.Context) ([]db.SkillRow, error) {
 	return db.ListSkills(ctx, l.pool, l.ns)
 }
 func (l dbLister) Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error) {
-	if !featuregate.PluginsEnabled {
-		return nil, nil
-	}
 	return db.ListMarketplaces(ctx, l.pool, l.ns)
 }
 func (l dbLister) MarketplacePlugins(ctx context.Context) ([]db.MarketplacePlugin, error) {
-	if !featuregate.PluginsEnabled {
-		return nil, nil
-	}
 	return db.ListAllMarketplacePlugins(ctx, l.pool)
 }
 func (l dbLister) SkillMarketplaces(ctx context.Context) ([]db.SkillMarketplaceRow, error) {

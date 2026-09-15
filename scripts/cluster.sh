@@ -33,8 +33,8 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo +
 #                   ach-mock-model (apply -k, post-ach)
 #   04-objects/     kustomize base — all non-Environment ACH CRs (apply -k,
-#                   post-ach; prompts/artifacts/skills/skillmarketplaces/BIPs)
-#                   sourced from their real upstreams (option B)
+#                   post-ach; LiteLLMConnection/plugins/prompts/artifacts/BIPs/
+#                   marketplaces) sourced from their real upstreams (option B)
 #   05-environment/ kustomize base — the demo Environments LAST (reference 04)
 #   06-agent/       kustomize base — AgentProfile + cron-only ACHAgent + ek
 #                   Secret (apply -k, post-CRDs); gated on WorkloadApplied
@@ -737,9 +737,9 @@ verify_all() {
   # demo) and environment/demo-unresolved (UnresolvedReferences). The Phase 5
   # *-invalid fixtures ARE gated below — on their EXPECTED failure state
   # (SourceReachable=False) — so "everything is in its known state" still holds.
-  # Plugin / PluginMarketplace fixtures are no longer applied (the kinds are
-  # disabled behind featuregate.PluginsEnabled=false and their CRDs are not in
-  # the chart), so they are not gated here.
+  # pluginmarketplace/conflict-mkt-b is now in the POSITIVE gate (Synced=True)
+  # under the scoped grammar: both conflict-mkt-* marketplaces resolve without
+  # conflict.
   local to="${VERIFY_TIMEOUT:-300s}"
   echo "[cluster.sh] verifying all synced objects and seeded MCP tools (stage 07)..."
   # Test backends (stage 03) up before asserting the JWT/MCP + capture paths.
@@ -760,8 +760,18 @@ verify_all() {
   # reported success while /content/artifact/<name> 404'd, surfacing 7 minutes
   # later as unrelated-looking hydrate failures across the whole suite instead of
   # a loud failure here with the operator's reason attached.
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" plugin/caveman
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/claude-code-system-prompt
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/openclaw-templates
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/anthropic-code
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/caveman
+  # Phase 02 SC#3 same-plugin-name pair (both filter the real anthropic
+  # catalogue to `feature-dev`): under the scoped grammar both reach
+  # Synced=True — `feature-dev@conflict-mkt-a` and `feature-dev@conflict-mkt-b`
+  # are independent references with no cross-marketplace name conflict.
+  # Their 1m refresh.interval keeps convergence well inside the timeout.
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-a
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/conflict-mkt-b
   # SkillMarketplace (convention discovery, no marketplace.json) + the two
   # standalone Skills pulled from the same monorepo via spec.github.path. The
   # demo Environment (below) references pdf, docx, and pdf@anthropic-skills, so
@@ -775,6 +785,7 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo
   # Phase 5 content-service exercise matrix — valid half healthy (Synced: the
   # content-service exercise reads the materialized bytes, see the note above).
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" plugin/plugin-valid
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/prompt-valid
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/artifact-valid
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
@@ -796,12 +807,13 @@ verify_all() {
   # Phase 5 invalid half — gate on the EXPECTED FAILURE state (the operator
   # has fetched + failed). kubectl wait supports condition=<type>=false.
   #
-  # These two stay on SourceReachable (=false) deliberately — do NOT "align"
+  # These three stay on SourceReachable (=false) deliberately — do NOT "align"
   # them with the Synced gates above. These fixtures point at a nonexistent
   # upstream, so the assertion we want is specifically "the upstream was
   # UNREACHABLE". Synced=false would be weaker: it is also false for a reachable
   # upstream whose content was merely bad, so the fixture could rot into
   # passing for the wrong reason.
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
   # Stage 06 agent-runtime — operator OUTPUT gate. WorkloadApplied=True (NOT
