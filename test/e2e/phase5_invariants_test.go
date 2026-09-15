@@ -571,10 +571,9 @@ func testPhase5SC4StalenessAndInFlightRename(t *testing.T) {
 			_, _, _ = psqlExec(cleanCtx,
 				`UPDATE plugins SET last_successful_refresh = NOW(), max_staleness_seconds = 86400 WHERE name='plugin-valid';`)
 		})
-		// Invalidate envcache so the loader rebuilds from the patched row.
-		// 60s TTL means we may need to wait or trigger eviction — for
-		// the E2E run, sleep 60s+ to ensure cache miss. Bounded.
-		time.Sleep(65 * time.Second)
+		// No wait needed: the content-service reads the plugins row per
+		// request (db.ResolvePluginByName — no TTL cache in front of it),
+		// so the patched staleness is visible on the very next GET.
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, csURL+"/content/plugin/plugin-valid", nil)
 		req.Header.Set("x-ach-key", pk)
 		req.Header.Set("x-ach-environment", env)
