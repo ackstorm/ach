@@ -1300,7 +1300,7 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 </thead>
 <tbody>
 <tr>
-<td>Declarative capability model (11 CRD kinds; 9 shipped in the chart, 2 plugin kinds gated off)</td>
+<td>Declarative capability model (11 CRD kinds, all shipped in the chart)</td>
 <td>✅ shipped</td>
 </tr>
 <tr>
@@ -1345,7 +1345,7 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 </tr>
 <tr>
 <td>Plugins / PluginMarketplace</td>
-<td>⏸ built, feature-gated OFF (<code>featuregate.PluginsEnabled=false</code>)</td>
+<td>✅ shipped (compile-time gate removed 2026-09-15)</td>
 </tr>
 <tr>
 <td>Release pipeline (goreleaser, Helm chart, signed multi-service image)</td>
@@ -1430,11 +1430,11 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 </tr>
 <tr>
 <td><code>Plugin</code> / <code>PluginMarketplace</code></td>
-<td>Fully built, currently gated off — a deliberate scope decision, reversible with one const + <code>make helm-sync</code>.</td>
+<td>Claude Code plugin (object) + marketplace index (discovery) — served via <code>/content/plugin/{name}</code>, projected via <code>ach-cli local plugin</code>.</td>
 </tr>
 </tbody>
 </table>
-<p>That is 11 kinds; the chart ships 9 (the 2 plugin kinds are gated off). <strong>Not
+<p>That is 11 kinds, all shipped in the chart. <strong>Not
 CRDs</strong> (a common confusion): personal keys (<code>pk_</code>) and environment keys (<code>ek_</code>)
 are platform-api/DB objects with REST lifecycle; teams live in LiteLLM + the
 runtime catalog; the gateway route set is the <code>achagents</code> DB projection the
@@ -1464,7 +1464,6 @@ operator writes.</p>
 <li><strong>Environment authoring is admin-only</strong> — no per-object ACLs yet, so no team self-service for Environments. Deliberate (avoids inventing an ACL model prematurely).</li>
 <li><strong>UI write path is Environment-only (v1)</strong> — the Objects API + GitOps-wins takeover pattern exists but covers one kind.</li>
 <li><strong>Content-service HA requires RWX storage</strong> — default sidecar mode is single-point for content serving (operator restart = brief unavailability; clients retry).</li>
-<li><strong>Plugins gated off</strong> — code, tables, and reconcilers are maintained but dormant; carrying cost is nonzero (docs, tests, mental overhead) and should be periodically re-justified.</li>
 <li><strong>LISTEN/NOTIFY is at-most-once</strong> — mitigated by 5-minute periodic refresh; worst-case staleness window is bounded but real.</li>
 <li><strong>Kustomize install surfaces are unsupported; Helm is the only working path.</strong> <code>deploy/kustomize/</code> was deleted 2026-07-17 (decision taken: Helm-only). <code>config/</code> remains, but as build/test scaffolding — <code>config/crd/bases</code> feeds envtest and <code>helm-sync</code>, and <code>config/default</code> is applied by the e2e suite. <strong><code>config/default</code> is NOT a working install</strong>: its operator Deployment runs as the <code>ach-operator</code> SA, which is bound only to the namespaced <code>ach-operator-role</code> (no <code>achagents</code>, <code>deployments</code>, <code>configmaps</code>, <code>services</code>, <code>pvcs</code>, <code>networkpolicies</code>, or <code>pods</code>), while the full-permission <code>ach-manager-role</code> ClusterRole is bound to <code>controller-manager</code> — and its RoleBinding's <code>roleRef</code> names <code>manager-role</code>, which after <code>namePrefix: ach-</code> does not exist (<code>ach-ach-manager-role</code> does), so it dangles unbound. e2e passes only because it never creates an ACHAgent. <code>.goreleaser.yml</code> release notes still advertise <code>kubectl apply -k .../config/default</code>, which would not reconcile an ACHAgent. Fix the RBAC wiring or stop advertising it.</li>
 <li><strong>Postgres durability/DR is undefined</strong> — Postgres is the source of truth for every non-operator read, but backup/restore, PITR, and failover are unspecified. Operator-projected tables can be re-derived from CRDs; platform-api-owned rows (personal/environment keys, runtime catalog) have no re-derivation path and would be lost. Needs an explicit DR statement before any production claim.</li>
@@ -1494,7 +1493,6 @@ operator writes.</p>
 <li><strong>Agent fleet operations</strong> ⭐ — ACHAgent today is single-replica instances. The natural evolution: fleet-level policies (max concurrent agents per team, budget-aware scale-to-zero for cron/queue agents, canary rollout of a new AgentProfile across a fleet). This is where "fleet manager for AI agents" becomes literally true and where no incumbent product exists yet.</li>
 <li><strong>Cross-cluster / multi-region environments</strong> — the harness already resolves its Environment at runtime with an <code>ek_</code> (capability.environment is ACH-side by design), so the seam for "agent in cluster A, environment governed by cluster B" already exists. Formalizing it = multi-cluster governance story for larger orgs.</li>
 <li><strong>Session/audit analytics</strong> ⭐ — <code>AgentSession</code> records + the audit stream are an underused asset. A retention + query story ("what did agent X do last Tuesday, with which credentials, against which backends") is the compliance feature that differentiates governed agents from ad-hoc ones.</li>
-<li><strong>Plugins: decide, don't carry</strong> ⭐ — either re-enable with a concrete customer use case, or excise the dormant code (types, tables, reconcilers) in a major version. Carrying ~dormant surface indefinitely is the one place the codebase violates its own YAGNI discipline — acknowledged as reversibility insurance, but insurance has premiums.</li>
 <li><strong>A2A mesh governance</strong> — as agent-to-agent traffic grows, the gateway's per-agent route set + BIP-minted identities position ACH to be the policy point for <em>inter-agent</em> calls (who may call whom, with what identity). Nobody owns this space yet.</li>
 </ul>
 <hr />
