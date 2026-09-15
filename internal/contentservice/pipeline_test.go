@@ -7,8 +7,7 @@
 // Coverage matrix:
 //
 //   TestPipeline_EndToEnd                    — every D-03 outcome (16+ subtests).
-//   TestPipeline_PluginPrecedence            — B2 bare/scoped resolution semantics (5 subtests);
-//                                              SKIPPED while plugins are gated off.
+//   TestPipeline_PluginPrecedence            — B2 bare/scoped resolution semantics (5 subtests).
 //   TestPipeline_ContentContainment          — gate 8 storage_location containment.
 //   TestPipeline_InFlightReadSurvivesRename  — D-02 + SC#4 inode-pin proof.
 //   TestPipeline_EmitsOneAuditEventPerRequest — audit emission shape on success + denial.
@@ -51,7 +50,6 @@ import (
 	"github.com/ackstorm/ach/internal/contentservice/envcache"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
-	"github.com/ackstorm/ach/internal/featuregate"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -588,11 +586,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	// p1/p2 (prompts), a1/a2 (artifacts), sk1/sk2/shared@smkt-b (skills).
 	// shared@smkt-b tests the scoped-ref (name@marketplace) resolution path.
 	//
-	// The content kind here is Skill, not Plugin: featuregate.PluginsEnabled is
-	// false, so the router never registers /content/plugin/{name} and every
-	// plugin arm of this test asserted against a missing route rather than
-	// against the pipeline. Skill exercises the same gates, the same staleness
-	// logic and the same scoped-ref resolution.
+	// The content kind here is Skill: it exercises the same gates, the same
+	// staleness logic and the same scoped-ref resolution as Plugin.
 	fx.seedEnvironment("prod",
 		[]string{"team-a"},
 		[]string{"p1", "p2"},
@@ -807,13 +802,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 // equivalent: it pins the bare-name fallback from `plugins` to
 // `marketplace_plugins`, and ResolveSkillByName deliberately has no such
 // fallback (a bare name hits `skills` only, a scoped name hits
-// `skill_marketplace_skills` only). It therefore stays gated on the same
-// compile-time const as the route it exercises, and comes back automatically
-// when featuregate.PluginsEnabled flips to true.
+// `skill_marketplace_skills` only).
 func TestPipeline_PluginPrecedence(t *testing.T) {
-	if !featuregate.PluginsEnabled {
-		t.Skip("plugins gated off: /content/plugin/{name} is not registered")
-	}
 	t.Parallel()
 	fx := setupIntegration(t)
 	defer fx.cleanup()
@@ -1232,10 +1222,8 @@ func TestPipeline_NoStoreHeader(t *testing.T) {
 //
 // TestPipeline_ContentContainment covers gate 8's containment of a
 // storage_location that is NOT derived from a validated {name}. It runs against
-// Skill rather than Plugin: /content/plugin/{name} is unregistered while
-// featuregate.PluginsEnabled is false, and marketplace-scoped skills reach the
-// SAME PluginStoragePathWithinRoot check via the shared usesStorageLocation arm
-// in resolveContent — so the security invariant stays covered on a live route.
+// Skill: marketplace-scoped skills reach the SAME PluginStoragePathWithinRoot
+// check via the shared usesStorageLocation arm in resolveContent.
 func TestPipeline_ContentContainment(t *testing.T) {
 	t.Parallel()
 	fx := setupIntegration(t)

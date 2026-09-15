@@ -328,6 +328,16 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 	// agents/commands are single files (agents/<name>.md) so their second
 	// segment is the filename — still one increment per component.
 	keptSeen := map[string]map[string]struct{}{}
+	// claimed maps a MergeReplace dest → index into fws, so a plugin that ships
+	// the SAME component in two source formats (commands/x.md + commands/x.toml,
+	// both routed to <tool>/commands/x.toml) yields ONE file-owned write.
+	// Two writes to one file-owned path split-brain the state row on
+	// re-hydrate (the converted write flips UpstreamOnlyOverwrite, the verbatim
+	// one then reads as LocalEditPreserve → exit 2). The verbatim (nil
+	// Transform) write wins: the author already shipped the native format.
+	// MergeDeep/MergeComposite are exempt — N→1 collapse is their contract.
+	claimed := map[string]int{}
+	converted := map[string]bool{} // dest → surviving write came through a Transform
 
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -449,6 +459,11 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 		if len(parts) >= 2 {
 			component = parts[1]
 		}
+		if len(parts) == 2 {
+			// Single-file component (commands/x.md): key on the stem so the same
+			// command shipped in two formats (x.md + x.toml) counts once.
+			component = strings.TrimSuffix(component, filepath.Ext(component))
+		}
 		if keptSeen[topLevel] == nil {
 			keptSeen[topLevel] = map[string]struct{}{}
 		}
@@ -456,13 +471,31 @@ func Project(rules []Rule, src, source string) (ProjectResult, error) {
 			keptSeen[topLevel][component] = struct{}{}
 			kept[topLevel]++
 		}
-		fws = append(fws, adapter.FileWrite{
+		fw := adapter.FileWrite{
 			Path:       dest,
 			Content:    content,
 			SourceHash: srcHash,
 			Merge:      rule.Merge,
 			Keys:       keys,
-		})
+		}
+		if rule.Merge == adapter.MergeReplace {
+			isConverted := rule.Transform != nil
+			if i, dup := claimed[dest]; dup {
+				switch {
+				case converted[dest] && !isConverted:
+					fws[i] = fw // native beats converted
+					converted[dest] = false
+				case !converted[dest] && isConverted:
+					// keep the native survivor
+				default:
+					return fmt.Errorf("route: %q and another source both project to %q — same-plugin destination collision with no native winner", filepath.ToSlash(rel), dest)
+				}
+				return nil
+			}
+			claimed[dest] = len(fws)
+			converted[dest] = isConverted
+		}
+		fws = append(fws, fw)
 		return nil
 	})
 	if err != nil {

@@ -632,3 +632,58 @@ func TestProject_SourceHash(t *testing.T) {
 		t.Errorf("converted SourceHash: got %q, want %q (source bytes)", cf.SourceHash, want)
 	}
 }
+
+// TestProject_SameDestNativeBeatsConverted: a plugin that ships BOTH the
+// Claude-format `commands/x.md` and the tool-native `commands/x.toml` routes
+// both through rules that land on ONE MergeReplace dest. Two FileWrites to
+// the same file-owned path is a state/disk split-brain on re-hydrate (the
+// converted write flips UpstreamOnlyOverwrite, the verbatim one then reads as
+// LocalEditPreserve → exit 2). Exactly one write must survive: the verbatim
+// (nil-Transform) one — the plugin author already shipped the native format.
+func TestProject_SameDestNativeBeatsConverted(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"commands/x.md":   "converted-source",
+		"commands/x.toml": "native",
+	})
+	rules := []Rule{
+		{
+			FromGlob: "commands/**/*.md", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace,
+			Transform: func(_ string, _ []byte) ([]byte, []string, error) { return []byte("CONVERTED"), nil, nil },
+		},
+		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace},
+	}
+	// Both rule orders must yield the same survivor.
+	for _, order := range [][]Rule{rules, {rules[1], rules[0]}} {
+		pr, err := Project(order, src, "")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+		if len(pr.FileWrites) != 1 {
+			t.Fatalf("expected 1 FileWrite, got %d (%v)", len(pr.FileWrites), pr.FileWrites)
+		}
+		if got := string(pr.FileWrites[0].Content); got != "native" {
+			t.Errorf("Content: got %q, want %q (verbatim native beats converted)", got, "native")
+		}
+		if pr.KeptByKind["commands"] != 1 {
+			t.Errorf("KeptByKind[commands]: got %d, want 1", pr.KeptByKind["commands"])
+		}
+	}
+}
+
+// TestProject_SameDestBothConvertedFails: two CONVERTING rules landing on one
+// MergeReplace dest has no principled winner — fail fast instead of letting
+// the last writer silently own the state row.
+func TestProject_SameDestBothConvertedFails(t *testing.T) {
+	src := writeTree(t, map[string]string{
+		"commands/x.md":  "a",
+		"commands/x.txt": "b",
+	})
+	conv := func(_ string, in []byte) ([]byte, []string, error) { return in, nil, nil }
+	rules := []Rule{
+		{FromGlob: "commands/**/*.md", ToGlob: ".t/commands/**/*.toml", Merge: adapter.MergeReplace, Transform: conv},
+		{FromGlob: "commands/**/*.txt", ToGlob: ".t/commands/**/*.toml", Merge: adapter.MergeReplace, Transform: conv},
+	}
+	if _, err := Project(rules, src, ""); err == nil || !strings.Contains(err.Error(), "both project to") {
+		t.Fatalf("expected same-plugin dest collision error, got %v", err)
+	}
+}

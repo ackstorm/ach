@@ -188,10 +188,9 @@ func (c *listRecorder) listed(substr string) bool {
 }
 
 // TestResync_GatedKindsNeverListed — with the Plugin/PluginMarketplace
-// channels nil (what the operator wires when featuregate.PluginsEnabled
-// is false), a sweep must not even List those Kinds. Their CRDs are not
-// installed, so a List returns `no matches for kind "PluginList"` and the
-// operator logged that error every 5 minutes.
+// channels nil, a sweep must not even List those Kinds: a kind with no
+// channel wired may have no CRD installed, and a List would return `no
+// matches for kind "PluginList"` every 5 minutes.
 func TestResync_GatedKindsNeverListed(t *testing.T) {
 	s := testScheme(t)
 	env := &achv1alpha1.Environment{

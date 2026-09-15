@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Internal-schema PluginMarketplace fixture for §11c / §11f.Mkt — exercises the
+# Stage-1 http fetch + parser + Stage-2 materialization + marketplace_plugins
+# UPSERT against the in-cluster fixture server.
+#
+# The marketplace body is served by applyPhase4MarketplaceServer(t) (ConfigMap
+# mkt-phase4-fixture from test/e2e/fixtures/phase4_marketplace_internal.json +
+# the mkt-test-server nginx Deployment/Service). Apply that stack BEFORE this
+# CR. Throwaway — the tests create + delete `internal-test`; it is NOT part of
+# the synced fixture set.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: internal-test
+  namespace: ach-system
+spec:
+  type: http
+  refresh:
+    interval: 1h
+    maxStaleness: 6h
+  http:
+    url: http://mkt-test-server.ach-system.svc.cluster.local/marketplace.json

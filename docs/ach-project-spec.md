@@ -22,7 +22,7 @@ Positioning in one line: **"IAM + package manager + fleet manager for AI agents,
 
 | Capability | Status |
 |---|---|
-| Declarative capability model (11 CRD kinds; 9 shipped in the chart, 2 plugin kinds gated off) | ✅ shipped |
+| Declarative capability model (11 CRD kinds, all shipped in the chart) | ✅ shipped |
 | SSO login → personal key (`pk_`) minting via LiteLLM | ✅ shipped |
 | Environment hydration into 4 local AI tools (multi-target) | ✅ shipped |
 | Environment-scoped service keys (`ek_`) with revocation + audit | ✅ shipped |
@@ -33,7 +33,7 @@ Positioning in one line: **"IAM + package manager + fleet manager for AI agents,
 | Gateway with opt-in per-agent routes (webhooks / a2a) | ✅ shipped |
 | Admin surface: object inventory, key lifecycle, runtime catalog | ✅ shipped |
 | UI write path (Environment drafts, GitOps-wins takeover) | ✅ v1 (Environment only) |
-| Plugins / PluginMarketplace | ⏸ built, feature-gated OFF (`featuregate.PluginsEnabled=false`) |
+| Plugins / PluginMarketplace | ✅ shipped (compile-time gate removed 2026-09-15) |
 | Release pipeline (goreleaser, Helm chart, signed multi-service image) | ✅ shipped |
 
 Scale of the codebase: ~146k lines of Go across operator, platform API, forwarder, content service, gateway, and two binaries; 16-gate pre-push publication check; unit + envtest in CI, full e2e (kind + Helm) as a local merge gate.
@@ -93,9 +93,9 @@ flowchart LR
 | `LiteLLMConnection` | Singleton (`default`) per namespace: the LiteLLM endpoint + admin credential Environments resolve against. |
 | `BackendIdentityPolicy` | Per-target JWT identity the forwarder mints — agents never hold long-lived backend credentials. |
 | `AgentProfile` / `ACHAgent` | Reusable infra template + agent instance → rendered `agent-config-v1`; the harness self-hydrates at boot. Profile defaults under `spec.achagent` (image, ach, model, engine, limits, health, cost) deep-merge per-field with the agent's flat overrides (set agent field wins); infra stays profile-only. |
-| `Plugin` / `PluginMarketplace` | Fully built, currently gated off — a deliberate scope decision, reversible with one const + `make helm-sync`. |
+| `Plugin` / `PluginMarketplace` | Claude Code plugin (object) + marketplace index (discovery) — served via `/content/plugin/{name}`, projected via `ach-cli local plugin`. |
 
-That is 11 kinds; the chart ships 9 (the 2 plugin kinds are gated off). **Not
+That is 11 kinds, all shipped in the chart. **Not
 CRDs** (a common confusion): personal keys (`pk_`) and environment keys (`ek_`)
 are platform-api/DB objects with REST lifecycle; teams live in LiteLLM + the
 runtime catalog; the gateway route set is the `achagents` DB projection the
@@ -127,11 +127,10 @@ operator writes.
 4. **Environment authoring is admin-only** — no per-object ACLs yet, so no team self-service for Environments. Deliberate (avoids inventing an ACL model prematurely).
 5. **UI write path is Environment-only (v1)** — the Objects API + GitOps-wins takeover pattern exists but covers one kind.
 6. **Content-service HA requires RWX storage** — default sidecar mode is single-point for content serving (operator restart = brief unavailability; clients retry).
-7. **Plugins gated off** — code, tables, and reconcilers are maintained but dormant; carrying cost is nonzero (docs, tests, mental overhead) and should be periodically re-justified.
-8. **LISTEN/NOTIFY is at-most-once** — mitigated by 5-minute periodic refresh; worst-case staleness window is bounded but real.
-9. **Kustomize install surfaces are unsupported; Helm is the only working path.** `deploy/kustomize/` was deleted 2026-07-17 (decision taken: Helm-only). `config/` remains, but as build/test scaffolding — `config/crd/bases` feeds envtest and `helm-sync`, and `config/default` is applied by the e2e suite. **`config/default` is NOT a working install**: its operator Deployment runs as the `ach-operator` SA, which is bound only to the namespaced `ach-operator-role` (no `achagents`, `deployments`, `configmaps`, `services`, `pvcs`, `networkpolicies`, or `pods`), while the full-permission `ach-manager-role` ClusterRole is bound to `controller-manager` — and its RoleBinding's `roleRef` names `manager-role`, which after `namePrefix: ach-` does not exist (`ach-ach-manager-role` does), so it dangles unbound. e2e passes only because it never creates an ACHAgent. `.goreleaser.yml` release notes still advertise `kubectl apply -k .../config/default`, which would not reconcile an ACHAgent. Fix the RBAC wiring or stop advertising it.
-10. **Postgres durability/DR is undefined** — Postgres is the source of truth for every non-operator read, but backup/restore, PITR, and failover are unspecified. Operator-projected tables can be re-derived from CRDs; platform-api-owned rows (personal/environment keys, runtime catalog) have no re-derivation path and would be lost. Needs an explicit DR statement before any production claim.
-11. **Revocation propagation is bounded at ~5 minutes on the JWT trust path** — forwarder BIP/Environment caches refresh via LISTEN/NOTIFY (at-most-once) plus a 5-minute periodic resync; a revoked/changed policy can keep minting per-target JWTs until the next refresh. LiteLLM-side key revocation is enforced per call and is not affected; the bound applies to non-LiteLLM backends reached via `BackendIdentityPolicy`.
+7. **LISTEN/NOTIFY is at-most-once** — mitigated by 5-minute periodic refresh; worst-case staleness window is bounded but real.
+8. **Kustomize install surfaces are unsupported; Helm is the only working path.** `deploy/kustomize/` was deleted 2026-07-17 (decision taken: Helm-only). `config/` remains, but as build/test scaffolding — `config/crd/bases` feeds envtest and `helm-sync`, and `config/default` is applied by the e2e suite. **`config/default` is NOT a working install**: its operator Deployment runs as the `ach-operator` SA, which is bound only to the namespaced `ach-operator-role` (no `achagents`, `deployments`, `configmaps`, `services`, `pvcs`, `networkpolicies`, or `pods`), while the full-permission `ach-manager-role` ClusterRole is bound to `controller-manager` — and its RoleBinding's `roleRef` names `manager-role`, which after `namePrefix: ach-` does not exist (`ach-ach-manager-role` does), so it dangles unbound. e2e passes only because it never creates an ACHAgent. `.goreleaser.yml` release notes still advertise `kubectl apply -k .../config/default`, which would not reconcile an ACHAgent. Fix the RBAC wiring or stop advertising it.
+9. **Postgres durability/DR is undefined** — Postgres is the source of truth for every non-operator read, but backup/restore, PITR, and failover are unspecified. Operator-projected tables can be re-derived from CRDs; platform-api-owned rows (personal/environment keys, runtime catalog) have no re-derivation path and would be lost. Needs an explicit DR statement before any production claim.
+10. **Revocation propagation is bounded at ~5 minutes on the JWT trust path** — forwarder BIP/Environment caches refresh via LISTEN/NOTIFY (at-most-once) plus a 5-minute periodic resync; a revoked/changed policy can keep minting per-target JWTs until the next refresh. LiteLLM-side key revocation is enforced per call and is not affected; the bound applies to non-LiteLLM backends reached via `BackendIdentityPolicy`.
 
 ---
 
@@ -160,7 +159,6 @@ Grouped by horizon. Items marked ⭐ are my (Claude's) additions beyond what's a
 - **Agent fleet operations** ⭐ — ACHAgent today is single-replica instances. The natural evolution: fleet-level policies (max concurrent agents per team, budget-aware scale-to-zero for cron/queue agents, canary rollout of a new AgentProfile across a fleet). This is where "fleet manager for AI agents" becomes literally true and where no incumbent product exists yet.
 - **Cross-cluster / multi-region environments** — the harness already resolves its Environment at runtime with an `ek_` (capability.environment is ACH-side by design), so the seam for "agent in cluster A, environment governed by cluster B" already exists. Formalizing it = multi-cluster governance story for larger orgs.
 - **Session/audit analytics** ⭐ — `AgentSession` records + the audit stream are an underused asset. A retention + query story ("what did agent X do last Tuesday, with which credentials, against which backends") is the compliance feature that differentiates governed agents from ad-hoc ones.
-- **Plugins: decide, don't carry** ⭐ — either re-enable with a concrete customer use case, or excise the dormant code (types, tables, reconcilers) in a major version. Carrying ~dormant surface indefinitely is the one place the codebase violates its own YAGNI discipline — acknowledged as reversibility insurance, but insurance has premiums.
 - **A2A mesh governance** — as agent-to-agent traffic grows, the gateway's per-agent route set + BIP-minted identities position ACH to be the policy point for *inter-agent* calls (who may call whom, with what identity). Nobody owns this space yet.
 
 ---

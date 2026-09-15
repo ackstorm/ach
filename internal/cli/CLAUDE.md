@@ -145,8 +145,8 @@ claimed name as `<env>-<name>` instead — the incumbent (first hydrated, so
   name a user types does not flap between hydrates.
 
 Only the per-platform `state-<platform>.json` is consulted — a claim for a
-different target writes a different tree. NOT covered: `Plugin` (same problem,
-dormant behind `featuregate.PluginsEnabled=false`); prompts/artifacts extract
+different target writes a different tree. NOT covered: `Plugin` (same problem);
+prompts/artifacts extract
 to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
 cross-env reference counting, so `env uninstall <a>` removes a file `<b>` also
