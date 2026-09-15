@@ -64,26 +64,27 @@ func waitForwarderReady(t *testing.T, deadline time.Duration) error {
 	return nil
 }
 
-// phase4GatewayPort returns the port of the gateway base (ACH_BASE_URL,
-// default http://localhost:8080). All SSO acquisition reaches platform-api
-// + Dex entirely through this gateway port — NO kubectl port-forward
-// (this plan's zero-port-forward architecture; the gateway already routes
-// /platform and /dex). The acquisition helpers build http://localhost:<port>,
-// so this assumes the standard localhost gateway fixture.
-func phase4GatewayPort(t *testing.T) string {
+// phase4GatewayAuthority returns the host:port of the gateway base
+// (ACH_BASE_URL, default http://ach.e2e.local:8080). All SSO acquisition
+// reaches platform-api + Dex entirely through this gateway — NO kubectl
+// port-forward (the gateway already routes /platform and /dex). Every hop is
+// pinned to this ONE authority so the __Host- SSO cookie set on the login
+// request is presented on the callback (Dex's redirect carries the fixture's
+// registered ach.e2e.local origin).
+func phase4GatewayAuthority(t *testing.T) string {
 	t.Helper()
 	base := os.Getenv("ACH_BASE_URL")
 	if base == "" {
-		base = "http://localhost:8080"
+		base = "http://ach.e2e.local:8080"
 	}
 	u, err := url.Parse(base)
 	if err != nil {
 		t.Fatalf("parse ACH_BASE_URL %q: %v", base, err)
 	}
-	if p := u.Port(); p != "" {
-		return p
+	if u.Port() != "" {
+		return u.Host
 	}
-	return "80"
+	return u.Host + ":80"
 }
 
 // pk_/ek_ acquisition is expensive (a full device-code SSO round-trip),
@@ -105,7 +106,7 @@ func mustAcquirePk(t *testing.T) string {
 	if cachedPk != "" {
 		return cachedPk
 	}
-	cachedPk = phase4AcquirePkAutomatically(t, phase4GatewayPort(t))
+	cachedPk = phase4AcquirePkAutomatically(t, phase4GatewayAuthority(t))
 	return cachedPk
 }
 
@@ -120,7 +121,7 @@ func mustAcquireEkBoundToEnv(t *testing.T, env string) string {
 		return ek
 	}
 	pk := mustAcquirePk(t)
-	ek, err := phase4AcquireEkBoundToEnvAutomatically(t, phase4GatewayPort(t), pk, env)
+	ek, err := phase4AcquireEkBoundToEnvAutomatically(t, phase4GatewayAuthority(t), pk, env)
 	if err != nil {
 		t.Skipf("Skipping: cannot automatically generate environment key due to LiteLLM limits (e.g. Enterprise tags check): %v", err)
 	}
@@ -175,7 +176,7 @@ func phase4StartGatewayPortForward(t *testing.T, localPort string) func() {
 	cmd := exec.Command("kubectl", "port-forward",
 		"-n", "ach-system",
 		"svc/ach-local-gateway",
-		localPort+":80",
+		localPort+":8080",
 	)
 	if err := cmd.Start(); err != nil {
 		t.Skipf("phase4StartGatewayPortForward: cannot start port-forward: %v", err)
@@ -201,7 +202,7 @@ func phase4StartGatewayPortForward(t *testing.T, localPort string) func() {
 	return func() {}
 }
 
-func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
+func phase4AcquirePkAutomatically(t *testing.T, gateway string) string {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
@@ -215,7 +216,7 @@ func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
 		},
 	}
 
-	loginURL := fmt.Sprintf("http://localhost:%s/platform/auth/login", localPort)
+	loginURL := fmt.Sprintf("http://%s/platform/auth/login", gateway)
 	loginResp, err := client.Get(loginURL)
 	if err != nil {
 		t.Fatalf("GET /login failed: %v", err)
@@ -234,8 +235,8 @@ func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
 		if hop >= maxRedirects {
 			t.Fatalf("SSO redirect loop exceeded %d hops at %s", maxRedirects, currentURL)
 		}
-		currentURL = strings.ReplaceAll(currentURL, "dex.dex-system.svc.cluster.local:5556", "localhost:"+localPort)
-		currentURL = strings.ReplaceAll(currentURL, "localhost:8080", "localhost:"+localPort)
+		currentURL = strings.ReplaceAll(currentURL, "dex.dex-system.svc.cluster.local:5556", gateway)
+		currentURL = strings.ReplaceAll(currentURL, "localhost:8080", gateway)
 
 		resp, err := client.Get(currentURL)
 		if err != nil {
@@ -284,7 +285,7 @@ func phase4AcquirePkAutomatically(t *testing.T, localPort string) string {
 	return data.Plaintext
 }
 
-func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, localPort, pk, env string) (string, error) {
+func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, gateway, pk, env string) (string, error) {
 	t.Helper()
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -294,7 +295,7 @@ func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, localPort, pk, env str
 		"name":        "demo-ek",
 	})
 
-	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:%s/platform/keys", localPort), bytes.NewReader(payload))
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/platform/keys", gateway), bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-ach-key", pk)
 

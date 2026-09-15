@@ -57,12 +57,17 @@ spec:
   # NodePort so the gateway is reachable from the host without a manual
   # `kubectl port-forward`. Paired with scripts/kind-config.yaml's
   # extraPortMapping (hostPort 8080 -> containerPort 30080), host
-  # http://localhost:8080 routes straight to this gateway. NOTE: the
-  # extraPortMapping only takes effect on `kind create` — an already-up
-  # cluster must be recreated (cluster-down && cluster-up) to publish it.
+  # http://ach.e2e.local:8080 (devtools maps the name to 127.0.0.1) routes
+  # straight to this gateway. Service port is 8080 (not 80) so the SAME
+  # host:port resolves from pods too: CoreDNS rewrites ach.e2e.local to this
+  # Service (coredns-rewrite.yaml), which is what lets platform-api advertise
+  # ONE ACH_BASE_URL that both the host test runner and agent pods can fetch
+  # hydrate downloads from. NOTE: the extraPortMapping only takes effect on
+  # `kind create` — an already-up cluster must be recreated (cluster-down &&
+  # cluster-up) to publish it.
   type: NodePort
   ports:
-  - port: 80
+  - port: 8080
     targetPort: 8080
     nodePort: 30080
     name: http

@@ -67,7 +67,7 @@ const (
 	// when ACH_E2E_PHASE6_BASE_URL is unset. phase6NormalizeHydrate rewrites
 	// this to the live base before the byte-for-byte compare — a no-op on the
 	// standard fixture, a real rewrite only against an exotic-host cluster.
-	phase6DefaultBaseURL = "http://localhost:8080"
+	phase6DefaultBaseURL = "http://ach.e2e.local:8080"
 	// phase6DemoEnvironment is the Environment name from
 	// examples/04-environment-demo.yaml — the standard cluster fixture
 	// that the golden was captured against.
@@ -149,7 +149,7 @@ func phase6PlatformAPIURL(t *testing.T) string {
 }
 
 // phase6NormalizeHydrate substitutes every occurrence of the golden's
-// stored base URL (phase6DefaultBaseURL = "http://localhost:8080") with the
+// stored base URL (phase6DefaultBaseURL = "http://ach.e2e.local:8080") with the
 // live cluster's base URL. The golden is stored against the literal host the
 // standard kind+Helm fixture emits, so this is a no-op there; it only does
 // real work against an exotic-host cluster (override ACH_E2E_PHASE6_BASE_URL).

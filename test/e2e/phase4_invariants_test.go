@@ -333,7 +333,7 @@ func testPhase4SC3JwtMintAndBipAlphaFirst(t *testing.T) {
 	defer startMcpEchoPortForward(t, mcpEchoLocal)()
 	gatewayLocal := "8195"
 	defer phase4StartGatewayPortForward(t, gatewayLocal)()
-	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
+	pk := phase4AcquirePkAutomatically(t, phase4GatewayAuthority(t)) // SSO must run on the ONE registered origin (cookie + Dex callback)
 
 	const route = bipJWTRouteName // demo-mcp-jwt
 	// Names sort before the synced bip-demo-mcp-jwt ('a' < 'b'); among the

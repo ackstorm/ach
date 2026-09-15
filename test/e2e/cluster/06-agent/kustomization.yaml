@@ -7,13 +7,15 @@ kind: Kustomization
 # within the stage does not matter — the operator re-reconciles on the profile
 # and secret watches until both resolve.
 #
-# DEFERRED: this fixture asserts operator OUTPUT only — WorkloadApplied=True,
-# a schema-valid config.json ConfigMap, and the ACH_TOKEN secretKeyRef on the
-# Deployment. Asserting WorkloadReady=True (pod-Ready) needs the real ach-agent
-# image loaded into kind + a live ACH Environment + a valid ek to hydrate
-# against; envtest cannot flip pod-Ready (no kubelet) either. Follow-up once the
-# ach-agent image is loadable into kind. Do NOT read this fixture as full
-# runtime coverage.
+# Two evidence tracks, kept separate on purpose (ach-agent handoff 2026-09-15):
+#   - rendering shape: scripts/cluster.sh stage 07 gates WorkloadApplied=True,
+#     a schema-valid config.json, the ACH_TOKEN secretKeyRef, and the
+#     standalone/distributed container matrix — no image needed.
+#   - runtime readiness: test/e2e/agent_runtime_ready_test.go mints a real ek
+#     for the demo Environment at test time, swaps it into e2e-agent-ek, and
+#     requires WorkloadReady=True on BOTH agents (hydration + native config +
+#     directory prep completed in the pod), then checks distributed isolation.
+# The committed ek value is a placeholder; nothing bypasses hydration.
 resources:
   - ek-secret.yaml
   - profile.yaml

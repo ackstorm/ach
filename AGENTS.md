@@ -123,7 +123,7 @@ directly. It is a logic-free packaging convenience — disable it with
 `gateway.enabled=false` and front the services with per-service Ingress instead.
 In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
-in front of `ach-gateway` (preserving the single `localhost:8080` origin). Owned
+in front of `ach-gateway` (preserving the single `ach.e2e.local:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Skill`, `SkillMarketplace`,
 `Prompt`, `Artifact`, `LiteLLMConnection`, `BackendIdentityPolicy`,
 `AgentProfile`, `ACHAgent` (`api/` is authoritative — NO `EnvKey`/`Team`/
@@ -485,10 +485,14 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 - **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`); the distributed
   matrix lives in `distributedContainers`/`distributedVolumes` (`achagent_workload.go`) and
   is asserted by `TestBuildDeployment_Distributed*`. The e2e stage 06 ships BOTH shapes:
-  `e2e-agent` (standalone) + `e2e-agent-dist` (`spec.placement: distributed`), gated on
-  WorkloadApplied + rendered shape only (image not loaded into kind). Pod-Ready validation
-  of the distributed pod needs the ach-agent image implementing the HTTP role-port probes
-  (> v0.16.2) against a real cluster.
+  `e2e-agent` (standalone) + `e2e-agent-dist` (`spec.placement: distributed`, image
+  `v0.16.3`, model `demo-model`). Two evidence tracks: `scripts/cluster.sh` gates the
+  rendered shape (`WorkloadApplied`); `test/e2e/agent_runtime_ready_test.go` mints a real
+  `ek_`, swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on both + the
+  distributed isolation matrix. Pods can hydrate because the e2e origin is
+  `http://ach.e2e.local:8080` on BOTH sides (devtools `--add-host` → 127.0.0.1; CoreDNS
+  rewrite → `ach-local-gateway:8080`) — never `localhost:8080`, which a pod resolves to
+  itself.
 
 - **Single-binary cobra layout**: each long-running mode is a subcommand under
   `cmd/ach/cmd/<mode>.go` wiring its `internal/<service>/` impl. New modes go

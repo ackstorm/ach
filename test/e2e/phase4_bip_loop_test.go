@@ -57,7 +57,7 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 	gwCleanup := phase4StartGatewayPortForward(t, gatewayLocal)
 	defer gwCleanup()
 
-	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
+	pk := phase4AcquirePkAutomatically(t, phase4GatewayAuthority(t)) // SSO must run on the ONE registered origin (cookie + Dex callback)
 
 	t.Run("jwt_route_attaches_jwt", func(t *testing.T) {
 		echoed := "hola-bip-jwt"

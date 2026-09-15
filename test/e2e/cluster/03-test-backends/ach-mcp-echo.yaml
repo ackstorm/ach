@@ -8,7 +8,7 @@
 # the BIPs bip-demo-mcp-jwt / bip-demo-mcp-nojwt drive the JWT closed loop.
 #
 # Env values are literals captured from the prior chart render against the
-# ach-system deploy: iss = the http://localhost:8080 gateway host, aud covers
+# ach-system deploy: iss = the http://ach.e2e.local:8080 gateway host, aud covers
 # both demo routes, requireJwt=false so the nojwt route's tokenless request is
 # accepted (jwt_present=false) while a present-but-invalid token still 401s.
 apiVersion: v1
@@ -68,7 +68,7 @@ spec:
             - name: ACH_JWKS_URL
               value: "http://ach-forwarder.ach-system.svc/.well-known/jwks.json"
             - name: ACH_EXPECTED_ISS
-              value: "http://localhost:8080"
+              value: "http://ach.e2e.local:8080"
             - name: ACH_EXPECTED_AUD
               value: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt"
             - name: ACH_REQUIRE_JWT

@@ -73,8 +73,8 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 		if m.Runtime.MCPServers[0].Endpoint == "" {
 			t.Error("Runtime.MCPServers[0].Endpoint is empty — must round-trip (ADAPT-03)")
 		}
-		if m.Runtime.MCPServers[0].Endpoint != "http://localhost:8080/mcp/demo-mcp-jwt" {
-			t.Errorf("Runtime.MCPServers[0].Endpoint = %q, want http://localhost:8080/mcp/demo-mcp-jwt",
+		if m.Runtime.MCPServers[0].Endpoint != "http://ach.e2e.local:8080/mcp/demo-mcp-jwt" {
+			t.Errorf("Runtime.MCPServers[0].Endpoint = %q, want http://ach.e2e.local:8080/mcp/demo-mcp-jwt",
 				m.Runtime.MCPServers[0].Endpoint)
 		}
 		if m.Runtime.MCPServers[1].Endpoint == "" {

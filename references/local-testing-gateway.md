@@ -15,14 +15,14 @@ directly — there is no nginx.
 
 In local/e2e testing on Kind, the **`ach-local-gateway`** nginx pod is now
 an **e2e-only shim**, not the primary router. Kind binds one host port, so
-the shim preserves the single `localhost:8080` origin the SSO cookie
+the shim preserves the single `ach.e2e.local:8080` origin the SSO cookie
 round-trip and metrics-scrape harness depend on. It serves the two dev
 **kludges** locally (`/dex`, `/metrics/<svc>`) and **falls through
 everything else to `ach-gateway`** — so e2e traffic exercises the real
 gateway exactly as prod will.
 
 ```
-                          host  http://localhost:8080
+                          host  http://ach.e2e.local:8080
                                         │  (NodePort 30080)
                               ┌──────────▼──────────┐
                               │  ach-local-gateway  │  e2e-only shim
@@ -44,12 +44,12 @@ gateway exactly as prod will.
 ```
 
 Reachable under the single localhost port (`8080`):
-* **Platform API:** `http://localhost:8080/platform/` — shim → `ach-gateway` → platform-api
-* **Content Service:** `http://localhost:8080/content/` — shim → `ach-gateway` → content-service
-* **LLM Forwarder:** `http://localhost:8080/{v1,v2,gemini,mcp,a2a}/`, JWKS at `/.well-known/` — shim → `ach-gateway` → forwarder
-* **SSO (Dex):** `http://localhost:8080/dex/` — **DEV KLUDGE, served by the shim, never by `ach-gateway`.** Prod reaches Dex directly via `ACH_DEX_ISSUER_URL` (e.g. `https://auth.ackstorm.ai`) with no gateway involvement.
-* **Per-service metrics:** `http://localhost:8080/metrics/{forwarder,content,platform,operator}` — **DEV KLUDGE, served by the shim.** Distinct routes because a bare `/metrics` can't disambiguate four services. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`; `/metrics/operator` is backed by the `ach-operator-metrics` Service. **`ach-gateway` has NO `/metrics` route by design** — keeping metrics off the prod router means the prod Ingress physically cannot leak them.
-* **Shim health:** `http://localhost:8080/healthz` returns `200 ok` directly from nginx (no upstream); it backs the shim pod's probes. `ach-gateway` serves its own local `/healthz` for its pod probes.
+* **Platform API:** `http://ach.e2e.local:8080/platform/` — shim → `ach-gateway` → platform-api
+* **Content Service:** `http://ach.e2e.local:8080/content/` — shim → `ach-gateway` → content-service
+* **LLM Forwarder:** `http://ach.e2e.local:8080/{v1,v2,gemini,mcp,a2a}/`, JWKS at `/.well-known/` — shim → `ach-gateway` → forwarder
+* **SSO (Dex):** `http://ach.e2e.local:8080/dex/` — **DEV KLUDGE, served by the shim, never by `ach-gateway`.** Prod reaches Dex directly via `ACH_DEX_ISSUER_URL` (e.g. `https://auth.ackstorm.ai`) with no gateway involvement.
+* **Per-service metrics:** `http://ach.e2e.local:8080/metrics/{forwarder,content,platform,operator}` — **DEV KLUDGE, served by the shim.** Distinct routes because a bare `/metrics` can't disambiguate four services. The e2e harness exports these as `ACH_{FORWARDER,CONTENT,PLATFORM,OPERATOR}_METRICS_URL`; `/metrics/operator` is backed by the `ach-operator-metrics` Service. **`ach-gateway` has NO `/metrics` route by design** — keeping metrics off the prod router means the prod Ingress physically cannot leak them.
+* **Shim health:** `http://ach.e2e.local:8080/healthz` returns `200 ok` directly from nginx (no upstream); it backs the shim pod's probes. `ach-gateway` serves its own local `/healthz` for its pod probes.
 
 ---
 
@@ -64,13 +64,23 @@ To apply or update the gateway manually:
 kubectl apply -f test/e2e/cluster/03-test-backends/ach-local-gateway.yaml
 ```
 
-### Reaching the Gateway on `localhost:8080`
+### Reaching the Gateway on `ach.e2e.local:8080`
+
+> **One origin, two sides.** `ach.e2e.local` is the single ACH origin for the
+> e2e cluster: the devtools container maps it to `127.0.0.1` (`scripts/dev.sh`
+> `--add-host`), and inside the cluster CoreDNS rewrites it to the
+> `ach-local-gateway` Service on port 8080 (`coredns-rewrite.yaml`). That is
+> what lets platform-api advertise hydrate download URLs that agent pods can
+> actually fetch. **On the host itself** (outside `./scripts/dev.sh`) add
+> `127.0.0.1 ach.e2e.local` to `/etc/hosts`; plain `localhost:8080` still
+> reaches nginx, but the SSO `__Host-` cookie and Dex callback are registered
+> for `ach.e2e.local`, so log in through that name.
 
 The gateway Service is **`type: NodePort` (nodePort `30080`)** and
 `scripts/kind-config.yaml` publishes it via an `extraPortMapping`
 (hostPort `8080` → node containerPort `30080`). So on any cluster created
 with the current kind-config, the whole platform is reachable at
-`http://localhost:8080` **with no port-forward** — the unified SSO +
+`http://ach.e2e.local:8080` **with no port-forward** — the unified SSO +
 `/platform` + `/content` + `/v1` + `/v2` paths all route through nginx.
 
 > The `extraPortMapping` only binds at `kind create`. A cluster created
@@ -80,7 +90,7 @@ with the current kind-config, the whole platform is reachable at
 
 **Fallback (cluster without the mapping):**
 ```bash
-kubectl -n ach-system port-forward svc/ach-local-gateway 8080:80
+kubectl -n ach-system port-forward svc/ach-local-gateway 8080:8080
 ```
 
 ---
@@ -102,7 +112,7 @@ To test the SSO and generate a personal key (`pk_...`) locally over HTTP:
    session = requests.Session()
 
    # Step 1: Initiate OAuth Login
-   login_resp = session.get("http://localhost:8080/platform/auth/login", allow_redirects=False)
+   login_resp = session.get("http://ach.e2e.local:8080/platform/auth/login", allow_redirects=False)
    dex_url = login_resp.headers.get("Location")
 
    # Step 2: Override the 'Secure' cookie flag to allow HTTP localhost transmission
@@ -110,13 +120,13 @@ To test the SSO and generate a personal key (`pk_...`) locally over HTTP:
        cookie.secure = False
 
    # Step 3: Rewrite internal cluster DNS to localhost
-   dex_url_local = dex_url.replace("dex.dex-system.svc.cluster.local:5556", "localhost:8080")
+   dex_url_local = dex_url.replace("dex.dex-system.svc.cluster.local:5556", "ach.e2e.local:8080")
 
    # Step 4: Perform login (Dex mock automatically authenticates)
    # We follow redirects manually because of internal k8s domain names
    current_url = dex_url_local
    while True:
-       current_url = current_url.replace("dex.dex-system.svc.cluster.local:5556", "localhost:8080")
+       current_url = current_url.replace("dex.dex-system.svc.cluster.local:5556", "ach.e2e.local:8080")
        for cookie in session.cookies:
            cookie.secure = False
        resp = session.get(current_url, allow_redirects=False)
@@ -137,6 +147,6 @@ To test the SSO and generate a personal key (`pk_...`) locally over HTTP:
    ```bash
    curl -H "x-ach-key: pk_xxxx..." \
         -H "Content-Type: application/json" \
-        http://localhost:8080/v1/models
+        http://ach.e2e.local:8080/v1/models
    ```
    This is proxied by Nginx to the Forwarder, which resolves the key to its LiteLLM virtual key, and impersonates it securely inside LiteLLM!

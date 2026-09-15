@@ -1,8 +1,7 @@
 # Same cron-only agent with placement=distributed set PER AGENT (overrides the
 # profile, which leaves it unset ⇒ standalone for e2e-agent). Asserts the
-# operator renders the three-role pod shape from one profile; pod-Ready needs an
-# ach-agent image implementing the HTTP role-port probes (> v0.16.2), which is
-# not loaded into kind — see the DEFERRED note in kustomization.yaml.
+# operator renders the three-role pod shape from one profile; readiness +
+# isolation are asserted live by TestAgentRuntimeReady (kustomization.yaml).
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: ACHAgent
 metadata:

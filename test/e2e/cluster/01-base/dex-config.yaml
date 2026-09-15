@@ -32,8 +32,8 @@ staticClients:
     secret: dev-secret-not-for-prod
     name: 'ACH Platform API (dev)'
     redirectURIs:
-      - http://localhost:8080/platform/auth/sso/callback
-      - https://localhost:8080/platform/auth/sso/callback
+      - http://ach.e2e.local:8080/platform/auth/sso/callback
+      - https://ach.e2e.local:8080/platform/auth/sso/callback
 
 connectors:
   - type: mockCallback

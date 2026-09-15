@@ -743,7 +743,7 @@ logs-litellm:      ## Tail LiteLLM logs.
 # turns red instead of green. Phases 6 & 7 are CLI suites that additionally
 # need a human-minted pk_ (ACH_E2E_PHASE6_PK / ACH_E2E_PHASE7_PK), inherited
 # from the caller's environment.
-ACH_BASE_URL   ?= http://localhost:8080
+ACH_BASE_URL   ?= http://ach.e2e.local:8080
 
 # Shared env block prefixed onto EVERY e2e go-test invocation (run + focus)
 # so URL-gated tests actually exercise the synced cluster. Make variables are

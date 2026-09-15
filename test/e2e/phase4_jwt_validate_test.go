@@ -159,7 +159,7 @@ func testJWTValidateViaForwarder(t *testing.T, mcpEchoLocal string) {
 	gwCleanup := phase4StartGatewayPortForward(t, gatewayLocal)
 	defer gwCleanup()
 
-	pk := phase4AcquirePkAutomatically(t, gatewayLocal)
+	pk := phase4AcquirePkAutomatically(t, phase4GatewayAuthority(t)) // SSO must run on the ONE registered origin (cookie + Dex callback)
 
 	resetMcpEchoCapture(t, mcpEchoLocal)
 

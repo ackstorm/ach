@@ -82,7 +82,7 @@ const (
 	// speaks plain http on localhost:8080 via ACH_BASE_URL in
 	// test/e2e/values/ach.values.yaml). Override with
 	// ACH_E2E_PHASE7_BASE_URL for an exotic-host cluster.
-	phase7DefaultBaseURL = "http://localhost:8080"
+	phase7DefaultBaseURL = "http://ach.e2e.local:8080"
 	// phase7DemoEnvironment is the Environment name from
 	// examples/04-environment-demo.yaml — the standard cluster fixture
 	// every sc1_* subtest drives against.

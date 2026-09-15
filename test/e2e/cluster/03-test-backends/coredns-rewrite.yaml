@@ -1,0 +1,36 @@
+# Makes the single e2e origin http://ach.e2e.local:8080 resolvable from pods:
+# CoreDNS rewrites the name to the local gateway Service. The devtools
+# container maps the same name to 127.0.0.1 (kind hostPort 8080), so host
+# tests and agent pods share ONE ACH_BASE_URL — platform-api advertises
+# hydrate download URLs on it and both sides can fetch them.
+#
+# Applied by scripts/cluster.sh (kube-system, not part of the 03 kustomize
+# base). Body = kind v1.31 default Corefile + the one `rewrite` line.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        rewrite name ach.e2e.local ach-local-gateway.ach-system.svc.cluster.local
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }

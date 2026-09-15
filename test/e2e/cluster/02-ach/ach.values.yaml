@@ -24,7 +24,10 @@ extraEnv:
   # Secrets seeded by 02-ach/secrets. Exercising the single-source path real
   # deployments use; setting them in extraEnv too would duplicate the env vars.
   - name: ACH_BASE_URL
-    value: "http://localhost:8080"
+    # ONE origin reachable from the host (devtools --add-host → 127.0.0.1 → kind
+    # hostPort 8080) AND from pods (CoreDNS rewrite → ach-local-gateway:8080), so
+    # the hydrate manifest's download URLs work for agent pods too.
+    value: "http://ach.e2e.local:8080"
   # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY are NOT set here anymore.
   # They are derived from the litellmConnection block below (the chart's
   # ach.litellmConnectionEnv helper injects them into platform-api +
@@ -44,14 +47,14 @@ extraEnv:
   - name: ACH_DEX_REDIRECT_URL
     # Must match a redirectURI registered in scripts/dex-config.yaml's
     # staticClient. The SSO flow (ach-cli login / the phase4 e2e helpers)
-    # reaches platform-api on localhost:8080 via the gateway, so we use the
+    # reaches platform-api on ach.e2e.local:8080 via the gateway, so we use the
     # same URL Dex has on file. In a real deployment this would be the public
     # platform-api callback URL behind ingress.
-    value: "http://localhost:8080/platform/auth/sso/callback"
+    value: "http://ach.e2e.local:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
   # No ACH_SSO_INSECURE_COOKIE here: the SSO cookie hardening is derived
-  # from the ACH_BASE_URL scheme. ACH_BASE_URL=http://localhost:8080
+  # from the ACH_BASE_URL scheme. ACH_BASE_URL=http://ach.e2e.local:8080
   # (above) makes the platform-api emit the non-Secure `ach_sso` cookie
   # automatically, so the kind gateway's plain-http SSO round-trip works
   # without a flag. An https base would auto-harden to __Host-/Secure.

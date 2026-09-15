@@ -572,6 +572,13 @@ reconcile_fixtures() {
   # verify both need the ach Services already up).
   echo "[cluster.sh] applying test backends (stage 03)..."
   kubectl apply -k "${CLUSTER_DIR}/03-test-backends"
+  # ONE ACH origin for host tests AND agent pods: CoreDNS rewrites
+  # ach.e2e.local → ach-local-gateway (see coredns-rewrite.yaml); the devtools
+  # container maps the same name to 127.0.0.1. Without it, platform-api's
+  # advertised hydrate URLs point agent pods at themselves.
+  kubectl apply -f "${CLUSTER_DIR}/03-test-backends/coredns-rewrite.yaml"
+  kubectl -n kube-system rollout restart deploy/coredns
+  kubectl -n kube-system rollout status deploy/coredns --timeout=120s
 }
 
 reconcile_objects() {
