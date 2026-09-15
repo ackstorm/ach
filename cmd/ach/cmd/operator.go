@@ -431,16 +431,8 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	bipCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	llmCh := make(chan event.GenericEvent, resyncSourceChanCap)
 
-	// Plugin + PluginMarketplace CRDs are NOT installed while
-	// featuregate.PluginsEnabled is false, so their channels stay nil:
-	// resync.sweepKind and refreshsignal.Listener both no-op on a nil
-	// channel, which is what keeps the 5-minute sweep from Listing a Kind
-	// the apiserver does not know ("no matches for kind \"PluginList\"").
-	var pluginCh, mpCh chan event.GenericEvent
-	if featuregate.PluginsEnabled {
-		pluginCh = make(chan event.GenericEvent, resyncSourceChanCap)
-		mpCh = make(chan event.GenericEvent, resyncSourceChanCap)
-	}
+	pluginCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	mpCh := make(chan event.GenericEvent, resyncSourceChanCap)
 
 	if err = (&achcontroller.LiteLLMConnectionReconciler{
 		Client:       mgr.GetClient(),
@@ -658,21 +650,14 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-// refreshChannels builds the refresh-signal kind→channel map, omitting the
-// Plugin kinds when featuregate.PluginsEnabled is false. The Listener is
-// nil-tolerant, so omitting them is belt-and-braces — it also keeps the
-// V(1) "no channel wired" log honest instead of implying a wired-but-nil
-// feed.
+// refreshChannels builds the refresh-signal kind→channel map.
 func refreshChannels(pluginCh, promptCh, artifactCh, skillCh, mpCh, smpCh chan event.GenericEvent) map[string]chan<- event.GenericEvent {
-	m := map[string]chan<- event.GenericEvent{
-		"prompt":           promptCh,
-		"artifact":         artifactCh,
-		"skill":            skillCh,
-		"skillmarketplace": smpCh,
+	return map[string]chan<- event.GenericEvent{
+		"plugin":            pluginCh,
+		"prompt":            promptCh,
+		"artifact":          artifactCh,
+		"skill":             skillCh,
+		"pluginmarketplace": mpCh,
+		"skillmarketplace":  smpCh,
 	}
-	if featuregate.PluginsEnabled {
-		m["plugin"] = pluginCh
-		m["pluginmarketplace"] = mpCh
-	}
-	return m
 }
