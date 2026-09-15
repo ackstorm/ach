@@ -7,8 +7,7 @@
 // Coverage matrix:
 //
 //   TestPipeline_EndToEnd                    — every D-03 outcome (16+ subtests).
-//   TestPipeline_PluginPrecedence            — B2 bare/scoped resolution semantics (5 subtests);
-//                                              SKIPPED while plugins are gated off.
+//   TestPipeline_PluginPrecedence            — B2 bare/scoped resolution semantics (5 subtests).
 //   TestPipeline_ContentContainment          — gate 8 storage_location containment.
 //   TestPipeline_InFlightReadSurvivesRename  — D-02 + SC#4 inode-pin proof.
 //   TestPipeline_EmitsOneAuditEventPerRequest — audit emission shape on success + denial.

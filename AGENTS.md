@@ -39,8 +39,7 @@ declarative agent configuration management: operator + platform API + forwarder
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
 ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
 keys/admin/runtime; hydrate/status/uninstall live under `env`; plus the serverless
-local package manager `repo`/`skill` — `plugin` is **disabled** (see
-`featuregate.PluginsEnabled` below)) that drops the
+local package manager `repo`/`plugin`/`skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
@@ -48,26 +47,6 @@ Release plumbing + CI scaffolding grafted from
 [ackstorm/alitellm-operator](https://github.com/ackstorm/alitellm-operator)
 (Apache-2.0; see `NOTICE` + `references/upstream-sync.md`) — non-code surfaces
 only. All Go code, CRDs, and Helm values are original ackstorm material.
-
-> **⚠ Plugin & PluginMarketplace are currently DISABLED** via the compile-time
-> const `featuregate.PluginsEnabled = false` (`internal/featuregate`). In the
-> shipped build their CRDs are not in the Helm chart (`kubectl apply` → `no
-> matches for kind`), the operator does not wire their reconcilers,
-> content-service does not serve `/content/plugin/{name}`, admin inventory hides
-> plugin/marketplace rows, an Environment's `context.plugins` refs are SKIPPED
-> (not failed — they no longer gate `ExecutionResourcesResolved`), and
-> `ach-cli local plugin` is unregistered. The Go types, reconcilers, DB
-> tables/migrations, and `config/crd/bases/` plugin CRDs REMAIN in the tree
-> (gated, not deleted). **`Skill` / `SkillMarketplace` are the supported content
-> kinds and are unaffected.** Flip the const to `true` + `make helm-sync` to
-> re-enable everything. Plugin mechanics described below stay accurate for the
-> re-enabled build, but read them as DORMANT in the current one.
->
-> **Plugins / PluginMarketplace are NOT a supported user surface** — treat the
-> CLI's refusal of them as CORRECT, never as a bug to "fix". Specifically:
-> `ach-cli plugin` → `unknown command "plugin"` (exit 1) and there is no
-> `ach-cli local plugin`; only `repo` + `skill` ship under `local`. Do NOT file
-> these as UX defects in any walkthrough/review — they are by design.
 
 ## Architecture
 
@@ -94,10 +73,7 @@ only. All Go code, CRDs, and Helm values are original ackstorm material.
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
 `marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`,
 `achagents` (operator-written read model for the gateway `/agents` route set +
-the future UI agent list; no UI write path); the
-`plugins`/`marketplace_plugins`/`marketplaces` tables + migrations REMAIN but
-are **unused** while `featuregate.PluginsEnabled=false` — nothing writes them);
-platform-api, forwarder,
+the future UI agent list; no UI write path)); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
 emitted by `with_tx_notify`. CRDs are no longer the read path for any
 non-operator service. **GitOps-wins UI write path (G2)**: the platform-api UI
@@ -124,13 +100,11 @@ directly. It is a logic-free packaging convenience — disable it with
 In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `ach.e2e.local:8080` origin). Owned
-CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Skill`, `SkillMarketplace`,
-`Prompt`, `Artifact`, `LiteLLMConnection`, `BackendIdentityPolicy`,
-`AgentProfile`, `ACHAgent` (`api/` is authoritative — NO `EnvKey`/`Team`/
-`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist; `ek_`/`pk_` keys and
-teams are platform-api/DB objects). `Plugin` /
-`PluginMarketplace` types also exist in `api/` but their CRDs are NOT shipped
-(gated off, see above). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
+CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
+`Skill`, `SkillMarketplace`, `Prompt`, `Artifact`, `LiteLLMConnection`,
+`BackendIdentityPolicy`, `AgentProfile`, `ACHAgent` (`api/` is authoritative —
+NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
+`ek_`/`pk_` keys and teams are platform-api/DB objects). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
 (an agent instance)** render into the single `agent-config-v1` config the
 `ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a
 `config.json` ConfigMap + a single-replica Deployment (probes, inbound
@@ -191,7 +165,7 @@ convenience**, not a co-equal mode.
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
 | operator        | `ach operator`        | Reconciles ACH CRDs |
-| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (an `ek_` is minted ONLY into its Environment's deny-all shell team `ach-env-<env>` — no models, no object_permission, no access-group binding; a `pk_` is minted into the caller's per-user deny-all shell team `ach-user-<email>` (provisioned idempotently at mint) with a matching key expiry — grants attach via the operator, not platform-api; see `references/litellm-permission-model.md`; `POST /platform/keys` (ek_ create) + `DELETE /platform/keys/{id}` (ek_ revoke; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read; hides plugin/marketplace rows while plugins are gated off) + UI Objects API (write, Environment only — `/platform/objects`, G2) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`) |
+| platform-api    | `ach platform-api`    | REST + Dex SSO + `pk_`/`ek_` lifecycle (an `ek_` is minted ONLY into its Environment's deny-all shell team `ach-env-<env>` — no models, no object_permission, no access-group binding; a `pk_` is minted into the caller's per-user deny-all shell team `ach-user-<email>` (provisioned idempotently at mint) with a matching key expiry — grants attach via the operator, not platform-api; see `references/litellm-permission-model.md`; `POST /platform/keys` (ek_ create) + `DELETE /platform/keys/{id}` (ek_ revoke; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard); combined read `GET /platform/keys` + `GET /platform/admin/keys`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`) |
 | forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/v2`/`/gemini`/`/mcp`/`/a2a` rewrite; anonymous `/.well-known/jwks.json` + `/.well-known/oauth-protected-resource/*` (RFC 9728 discovery, #177) |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)` |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex); disable via `gateway.enabled=false`, use per-service Ingress instead. Also reads the `achagents` projection (**`ACH_DB_URL` required — refuses to start without it**) and serves `/agents/{ns}/{service}/…` to per-agent Services (`{service}` = the Service name, e.g. `achagent-gh`; the tail after it is forwarded verbatim — webhook, a2a, whatever the harness serves) — **only agents that opt in via `spec.expose.gateway=true` are in the route set** (`exposed` projection column); still no auth/no header rewrite; the `ach-agent` harness verifies HMAC on its webhook route |
@@ -205,12 +179,10 @@ bare `ach-cli env hydrate` reproduces the workspace. Bare `ach-cli env hydrate`
 (no `<name>`, no `ACH_ENVIRONMENT`) reads that `ach.yaml` and hydrates each
 listed Environment best-effort (exit ≠0 if any fails).
 Plus the **serverless local package manager** — `repo` (register a GitHub/git
-marketplace or direct skill source) and `skill`
+marketplace or direct plugin/skill source), `plugin` and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs
 via `--target`, no Environment/CRD ceremony). `env` is the governed remote
-object; `repo`/`skill` are the local-first quick path. The `plugin` subcommand
-and `repo`'s plugin/plugin-marketplace lenses are **NOT registered** while
-`featuregate.PluginsEnabled=false` (only `repo` + `skill` ship under `local`).
+object; `repo`/`plugin`/`skill` are the local-first quick path.
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
@@ -522,9 +494,8 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   topology via `deploy/helm/ach/values.yaml` `*.enabled` flags. Each Deployment
   carries `args: ["<mode>"]`.
 - **Environment two-axis status**: `ExecutionResourcesResolved`
-  (Prompt/Artifact/**Skill** closed-set — `Plugin` is gated off, so
-  `context.plugins` refs are SKIPPED, not failed, and no longer gate this
-  condition; `context.skills` is content-gated) + `AccessGroupSynced` (LiteLLM: names →
+  (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
+  content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
   rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
   `spec.runtime.guardrails` (LiteLLM guardrail names) **requires a LiteLLM
@@ -541,7 +512,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   which carries no guardrail field, so **human CLI traffic to the same
   models is unguarded**. This is a known v1 limitation, not a bug.
 - **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
-  mirrors the (now-gated-off) **Plugin** pipeline end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
+  mirrors **Plugin** end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
   `skill/<name>.tar.gz` → `skills` projection → content-service
   `/content/skill/{name}` gzip). On hydrate it rides the plugin-mirrored stage
   root: extract to `<tmp>/skill/<name>`, nest under a synthetic `skills/<name>/`,
@@ -596,9 +567,7 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
 - **Dex SSO**: WebFetch `https://dexidp.io/docs/` (OIDC connector/discovery).
 - **goreleaser v2**: https://goreleaser.com — watch the `dockers` → `dockers_v2`
   migration (deferred; configs validate today).
-- **Claude Code plugin / marketplace schemas** (DORMANT —
-  `featuregate.PluginsEnabled=false`; mechanics below apply only to the
-  re-enabled build): JSON Schemas at schemastore.org
+- **Claude Code plugin / marketplace schemas**: JSON Schemas at schemastore.org
   (narrative: code.claude.com/docs/en/plugin-marketplaces). The parser
   (`internal/controller/ach/marketplace_parse.go`) follows the real schema with
   one drift ack: `url`-Kind entries carry an optional `path` (→ `git-subdir`).
@@ -631,9 +600,7 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
   subtree's contents (git on-disk via `git.tarSubtree`; legacy REST via
   `sources.NarrowArchiveSubtree`), a single **file** returns its raw bytes
   (Prompt, Artifact `scope=object`). Applies to the served/hydrated objects:
-  `Skill`, `Artifact`, `Prompt` (and `Plugin` when re-enabled —
-  `featuregate.PluginsEnabled` is currently false, so its fetch/serve path is
-  dormant). The fetcher infers file-vs-dir from
+  `Plugin`, `Skill`, `Artifact`, `Prompt`. The fetcher infers file-vs-dir from
   the path shape (Artifact `scope` is orthogonal — it only drives cache-file
   naming; a CR's `scope` should match its path target). DISCOVERY kinds
   (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and

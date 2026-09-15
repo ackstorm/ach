@@ -76,7 +76,7 @@ ach/
 ## Mirrored into the chart (never hand-edit the copy)
 
 `deploy/helm/ach/crd-sources/` is COPIED from `config/crd/bases/` by
-`make helm-sync` (minus the gated-off plugin CRDs) because Helm cannot
+`make helm-sync` because Helm cannot
 `.Files.Glob` outside the chart directory. Never edit it in place — the next
 sync reverts the edit. `templates/crds.yaml` ranges over it.
 

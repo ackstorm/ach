@@ -97,7 +97,7 @@ through `exit.DispatchAndRender` (sole `os.Exit` callers).
 `LISTEN ach_*_changed` + 5-min periodic refresh (`db.RunRefreshLoop`) —
 LISTEN is at-most-once on session loss. Instances: forwarder `bipcache` +
 `envstore`, content-service `envcache`, gateway `agentstore`. Consequence:
-revocation/change propagation on the JWT trust path bounded ~5 min (gap #11);
+revocation/change propagation on the JWT trust path bounded ~5 min (gap #10);
 LiteLLM-side key revocation is per-call, unaffected.
 
 Dev/e2e routing: nginx `ach-local-gateway` is an **e2e-only shim** (single
@@ -176,13 +176,11 @@ parity checklist: `references/adding-a-cr-kind.md`.
 Not CRDs (common confusion): pk_/ek_ (platform-api/DB objects), teams
 (LiteLLM + runtime catalog), gateway route set (`achagents` projection).
 
-**Plugins gated OFF**: compile-time `featuregate.PluginsEnabled = false` —
-a Go const so the compiler dead-code-eliminates and no env var re-enables.
-Six gate sites: operator reconciler wiring, content-service `/content/plugin`
-route, admin inventory listers, environment reconciler (`context.plugins`
-SKIPPED, not failed), localpkg discover lenses, ach-cli command tree
-(`local plugin` unregistered). Skill/SkillMarketplace are the live twins.
-Flip + `make helm-sync` re-enables everything. NOT a bug to "fix".
+**Plugins**: `Plugin` + `PluginMarketplace` are shipped kinds (CRDs in the
+chart, reconcilers wired, `/content/plugin/{name}` served, `context.plugins`
+gates `ExecutionResourcesResolved`, `ach-cli local plugin` registered).
+Skill/SkillMarketplace are their agentskills.io twins. (A compile-time gate
+disabled them 2026-06-25 → 2026-09-15; removed.)
 
 ## 5. Database — Postgres as source of truth
 
@@ -408,8 +406,7 @@ ek→hydrate probe) · `config add/list/show/use/remove/rename/rm-ek`
 `--no-save`; prune keeps newest pk, never force-revokes active) ·
 `admin keys/users/refresh/list` (exit 3 on not_admin) ·
 `runtime models/mcp/a2a/teams/catalog` · `content fetch` ·
-`local repo add/list/remove/update` + `local skill install/uninstall/update/outdated/list`
-(`local plugin` gated off).
+`local repo add/list/remove/update` + `local plugin|skill install/uninstall/update/outdated/list`.
 
 Credential precedence: synthetic (`ACH_BASE_URL`+`ACH_API_KEY`) → `--api-key`
 → `--env-key label` → `ACH_API_KEY` → `ACH_ENV_KEY` → profile pk. Profile:
@@ -458,11 +455,10 @@ project-root containment (only `.mcp.json` allowed at root). State
 3. Hydrate vs editor-save race (edit in hydrate window silently lost;
 self-heals next run; mtime-recheck would close). 4. Environment authoring
 admin-only (no ACL model yet). 5. UI write path Environment-only.
-6. CS HA requires RWX. 7. Plugins carried dormant (insurance w/ premiums).
-8. LISTEN/NOTIFY at-most-once (5-min bound). 9. `config/default` advertised
-in release notes but RBAC can't reconcile ACHAgent. 10. Postgres DR
-undefined (pk/ek + catalog rows NOT re-derivable). 11. ~5-min revocation
-bound on the BIP/Env JWT path.
+6. CS HA requires RWX. 7. LISTEN/NOTIFY at-most-once (5-min bound).
+8. `config/default` advertised in release notes but RBAC can't reconcile
+ACHAgent. 9. Postgres DR undefined (pk/ek + catalog rows NOT re-derivable).
+10. ~5-min revocation bound on the BIP/Env JWT path.
 
 ## 12. Spec-vs-code drift (code wins; spec cadence pending)
 
