@@ -21,10 +21,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/audit"
-	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
-	"github.com/ackstorm/ach/internal/keycrypt"
-	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	cli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
@@ -411,114 +408,17 @@ func CallbackHandler(deps Deps) http.HandlerFunc {
 // failure, success audit, and the session writeback (HTML) or legacy JSON.
 // Writes the full response itself; the caller returns immediately.
 func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, email, userID, actor, reqID, sessionID string) {
-	// Step 6: mint pk_ and pkid_ server-side; hash plaintext.
-	plaintext, err := keys.NewBearer(keys.PrefixPk)
+	// Steps 6-7 live in MintPK (shared with the OAuth token endpoint).
+	plaintext, row, err := deps.MintPK(ctx, email, userID, "cli")
 	if err != nil {
-		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
-			"failed to mint bearer", reqID, "")
-		return
-	}
-	keyID, err := keys.NewKeyID(keys.PrefixPkid)
-	if err != nil {
-		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
-			"failed to mint key id", reqID, "")
-		return
-	}
-	credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
-	if err != nil {
-		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
-			"failed to hash credential", reqID, "")
-		return
-	}
-
-	// Cap the pk_ with the caller's per-user deny-all shell team. A key with
-	// no live team is fail-open on models AND agents (measured; the exact hole
-	// this change closes). The shell MUST exist before KeyGenerate — LiteLLM
-	// silently accepts a nonexistent team_id and mints a fail-open key
-	// (Hazard 4). team_id == alias, so a 400 "already exists" means the shell
-	// is already there with the id we know: success.
-	shellID := litellm.UserShellAlias(email)
-	if _, tErr := deps.LiteLLM.CreateTeam(ctx, litellm.NewUserShellRequest(email)); tErr != nil {
-		if !litellm.IsDuplicateTeamErr(tErr) {
-			deps.fail(ctx, w, actor, audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
-				"litellm user shell provision failed", reqID, "")
-			return
+		var me *MintError
+		if !errors.As(err, &me) {
+			me = &MintError{Outcome: audit.OutcomeInternalError, Status: http.StatusInternalServerError, Msg: "failed to mint personal key"}
 		}
-	}
-
-	// Step 6b: LiteLLM key registration. ACH does NOT supply
-	// req.Key — LiteLLM owns its own virtual-key plaintext format
-	// (sk-…) and ACH never persists or forwards it (FIX01 §A.6
-	// decision; supersedes the obsolete D-13 "shared plaintext"
-	// design). ACH stores only the opaque keyResp.Token, which is
-	// the stable LiteLLM-side identifier used for revoke +
-	// forwarder attribution. KEY-10 invariant preserved:
-	// MaxBudget remains nil.
-	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, &litellm.KeyGenerateRequest{
-		UserID:    userID,
-		KeyAlias:  keyID,                          // pkid_… — debug attribution only (not used for lookup)
-		TeamID:    shellID,                        // per-user deny-all shell (grants attach via the operator)
-		Duration:  durationString(pkExpiryWindow), // LiteLLM key expires with the ACH row
-		MaxBudget: nil,
-		Metadata: map[string]string{
-			"ach_key_id":      keyID,
-			"ach_key_type":    "pk",
-			"ach_owner_email": email,
-		},
-	})
-	if err != nil {
-		deps.fail(ctx, w, actor, audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
-			"litellm key/generate unreachable", reqID, "")
+		deps.fail(ctx, w, actor, me.Outcome, me.Status, me.Msg, reqID, me.KeyID)
 		return
 	}
-
-	// Step 7: seal the LiteLLM virtual-key material (sk-…) at rest (G3),
-	// then INSERT row. On failure compensate by revoking the LiteLLM-side
-	// key (best-effort — RevokeKey error is logged but does NOT alter the
-	// 500 response). Never log keyResp.Key, the sealed blob, or the DEK.
-	sealedMaterial, err := keycrypt.Seal(deps.KeyEncryptionKey, []byte(keyResp.Key))
-	if err != nil {
-		// Sealing failed (misconfigured DEK / RNG): minting cannot proceed
-		// safely. Compensate by revoking the LiteLLM-side key we just minted.
-		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
-			deps.Logger.Error("sso.callback: compensation revoke failed after seal error",
-				"err", cleanupErr, "key_id", keyID)
-		}
-		cancel()
-		deps.fail(ctx, w, actor, audit.OutcomeInternalError, http.StatusInternalServerError,
-			"failed to seal personal key material", reqID, keyID)
-		return
-	}
-	expiresAt := deps.callbackNow().Add(pkExpiryWindow)
-	row := db.PkInsertRow{
-		KeyID:          keyID,
-		CredentialHash: credHash,
-		OwnerEmail:     email,
-		ExpiresAt:      expiresAt,
-		LiteLLMUserID:  &userID,
-		LiteLLMToken:   &keyResp.Token,
-		// G3: LiteLLM virtual-key material, encrypted at rest (keycrypt blob).
-		// The forwarder decrypts on use to authenticate to LiteLLM as this
-		// user's own key.
-		LiteLLMKeyMaterial: &sealedMaterial,
-	}
-	if err := deps.callbackInsertPK(ctx, row); err != nil {
-		// Compensation: revoke the LiteLLM-side key we just minted.
-		// Use a fresh context (the request ctx may already be cancelled
-		// when the DB INSERT failed). Best-effort: log on error, do
-		// NOT alter the 500 response per D-12 step 7 analog.
-		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, keyResp.Token); cleanupErr != nil {
-			deps.Logger.Error("sso.callback: compensation revoke failed",
-				"err", cleanupErr, "key_id", keyID)
-		}
-		cancel()
-
-		deps.fail(ctx, w, actor, audit.OutcomeDbInsertFailed, http.StatusInternalServerError,
-			"failed to persist personal key", reqID, keyID)
-		return
-	}
+	keyID := row.KeyID
 
 	// Step 8: emit success audit + render the one-time plaintext.
 	audit.EmitAudit(ctx, deps.Audit, audit.Event{
