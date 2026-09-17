@@ -100,6 +100,9 @@ type PkInsertRow struct {
 	LiteLLMUserID      *string
 	LiteLLMToken       *string
 	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
+	// Purpose is 'cli' (console / device-code mint, the default) or 'oauth'
+	// (the single row a user's OAuth JWT resolves to; migration 000020).
+	Purpose string
 }
 
 // EkInsertRow is the value-struct argument to InsertEnvironmentKey. Same

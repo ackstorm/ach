@@ -96,12 +96,15 @@ func InsertPersonalKey(ctx context.Context, pool *pgxpool.Pool, row PkInsertRow)
 	const sql = `
 		INSERT INTO personal_keys
 		    (key_id, credential_hash, owner_email, expires_at,
-		     status, litellm_user_id, litellm_token, litellm_key_material_enc)
-		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
+		     status, litellm_user_id, litellm_token, litellm_key_material_enc, purpose)
+		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)
 	`
+	if row.Purpose == "" {
+		row.Purpose = "cli"
+	}
 	if _, err := pool.Exec(ctx, sql,
 		row.KeyID, row.CredentialHash, row.OwnerEmail, row.ExpiresAt,
-		row.LiteLLMUserID, row.LiteLLMToken, row.LiteLLMKeyMaterial,
+		row.LiteLLMUserID, row.LiteLLMToken, row.LiteLLMKeyMaterial, row.Purpose,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
