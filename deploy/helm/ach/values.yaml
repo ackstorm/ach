@@ -116,9 +116,20 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
+  # oauth.enabled mounts the ach-jwt-signing-keys Secret into platform-api
+  # and turns on the OAuth 2.1 authorization server under /platform/oauth
+  # (the human login path for Claude Code / Codex / opencode). Off → the
+  # device-code + pk_ flow only.
+  oauth:
+    enabled: true
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.
   initContainers: []
+
+# oauth: shared between platform-api (issues) and forwarder (verifies).
+# audience is the `aud` claim of the OAuth access tokens (ACH_OAUTH_AUDIENCE).
+oauth:
+  audience: ach
 
 # forwarder: bridges in-cluster MCP servers and external clients.
 # §5.1 reverse-proxy plane + §9 JWT trust path. Boots two listeners:

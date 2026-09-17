@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-logr/logr"
@@ -38,12 +39,14 @@ import (
 	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
+	"github.com/ackstorm/ach/internal/platformapi/auth"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -84,6 +87,11 @@ type platformAPIConfig struct {
 	BindAddr         string
 	Namespace        string
 	InsecureCookie   bool
+	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
+	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → AS disabled
+	OAuthAudience   string        // ACH_OAUTH_AUDIENCE, default "ach"
+	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
+	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
 }
 
 func validatePlatformAPIConfig() (*platformAPIConfig, error) {
@@ -154,6 +162,14 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	// survives — so it is the single correct source of truth (the
 	// platform-api itself always listens plain http behind the ingress).
 	cfg.InsecureCookie = !strings.HasPrefix(cfg.BaseURL, "https://")
+	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
+	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
+	if cfg.OAuthAccessTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_ACCESS_TTL", time.Hour, time.Minute); err != nil {
+		return nil, err
+	}
+	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -161,6 +177,9 @@ type platformAPIProcessDeps struct {
 	pool   *pgxpool.Pool
 	redis  *redis.Client
 	server platformapi.Deps
+	// signer is the OAuth access-token signer, loaded from the mounted
+	// ach-jwt-signing-keys Secret; nil when the AS is disabled.
+	signer *jwt.Ed25519Signer
 	// Plan 05-06 D-10: metricsReg holds the process-local Registry +
 	// metricsHandler is the corresponding /metrics http.Handler that
 	// runPlatformAPIServer composes onto the chi router. litellmUnreachable
@@ -273,7 +292,22 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
 
+	var oauthDeps *auth.OAuthDeps
+	if cfg.JWTSecretDir != "" {
+		signer := jwt.NewEd25519Signer()
+		if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
+			return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no AS
+		}
+		out.signer = signer
+		oauthDeps = &auth.OAuthDeps{
+			Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
+			Issuer: cfg.BaseURL, Audience: cfg.OAuthAudience,
+			AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
+		}
+	}
+
 	out.server = platformapi.Deps{
+		OAuth:            oauthDeps,
 		Pool:             pool,
 		Redis:            out.redis,
 		LiteLLM:          liteLLM,

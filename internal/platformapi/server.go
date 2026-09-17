@@ -94,6 +94,10 @@ type Deps struct {
 	// Metrics is the platform-api collector set (G7): hydrate duration +
 	// login total. Nil-tolerant — tests that don't scrape leave it unset.
 	Metrics *achmetrics.PlatformAPICollectors
+
+	// OAuth is the OAuth 2.1 authorization server (/platform/oauth/*);
+	// nil → not mounted (no ACH_JWT_SECRET_DIR). Auth is filled in by New.
+	OAuth *auth.OAuthDeps
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -144,6 +148,14 @@ func New(deps Deps) http.Handler {
 		BaseURL:   deps.BaseURL,
 		Metrics:   deps.Metrics,
 	}))
+
+	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
+	// a client that does not yet hold a credential).
+	if deps.OAuth != nil {
+		od := *deps.OAuth
+		od.Auth = authDeps
+		r.Route("/platform/oauth", auth.MountOAuth(od))
+	}
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
 	// deps.Allowlist, deps.Audit) — allowlist passed positionally so

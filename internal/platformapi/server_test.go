@@ -16,11 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/platformapi/auth"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -323,5 +327,25 @@ func TestRunnable_NeedLeaderElection(t *testing.T) {
 	rn := NewRunnable(":0", http.NotFoundHandler(), nil)
 	if rn.NeedLeaderElection() {
 		t.Errorf("ServerRunnable.NeedLeaderElection() = true, want false")
+	}
+}
+
+// TestServer_MountsOAuthOutsideAuthn: /platform/oauth/* is reached without
+// a credential — an unsupported grant gets the AS's 400, never Authn's 401.
+func TestServer_MountsOAuthOutsideAuthn(t *testing.T) {
+	mr := miniredis.RunT(t)
+	deps := newTestDeps(t, &fakeResolver{})
+	deps.OAuth = &auth.OAuthDeps{
+		Store:  &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
+		Signer: jwt.NewEd25519Signer(), Issuer: "https://ach.example.com", Audience: "ach",
+		AccessTTL: time.Hour, RefreshTTL: time.Hour,
+	}
+	h := New(deps)
+	req := httptest.NewRequest(http.MethodPost, "/platform/oauth/token", strings.NewReader("grant_type=password"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "unsupported_grant_type") {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
