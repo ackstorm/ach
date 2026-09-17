@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,11 +47,22 @@ type File struct {
 }
 
 // Profile is one named entry under `profiles:` — a URL plus the
-// optional pk_/ek_ map. `url:` is the only required field.
+// optional pk_/ek_ map or OAuth block. `url:` is the only required field.
 type Profile struct {
-	URL string            `yaml:"url"`
-	PK  string            `yaml:"pk,omitempty"`
-	EK  map[string]string `yaml:"ek,omitempty"`
+	URL   string            `yaml:"url"`
+	PK    string            `yaml:"pk,omitempty"`
+	EK    map[string]string `yaml:"ek,omitempty"`
+	OAuth *OAuthCreds       `yaml:"oauth,omitempty"`
+}
+
+// OAuthCreds is what `ach-cli login` (OAuth mode) stores: the DCR client id
+// (registered once per profile) and the current token pair. PK stays empty
+// on an OAuth profile — the access token is the credential.
+type OAuthCreds struct {
+	ClientID     string    `yaml:"client_id"`
+	AccessToken  string    `yaml:"access_token"`
+	RefreshToken string    `yaml:"refresh_token"`
+	ExpiresAt    time.Time `yaml:"expires_at"`
 }
 
 // ProfileNames returns the configured profile names in sorted order (for

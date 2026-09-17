@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 )
@@ -416,5 +417,25 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got == nil || got.Default != "prod" || got.Profiles["prod"].URL != "https://x.test" {
 		t.Fatalf("round trip mismatch: %+v", got)
+	}
+}
+
+func TestProfile_OAuthRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	exp := time.Now().Add(time.Hour).Truncate(time.Second)
+	in := &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
+		URL:   "https://ach.test",
+		OAuth: &config.OAuthCreds{ClientID: "oc_1", AccessToken: "a.b.c", RefreshToken: "r1", ExpiresAt: exp},
+	}}}
+	if err := config.Save(path, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.Profiles["p"].OAuth
+	if got == nil || got.ClientID != "oc_1" || got.AccessToken != "a.b.c" || got.RefreshToken != "r1" || !got.ExpiresAt.Equal(exp) {
+		t.Fatalf("%+v", got)
 	}
 }
