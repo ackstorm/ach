@@ -50,6 +50,7 @@ import (
 	"github.com/ackstorm/ach/internal/contentservice/envcache"
 	"github.com/ackstorm/ach/internal/credhash/pepperenv"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
@@ -87,6 +88,9 @@ type contentServiceConfig struct {
 	LiteLLMMasterKey string
 	BindAddr         string
 	Pepper           []byte
+	BaseURL          string // ACH_BASE_URL: OAuth issuer (`iss` of the access tokens)
+	JWTSecretDir     string // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → JWTs read as 401
+	OAuthAudience    string // ACH_OAUTH_AUDIENCE, default "ach"
 }
 
 // parseContentServiceConfig validates and returns the env-var surface.
@@ -132,6 +136,13 @@ func parseContentServiceConfig() (*contentServiceConfig, error) {
 		return nil, fmt.Errorf("ACH_CREDENTIAL_HASH_PEPPER invalid: %w", err)
 	}
 	cfg.Pepper = pepper
+
+	cfg.BaseURL = os.Getenv("ACH_BASE_URL")
+	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
+	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
+	if cfg.JWTSecretDir != "" && cfg.BaseURL == "" {
+		return nil, fmt.Errorf("ACH_BASE_URL required when ACH_JWT_SECRET_DIR is set (OAuth issuer)")
+	}
 
 	return cfg, nil
 }
@@ -185,7 +196,20 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	resolver, err := keystore.NewCachedResolver(dbResolver, redisClient, cfg.Pepper)
+	// OAuth access tokens (hydrate from an OAuth profile sends the JWS in
+	// x-ach-key) verify against the same Ed25519 slots platform-api signs
+	// with, read from the mounted Secret like platform-api does. Without
+	// the mount a JWS reads as (nil, nil) → 401.
+	var verifier keystore.JWTVerifier = keystore.NoJWT{}
+	if cfg.JWTSecretDir != "" {
+		signer := jwt.NewEd25519Signer()
+		if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
+			return fmt.Errorf("oauth verifier: %w", err) // fail closed, like platform-api
+		}
+		verifier = signer
+	}
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, cfg.OAuthAudience, pool)
+	resolver, err := keystore.NewCachedResolver(oauthResolver, redisClient, cfg.Pepper)
 	if err != nil {
 		return fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}

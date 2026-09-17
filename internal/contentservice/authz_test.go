@@ -94,6 +94,10 @@ func TestResolveAuthn(t *testing.T) {
 		{"resolver internal error", "pk-a", &mockResolver{err: errors.New("boom")}, nil, "internal_error"},
 		{"resolver nil info (revoked)", "pk-a", &mockResolver{info: nil}, nil, "expired_or_revoked"},
 		{"happy path pk_", "pk-a", &mockResolver{info: pkInfo}, pkInfo, ""},
+		// An OAuth access token (compact JWS) passes the prefix gate; the
+		// resolver chain maps it to the subject's oauth pk_ row.
+		{"happy path OAuth JWS", "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJhIn0.c2ln", &mockResolver{info: pkInfo}, pkInfo, ""},
+		{"JWS resolver nil (bad sig / no row)", "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJhIn0.c2ln", &mockResolver{info: nil}, nil, "expired_or_revoked"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

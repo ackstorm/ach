@@ -5,6 +5,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -106,7 +107,6 @@ func TestOAuthFrontDoor(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&body)
 		return resp.StatusCode, body
 	}
-	mintedAt := time.Now().Add(-5 * time.Second)
 	code, tok := tokenPost(t, url.Values{
 		"grant_type": {"authorization_code"}, "code": {authCode}, "client_id": {reg.ClientID},
 		"redirect_uri": {"http://127.0.0.1:1/cb"}, "code_verifier": {verifier},
@@ -124,6 +124,13 @@ func TestOAuthFrontDoor(t *testing.T) {
 		}
 	}
 
+	// 6b. The content-service accepts the JWT too (hydrate from an OAuth
+	//     profile fetches every object with it in x-ach-key).
+	if code, _, body := getJSON(t, "/content/prompt/claude-code-system-prompt",
+		map[string]string{"x-ach-key": access, "x-ach-environment": "demo"}); code != 200 {
+		t.Fatalf("/content with OAuth JWT: %d %v", code, body)
+	}
+
 	// 7. Refresh rotates; the old refresh token dies.
 	refreshForm := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {reg.ClientID}}
 	code, second := tokenPost(t, refreshForm)
@@ -135,7 +142,7 @@ func TestOAuthFrontDoor(t *testing.T) {
 	}
 
 	// 8. Revoke the OAuth pk_ → the JWT stops working within the cache window.
-	revokeNewestPK(t, base, access, mintedAt)
+	revokeOAuthPK(t, base, access)
 	deadline := time.Now().Add(90 * time.Second)
 	for {
 		code, _, _ = getJSON(t, "/v1/models", map[string]string{"Authorization": "Bearer " + access})
@@ -154,37 +161,26 @@ func TestOAuthFrontDoor(t *testing.T) {
 	}
 }
 
-// revokeNewestPK deletes the caller's newest active pk_ (the OAuth row the
-// token endpoint just minted — ListKeys is created_at DESC) with ?force=true,
-// since it is also the key authenticating the call.
-func revokeNewestPK(t *testing.T, base, access string, mintedAfter time.Time) {
+// revokeOAuthPK deletes the caller's active purpose='oauth' pk_ (the row
+// behind the JWT) with ?force=true, since it is also the key authenticating
+// the call. The row is found in Postgres rather than via GET /platform/keys:
+// the list carries no purpose, and on a kept cluster a newer non-OAuth pk_
+// (device login, an earlier test) can outrank it in created_at order.
+func revokeOAuthPK(t *testing.T, base, access string) {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, base+"/platform/keys?type=pk&status=active", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, stderr, err := psqlExec(ctx, `SELECT key_id FROM personal_keys
+		WHERE owner_email = 'kilgore@kilgore.trout' AND purpose = 'oauth' AND status = 'active'`)
+	keyID := strings.TrimSpace(out)
+	if err != nil || keyID == "" || strings.Contains(keyID, "\n") {
+		t.Fatalf("active oauth pk_ row for kilgore: err=%v out=%q stderr=%q", err, out, stderr)
+	}
+	req, _ := http.NewRequest(http.MethodDelete, base+"/platform/keys/"+keyID+"?force=true", nil)
 	req.Header.Set("Authorization", "Bearer "+access)
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var list struct {
-		Items []struct {
-			KeyID     string `json:"key_id"`
-			CreatedAt string `json:"created_at"`
-		} `json:"items"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&list)
-	resp.Body.Close()
-	if resp.StatusCode != 200 || len(list.Items) == 0 {
-		t.Fatalf("list keys: %d %+v", resp.StatusCode, list)
-	}
-	created, _ := time.Parse(time.RFC3339, list.Items[0].CreatedAt)
-	if created.Before(mintedAfter) {
-		t.Fatalf("newest pk_ is not the OAuth row minted at /token: %+v", list.Items[0])
-	}
-	req, _ = http.NewRequest(http.MethodDelete, base+"/platform/keys/"+list.Items[0].KeyID+"?force=true", nil)
-	req.Header.Set("Authorization", "Bearer "+access)
-	resp, err = http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode/100 != 2 {
-		t.Fatalf("revoke %s: err=%v status=%v", list.Items[0].KeyID, err, resp)
+		t.Fatalf("revoke %s: err=%v status=%v", keyID, err, resp)
 	}
 	resp.Body.Close()
 }

@@ -94,6 +94,9 @@ spec:
         # with "mkdir /tmp/git-...: read-only file system".
         - name: tmp
           emptyDir: {}
+        {{- if not .Values.contentService.standalone }}
+        {{- include "ach.contentServiceJWTVolume" . | nindent 8 }}
+        {{- end }}
       containers:
         - name: manager
           image: {{ include "ach.image" . }}

@@ -117,9 +117,10 @@ platformApi:
   resources: {}
   args: ["platform-api"]
   # oauth.enabled mounts the ach-jwt-signing-keys Secret into platform-api
-  # and turns on the OAuth 2.1 authorization server under /platform/oauth
-  # (the human login path for Claude Code / Codex / opencode). Off → the
-  # device-code + pk_ flow only.
+  # (and into content-service, which verifies the access tokens hydrate
+  # sends in x-ach-key) and turns on the OAuth 2.1 authorization server
+  # under /platform/oauth (the human login path for Claude Code / Codex /
+  # opencode). Off → the device-code + pk_ flow only.
   oauth:
     enabled: true
   # initContainers: extra init containers for THIS Deployment only, appended
