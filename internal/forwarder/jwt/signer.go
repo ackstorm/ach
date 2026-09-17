@@ -58,6 +58,10 @@ type Claims struct {
 	// ACH's internal shell teams (ach-env-*/ach-user-*) are filtered out
 	// upstream in the proxy. Optional; the claim is omitted when empty.
 	Groups []string
+	// TTL is the access-token lifetime. Zero keeps the FWD-07 120-second
+	// window used for per-target backend tokens; the OAuth front door sets
+	// ACH_OAUTH_ACCESS_TTL (1h) so a user token outlives one request.
+	TTL time.Duration
 }
 
 // JWK is the RFC 7517 JSON Web Key wire shape for a single Ed25519
@@ -177,12 +181,16 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 		return "", ErrNoCurrentSlot
 	}
 	now := time.Now().Unix()
+	ttl := int64(120) // FWD-07 / Hub §9.1: 120-second skew window. NO jti.
+	if c.TTL != 0 {
+		ttl = int64(c.TTL / time.Second)
+	}
 	claims := jwtv5.MapClaims{
 		"iss": c.Iss,
 		"sub": c.Sub,
 		"aud": c.Aud,
 		"iat": now,
-		"exp": now + 120, // FWD-07 / Hub §9.1: 120-second skew window. NO jti.
+		"exp": now + ttl,
 	}
 	// "email" mirrors "sub" (both the bare owner email) for consumers that key
 	// by email. Additive; omitted when empty. (G18: sub is NOT namespace-qualified.)
