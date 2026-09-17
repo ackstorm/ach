@@ -71,7 +71,8 @@ type contentRow struct {
 //
 // Returns *errResp on:
 //   - empty header → 400 invalid_key_format
-//   - missing pk_ / ek_ prefix → 400 invalid_key_format
+//   - neither a pk_ / ek_ prefix nor a compact JWS (OAuth access token,
+//     resolved by the keystore.OAuthResolver in the chain) → 400 invalid_key_format
 //   - Resolver internal error → 500 internal_error
 //   - Resolver returns (nil, nil) (revoked/expired/unknown) → 401 expired_or_revoked
 //
@@ -87,7 +88,8 @@ func resolveAuthn(ctx context.Context, d Deps, r *http.Request) (*keystore.KeyIn
 	if plaintext == "" {
 		return nil, errInvalidKeyFormat
 	}
-	if !strings.HasPrefix(plaintext, string(keys.PrefixPk)) && !strings.HasPrefix(plaintext, string(keys.PrefixEk)) {
+	if !strings.HasPrefix(plaintext, string(keys.PrefixPk)) && !strings.HasPrefix(plaintext, string(keys.PrefixEk)) &&
+		!keys.LooksLikeJWS(plaintext) {
 		return nil, errInvalidKeyFormat
 	}
 	info, err := d.Resolver.Resolve(ctx, plaintext)

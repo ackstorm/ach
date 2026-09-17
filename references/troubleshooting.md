@@ -33,6 +33,27 @@ WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 hydrate URLs look right — and every GET 404s because the route doesn't
 exist. Fix is a rolling image update; no data migration.
 
+### ❌ `ach-cli env hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
+```bash
+ach-cli env hydrate demo          # profile logged in via `ach-cli login` (OAuth)
+# /platform/hydrate succeeds, then the first /content/<kind>/<name> GET 400s
+```
+✅ Content-service must verify the OAuth access token hydrate sends in
+`x-ach-key`. Check the `content-service` container carries
+`ACH_JWT_SECRET_DIR=/etc/ach/jwt` and the `jwt-signing-keys` mount
+(operator Pod sidecar by default; the `ach-content-service` Deployment
+when `contentService.standalone=true`):
+```bash
+kubectl -n ach-system get deploy ach-operator -o jsonpath='{.spec.template.spec.containers[?(@.name=="content-service")].env[?(@.name=="ACH_JWT_SECRET_DIR")].value}'
+```
+WHY IT FAILS: the content-service authn gate accepts a `pk_`/`ek_` prefix
+or a compact JWS, and the JWS is resolved by the keystore OAuth resolver
+against the mounted signing seed — with the mount absent (chart <
+v0.9.0, or `platformApi.oauth.enabled=false`) the token cannot be
+verified. A `pk_`/`ek_` hydrate is unaffected. Found by the pre-v0.9.0
+binary smoke; the forwarder + platform-api had the resolver, the
+content-service did not.
+
 > **HA / standalone split (G16).** The default single-replica content
 > path is co-located with the operator, so content availability is tied
 > to the operator Pod and cannot scale independently. To split it into
