@@ -47,6 +47,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
+	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -286,28 +287,38 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper,
-		keystore.WithCacheMetrics(keystoreCollectors))
-	if err != nil {
-		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
-	}
-
+	// OAuth AS: the signer is loaded from the mounted Secret; with the AS
+	// disabled (no ACH_JWT_SECRET_DIR) JWTs simply read as (nil, nil) → 401.
 	var oauthDeps *auth.OAuthDeps
+	var verifier keystore.JWTVerifier = keystore.NoJWT{}
 	if cfg.JWTSecretDir != "" {
 		signer := jwt.NewEd25519Signer()
 		if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
 			return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no AS
 		}
 		out.signer = signer
+		verifier = signer
 		oauthDeps = &auth.OAuthDeps{
 			Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
 			Issuer: cfg.BaseURL, Audience: cfg.OAuthAudience,
 			AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
 		}
 	}
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, cfg.OAuthAudience, pool)
+	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
+		keystore.WithCacheMetrics(keystoreCollectors))
+	if err != nil {
+		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
+	}
 
 	out.server = platformapi.Deps{
-		OAuth:            oauthDeps,
+		OAuth: oauthDeps,
+		AuthnOptions: pamw.AuthnOptions{
+			Challenge: func(*http.Request) string {
+				return `Bearer resource_metadata="` + strings.TrimRight(cfg.BaseURL, "/") + `/.well-known/oauth-protected-resource"`
+			},
+			AllowRawLiteLLMKey: false,
+		},
 		Pool:             pool,
 		Redis:            out.redis,
 		LiteLLM:          liteLLM,

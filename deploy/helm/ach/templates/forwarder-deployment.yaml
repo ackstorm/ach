@@ -70,6 +70,8 @@ spec:
             - name: healthz
               containerPort: 8081
           env:
+            - name: ACH_OAUTH_AUDIENCE
+              value: {{ .Values.oauth.audience | default "ach" | quote }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

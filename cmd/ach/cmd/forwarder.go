@@ -64,10 +64,12 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
+	"github.com/ackstorm/ach/internal/forwarder/proxy"
 	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
+	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 var forwarderScheme = runtime.NewScheme()
@@ -111,6 +113,7 @@ type forwarderConfig struct {
 	HealthBindAddr   string
 	Namespace        string
 	JWTSecretName    string
+	OAuthAudience    string // ACH_OAUTH_AUDIENCE: `aud` of the OAuth access tokens platform-api issues
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -123,6 +126,7 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
+	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
 		return nil, err
@@ -310,7 +314,14 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	cachedResolver, err := keystore.NewCachedResolver(dbResolver, out.redis, cfg.Pepper,
+	// JWT signer + Secret loader (refuse-to-start on missing/malformed).
+	// Created here because the OAuth resolver below verifies user access
+	// tokens against the same slots; until LoadOnce populates them a JWS
+	// reads "unknown kid" → (nil, nil) → 401, which is correct.
+	out.signer = jwt.NewEd25519Signer()
+	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, cfg.OAuthAudience, pool)
+	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
@@ -324,10 +335,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedTeamsResolver: %w", err)
 	}
-
-	// JWT signer + Secret loader (refuse-to-start on missing/malformed).
-	out.signer = jwt.NewEd25519Signer()
-	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 
 	// W9 (REVIEW): the cached client requires mgr.Start() to populate,
 	// and LoadOnce runs before manager start. controller-runtime exposes
@@ -381,6 +388,10 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		BaseURL:          cfg.BaseURL,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
+		AuthnOptions: pamw.AuthnOptions{
+			Challenge:          proxy.ChallengeFor(cfg.BaseURL),
+			AllowRawLiteLLMKey: true,
+		},
 	}
 	return out, nil
 }
