@@ -40,7 +40,9 @@ func newTokenCmd() *cobra.Command {
 				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("%v; run `ach-cli login`", err), Wrapped: err}
 			}
 			if prof.OAuth == nil {
-				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("profile %q has no OAuth login; run `ach-cli login`", name)}
+				return &exit.CodedError{
+					Code: exit.General, Msg: fmt.Sprintf("profile %q has no OAuth login; run `ach-cli login`", name),
+				}
 			}
 			client := &oauthlogin.Client{BaseURL: prof.URL}
 			tok, updated, err := client.CurrentAccessToken(cmd.Context(), prof.OAuth)

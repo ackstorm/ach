@@ -38,10 +38,14 @@ func oauthASForTest(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		if r.PostForm.Get("grant_type") == "refresh_token" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "d.e.f", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r2"})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "d.e.f", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r2",
+			})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "a.b.c", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "a.b.c", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1",
+		})
 	})
 	srv = httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
@@ -72,7 +76,8 @@ func TestLogin_OAuthDefault_WritesOAuthBlockAndNoPK(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := file.Profiles["prod"]
-	if p == nil || p.PK != "" || p.OAuth == nil || p.OAuth.AccessToken != "a.b.c" || p.OAuth.ClientID != "oc_test" || p.OAuth.RefreshToken != "r1" {
+	if p == nil || p.PK != "" || p.OAuth == nil || p.OAuth.AccessToken != "a.b.c" ||
+		p.OAuth.ClientID != "oc_test" || p.OAuth.RefreshToken != "r1" {
 		t.Fatalf("profile: %+v oauth=%+v", p, p.OAuth)
 	}
 }
@@ -84,7 +89,8 @@ func TestToken_PrintsExactlyTheAccessToken(t *testing.T) {
 	save := func(exp time.Time) {
 		t.Helper()
 		if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
-			URL: as.URL, OAuth: &config.OAuthCreds{ClientID: "oc_test", AccessToken: "a.b.c", RefreshToken: "r1", ExpiresAt: exp},
+			URL:   as.URL,
+			OAuth: &config.OAuthCreds{ClientID: "oc_test", AccessToken: "a.b.c", RefreshToken: "r1", ExpiresAt: exp},
 		}}}); err != nil {
 			t.Fatal(err)
 		}

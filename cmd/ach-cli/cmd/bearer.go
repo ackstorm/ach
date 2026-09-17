@@ -23,7 +23,9 @@ func profileBearer(ctx context.Context, file *config.File, path string, dep *con
 	}
 	tok, updated, err := (&oauthlogin.Client{BaseURL: dep.URL}).CurrentAccessToken(ctx, dep.OAuth)
 	if err != nil {
-		return "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("oauth session: %v; run `ach-cli login`", err), Wrapped: err}
+		return "", &exit.CodedError{
+			Code: exit.General, Msg: fmt.Sprintf("oauth session: %v; run `ach-cli login`", err), Wrapped: err,
+		}
 	}
 	if updated != nil {
 		dep.OAuth = updated

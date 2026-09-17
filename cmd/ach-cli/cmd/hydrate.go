@@ -906,7 +906,8 @@ func hydrateTips(meta summaryMeta) []string {
 	}
 	switch {
 	case meta.oauth:
-		tips = append(tips, "MCP entries carry no credential; each tool signs in once on first use (`claude mcp login <name>` / `codex mcp login <name>` / `opencode mcp auth <name>`)")
+		tips = append(tips, "MCP entries carry no credential; each tool signs in once on first use "+
+			"(`claude mcp login <name>` / `codex mcp login <name>` / `opencode mcp auth <name>`)")
 	case meta.keyPrefix == keys.PrefixPk:
 		tips = append(tips, "pk- is not Environment-scoped; Environment workloads (CI/agents) want an ek- key")
 	}

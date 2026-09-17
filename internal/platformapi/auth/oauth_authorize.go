@@ -20,6 +20,7 @@ import (
 const (
 	oauthPendingTTL = 10 * time.Minute
 	oauthCodeTTL    = 2 * time.Minute
+	pkceS256        = "S256"
 )
 
 // oauthPending is an /authorize request parked while the browser is at Dex.
@@ -81,7 +82,7 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := q.Get("state")
-	if q.Get("response_type") != "code" || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" {
+	if q.Get("response_type") != "code" || q.Get("code_challenge_method") != pkceS256 || q.Get("code_challenge") == "" {
 		p := url.Values{"error": {"invalid_request"}, "error_description": {"response_type=code with PKCE S256 is required"}}
 		if state != "" {
 			p.Set("state", state)

@@ -67,7 +67,7 @@ func (c *Client) discover(ctx context.Context) (*metadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("discovery: %s returned %d", req.URL, resp.StatusCode)
 	}
@@ -92,7 +92,7 @@ func (c *Client) register(ctx context.Context, m *metadata, redirectURI string) 
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out struct {
 		ClientID string `json:"client_id"`
 	}
@@ -121,7 +121,7 @@ func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds
 	if err != nil {
 		return nil, err
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
 	if clientID == "" {
@@ -174,7 +174,7 @@ func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds
 		}
 	})}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 
 	if err := Opener(authorizeURL); err != nil {
 		return nil, fmt.Errorf("open browser: %w (open this URL yourself: %s)", err, authorizeURL)
@@ -233,7 +233,7 @@ func (c *Client) exchange(ctx context.Context, tokenEndpoint string, form url.Va
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var tr tokenResponse
 	_ = json.NewDecoder(resp.Body).Decode(&tr)
 	if resp.StatusCode != http.StatusOK || tr.AccessToken == "" {

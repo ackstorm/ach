@@ -27,6 +27,7 @@ import (
 const (
 	xAchKeyHeader = "x-ach-key"
 	xAPIKeyHeader = "x-api-key" //nolint:gosec // header name, not a credential
+	authzHeader   = "Authorization"
 )
 
 // AuthnOptions is per-service policy.
@@ -42,12 +43,12 @@ type AuthnOptions struct {
 // credential picks the first slot that is set, returning the bare value and
 // the header it came from. "Bearer " is stripped from any slot.
 func credential(r *http.Request) (value, from string) {
-	for _, h := range []string{xAchKeyHeader, xAPIKeyHeader, "Authorization"} {
+	for _, h := range []string{xAchKeyHeader, xAPIKeyHeader, authzHeader} {
 		raw := strings.TrimSpace(r.Header.Get(h))
 		if raw == "" {
 			continue
 		}
-		if h == "Authorization" && !strings.HasPrefix(raw, "Bearer ") {
+		if h == authzHeader && !strings.HasPrefix(raw, "Bearer ") {
 			continue // Basic, Digest, … : not ours, leave it
 		}
 		return strings.TrimSpace(strings.TrimPrefix(raw, "Bearer ")), h
@@ -313,8 +314,8 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			// discipline catches these sites verbatim.
 			r.Header.Del("x-ach-key")
 			r.Header.Del("x-api-key")
-			if from == "Authorization" {
-				r.Header.Del("Authorization") // ours: consumed. Any other Authorization passes through.
+			if from == authzHeader {
+				r.Header.Del(authzHeader) // ours: consumed. Any other Authorization passes through.
 			}
 
 			// BLK-02: admin status is the allowlist lookup on pk_ only.

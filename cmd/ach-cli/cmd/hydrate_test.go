@@ -1193,8 +1193,10 @@ func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedConfig(t, dir, "prod", &config.Profile{
-		URL:   mock.server.URL,
-		OAuth: &config.OAuthCreds{ClientID: "oc_1", AccessToken: "aaa.bbb.ccc", RefreshToken: "r1", ExpiresAt: time.Now().Add(time.Hour)},
+		URL: mock.server.URL,
+		OAuth: &config.OAuthCreds{
+			ClientID: "oc_1", AccessToken: "aaa.bbb.ccc", RefreshToken: "r1", ExpiresAt: time.Now().Add(time.Hour),
+		},
 	})
 	swapHydrateHTTPClientForTest(t, mock.server.Client())
 
@@ -1216,7 +1218,8 @@ func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seen.Bearer != "aaa.bbb.ccc" || !strings.Contains(stdout, "OAuth session") || !strings.Contains(stdout, "signs in once") {
+	if seen.Bearer != "aaa.bbb.ccc" || !strings.Contains(stdout, "OAuth session") ||
+		!strings.Contains(stdout, "signs in once") {
 		t.Errorf("bearer=%q stdout=%q", seen.Bearer, stdout)
 	}
 }

@@ -201,7 +201,7 @@ func LoginHandler(deps Deps) http.HandlerFunc {
 		// state (without suffix) is what landed in the cookie above.
 		authURL := deps.OAuth2Cfg.AuthCodeURL(urlState,
 			oauth2.SetAuthURLParam("code_challenge", challenge),
-			oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+			oauth2.SetAuthURLParam("code_challenge_method", pkceS256),
 		)
 
 		http.Redirect(w, r, authURL, http.StatusFound)

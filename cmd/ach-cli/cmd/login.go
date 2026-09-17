@@ -24,6 +24,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -114,7 +115,8 @@ Flags:
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Profile name to write (DNS-1123 label)")
 	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
 	cmd.Flags().BoolVar(&flagDevice, "device", false, "Use the device-code flow (headless hosts) instead of OAuth")
-	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser (--device only)")
+	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false,
+		"Print verification_url; do not open the browser (--device only)")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
 		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
@@ -193,32 +195,9 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 
-	// Step 5 (OAuth, the default) — browser ceremony via the AS. An OAuth
-	// profile never carries a pk_: the access token is the credential.
+	// Step 5 (OAuth, the default) — browser ceremony via the AS.
 	if !device {
-		existing := file.Profiles[name]
-		clientID := ""
-		if existing != nil && existing.OAuth != nil && existing.URL == url {
-			clientID = existing.OAuth.ClientID // cached DCR id; "" re-registers
-		}
-		_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
-		creds, err := (&oauthlogin.Client{BaseURL: url}).Login(ctx, clientID)
-		if err != nil {
-			return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
-		}
-		dep := &config.Profile{URL: url, OAuth: creds}
-		if existing != nil {
-			dep.EK = existing.EK
-		}
-		file.Profiles[name] = dep
-		if file.Default == "" {
-			file.Default = name
-		}
-		if err := config.Save(configPath, file); err != nil {
-			return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-		}
-		_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli token` to print an access token\n", name)
-		return nil
+		return runOAuthLogin(ctx, stdout, configPath, file, name, url)
 	}
 
 	// Step 5 (--device) — device-code init.
@@ -462,4 +441,35 @@ func promptPreOpen(stdin io.Reader, stdout io.Writer) openAction {
 
 func init() {
 	rootCmd.AddCommand(newLoginCmd())
+}
+
+// runOAuthLogin is the default login: the CLI is a public OAuth client of
+// the Hub. An OAuth profile never carries a pk_ — the access token is the
+// credential (`ach-cli token` prints a fresh one).
+func runOAuthLogin(
+	ctx context.Context, stdout io.Writer, configPath string, file *config.File, name, url string,
+) error {
+	existing := file.Profiles[name]
+	clientID := ""
+	if existing != nil && existing.OAuth != nil && existing.URL == url {
+		clientID = existing.OAuth.ClientID // cached DCR id; "" re-registers
+	}
+	_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
+	creds, err := (&oauthlogin.Client{BaseURL: url}).Login(ctx, clientID)
+	if err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
+	}
+	dep := &config.Profile{URL: url, OAuth: creds}
+	if existing != nil {
+		dep.EK = existing.EK
+	}
+	file.Profiles[name] = dep
+	if file.Default == "" {
+		file.Default = name
+	}
+	if err := config.Save(configPath, file); err != nil {
+		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli token` to print an access token\n", name)
+	return nil
 }
