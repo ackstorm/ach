@@ -1699,3 +1699,20 @@ func TestCommit_Step12_SkillSourcePropagates(t *testing.T) {
 		t.Errorf("Skills[0].Source = %q; want %q (U5 per-resource grouping)", got, "myskill")
 	}
 }
+
+// personBearer is the gate for the model-endpoint helper wiring: a person
+// (OAuth JWS or pk_) gets it, an ek_ (agents / CI) never does.
+func TestPersonBearer(t *testing.T) {
+	suffix := strings.Repeat("a", 64)
+	for bearer, want := range map[string]bool{
+		"aaa.bbb.ccc":  true,
+		"pk-" + suffix: true,
+		"ek-" + suffix: false,
+		"":             false,
+		"sk-not-a-jws": false,
+	} {
+		if got := personBearer(bearer); got != want {
+			t.Errorf("personBearer(%q) = %v, want %v", bearer, got, want)
+		}
+	}
+}

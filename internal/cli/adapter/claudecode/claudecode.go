@@ -16,7 +16,8 @@
 //   - The MCP target is the project-root .mcp.json (mcpJSONPath) — the file
 //     Claude Code actually reads for MCP servers. Both plugin projection and
 //     the governed runtime MCP (RenderRuntime) deep-merge there;
-//     .claude/settings.json is NOT an MCP load path and is not written.
+//     .claude/settings.json is NOT an MCP load path; it is written ONLY for
+//     the model-endpoint credential helper on a person hydrate.
 //
 // ADAPT-06 scope rule: this adapter emits .claude/-prefixed paths plus the
 // project-root .mcp.json (MCP) and CLAUDE.md (AGENTS.md composite).
@@ -49,6 +50,12 @@ const (
 	// "todos son iguales" — same destination regardless of source. settings.json
 	// is NOT a claude MCP load path and is no longer written by this adapter.
 	mcpJSONPath = ".mcp.json"
+
+	// settingsJSONPath carries the model-endpoint wiring on a person
+	// hydrate (OAuth / pk_): `apiKeyHelper` + `env.ANTHROPIC_BASE_URL`, so
+	// `claude` sends model traffic through the Hub with a credential from
+	// `ach-cli token`. Never written for an ek_ (agents / CI).
+	settingsJSONPath = ".claude/settings.json"
 
 	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
 	// alias contract (plan must_haves: ["claude", "cc"]).
@@ -229,14 +236,30 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 		return nil, err
 	}
 
-	return []adapter.FileWrite{
+	writes := []adapter.FileWrite{
 		{
 			Path:    mcpJSONPath,
 			Content: content,
 			Merge:   adapter.MergeDeep,
 			Keys:    keys,
 		},
-	}, nil
+	}
+	if hub := adapter.HelperBaseURLFromContext(ctx); hub != "" {
+		settings, err := json.MarshalIndent(map[string]any{
+			"apiKeyHelper": adapter.HelperCommand,
+			"env":          map[string]string{"ANTHROPIC_BASE_URL": hub},
+		}, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("claudecode: encode settings.json: %w", err)
+		}
+		writes = append(writes, adapter.FileWrite{
+			Path:    settingsJSONPath,
+			Content: append(settings, '\n'),
+			Merge:   adapter.MergeDeep,
+			Keys:    []string{"apiKeyHelper", "env.ANTHROPIC_BASE_URL"},
+		})
+	}
+	return writes, nil
 }
 
 // mcpDeepKeys is the claude-code adapter's only non-nil route.Rule.Transform

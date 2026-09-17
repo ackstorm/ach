@@ -54,7 +54,10 @@ token it obtained. `x-ach-environment` is informational and fine.
 ## Model endpoint: a credential helper
 
 No tool runs OAuth against a model base URL. Each takes a **command that
-prints a credential to stdout**; `ach-cli token` is that command. Wire it once:
+prints a credential to stdout**; `ach-cli token` is that command. `ach-cli
+env hydrate` writes the wiring for you when you are signed in as a person
+(OAuth or a `pk_` — never for an `ek_`); this is what it writes, for the
+case you set it up by hand:
 
 ```json
 // Claude Code — settings.json. Pair with ANTHROPIC_BASE_URL=https://ach.example.com
@@ -77,9 +80,11 @@ refresh_interval_ms = 300000
 # until then set the provider block by hand with apiKey: "{env:ACH_TOKEN}" and export ACH_TOKEN="$(ach-cli token)".
 ```
 
-`ach-cli token` prints **only** the token (Claude Code's helper fails on any
-extra output); every diagnostic goes to stderr. It refreshes automatically
-when the stored token is within 6 minutes of expiry.
+`ach-cli token` prints **only** the credential (Claude Code's helper fails on
+any extra output); every diagnostic goes to stderr. On an OAuth profile it
+refreshes automatically when the stored token is within 6 minutes of expiry,
+under a file lock so Claude Code and Codex firing it together spend one
+refresh, not two; on a `pk_` profile it prints the `pk_`.
 
 ## What a token can reach
 

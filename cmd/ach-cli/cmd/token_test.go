@@ -8,12 +8,18 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/oauthlogin"
 )
+
+// oauthRefreshCalls counts refresh grants the fake AS served; the refresh
+// handler sleeps so two concurrent helpers overlap inside the window.
+var oauthRefreshCalls atomic.Int32
 
 // oauthASForTest is a minimal fake AS: metadata + DCR + authorize (bounces
 // straight back with a code) + token (code → a.b.c/r1, refresh → d.e.f/r2).
@@ -38,6 +44,8 @@ func oauthASForTest(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		if r.PostForm.Get("grant_type") == "refresh_token" {
+			oauthRefreshCalls.Add(1)
+			time.Sleep(150 * time.Millisecond)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"access_token": "d.e.f", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r2",
 			})
@@ -114,5 +122,59 @@ func TestToken_PrintsExactlyTheAccessToken(t *testing.T) {
 	}
 	if strings.Count(stdout, "\n") != 1 {
 		t.Fatalf("credential helpers need exactly one line: %q", stdout)
+	}
+}
+
+func TestToken_ConcurrentHelpersRefreshOnce(t *testing.T) {
+	dir := loginTestEnv(t)
+	as := oauthASForTest(t)
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
+		URL:   as.URL,
+		OAuth: &config.OAuthCreds{ClientID: "oc_test", AccessToken: "a.b.c", RefreshToken: "r1", ExpiresAt: time.Now()},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	oauthRefreshCalls.Store(0)
+	var wg sync.WaitGroup
+	outs := make([]string, 2)
+	errs := make([]error, 2)
+	for i := range outs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			outs[i], _, _, errs[i] = executeCommand(t, newTokenCmd())
+		}(i)
+	}
+	wg.Wait()
+	for i := range outs {
+		if errs[i] != nil || outs[i] != "d.e.f\n" {
+			t.Fatalf("helper %d: stdout=%q err=%v", i, outs[i], errs[i])
+		}
+	}
+	if n := oauthRefreshCalls.Load(); n != 1 {
+		t.Fatalf("refresh grants = %d, want 1 (a second refresh spends the rotated token)", n)
+	}
+}
+
+func TestToken_PKProfilePrintsPK(t *testing.T) {
+	dir := loginTestEnv(t)
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
+		URL: "https://ach.example.com", PK: "pk_abc",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, _, err := executeCommand(t, newTokenCmd())
+	if err != nil || stdout != "pk_abc\n" {
+		t.Fatalf("stdout=%q err=%v", stdout, err)
+	}
+	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
+		URL: "https://ach.example.com", EK: map[string]string{"prod": "ek_x"},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := executeCommand(t, newTokenCmd()); err == nil {
+		t.Fatal("ek_-only profile must not print a credential")
 	}
 }

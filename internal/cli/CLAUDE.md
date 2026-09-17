@@ -198,6 +198,19 @@ merge) — don't conflate them.
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
 asserted in e2e — not a bug).
 
+**Model-endpoint helper wiring (person hydrate only).** When the hydrate
+bearer is a PERSON credential (OAuth JWS or `pk-`; `commit.renderContext` →
+`adapter.WithHelperBaseURL`), claude-code additionally deep-merges
+`.claude/settings.json` (`apiKeyHelper: "ach-cli token"` +
+`env.ANTHROPIC_BASE_URL: <hub>`) and codex adds `model_provider = "ach"` +
+`[model_providers.ach]` (`base_url <hub>/v1`, `wire_api responses`,
+`[auth] command = "ach-cli token"`, `refresh_interval_ms 300000`) to its
+`config.toml` — keys tracked, so `env uninstall` prunes them. An `ek-` bearer
+(agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
+token` prints the OAuth access token (refresh under `<configDir>/token.lock`
+— the AS rotates refresh tokens, so two concurrent helpers must not both
+refresh) or the profile's `pk_`; never an `ek_`.
+
 ### Global-scope root resolution (`--global`)
 
 `--global` does NOT mean "$HOME-relative". Each agent CLI exposes its own

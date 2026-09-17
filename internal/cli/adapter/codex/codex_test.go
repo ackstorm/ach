@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -812,6 +813,53 @@ func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
 	for _, w := range writes {
 		if bytes.Contains(w.Content, []byte("http_headers")) || bytes.Contains(w.Content, []byte("x-ach-key")) {
 			t.Errorf("credential-free render must carry no headers table; got:\n%s", w.Content)
+		}
+	}
+}
+
+// A person hydrate (helper base URL set) adds model_provider +
+// [model_providers.ach] with the credential command; an ek_ render carries
+// neither.
+func TestRenderRuntime_HelperWiring(t *testing.T) {
+	a := &Adapter{}
+	m := buildManifest()
+
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), ""), m, nil)
+	if err != nil || len(writes) != 1 {
+		t.Fatalf("no helper: writes=%d err=%v", len(writes), err)
+	}
+	if bytes.Contains(writes[0].Content, []byte("model_provider")) {
+		t.Fatalf("ek_ render must not wire a model provider:\n%s", writes[0].Content)
+	}
+
+	ctx := adapter.WithHelperBaseURL(adapter.WithCredential(context.Background(), ""), "https://ach.example.com/")
+	writes, err = a.RenderRuntime(ctx, m, nil)
+	if err != nil || len(writes) != 1 {
+		t.Fatalf("helper: writes=%d err=%v", len(writes), err)
+	}
+	var got struct {
+		ModelProvider  string `toml:"model_provider"`
+		ModelProviders map[string]struct {
+			Name    string `toml:"name"`
+			BaseURL string `toml:"base_url"`
+			WireAPI string `toml:"wire_api"`
+			Auth    struct {
+				Command           string `toml:"command"`
+				RefreshIntervalMS int    `toml:"refresh_interval_ms"`
+			} `toml:"auth"`
+		} `toml:"model_providers"`
+	}
+	if _, err := toml.Decode(string(writes[0].Content), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, writes[0].Content)
+	}
+	p := got.ModelProviders["ach"]
+	if got.ModelProvider != "ach" || p.BaseURL != "https://ach.example.com/v1" || p.WireAPI != "responses" ||
+		p.Auth.Command != "ach-cli token" || p.Auth.RefreshIntervalMS != 300000 {
+		t.Fatalf("provider: %+v\n%s", got, writes[0].Content)
+	}
+	for _, k := range []string{"model_provider", "model_providers.ach"} {
+		if !slices.Contains(writes[0].Keys, k) {
+			t.Fatalf("keys %v missing %q", writes[0].Keys, k)
 		}
 	}
 }

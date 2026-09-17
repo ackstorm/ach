@@ -201,9 +201,30 @@ type a2aAgentTable struct {
 // with the same input. FMT-05 deterministic re-hydrate / drift no-op
 // detection depends on this.
 type configTOMLShape struct {
-	MCPServers map[string]mcpServerTable `toml:"mcp_servers"`
-	A2AAgents  map[string]a2aAgentTable  `toml:"a2a_agents"`
+	ModelProvider  string                        `toml:"model_provider,omitempty"`
+	ModelProviders map[string]modelProviderTable `toml:"model_providers,omitempty"`
+	MCPServers     map[string]mcpServerTable     `toml:"mcp_servers"`
+	A2AAgents      map[string]a2aAgentTable      `toml:"a2a_agents"`
 }
+
+// modelProviderTable is `[model_providers.<id>]` — the Hub as a custom model
+// provider whose credential comes from a command (`[auth] command`), written
+// ONLY on a person hydrate (OAuth / pk_). Codex re-runs the command every
+// refresh_interval_ms; 5 min sits under the token's 1 h life.
+type modelProviderTable struct {
+	Name    string            `toml:"name"`
+	BaseURL string            `toml:"base_url"`
+	WireAPI string            `toml:"wire_api"`
+	Auth    modelProviderAuth `toml:"auth"`
+}
+
+type modelProviderAuth struct {
+	Command           string `toml:"command"`
+	RefreshIntervalMS int    `toml:"refresh_interval_ms"`
+}
+
+// modelProviderID is the `[model_providers.<id>]` key and `model_provider` value.
+const modelProviderID = "ach"
 
 // renderConfigTOML builds the .codex/config.toml bytes from a manifest
 // + credential. Returned bytes are deterministic.
@@ -211,7 +232,7 @@ type configTOMLShape struct {
 // Each MCP server / A2A agent contributes a [mcp_servers.<id>] /
 // [a2a_agents.<id>] table with the credential under headers["x-ach-key"]
 // per the on-disk plaintext discipline CLI-04 (D-04) establishes.
-func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string, error) {
+func renderConfigTOML(m *manifest.Manifest, credential, helperBaseURL string) ([]byte, []string, error) {
 	shape := configTOMLShape{
 		MCPServers: map[string]mcpServerTable{},
 		A2AAgents:  map[string]a2aAgentTable{},
@@ -240,6 +261,17 @@ func renderConfigTOML(m *manifest.Manifest, credential string) ([]byte, []string
 		contributedKeys = append(contributedKeys, "a2a_agents."+agent.ID)
 	}
 
+	if helperBaseURL != "" {
+		shape.ModelProvider = modelProviderID
+		shape.ModelProviders = map[string]modelProviderTable{modelProviderID: {
+			Name:    "ACH",
+			BaseURL: strings.TrimRight(helperBaseURL, "/") + "/v1",
+			WireAPI: "responses",
+			Auth:    modelProviderAuth{Command: adapter.HelperCommand, RefreshIntervalMS: 300000},
+		}}
+		contributedKeys = append(contributedKeys, "model_provider", "model_providers."+modelProviderID)
+	}
+
 	sort.Strings(contributedKeys)
 
 	var buf bytes.Buffer
@@ -265,7 +297,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}
 
 	cred := adapter.CredentialFromContext(ctx)
-	content, keys, err := renderConfigTOML(m, cred)
+	content, keys, err := renderConfigTOML(m, cred, adapter.HelperBaseURLFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

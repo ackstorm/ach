@@ -499,3 +499,38 @@ func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
 		t.Errorf("credential-free render must carry no headers block; got:\n%s", writes[0].Content)
 	}
 }
+
+// A person hydrate (helper base URL set) adds the .claude/settings.json
+// model-endpoint wiring; without it (ek_) nothing beyond .mcp.json is written.
+func TestRenderRuntime_HelperWiring(t *testing.T) {
+	a := &Adapter{}
+	m := buildManifest()
+
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), ""), m, nil)
+	if err != nil || len(writes) != 1 {
+		t.Fatalf("no helper: writes=%d err=%v", len(writes), err)
+	}
+
+	ctx := adapter.WithHelperBaseURL(adapter.WithCredential(context.Background(), ""), "https://ach.example.com")
+	writes, err = a.RenderRuntime(ctx, m, nil)
+	if err != nil || len(writes) != 2 {
+		t.Fatalf("helper: writes=%d err=%v", len(writes), err)
+	}
+	w := writes[1]
+	if w.Path != settingsJSONPath || w.Merge != adapter.MergeDeep {
+		t.Fatalf("path=%q merge=%v", w.Path, w.Merge)
+	}
+	var got struct {
+		APIKeyHelper string            `json:"apiKeyHelper"`
+		Env          map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(w.Content, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.APIKeyHelper != "ach-cli token" || got.Env["ANTHROPIC_BASE_URL"] != "https://ach.example.com" {
+		t.Fatalf("settings: %s", w.Content)
+	}
+	if want := []string{"apiKeyHelper", "env.ANTHROPIC_BASE_URL"}; !reflect.DeepEqual(w.Keys, want) {
+		t.Fatalf("keys=%v want %v", w.Keys, want)
+	}
+}

@@ -187,6 +187,34 @@ func CredentialFromContext(ctx context.Context) string {
 	return ""
 }
 
+// helperKey is the typed ctx key for the model-endpoint credential helper.
+type helperKey struct{}
+
+// HelperCommand is the command the tools exec to obtain a model credential
+// (Claude Code `apiKeyHelper`, Codex `[model_providers.*].auth.command`).
+// Bare name on purpose: the rendered files are shared with teammates and the
+// tools spawn it through the user's shell PATH.
+const HelperCommand = "ach-cli token"
+
+// WithHelperBaseURL marks the render as a PERSON hydrate (OAuth or pk_): the
+// adapters wire the model endpoint to baseURL with HelperCommand as the
+// credential source. Unset (ek_ / agents / CI) ⇒ no helper wiring at all.
+func WithHelperBaseURL(ctx context.Context, baseURL string) context.Context {
+	return context.WithValue(ctx, helperKey{}, baseURL)
+}
+
+// HelperBaseURLFromContext reads the base URL set by WithHelperBaseURL; ""
+// when the render is not a person hydrate.
+func HelperBaseURLFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(helperKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // HeadersWithCredential returns the per-server headers map embedding the
 // bearer under "x-ach-key" plus, when non-empty, the environment name
 // under "x-ach-environment". An empty credential still emits the

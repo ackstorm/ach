@@ -477,20 +477,9 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	var renderResult RenderResult
 	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
-		// ADAPT-03: propagate the bearer credential to the adapter via
-		// ctx so RenderRuntime can embed it as the x-ach-key header.
-		// Without this the rendered MCP config carries an empty credential
-		// and the agent cannot authenticate to the forwarder. Credentials
-		// travel by context key only (never env/param) per adapter.go.
-		// An OAuth access token (a JWS) is NOT rendered: the tool
-		// authenticates itself on first use (401 + RFC 9728 pointer →
-		// its own OAuth ceremony; docs/developer-guide/
-		// oauth-client-conformance.md §4). pk_/ek_ are written as today.
-		renderCred := c.opts.Bearer
-		if keys.LooksLikeJWS(renderCred) {
-			renderCred = ""
-		}
-		renderCtx := adapter.WithCredential(ctx, renderCred)
+		// ADAPT-03: the credential (and, for a person, the helper base URL)
+		// travel to RenderRuntime by context key only — see renderContext.
+		renderCtx := c.renderContext(ctx)
 		// WIRE-04 / D-11 scope gate: plugin/resource projection is the
 		// CONTEXT slice. Run it when NOT --only-runtime (the default and
 		// --no-runtime scopes both project context; OnlyRuntime has
@@ -1382,4 +1371,33 @@ func (defaultStateStore) Save(path string, f *state.File) error {
 
 func (defaultStateStore) GuardEnvironment(existing *state.File, requested string, force bool) error {
 	return state.GuardEnvironment(existing, requested, force)
+}
+
+// renderContext stuffs what the adapters need to know about the caller:
+// the credential to embed (an OAuth JWS is NOT rendered — the tool runs
+// its own ceremony on the 401 + RFC 9728 pointer; docs/developer-guide/
+// oauth-client-conformance.md §4) and, for a PERSON hydrate (OAuth or pk_), the Hub
+// base URL for the model-endpoint helper wiring. An ek_ (agents / CI) has
+// no interactive login to lean on and keeps the key-in-file contract, so
+// it gets no helper wiring.
+func (c *commit) renderContext(ctx context.Context) context.Context {
+	renderCred := c.opts.Bearer
+	if keys.LooksLikeJWS(renderCred) {
+		renderCred = ""
+	}
+	ctx = adapter.WithCredential(ctx, renderCred)
+	if personBearer(c.opts.Bearer) {
+		ctx = adapter.WithHelperBaseURL(ctx, c.opts.BaseURL)
+	}
+	return ctx
+}
+
+// personBearer reports whether the bearer stands for a person at a keyboard
+// (an OAuth access token or a pk_) rather than an Environment key.
+func personBearer(bearer string) bool {
+	if keys.LooksLikeJWS(bearer) {
+		return true
+	}
+	prefix, err := keys.ClassifyBearer(bearer)
+	return err == nil && prefix == keys.PrefixPk
 }
