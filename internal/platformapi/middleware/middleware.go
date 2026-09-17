@@ -16,10 +16,44 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
 
-// xAchKeyHeader is the canonical bearer-credential header per Hub §3.
-// Authn reads it once, resolves it, and DISCARDS it from r.Header before
-// the inner handler runs (D-19 / T-03-05-02).
-const xAchKeyHeader = "x-ach-key"
+// Credential slots, in precedence order (alitellm-auth authz/decide.go, the
+// rules ACH mirrors): x-ach-key is ACH's own header (Hub §3); x-api-key is
+// where the Anthropic SDK puts a key (Claude Code with ANTHROPIC_API_KEY or
+// an apiKeyHelper); Authorization is consulted LAST and only consumed when
+// it carries a LiteLLM key or our JWT — otherwise it is the upstream
+// provider's credential and passes through untouched. Authn reads the slot
+// once, resolves it, and DISCARDS it from r.Header before the inner handler
+// runs (D-19 / T-03-05-02).
+const (
+	xAchKeyHeader = "x-ach-key"
+	xAPIKeyHeader = "x-api-key" //nolint:gosec // header name, not a credential
+)
+
+// AuthnOptions is per-service policy.
+type AuthnOptions struct {
+	// Challenge composes the WWW-Authenticate value for a 401 (the RFC 9728
+	// resource_metadata pointer). nil → no header.
+	Challenge func(r *http.Request) string
+	// AllowRawLiteLLMKey lets a raw sk-… through with no ACH identity. The
+	// forwarder sets it; platform-api does not (nothing there proxies).
+	AllowRawLiteLLMKey bool
+}
+
+// credential picks the first slot that is set, returning the bare value and
+// the header it came from. "Bearer " is stripped from any slot.
+func credential(r *http.Request) (value, from string) {
+	for _, h := range []string{xAchKeyHeader, xAPIKeyHeader, "Authorization"} {
+		raw := strings.TrimSpace(r.Header.Get(h))
+		if raw == "" {
+			continue
+		}
+		if h == "Authorization" && !strings.HasPrefix(raw, "Bearer ") {
+			continue // Basic, Digest, … : not ours, leave it
+		}
+		return strings.TrimSpace(strings.TrimPrefix(raw, "Bearer ")), h
+	}
+	return "", ""
+}
 
 // requestIDPrefix is the namespace for server-generated request IDs.
 // "req_" mirrors the bearer prefix grammar so log filters can grep
@@ -205,13 +239,17 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 	})
 }
 
-// Authn is the load-bearing middleware. It reads x-ach-key from
-// r.Header, resolves it via the Resolver, and either:
+// Authn is the load-bearing middleware. It reads the credential from the
+// first populated slot (x-ach-key, x-api-key, Authorization: Bearer),
+// resolves it via the Resolver (pk_/ek_ or an OAuth JWS), and either:
 //
 //   - rejects the request with 401 (missing/invalid/expired bearer) plus
-//     a render.Error envelope; or
+//     a render.Error envelope and, when opts.Challenge is set, the
+//     WWW-Authenticate pointer that starts the OAuth ceremony; or
 //   - injects a populated KeyContext into ctx and discards the plaintext
-//     from r.Header before invoking next.ServeHTTP (D-19).
+//     from r.Header before invoking next.ServeHTTP (D-19); or
+//   - with opts.AllowRawLiteLLMKey, passes a raw sk-… through with NO ACH
+//     identity (RawLiteLLMKeyFromCtx) — LiteLLM authenticates it.
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
 // OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
@@ -220,15 +258,32 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //
 // auditLog receives audit emissions on internal_error paths only (401
 // rejections are operational signals, not audit-worthy events).
-func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *slog.Logger) func(http.Handler) http.Handler {
+func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *slog.Logger, opts AuthnOptions) func(http.Handler) http.Handler {
+	unauthorized := func(w http.ResponseWriter, r *http.Request, code, msg, reqID string) {
+		if opts.Challenge != nil {
+			w.Header().Set("WWW-Authenticate", opts.Challenge(r))
+		}
+		render.Error(w, http.StatusUnauthorized, code, msg, reqID)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			reqID := RequestIDFromCtx(ctx)
 
-			plaintext := r.Header.Get(xAchKeyHeader)
+			plaintext, from := credential(r)
 			if plaintext == "" {
-				render.Error(w, http.StatusUnauthorized, "missing_key", "x-ach-key header required", reqID)
+				unauthorized(w, r, "missing_key", "present an API key or a bearer token", reqID)
+				return
+			}
+
+			// A raw LiteLLM key: no ACH identity. LiteLLM decides.
+			if strings.HasPrefix(plaintext, "sk-") {
+				if !opts.AllowRawLiteLLMKey {
+					unauthorized(w, r, "missing_key", "an ACH credential is required here", reqID)
+					return
+				}
+				r.Header.Del(from)
+				next.ServeHTTP(w, r.WithContext(WithRawLiteLLMKey(ctx, plaintext)))
 				return
 			}
 
@@ -246,17 +301,21 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 				return
 			}
 			if info == nil {
-				// Revoked / expired / unknown — indistinguishable per
-				// KEY-04 / KEY-06.
-				render.Error(w, http.StatusUnauthorized, audit.OutcomeExpiredOrRevoked, "key expired or revoked", reqID)
+				// Revoked / expired / unknown / bad JWT — indistinguishable
+				// per KEY-04 / KEY-06.
+				unauthorized(w, r, audit.OutcomeExpiredOrRevoked, "key expired or revoked", reqID)
 				return
 			}
 
-			// D-19: discard plaintext from r.Header BEFORE invoking inner.
-			// Literal header name kept inline (not via xAchKeyHeader
-			// constant) so the static-analysis grep gate that proves the
-			// plaintext-discard discipline catches this site verbatim.
+			// D-19: discard the presented credential BEFORE invoking inner.
+			// Literal header names kept inline (not via the constants) so
+			// the static-analysis grep that proves the plaintext-discard
+			// discipline catches these sites verbatim.
 			r.Header.Del("x-ach-key")
+			r.Header.Del("x-api-key")
+			if from == "Authorization" {
+				r.Header.Del("Authorization") // ours: consumed. Any other Authorization passes through.
+			}
 
 			// BLK-02: admin status is the allowlist lookup on pk_ only.
 			isAdmin := false

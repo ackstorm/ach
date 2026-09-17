@@ -95,6 +95,10 @@ type Deps struct {
 	// login total. Nil-tolerant — tests that don't scrape leave it unset.
 	Metrics *achmetrics.PlatformAPICollectors
 
+	// AuthnOptions: the RFC 9728 challenge on 401. platform-api never
+	// allows a raw LiteLLM key (nothing here proxies).
+	AuthnOptions pamw.AuthnOptions
+
 	// OAuth is the OAuth 2.1 authorization server (/platform/oauth/*);
 	// nil → not mounted (no ACH_JWT_SECRET_DIR). Auth is filled in by New.
 	OAuth *auth.OAuthDeps
@@ -162,7 +166,7 @@ func New(deps Deps) http.Handler {
 	// KeyContext.IsAdmin is populated uniformly for downstream
 	// handlers.
 	r.Group(func(r chi.Router) {
-		r.Use(pamw.Authn(deps.Resolver, deps.Allowlist, deps.Audit))
+		r.Use(pamw.Authn(deps.Resolver, deps.Allowlist, deps.Audit, deps.AuthnOptions))
 
 		// BLK-03: hydrate.Deps now exposes LiteLLM litellm.Client as a
 		// first-class field (Plan 03-09 ships the contract).

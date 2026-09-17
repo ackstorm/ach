@@ -187,3 +187,12 @@ func isBase64URL(c byte) bool {
 	}
 	return false
 }
+
+// LooksLikeJWS reports whether a bearer is a compact JWS
+// (header.payload.signature) and not a LiteLLM key: anything that starts
+// with sk- is LiteLLM's, whatever follows (sk-ant-… included). Shared by
+// the keystore OAuth resolver and ach-cli's hydrate (which must not import
+// keystore).
+func LooksLikeJWS(s string) bool {
+	return strings.Count(s, ".") == 2 && !strings.HasPrefix(s, "sk-")
+}

@@ -148,17 +148,23 @@ func pkLookupFor(pool *pgxpool.Pool, extendHook PkExtendHook) dbLookupFn {
 		if row.Extended && extendHook != nil && row.LiteLLMToken != nil {
 			extendHook(context.WithoutCancel(ctx), *row.LiteLLMToken)
 		}
-		expires := row.ExpiresAt
-		return &KeyInfo{
-			KeyID:         row.KeyID,
-			KeyType:       keys.PrefixPk,
-			OwnerEmail:    row.OwnerEmail,
-			ExpiresAt:     &expires,
-			LiteLLMUserID: row.LiteLLMUserID,
-			LiteLLMToken:  row.LiteLLMToken,
-			// TESTING-PHASE (reverts FIX01 §A.6)
-			LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
-		}, nil
+		return pkInfoToKeyInfo(row), nil
+	}
+}
+
+// pkInfoToKeyInfo maps a resolved personal_keys row to the auth-layer
+// KeyInfo. Shared by the pk_ path and the OAuth resolver (same row shape).
+func pkInfoToKeyInfo(row *db.PkKeyInfo) *KeyInfo {
+	expires := row.ExpiresAt
+	return &KeyInfo{
+		KeyID:         row.KeyID,
+		KeyType:       keys.PrefixPk,
+		OwnerEmail:    row.OwnerEmail,
+		ExpiresAt:     &expires,
+		LiteLLMUserID: row.LiteLLMUserID,
+		LiteLLMToken:  row.LiteLLMToken,
+		// TESTING-PHASE (reverts FIX01 §A.6)
+		LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 	}
 }
 

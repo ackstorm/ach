@@ -35,6 +35,8 @@ type Deps struct {
 	// request before forwarding. Required (validated at process start).
 	KeyEncryptionKey []byte
 	LiteLLMUpstream  *url.URL
+	// AuthnOptions: the RFC 9728 challenge on 401 + raw sk- passthrough.
+	AuthnOptions pamw.AuthnOptions
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -91,7 +93,7 @@ func New(deps Deps) http.Handler {
 	r.Handle("/.well-known/oauth-protected-resource/*", proxy.New(hdeps.Deps))
 
 	r.Group(func(r chi.Router) {
-		r.Use(pamw.Authn(deps.Resolver, nil, nil)) // no allowlist, no audit
+		r.Use(pamw.Authn(deps.Resolver, nil, nil, deps.AuthnOptions)) // no allowlist, no audit
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
 		r.Handle("/v2/*", proxy.HandlerV2(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))

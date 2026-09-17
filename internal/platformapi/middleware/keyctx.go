@@ -123,3 +123,18 @@ func ActorFromCtx(ctx context.Context) string {
 	}
 	return ns + "/" + email
 }
+
+type rawKeyCtxKey struct{}
+
+// WithRawLiteLLMKey marks a request that presented a raw LiteLLM key (sk-…)
+// and therefore has NO ACH identity: no KeyContext, no precheck, no audit
+// actor. The forwarder writes it to x-litellm-api-key and LiteLLM decides.
+func WithRawLiteLLMKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, rawKeyCtxKey{}, key)
+}
+
+// RawLiteLLMKeyFromCtx returns the raw LiteLLM key set by Authn, if any.
+func RawLiteLLMKeyFromCtx(ctx context.Context) (string, bool) {
+	k, ok := ctx.Value(rawKeyCtxKey{}).(string)
+	return k, ok && k != ""
+}
