@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -1181,5 +1182,41 @@ func TestRenderHydrateSummary_NoticeBlock(t *testing.T) {
 		summaryMeta{noWarnings: true})
 	if strings.Contains(none, "Notice") {
 		t.Errorf("notice block rendered for empty notice:\n%s", none)
+	}
+}
+
+// An OAuth profile authenticates the hydrate call with its access token in
+// x-ach-key (Authn accepts a JWS there) and the summary says so; the
+// adapters render no credential (see internal/cli/hydrate/commit.go +
+// adapter.HeadersWithCredential).
+func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: &config.OAuthCreds{ClientID: "oc_1", AccessToken: "aaa.bbb.ccc", RefreshToken: "r1", ExpiresAt: time.Now().Add(time.Hour)},
+	})
+	swapHydrateHTTPClientForTest(t, mock.server.Client())
+
+	if _, _, code, err := executeHydrate(t, "demo", "--no-warnings"); err != nil || code != exit.OK {
+		t.Fatalf("hydrate: code=%d err=%v", code, err)
+	}
+	if *mock.lastKey != "aaa.bbb.ccc" {
+		t.Errorf("x-ach-key = %q; want the OAuth access token", *mock.lastKey)
+	}
+
+	var seen hydrate.Opts
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		seen = opts
+		return hydrate.Result{}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+	stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen.Bearer != "aaa.bbb.ccc" || !strings.Contains(stdout, "OAuth session") || !strings.Contains(stdout, "signs in once") {
+		t.Errorf("bearer=%q stdout=%q", seen.Bearer, stdout)
 	}
 }

@@ -214,7 +214,7 @@ func TestPimono_RenderRuntime_McpJSONShape(t *testing.T) {
 	a := &Adapter{}
 	m := buildManifest()
 
-	writes, err := a.RenderRuntime(context.Background(), m, nil)
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), "pk_demo"), m, nil)
 	if err != nil {
 		t.Fatalf("RenderRuntime: %v", err)
 	}

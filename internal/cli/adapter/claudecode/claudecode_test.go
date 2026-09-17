@@ -484,3 +484,18 @@ func TestClaudeCode_PassThrough_NoFieldRewrite_Conformance(t *testing.T) {
 		t.Errorf("permissions→permissionMode ladder fired — FMT-03 must be cut")
 	}
 }
+
+// An OAuth hydrate (empty credential) writes MCP entries with NO headers
+// key at all: the tool must see no credential so it runs OAuth itself.
+func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
+	a := &Adapter{}
+	m := buildManifest()
+	m.Environment = ""
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), ""), m, nil)
+	if err != nil {
+		t.Fatalf("RenderRuntime: %v", err)
+	}
+	if bytes.Contains(writes[0].Content, []byte(`"headers"`)) || bytes.Contains(writes[0].Content, []byte(`x-ach-key`)) {
+		t.Errorf("credential-free render must carry no headers block; got:\n%s", writes[0].Content)
+	}
+}

@@ -190,7 +190,7 @@ type mcpServerTable struct {
 // that needs to change — the Adapter interface stays stable.
 type a2aAgentTable struct {
 	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers"`
+	Headers   map[string]string `toml:"headers,omitempty"`
 	Transport string            `toml:"transport"`
 }
 

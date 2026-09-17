@@ -23,6 +23,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/lock"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
+	"github.com/ackstorm/ach/internal/keys"
 )
 
 // manifestFetcher is the function-typed test seam for step 5. Production
@@ -481,7 +482,15 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// Without this the rendered MCP config carries an empty credential
 		// and the agent cannot authenticate to the forwarder. Credentials
 		// travel by context key only (never env/param) per adapter.go.
-		renderCtx := adapter.WithCredential(ctx, c.opts.Bearer)
+		// An OAuth access token (a JWS) is NOT rendered: the tool
+		// authenticates itself on first use (401 + RFC 9728 pointer →
+		// its own OAuth ceremony; docs/developer-guide/
+		// oauth-client-conformance.md §4). pk_/ek_ are written as today.
+		renderCred := c.opts.Bearer
+		if keys.LooksLikeJWS(renderCred) {
+			renderCred = ""
+		}
+		renderCtx := adapter.WithCredential(ctx, renderCred)
 		// WIRE-04 / D-11 scope gate: plugin/resource projection is the
 		// CONTEXT slice. Run it when NOT --only-runtime (the default and
 		// --no-runtime scopes both project context; OnlyRuntime has

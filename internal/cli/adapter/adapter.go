@@ -200,11 +200,22 @@ func CredentialFromContext(ctx context.Context) string {
 // before forwarding upstream, so it never reaches the MCP/A2A backend. It
 // is omitted when env is empty so offline / dry-run / unit-test renders
 // stay minimal.
+//
+// An EMPTY credential emits NO x-ach-key — this is the OAuth hydrate: the
+// tool must see no credential at all so its first request gets the 401 +
+// RFC 9728 pointer and it runs the ceremony itself. A present-but-empty
+// header would be sent as-is and defeat that (Claude Code disables its
+// OAuth fallback when a credential header is configured). With nothing to
+// emit the map is nil so the entry's `omitempty` drops the key entirely.
 func HeadersWithCredential(cred, env string) map[string]string {
-	h := map[string]string{
-		"x-ach-key": cred,
+	var h map[string]string
+	if cred != "" {
+		h = map[string]string{"x-ach-key": cred}
 	}
 	if env != "" {
+		if h == nil {
+			h = map[string]string{}
+		}
 		h["x-ach-environment"] = env
 	}
 	return h

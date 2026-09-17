@@ -45,6 +45,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -368,7 +369,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	}
 
 	// D-12: pk- classification + <name> positional argument gate.
-	prefix, classifyErr := keys.ClassifyBearer(bearer)
+	prefix, classifyErr := classifyBearer(bearer)
 	if classifyErr != nil {
 		return &exit.CodedError{
 			Code:    exit.General,
@@ -471,7 +472,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	// Classify the bearer once: drives both the pk- x-ach-environment header
 	// (below) and the summary's header facts + Tips footer (summaryFromResult).
 	// A classify error leaves the prefix zero — neither path acts on it.
-	bearerPrefix, _ := keys.ClassifyBearer(bearer)
+	bearerPrefix, _ := classifyBearer(bearer)
 
 	limits, err := extract.LoadLimits()
 	if err != nil {
@@ -561,6 +562,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 			global:     in.global,
 			output:     in.output,
 			keyPrefix:  bearerPrefix,
+			oauth:      keys.LooksLikeJWS(bearer),
 			noWarnings: in.noWarnings,
 		}
 		_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHydrateSummary(results, meta))
@@ -768,6 +770,7 @@ type summaryMeta struct {
 	global     bool              // --global → home-root scope
 	output     string            // --output dir ("" when unset)
 	keyPrefix  keys.BearerPrefix // pk-/ek- classification of the bearer
+	oauth      bool              // the bearer is an OAuth access token (rendered configs carry no credential)
 	noWarnings bool              // --no-warnings → drop the Tips footer
 }
 
@@ -881,10 +884,12 @@ func scopeKeyFacts(meta summaryMeta) string {
 	default:
 		parts = append(parts, "project scope")
 	}
-	switch meta.keyPrefix {
-	case keys.PrefixPk:
+	switch {
+	case meta.oauth:
+		parts = append(parts, "OAuth session")
+	case meta.keyPrefix == keys.PrefixPk:
 		parts = append(parts, "pk- key")
-	case keys.PrefixEk:
+	case meta.keyPrefix == keys.PrefixEk:
 		parts = append(parts, "ek- key")
 	}
 	return strings.Join(parts, ", ")
@@ -899,7 +904,10 @@ func hydrateTips(meta summaryMeta) []string {
 	if !meta.global && meta.output == "" {
 		tips = append(tips, "pass --global to write under $HOME instead of ./.ach")
 	}
-	if meta.keyPrefix == keys.PrefixPk {
+	switch {
+	case meta.oauth:
+		tips = append(tips, "MCP entries carry no credential; each tool signs in once on first use (`claude mcp login <name>` / `codex mcp login <name>` / `opencode mcp auth <name>`)")
+	case meta.keyPrefix == keys.PrefixPk:
 		tips = append(tips, "pk- is not Environment-scoped; Environment workloads (CI/agents) want an ek- key")
 	}
 	return tips
@@ -1093,6 +1101,11 @@ func resolveBearer(in hydrateInputs) (string, string, error) {
 		return "", "", err
 	}
 	if bearer == "" {
+		if bearer, err = profileBearer(context.Background(), file, configPath, dep); err != nil {
+			return "", "", err
+		}
+	}
+	if bearer == "" {
 		return "", "", &exit.CodedError{
 			Code: exit.General,
 			Msg:  "no credential resolved; run `ach login` or set ACH_API_KEY",
@@ -1128,10 +1141,8 @@ func pickBearer(in hydrateInputs, name string, dep *config.Profile) (string, err
 			}
 		}
 		return ek, nil
-	case dep.PK != "":
-		return dep.PK, nil
 	}
-	return "", nil
+	return "", nil // the profile's own credential: resolveBearer → profileBearer
 }
 
 // runHydrateRaw is the Phase 6 surface-only POST+stream body extracted

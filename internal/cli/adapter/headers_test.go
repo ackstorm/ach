@@ -17,17 +17,19 @@ func TestHeadersWithCredential_EmitsKeyAndEnvironment(t *testing.T) {
 	}
 }
 
-// TestHeadersWithCredential_EmptyEnvironmentOmitsHeader asserts the
-// x-ach-environment header is absent (not an empty value) when the
-// Environment is empty, so offline / dry-run renders stay minimal. The
-// x-ach-key header is still emitted (empty value) to keep the rendered
-// shape stable.
-func TestHeadersWithCredential_EmptyEnvironmentOmitsHeader(t *testing.T) {
-	h := HeadersWithCredential("", "")
-	if _, ok := h["x-ach-key"]; !ok {
-		t.Errorf("x-ach-key must always be present (empty value ok); got %v", h)
+// TestHeadersWithCredential_EmptyCredentialOmitsKey: an OAuth hydrate
+// renders NO x-ach-key at all — a present-but-empty header is a credential
+// the tool sends instead of authenticating. With nothing to emit the map
+// is nil so the entry's `omitempty` drops the key.
+func TestHeadersWithCredential_EmptyCredentialOmitsKey(t *testing.T) {
+	h := HeadersWithCredential("", "prod")
+	if _, ok := h["x-ach-key"]; ok {
+		t.Errorf("x-ach-key must be absent for an empty credential; got %v", h)
 	}
-	if _, ok := h["x-ach-environment"]; ok {
-		t.Errorf("x-ach-environment must be absent when env is empty; got %v", h)
+	if h["x-ach-environment"] != "prod" {
+		t.Errorf("x-ach-environment = %q, want prod", h["x-ach-environment"])
+	}
+	if got := HeadersWithCredential("", ""); got != nil {
+		t.Errorf("expected nil map, got %v", got)
 	}
 }

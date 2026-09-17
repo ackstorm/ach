@@ -1038,3 +1038,18 @@ func TestOpencodeAgentTools_ModelShorthandDropped(t *testing.T) {
 		t.Errorf("provider/model not kept; got %v", m["model"])
 	}
 }
+
+// An OAuth hydrate (empty credential) writes MCP entries with NO headers
+// key at all: the tool must see no credential so it runs OAuth itself.
+func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
+	a := &Adapter{}
+	m := buildManifest()
+	m.Environment = ""
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), ""), m, nil)
+	if err != nil {
+		t.Fatalf("RenderRuntime: %v", err)
+	}
+	if bytes.Contains(writes[0].Content, []byte(`"headers"`)) || bytes.Contains(writes[0].Content, []byte(`x-ach-key`)) {
+		t.Errorf("credential-free render must carry no headers block; got:\n%s", writes[0].Content)
+	}
+}

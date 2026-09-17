@@ -170,7 +170,7 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	a := &Adapter{}
 	m := buildManifest()
 
-	writes, err := a.RenderRuntime(context.Background(), m, nil)
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), "pk_demo"), m, nil)
 	if err != nil {
 		t.Fatalf("RenderRuntime: %v", err)
 	}
@@ -796,5 +796,22 @@ func TestCodexMCPSurgery_Conformance(t *testing.T) {
 	}
 	if _, ok := svc["headers"]; ok {
 		t.Errorf("original headers map must be dropped: %v", svc)
+	}
+}
+
+// An OAuth hydrate (empty credential) writes MCP entries with NO
+// http_headers table: the tool must see no credential so it runs OAuth itself.
+func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
+	a := &Adapter{}
+	m := buildManifest()
+	m.Environment = ""
+	writes, err := a.RenderRuntime(adapter.WithCredential(context.Background(), ""), m, nil)
+	if err != nil {
+		t.Fatalf("RenderRuntime: %v", err)
+	}
+	for _, w := range writes {
+		if bytes.Contains(w.Content, []byte("http_headers")) || bytes.Contains(w.Content, []byte("x-ach-key")) {
+			t.Errorf("credential-free render must carry no headers table; got:\n%s", w.Content)
+		}
 	}
 }

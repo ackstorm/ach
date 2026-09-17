@@ -908,7 +908,7 @@ func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
 //  3. --env-key flag → resolve against profiles.<active>.ek.<label>.
 //  4. ACH_API_KEY env → same as --api-key.
 //  5. ACH_ENV_KEY env → same as --env-key.
-//  6. default → profile.PK from disk config.
+//  6. default → the profile's own credential (pk_, or the OAuth access token).
 //
 // Returns baseURL (profile.url or ACH_BASE_URL) and the bearer
 // plaintext. The resolved profile name is folded into error
@@ -974,8 +974,11 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 			}
 		}
 		return dep.URL, ek, nil
-	case dep.PK != "":
-		return dep.URL, dep.PK, nil
+	}
+	if bearer, err := profileBearer(context.Background(), file, cfgPath, dep); err != nil {
+		return "", "", err
+	} else if bearer != "" {
+		return dep.URL, bearer, nil
 	}
 	return "", "", &exit.CodedError{
 		Code: exit.General,

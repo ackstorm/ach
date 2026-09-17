@@ -125,7 +125,7 @@ func runContentFetch(cmd *cobra.Command, kind, name string, f *contentFetchFlags
 	// A pk- bearer must carry the target Environment in x-ach-environment (the
 	// Content Service returns 400 missing_environment otherwise). An ek- binds
 	// its own Environment, so the header is omitted.
-	bearerPrefix, _ := keys.ClassifyBearer(bearer)
+	bearerPrefix, _ := classifyBearer(bearer)
 	if bearerPrefix == keys.PrefixPk {
 		if f.Environment == "" {
 			return &exit.CodedError{

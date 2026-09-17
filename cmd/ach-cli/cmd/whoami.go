@@ -21,6 +21,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -128,7 +129,7 @@ func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey 
 	}
 
 	// --verify: classify pk- vs ek- and call the right endpoint.
-	prefix, classifyErr := keys.ClassifyBearer(bearer)
+	prefix, classifyErr := classifyBearer(bearer)
 	if classifyErr != nil {
 		return &exit.CodedError{
 			Code: exit.General,
@@ -251,8 +252,11 @@ func resolveActiveBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, *c
 			}
 		}
 		return name, dep, ek, nil
-	case dep.PK != "":
-		return name, dep, dep.PK, nil
+	}
+	if bearer, err := profileBearer(context.Background(), file, configPath, dep); err != nil {
+		return "", nil, "", err
+	} else if bearer != "" {
+		return name, dep, bearer, nil
 	}
 	return "", nil, "", &exit.CodedError{
 		Code: exit.General,
