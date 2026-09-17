@@ -38,6 +38,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/devicecode"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/oauthlogin"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
@@ -65,14 +66,21 @@ func newLoginCmd() *cobra.Command {
 		flagNoBrowser  bool
 		flagNoWarnings bool
 		flagInsecure   bool
+		flagDevice     bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate against a Hub via device-code SSO and persist pk-",
-		Long: `Authenticate against an ACH Hub via the device-code SSO flow.
+		Short: "Sign in to a Hub with your browser (OAuth); --device for a host without one",
+		Long: `Sign in to an ACH Hub.
 
-Flow:
+Default (OAuth): the CLI is a public OAuth client of the Hub — it opens
+your browser on the Hub's authorization endpoint (Dex SSO behind it), gets
+an authorization code back on a loopback redirect, and stores a short-lived
+access token + refresh token on the profile. ` + "`ach-cli token`" + ` prints a
+fresh access token for tools' credential helpers; no pk- is minted.
+
+--device (legacy device-code flow, for SSH / headless hosts):
   1. POST /platform/auth/cli/init to mint a session_id + verification_url.
   2. Open the verification_url in the browser (or print it with --no-browser).
   3. Poll POST /platform/auth/cli/token until the SSO round-trip lands
@@ -94,17 +102,19 @@ with exit 1.
 Flags:
   --profile <name>   Skip the profile-name prompt
   --base-url <url>      Skip the URL prompt (http:// or https://)
-  --no-browser          Print verification_url instead of opening browser
+  --device              Device-code flow instead of OAuth (headless hosts)
+  --no-browser          Print verification_url instead of opening browser (--device only)
   --no-warnings         Suppress config-file file-mode warnings to stderr
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings, flagInsecure)
+			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings, flagInsecure, flagDevice)
 		},
 	}
 
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Profile name to write (DNS-1123 label)")
 	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
-	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser")
+	cmd.Flags().BoolVar(&flagDevice, "device", false, "Use the device-code flow (headless hosts) instead of OAuth")
+	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false, "Print verification_url; do not open the browser (--device only)")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
 		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
@@ -114,7 +124,7 @@ Flags:
 
 // runLogin is the RunE body, extracted so newLoginCmd's closure stays
 // short.
-func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings, insecure bool) error {
+func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings, insecure, device bool) error {
 	ctx := cmd.Context()
 
 	// Step 1 — synthetic-mode gate via the centralized 06-07 helper.
@@ -183,7 +193,35 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 
-	// Step 5 — device-code init.
+	// Step 5 (OAuth, the default) — browser ceremony via the AS. An OAuth
+	// profile never carries a pk_: the access token is the credential.
+	if !device {
+		existing := file.Profiles[name]
+		clientID := ""
+		if existing != nil && existing.OAuth != nil && existing.URL == url {
+			clientID = existing.OAuth.ClientID // cached DCR id; "" re-registers
+		}
+		_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
+		creds, err := (&oauthlogin.Client{BaseURL: url}).Login(ctx, clientID)
+		if err != nil {
+			return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
+		}
+		dep := &config.Profile{URL: url, OAuth: creds}
+		if existing != nil {
+			dep.EK = existing.EK
+		}
+		file.Profiles[name] = dep
+		if file.Default == "" {
+			file.Default = name
+		}
+		if err := config.Save(configPath, file); err != nil {
+			return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+		}
+		_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli token` to print an access token\n", name)
+		return nil
+	}
+
+	// Step 5 (--device) — device-code init.
 	initResp, err := devicecode.Init(ctx, url)
 	if err != nil {
 		return err

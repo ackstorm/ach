@@ -129,6 +129,7 @@ func TestLogin_HappyPath_WritesConfig(t *testing.T) {
 
 	stdout, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -194,6 +195,7 @@ func TestLogin_RejectInvalidScheme(t *testing.T) {
 
 	_, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", "ftp://insecure",
 		"--no-browser",
 	)
@@ -215,6 +217,7 @@ func TestLogin_RefusesHTTP_ByDefault(t *testing.T) {
 	loginTestEnv(t)
 	_, _, code, err := executeLogin(t,
 		"--profile", "dev",
+		"--device",
 		"--base-url", "http://localhost:8080",
 		"--no-browser",
 	)
@@ -232,6 +235,7 @@ func TestLogin_AllowsHTTP_WithInsecureFlag(t *testing.T) {
 	loginTestEnv(t)
 	_, _, _, err := executeLogin(t,
 		"--profile", "dev",
+		"--device",
 		"--base-url", "http://127.0.0.1:1",
 		"--no-browser",
 		"--insecure",
@@ -247,6 +251,7 @@ func TestLogin_AllowsHTTP_WithInsecureEnv(t *testing.T) {
 	t.Setenv("ACH_INSECURE", "1")
 	_, _, _, err := executeLogin(t,
 		"--profile", "dev",
+		"--device",
 		"--base-url", "http://127.0.0.1:1",
 		"--no-browser",
 	)
@@ -279,6 +284,7 @@ func TestLogin_AutoSetsDefault(t *testing.T) {
 
 	_, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -307,6 +313,7 @@ func TestLogin_OverwritesPriorPK(t *testing.T) {
 
 	_, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts1.URL,
 		"--no-browser",
 	)
@@ -319,6 +326,7 @@ func TestLogin_OverwritesPriorPK(t *testing.T) {
 	defer ts2.Close()
 	_, _, code, err = executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts2.URL,
 		"--no-browser",
 	)
@@ -349,6 +357,7 @@ func TestLogin_SyntheticModeRejected(t *testing.T) {
 
 	_, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", "https://hub.test",
 		"--no-browser",
 	)
@@ -372,6 +381,7 @@ func TestLogin_NoBrowserPrintsURL(t *testing.T) {
 
 	stdout, stderr, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -399,6 +409,7 @@ func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
 
 	stdout, _, code, err := executeLogin(t,
 		"--profile", "prod",
+		"--device",
 		"--base-url", ts.URL,
 		"--no-browser",
 	)
@@ -522,7 +533,7 @@ func TestLogin_InteractivePrompt_EmptyDefaultsToDefault(t *testing.T) {
 	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "u@example")
 	defer ts.Close()
 
-	stdout, _, code, err := executeLoginStdin(t, "\n", "--base-url", ts.URL, "--no-browser")
+	stdout, _, code, err := executeLoginStdin(t, "\n", "--device", "--base-url", ts.URL, "--no-browser")
 	if err != nil || code != exit.OK {
 		t.Fatalf("login err = %v, code = %d", err, code)
 	}
@@ -566,7 +577,7 @@ func TestLogin_InteractivePrompt_NoSuggestionWhenDefaultExists(t *testing.T) {
 	ts := newLoginTestServer(t, 0, "pk-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWXYZ", "u@example")
 	defer ts.Close()
 
-	stdout, _, code, err := executeLoginStdin(t, "\n", "--base-url", ts.URL, "--no-browser")
+	stdout, _, code, err := executeLoginStdin(t, "\n", "--device", "--base-url", ts.URL, "--no-browser")
 	if err == nil {
 		t.Fatal("expected empty profile name to be rejected when no suggestion is offered")
 	}
@@ -597,7 +608,7 @@ func TestLogin_InteractivePrompt_TypedNameOverridesSuggestion(t *testing.T) {
 	ts := newLoginTestServer(t, 0, "pk-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCWXYZ", "u@example")
 	defer ts.Close()
 
-	_, _, code, err := executeLoginStdin(t, "prod\n", "--base-url", ts.URL, "--no-browser")
+	_, _, code, err := executeLoginStdin(t, "prod\n", "--device", "--base-url", ts.URL, "--no-browser")
 	if err != nil || code != exit.OK {
 		t.Fatalf("login err = %v, code = %d", err, code)
 	}
