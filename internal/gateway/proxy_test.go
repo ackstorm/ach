@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/forwarder"
+	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/keystore"
 )
 
 func TestNewReverseProxyPreservesPathAndClearsHost(t *testing.T) {
@@ -194,9 +196,9 @@ func TestNewReverseProxySetsXForwardedHost(t *testing.T) {
 // elsewhere (this file for the gateway, headers.StripAndRewrite's table for
 // the forwarder); only a composed test catches a strip introduced BETWEEN them.
 //
-// The anonymous /.well-known route is used as the vehicle because it is the
-// one forwarder route that needs no key resolver — the header handling it
-// exercises is the shared Director path every route uses.
+// /v1 with a stub resolver is the vehicle (the /.well-known documents are
+// now composed by the forwarder itself and never reach the upstream); the
+// header handling it exercises is the shared Director path every route uses.
 func TestXForwardedHostSurvivesBothHops(t *testing.T) {
 	var gotFwdHost, gotFwdProto string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -210,14 +212,16 @@ func TestXForwardedHostSurvivesBothHops(t *testing.T) {
 	fwd := httptest.NewServer(forwarder.New(forwarder.Deps{
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		LiteLLMUpstream: upstreamURL,
+		Resolver:        stubResolver{},
 	}))
 	defer fwd.Close()
 
 	fwdURL, _ := url.Parse(fwd.URL)
 	gw := newReverseProxy(fwdURL, slog.Default())
 
-	req := httptest.NewRequest(http.MethodGet, "http://ach.example.com/.well-known/oauth-protected-resource/mcp/demo", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://ach.example.com/v1/models", nil)
 	req.Host = "ach.example.com"
+	req.Header.Set("x-ach-key", "pk_test")
 	rec := httptest.NewRecorder()
 	gw.ServeHTTP(rec, req)
 
@@ -230,4 +234,11 @@ func TestXForwardedHostSurvivesBothHops(t *testing.T) {
 	if gotFwdProto != "http" {
 		t.Errorf("X-Forwarded-Proto after gateway+forwarder: got %q want http", gotFwdProto)
 	}
+}
+
+// stubResolver accepts any bearer as a pk_ — enough to get past Authn.
+type stubResolver struct{}
+
+func (stubResolver) Resolve(context.Context, string) (*keystore.KeyInfo, error) {
+	return &keystore.KeyInfo{KeyID: "pkid_t", KeyType: keys.PrefixPk, OwnerEmail: "u@x"}, nil
 }
