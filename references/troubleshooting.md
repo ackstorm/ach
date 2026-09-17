@@ -629,6 +629,34 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ OAuth (Claude Code / Codex / opencode): 401 with `WWW-Authenticate` on every request
+
+The tool never ran its login. MCP entries hydrate writes carry **no
+credential** by design (the OAuth front door): the first request gets
+`401 WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp/<name>"`
+and the tool must be told to act on it once — `claude mcp login <name>`,
+`codex mcp login <name>`, `opencode mcp auth <name>`. None of the three
+opens a browser mid-session. If the entry carries an `Authorization` header
+or an empty `x-ach-key` (hand-edited, or a pre-OAuth hydrate), remove it:
+Claude Code disables its OAuth fallback when a credential header is
+configured.
+
+### ❌ `ach-cli token` / a tool refresh fails `invalid_grant`
+
+The 30-day refresh token is dead: it expired, was rotated by another
+process (refresh tokens are single-use — a second copy of the profile on
+another machine races the first), or Redis was flushed (the AS keeps its
+transient state there; a flush logs every OAuth client out). Fix:
+`ach-cli login` again; for a tool, its `… mcp login` again.
+
+### ❌ OAuth login works, `/mcp/<name>` is 403
+
+Not OAuth — `precheck`, exactly as for a `pk_`. The token stands for the
+user; the user reaches an `/mcp/<name>` only through an Environment whose
+`spec.authorizedTeams` includes one of their LiteLLM teams. Same fix as
+the pk_ case above ("A fresh `pk_` reaches nothing…"): the Environment's
+grants, then wait one reconcile.
+
 ### ❌ MCP client refuses: "Protected resource `<X>` does not match expected `<Y>`"
 
 ```
@@ -658,12 +686,11 @@ Walk it in this order:
    ```bash
    curl -s https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server | jq -r .resource
    ```
-   If it names LiteLLM's internal Service DNS name
-   (`http://litellm.<ns>.svc.cluster.local:4000/...`), LiteLLM is ignoring
-   `X-Forwarded-Host`. It honors that header ONLY when `general_settings`
-   sets BOTH `use_x_forwarded_for: true` AND a `mcp_trusted_proxy_ranges`
-   CIDR containing the forwarder's Pod IP — with the first alone it fails
-   closed by design. Never widen the range to `0.0.0.0/0`.
+   Since the OAuth front door the forwarder COMPOSES this document itself
+   from `ACH_BASE_URL` (`proxy.WellKnownHandler`) — LiteLLM's copy is no
+   longer relayed. A wrong host here means `ACH_BASE_URL` on the forwarder
+   Deployment is wrong. (On older builds it was LiteLLM's document and the
+   `use_x_forwarded_for` + `mcp_trusted_proxy_ranges` opt-in applied.)
 
 3. **Is the scheme wrong but the host right** (`http://ach.example.com`)?
    The Ingress is not sending `X-Forwarded-Proto`. The gateway only fills

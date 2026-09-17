@@ -34,6 +34,9 @@ staticClients:
     redirectURIs:
       - http://ach.e2e.local:8080/platform/auth/sso/callback
       - https://ach.e2e.local:8080/platform/auth/sso/callback
+      # OAuth front door: platform-api's AS is a second OIDC client leg.
+      - http://ach.e2e.local:8080/platform/oauth/as-callback
+      - https://ach.e2e.local:8080/platform/oauth/as-callback
 
 connectors:
   - type: mockCallback
