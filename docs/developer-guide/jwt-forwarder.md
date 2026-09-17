@@ -240,7 +240,7 @@ miss.
 > `resource_metadata` rather than advertise a document the client will
 > reject. §1.5 is what makes that safe: ACH supplies the pointer itself.
 
-### The metadata route
+### The metadata route — ACH composes both discovery documents
 
 RFC 9728 §3 places the well-known segment *between the authority and the
 resource path* (following RFC 8414, not RFC 8615) — so for resource
@@ -248,28 +248,73 @@ resource path* (following RFC 8414, not RFC 8615) — so for resource
 `https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server`,
 a **sibling** of `/mcp/my-server`, not a child.
 
-The forwarder mounts that subtree **outside** the Authn group, alongside
-JWKS:
+The forwarder mounts the discovery surface **outside** the Authn group,
+alongside JWKS, and **serves it itself** (`proxy.WellKnownHandler`):
 
 ```go
-r.Handle("/.well-known/oauth-protected-resource/*", proxy.New(hdeps.Deps))
+wk := proxy.WellKnownHandler(deps.BaseURL)
+r.Handle("/.well-known/oauth-authorization-server", wk)   // RFC 8414 — jwt.ASMetadata
+r.Handle("/.well-known/oauth-protected-resource", wk)     // RFC 9728 — the API root
+r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /mcp/<name>, /a2a/<name>
 ```
 
-Anonymous by design (RFC 9728 §5): a client fetches this document
-precisely because it does not yet hold a credential — gating it on
-`x-ach-key` makes the ceremony unstartable.
+| Document | `resource` / `issuer` | Points at |
+|---|---|---|
+| `/.well-known/oauth-authorization-server` | `ACH_BASE_URL` | platform-api's `/platform/oauth/{register,authorize,token}`, `jwks_uri` = the forwarder's JWKS |
+| `/.well-known/oauth-protected-resource` | `ACH_BASE_URL` | `authorization_servers: [ACH_BASE_URL]` |
+| `…/oauth-protected-resource/mcp/<name>` | `ACH_BASE_URL/mcp/<name>` | same |
+| `…/oauth-protected-resource/a2a/<name>` | `ACH_BASE_URL/a2a/<name>` | same |
+
+Any other path under the PRM segment (`/v1`, `/mcp/`, `/mcp/a/b`) is 404.
+**LiteLLM's PRM document is no longer relayed** — the client must be sent
+to ACH's authorization server, not LiteLLM's, so the `X-Forwarded-Host`
+opt-in below is no longer load-bearing for discovery (it stays documented
+because backends proxied directly still read it).
+
+Anonymous by design (RFC 9728 §5): a client fetches these documents
+precisely because it does not yet hold a credential — gating them makes
+the ceremony unstartable.
 
 > `/.well-known/jwks.json` is registered explicitly and therefore
 > **shadows** the one LiteLLM also serves. That is required, not
 > incidental: backends point `AUTH_JWT_JWKS_URI` at ACH and must receive
 > ACH's Ed25519 signing keys, never LiteLLM's.
 
-### Required LiteLLM configuration
+### The challenge on a missing credential
 
-`/mcp/*` traffic traverses LiteLLM (§3), and LiteLLM builds the
+`middleware.Authn` (with `AuthnOptions.Challenge = proxy.ChallengeFor(base)`)
+answers an anonymous request with `401` and
+
+```
+WWW-Authenticate: Bearer resource_metadata="<ACH_BASE_URL>/.well-known/oauth-protected-resource[/mcp/<name>|/a2a/<name>]"
+```
+
+The pointer names the **service root**, never the dialled path: streamable
+HTTP appends `/messages` and session segments, and RFC 9728 §3.2 has the
+client compare the document's `resource` against the server it configured.
+This is what starts the OAuth ceremony for Claude Code, Codex and opencode
+(`docs/developer-guide/oauth-client-conformance.md`).
+
+### Credential slots
+
+Authn reads, in order, `x-ach-key`, `x-api-key`, `Authorization: Bearer`.
+A `pk_`/`ek_` or an ACH OAuth JWS is resolved and its header removed; a raw
+`sk-…` (any slot) passes through on the forwarder as the LiteLLM key with
+**no ACH identity** (no precheck, no per-target JWT, no audit actor —
+`middleware.RawLiteLLMKeyFromCtx`); `Authorization` is otherwise **left
+alone** — `headers.StripAndRewrite` no longer deletes it — because it may
+carry the upstream provider's own credential (Claude Code on an Anthropic
+subscription: Anthropic's OAuth in `Authorization`, ours in `x-ach-key`).
+On `/mcp` + `/a2a` the per-target ACH JWT overwrites it.
+
+### Required LiteLLM configuration (direct backends only)
+
+`/mcp/*` traffic traverses LiteLLM (§3), and LiteLLM builds its own
 document's `resource` / `authorization_servers` from the request base URL
-(`get_request_base_url`). It honors `X-Forwarded-Host` / `-Proto` /
-`-Port` **only** when `general_settings` sets **both** of these:
+(`get_request_base_url`). ACH no longer serves that document, but a
+backend ACH proxies to directly may still consume `X-Forwarded-Host`.
+LiteLLM honors `X-Forwarded-Host` / `-Proto` / `-Port` **only** when
+`general_settings` sets **both** of these:
 
 ```yaml
 general_settings:
@@ -283,62 +328,28 @@ With `use_x_forwarded_for` alone LiteLLM deliberately fails closed
 and these URLs become `redirect_uri`s. **Never set the range to
 `0.0.0.0/0`**; scope it to the forwarder's Pod CIDR.
 
-Measured on LiteLLM `v1.99.1`, through ACH, **with `PROXY_BASE_URL` unset**:
-
-| LiteLLM config | `resource` returned |
-|---|---|
-| neither key | `http://litellm.<ns>.svc.cluster.local:4000/mcp` ❌ |
-| both keys | `https://ach.example.com/mcp` ✅ |
-
-> **⚠ `PROXY_BASE_URL` short-circuits all of the above.**
-> `get_request_base_url` returns it verbatim **before** any `X-Forwarded-*`
-> handling:
->
-> ```python
-> configured: Final = _resolve_proxy_base_url_env()
-> if configured:
->     return configured          # returns BEFORE the trusted-proxy branch
-> ```
->
-> Most real deployments set it — the admin UI, OAuth callbacks and spend
-> links need it — and on those `use_x_forwarded_for`,
-> `mcp_trusted_proxy_ranges` and `X-Forwarded-Host` are **unreachable code**
-> on this path. Unsetting it is not a workaround either: an Ingress behind a
-> TLS-terminating L4 load balancer truthfully reports `http`, so the pointer
-> becomes `http://ach.example.com/…` — a wrong scheme traded for a wrong
-> host. §1.5 is what actually closes this.
-
-This failure is **silent** — no error is logged at any hop. The client
-simply refuses with `does not match expected …`, which looks identical to
-the route not existing at all.
+> **⚠ `PROXY_BASE_URL` short-circuits all of the above** —
+> `get_request_base_url` returns it verbatim before any `X-Forwarded-*`
+> handling. That is one of the reasons ACH composes the documents itself.
 
 ### Scope
 
-The forwarder serves the protected-resource document only. The rest of
-LiteLLM's OAuth surface —
-`/.well-known/oauth-authorization-server*`,
-`/.well-known/openid-configuration`, and the ceremony endpoints under
+The forwarder serves the two discovery documents; the ceremony endpoints
+are platform-api's `/platform/oauth/{register,authorize,as-callback,token}`
+(reached through the gateway on the same origin). LiteLLM's own OAuth
+surface — `/.well-known/openid-configuration` and
 `/v1/mcp/oauth/{authorize,token,register}` — is **not** exposed
-anonymously: the first two are unmounted (404) and the last sits inside
-the Authn group (`401 missing_key`). Completing a full OAuth grant
-through ACH would require opening that surface, which is an open design
-decision, not an oversight.
-
-Deployments that control their ingress can bypass ACH for the metadata
-path entirely — an `Exact` match outranks the catch-all prefix route, and
-Istio preserves the original `Host`:
-
-```yaml
-hostnames: [ach.example.com]
-rules:
-  - matches:
-      - path: {type: Exact, value: /.well-known/oauth-protected-resource/mcp/my-server}
-    backendRefs: [{name: my-server-headless, port: 8000}]
-```
+anonymously: the first is unmounted (404) and the rest sit inside the
+Authn group (`401 missing_key`).
 
 ---
 
 ## 1.5 Auth-challenge rewrite — pointing `resource_metadata` at ACH
+
+> A request with **no credential at all** never reaches LiteLLM: Authn
+> answers it with the pointer directly (§1.4 "The challenge on a missing
+> credential"). The rewrite below covers the other case — a credentialed
+> request that LiteLLM's MCP gateway itself challenges.
 
 Header forwarding (§1.4) gets the public hostname as far as LiteLLM. On the
 `/mcp` path that is not enough, for two upstream reasons measured on

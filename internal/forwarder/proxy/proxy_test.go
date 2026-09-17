@@ -125,8 +125,8 @@ func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	if req.Host != "" {
 		t.Errorf("req.Host = %q; want empty (Go fills from URL.Host)", req.Host)
 	}
-	if got := req.Header.Get("Authorization"); got != "" {
-		t.Errorf("Authorization = %q; want empty (stripped before JWT-LAST write)", got)
+	if got := req.Header.Get("Authorization"); got != "Bearer evil" {
+		t.Errorf("Authorization = %q; want passed through (Authn already consumed any ACH credential)", got)
 	}
 	if got := req.Header.Get("x-ach-key"); got != "" {
 		t.Errorf("x-ach-key = %q; want stripped", got)
@@ -175,10 +175,13 @@ func TestDirector_V2HeaderParity(t *testing.T) {
 	if got := req.Header.Get("x-litellm-api-key"); got != material {
 		t.Errorf("x-litellm-api-key = %q; want bare %q on /v2", got, material)
 	}
-	for _, h := range []string{"Authorization", "x-ach-key", "X-Goog-Api-Key"} {
+	for _, h := range []string{"x-ach-key", "X-Goog-Api-Key"} {
 		if got := req.Header.Get(h); got != "" {
 			t.Errorf("%s = %q; want stripped on /v2", h, got)
 		}
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer evil" {
+		t.Errorf("Authorization = %q; want passed through on /v2", got)
 	}
 }
 

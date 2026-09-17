@@ -73,8 +73,8 @@ func newAS(t *testing.T) *asFixture {
 		t.Fatal(err)
 	}
 	f := &asFixture{store: store, deps: OAuthDeps{
-		Auth:   Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		Store:  store, Signer: signer,
+		Auth:  Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		Store: store, Signer: signer,
 		Issuer: "https://ach.test", Audience: "ach",
 		AccessTTL: time.Hour, RefreshTTL: 30 * 24 * time.Hour,
 	}}

@@ -3,11 +3,13 @@
 package forwarder_test
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/forwarder"
@@ -78,18 +80,18 @@ func TestV2RegisteredInsideAuthnGroup(t *testing.T) {
 }
 
 // TestProtectedResourceMetadataIsAnonymous pins issue #177: the RFC 9728
-// protected-resource document must be reachable WITHOUT x-ach-key (§5 assumes
-// an unauthenticated GET — a client fetches it precisely because it holds no
-// credential yet), and must be proxied to LiteLLM with the path and the
-// X-Forwarded-Host published by the gateway hop both intact.
+// protected-resource document must be reachable WITHOUT a credential (§5
+// assumes an unauthenticated GET — a client fetches it precisely because it
+// holds none yet) and is now COMPOSED BY ACH: `resource` is the service root
+// under ACH_BASE_URL and `authorization_servers` names ACH's own AS, never
+// LiteLLM's. LiteLLM is not contacted.
 //
 // Status discriminates: 404 => not mounted; 401 => wrongly inside the Authn
-// group; 200 => reached the upstream anonymously (PASS).
+// group; 200 => served anonymously (PASS).
 func TestProtectedResourceMetadataIsAnonymous(t *testing.T) {
-	var gotPath, gotFwdHost string
-	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotFwdHost = r.Header.Get("X-Forwarded-Host")
+	litellmCalls := 0
+	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		litellmCalls++
 		_, _ = io.WriteString(w, `{"resource":"ok"}`)
 	}))
 	defer litellm.Close()
@@ -101,21 +103,35 @@ func TestProtectedResourceMetadataIsAnonymous(t *testing.T) {
 	h := forwarder.New(forwarder.Deps{
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		LiteLLMUpstream: upstream,
+		BaseURL:         "https://ach.example.com",
 	})
 
-	const path = "/.well-known/oauth-protected-resource/mcp/mcp-gitlab-ro"
+	for path, resource := range map[string]string{
+		"/.well-known/oauth-protected-resource/mcp/mcp-gitlab-ro": "https://ach.example.com/mcp/mcp-gitlab-ro",
+		"/.well-known/oauth-protected-resource":                   "https://ach.example.com",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: got %d, want 200 (mounted, anonymous)", path, rec.Code)
+		}
+		var doc struct {
+			Resource string   `json:"resource"`
+			AS       []string `json:"authorization_servers"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if doc.Resource != resource || len(doc.AS) != 1 || doc.AS[0] != "https://ach.example.com" {
+			t.Errorf("%s: %+v", path, doc)
+		}
+	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
-	req.Header.Set("X-Forwarded-Host", "ach.example.com")
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET %s: got %d, want 200 (mounted, anonymous)", path, rec.Code)
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"registration_endpoint":"https://ach.example.com/platform/oauth/register"`) {
+		t.Errorf("AS metadata: %d %s", rec.Code, rec.Body)
 	}
-	if gotPath != path {
-		t.Errorf("upstream path: got %q want %q", gotPath, path)
-	}
-	if gotFwdHost != "ach.example.com" {
-		t.Errorf("X-Forwarded-Host did not survive the forwarder hop: got %q", gotFwdHost)
+	if litellmCalls != 0 {
+		t.Errorf("LiteLLM must not be consulted for discovery documents; calls=%d", litellmCalls)
 	}
 }

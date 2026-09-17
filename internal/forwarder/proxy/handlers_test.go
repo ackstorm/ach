@@ -165,6 +165,7 @@ func upstreamSpy() (*httptest.Server, *upstreamRec) {
 		defer rec.mu.Unlock()
 		rec.calls++
 		rec.lastAuth = r.Header.Get("Authorization")
+		rec.lastKey = r.Header.Get("X-Litellm-Api-Key")
 		body, _ := io.ReadAll(r.Body)
 		rec.lastBody = body
 		w.WriteHeader(http.StatusOK)
@@ -177,7 +178,14 @@ type upstreamRec struct {
 	mu       sync.Mutex
 	calls    int
 	lastAuth string
+	lastKey  string
 	lastBody []byte
+}
+
+func (r *upstreamRec) LastKey() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastKey
 }
 
 func (r *upstreamRec) Calls() int {
@@ -576,5 +584,47 @@ func TestHandlerMCP_PkGroupsClaim(t *testing.T) {
 	got := signer.lastClaims.Groups
 	if len(got) != 1 || got[0] != "team-a" {
 		t.Errorf("groups = %v; want [team-a] (intersection only)", got)
+	}
+}
+
+// A caller with a raw sk- has no KeyContext; the proxy writes the key
+// through and, on /mcp, skips precheck and the per-target JWT mint.
+func TestHandlers_RawLiteLLMKeyIsForwardedWithoutIdentity(t *testing.T) {
+	upstream, rec := upstreamSpy()
+	defer upstream.Close()
+	signer := &mockSigner{}
+	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+
+	for _, tc := range []struct {
+		path string
+		h    http.HandlerFunc
+	}{
+		{"/v1/chat/completions", HandlerV1(deps)},
+		{"/mcp/some-server", chiWithName(HandlerMCP(deps))},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader("{}"))
+		req = req.WithContext(middleware.WithRawLiteLLMKey(req.Context(), "sk-raw-123"))
+		req.Header.Set("Authorization", "Bearer upstream-cred")
+		w := httptest.NewRecorder()
+		tc.h(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", tc.path, w.Code, w.Body)
+		}
+		if got := rec.LastKey(); !strings.HasSuffix(got, "sk-raw-123") {
+			t.Fatalf("%s: upstream x-litellm-api-key = %q", tc.path, got)
+		}
+	}
+	if signer.signCalls != 0 {
+		t.Fatalf("no JWT may be minted for a raw key; signCalls=%d", signer.signCalls)
+	}
+}
+
+// chiWithName wraps a named-route handler with a chi route context whose
+// {name} is the second path segment.
+func chiWithName(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("name", strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[1])
+		h(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
 	}
 }

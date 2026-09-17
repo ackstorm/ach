@@ -54,10 +54,6 @@ var hopByHopSet = map[string]struct{}{
 	"Upgrade":             {},
 }
 
-// authHeader is the canonical-case form of the client Authorization header
-// the forwarder unconditionally strips per D-06 (T-04-01-03 mitigation).
-const authHeader = "Authorization"
-
 // googAPIKeyHeader is the native-Gemini credential header (canonical case).
 // Clients authenticate to the forwarder via x-ach-key, never x-goog-api-key,
 // so any incoming value is stripped on every route; the proxy Director re-sets
@@ -72,7 +68,6 @@ const googAPIKeyHeader = "X-Goog-Api-Key" //nolint:gosec // G101 false positive:
 //     with textproto.CanonicalMIMEHeaderKey so the resulting set matches the
 //     canonical-case keys http.Header stores.
 //  2. STRIP PASS — iterate h and delete every key matching any of:
-//     - canonical "Authorization"
 //     - canonical "X-Goog-Api-Key" (native-Gemini credential; the /gemini
 //     Director re-sets it with the caller's own key)
 //     - case-insensitive prefix "x-litellm-", UNLESS the lowercased key is in
@@ -91,8 +86,12 @@ const googAPIKeyHeader = "X-Goog-Api-Key" //nolint:gosec // G101 false positive:
 // key). An empty litellmAPIKey writes an empty header (callers with no stored
 // material — pre-migration keys — fail upstream, by design).
 //
-// The function NEVER writes Authorization — JWT attach for /mcp + /a2a is the
-// per-route handler's job AFTER this generic transform runs.
+// The function NEVER touches Authorization: middleware.Authn already removed
+// it when it carried an ACH credential (pk_/ek_/OAuth JWT or a raw sk-);
+// anything still in it is the upstream provider's own credential (Claude
+// Code on an Anthropic subscription, ours in x-ach-key) and LiteLLM forwards
+// it. JWT attach for /mcp + /a2a is the per-route handler's job AFTER this
+// generic transform runs (it overwrites).
 //
 // Pure: no I/O, no logging, no panics on adversarial Connection token shapes
 // (empty value, whitespace-only, comma-only, multi-value entries).
@@ -116,10 +115,6 @@ func StripAndRewrite(h http.Header, litellmAPIKey string) {
 
 	// 2. Strip pass.
 	for k := range h {
-		if k == authHeader {
-			delete(h, k)
-			continue
-		}
 		if k == googAPIKeyHeader {
 			delete(h, k)
 			continue

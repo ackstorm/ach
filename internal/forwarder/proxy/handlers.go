@@ -108,10 +108,19 @@ type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name strin
 func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
-		kc, _ := middleware.KeyContextFromCtx(r.Context())
 		name := chi.URLParam(r, "name")
 		reqID := middleware.RequestIDFromCtx(r.Context())
 		keyTypeLabel := keyTypeFor(r.Context())
+
+		// 0. A raw LiteLLM key has no ACH identity: no precheck, no
+		//    per-target JWT. LiteLLM decides; the backend's own
+		//    requirements are the backend's business.
+		if _, raw := middleware.RawLiteLLMKeyFromCtx(r.Context()); raw {
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			rp.ServeHTTP(w, r)
+			return
+		}
+		kc, _ := middleware.KeyContextFromCtx(r.Context())
 
 		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
 		//    JWT "groups" claim (filtered at the mint below).

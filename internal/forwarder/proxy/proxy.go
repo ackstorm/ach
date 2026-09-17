@@ -105,7 +105,11 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// empty header (no fallback) — keys minted before migration 000014,
 			// or under a different DEK, fail upstream by design.
 			material := ""
-			if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMKeyMaterial != nil {
+			if raw, ok := middleware.RawLiteLLMKeyFromCtx(req.Context()); ok {
+				// The caller presented a raw LiteLLM key: no ACH identity, no
+				// sealed material — LiteLLM authenticates the key itself.
+				material = raw
+			} else if kc, ok := middleware.KeyContextFromCtx(req.Context()); ok && kc.LiteLLMKeyMaterial != nil {
 				pt, err := keycrypt.Open(deps.KeyEncryptionKey, *kc.LiteLLMKeyMaterial)
 				if err != nil {
 					// Wrong DEK / legacy plaintext row / corruption: forward no
@@ -144,7 +148,8 @@ func New(deps Deps) *httputil.ReverseProxy {
 				req.Header.Set("X-Goog-Api-Key", material)
 			}
 
-			// JWT write LAST — strip just cleared any client Authorization.
+			// JWT write LAST — overwrites whatever Authorization the client
+			// sent: on /mcp + /a2a the per-target ACH JWT is the credential.
 			if token, present := jwtFromCtx(req.Context()); present {
 				req.Header.Set("Authorization", "Bearer "+token)
 			}

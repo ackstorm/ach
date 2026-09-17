@@ -46,22 +46,31 @@ func TestStripAndRewrite(t *testing.T) {
 		apiKey string
 		want   http.Header
 	}{
-		// ---- Test 1: strip Authorization (every scheme) ----
+		// ---- Test 1: Authorization is LEFT ALONE (Authn consumed ours;
+		// what remains is the upstream provider's credential) ----
 		{
-			name: "01_strip_Authorization_Bearer",
+			name: "01_keep_Authorization_Bearer",
 			in: http.Header{
 				"Authorization": {"Bearer xyz"},
 			},
 			apiKey: userKey,
-			want:   oneWritten(),
+			want: func() http.Header {
+				h := oneWritten()
+				h.Set("Authorization", "Bearer xyz")
+				return h
+			}(),
 		},
 		{
-			name: "01b_strip_Authorization_Basic",
+			name: "01b_keep_Authorization_Basic",
 			in: http.Header{
 				"Authorization": {"Basic dXNlcjpwYXNz"},
 			},
 			apiKey: userKey,
-			want:   oneWritten(),
+			want: func() http.Header {
+				h := oneWritten()
+				h.Set("Authorization", "Basic dXNlcjpwYXNz")
+				return h
+			}(),
 		},
 
 		// ---- Test 2: case-insensitive x-litellm-* strip ----
@@ -351,7 +360,7 @@ func TestStripAndRewrite(t *testing.T) {
 		// ---- Test 21: empty value for the user key ----
 		{
 			name:   "21_empty_user_key",
-			in:     http.Header{"Authorization": {"Bearer x"}},
+			in:     http.Header{"X-Ach-Key": {"pk_x"}},
 			apiKey: "",
 			want: func() http.Header {
 				h := http.Header{}
@@ -383,7 +392,6 @@ func TestStripAndRewrite(t *testing.T) {
 			name: "23_full_mix",
 			in: func() http.Header {
 				h := http.Header{}
-				h.Set("Authorization", "Bearer x")
 				h.Set("X-Ach-Key", "pk_a")
 				h.Set("X-Litellm-Foo", "v")
 				h.Set("User-Agent", "curl/8")
@@ -420,7 +428,7 @@ func TestStripAndRewrite(t *testing.T) {
 
 		// ---- Test 25: Authorization mixed case canonical form is "Authorization" ----
 		{
-			name: "25_authorization_lowercase_canonical_still_stripped",
+			name: "25_authorization_and_other_kept",
 			in: http.Header{
 				// http.Header is canonical-case; the key here is already canonical.
 				"Authorization": {"Bearer xyz"},
@@ -429,6 +437,7 @@ func TestStripAndRewrite(t *testing.T) {
 			apiKey: userKey,
 			want: func() http.Header {
 				h := oneWritten()
+				h.Set("Authorization", "Bearer xyz")
 				h.Set("X-Other", "keep")
 				return h
 			}(),
@@ -508,8 +517,7 @@ func TestStripAndRewrite(t *testing.T) {
 		{
 			name: "10_idempotency_marker", // exercised by the dedicated subtest below
 			in: http.Header{
-				"Authorization": {"Bearer x"},
-				"X-Ach-Key":     {"pk_idem"},
+				"X-Ach-Key": {"pk_idem"},
 			},
 			apiKey: userKey,
 			want:   oneWritten(),
@@ -576,10 +584,10 @@ func TestStripAndRewrite(t *testing.T) {
 // are stripped.
 func TestStripAndRewrite_WritesUserKeyNoKeyID(t *testing.T) {
 	h := http.Header{}
-	h.Set("Authorization", "Bearer client-jwt")   // must be stripped
-	h.Set("X-Litellm-Api-Key", "client-supplied") // must be stripped then overwritten
-	h.Set("X-Litellm-Key-Id", "client-keyid")     // must be stripped, NOT re-added
-	h.Set("X-Ach-Key", "pk_secret")               // must be stripped
+	h.Set("Authorization", "Bearer upstream-cred") // must be KEPT (Authn already consumed ours)
+	h.Set("X-Litellm-Api-Key", "client-supplied")  // must be stripped then overwritten
+	h.Set("X-Litellm-Key-Id", "client-keyid")      // must be stripped, NOT re-added
+	h.Set("X-Ach-Key", "pk_secret")                // must be stripped
 
 	headers.StripAndRewrite(h, "sk-user-material")
 
@@ -589,8 +597,8 @@ func TestStripAndRewrite_WritesUserKeyNoKeyID(t *testing.T) {
 	if _, ok := h["X-Litellm-Key-Id"]; ok {
 		t.Errorf("x-litellm-key-id must NOT be set (delegation removed)")
 	}
-	if h.Get("Authorization") != "" {
-		t.Errorf("Authorization must be stripped")
+	if h.Get("Authorization") != "Bearer upstream-cred" {
+		t.Errorf("Authorization must pass through untouched, got %q", h.Get("Authorization"))
 	}
 }
 
