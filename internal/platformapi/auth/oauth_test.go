@@ -1,0 +1,422 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package auth
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
+)
+
+func newOAuthStore(t *testing.T) *OAuthStore {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	return &OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
+}
+
+type sample struct{ Sub string }
+
+func TestOAuthStore_PutGetTakeAndKinds(t *testing.T) {
+	s := newOAuthStore(t)
+	ctx := context.Background()
+	if err := s.Put(ctx, "code", "abc", sample{"u@x"}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var got sample
+	ok, err := s.Get(ctx, "code", "abc", &got)
+	if err != nil || !ok || got.Sub != "u@x" {
+		t.Fatalf("get: ok=%v err=%v got=%+v", ok, err, got)
+	}
+	if ok, _ := s.Get(ctx, "client", "abc", &got); ok {
+		t.Fatal("kinds must not share a namespace")
+	}
+	if ok, _ = s.Take(ctx, "code", "abc", &got); !ok {
+		t.Fatal("take: expected hit")
+	}
+	if ok, _ = s.Get(ctx, "code", "abc", &got); ok {
+		t.Fatal("take must be single-use")
+	}
+}
+
+// asFixture is a bare chi router with only the AS mounted.
+type asFixture struct {
+	r     chi.Router
+	deps  OAuthDeps
+	store *OAuthStore
+}
+
+func newAS(t *testing.T) *asFixture {
+	t.Helper()
+	store := newOAuthStore(t)
+	signer := jwt.NewEd25519Signer()
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+	if err := jwt.LoadSeed(signer, "k1", seed); err != nil {
+		t.Fatal(err)
+	}
+	f := &asFixture{store: store, deps: OAuthDeps{
+		Auth:   Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		Store:  store, Signer: signer,
+		Issuer: "https://ach.test", Audience: "ach",
+		AccessTTL: time.Hour, RefreshTTL: 30 * 24 * time.Hour,
+	}}
+	f.mount()
+	return f
+}
+
+func (f *asFixture) mount() {
+	f.r = chi.NewRouter()
+	f.r.Route("/platform/oauth", MountOAuth(f.deps))
+}
+
+func (f *asFixture) do(t *testing.T, method, path string, body any, hdr map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var rd *bytes.Reader
+	switch b := body.(type) {
+	case nil:
+		rd = bytes.NewReader(nil)
+	case string:
+		rd = bytes.NewReader([]byte(b))
+	default:
+		j, _ := json.Marshal(b)
+		rd = bytes.NewReader(j)
+	}
+	req := httptest.NewRequest(method, path, rd)
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	f.r.ServeHTTP(w, req)
+	return w
+}
+
+func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
+	m := jwt.ASMetadata("https://ach.test/")
+	want := map[string]string{
+		"issuer":                 "https://ach.test",
+		"authorization_endpoint": "https://ach.test/platform/oauth/authorize",
+		"token_endpoint":         "https://ach.test/platform/oauth/token",
+		"registration_endpoint":  "https://ach.test/platform/oauth/register",
+		"jwks_uri":               "https://ach.test/.well-known/jwks.json",
+	}
+	for k, v := range want {
+		if m[k] != v {
+			t.Errorf("%s = %v, want %s", k, m[k], v)
+		}
+	}
+	if cc, _ := m["code_challenge_methods_supported"].([]string); len(cc) != 1 || cc[0] != "S256" {
+		t.Errorf("S256 must be advertised: %v", m["code_challenge_methods_supported"])
+	}
+	if ss, _ := m["scopes_supported"].([]string); len(ss) != 1 || ss[0] != "offline_access" {
+		t.Errorf("offline_access must be advertised: %v", m["scopes_supported"])
+	}
+}
+
+func TestRegister(t *testing.T) {
+	f := newAS(t)
+	w := f.do(t, "POST", "/platform/oauth/register", map[string]any{
+		"client_name":   "OpenCode",
+		"redirect_uris": []string{"http://127.0.0.1:19876/mcp/oauth/callback", "http://localhost:53421/callback", "https://app.example/cb"},
+	}, map[string]string{"Content-Type": "application/json"})
+	if w.Code != 201 {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["client_id"] == "" || body["token_endpoint_auth_method"] != "none" {
+		t.Fatalf("body: %v", body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"http://evil.example/cb"}}, nil); w.Code != 400 {
+		t.Fatalf("http off loopback: %d", w.Code)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"client_name": "x"}, nil); w.Code != 400 {
+		t.Fatalf("no redirects: %d", w.Code)
+	}
+}
+
+func registerClient(t *testing.T, f *asFixture, uris ...string) string {
+	t.Helper()
+	if len(uris) == 0 {
+		uris = []string{"http://127.0.0.1:5000/cb"}
+	}
+	w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": uris}, nil)
+	var body struct {
+		ClientID string `json:"client_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	return body.ClientID
+}
+
+const (
+	testChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" // S256 of testVerifier (RFC 7636 App. B)
+	testVerifier  = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
+
+func authorizeURL(clientID string, over map[string]string) string {
+	q := url.Values{
+		"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {"http://127.0.0.1:5000/cb"},
+		"state": {"xyz"}, "code_challenge": {testChallenge}, "code_challenge_method": {"S256"},
+		"resource": {"https://ach.test/mcp/whatever"}, // RFC 8707: Claude Code and Codex send it; must be tolerated
+	}
+	for k, v := range over {
+		if v == "" {
+			q.Del(k)
+		} else {
+			q.Set(k, v)
+		}
+	}
+	return "/platform/oauth/authorize?" + q.Encode()
+}
+
+func withFakeDex(f *asFixture, email string) *asFixture {
+	f.deps.DexLogin = func(state, _ string) string { return "http://dex.test/auth?state=" + state }
+	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, error) {
+		if code != "dexcode" {
+			return "", errors.New("bad code")
+		}
+		return email, nil
+	}
+	f.deps.Provision = func(_ context.Context, _ string) (string, error) { return "litellm-user-1", nil }
+	f.mount()
+	return f
+}
+
+func mustQuery(t *testing.T, raw, key string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Query().Get(key)
+}
+
+func TestAuthorize(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	cid := registerClient(t, f)
+
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	if w.Code != 302 || !strings.HasPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=") {
+		t.Fatalf("happy: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	w = f.do(t, "GET", authorizeURL(cid, map[string]string{"redirect_uri": "https://evil.example/cb"}), nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("unregistered uri: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	w = f.do(t, "GET", authorizeURL(cid, map[string]string{"code_challenge": ""}), nil, nil)
+	loc := w.Header().Get("Location")
+	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "error=invalid_request") || !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("no pkce: %d %s", w.Code, loc)
+	}
+
+	cid2 := registerClient(t, f, "http://localhost:1/callback")
+	w = f.do(t, "GET", authorizeURL(cid2, map[string]string{"redirect_uri": "http://localhost:53421/callback"}), nil, nil)
+	if w.Code != 302 {
+		t.Fatalf("RFC 8252 §7.3 port change refused: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestASCallback(t *testing.T) {
+	f := withFakeDex(newAS(t), "U@X.com")
+	cid := registerClient(t, f)
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil)
+	loc := w.Header().Get("Location")
+	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "code=") || !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("%d %s", w.Code, loc)
+	}
+	code := mustQuery(t, loc, "code")
+	var rec oauthCode
+	ok, _ := f.store.Get(context.Background(), "code", code, &rec)
+	if !ok || rec.Sub != "u@x.com" || rec.UserID != "litellm-user-1" || rec.ClientID != cid {
+		t.Fatalf("code record: ok=%v %+v", ok, rec)
+	}
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=x&state=nope", nil, nil); w.Code != 400 {
+		t.Fatalf("no pending: %d", w.Code)
+	}
+	// pending is single-use
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil); w.Code != 400 {
+		t.Fatalf("pending replay: %d", w.Code)
+	}
+}
+
+// fakeOAuthPKs is the DB seam: the active oauth row per email + a revoke log.
+type fakeOAuthPKs struct {
+	rows    map[string]*db.PkKeyInfo
+	revoked []string
+	minted  int
+}
+
+func installFakePKs(f *asFixture) *fakeOAuthPKs {
+	p := &fakeOAuthPKs{rows: map[string]*db.PkKeyInfo{}}
+	f.deps.OAuthPKLookup = func(_ context.Context, email string) (*db.PkKeyInfo, error) { return p.rows[email], nil }
+	f.deps.OAuthPKRevoke = func(_ context.Context, id string) error {
+		p.revoked = append(p.revoked, id)
+		for e, r := range p.rows {
+			if r.KeyID == id {
+				delete(p.rows, e)
+			}
+		}
+		return nil
+	}
+	f.deps.Mint = func(_ context.Context, email, userID, purpose string) (string, db.PkInsertRow, error) {
+		if p.rows[email] != nil {
+			return "", db.PkInsertRow{}, errors.New("unique index: one active oauth row per owner")
+		}
+		p.minted++
+		tok, mat := "lt-"+email, "sealed"
+		row := db.PkInsertRow{KeyID: fmt.Sprintf("pkid_%d", p.minted), OwnerEmail: email, ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+			LiteLLMUserID: &userID, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Purpose: purpose}
+		p.rows[email] = &db.PkKeyInfo{KeyID: row.KeyID, OwnerEmail: email, ExpiresAt: row.ExpiresAt, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Status: "active"}
+		return "pk-discarded", row, nil
+	}
+	f.mount()
+	return p
+}
+
+func seedCode(t *testing.T, f *asFixture, cid string) {
+	t.Helper()
+	err := f.store.Put(context.Background(), "code", "thecode", oauthCode{
+		oauthPending: oauthPending{ClientID: cid, RedirectURI: "http://127.0.0.1:5000/cb", State: "s", CodeChallenge: testChallenge},
+		Sub:          "u@x.com", UserID: "litellm-user-1",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func tokenForm(cid string, over map[string]string) string {
+	v := url.Values{"grant_type": {"authorization_code"}, "code": {"thecode"}, "client_id": {cid},
+		"redirect_uri": {"http://127.0.0.1:5000/cb"}, "code_verifier": {testVerifier},
+		"resource": {"https://ach.test"}} // RFC 8707 on /token too — tolerated
+	for k, val := range over {
+		v.Set(k, val)
+	}
+	return v.Encode()
+}
+
+var formHdr = map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+
+type tokenBody struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func TestToken_CodeExchangeMintsTheOAuthPKAndAJWT(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+
+	w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var body tokenBody
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body.TokenType != "Bearer" || body.ExpiresIn != 3600 || body.RefreshToken == "" {
+		t.Fatalf("body: %+v", body) // token_type + expires_in are hard client requirements
+	}
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("token responses must be no-store")
+	}
+	sub, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
+	if err != nil || sub != "u@x.com" {
+		t.Fatalf("sub=%q err=%v", sub, err)
+	}
+	if pks.minted != 1 || pks.rows["u@x.com"] == nil {
+		t.Fatalf("oauth pk_ not minted: %+v", pks)
+	}
+
+	// second login reuses the row
+	seedCode(t, f, cid)
+	f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr)
+	if pks.minted != 1 || len(pks.revoked) != 0 {
+		t.Fatalf("second login must reuse the row: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+func TestToken_RotatesAnOAuthPKThatIsAboutToExpire(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	tok := "lt-old"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(30 * time.Minute), LiteLLMToken: &tok, Status: "active"}
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 1 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_old" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+func TestToken_Rejects(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	a, b := registerClient(t, f), registerClient(t, f)
+
+	seedCode(t, f, a)
+	w := f.do(t, "POST", "/platform/oauth/token", tokenForm(a, map[string]string{"code_verifier": "wrong-wrong-wrong-wrong-wrong-wrong-wrong-wrong"}), formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("wrong verifier: %d %s", w.Code, w.Body)
+	}
+	if w = f.do(t, "POST", "/platform/oauth/token", tokenForm(a, nil), formHdr); w.Code != 400 {
+		t.Fatalf("code must be single-use: %d", w.Code)
+	}
+
+	seedCode(t, f, a)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(b, nil), formHdr); w.Code != 400 {
+		t.Fatalf("other client: %d", w.Code)
+	}
+
+	w = f.do(t, "POST", "/platform/oauth/token", "grant_type=password", formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "unsupported_grant_type") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var second tokenBody
+	_ = json.Unmarshal(w.Body.Bytes(), &second)
+	if second.RefreshToken == "" || second.RefreshToken == first.RefreshToken {
+		t.Fatal("refresh must rotate")
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("old refresh must be dead: %d", w.Code)
+	}
+}
