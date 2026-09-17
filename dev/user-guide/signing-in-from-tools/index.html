@@ -10,27 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/reviews/2026-06-01/platform-api/">
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/user-guide/signing-in-from-tools/">
       
       
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../../developer-guide/architecture/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
-        <title>Platform-API — Code Quality Review - ACH — Agent Capability Hub</title>
+        <title>Signing in from Claude Code, Codex and opencode - ACH — Agent Capability Hub</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -74,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#platform-api-code-quality-review" class="md-skip">
+        <a href="#signing-in-from-claude-code-codex-and-opencode" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +96,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Platform-API — Code Quality Review
+              Signing in from Claude Code, Codex and opencode
             
           </span>
         </div>
@@ -228,7 +232,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../.." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -249,7 +253,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -265,11 +269,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../../user-guide/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -289,7 +295,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
           
   
   
@@ -309,7 +315,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
           
   
   
@@ -329,7 +335,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
           
   
   
@@ -363,7 +369,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -393,7 +399,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -474,7 +480,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -502,7 +508,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -534,28 +540,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -573,7 +582,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -591,7 +600,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -616,10 +625,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../user-guide/signing-in-from-tools/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -635,6 +671,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-servers-the-tool-signs-in-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP servers: the tool signs in itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-endpoint-a-credential-helper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model endpoint: a credential helper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-token-can-reach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a token can reach
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-goes-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When it goes wrong
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -708,7 +808,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
         
   
   
@@ -736,7 +836,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/development/" class="md-nav__link">
+      <a href="../../developer-guide/development/" class="md-nav__link">
         
   
   
@@ -764,7 +864,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
         
   
   
@@ -792,7 +892,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
         
   
   
@@ -820,7 +920,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
         
   
   
@@ -909,7 +1009,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
         
   
   
@@ -937,7 +1037,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
         
   
   
@@ -965,7 +1065,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
         
   
   
@@ -1054,7 +1154,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
         
   
   
@@ -1102,6 +1202,58 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-servers-the-tool-signs-in-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP servers: the tool signs in itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-endpoint-a-credential-helper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model endpoint: a credential helper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-token-can-reach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a token can reach
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-goes-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When it goes wrong
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1120,123 +1272,106 @@
   
 
 
-<h1 id="platform-api-code-quality-review">Platform-API — Code Quality Review<a class="headerlink" href="#platform-api-code-quality-review" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p><strong>Date:</strong> 2026-06-01 · <strong>Service:</strong> Platform-API · <strong>Packages:</strong> <code>platformapi</code> · <strong>Lines:</strong> 5.7k
-<strong>Findings:</strong> 20 raw → <strong>19 verified</strong> · Read-only review, no code changed.
-<strong>Method:</strong> parallel reviewers per package → adversarial verification (grep/read to refute) → synthesis.
-<strong>Axes:</strong> dead code · complexity · over-engineering · optimization · duplication.
-Part of the <a href="../">full codebase review</a>.</p>
-</blockquote>
-<hr />
-<h1 id="ach-platform-api-code-quality-review">ACH platform-api — Code Quality Review<a class="headerlink" href="#ach-platform-api-code-quality-review" title="Permanent link">&para;</a></h1>
-<h2 id="deduplication-note">Deduplication note<a class="headerlink" href="#deduplication-note" title="Permanent link">&para;</a></h2>
-<p>Three findings describe the <strong>same root</strong> (envkeys <code>CreateHandler</code> 3-SELECT redundancy): <code>envkeys/optimization</code> and <code>plumbing/optimization</code> are duplicates — merged into <strong>OPT-1</strong>. Two findings describe the <strong>same root</strong> (<code>hasIntersect</code> 4-copy duplication): <code>hydrate/duplication</code> and <code>environments_teams/duplication</code> — merged into <strong>DUP-4</strong>. Net: 19 findings → 16 unique.</p>
-<hr />
-<h2 id="optimization">Optimization<a class="headerlink" href="#optimization" title="Permanent link">&para;</a></h2>
-<h3 id="opt-1-internalplatformapienvkeyshandlergo184-259-low">OPT-1 · <code>internal/platformapi/envkeys/handler.go:184-259</code> · low<a class="headerlink" href="#opt-1-internalplatformapienvkeyshandlergo184-259-low" title="Permanent link">&para;</a></h3>
+<h1 id="signing-in-from-claude-code-codex-and-opencode">Signing in from Claude Code, Codex and opencode<a class="headerlink" href="#signing-in-from-claude-code-codex-and-opencode" title="Permanent link">&para;</a></h1>
+<p>ACH is an OAuth 2.1 authorization server for humans. You sign in once through
+your organisation's SSO (Dex) and hold a short-lived access token (1 h,
+refreshed for 30 days) that works for <strong>model calls</strong> and <strong>MCP servers</strong>
+through ACH. Agents and CI keep the persistent <code>pk_</code> / <code>ek_</code> keys; this page
+is for a person at a keyboard.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ach-cli<span class="w"> </span>login<span class="w">                 </span><span class="c1"># browser → SSO → "Signed in to ACH"</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ach-cli<span class="w"> </span>token<span class="w">                 </span><span class="c1"># prints ONE line: a fresh access token</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ach-cli<span class="w"> </span>env<span class="w"> </span>hydrate<span class="w"> </span>&lt;env&gt;<span class="w">     </span><span class="c1"># writes the tools' configs (no credential inside — see below)</span>
+</code></pre></div>
+<p><code>ach-cli login --device</code> keeps the old device-code flow for an SSH host
+without a browser (it mints a <code>pk_</code>, as before).</p>
+<h2 id="mcp-servers-the-tool-signs-in-itself">MCP servers: the tool signs in itself<a class="headerlink" href="#mcp-servers-the-tool-signs-in-itself" title="Permanent link">&para;</a></h2>
+<p>Hydrate writes MCP entries with <strong>no credential</strong>. The tool's first request
+gets a <code>401</code> with an RFC 9728 pointer and the tool runs the OAuth ceremony
+against ACH on its own — one browser round-trip per tool, then it refreshes
+by itself. The entries hydrate writes are exactly these:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// Claude Code — .mcp.json. `type` is REQUIRED with url.</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="p">{</span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"ach"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http"</span><span class="p">,</span><span class="w"> </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span><span class="p">}}}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// opencode — opencode.json. OAuth is opt-OUT: a remote entry without "oauth": false gets a provider.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="p">{</span><span class="nt">"mcp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"ach"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"remote"</span><span class="p">,</span><span class="w"> </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span><span class="p">}}}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Codex — config.toml</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">[mcp_servers.ach]</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span>
+</code></pre></div>
+<p>Login is explicit in all three — none opens a browser mid-session:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Command</th>
+<th>Then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td><code>claude mcp login &lt;name&gt;</code> (<code>--no-browser</code> for SSH)</td>
+<td><code>/mcp</code> shows the server connected</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td><code>codex mcp login &lt;name&gt;</code></td>
+<td>tools list</td>
+</tr>
+<tr>
+<td>opencode</td>
+<td><code>opencode mcp auth &lt;name&gt;</code></td>
+<td>tools list</td>
+</tr>
+</tbody>
+</table>
+<p>Do <strong>not</strong> add an <code>Authorization</code> header (or an empty <code>x-ach-key</code>) to these
+entries: Claude Code disables its OAuth fallback entirely when a credential
+header is configured, and opencode's configured headers silently override the
+token it obtained. <code>x-ach-environment</code> is informational and fine.</p>
+<h2 id="model-endpoint-a-credential-helper">Model endpoint: a credential helper<a class="headerlink" href="#model-endpoint-a-credential-helper" title="Permanent link">&para;</a></h2>
+<p>No tool runs OAuth against a model base URL. Each takes a <strong>command that
+prints a credential to stdout</strong>; <code>ach-cli token</code> is that command. <code>ach-cli
+env hydrate</code> writes the wiring for you when you are signed in as a person
+(OAuth or a <code>pk_</code> — never for an <code>ek_</code>); this is what it writes, for the
+case you set it up by hand:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// Claude Code — settings.json. Pair with ANTHROPIC_BASE_URL=https://ach.example.com</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="p">{</span><span class="nt">"apiKeyHelper"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-cli token"</span><span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Codex — config.toml</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">[model_providers.ach]</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"ACH"</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://ach.example.com/v1"</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">wire_api</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"responses"</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">[model_providers.ach.auth]</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"ach-cli token"</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="n">refresh_interval_ms</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">300000</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># opencode — the provider comes from ACH's opencode document (optional adapter, not yet served);</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># until then set the provider block by hand with apiKey: "{env:ACH_TOKEN}" and export ACH_TOKEN="$(ach-cli token)".</span>
+</code></pre></div>
+<p><code>ach-cli token</code> prints <strong>only</strong> the credential (Claude Code's helper fails on
+any extra output); every diagnostic goes to stderr. On an OAuth profile it
+refreshes automatically when the stored token is within 6 minutes of expiry,
+under a file lock so Claude Code and Codex firing it together spend one
+refresh, not two; on a <code>pk_</code> profile it prints the <code>pk_</code>.</p>
+<h2 id="what-a-token-can-reach">What a token can reach<a class="headerlink" href="#what-a-token-can-reach" title="Permanent link">&para;</a></h2>
+<p>Nothing changes in authorization: the token stands for you, exactly as a
+<code>pk_</code> does. What you can reach is what your Environments' <code>authorizedTeams</code>
+grant — <code>/mcp/&lt;name&gt;</code> is still gated by the forwarder's precheck, <code>/v1</code> by
+LiteLLM's team/access-group model. Revoking your OAuth key from the admin
+key list (<code>ach-cli admin keys</code>, purpose <code>oauth</code>) kills the session within a
+minute; the next <code>ach-cli token</code> after that mints a fresh one.</p>
+<h2 id="when-it-goes-wrong">When it goes wrong<a class="headerlink" href="#when-it-goes-wrong" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Problem:</strong> <code>CreateHandler</code> issues 3 identical <code>SELECT … FROM environments</code> for one row — <code>GetEnvironment</code> (184), then <code>EnvironmentTerminating</code> (210) and <code>EnvironmentAccessGroupSynced</code> (236), the latter two re-calling <code>GetEnvironment</code> internally (<code>store/store.go:82,109</code>), all uncached PK lookups.</li>
-<li><strong>Fix:</strong> Derive both predicates off the <code>env</code> row already held at line 184: <code>terminating := env.DeletionTimestamp != nil</code>; add a row-taking synced helper (e.g. <code>store.AccessGroupSyncedFromRow(env)</code> wrapping the unexported <code>decodeAccessGroupSynced</code>). 3 SELECTs → 1.</li>
+<li><strong>401 with <code>WWW-Authenticate</code> on every request</strong> — the tool never ran
+  login: <code>claude mcp login</code> / <code>codex mcp login</code> / <code>opencode mcp auth</code>.</li>
+<li><strong><code>invalid_grant</code> on refresh</strong> — the 30-day refresh expired or Redis was
+  flushed: <code>ach-cli login</code> again.</li>
+<li><strong>OAuth works, <code>/mcp/&lt;name&gt;</code> is 403</strong> — precheck, same as a <code>pk_</code>: the
+  Environment's <code>authorizedTeams</code> do not include one of yours.</li>
 </ul>
-<hr />
-<h2 id="duplication">Duplication<a class="headerlink" href="#duplication" title="Permanent link">&para;</a></h2>
-<h3 id="dup-1-internalplatformapienvkeyshandlergo184-373-medium">DUP-1 · <code>internal/platformapi/envkeys/handler.go:184-373</code> · medium<a class="headerlink" href="#dup-1-internalplatformapienvkeyshandlergo184-373-medium" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Internal-error audit+render block copy-pasted 6× and the <code>classifyLitellmErr</code> triple 4× inside <code>CreateHandler</code> (~10 sites; pattern also recurs in Revoke/List handlers).</li>
-<li><strong>Fix:</strong> Two handler-bound helpers — <code>emitInternalError(logMsg, err)</code> and <code>emitLitellmError(err, logMsg)</code> — each doing <code>Logger.Error</code> + <code>EmitAudit</code> + <code>render.Error</code>. Collapses ~10 blocks to one-liners.</li>
-</ul>
-<h3 id="dup-4-hasintersect-4-hydratehandlergo383-environmentshandlergo273-envkeyshandlergo537-storestorego183-low">DUP-4 · <code>hasIntersect</code> ×4: <code>hydrate/handler.go:383</code>, <code>environments/handler.go:273</code>, <code>envkeys/handler.go:537</code>, <code>store/store.go:183</code> · low<a class="headerlink" href="#dup-4-hasintersect-4-hydratehandlergo383-environmentshandlergo273-envkeyshandlergo537-storestorego183-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Identical 12-line set-intersection helper duplicated byte-for-byte across 4 packages; comments claim deliberate-for-boundaries, but the primitive is trivial.</li>
-<li><strong>Fix:</strong> Promote one exported <code>teams.HasIntersect(a, b []string) bool</code> (the <code>achteams</code>/<code>teams</code> package already exists as natural home) and delete the 4 copies. Caveat: <code>envkeys</code> does <strong>not</strong> import <code>store</code> today (uses a local <code>envStore</code> interface), so the home must be <code>teams</code>, not <code>store</code>, to avoid new coupling.</li>
-</ul>
-<h3 id="dup-2-internalplatformapiauthssogo276-523-low">DUP-2 · <code>internal/platformapi/auth/sso.go:276-523</code> · low<a class="headerlink" href="#dup-2-internalplatformapiauthssogo276-523-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CallbackHandler</code> repeats the audit-emit + render-error failure block ~14×, varying only by (outcome, status, msg, actor, optional keyID); outcome string must be hand-synced between <code>EmitAudit</code> and <code>render.Error</code> (footgun).</li>
-<li><strong>Fix:</strong> <code>func (deps Deps) fail(ctx, w, actor, outcome string, status int, msg, reqID, keyID string)</code> emitting both; each branch becomes one call. Cuts ~80 lines, threads outcome once.</li>
-</ul>
-<h3 id="dup-3-internalplatformapiadminhandlergo159-219-vs-392-416-231-305-vs-422-447-low">DUP-3 · <code>internal/platformapi/admin/handler.go:159-219 vs 392-416, 231-305 vs 422-447</code> · low<a class="headerlink" href="#dup-3-internalplatformapiadminhandlergo159-219-vs-392-416-231-305-vs-422-447-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> pk_/ek_ revoke side-effect sequences (DB flip / LiteLLM RevokeKey / Redis Del / audit) reimplemented near-verbatim in <code>revokePkInline</code>/<code>revokeEkInline</code> vs the rendering handlers — ordering + audit shape live in 2 places per key type.</li>
-<li><strong>Fix:</strong> Rendering handlers call the inline helpers and translate returned error to HTTP/audit; keep ordering + audit construction in one place per type. Preserve pk_ WARN-04 (LiteLLM-unreachable = 200, not error).</li>
-</ul>
-<hr />
-<h2 id="complexity">Complexity<a class="headerlink" href="#complexity" title="Permanent link">&para;</a></h2>
-<h3 id="cplx-1-internalplatformapienvkeyshandlergo149-497-low">CPLX-1 · <code>internal/platformapi/envkeys/handler.go:149-497</code> · low<a class="headerlink" href="#cplx-1-internalplatformapienvkeyshandlergo149-497-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CreateHandler</code> is a 349-line single <code>http.HandlerFunc</code> closure walking 8 inline steps; bulk is repeated audit boilerplate (flat guard clauses, shallow nesting).</li>
-<li><strong>Fix:</strong> Apply DUP-1 helpers first; then extract <code>validateAndLoadEnv</code> (3a/3b/4), <code>provisionUser</code> (6), <code>mintAndInsert</code> (7/8) so the handler orchestrates ~6 calls.</li>
-</ul>
-<h3 id="cplx-2-internalplatformapiauthssogo265-571-low">CPLX-2 · <code>internal/platformapi/auth/sso.go:265-571</code> · low<a class="headerlink" href="#cplx-2-internalplatformapiauthssogo265-571-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CallbackHandler</code> is a ~305-line closure with 14 sequential guard branches + the D-20 Redis-writeback tail; full 8-step OIDC sequence inlined.</li>
-<li><strong>Fix:</strong> Apply DUP-2 <code>fail</code> helper; then extract steps 6-8 (mint pk_/keyid, hash, KeyGenerate, INSERT+compensate, audit+writeback) into <code>mintAndPersistPK(...) (callbackResponse, error)</code>, leaving the handler as the linear OIDC orchestrator.</li>
-</ul>
-<hr />
-<h2 id="over-engineering">Over-engineering<a class="headerlink" href="#over-engineering" title="Permanent link">&para;</a></h2>
-<h3 id="oe-1-internalplatformapiadminhandlergo28-36-199-201-293-295-406-408-437-439-low">OE-1 · <code>internal/platformapi/admin/handler.go:28-36, 199-201, 293-295, 406-408, 437-439</code> · low<a class="headerlink" href="#oe-1-internalplatformapiadminhandlergo28-36-199-201-293-295-406-408-437-439-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Best-effort Redis <code>DEL</code> under <code>adminCacheKeyPrefix</code> ("ach:revoke:keyid:") in all 4 revoke paths is a guaranteed-miss — nothing SETs/reads that namespace (real key is "ach:key:"+credential_hash); justified only as observability/ordering invariant, exists to satisfy one test. Note: ek_ paths <em>could</em> do the real <code>"ach:key:"+row.CredentialHash</code> DEL (hash is available there) as <code>envkeys</code> does.</li>
-<li><strong>Fix:</strong> Drop the no-op <code>Del</code> (60s TTL already bounds staleness), or wire the real invalidation where <code>credential_hash</code> is available; if kept for symmetry, collapse 4 lines into one helper.</li>
-</ul>
-<h3 id="oe-2-internalplatformapiauthssogo722-747-low">OE-2 · <code>internal/platformapi/auth/sso.go:722-747</code> · low<a class="headerlink" href="#oe-2-internalplatformapiauthssogo722-747-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>containsCaseInsensitive</code> is a 26-line manual double-loop doing strict byte equality (NOT case-insensitive, per its own comment); single caller passes literal <code>"404"</code>; the "avoids ToLower alloc" rationale is moot (no lowering; <code>strings.Contains</code> allocates nothing).</li>
-<li><strong>Fix:</strong> Replace call with <code>strings.Contains(err.Error(), "404")</code> (strings already imported) and delete the function.</li>
-</ul>
-<h3 id="oe-3-internalplatformapiadminhandlergo550-573-low">OE-3 · <code>internal/platformapi/admin/handler.go:550-573</code> · low<a class="headerlink" href="#oe-3-internalplatformapiadminhandlergo550-573-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Hand-rolled 24-line <code>itoa</code> reimplements <code>strconv.Itoa</code> for one audit Extra value; sibling <code>environments/handler.go</code> already imports <code>strconv.Itoa</code>.</li>
-<li><strong>Fix:</strong> Delete <code>itoa</code>, use <code>strconv.Itoa(revokedCount)</code> at handler.go:379, import <code>strconv</code>.</li>
-</ul>
-<hr />
-<h2 id="dead-code">Dead code<a class="headerlink" href="#dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="dc-1-internalplatformapiservergo92-107-low">DC-1 · <code>internal/platformapi/server.go:92-107</code> · low<a class="headerlink" href="#dc-1-internalplatformapiservergo92-107-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Orphaned doc-comment narrates an <code>envKeysStoreAdapter</code> type that exists nowhere, mislocates <code>envkeysDBAdapter</code> ("inline below" — actually in <code>adapters.go:19</code>), and references a nonexistent <code>adminDB</code>.</li>
-<li><strong>Fix:</strong> Delete the comment block; optionally fold a one-liner next to <code>envkeysDBAdapter</code> in <code>adapters.go</code>.</li>
-</ul>
-<h3 id="dc-2-internalplatformapimiddlewarechi_compatgo1-37-low">DC-2 · <code>internal/platformapi/middleware/chi_compat.go:1-37</code> · low<a class="headerlink" href="#dc-2-internalplatformapimiddlewarechi_compatgo1-37-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Entire file is vestigial — pins the chi import + compile-asserts middleware signatures, both now redundant (<code>server.go</code> uses <code>chi.NewRouter()</code>/<code>chi.Router</code> directly and <code>r.Use(pamw.RequestID/ContentTypeJSON)</code> type-checks at call site); comments admit Plan 03-06 (shipped) supersedes it.</li>
-<li><strong>Fix:</strong> Delete the file entirely.</li>
-</ul>
-<h3 id="dc-3-internalplatformapiauthssogo41-50-low">DC-3 · <code>internal/platformapi/auth/sso.go:41-50</code> · low<a class="headerlink" href="#dc-3-internalplatformapiauthssogo41-50-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.OIDCProvider *oidc.Provider</code> is write-only — verification runs through <code>IDTokenVerifier</code>; provider threaded through two Deps structs for a nonexistent consumer.</li>
-<li><strong>Fix:</strong> Drop <code>OIDCProvider</code> from <code>auth.Deps</code> + assignments at <code>server.go:129</code> and <code>platform_api.go:253</code>.</li>
-</ul>
-<h3 id="dc-4-internalplatformapiadminhandlergo60-low">DC-4 · <code>internal/platformapi/admin/handler.go:60</code> · low<a class="headerlink" href="#dc-4-internalplatformapiadminhandlergo60-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Pepper []byte</code> never read in admin package (comment admits "compositional parity"); dead plumbing across 3 files.</li>
-<li><strong>Fix:</strong> Drop <code>Pepper</code> from <code>admin.Deps</code> + assignment at <code>server.go:205</code>.</li>
-</ul>
-<h3 id="dc-5-internalplatformapihydratehandlergo4850-low">DC-5 · <code>internal/platformapi/hydrate/handler.go:48,50</code> · low<a class="headerlink" href="#dc-5-internalplatformapihydratehandlergo4850-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Allowlist</code> + <code>Deps.Namespace</code> never read (docs say "retained for parity/symmetry"); admin status comes from <code>keyCtx.IsAdmin</code>, Store is namespace-scoped.</li>
-<li><strong>Fix:</strong> Drop both fields + assignments at <code>server.go:169,171</code>.</li>
-</ul>
-<h3 id="dc-6-internalplatformapienvironmentshandlergo5456-low">DC-6 · <code>internal/platformapi/environments/handler.go:54,56</code> · low<a class="headerlink" href="#dc-6-internalplatformapienvironmentshandlergo5456-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Allowlist</code> + <code>Deps.Namespace</code> write-only (same parity rationale as DC-5); populated at <code>server.go:192,194</code>, never read.</li>
-<li><strong>Fix:</strong> Drop both fields + the <code>server.go:192,194</code> assignments.</li>
-</ul>
-<h3 id="dc-7-internalplatformapienvkeyshandlergo506525-530-low">DC-7 · <code>internal/platformapi/envkeys/handler.go:506,525-530</code> · low<a class="headerlink" href="#dc-7-internalplatformapienvkeyshandlergo506525-530-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>insertErrCredentialHashCollision</code> class computed by <code>classifyInsertError</code> but the sole caller branches only on <code>insertErrEkidCollision</code>; a credential-hash collision falls through identically to <code>insertErrOther</code> — the const + switch case are unreachable-behavior dead code.</li>
-<li><strong>Fix:</strong> Fold case 525-529 into <code>default</code>/<code>return insertErrOther</code> and drop the const — OR wire the caller to skip compensation on hash collision if that was the intent.</li>
-</ul>
-<hr />
-<h2 id="top-5-highest-leverage-cleanups">Top 5 highest-leverage cleanups<a class="headerlink" href="#top-5-highest-leverage-cleanups" title="Permanent link">&para;</a></h2>
-<ol>
-<li><strong>DUP-1</strong> (<code>envkeys/handler.go</code> ~10 copy-pasted audit+render blocks) — only <strong>medium</strong> finding; two small helpers kill the largest copy-paste hazard AND directly unlock CPLX-1's extraction. Highest leverage: one change, two findings resolved.</li>
-<li><strong>DUP-2 + CPLX-2</strong> (<code>sso.go</code> <code>CallbackHandler</code>) — the <code>fail</code> helper removes ~80 lines and the outcome-must-match-twice footgun in an <strong>audit/security path</strong>, then enables the <code>mintAndPersistPK</code> extraction. One helper, two findings.</li>
-<li><strong>DUP-4</strong> (<code>hasIntersect</code> ×4 → <code>teams.HasIntersect</code>) — kills duplication across 4 packages in one move; pure trivial helper, lowest risk, repo-wide hygiene win (mind the <code>envkeys</code>→<code>store</code> coupling caveat: home is <code>teams</code>).</li>
-<li><strong>DC-2 + DC-1</strong> (<code>chi_compat.go</code> deletion + <code>server.go</code> orphan comment) — delete a whole vestigial file plus a misleading comment that actively misdescribes the codebase; zero-risk, removes reader-confusion debt.</li>
-<li><strong>OPT-1</strong> (<code>envkeys</code> 3→1 SELECTs) — the only behavioral/perf finding; small surgical change (read predicates off the in-hand <code>env</code> row), trims 2 DB round-trips per ek_ create. Low impact but the only one that changes runtime behavior.</li>
-</ol>
-<p>Batch the 6 write-only <code>Deps</code>-field removals (DC-3/4/5/6 + OPT-1's neighbors) as a single mechanical sweep — individually trivial, collectively they de-clutter the Deps bags and <code>server.go</code> wire-up in one commit.</p>
 
 
 
@@ -1308,10 +1443,10 @@ Part of the <a href="../">full codebase review</a>.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

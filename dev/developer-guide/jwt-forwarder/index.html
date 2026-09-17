@@ -618,6 +618,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/signing-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -878,10 +906,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#the-metadata-route" class="md-nav__link">
+  <a href="#the-metadata-route-ach-composes-both-discovery-documents" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The metadata route
+        The metadata route — ACH composes both discovery documents
       
     </span>
   </a>
@@ -889,10 +917,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-litellm-configuration" class="md-nav__link">
+  <a href="#the-challenge-on-a-missing-credential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required LiteLLM configuration
+        The challenge on a missing credential
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-slots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential slots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-litellm-configuration-direct-backends-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required LiteLLM configuration (direct backends only)
       
     </span>
   </a>
@@ -1443,10 +1493,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#the-metadata-route" class="md-nav__link">
+  <a href="#the-metadata-route-ach-composes-both-discovery-documents" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The metadata route
+        The metadata route — ACH composes both discovery documents
       
     </span>
   </a>
@@ -1454,10 +1504,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-litellm-configuration" class="md-nav__link">
+  <a href="#the-challenge-on-a-missing-credential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required LiteLLM configuration
+        The challenge on a missing credential
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-slots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential slots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-litellm-configuration-direct-backends-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required LiteLLM configuration (direct backends only)
       
     </span>
   </a>
@@ -1925,98 +1997,121 @@ it never reaches the pod:</p>
 <code>resource_metadata</code> rather than advertise a document the client will
 reject. §1.5 is what makes that safe: ACH supplies the pointer itself.</p>
 </blockquote>
-<h3 id="the-metadata-route">The metadata route<a class="headerlink" href="#the-metadata-route" title="Permanent link">&para;</a></h3>
+<h3 id="the-metadata-route-ach-composes-both-discovery-documents">The metadata route — ACH composes both discovery documents<a class="headerlink" href="#the-metadata-route-ach-composes-both-discovery-documents" title="Permanent link">&para;</a></h3>
 <p>RFC 9728 §3 places the well-known segment <em>between the authority and the
 resource path</em> (following RFC 8414, not RFC 8615) — so for resource
 <code>https://ach.example.com/mcp/my-server</code> the document lives at
 <code>https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server</code>,
 a <strong>sibling</strong> of <code>/mcp/my-server</code>, not a child.</p>
-<p>The forwarder mounts that subtree <strong>outside</strong> the Authn group, alongside
-JWKS:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource/*"</span><span class="p">,</span><span class="w"> </span><span class="nx">proxy</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="nx">hdeps</span><span class="p">.</span><span class="nx">Deps</span><span class="p">))</span>
+<p>The forwarder mounts the discovery surface <strong>outside</strong> the Authn group,
+alongside JWKS, and <strong>serves it itself</strong> (<code>proxy.WellKnownHandler</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">wk</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">proxy</span><span class="p">.</span><span class="nx">WellKnownHandler</span><span class="p">(</span><span class="nx">deps</span><span class="p">.</span><span class="nx">BaseURL</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-authorization-server"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 8414 — jwt.ASMetadata</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">     </span><span class="c1">// RFC 9728 — the API root</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource/*"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 9728 — /mcp/&lt;name&gt;, /a2a/&lt;name&gt;</span>
 </code></pre></div>
-<p>Anonymous by design (RFC 9728 §5): a client fetches this document
-precisely because it does not yet hold a credential — gating it on
-<code>x-ach-key</code> makes the ceremony unstartable.</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th><code>resource</code> / <code>issuer</code></th>
+<th>Points at</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/.well-known/oauth-authorization-server</code></td>
+<td><code>ACH_BASE_URL</code></td>
+<td>platform-api's <code>/platform/oauth/{register,authorize,token}</code>, <code>jwks_uri</code> = the forwarder's JWKS</td>
+</tr>
+<tr>
+<td><code>/.well-known/oauth-protected-resource</code></td>
+<td><code>ACH_BASE_URL</code></td>
+<td><code>authorization_servers: [ACH_BASE_URL]</code></td>
+</tr>
+<tr>
+<td><code>…/oauth-protected-resource/mcp/&lt;name&gt;</code></td>
+<td><code>ACH_BASE_URL/mcp/&lt;name&gt;</code></td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>…/oauth-protected-resource/a2a/&lt;name&gt;</code></td>
+<td><code>ACH_BASE_URL/a2a/&lt;name&gt;</code></td>
+<td>same</td>
+</tr>
+</tbody>
+</table>
+<p>Any other path under the PRM segment (<code>/v1</code>, <code>/mcp/</code>, <code>/mcp/a/b</code>) is 404.
+<strong>LiteLLM's PRM document is no longer relayed</strong> — the client must be sent
+to ACH's authorization server, not LiteLLM's, so the <code>X-Forwarded-Host</code>
+opt-in below is no longer load-bearing for discovery (it stays documented
+because backends proxied directly still read it).</p>
+<p>Anonymous by design (RFC 9728 §5): a client fetches these documents
+precisely because it does not yet hold a credential — gating them makes
+the ceremony unstartable.</p>
 <blockquote>
 <p><code>/.well-known/jwks.json</code> is registered explicitly and therefore
 <strong>shadows</strong> the one LiteLLM also serves. That is required, not
 incidental: backends point <code>AUTH_JWT_JWKS_URI</code> at ACH and must receive
 ACH's Ed25519 signing keys, never LiteLLM's.</p>
 </blockquote>
-<h3 id="required-litellm-configuration">Required LiteLLM configuration<a class="headerlink" href="#required-litellm-configuration" title="Permanent link">&para;</a></h3>
-<p><code>/mcp/*</code> traffic traverses LiteLLM (§3), and LiteLLM builds the
+<h3 id="the-challenge-on-a-missing-credential">The challenge on a missing credential<a class="headerlink" href="#the-challenge-on-a-missing-credential" title="Permanent link">&para;</a></h3>
+<p><code>middleware.Authn</code> (with <code>AuthnOptions.Challenge = proxy.ChallengeFor(base)</code>)
+answers an anonymous request with <code>401</code> and</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>WWW-Authenticate: Bearer resource_metadata="&lt;ACH_BASE_URL&gt;/.well-known/oauth-protected-resource[/mcp/&lt;name&gt;|/a2a/&lt;name&gt;]"
+</code></pre></div>
+<p>The pointer names the <strong>service root</strong>, never the dialled path: streamable
+HTTP appends <code>/messages</code> and session segments, and RFC 9728 §3.2 has the
+client compare the document's <code>resource</code> against the server it configured.
+This is what starts the OAuth ceremony for Claude Code, Codex and opencode
+(<code>docs/developer-guide/oauth-client-conformance.md</code>).</p>
+<h3 id="credential-slots">Credential slots<a class="headerlink" href="#credential-slots" title="Permanent link">&para;</a></h3>
+<p>Authn reads, in order, <code>x-ach-key</code>, <code>x-api-key</code>, <code>Authorization: Bearer</code>.
+A <code>pk_</code>/<code>ek_</code> or an ACH OAuth JWS is resolved and its header removed; a raw
+<code>sk-…</code> (any slot) passes through on the forwarder as the LiteLLM key with
+<strong>no ACH identity</strong> (no precheck, no per-target JWT, no audit actor —
+<code>middleware.RawLiteLLMKeyFromCtx</code>); <code>Authorization</code> is otherwise <strong>left
+alone</strong> — <code>headers.StripAndRewrite</code> no longer deletes it — because it may
+carry the upstream provider's own credential (Claude Code on an Anthropic
+subscription: Anthropic's OAuth in <code>Authorization</code>, ours in <code>x-ach-key</code>).
+On <code>/mcp</code> + <code>/a2a</code> the per-target ACH JWT overwrites it.</p>
+<h3 id="required-litellm-configuration-direct-backends-only">Required LiteLLM configuration (direct backends only)<a class="headerlink" href="#required-litellm-configuration-direct-backends-only" title="Permanent link">&para;</a></h3>
+<p><code>/mcp/*</code> traffic traverses LiteLLM (§3), and LiteLLM builds its own
 document's <code>resource</code> / <code>authorization_servers</code> from the request base URL
-(<code>get_request_base_url</code>). It honors <code>X-Forwarded-Host</code> / <code>-Proto</code> /
-<code>-Port</code> <strong>only</strong> when <code>general_settings</code> sets <strong>both</strong> of these:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">general_settings</span><span class="p">:</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">use_x_forwarded_for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">mcp_trusted_proxy_ranges</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"&lt;ach-forwarder</span><span class="nv"> </span><span class="s">Pod</span><span class="nv"> </span><span class="s">CIDR&gt;"</span><span class="p p-Indicator">]</span>
+(<code>get_request_base_url</code>). ACH no longer serves that document, but a
+backend ACH proxies to directly may still consume <code>X-Forwarded-Host</code>.
+LiteLLM honors <code>X-Forwarded-Host</code> / <code>-Proto</code> / <code>-Port</code> <strong>only</strong> when
+<code>general_settings</code> sets <strong>both</strong> of these:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">general_settings</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">use_x_forwarded_for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">mcp_trusted_proxy_ranges</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"&lt;ach-forwarder</span><span class="nv"> </span><span class="s">Pod</span><span class="nv"> </span><span class="s">CIDR&gt;"</span><span class="p p-Indicator">]</span>
 </code></pre></div>
 <p>With <code>use_x_forwarded_for</code> alone LiteLLM deliberately fails closed
 (<code>litellm/proxy/auth/ip_address_utils.py</code>, <code>is_request_from_trusted_proxy</code>)
 — it cannot distinguish a trusted reverse proxy from a direct attacker,
 and these URLs become <code>redirect_uri</code>s. <strong>Never set the range to
 <code>0.0.0.0/0</code></strong>; scope it to the forwarder's Pod CIDR.</p>
-<p>Measured on LiteLLM <code>v1.99.1</code>, through ACH, <strong>with <code>PROXY_BASE_URL</code> unset</strong>:</p>
-<table>
-<thead>
-<tr>
-<th>LiteLLM config</th>
-<th><code>resource</code> returned</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>neither key</td>
-<td><code>http://litellm.&lt;ns&gt;.svc.cluster.local:4000/mcp</code> ❌</td>
-</tr>
-<tr>
-<td>both keys</td>
-<td><code>https://ach.example.com/mcp</code> ✅</td>
-</tr>
-</tbody>
-</table>
 <blockquote>
-<p><strong>⚠ <code>PROXY_BASE_URL</code> short-circuits all of the above.</strong>
-<code>get_request_base_url</code> returns it verbatim <strong>before</strong> any <code>X-Forwarded-*</code>
-handling:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">configured</span><span class="p">:</span> <span class="n">Final</span> <span class="o">=</span> <span class="n">_resolve_proxy_base_url_env</span><span class="p">()</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">if</span> <span class="n">configured</span><span class="p">:</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="k">return</span> <span class="n">configured</span>          <span class="c1"># returns BEFORE the trusted-proxy branch</span>
-</code></pre></div>
-<p>Most real deployments set it — the admin UI, OAuth callbacks and spend
-links need it — and on those <code>use_x_forwarded_for</code>,
-<code>mcp_trusted_proxy_ranges</code> and <code>X-Forwarded-Host</code> are <strong>unreachable code</strong>
-on this path. Unsetting it is not a workaround either: an Ingress behind a
-TLS-terminating L4 load balancer truthfully reports <code>http</code>, so the pointer
-becomes <code>http://ach.example.com/…</code> — a wrong scheme traded for a wrong
-host. §1.5 is what actually closes this.</p>
+<p><strong>⚠ <code>PROXY_BASE_URL</code> short-circuits all of the above</strong> —
+<code>get_request_base_url</code> returns it verbatim before any <code>X-Forwarded-*</code>
+handling. That is one of the reasons ACH composes the documents itself.</p>
 </blockquote>
-<p>This failure is <strong>silent</strong> — no error is logged at any hop. The client
-simply refuses with <code>does not match expected …</code>, which looks identical to
-the route not existing at all.</p>
 <h3 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h3>
-<p>The forwarder serves the protected-resource document only. The rest of
-LiteLLM's OAuth surface —
-<code>/.well-known/oauth-authorization-server*</code>,
-<code>/.well-known/openid-configuration</code>, and the ceremony endpoints under
+<p>The forwarder serves the two discovery documents; the ceremony endpoints
+are platform-api's <code>/platform/oauth/{register,authorize,as-callback,token}</code>
+(reached through the gateway on the same origin). LiteLLM's own OAuth
+surface — <code>/.well-known/openid-configuration</code> and
 <code>/v1/mcp/oauth/{authorize,token,register}</code> — is <strong>not</strong> exposed
-anonymously: the first two are unmounted (404) and the last sits inside
-the Authn group (<code>401 missing_key</code>). Completing a full OAuth grant
-through ACH would require opening that surface, which is an open design
-decision, not an oversight.</p>
-<p>Deployments that control their ingress can bypass ACH for the metadata
-path entirely — an <code>Exact</code> match outranks the catch-all prefix route, and
-Istio preserves the original <code>Host</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">hostnames</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">ach.example.com</span><span class="p p-Indicator">]</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">rules</span><span class="p">:</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">matches</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">Exact</span><span class="p p-Indicator">,</span><span class="nt"> value</span><span class="p">:</span><span class="w"> </span><span class="nv">/.well-known/oauth-protected-resource/mcp/my-server</span><span class="p p-Indicator">}</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">backendRefs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[{</span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="nv">my-server-headless</span><span class="p p-Indicator">,</span><span class="nt"> port</span><span class="p">:</span><span class="w"> </span><span class="nv">8000</span><span class="p p-Indicator">}]</span>
-</code></pre></div>
+anonymously: the first is unmounted (404) and the rest sit inside the
+Authn group (<code>401 missing_key</code>).</p>
 <hr />
 <h2 id="15-auth-challenge-rewrite-pointing-resource_metadata-at-ach">1.5 Auth-challenge rewrite — pointing <code>resource_metadata</code> at ACH<a class="headerlink" href="#15-auth-challenge-rewrite-pointing-resource_metadata-at-ach" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>A request with <strong>no credential at all</strong> never reaches LiteLLM: Authn
+answers it with the pointer directly (§1.4 "The challenge on a missing
+credential"). The rewrite below covers the other case — a credentialed
+request that LiteLLM's MCP gateway itself challenges.</p>
+</blockquote>
 <p>Header forwarding (§1.4) gets the public hostname as far as LiteLLM. On the
 <code>/mcp</code> path that is not enough, for two upstream reasons measured on
 <code>v1.99.1</code>:</p>
@@ -2025,11 +2120,11 @@ Istio preserves the original <code>Host</code>:</p>
    (<code>proxy/_experimental/mcp_server/server.py</code>) discards the upstream's
    <code>WWW-Authenticate</code> and synthesizes a replacement:</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">for</span> <span class="p">(</span><span class="n">srv</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">challenge_server_name</span><span class="p">),</span> <span class="p">(</span><span class="n">probe_status</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">probe_targets</span><span class="p">,</span> <span class="n">probe_results</span><span class="p">):</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="k">if</span> <span class="n">probe_status</span> <span class="o">==</span> <span class="mi">401</span><span class="p">:</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>        <span class="n">www_authenticate</span> <span class="o">=</span> <span class="n">get_passthrough_www_authenticate</span><span class="p">(</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>            <span class="n">scope</span><span class="o">=</span><span class="n">scope</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="n">challenge_server_name</span><span class="p">,</span> <span class="n">invalid_token</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">for</span> <span class="p">(</span><span class="n">srv</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">challenge_server_name</span><span class="p">),</span> <span class="p">(</span><span class="n">probe_status</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">probe_targets</span><span class="p">,</span> <span class="n">probe_results</span><span class="p">):</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="k">if</span> <span class="n">probe_status</span> <span class="o">==</span> <span class="mi">401</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="n">www_authenticate</span> <span class="o">=</span> <span class="n">get_passthrough_www_authenticate</span><span class="p">(</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>            <span class="n">scope</span><span class="o">=</span><span class="n">scope</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="n">challenge_server_name</span><span class="p">,</span> <span class="n">invalid_token</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        <span class="p">)</span>
 </code></pre></div>
 <p>(The <code>is_true_passthrough</code> block ~200 lines earlier does the opposite and
    relays it — an upstream inconsistency, not something ACH can configure
@@ -2054,18 +2149,18 @@ all. ACH guarantees this alone, with no cooperation from LiteLLM, toolhive,
 or the backend, which is what makes the forwarder the right layer for it.</p>
 <p><strong>Branch 1 — rewrite</strong> (<code>internal/forwarder/proxy/challenge.go</code>), when a
 pointer is present:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token",
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>             resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>client:    WWW-Authenticate: Bearer error="invalid_token",
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token",
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>             resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>client:    WWW-Authenticate: Bearer error="invalid_token",
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
 </code></pre></div>
 <p>Only the <strong>scheme and authority</strong> change. The path tail names the backend
 the document describes and is upstream's to choose.</p>
 <p><strong>Branch 2 — insert</strong>, when no pointer is present and the route is
 <code>/mcp/{name}</code> or <code>/a2a/{name}</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token", scope="read"
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>client:    WWW-Authenticate: Bearer error="invalid_token", scope="read",
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token", scope="read"
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>client:    WWW-Authenticate: Bearer error="invalid_token", scope="read",
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
 </code></pre></div>
 <p>Branch 2 is not hypothetical housekeeping: branch 1 alone <strong>silently
 no-ops</strong> the day LiteLLM stops discarding the backend's challenge. ACH
@@ -2143,16 +2238,16 @@ streaming test runs with the hook installed precisely to keep that honest.</p>
 <h2 id="2-backendidentitypolicy-bip-turning-jwt-mint-on">2. BackendIdentityPolicy (BIP) — turning JWT mint on<a class="headerlink" href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" title="Permanent link">&para;</a></h2>
 <p>JWT mint is <strong>opt-in per target</strong>. A <code>BackendIdentityPolicy</code> CR selects
 a route and sets <code>forwardIdentityJWT: true</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach.ackstorm.ai/v1alpha1</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BackendIdentityPolicy</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nt">metadata</span><span class="p">:</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-demo-mcp-echo</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nt">spec</span><span class="p">:</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MCPServer</span><span class="w">       </span><span class="c1"># or "A2AAgent"</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-mcp-echo</span><span class="w">   </span><span class="c1"># bare name; matches /mcp/&lt;name&gt; route</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach.ackstorm.ai/v1alpha1</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BackendIdentityPolicy</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-demo-mcp-echo</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MCPServer</span><span class="w">       </span><span class="c1"># or "A2AAgent"</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-mcp-echo</span><span class="w">   </span><span class="c1"># bare name; matches /mcp/&lt;name&gt; route</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </code></pre></div>
 <p>When the Forwarder handles <code>/mcp/&lt;name&gt;/*</code>, it looks up the BIP by
 <code>(MCPServer, &lt;name&gt;)</code> via the in-process <code>bipcache</code> (Postgres-backed
@@ -2169,7 +2264,7 @@ flow (issue #34 C1). Status conditions on the BIP CR are informational;
 the Forwarder reads from Postgres unconditionally.</p>
 <h3 id="observability-confirming-a-jwt-was-attached">Observability — confirming a JWT was attached<a class="headerlink" href="#observability-confirming-a-jwt-was-attached" title="Permanent link">&para;</a></h3>
 <p>On the mint path the Forwarder logs at <strong>Info</strong>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>forwarder: backend identity forwarded (JWT minted)  kind=MCPServer target=&lt;name&gt; aud=mcp:&lt;name&gt; owner=&lt;email&gt; request_id=...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>forwarder: backend identity forwarded (JWT minted)  kind=MCPServer target=&lt;name&gt; aud=mcp:&lt;name&gt; owner=&lt;email&gt; request_id=...
 </code></pre></div>
 <p>When no BIP matches it logs the same fact at <strong>Debug</strong>
 (<code>no backend identity policy; forwarding without JWT</code>) — raise the log
@@ -2249,16 +2344,16 @@ own credential, but it breaks the ACH JWT trust path.</p>
 <p>To opt in to forwarding, register (or re-register) the MCP server in
 LiteLLM with <code>extra_headers: ["authorization"]</code> (and <code>allow_all_keys: true</code>
 so the per-user virtual key is accepted — see §2.6.1):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: Bearer &lt;master-key&gt;'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="s1">    "server_name": "demo-mcp-echo",</span>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="s1">    "transport":   "http",</span>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="s1">    "url":         "http://ach-mcp-echo.ach-system.svc",</span>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="s1">    "extra_headers": ["authorization"],</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="s1">    "allow_all_keys": true</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="s1">  }'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: Bearer &lt;master-key&gt;'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="s1">    "server_name": "demo-mcp-echo",</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="s1">    "transport":   "http",</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="s1">    "url":         "http://ach-mcp-echo.ach-system.svc",</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="s1">    "extra_headers": ["authorization"],</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="s1">    "allow_all_keys": true</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="s1">  }'</span>
 </code></pre></div>
 <p>What the opt-in does:</p>
 <ul>
@@ -2319,33 +2414,33 @@ The verifier (<code>jwt/verify.go</code>) and JWKS cache (<code>jwt/jwks.go</cod
 <hr />
 <h2 id="5-end-to-end-verification-recipe">5. End-to-end verification recipe<a class="headerlink" href="#5-end-to-end-verification-recipe" title="Permanent link">&para;</a></h2>
 <p>The full round-trip can be exercised on a <code>kind</code> cluster:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">"--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true"</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">"</span>
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">  </span>-f<span class="w"> </span>test/e2e/fixtures/phase4_bip_mcp_echo.yaml
-<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>
-<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
-<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"x-ach-key: </span><span class="nv">$PK</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Accept: application/json, text/event-stream'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"jsonrpc":"2.0","id":1,</span>
-<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="s1">       "method":"tools/call",</span>
-<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="s1">       "params":{"name":"demo-mcp-echo.echo",</span>
-<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="s1">                 "arguments":{"text":"hello"}}}'</span>
-<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a>
-<a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
-<a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a><span class="w">  </span>--image<span class="o">=</span>curlimages/curl:latest<span class="w"> </span>--quiet<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>http://ach-mcp-echo.ach-system.svc/__capture/last
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">"--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true"</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">"</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">  </span>-f<span class="w"> </span>test/e2e/fixtures/phase4_bip_mcp_echo.yaml
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"x-ach-key: </span><span class="nv">$PK</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Accept: application/json, text/event-stream'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"jsonrpc":"2.0","id":1,</span>
+<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="s1">       "method":"tools/call",</span>
+<a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a><span class="s1">       "params":{"name":"demo-mcp-echo.echo",</span>
+<a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a><span class="s1">                 "arguments":{"text":"hello"}}}'</span>
+<a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a>
+<a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
+<a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-26" name="__codelineno-12-26" href="#__codelineno-12-26"></a><span class="w">  </span>--image<span class="o">=</span>curlimages/curl:latest<span class="w"> </span>--quiet<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-27" name="__codelineno-12-27" href="#__codelineno-12-27"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>http://ach-mcp-echo.ach-system.svc/__capture/last
 </code></pre></div>
 <p>A passing run prints the echoed text plus the verified claim set
 (<code>iss</code>, <code>sub</code>, <code>aud</code>, <code>kid</code>, <code>iat</code>, <code>exp</code>) inside the tool result.

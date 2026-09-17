@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/reviews/2026-06-01/platform-api/">
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/developer-guide/oauth-client-conformance/">
       
       
       
@@ -18,19 +18,19 @@
         
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
-        <title>Platform-API — Code Quality Review - ACH — Agent Capability Hub</title>
+        <title>OAuth client conformance — what ACH's authorization server must satisfy - ACH — Agent Capability Hub</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,7 +49,7 @@
       
     
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#platform-api-code-quality-review" class="md-skip">
+        <a href="#oauth-client-conformance-what-achs-authorization-server-must-satisfy" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +92,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Platform-API — Code Quality Review
+              OAuth client conformance — what ACH's authorization server must satisfy
             
           </span>
         </div>
@@ -228,7 +228,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../.." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -249,7 +249,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -269,7 +269,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../user-guide/" class="md-tabs__link">
+        <a href="../../user-guide/" class="md-tabs__link">
           
   
   
@@ -289,7 +289,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+        <a href="../architecture/" class="md-tabs__link">
           
   
   
@@ -309,7 +309,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
           
   
   
@@ -329,7 +329,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
           
   
   
@@ -363,7 +363,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -393,7 +393,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -474,7 +474,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -502,7 +502,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -591,7 +591,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/" class="md-nav__link">
+      <a href="../../user-guide/" class="md-nav__link">
         
   
   
@@ -619,7 +619,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/signing-in-from-tools/" class="md-nav__link">
+      <a href="../../user-guide/signing-in-from-tools/" class="md-nav__link">
         
   
   
@@ -708,7 +708,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+      <a href="../architecture/" class="md-nav__link">
         
   
   
@@ -736,7 +736,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/development/" class="md-nav__link">
+      <a href="../development/" class="md-nav__link">
         
   
   
@@ -764,7 +764,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+      <a href="../jwt-forwarder/" class="md-nav__link">
         
   
   
@@ -792,7 +792,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+      <a href="../litellm-custom-auth/" class="md-nav__link">
         
   
   
@@ -820,7 +820,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+      <a href="../release-process/" class="md-nav__link">
         
   
   
@@ -909,7 +909,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
         
   
   
@@ -937,7 +937,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
         
   
   
@@ -965,7 +965,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
         
   
   
@@ -1054,7 +1054,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
         
   
   
@@ -1102,6 +1102,114 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-mcp-over-http-all-three-do-full-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. MCP over HTTP: all three do full OAuth
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. MCP over HTTP: all three do full OAuth">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-access-token-is-opaque-to-all-three" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The access token is opaque to all three
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-requirements-on-the-as-union-across-the-three-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Requirements on the AS — union across the three clients
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Requirements on the AS — union across the three clients">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-one-that-will-bite-the-prm-resource-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one that will bite: the PRM resource value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-model-endpoint-none-of-them-do-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Model endpoint: none of them do OAuth
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-zero-credential-mcp-entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Zero-credential MCP entries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-where-tokens-land-for-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Where tokens land (for support)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not verified
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1120,123 +1228,226 @@
   
 
 
-<h1 id="platform-api-code-quality-review">Platform-API — Code Quality Review<a class="headerlink" href="#platform-api-code-quality-review" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p><strong>Date:</strong> 2026-06-01 · <strong>Service:</strong> Platform-API · <strong>Packages:</strong> <code>platformapi</code> · <strong>Lines:</strong> 5.7k
-<strong>Findings:</strong> 20 raw → <strong>19 verified</strong> · Read-only review, no code changed.
-<strong>Method:</strong> parallel reviewers per package → adversarial verification (grep/read to refute) → synthesis.
-<strong>Axes:</strong> dead code · complexity · over-engineering · optimization · duplication.
-Part of the <a href="../">full codebase review</a>.</p>
-</blockquote>
-<hr />
-<h1 id="ach-platform-api-code-quality-review">ACH platform-api — Code Quality Review<a class="headerlink" href="#ach-platform-api-code-quality-review" title="Permanent link">&para;</a></h1>
-<h2 id="deduplication-note">Deduplication note<a class="headerlink" href="#deduplication-note" title="Permanent link">&para;</a></h2>
-<p>Three findings describe the <strong>same root</strong> (envkeys <code>CreateHandler</code> 3-SELECT redundancy): <code>envkeys/optimization</code> and <code>plumbing/optimization</code> are duplicates — merged into <strong>OPT-1</strong>. Two findings describe the <strong>same root</strong> (<code>hasIntersect</code> 4-copy duplication): <code>hydrate/duplication</code> and <code>environments_teams/duplication</code> — merged into <strong>DUP-4</strong>. Net: 19 findings → 16 unique.</p>
-<hr />
-<h2 id="optimization">Optimization<a class="headerlink" href="#optimization" title="Permanent link">&para;</a></h2>
-<h3 id="opt-1-internalplatformapienvkeyshandlergo184-259-low">OPT-1 · <code>internal/platformapi/envkeys/handler.go:184-259</code> · low<a class="headerlink" href="#opt-1-internalplatformapienvkeyshandlergo184-259-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CreateHandler</code> issues 3 identical <code>SELECT … FROM environments</code> for one row — <code>GetEnvironment</code> (184), then <code>EnvironmentTerminating</code> (210) and <code>EnvironmentAccessGroupSynced</code> (236), the latter two re-calling <code>GetEnvironment</code> internally (<code>store/store.go:82,109</code>), all uncached PK lookups.</li>
-<li><strong>Fix:</strong> Derive both predicates off the <code>env</code> row already held at line 184: <code>terminating := env.DeletionTimestamp != nil</code>; add a row-taking synced helper (e.g. <code>store.AccessGroupSyncedFromRow(env)</code> wrapping the unexported <code>decodeAccessGroupSynced</code>). 3 SELECTs → 1.</li>
-</ul>
-<hr />
-<h2 id="duplication">Duplication<a class="headerlink" href="#duplication" title="Permanent link">&para;</a></h2>
-<h3 id="dup-1-internalplatformapienvkeyshandlergo184-373-medium">DUP-1 · <code>internal/platformapi/envkeys/handler.go:184-373</code> · medium<a class="headerlink" href="#dup-1-internalplatformapienvkeyshandlergo184-373-medium" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Internal-error audit+render block copy-pasted 6× and the <code>classifyLitellmErr</code> triple 4× inside <code>CreateHandler</code> (~10 sites; pattern also recurs in Revoke/List handlers).</li>
-<li><strong>Fix:</strong> Two handler-bound helpers — <code>emitInternalError(logMsg, err)</code> and <code>emitLitellmError(err, logMsg)</code> — each doing <code>Logger.Error</code> + <code>EmitAudit</code> + <code>render.Error</code>. Collapses ~10 blocks to one-liners.</li>
-</ul>
-<h3 id="dup-4-hasintersect-4-hydratehandlergo383-environmentshandlergo273-envkeyshandlergo537-storestorego183-low">DUP-4 · <code>hasIntersect</code> ×4: <code>hydrate/handler.go:383</code>, <code>environments/handler.go:273</code>, <code>envkeys/handler.go:537</code>, <code>store/store.go:183</code> · low<a class="headerlink" href="#dup-4-hasintersect-4-hydratehandlergo383-environmentshandlergo273-envkeyshandlergo537-storestorego183-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Identical 12-line set-intersection helper duplicated byte-for-byte across 4 packages; comments claim deliberate-for-boundaries, but the primitive is trivial.</li>
-<li><strong>Fix:</strong> Promote one exported <code>teams.HasIntersect(a, b []string) bool</code> (the <code>achteams</code>/<code>teams</code> package already exists as natural home) and delete the 4 copies. Caveat: <code>envkeys</code> does <strong>not</strong> import <code>store</code> today (uses a local <code>envStore</code> interface), so the home must be <code>teams</code>, not <code>store</code>, to avoid new coupling.</li>
-</ul>
-<h3 id="dup-2-internalplatformapiauthssogo276-523-low">DUP-2 · <code>internal/platformapi/auth/sso.go:276-523</code> · low<a class="headerlink" href="#dup-2-internalplatformapiauthssogo276-523-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CallbackHandler</code> repeats the audit-emit + render-error failure block ~14×, varying only by (outcome, status, msg, actor, optional keyID); outcome string must be hand-synced between <code>EmitAudit</code> and <code>render.Error</code> (footgun).</li>
-<li><strong>Fix:</strong> <code>func (deps Deps) fail(ctx, w, actor, outcome string, status int, msg, reqID, keyID string)</code> emitting both; each branch becomes one call. Cuts ~80 lines, threads outcome once.</li>
-</ul>
-<h3 id="dup-3-internalplatformapiadminhandlergo159-219-vs-392-416-231-305-vs-422-447-low">DUP-3 · <code>internal/platformapi/admin/handler.go:159-219 vs 392-416, 231-305 vs 422-447</code> · low<a class="headerlink" href="#dup-3-internalplatformapiadminhandlergo159-219-vs-392-416-231-305-vs-422-447-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> pk_/ek_ revoke side-effect sequences (DB flip / LiteLLM RevokeKey / Redis Del / audit) reimplemented near-verbatim in <code>revokePkInline</code>/<code>revokeEkInline</code> vs the rendering handlers — ordering + audit shape live in 2 places per key type.</li>
-<li><strong>Fix:</strong> Rendering handlers call the inline helpers and translate returned error to HTTP/audit; keep ordering + audit construction in one place per type. Preserve pk_ WARN-04 (LiteLLM-unreachable = 200, not error).</li>
-</ul>
-<hr />
-<h2 id="complexity">Complexity<a class="headerlink" href="#complexity" title="Permanent link">&para;</a></h2>
-<h3 id="cplx-1-internalplatformapienvkeyshandlergo149-497-low">CPLX-1 · <code>internal/platformapi/envkeys/handler.go:149-497</code> · low<a class="headerlink" href="#cplx-1-internalplatformapienvkeyshandlergo149-497-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CreateHandler</code> is a 349-line single <code>http.HandlerFunc</code> closure walking 8 inline steps; bulk is repeated audit boilerplate (flat guard clauses, shallow nesting).</li>
-<li><strong>Fix:</strong> Apply DUP-1 helpers first; then extract <code>validateAndLoadEnv</code> (3a/3b/4), <code>provisionUser</code> (6), <code>mintAndInsert</code> (7/8) so the handler orchestrates ~6 calls.</li>
-</ul>
-<h3 id="cplx-2-internalplatformapiauthssogo265-571-low">CPLX-2 · <code>internal/platformapi/auth/sso.go:265-571</code> · low<a class="headerlink" href="#cplx-2-internalplatformapiauthssogo265-571-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>CallbackHandler</code> is a ~305-line closure with 14 sequential guard branches + the D-20 Redis-writeback tail; full 8-step OIDC sequence inlined.</li>
-<li><strong>Fix:</strong> Apply DUP-2 <code>fail</code> helper; then extract steps 6-8 (mint pk_/keyid, hash, KeyGenerate, INSERT+compensate, audit+writeback) into <code>mintAndPersistPK(...) (callbackResponse, error)</code>, leaving the handler as the linear OIDC orchestrator.</li>
-</ul>
-<hr />
-<h2 id="over-engineering">Over-engineering<a class="headerlink" href="#over-engineering" title="Permanent link">&para;</a></h2>
-<h3 id="oe-1-internalplatformapiadminhandlergo28-36-199-201-293-295-406-408-437-439-low">OE-1 · <code>internal/platformapi/admin/handler.go:28-36, 199-201, 293-295, 406-408, 437-439</code> · low<a class="headerlink" href="#oe-1-internalplatformapiadminhandlergo28-36-199-201-293-295-406-408-437-439-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Best-effort Redis <code>DEL</code> under <code>adminCacheKeyPrefix</code> ("ach:revoke:keyid:") in all 4 revoke paths is a guaranteed-miss — nothing SETs/reads that namespace (real key is "ach:key:"+credential_hash); justified only as observability/ordering invariant, exists to satisfy one test. Note: ek_ paths <em>could</em> do the real <code>"ach:key:"+row.CredentialHash</code> DEL (hash is available there) as <code>envkeys</code> does.</li>
-<li><strong>Fix:</strong> Drop the no-op <code>Del</code> (60s TTL already bounds staleness), or wire the real invalidation where <code>credential_hash</code> is available; if kept for symmetry, collapse 4 lines into one helper.</li>
-</ul>
-<h3 id="oe-2-internalplatformapiauthssogo722-747-low">OE-2 · <code>internal/platformapi/auth/sso.go:722-747</code> · low<a class="headerlink" href="#oe-2-internalplatformapiauthssogo722-747-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>containsCaseInsensitive</code> is a 26-line manual double-loop doing strict byte equality (NOT case-insensitive, per its own comment); single caller passes literal <code>"404"</code>; the "avoids ToLower alloc" rationale is moot (no lowering; <code>strings.Contains</code> allocates nothing).</li>
-<li><strong>Fix:</strong> Replace call with <code>strings.Contains(err.Error(), "404")</code> (strings already imported) and delete the function.</li>
-</ul>
-<h3 id="oe-3-internalplatformapiadminhandlergo550-573-low">OE-3 · <code>internal/platformapi/admin/handler.go:550-573</code> · low<a class="headerlink" href="#oe-3-internalplatformapiadminhandlergo550-573-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Hand-rolled 24-line <code>itoa</code> reimplements <code>strconv.Itoa</code> for one audit Extra value; sibling <code>environments/handler.go</code> already imports <code>strconv.Itoa</code>.</li>
-<li><strong>Fix:</strong> Delete <code>itoa</code>, use <code>strconv.Itoa(revokedCount)</code> at handler.go:379, import <code>strconv</code>.</li>
-</ul>
-<hr />
-<h2 id="dead-code">Dead code<a class="headerlink" href="#dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="dc-1-internalplatformapiservergo92-107-low">DC-1 · <code>internal/platformapi/server.go:92-107</code> · low<a class="headerlink" href="#dc-1-internalplatformapiservergo92-107-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Orphaned doc-comment narrates an <code>envKeysStoreAdapter</code> type that exists nowhere, mislocates <code>envkeysDBAdapter</code> ("inline below" — actually in <code>adapters.go:19</code>), and references a nonexistent <code>adminDB</code>.</li>
-<li><strong>Fix:</strong> Delete the comment block; optionally fold a one-liner next to <code>envkeysDBAdapter</code> in <code>adapters.go</code>.</li>
-</ul>
-<h3 id="dc-2-internalplatformapimiddlewarechi_compatgo1-37-low">DC-2 · <code>internal/platformapi/middleware/chi_compat.go:1-37</code> · low<a class="headerlink" href="#dc-2-internalplatformapimiddlewarechi_compatgo1-37-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> Entire file is vestigial — pins the chi import + compile-asserts middleware signatures, both now redundant (<code>server.go</code> uses <code>chi.NewRouter()</code>/<code>chi.Router</code> directly and <code>r.Use(pamw.RequestID/ContentTypeJSON)</code> type-checks at call site); comments admit Plan 03-06 (shipped) supersedes it.</li>
-<li><strong>Fix:</strong> Delete the file entirely.</li>
-</ul>
-<h3 id="dc-3-internalplatformapiauthssogo41-50-low">DC-3 · <code>internal/platformapi/auth/sso.go:41-50</code> · low<a class="headerlink" href="#dc-3-internalplatformapiauthssogo41-50-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.OIDCProvider *oidc.Provider</code> is write-only — verification runs through <code>IDTokenVerifier</code>; provider threaded through two Deps structs for a nonexistent consumer.</li>
-<li><strong>Fix:</strong> Drop <code>OIDCProvider</code> from <code>auth.Deps</code> + assignments at <code>server.go:129</code> and <code>platform_api.go:253</code>.</li>
-</ul>
-<h3 id="dc-4-internalplatformapiadminhandlergo60-low">DC-4 · <code>internal/platformapi/admin/handler.go:60</code> · low<a class="headerlink" href="#dc-4-internalplatformapiadminhandlergo60-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Pepper []byte</code> never read in admin package (comment admits "compositional parity"); dead plumbing across 3 files.</li>
-<li><strong>Fix:</strong> Drop <code>Pepper</code> from <code>admin.Deps</code> + assignment at <code>server.go:205</code>.</li>
-</ul>
-<h3 id="dc-5-internalplatformapihydratehandlergo4850-low">DC-5 · <code>internal/platformapi/hydrate/handler.go:48,50</code> · low<a class="headerlink" href="#dc-5-internalplatformapihydratehandlergo4850-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Allowlist</code> + <code>Deps.Namespace</code> never read (docs say "retained for parity/symmetry"); admin status comes from <code>keyCtx.IsAdmin</code>, Store is namespace-scoped.</li>
-<li><strong>Fix:</strong> Drop both fields + assignments at <code>server.go:169,171</code>.</li>
-</ul>
-<h3 id="dc-6-internalplatformapienvironmentshandlergo5456-low">DC-6 · <code>internal/platformapi/environments/handler.go:54,56</code> · low<a class="headerlink" href="#dc-6-internalplatformapienvironmentshandlergo5456-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>Deps.Allowlist</code> + <code>Deps.Namespace</code> write-only (same parity rationale as DC-5); populated at <code>server.go:192,194</code>, never read.</li>
-<li><strong>Fix:</strong> Drop both fields + the <code>server.go:192,194</code> assignments.</li>
-</ul>
-<h3 id="dc-7-internalplatformapienvkeyshandlergo506525-530-low">DC-7 · <code>internal/platformapi/envkeys/handler.go:506,525-530</code> · low<a class="headerlink" href="#dc-7-internalplatformapienvkeyshandlergo506525-530-low" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Problem:</strong> <code>insertErrCredentialHashCollision</code> class computed by <code>classifyInsertError</code> but the sole caller branches only on <code>insertErrEkidCollision</code>; a credential-hash collision falls through identically to <code>insertErrOther</code> — the const + switch case are unreachable-behavior dead code.</li>
-<li><strong>Fix:</strong> Fold case 525-529 into <code>default</code>/<code>return insertErrOther</code> and drop the const — OR wire the caller to skip compensation on hash collision if that was the intent.</li>
-</ul>
-<hr />
-<h2 id="top-5-highest-leverage-cleanups">Top 5 highest-leverage cleanups<a class="headerlink" href="#top-5-highest-leverage-cleanups" title="Permanent link">&para;</a></h2>
+<h1 id="oauth-client-conformance-what-achs-authorization-server-must-satisfy">OAuth client conformance — what ACH's authorization server must satisfy<a class="headerlink" href="#oauth-client-conformance-what-achs-authorization-server-must-satisfy" title="Permanent link">&para;</a></h1>
+<p>Research verified 2026-09-17 against the three human-facing tools ACH hydrates
+for. Each was checked from source (or the shipped binary) and from the version
+installed on the dev box, not from docs alone. Gemini CLI is deprecated and was
+not researched.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Version checked</th>
+<th>Source read</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td>2.1.274 (local binary, bun-compiled bundle grepped)</td>
+<td>code.claude.com/docs/en/mcp, binary</td>
+</tr>
+<tr>
+<td>Codex CLI</td>
+<td>0.154.0 (local)</td>
+<td>openai/codex <code>codex-rs/rmcp-client/</code>, learn.chatgpt.com config reference</td>
+</tr>
+<tr>
+<td>opencode</td>
+<td>1.18.31 (local)</td>
+<td>anomalyco/opencode <code>dev</code>, <code>@modelcontextprotocol/sdk</code> 1.29.0</td>
+</tr>
+</tbody>
+</table>
+<h2 id="1-mcp-over-http-all-three-do-full-oauth">1. MCP over HTTP: all three do full OAuth<a class="headerlink" href="#1-mcp-over-http-all-three-do-full-oauth" title="Permanent link">&para;</a></h2>
+<p>Every one of them, on a <code>401</code> carrying <code>WWW-Authenticate: Bearer
+resource_metadata="…"</code>, runs the complete chain:</p>
 <ol>
-<li><strong>DUP-1</strong> (<code>envkeys/handler.go</code> ~10 copy-pasted audit+render blocks) — only <strong>medium</strong> finding; two small helpers kill the largest copy-paste hazard AND directly unlock CPLX-1's extraction. Highest leverage: one change, two findings resolved.</li>
-<li><strong>DUP-2 + CPLX-2</strong> (<code>sso.go</code> <code>CallbackHandler</code>) — the <code>fail</code> helper removes ~80 lines and the outcome-must-match-twice footgun in an <strong>audit/security path</strong>, then enables the <code>mintAndPersistPK</code> extraction. One helper, two findings.</li>
-<li><strong>DUP-4</strong> (<code>hasIntersect</code> ×4 → <code>teams.HasIntersect</code>) — kills duplication across 4 packages in one move; pure trivial helper, lowest risk, repo-wide hygiene win (mind the <code>envkeys</code>→<code>store</code> coupling caveat: home is <code>teams</code>).</li>
-<li><strong>DC-2 + DC-1</strong> (<code>chi_compat.go</code> deletion + <code>server.go</code> orphan comment) — delete a whole vestigial file plus a misleading comment that actively misdescribes the codebase; zero-risk, removes reader-confusion debt.</li>
-<li><strong>OPT-1</strong> (<code>envkeys</code> 3→1 SELECTs) — the only behavioral/perf finding; small surgical change (read predicates off the in-hand <code>env</code> row), trims 2 DB round-trips per ek_ create. Low impact but the only one that changes runtime behavior.</li>
+<li>fetch the RFC 9728 protected-resource document,</li>
+<li>discover the authorization server from <code>authorization_servers[0]</code> via RFC 8414
+   (<code>/.well-known/oauth-authorization-server</code>; opencode's SDK also probes
+   <code>/.well-known/openid-configuration</code>),</li>
+<li>register with RFC 7591 Dynamic Client Registration,</li>
+<li>run authorization-code + PKCE S256 in a browser against a loopback redirect,</li>
+<li>send <code>Authorization: Bearer &lt;token&gt;</code> on every subsequent request,</li>
+<li>refresh with <code>grant_type=refresh_token</code>; on a rejected refresh, restart the
+   browser flow.</li>
 </ol>
-<p>Batch the 6 write-only <code>Deps</code>-field removals (DC-3/4/5/6 + OPT-1's neighbors) as a single mechanical sweep — individually trivial, collectively they de-clutter the Deps bags and <code>server.go</code> wire-up in one commit.</p>
+<h3 id="the-access-token-is-opaque-to-all-three">The access token is opaque to all three<a class="headerlink" href="#the-access-token-is-opaque-to-all-three" title="Permanent link">&para;</a></h3>
+<p>None parses the token. None fetches a JWKS. None checks a signature. Expiry is
+taken from <code>expires_in</code> in the token response, never from a decoded <code>exp</code>.</p>
+<ul>
+<li>Claude Code: zod schema <code>{access_token, token_type, expires_in?, scope?,
+  refresh_token?, id_token?}.strip()</code>, stored verbatim.</li>
+<li>Codex: <code>StoredOAuthTokens</code> forwarded verbatim; the only JWT parser in the
+  client is the separate enterprise ID-JAG path.</li>
+<li>opencode: SDK <code>OAuthTokensSchema</code>, <code>access_token: z.string()</code>; <code>expiresAt</code>
+  computed from <code>expires_in</code>.</li>
+</ul>
+<p>So an opaque <code>pk_</code> would work as an access token. ACH issues a JWT by decision
+(see the credential-model decision in ach-memory), not by client constraint.</p>
+<h2 id="2-requirements-on-the-as-union-across-the-three-clients">2. Requirements on the AS — union across the three clients<a class="headerlink" href="#2-requirements-on-the-as-union-across-the-three-clients" title="Permanent link">&para;</a></h2>
+<p>These are hard: the named client fails the flow without them.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Who needs it</th>
+<th>Failure without it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>registration_endpoint</code> in the RFC 8414 document</td>
+<td>all three</td>
+<td>Claude Code: <code>Incompatible auth server: does not support dynamic client registration</code>. opencode: status <code>needs_client_registration</code>. Codex: DCR mode fails; only a pre-registered <code>--oauth-client-id</code> works.</td>
+</tr>
+<tr>
+<td><code>code_challenge_methods_supported</code> includes <code>"S256"</code></td>
+<td>opencode (SDK refuses otherwise), Codex (tests assert it)</td>
+<td>flow aborts before <code>/authorize</code></td>
+</tr>
+<tr>
+<td>Token response carries <code>access_token</code> <strong>and</strong> <code>token_type</code></td>
+<td>all three</td>
+<td>schema validation fails; Claude Code's zod requires <code>token_type: string()</code></td>
+</tr>
+<tr>
+<td><code>expires_in</code> in the token response</td>
+<td>all three, soft</td>
+<td>omitted ⇒ no local expiry; clients rely on the next <code>401</code> to refresh</td>
+</tr>
+<tr>
+<td>Loopback redirect URIs with <strong>any port</strong> (RFC 8252 §7.3)</td>
+<td>all three</td>
+<td>Claude Code <code>http://localhost:&lt;random&gt;/callback</code>; opencode <code>http://127.0.0.1:19876/mcp/oauth/callback</code> (configurable); Codex random port or configured <code>callback_port</code></td>
+</tr>
+<tr>
+<td>Tolerate an RFC 8707 <code>resource</code> parameter on <code>/authorize</code> and <code>/token</code></td>
+<td>Claude Code, Codex</td>
+<td>both send it, taken from the PRM document; rejecting the request kills the flow</td>
+</tr>
+<tr>
+<td>PRM document <code>resource</code> <strong>equals the MCP URL</strong> (origin + path prefix)</td>
+<td>opencode</td>
+<td>SDK <code>checkResourceAllowed()</code> <strong>throws</strong> on mismatch — not a warning</td>
+</tr>
+<tr>
+<td>Authorization response names the expected issuer</td>
+<td>Claude Code</td>
+<td>internal errors <code>issuer_echo_denied</code> / <code>issuer_echo_mismatch</code> / <code>issuer_response_mismatch</code></td>
+</tr>
+<tr>
+<td><code>token_endpoint_auth_method: "none"</code> accepted</td>
+<td>all three</td>
+<td>they register as public clients; opencode uses <code>client_secret_post</code> only if a secret is configured</td>
+</tr>
+</tbody>
+</table>
+<p>Advisable, not required:</p>
+<ul>
+<li>Advertise <code>offline_access</code> in <code>scopes_supported</code>. Claude Code then appends it
+  and sends <code>prompt=consent</code>, and refresh never needs a browser again.</li>
+<li>Accept any <code>client_name</code> at DCR. opencode registers as <code>"OpenCode"</code>; an AS that
+  allowlists client names rejects it (reported against Figma's AS).</li>
+</ul>
+<h3 id="the-one-that-will-bite-the-prm-resource-value">The one that will bite: the PRM <code>resource</code> value<a class="headerlink" href="#the-one-that-will-bite-the-prm-resource-value" title="Permanent link">&para;</a></h3>
+<p>opencode's <code>checkResourceAllowed()</code> compares the document's <code>resource</code> against
+the MCP URL the user configured. A <code>401</code> from <code>/mcp/&lt;svc&gt;/messages</code> that points
+at a document declaring <code>resource: …/mcp/&lt;svc&gt;/messages</code> fails, because the
+client holds <code>…/mcp/&lt;svc&gt;</code>. The challenge must always point at the <strong>service
+root's</strong> document, and that document must name the service root. The
+forwarder's existing challenge rewrite (<code>internal/forwarder/proxy/challenge.go</code>)
+must be checked against this before the AS ships.</p>
+<h2 id="3-model-endpoint-none-of-them-do-oauth">3. Model endpoint: none of them do OAuth<a class="headerlink" href="#3-model-endpoint-none-of-them-do-oauth" title="Permanent link">&para;</a></h2>
+<p>For the model API (not MCP), no client runs OAuth against a base URL you choose.
+All three take a <strong>command that prints a credential to stdout</strong> instead:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Mechanism</th>
+<th>Re-run cadence</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td><code>apiKeyHelper</code> in settings</td>
+<td>5 min default, <code>CLAUDE_CODE_API_KEY_HELPER_TTL_MS</code></td>
+<td>must print nothing but the credential; disables Remote Control / voice / Console analytics</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td><code>[model_providers.&lt;x&gt;].auth.command</code></td>
+<td><code>auth.refresh_interval_ms</code>, default 300000</td>
+<td>mutually exclusive with <code>env_key</code> / <code>experimental_bearer_token</code>; <code>wire_api = "responses"</code> is the only value</td>
+</tr>
+<tr>
+<td>opencode</td>
+<td><code>opencode auth login &lt;url&gt;</code> → fetches <code>&lt;url&gt;/.well-known/opencode</code> → <code>{"auth": {"command": [...], "env": "VAR"}}</code></td>
+<td>on <code>auth login</code> only; no auto-refresh</td>
+<td>the same document may ship <code>config</code> / <code>remote_config</code> — the provider block, <code>baseURL</code>, <code>apiKey: "{env:VAR}"</code>, the model list</td>
+</tr>
+</tbody>
+</table>
+<p>Consequence: <code>ach-cli</code> printing a short-lived token is the model-path
+credential for every tool. Hydrate writes the command into the config, not a
+key.</p>
+<p>opencode's <code>.well-known/opencode</code> is more than a hook: it lets the server ship
+the provider configuration. ACH could <strong>serve</strong> opencode's config from the
+platform instead of writing <code>.opencode/opencode.json</code>. Recorded as an option,
+not a decision.</p>
+<p>opencode also exposes an undocumented plugin <code>auth</code> hook
+(<code>packages/plugin/src/index.ts</code>) with real OAuth — <code>authorize()</code> returning
+<code>{access, refresh, expires}</code> and a <code>loader</code> that turns the live token into
+provider options. That is the path to genuine OAuth on opencode's model
+endpoint, if ever wanted.</p>
+<h2 id="4-zero-credential-mcp-entries">4. Zero-credential MCP entries<a class="headerlink" href="#4-zero-credential-mcp-entries" title="Permanent link">&para;</a></h2>
+<p>Each tool has a config shape with no credential at all; a <code>401</code> then starts the
+ceremony. This is what personal hydrate writes.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1">// Claude Code — .mcp.json or the mcpServers block. `type` is REQUIRED with url.</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="p">{</span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"ach"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http"</span><span class="p">,</span><span class="w"> </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span><span class="p">}}}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// opencode — OAuth is opt-OUT: any remote entry without "oauth": false gets a provider.</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="p">{</span><span class="nt">"mcp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"ach"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"remote"</span><span class="p">,</span><span class="w"> </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span><span class="p">}}}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Codex — verified by running `codex mcp add` against a throwaway CODEX_HOME.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">[mcp_servers.ach]</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://ach.example.com/mcp/&lt;svc&gt;"</span>
+</code></pre></div>
+<p>Two facts that govern hydrate:</p>
+<ul>
+<li><strong>A configured <code>Authorization</code> header defeats OAuth.</strong> Claude Code disables
+  the fallback entirely (a <code>401</code> becomes a connection error). opencode spreads
+  configured headers <em>after</em> the OAuth header, silently overriding the token.
+  The header must be <strong>omitted</strong>, not emitted empty.</li>
+<li><strong>Login is explicit in all three.</strong> <code>claude mcp login &lt;name&gt;</code>,
+  <code>codex mcp login &lt;name&gt;</code>, <code>opencode mcp auth &lt;name&gt;</code>. None opens a browser
+  mid-session; Codex returns the tool result as an error carrying the challenge,
+  Claude Code and opencode flag the server as needing auth. Credential-free
+  hydrate costs one manual login per tool. Claude Code has <code>--no-browser</code> for
+  SSH; <code>claude -p</code> cannot run the flow at all.</li>
+</ul>
+<h2 id="5-where-tokens-land-for-support">5. Where tokens land (for support)<a class="headerlink" href="#5-where-tokens-land-for-support" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Claude Code: <code>~/.claude.json</code> under <code>mcpOAuth</code>, keyed per endpoint.</li>
+<li>Codex: OS keyring or <code>~/.codex/.credentials.json</code>
+  (<code>mcp_oauth_credentials_store = keyring | file | auto</code>), keyed by server name + URL.</li>
+<li>opencode: <code>~/.local/share/opencode/mcp-auth.json</code>, mode 0600, flock-guarded,
+  keyed by <code>serverUrl</code> — changing the URL forces re-auth.</li>
+</ul>
+<h2 id="not-verified">Not verified<a class="headerlink" href="#not-verified" title="Permanent link">&para;</a></h2>
+<ul>
+<li>No live handshake was captured against a self-hosted <code>401</code>. Everything above
+  is source and stored-state evidence. Before the AS ships, stand it up and
+  capture the <code>/authorize</code> + <code>/token</code> requests from each tool.</li>
+<li>opencode carries a patch on <code>@modelcontextprotocol/sdk@1.29.0</code> whose contents
+  could not be fetched; a deviation from stock SDK auth behaviour is possible.</li>
+<li>Whether the forwarder's existing <code>/.well-known/oauth-protected-resource/*</code>
+  handling satisfies Claude Code's strict issuer echo.</li>
+</ul>
 
 
 
@@ -1308,10 +1519,10 @@ Part of the <a href="../">full codebase review</a>.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
