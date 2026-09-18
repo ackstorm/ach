@@ -34,6 +34,9 @@ type OAuthDeps struct {
 	// projection; required when Services is non-empty.
 	Services map[string]oauthsvc.Service
 	Grants   GrantReader
+	// HTTPClient is a seam for tests calling a broker's /register; nil → a
+	// 10s stdlib client.
+	HTTPClient *http.Client
 
 	// Seams. nil → the real thing: the oauth2+oidc Dex leg, provisionUser,
 	// Auth.MintPK, db.ActiveOAuthPK, db.RevokePersonalKey + LiteLLM revoke.
@@ -56,6 +59,7 @@ func MountOAuth(d OAuthDeps) func(chi.Router) {
 		r.Post("/register", d.register)
 		r.Get("/authorize", d.authorize)
 		r.Get("/as-callback", d.asCallback)
+		r.Get("/broker-callback", d.brokerCallback)
 		r.Post("/token", d.token)
 	}
 }

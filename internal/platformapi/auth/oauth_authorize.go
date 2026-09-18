@@ -184,9 +184,9 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, 400, "no authorization request is pending — start again from your client")
 		return
 	}
-	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	c, cerr := r.Cookie(bindingCookieName(pendingID, d.Auth.InsecureCookie))
 	if cerr != nil || subtle.ConstantTimeCompare([]byte(bindingHash(c.Value)), []byte(p.Binding)) != 1 {
+		http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 		d.Auth.Logger.Warn("oauth: as-callback from a browser that did not start the authorization", "client_id", p.ClientID)
 		htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
 		return
@@ -211,21 +211,22 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, 503, "user provisioning failed")
 		return
 	}
-	code, err := cli.NewSessionID()
-	if err != nil {
-		htmlError(w, 500, "")
+	var todo []string
+	for _, key := range p.Scopes {
+		granted, gerr := d.Grants.Granted(r.Context(), email, d.Services[key].Store)
+		if gerr != nil {
+			// Projection down: re-consent is harmless, a login blocked is not.
+			d.Auth.Logger.Warn("oauth: grant projection unreachable at authorize; chaining every requested service", "err", gerr)
+		}
+		if !granted {
+			todo = append(todo, key)
+		}
+	}
+	if len(todo) > 0 {
+		d.chainNext(w, r, oauthChain{oauthPending: p, PendingID: pendingID, Sub: email, UserID: userID, Todo: todo})
 		return
 	}
-	if err := d.Store.Put(r.Context(), "code", code, oauthCode{oauthPending: p, Sub: email, UserID: userID}, oauthCodeTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
-		return
-	}
-	pv := url.Values{"code": {code}}
-	if p.State != "" {
-		pv.Set("state", p.State)
-	}
-	d.Auth.Logger.Info("oauth: authorization code issued", "client_id", p.ClientID)
-	clientRedirect(w, r, p.RedirectURI, pv)
+	d.finish(w, r, p, pendingID, email, userID)
 }
 
 // parseScope splits a space-separated scope; the audience and
