@@ -44,6 +44,7 @@ import (
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
@@ -93,6 +94,11 @@ type platformAPIConfig struct {
 	OAuthAudience   string        // ACH_OAUTH_AUDIENCE, default "ach"
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
 	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
+	// OAuthServices is ACH_OAUTH_SERVICES: the broker chain + scope map.
+	// Non-empty requires OAuthGrantsRedisURL (the chain reads the brokers'
+	// grant projection to decide what a token may carry as scope).
+	OAuthServices       map[string]oauthsvc.Service
+	OAuthGrantsRedisURL string // ACH_OAUTH_GRANTS_REDIS_URL
 }
 
 func validatePlatformAPIConfig() (*platformAPIConfig, error) {
@@ -171,6 +177,13 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
 		return nil, err
 	}
+	if cfg.OAuthServices, err = oauthsvc.Parse(os.Getenv("ACH_OAUTH_SERVICES")); err != nil {
+		return nil, err
+	}
+	cfg.OAuthGrantsRedisURL = os.Getenv("ACH_OAUTH_GRANTS_REDIS_URL")
+	if len(cfg.OAuthServices) > 0 && cfg.OAuthGrantsRedisURL == "" {
+		return nil, fmt.Errorf("ACH_OAUTH_GRANTS_REDIS_URL required when ACH_OAUTH_SERVICES is set (the broker chain reads the grant projection)")
+	}
 	return cfg, nil
 }
 
@@ -178,6 +191,9 @@ type platformAPIProcessDeps struct {
 	pool   *pgxpool.Pool
 	redis  *redis.Client
 	server platformapi.Deps
+	// grantsRedis is the brokers' grant projection (ACH_OAUTH_GRANTS_REDIS_URL);
+	// nil when ACH_OAUTH_SERVICES is unset (feature dormant).
+	grantsRedis *redis.Client
 	// signer is the OAuth access-token signer, loaded from the mounted
 	// ach-jwt-signing-keys Secret; nil when the AS is disabled.
 	signer *jwt.Ed25519Signer
@@ -201,6 +217,9 @@ func (p *platformAPIProcessDeps) close() {
 	}
 	if p.redis != nil {
 		_ = p.redis.Close()
+	}
+	if p.grantsRedis != nil {
+		_ = p.grantsRedis.Close()
 	}
 	if p.pool != nil {
 		p.pool.Close()
@@ -302,6 +321,15 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 			Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
 			Issuer: cfg.BaseURL, Audience: cfg.OAuthAudience,
 			AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
+			Services: cfg.OAuthServices,
+		}
+		if cfg.OAuthGrantsRedisURL != "" {
+			gopts, err := redis.ParseURL(cfg.OAuthGrantsRedisURL)
+			if err != nil {
+				return out, fmt.Errorf("ACH_OAUTH_GRANTS_REDIS_URL: %w", err)
+			}
+			out.grantsRedis = redis.NewClient(gopts) // closed with the other clients in out.close()
+			oauthDeps.Grants = auth.NewRedisGrants(out.grantsRedis)
 		}
 	}
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, cfg.OAuthAudience, pool)

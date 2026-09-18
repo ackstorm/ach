@@ -10,9 +10,13 @@
 //	ach-mock mcp   — MCP server echo backend. Echoes the Authorization header
 //	                 (JWT) in the response and captures it for tests.
 //	ach-mock a2a   — Agent-to-Agent echo backend.
+//	ach-mock broker — mcp-oauth stand-in for the OAuth broker chain e2e:
+//	                 /register + /authorize, verifies the login_hint against
+//	                 the issuer's JWKS, writes the grant projection. Runs its
+//	                 own server (no shared capture surface, no provider).
 //
-// All three modes share the same in-memory capture surface and listen on
-// MOCK_BIND_ADDRESS (default :9090). Tests reach into the mock via
+// The model/mcp/a2a modes share the same in-memory capture surface and
+// listen on MOCK_BIND_ADDRESS (default :9090). Tests reach into the mock via
 // /__capture/last after driving traffic through the Forwarder.
 //
 // Stdlib only (no new go.mod entries). Single-replica; per-request state
@@ -97,10 +101,14 @@ func filterAndCopyHeaders(in http.Header) map[string][]string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ach-mock <model|mcp|a2a>")
+		fmt.Fprintln(os.Stderr, "usage: ach-mock <model|mcp|a2a|broker>")
 		os.Exit(2)
 	}
 	mode := os.Args[1]
+	if mode == "broker" {
+		runBroker()
+		return
+	}
 	addr := envOr("MOCK_BIND_ADDRESS", ":9090")
 
 	cap := &capture{}
@@ -141,7 +149,7 @@ func main() {
 	case "a2a":
 		mountA2A(mux, cap)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown mode %q (want model | mcp | a2a)\n", mode)
+		fmt.Fprintf(os.Stderr, "unknown mode %q (want model | mcp | a2a | broker)\n", mode)
 		os.Exit(2)
 	}
 

@@ -72,6 +72,10 @@ spec:
           env:
             - name: ACH_OAUTH_AUDIENCE
               value: {{ .Values.oauth.audience | default "ach" | quote }}
+            {{- if .Values.oauth.services }}
+            - name: ACH_OAUTH_SERVICES
+              value: {{ .Values.oauth.services | toJson | quote }}
+            {{- end }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

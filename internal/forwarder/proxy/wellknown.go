@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 )
 
 // serviceRe extracts the service root a client holds: "/mcp/<name>" or
@@ -38,13 +39,14 @@ func ChallengeFor(base string) func(*http.Request) string {
 // WellKnownHandler serves the two anonymous discovery documents: RFC 8414
 // (jwt.ASMetadata) and RFC 9728 for the API root and for every
 // /mcp/<name> and /a2a/<name>. Anything else under the PRM segment is 404.
-func WellKnownHandler(base string) http.Handler {
+func WellKnownHandler(base, audience string, services map[string]oauthsvc.Service) http.Handler {
 	base = strings.TrimRight(base, "/")
+	keys := oauthsvc.Keys(services)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var doc map[string]any
 		switch {
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
-			doc = jwt.ASMetadata(base)
+			doc = jwt.ASMetadata(base, audience, keys)
 		case strings.HasPrefix(r.URL.Path, wellKnownPRMSegment):
 			rest := strings.TrimPrefix(r.URL.Path, wellKnownPRMSegment)
 			if rest != "" && resourceRoot(rest) != rest {
@@ -55,6 +57,13 @@ func WellKnownHandler(base string) http.Handler {
 				"resource":                 base + rest,
 				"authorization_servers":    []string{base},
 				"bearer_methods_supported": []string{"header"},
+			}
+			// A brokered MCP service names the scope a client must ask for
+			// (RFC 9728 §2): the audience plus its own key.
+			if m := serviceRe.FindStringSubmatch(rest); m != nil && m[1] == "mcp" {
+				if _, ok := services[m[2]]; ok {
+					doc["scopes_supported"] = []string{audience, m[2]}
+				}
 			}
 		default:
 			http.NotFound(w, r)

@@ -17,6 +17,7 @@ resources:
   - ach-mcp-echo.yaml
   - ach-mock-model.yaml
   - ach-mock-a2a.yaml
+  - ach-mock-broker.yaml
 
 # nginx shim config as a generated ConfigMap. The default content-hash name
 # suffix is the point: edit files/nginx.conf -> new CM name -> kustomize

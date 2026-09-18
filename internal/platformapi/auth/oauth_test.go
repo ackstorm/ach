@@ -23,6 +23,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 )
 
 func newOAuthStore(t *testing.T) *OAuthStore {
@@ -110,7 +111,7 @@ func (f *asFixture) do(t *testing.T, method, path string, body any, hdr map[stri
 }
 
 func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
-	m := jwt.ASMetadata("https://ach.test/")
+	m := jwt.ASMetadata("https://ach.test/", "ach", nil)
 	want := map[string]string{
 		"issuer":                 "https://ach.test",
 		"authorization_endpoint": "https://ach.test/platform/oauth/authorize",
@@ -126,8 +127,8 @@ func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
 	if cc, _ := m["code_challenge_methods_supported"].([]string); len(cc) != 1 || cc[0] != "S256" {
 		t.Errorf("S256 must be advertised: %v", m["code_challenge_methods_supported"])
 	}
-	if ss, _ := m["scopes_supported"].([]string); len(ss) != 1 || ss[0] != "offline_access" {
-		t.Errorf("offline_access must be advertised: %v", m["scopes_supported"])
+	if ss, _ := m["scopes_supported"].([]string); len(ss) != 2 || ss[0] != "offline_access" || ss[1] != "ach" {
+		t.Errorf("offline_access + audience must be advertised: %v", m["scopes_supported"])
 	}
 }
 
@@ -421,9 +422,9 @@ func TestToken_CodeExchangeMintsTheOAuthPKAndAJWT(t *testing.T) {
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("token responses must be no-store")
 	}
-	sub, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
-	if err != nil || sub != "u@x.com" {
-		t.Fatalf("sub=%q err=%v", sub, err)
+	v, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
+	if err != nil || v.Sub != "u@x.com" {
+		t.Fatalf("sub=%+v err=%v", v, err)
 	}
 	if pks.minted != 1 || pks.rows["u@x.com"] == nil {
 		t.Fatalf("oauth pk_ not minted: %+v", pks)
@@ -497,5 +498,101 @@ func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
 	}
 	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
 		t.Fatalf("old refresh must be dead: %d", w.Code)
+	}
+}
+
+func withServices(f *asFixture) *asFixture {
+	f.deps.Services = map[string]oauthsvc.Service{
+		"mcp-a": {Store: "a-store", Broker: "https://broker.test/a"},
+		"mcp-b": {Store: "b-store", Broker: "https://broker.test/b"},
+	}
+	f.deps.Grants = MapGrants{}
+	f.mount()
+	return f
+}
+
+func TestAuthorize_ScopeValidation(t *testing.T) {
+	f := withServices(withFakeDex(newAS(t), "u@x.com"))
+	cid := registerClient(t, f)
+	// unknown scope → invalid_scope back to the client, no pending, no Dex
+	w := f.do(t, "GET", authorizeURL(cid, map[string]string{"scope": "ach mcp-nope"}), nil, nil)
+	loc := w.Header().Get("Location")
+	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "error=invalid_scope") || !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("unknown scope: %d %s", w.Code, loc)
+	}
+	// known scopes + the always-accepted ones are stored on the pending
+	w = f.do(t, "GET", authorizeURL(cid, map[string]string{"scope": "offline_access ach mcp-b mcp-a"}), nil, nil)
+	state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	var p oauthPending
+	if ok, _ := f.store.Get(context.Background(), "pending", state, &p); !ok || strings.Join(p.Scopes, " ") != "mcp-b mcp-a" {
+		t.Fatalf("pending scopes: ok=%v %+v", ok, p)
+	}
+	// no scope at all is fine (today's CLI login)
+	if w := f.do(t, "GET", authorizeURL(cid, map[string]string{"scope": ""}), nil, nil); w.Code != 302 || !strings.Contains(w.Header().Get("Location"), "dex.test") {
+		t.Fatalf("no scope: %d", w.Code)
+	}
+}
+
+func TestToken_ScopeFromProjection(t *testing.T) {
+	f := withServices(newAS(t))
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	f.deps.Grants = MapGrants{"a-store|u@x.com": true} // mcp-a granted, mcp-b not
+	f.mount()
+	seedCodeScoped(t, f, cid, []string{"mcp-a", "mcp-b"})
+	w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr)
+	var tb struct {
+		tokenBody
+		Scope string `json:"scope"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &tb)
+	if w.Code != 200 || tb.Scope != "ach mcp-a" {
+		t.Fatalf("code grant scope: %d %s", w.Code, w.Body)
+	}
+	v, err := f.deps.Signer.Verify(tb.AccessToken, "https://ach.test", "ach")
+	if err != nil || v.Scope != "ach mcp-a" {
+		t.Fatalf("jwt scope: %+v %v", v, err)
+	}
+	// refresh recomputes: grant for mcp-b appears, mcp-a revoked at the broker disappears
+	f.deps.Grants = MapGrants{"b-store|u@x.com": true}
+	f.mount()
+	w = f.do(t, "POST", "/platform/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tb.RefreshToken}, "client_id": {cid}}.Encode(), formHdr)
+	_ = json.Unmarshal(w.Body.Bytes(), &tb)
+	if w.Code != 200 || tb.Scope != "ach mcp-b" {
+		t.Fatalf("refresh scope: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestToken_GrantsUnavailable(t *testing.T) {
+	f := withServices(newAS(t))
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	f.deps.Grants = failingGrants{}
+	f.mount()
+	seedCodeScoped(t, f, cid, []string{"mcp-a"})
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 503 {
+		t.Fatalf("grants down must be 503: %d %s", w.Code, w.Body)
+	}
+	// …but a code that asked for no services never touches the projection
+	seedCodeScoped(t, f, cid, nil)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("no services requested: %d %s", w.Code, w.Body)
+	}
+}
+
+type failingGrants struct{}
+
+func (failingGrants) Granted(context.Context, string, string) (bool, error) {
+	return false, errors.New("redis down")
+}
+
+func seedCodeScoped(t *testing.T, f *asFixture, cid string, scopes []string) {
+	t.Helper()
+	err := f.store.Put(context.Background(), "code", "thecode", oauthCode{
+		oauthPending: oauthPending{ClientID: cid, RedirectURI: "http://127.0.0.1:5000/cb", State: "s", CodeChallenge: testChallenge, Scopes: scopes},
+		Sub:          "u@x.com", UserID: "litellm-user-1",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

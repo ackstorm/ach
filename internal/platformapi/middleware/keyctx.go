@@ -28,7 +28,11 @@ type KeyContext struct {
 	// plaintext (sk-…), forwarded by the proxy as x-litellm-api-key.
 	LiteLLMKeyMaterial *string
 	LiteLLMUserID      *string
-	IsAdmin            bool
+	// OAuth/Scopes mirror keystore.KeyInfo: true + the "scope" claim's
+	// fields when the bearer was an OAuth access token, zero for pk_/ek_.
+	OAuth   bool
+	Scopes  []string
+	IsAdmin bool
 }
 
 // ctxKey is the private type used for the two context.Value keys this
@@ -62,6 +66,8 @@ func WithKeyContext(ctx context.Context, info *keystore.KeyInfo, isAdmin bool) c
 		// TESTING-PHASE (reverts FIX01 §A.6)
 		LiteLLMKeyMaterial: info.LiteLLMKeyMaterial,
 		LiteLLMUserID:      info.LiteLLMUserID,
+		OAuth:              info.OAuth,
+		Scopes:             info.Scopes,
 		IsAdmin:            isAdmin,
 	}
 	return context.WithValue(ctx, keyContextKey, kc)

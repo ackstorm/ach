@@ -456,6 +456,36 @@ substituted.
 
 ---
 
+## 1.6 OAuth scope gate — `insufficient_scope` on brokered `/mcp/<name>`
+
+`ACH_OAUTH_SERVICES` (a JSON map, shared with platform-api's broker chain)
+names the `/mcp/<name>` services that require a scope. The gate applies
+**only to OAuth bearers** — a `pk_`, `ek_`, or raw `sk-` is never checked, and
+an unmapped service is never checked either.
+
+On `/mcp/<name>`, before precheck: if the caller's token is OAuth AND `name`
+is in the map AND the token's `scope` claim does not contain `name`, the
+forwarder answers:
+
+```
+403 {"error":"insufficient_scope", ...}
+WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata="<base>/.well-known/oauth-protected-resource/mcp/<name>"
+```
+
+The client's remedy is the normal RFC 9728 dance: fetch the PRM pointer,
+read its `scopes_supported` (the audience plus `<name>` — the forwarder
+composes this from the same map, see §1.2's `jwt.ASMetadata`/PRM handling),
+and re-run `/authorize` asking for that scope. platform-api's broker chain
+then runs one hop per requested-but-ungranted service before minting a token
+whose `scope` claim actually carries it — see
+`docs/superpowers/specs/2026-09-18-oauth-broker-chain-design.md`.
+
+`/a2a/<name>` and any `/mcp/<name>` not in the map are never gated —
+`ACH_OAUTH_SERVICES` empty/unset makes the whole gate dormant, matching
+today's behavior.
+
+---
+
 ## 2. BackendIdentityPolicy (BIP) — turning JWT mint on
 
 JWT mint is **opt-in per target**. A `BackendIdentityPolicy` CR selects

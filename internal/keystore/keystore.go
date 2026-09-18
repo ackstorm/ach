@@ -63,6 +63,12 @@ type KeyInfo struct {
 	// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM virtual-key plaintext (sk-…),
 	// forwarded as x-litellm-api-key so LiteLLM sees the caller's own key.
 	LiteLLMKeyMaterial *string `json:"litellm_key_material,omitempty"`
+	// OAuth is true when the bearer was an OAuth access token (resolved by
+	// oauthResolver) rather than a pk_/ek_ plaintext; Scopes is its "scope"
+	// claim split on spaces. Both zero for pk_/ek_. Cached with the row
+	// under the peppered hash of the JWT, so a token's scopes are stable.
+	OAuth  bool     `json:"oauth,omitempty"`
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // Resolver is the single per-request authentication contract. The Authn

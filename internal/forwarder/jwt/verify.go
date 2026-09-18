@@ -14,12 +14,19 @@ import (
 // segments. Callers use it to fall through to pk_/ek_ handling.
 var ErrNotAJWT = errors.New("jwt: not a compact JWS")
 
+// Verified is what Verify hands back: the subject and the scope claim
+// ("" when absent). Callers that only need identity read Sub.
+type Verified struct {
+	Sub   string
+	Scope string
+}
+
 // Verify checks a token this signer (or its next slot) produced and returns
-// its subject. iss and aud are exact matches. Keys are the in-memory slots —
-// no JWKS fetch, both services hold the same Secret.
-func (s *Ed25519Signer) Verify(raw, iss, aud string) (string, error) {
+// its subject and scope. iss and aud are exact matches. Keys are the
+// in-memory slots — no JWKS fetch, both services hold the same Secret.
+func (s *Ed25519Signer) Verify(raw, iss, aud string) (*Verified, error) {
 	if strings.Count(raw, ".") != 2 {
-		return "", ErrNotAJWT
+		return nil, ErrNotAJWT
 	}
 	keyfunc := func(t *jwtv5.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
@@ -37,11 +44,12 @@ func (s *Ed25519Signer) Verify(raw, iss, aud string) (string, error) {
 		jwtv5.WithAudience(aud),
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	sub, err := tok.Claims.GetSubject()
 	if err != nil || sub == "" {
-		return "", errors.New("jwt: no subject")
+		return nil, errors.New("jwt: no subject")
 	}
-	return sub, nil
+	scope, _ := tok.Claims.(jwtv5.MapClaims)["scope"].(string)
+	return &Verified{Sub: sub, Scope: scope}, nil
 }

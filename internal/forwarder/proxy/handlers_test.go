@@ -20,6 +20,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/go-chi/chi/v5"
 )
@@ -626,5 +627,44 @@ func chiWithName(h http.HandlerFunc) http.HandlerFunc {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("name", strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[1])
 		h(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
+	}
+}
+
+func TestHandlerMCP_InsufficientScope(t *testing.T) {
+	upstream, _ := upstreamSpy()
+	defer upstream.Close()
+	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider(), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+	deps.Services = map[string]oauthsvc.Service{"svc-a": {Store: "a", Broker: "http://b"}}
+	deps.BaseURL = "https://ach.example.com"
+	h := HandlerMCP(deps)
+	call := func(name string, kc middleware.KeyContext) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/mcp/"+name, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("name", name)
+		ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
+		ctx = middleware.WithKeyContext(ctx, &keystore.KeyInfo{KeyID: kc.KeyID, KeyType: kc.KeyType, OwnerEmail: kc.OwnerEmail, OAuth: kc.OAuth, Scopes: kc.Scopes}, false)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r.WithContext(ctx))
+		return rec
+	}
+	oauthNoScope := middleware.KeyContext{KeyID: "pkid_1", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com", OAuth: true, Scopes: []string{"ach"}}
+	rec := call("svc-a", oauthNoScope)
+	if rec.Code != 403 || !strings.Contains(rec.Body.String(), "insufficient_scope") ||
+		rec.Header().Get("WWW-Authenticate") != `Bearer error="insufficient_scope", resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/svc-a"` {
+		t.Fatalf("oauth without scope: %d %q %s", rec.Code, rec.Header().Get("WWW-Authenticate"), rec.Body)
+	}
+	// with the scope, an unmapped service, or a pk_ bearer: the gate is silent
+	// (the request proceeds to precheck — whatever the fixture answers there is not 403 insufficient_scope)
+	for _, tc := range []struct {
+		name string
+		kc   middleware.KeyContext
+	}{
+		{"svc-a", middleware.KeyContext{KeyID: "pkid_1", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com", OAuth: true, Scopes: []string{"ach", "svc-a"}}},
+		{"svc-other", oauthNoScope},
+		{"svc-a", middleware.KeyContext{KeyID: "pkid_2", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com"}},
+	} {
+		if rec := call(tc.name, tc.kc); strings.Contains(rec.Body.String(), "insufficient_scope") {
+			t.Fatalf("%s/%v must pass the scope gate: %d %s", tc.name, tc.kc.Scopes, rec.Code, rec.Body)
+		}
 	}
 }
