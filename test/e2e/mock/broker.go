@@ -26,7 +26,8 @@ import (
 // and bounces to redirect_uri with a code. No provider, no consent screen.
 func runBroker() {
 	issuer := strings.TrimRight(envOr("BROKER_ISSUER", "http://ach.e2e.local:8080"), "/")
-	rdb := redis.NewClient(&redis.Options{Addr: envOr("BROKER_REDIS_ADDR", "valkey-primary.ach-system.svc.cluster.local:6379")})
+	redisAddr := envOr("BROKER_REDIS_ADDR", "valkey-primary.ach-system.svc.cluster.local:6379")
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	keys := &jwksCache{issuer: issuer}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
@@ -52,7 +53,8 @@ func runBroker() {
 			http.Error(w, "an account the provider did not name: "+err.Error(), 400)
 			return
 		}
-		if err := rdb.Set(r.Context(), "oauth:"+store+":state:"+sub, `{"granted":true,"via":"ach-mock-broker"}`, 0).Err(); err != nil {
+		grant := `{"granted":true,"via":"ach-mock-broker"}`
+		if err := rdb.Set(r.Context(), "oauth:"+store+":state:"+sub, grant, 0).Err(); err != nil {
 			http.Error(w, "projection write failed", 503)
 			return
 		}
@@ -75,14 +77,17 @@ func (c *jwksCache) verifyHint(ctx context.Context, raw, aud string) (string, er
 	if raw == "" {
 		return "", fmt.Errorf("no login_hint")
 	}
-	tok, err := jwtv5.Parse(raw, func(t *jwtv5.Token) (any, error) {
+	keyfunc := func(t *jwtv5.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
 		k, err := c.key(ctx, kid)
 		if err != nil {
 			return nil, err
 		}
 		return k, nil
-	}, jwtv5.WithValidMethods([]string{"EdDSA"}), jwtv5.WithIssuer(c.issuer), jwtv5.WithAudience(aud), jwtv5.WithExpirationRequired())
+	}
+	tok, err := jwtv5.Parse(raw, keyfunc,
+		jwtv5.WithValidMethods([]string{"EdDSA"}),
+		jwtv5.WithIssuer(c.issuer), jwtv5.WithAudience(aud), jwtv5.WithExpirationRequired())
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +139,7 @@ func getJSON(ctx context.Context, u string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("%s: %s", u, resp.Status)
 	}
