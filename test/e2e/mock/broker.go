@@ -63,7 +63,15 @@ func runBroker() {
 	})
 	addr := envOr("MOCK_BIND_ADDRESS", ":9090")
 	log.Printf("ach-mock broker listening on %s (issuer %s)", addr, issuer)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 type jwksCache struct {
