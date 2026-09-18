@@ -13,6 +13,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 )
 
 // OAuthDeps is what the OAuth 2.1 authorization server needs beyond
@@ -27,6 +28,12 @@ type OAuthDeps struct {
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 	Now        func() time.Time
+
+	// Services is the MCP-service map (ACH_OAUTH_SERVICES); nil → no scopes
+	// beyond the audience, no broker chain. Grants reads the brokers' grant
+	// projection; required when Services is non-empty.
+	Services map[string]oauthsvc.Service
+	Grants   GrantReader
 
 	// Seams. nil → the real thing: the oauth2+oidc Dex leg, provisionUser,
 	// Auth.MintPK, db.ActiveOAuthPK, db.RevokePersonalKey + LiteLLM revoke.

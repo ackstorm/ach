@@ -42,6 +42,9 @@ type oauthPending struct {
 	CodeChallenge string `json:"code_challenge"`
 	DexVerifier   string `json:"dex_verifier"`
 	Binding       string `json:"binding"` // hex(sha256(browser cookie value))
+	// Scopes is the requested MCP-service keys (request order, deduplicated;
+	// the audience and offline_access are always accepted and dropped here).
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // bindingCookieName is the per-pending browser-binding cookie. __Host- on an
@@ -132,8 +135,19 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		clientRedirect(w, r, redirectURI, p)
 		return
 	}
-	// `scope` and `resource` (RFC 8707) are accepted and ignored: one
-	// audience, authorization lives in precheck.
+	// `resource` (RFC 8707) is accepted and ignored: one audience,
+	// authorization lives in precheck. `scope` picks the MCP services the
+	// broker chain will run for (Task 4); unknown scopes are refused now so
+	// a typo fails at /authorize, not silently at /mcp/<svc>.
+	scopes, unknown := d.parseScope(q.Get("scope"))
+	if len(unknown) > 0 {
+		p := url.Values{"error": {"invalid_scope"}, "error_description": {"unknown scope: " + strings.Join(unknown, " ")}}
+		if state != "" {
+			p.Set("state", state)
+		}
+		clientRedirect(w, r, redirectURI, p)
+		return
+	}
 	pendingID, err := cli.NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
@@ -146,7 +160,7 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := oauthPending{ClientID: client.ClientID, RedirectURI: redirectURI, State: state,
-		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding)}
+		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding), Scopes: scopes}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
 		htmlError(w, 500, "store unavailable")
 		return
@@ -212,6 +226,26 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	d.Auth.Logger.Info("oauth: authorization code issued", "client_id", p.ClientID)
 	clientRedirect(w, r, p.RedirectURI, pv)
+}
+
+// parseScope splits a space-separated scope; the audience and
+// offline_access are always accepted and dropped, service keys are kept
+// (deduplicated, request order), anything else is returned as unknown.
+func (d OAuthDeps) parseScope(raw string) (services, unknown []string) {
+	seen := map[string]bool{}
+	for _, s := range strings.Fields(raw) {
+		switch {
+		case s == d.Audience || s == "offline_access":
+		case d.Services[s].Store != "":
+			if !seen[s] {
+				seen[s] = true
+				services = append(services, s)
+			}
+		default:
+			unknown = append(unknown, s)
+		}
+	}
+	return services, unknown
 }
 
 // --- Dex leg: the real thing, behind the seams ------------------------------
