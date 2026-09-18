@@ -13,6 +13,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/forwarder/proxy"
 	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/go-chi/chi/v5"
 )
@@ -37,6 +38,13 @@ type Deps struct {
 	LiteLLMUpstream  *url.URL
 	// AuthnOptions: the RFC 9728 challenge on 401 + raw sk- passthrough.
 	AuthnOptions pamw.AuthnOptions
+	// Services is the MCP-service map (ACH_OAUTH_SERVICES): drives brokered
+	// PRM scopes_supported and the insufficient_scope gate on /mcp/<name>.
+	// nil → no broker chain, no gate (today's behaviour).
+	Services map[string]oauthsvc.Service
+	// OAuthAudience is the ACH OAuth AS audience (ACH_OAUTH_AUDIENCE,
+	// default "ach"), advertised in scopes_supported.
+	OAuthAudience string
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -69,7 +77,8 @@ func New(deps Deps) http.Handler {
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 		},
-		BaseURL: deps.BaseURL,
+		BaseURL:  deps.BaseURL,
+		Services: deps.Services,
 	}
 
 	// OAuth discovery, ANONYMOUS by design (a client fetches these precisely
@@ -79,7 +88,11 @@ func New(deps Deps) http.Handler {
 	// every /mcp/<name> + /a2a/<name>. ACH composes both — LiteLLM's PRM
 	// document is no longer relayed, so the client is sent to ACH's
 	// authorization server, never LiteLLM's.
-	wk := proxy.WellKnownHandler(deps.BaseURL)
+	oauthAudience := deps.OAuthAudience
+	if oauthAudience == "" {
+		oauthAudience = "ach"
+	}
+	wk := proxy.WellKnownHandler(deps.BaseURL, oauthAudience, deps.Services)
 	r.Handle("/.well-known/oauth-authorization-server", wk)
 	r.Handle("/.well-known/oauth-protected-resource", wk)
 	r.Handle("/.well-known/oauth-protected-resource/*", wk)

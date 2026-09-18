@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -78,4 +79,13 @@ func TestPlatformAPIProcessDeps_CloseSafeOnPartialBuild(t *testing.T) {
 	deps := &platformAPIProcessDeps{} // pool + redis nil, as in an early failure
 	deps.close()
 	deps.close() // idempotent
+}
+
+func TestPlatformAPIConfig_ServicesRequireGrantsRedis(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	t.Setenv("ACH_OAUTH_SERVICES", `{"mcp-a":{"store":"a","broker":"https://b"}}`)
+	t.Setenv("ACH_OAUTH_GRANTS_REDIS_URL", "")
+	if _, err := validatePlatformAPIConfig(); err == nil || !strings.Contains(err.Error(), "ACH_OAUTH_GRANTS_REDIS_URL") {
+		t.Fatalf("expected refuse-to-start, got %v", err)
+	}
 }

@@ -69,6 +69,7 @@ import (
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/oauthsvc"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -114,6 +115,9 @@ type forwarderConfig struct {
 	Namespace        string
 	JWTSecretName    string
 	OAuthAudience    string // ACH_OAUTH_AUDIENCE: `aud` of the OAuth access tokens platform-api issues
+	// OAuthServices is ACH_OAUTH_SERVICES: drives brokered PRM
+	// scopes_supported and the insufficient_scope gate on /mcp/<name>.
+	OAuthServices map[string]oauthsvc.Service
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -127,6 +131,9 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	}
 	cfg.BaseURL = baseURL
 	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
+	if cfg.OAuthServices, err = oauthsvc.Parse(os.Getenv("ACH_OAUTH_SERVICES")); err != nil {
+		return nil, err
+	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
 		return nil, err
@@ -392,6 +399,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			Challenge:          proxy.ChallengeFor(cfg.BaseURL),
 			AllowRawLiteLLMKey: true,
 		},
+		Services:      cfg.OAuthServices,
+		OAuthAudience: cfg.OAuthAudience,
 	}
 	return out, nil
 }

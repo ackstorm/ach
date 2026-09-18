@@ -131,6 +131,18 @@ platformApi:
 # audience is the `aud` claim of the OAuth access tokens (ACH_OAUTH_AUDIENCE).
 oauth:
   audience: ach
+  # services: MCP services a user token may carry as scopes. Key = the
+  # /mcp/<key> path segment; store = the broker's name for it; broker = the
+  # mcp-oauth AS base. Same shape as alitellm-auth authServer.services.
+  # Empty → no broker chain, no scope gate (today's behaviour).
+  services: {}
+  #  mcp-zoho-desk-ro: { store: zoho-desk-ro, broker: https://api.ackstorm.ai/zoho-desk-ro-callback }
+  # grantsRedis: the brokers' grant projection (oauth:{store}:state:{email}),
+  # read-only, platform-api only. Required when services is non-empty.
+  grantsRedis:
+    secretRef:
+      name: ""
+      key: url
 
 # forwarder: bridges in-cluster MCP servers and external clients.
 # §5.1 reverse-proxy plane + §9 JWT trust path. Boots two listeners:
