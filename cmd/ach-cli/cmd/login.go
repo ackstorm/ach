@@ -455,6 +455,7 @@ func runOAuthLogin(
 		clientID = existing.OAuth.ClientID // cached DCR id; "" re-registers
 	}
 	_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
+	_, _ = fmt.Fprintln(stdout, "(no browser here? this is a remote/SSH host? re-run `ach-cli login --device`)")
 	creds, err := (&oauthlogin.Client{BaseURL: url}).Login(ctx, clientID)
 	if err != nil {
 		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
