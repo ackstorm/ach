@@ -33,6 +33,26 @@ WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 hydrate URLs look right — and every GET 404s because the route doesn't
 exist. Fix is a rolling image update; no data migration.
 
+### ❌ OAuth login ends on `400 this browser did not start the authorization request`
+```bash
+# /platform/oauth/as-callback?code=…&state=<pendingID>  → 400 (HTML)
+```
+✅ Since v0.9.1 `/authorize` sets a per-pending browser-binding cookie
+(`__Host-ach_oauth_<pendingID>` on https, `ach_oauth_<pendingID>` on a
+plain-http base, `SameSite=Lax`, 10 min) and `/as-callback` requires it to
+match the pending record before minting a code. The 400 means the callback
+arrived without it: the user copied the login URL into a different
+browser/profile, cookies are blocked for the Hub origin, or a proxy in
+front of platform-api dropped `Set-Cookie`/`Cookie` on those two paths.
+Scripted flows (e2e `followToLoopback`, the fake-browser smoke) must carry
+the cookie jar across hops. The pending is burned on the failed attempt —
+restart from the tool.
+WHY IT EXISTS: without the binding, whoever completed the Dex login for a
+given `state` was the identity the code was minted for, so an attacker
+could start `/authorize` for THEIR DCR client, hand the Dex URL to a
+victim, and redeem the victim's code with their own PKCE verifier (login
+CSRF / code injection; v0.9.0 security review, fixed in v0.9.1).
+
 ### ❌ `ach-cli env hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
 ```bash
 ach-cli env hydrate demo          # profile logged in via `ach-cli login` (OAuth)

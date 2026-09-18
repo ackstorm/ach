@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -235,15 +236,33 @@ func TestAuthorize(t *testing.T) {
 	}
 }
 
+// startAuthorize runs /authorize and returns Dex's state (= the pending id)
+// plus the Cookie header a real browser would send back on /as-callback.
+func startAuthorize(t *testing.T, f *asFixture, cid string) (state string, cookie map[string]string) {
+	t.Helper()
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	if w.Code != 302 {
+		t.Fatalf("authorize: %d %s", w.Code, w.Body)
+	}
+	state = strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	cs := w.Result().Cookies()
+	if len(cs) != 1 || cs[0].Name != "__Host-ach_oauth_"+state || !cs[0].Secure || !cs[0].HttpOnly || cs[0].SameSite != http.SameSiteLaxMode {
+		t.Fatalf("binding cookie: %+v", cs)
+	}
+	return state, map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value}
+}
+
 func TestASCallback(t *testing.T) {
 	f := withFakeDex(newAS(t), "U@X.com")
 	cid := registerClient(t, f)
-	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
-	state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
-	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil)
+	state, cookie := startAuthorize(t, f, cid)
+	w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
 	loc := w.Header().Get("Location")
 	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "code=") || !strings.Contains(loc, "state=xyz") {
 		t.Fatalf("%d %s", w.Code, loc)
+	}
+	if cs := w.Result().Cookies(); len(cs) != 1 || cs[0].Name != "__Host-ach_oauth_"+state || cs[0].MaxAge >= 0 {
+		t.Fatalf("binding cookie not cleared: %+v", cs)
 	}
 	code := mustQuery(t, loc, "code")
 	var rec oauthCode
@@ -255,8 +274,68 @@ func TestASCallback(t *testing.T) {
 		t.Fatalf("no pending: %d", w.Code)
 	}
 	// pending is single-use
-	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil); w.Code != 400 {
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie); w.Code != 400 {
 		t.Fatalf("pending replay: %d", w.Code)
+	}
+}
+
+// TestASCallback_RequiresTheBrowserThatStartedIt is the login-CSRF /
+// code-injection regression: an attacker starts /authorize for THEIR
+// client and hands the Dex URL to a victim. The victim's browser reaches
+// /as-callback with the attacker's `state` but without the binding cookie
+// (or with a stale one from its own flow) — no code may be minted, and the
+// pending must be burned so the link cannot be retried.
+func TestASCallback_RequiresTheBrowserThatStartedIt(t *testing.T) {
+	f := withFakeDex(newAS(t), "victim@x.com")
+	cid := registerClient(t, f)
+
+	// No cookie at all.
+	state, _ := startAuthorize(t, f, cid)
+	w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("no cookie: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if n := f.store.RDB.Keys(context.Background(), "ach:oauth:code:*").Val(); len(n) != 0 {
+		t.Fatalf("code minted without binding: %v", n)
+	}
+	// Burned: the same link cannot be replayed even with the right cookie now.
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil); w.Code != 400 {
+		t.Fatalf("pending survived a binding failure: %d", w.Code)
+	}
+
+	// A cookie from a DIFFERENT pending (the victim's own concurrent flow)
+	// does not satisfy the attacker's pending.
+	attackerState, _ := startAuthorize(t, f, cid)
+	_, victimCookie := startAuthorize(t, f, cid)
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+attackerState, nil, victimCookie)
+	if w.Code != 400 {
+		t.Fatalf("foreign cookie: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	// Wrong value under the right name.
+	state, _ = startAuthorize(t, f, cid)
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil,
+		map[string]string{"Cookie": "__Host-ach_oauth_" + state + "=not-the-secret"})
+	if w.Code != 400 {
+		t.Fatalf("wrong cookie value: %d", w.Code)
+	}
+}
+
+func TestAuthorize_InsecureBaseUsesPlainCookieName(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	f.deps.Auth.InsecureCookie = true
+	f.mount()
+	cid := registerClient(t, f)
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	cs := w.Result().Cookies()
+	if len(cs) != 1 || cs[0].Name != "ach_oauth_"+state || cs[0].Secure {
+		t.Fatalf("insecure cookie: %+v", cs)
+	}
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil,
+		map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value})
+	if w.Code != 302 {
+		t.Fatalf("insecure happy path: %d %s", w.Code, w.Body)
 	}
 }
 
