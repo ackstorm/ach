@@ -1330,6 +1330,13 @@ by itself. The entries hydrate writes are exactly these:</p>
 entries: Claude Code disables its OAuth fallback entirely when a credential
 header is configured, and opencode's configured headers silently override the
 token it obtained. <code>x-ach-environment</code> is informational and fine.</p>
+<p>Some MCP servers are <strong>brokered</strong>: ACH names no account of its own, so it
+delegates that one service's consent to the service's own broker. For a
+brokered service the browser makes one extra stop — at that service's broker,
+and the provider behind it — before returning to the tool; that stop is where
+the provider consent actually lives. You do not configure anything
+differently for this; the extra hop happens inside the same login command
+above.</p>
 <h2 id="model-endpoint-a-credential-helper">Model endpoint: a credential helper<a class="headerlink" href="#model-endpoint-a-credential-helper" title="Permanent link">&para;</a></h2>
 <p>No tool runs OAuth against a model base URL. Each takes a <strong>command that
 prints a credential to stdout</strong>; <code>ach-cli token</code> is that command. <code>ach-cli
@@ -1371,6 +1378,9 @@ minute; the next <code>ach-cli token</code> after that mints a fresh one.</p>
   flushed: <code>ach-cli login</code> again.</li>
 <li><strong>OAuth works, <code>/mcp/&lt;name&gt;</code> is 403</strong> — precheck, same as a <code>pk_</code>: the
   Environment's <code>authorizedTeams</code> do not include one of yours.</li>
+<li><strong><code>403 insufficient_scope</code> on an MCP</strong> — the token was minted before you
+  consented to that service (or the consent was revoked at the provider); the
+  tool re-runs its login for that server (<code>claude mcp login &lt;name&gt;</code> etc.).</li>
 <li><strong>"this browser did not start the authorization request"</strong> — the sign-in
   must finish in the browser that opened it: ACH sets a cookie when the
   tool sends you to <code>/platform/oauth/authorize</code> and checks it when the

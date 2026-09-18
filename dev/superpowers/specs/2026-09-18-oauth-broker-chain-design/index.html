@@ -1,0 +1,1627 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/superpowers/specs/2026-09-18-oauth-broker-chain-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>OAuth broker chain — design - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#oauth-broker-chain-design" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              OAuth broker chain — design
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/signing-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#internalplatformapiauth-the-chain-platform-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        internal/platformapi/auth — the chain (platform-api)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-scope-on-the-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /token — scope on the token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internalforwarderjwt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        internal/forwarder/jwt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internalkeystore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        internal/keystore
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internalforwarderproxy-prm-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        internal/forwarder/proxy — PRM + gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helm
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow-one-zoho-login-nothing-granted-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow (one Zoho login, nothing granted yet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error handling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="oauth-broker-chain-design">OAuth broker chain — design<a class="headerlink" href="#oauth-broker-chain-design" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-09-18 · <strong>Target release:</strong> v0.10.0 · <strong>Depends on:</strong> v0.9.1 (OAuth front door + browser-binding cookie)</p>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>A user signing in to an MCP service behind a broker (mcp-oauth) reaches the
+provider's consent screen, and the broker must then store the grant under
+the user's identity. Providers that name no account (Zoho) — or an account
+whose email is not the Dex one (some GitLab/Slack) — leave the broker with
+nothing to key on: <code>This session belongs to '__broker_pending__', but you
+authorized as 'an account the provider did not name'</code>.</p>
+<p>The fix agreed with the mcp-oauth / alitellm-auth team: the authorization
+server that already knows the user (ACH's, right after the Dex leg) chains
+the browser through each broker and names the grant owner with a signed
+<code>login_hint</code>. mcp-oauth (≥ a227d3f) verifies the hint against ACH's issuer
++ JWKS (EdDSA accepted) and keys the grant by <code>sub</code>. ACH v0.9.1's AS does
+Dex → token only; it ignores <code>scope</code> and never visits a broker.</p>
+<p>The immediate production symptom is unrelated to ACH's AS: 23 HTTPRoutes
+on <code>ach.*</code> send the per-service PRM to the pod's own broker, so clients
+skip ACH entirely. Those routes are deleted the day ACH serves the
+per-service PRM (this design).</p>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>/authorize</code> chains through the broker of every requested MCP service the
+  user has not yet granted, sending <code>login_hint</code>.</li>
+<li>The ACH access token carries <code>scope</code> = <code>ach</code> + the granted services; the
+  forwarder gates <code>/mcp/&lt;svc&gt;</code> on it for OAuth bearers.</li>
+<li>ACH serves the per-service PRM with <code>scopes_supported</code>, so clients ask
+  for the right scope on first use and re-authorize on <code>insufficient_scope</code>.</li>
+<li>Behaviour byte-compatible with alitellm-auth v0.8.3 (<code>_chain_next</code>,
+  <code>broker_callback</code>, <code>Grants</code>) so the 23 brokers need no ACH-specific code.</li>
+</ul>
+<h2 id="non-goals">Non-goals<a class="headerlink" href="#non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Redeeming the broker's code (the grant projection is the truth).</li>
+<li>Any change to <code>pk_</code>/<code>ek_</code> bearers, the device-code flow, hydrate, or the
+  <code>ach-cli</code> (its login keeps <code>scope=offline_access</code>; MCP scopes are for the
+  tools' own OAuth clients).</li>
+<li>Discovering brokers from LiteLLM. The service map is static config.</li>
+<li>Per-user revocation of broker grants (owned by the broker).</li>
+</ul>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p><strong>Service map</strong> — one Helm value, rendered as JSON into BOTH platform-api
+and forwarder as <code>ACH_OAUTH_SERVICES</code>. Same shape as alitellm-auth
+<code>authServer.services</code>; gitops renders the same 23 entries for both charts.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">oauth</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">audience</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">services</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="c1">#  mcp-zoho-desk-ro: { store: zoho-desk-ro, broker: https://api.ackstorm.ai/zoho-desk-ro-callback }</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">grantsRedis</span><span class="p">:</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="s">""</span><span class="p p-Indicator">,</span><span class="nt"> key</span><span class="p">:</span><span class="w"> </span><span class="nv">url</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">   </span><span class="c1"># redis://:&lt;pw&gt;@host:6379/0 — the brokers' projection</span>
+</code></pre></div>
+<p><code>ACH_OAUTH_SERVICES</code> unset/empty ⇒ the whole feature is dormant: no chain,
+no <code>scope</code> gate, PRMs unchanged. <code>ACH_OAUTH_GRANTS_REDIS_URL</code> (platform-api
+only) unset with a non-empty map ⇒ refuse to start (a map without a
+projection would re-prompt every login). The Redis user should be the ACL
+user limited to <code>+get ~oauth:*:state:*</code> the mcp team offered; ACH never
+writes there.</p>
+<p>Keys of the map are the <code>/mcp/&lt;name&gt;</code> path segment (the client-facing
+scope); <code>store</code> is what the broker calls the service (its <code>scope</code>/<code>aud</code>);
+<code>broker</code> is the broker's OAuth AS base (has <code>/register</code>, <code>/authorize</code>).</p>
+<h2 id="components">Components<a class="headerlink" href="#components" title="Permanent link">&para;</a></h2>
+<h3 id="internalplatformapiauth-the-chain-platform-api"><code>internal/platformapi/auth</code> — the chain (platform-api)<a class="headerlink" href="#internalplatformapiauth-the-chain-platform-api" title="Permanent link">&para;</a></h3>
+<p>New file <code>oauth_chain.go</code>; <code>oauth_authorize.go</code> gains the scope check and
+the hand-off. Store kinds added to <code>OAuthStore</code>: <code>brokerclient</code>
+(<code>&lt;broker&gt; → client_id</code>, TTL 30 d), <code>chain</code> (TTL 10 min).</p>
+<p><code>OAuthDeps</code> gains <code>Services map[string]Service</code> (<code>{Store, Broker string}</code>)
+and <code>Grants GrantReader</code> (<code>Granted(ctx, email, store) (bool, error)</code>; the
+production reader is a Redis <code>GET</code>). No broker seam: unit tests stand up a
+real <code>httptest.Server</code> broker and point <code>Services[*].Broker</code> at it.</p>
+<p><strong><code>/authorize</code></strong>: after the existing checks, parse <code>scope</code> (space-separated).
+Every value must be the audience (<code>ach</code>), <code>offline_access</code>, or a key of
+<code>Services</code>; anything else ⇒ <code>invalid_scope</code> redirect to the client (same
+shape as the existing <code>invalid_request</code> one). The requested services are
+stored on <code>oauthPending.Scopes</code>.</p>
+<p><strong><code>/as-callback</code></strong> (existing): after <code>provision</code>, compute
+<code>todo = [s for s in pending.Scopes if !Grants.Granted(email, Services[s].Store)]</code>.
+Empty ⇒ <code>finish</code> (today's code-mint path). Otherwise <code>chainNext</code>.</p>
+<p><strong><code>chainNext(pending, todo)</code></strong>:
+1. <code>clientID = brokerClientID(broker)</code>: <code>POST &lt;broker&gt;/register</code> with
+   <code>{client_name: "ACH", redirect_uris: [&lt;issuer&gt;/platform/oauth/broker-callback], token_endpoint_auth_method: "none"}</code>
+   once per broker, cached in <code>brokerclient</code>. Any error ⇒ log, drop this
+   service from <code>todo</code>, continue (alitellm-auth <code>_skip_and_continue</code>).
+2. <code>chainID = NewSessionID()</code>; store kind <code>chain</code> = pending + <code>Todo</code> + the
+   PKCE verifier (unused; kept for a future revision that redeems).
+3. 302 to <code>&lt;broker&gt;/authorize?response_type=code&amp;client_id=…&amp;redirect_uri=&lt;issuer&gt;/platform/oauth/broker-callback&amp;scope=&lt;store&gt;&amp;state=&lt;chainID&gt;&amp;code_challenge=S256(v)&amp;code_challenge_method=S256&amp;login_hint=&lt;hint&gt;</code>.
+4. <code>hint</code> = <code>Signer.Sign(Claims{Iss: issuer, Sub: email, Aud: store, TTL: 600s})</code>
+   — the existing Ed25519 signer; no <code>email</code>/<code>groups</code>/<code>scope</code> claims.</p>
+<p><strong><code>/broker-callback</code></strong> (new route, anonymous like the rest): pop <code>chain</code> by
+<code>state</code>; missing ⇒ 400 HTML. Verify the v0.9.1 <strong>browser-binding cookie</strong>
+for the chain's <code>pendingID</code> (the chain record carries it; the cookie set at
+<code>/authorize</code> is still in the browser, <code>Max-Age</code> 10 min). Mismatch ⇒ 400,
+chain burned. <code>error</code> param ⇒ log at info, treat as skipped. The <code>code</code> is
+ignored. Then <code>skipAndContinue</code>: next <code>todo</code> ⇒ <code>chainNext</code>, else <code>finish</code>.</p>
+<p><strong><code>finish</code></strong>: today's code-mint, plus <code>oauthCode.Scopes</code> = the requested
+services (not the granted ones — granted is recomputed at <code>/token</code>). The
+binding cookie is cleared here, not at <code>/as-callback</code> any more (the cookie
+must survive the chain). On the <code>todo</code>-empty path <code>/as-callback</code> still
+clears it via <code>finish</code>.</p>
+<h3 id="token-scope-on-the-token"><code>/token</code> — <code>scope</code> on the token<a class="headerlink" href="#token-scope-on-the-token" title="Permanent link">&para;</a></h3>
+<p><code>issue()</code> computes <code>scope = [audience] + [s for s in requested if Granted(email, Services[s].Store)]</code>
+for BOTH grants: <code>authorization_code</code> uses <code>oauthCode.Scopes</code>; the refresh
+record gains <code>Scopes</code> (the originally requested services) so a refresh
+re-reads the projection — a grant revoked at the broker drops off the next
+token. <code>Claims.Scope</code> (space-separated string) is added to the access JWT;
+the token response gains <code>"scope"</code>. Grants Redis unreachable at <code>/token</code> ⇒
+<code>503 temporarily_unavailable</code> (never mint a wider token than the
+projection allows, never silently narrower).</p>
+<h3 id="internalforwarderjwt"><code>internal/forwarder/jwt</code><a class="headerlink" href="#internalforwarderjwt" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Claims.Scope string</code> (omitted when empty).</li>
+<li><code>Ed25519Signer.Verify</code> returns the verified claims (<code>sub</code>, <code>scope</code>) — the
+  <code>keystore.JWTVerifier</code> interface changes from <code>(sub string, err)</code> to
+  <code>(*VerifiedClaims, error)</code>; <code>NoJWT</code> follows.</li>
+<li><code>ASMetadata(issuer, services)</code>: <code>scopes_supported</code> = <code>["offline_access", audience, ...service keys]</code>.</li>
+</ul>
+<h3 id="internalkeystore"><code>internal/keystore</code><a class="headerlink" href="#internalkeystore" title="Permanent link">&para;</a></h3>
+<p><code>KeyInfo</code> gains <code>OAuth bool</code> and <code>Scopes []string</code> (both set only by the
+OAuth resolver; <code>pk_</code>/<code>ek_</code> rows leave them zero). Cached by the existing
+peppered-JWT-hash key, so a token's scopes are stable for its lifetime.
+<code>middleware.KeyContext</code> mirrors both fields.</p>
+<h3 id="internalforwarderproxy-prm-gate"><code>internal/forwarder/proxy</code> — PRM + gate<a class="headerlink" href="#internalforwarderproxy-prm-gate" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>WellKnownHandler(base, services)</code>: for <code>/mcp/&lt;svc&gt;</code> with <code>&lt;svc&gt;</code> in the
+  map, add <code>"scopes_supported": ["&lt;audience&gt;", "&lt;svc&gt;"]</code>. <code>/a2a/*</code> and
+  unknown services unchanged.</li>
+<li><code>/mcp/&lt;svc&gt;</code> handler, before precheck: if <code>kc.OAuth &amp;&amp; svc ∈ services &amp;&amp; !contains(kc.Scopes, svc)</code>
+  ⇒ <code>403</code> JSON <code>{"error":"insufficient_scope"}</code> with
+  <code>WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata="&lt;base&gt;/.well-known/oauth-protected-resource/mcp/&lt;svc&gt;"</code>.
+  Metric outcome <code>insufficient_scope</code>. Everything else (pk_/ek_, unmapped
+  services, <code>/a2a</code>) falls through untouched.</li>
+</ul>
+<h3 id="helm">Helm<a class="headerlink" href="#helm" title="Permanent link">&para;</a></h3>
+<p><code>oauth.services</code> → <code>ACH_OAUTH_SERVICES</code> (JSON via <code>toJson</code>) on the
+platform-api and forwarder Deployments; <code>oauth.grantsRedis.secretRef</code> →
+<code>ACH_OAUTH_GRANTS_REDIS_URL</code> on platform-api. <code>helm template</code> must render
+identically to today when both are empty.</p>
+<h2 id="data-flow-one-zoho-login-nothing-granted-yet">Data flow (one Zoho login, nothing granted yet)<a class="headerlink" href="#data-flow-one-zoho-login-nothing-granted-yet" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>opencode → GET /.well-known/oauth-protected-resource/mcp/mcp-zoho-desk-ro   (forwarder: AS=ACH, scopes ach mcp-zoho-desk-ro)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>opencode → /platform/oauth/authorize?scope=ach mcp-zoho-desk-ro…            (pending{Scopes}, binding cookie)
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        → Dex → /as-callback   email=u@x  Granted(u@x, zoho-desk-ro)=false
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        → chainNext: register@broker (cached) → 302 broker/authorize?…&amp;login_hint=&lt;EdDSA JWT sub=u@x aud=zoho-desk-ro&gt;
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        → broker verifies hint via ACH jwks_uri → Zoho consent → broker writes oauth:zoho-desk-ro:state:u@x {granted:true}
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        → 302 /platform/oauth/broker-callback?code=…&amp;state=&lt;chainID&gt;        (cookie ok, code ignored)
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        → finish: 302 opencode?code=&lt;achcode&gt;
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>opencode → /token  → Granted(u@x, zoho-desk-ro)=true → JWT scope="ach mcp-zoho-desk-ro"
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>opencode → /mcp/mcp-zoho-desk-ro  (forwarder: scope ok → precheck → per-target JWT sub=u@x → pod finds the grant)
+</code></pre></div>
+<h2 id="error-handling">Error handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unknown scope on <code>/authorize</code></td>
+<td><code>invalid_scope</code> redirect to the client</td>
+</tr>
+<tr>
+<td>Broker <code>/register</code> or unreachable</td>
+<td>log warn, skip that service, continue chain; token simply lacks it</td>
+</tr>
+<tr>
+<td>User declines at provider (<code>error</code> on broker-callback)</td>
+<td>log info, skip, continue</td>
+</tr>
+<tr>
+<td>Browser-binding cookie missing on <code>/broker-callback</code></td>
+<td>400 HTML, chain burned</td>
+</tr>
+<tr>
+<td>Grants Redis down at <code>/as-callback</code></td>
+<td>treat every requested service as ungranted (chain runs; harmless re-consent)</td>
+</tr>
+<tr>
+<td>Grants Redis down at <code>/token</code></td>
+<td>503 <code>temporarily_unavailable</code></td>
+</tr>
+<tr>
+<td><code>ACH_OAUTH_SERVICES</code> set, Redis URL unset</td>
+<td>platform-api refuses to start</td>
+</tr>
+<tr>
+<td>OAuth JWT without the service scope on <code>/mcp/&lt;svc&gt;</code></td>
+<td>403 <code>insufficient_scope</code> + PRM pointer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="security-notes">Security notes<a class="headerlink" href="#security-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>login_hint</code> is signed by the same Ed25519 slot as access tokens, but
+  <code>aud</code> = store name, so it verifies at exactly one broker and nowhere in
+  ACH (ACH verifiers require <code>aud = ach</code>). 600 s lifetime.</li>
+<li>The chain inherits the v0.9.1 browser binding end to end; an attacker
+  cannot splice a victim's broker consent into their own chain.</li>
+<li>The broker code is never redeemed, so ACH holds no provider credentials.</li>
+<li>Scope is enforced only for OAuth bearers. <code>pk_</code>/<code>ek_</code> semantics are
+  unchanged (the key's team/access-group is their ceiling).</li>
+</ul>
+<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
+<p><strong>Unit (<code>internal/platformapi/auth</code>)</strong>: <code>httptest.Server</code> broker with
+<code>/register</code> + <code>/authorize</code> (records <code>login_hint</code>, verifies it with the test
+signer: <code>iss</code>, <code>sub</code>, <code>aud</code>, <code>exp ≤ 600 s</code>), fake <code>Grants</code> map. Cases:
+two services, one granted ⇒ exactly one hop; broker down ⇒ skipped, token
+still minted; decline ⇒ skipped; binding cookie missing on
+<code>/broker-callback</code> ⇒ 400; <code>invalid_scope</code>; <code>/token</code> and refresh recompute
+scope from the fake projection; hint has no ACH audience.</p>
+<p><strong>Unit (<code>forwarder</code>)</strong>: PRM with/without map; <code>/mcp/&lt;svc&gt;</code> 403 for an OAuth
+<code>KeyContext</code> lacking the scope, pass with it, pass for <code>pk_</code> without it,
+pass for an unmapped service.</p>
+<p><strong>e2e</strong>: new fixture <code>test/e2e/mock/broker</code> (Go, same image family as
+mcp-echo): <code>/register</code> (any client), <code>/authorize</code> verifies <code>login_hint</code>
+against <code>http://ach.e2e.local:8080/.well-known/jwks.json</code>, writes
+<code>oauth:&lt;store&gt;:state:&lt;sub&gt;</code> <code>{"granted":true}</code> to the e2e Redis, 302s to
+<code>redirect_uri?code=x&amp;state=…</code>. Chart values in <code>02-ach/ach.values.yaml</code>:
+<code>oauth.services: { demo-mcp-echo: {store: echo, broker: http://mock-broker.ach-system.svc:8080} }</code>
+and the grants Redis = the e2e ach-redis. <code>TestOAuthFrontDoor</code> gains:
+PRM for <code>/mcp/demo-mcp-echo</code> lists <code>scopes_supported</code>; authorize with
+<code>scope=ach demo-mcp-echo</code> walks one broker hop (<code>followToLoopback</code> already
+carries cookies); the token's <code>scope</code> contains <code>demo-mcp-echo</code>; <code>/mcp/demo-mcp-echo</code>
+answers 200 with it; a second ceremony without the scope gets 403
+<code>insufficient_scope</code> on <code>/mcp/demo-mcp-echo</code> and 200 on <code>/v1/models</code>.</p>
+<h2 id="rollout">Rollout<a class="headerlink" href="#rollout" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Ship v0.10.0. Chart default: <code>oauth.services: {}</code> (dormant).</li>
+<li>Gitops: set <code>oauth.services</code> (23 entries) + <code>grantsRedis.secretRef</code> on
+   ach; add <code>https://ach.&lt;domain&gt;</code> to <code>AUTH_BROKER_HINT_ISSUER</code> on the 23
+   MCPServers.</li>
+<li>Delete the 23 <code>&lt;svc&gt;-ach-resource-metadata</code> HTTPRoutes and
+   <code>AUTH_RESOURCE_URLS</code>. From then on clients discover ACH as the AS.</li>
+</ol>
+<p>Docs in the same change: CLAUDE.md service-table rows (platform-api,
+forwarder), <code>docs/developer-guide/jwt-forwarder.md</code> (scope gate + PRM),
+<code>docs/user-guide/signing-in-from-tools.md</code> (what the extra browser hop is),
+<code>references/troubleshooting.md</code> (<code>insufficient_scope</code>, chain skipped).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
