@@ -56,9 +56,9 @@ func TestSign_TTL(t *testing.T) {
 func TestVerify_AcceptsOwnTokenAndReturnsSub(t *testing.T) {
 	s := signerWith(t, "k1")
 	raw, _ := s.Sign(context.Background(), Claims{Iss: "https://ach.test", Sub: "U@X.com", Aud: "ach", TTL: time.Minute})
-	sub, err := s.Verify(raw, "https://ach.test", "ach")
-	if err != nil || sub != "U@X.com" {
-		t.Fatalf("sub=%q err=%v", sub, err)
+	v, err := s.Verify(raw, "https://ach.test", "ach")
+	if err != nil || v.Sub != "U@X.com" {
+		t.Fatalf("sub=%+v err=%v", v, err)
 	}
 }
 
@@ -137,5 +137,21 @@ func TestLoadFromDir(t *testing.T) {
 	}
 	if s.Loaded() {
 		t.Fatal("must not load on error")
+	}
+}
+
+func TestVerify_ReturnsScope(t *testing.T) {
+	s := signerWith(t, "k1")
+	raw, err := s.Sign(context.Background(), Claims{Iss: "https://ach.test", Sub: "u@x.com", Aud: "ach", Scope: "ach mcp-a", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.Verify(raw, "https://ach.test", "ach")
+	if err != nil || v.Sub != "u@x.com" || v.Scope != "ach mcp-a" {
+		t.Fatalf("got %+v err=%v", v, err)
+	}
+	raw, _ = s.Sign(context.Background(), Claims{Iss: "https://ach.test", Sub: "u@x.com", Aud: "ach", TTL: time.Minute})
+	if v, err := s.Verify(raw, "https://ach.test", "ach"); err != nil || v.Scope != "" {
+		t.Fatalf("no scope claim: %+v err=%v", v, err)
 	}
 }

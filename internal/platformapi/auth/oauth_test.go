@@ -110,7 +110,7 @@ func (f *asFixture) do(t *testing.T, method, path string, body any, hdr map[stri
 }
 
 func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
-	m := jwt.ASMetadata("https://ach.test/")
+	m := jwt.ASMetadata("https://ach.test/", "ach", nil)
 	want := map[string]string{
 		"issuer":                 "https://ach.test",
 		"authorization_endpoint": "https://ach.test/platform/oauth/authorize",
@@ -126,8 +126,8 @@ func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
 	if cc, _ := m["code_challenge_methods_supported"].([]string); len(cc) != 1 || cc[0] != "S256" {
 		t.Errorf("S256 must be advertised: %v", m["code_challenge_methods_supported"])
 	}
-	if ss, _ := m["scopes_supported"].([]string); len(ss) != 1 || ss[0] != "offline_access" {
-		t.Errorf("offline_access must be advertised: %v", m["scopes_supported"])
+	if ss, _ := m["scopes_supported"].([]string); len(ss) != 2 || ss[0] != "offline_access" || ss[1] != "ach" {
+		t.Errorf("offline_access + audience must be advertised: %v", m["scopes_supported"])
 	}
 }
 
@@ -421,9 +421,9 @@ func TestToken_CodeExchangeMintsTheOAuthPKAndAJWT(t *testing.T) {
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("token responses must be no-store")
 	}
-	sub, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
-	if err != nil || sub != "u@x.com" {
-		t.Fatalf("sub=%q err=%v", sub, err)
+	v, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
+	if err != nil || v.Sub != "u@x.com" {
+		t.Fatalf("sub=%+v err=%v", v, err)
 	}
 	if pks.minted != 1 || pks.rows["u@x.com"] == nil {
 		t.Fatalf("oauth pk_ not minted: %+v", pks)

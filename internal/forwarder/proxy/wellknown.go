@@ -44,7 +44,7 @@ func WellKnownHandler(base string) http.Handler {
 		var doc map[string]any
 		switch {
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
-			doc = jwt.ASMetadata(base)
+			doc = jwt.ASMetadata(base, "ach", nil) // Task 5 threads the real audience + services
 		case strings.HasPrefix(r.URL.Path, wellKnownPRMSegment):
 			rest := strings.TrimPrefix(r.URL.Path, wellKnownPRMSegment)
 			if rest != "" && resourceRoot(rest) != rest {

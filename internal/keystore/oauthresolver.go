@@ -17,14 +17,16 @@ import (
 // JWTVerifier is what *jwt.Ed25519Signer provides: both services hold the
 // signing Secret, so verification never fetches a JWKS.
 type JWTVerifier interface {
-	Verify(raw, iss, aud string) (sub string, err error)
+	Verify(raw, iss, aud string) (*jwt.Verified, error)
 }
 
 // NoJWT is the verifier for a service with the OAuth AS disabled (no
 // signing seed mounted): every JWS reads as (nil, nil) → 401.
 type NoJWT struct{}
 
-func (NoJWT) Verify(string, string, string) (string, error) { return "", errors.New("oauth disabled") }
+func (NoJWT) Verify(string, string, string) (*jwt.Verified, error) {
+	return nil, errors.New("oauth disabled")
+}
 
 // OAuthPKLookup returns the user's single active purpose='oauth' row.
 type OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
@@ -57,16 +59,19 @@ func (r *oauthResolver) Resolve(ctx context.Context, plaintext string) (*KeyInfo
 	if !keys.LooksLikeJWS(plaintext) {
 		return r.inner.Resolve(ctx, plaintext)
 	}
-	sub, err := r.verifier.Verify(plaintext, r.iss, r.aud)
+	v, err := r.verifier.Verify(plaintext, r.iss, r.aud)
 	if err != nil {
 		if errors.Is(err, jwt.ErrNotAJWT) {
 			return r.inner.Resolve(ctx, plaintext)
 		}
 		return nil, nil // bad signature / expired / wrong aud: 401, not 500
 	}
-	row, err := r.lookup(ctx, sub)
+	row, err := r.lookup(ctx, v.Sub)
 	if err != nil || row == nil {
 		return nil, err
 	}
-	return pkInfoToKeyInfo(row), nil
+	info := pkInfoToKeyInfo(row)
+	info.OAuth = true
+	info.Scopes = strings.Fields(v.Scope)
+	return info, nil
 }
