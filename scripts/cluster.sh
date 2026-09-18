@@ -747,6 +747,7 @@ verify_all() {
   wait_mcp_tools_discovered "${to}"
   kubectl -n ach-system rollout status deploy/ach-mock-model   --timeout="${to}"
   kubectl -n ach-system rollout status deploy/ach-mock-a2a     --timeout="${to}"
+  kubectl -n ach-system rollout status deploy/ach-mock-broker  --timeout="${to}"
   kubectl -n ach-system wait --for=condition=Ready           --timeout="${to}" litellmconnection/default
   # Gate external refs on Synced, NOT SourceReachable. Per the condition matrix
   # (internal/controller/ach/conditions.go reasonToConditionStates),
@@ -863,8 +864,8 @@ reconcile_all() {
   reconcile_valkey
   reconcile_dex
   reconcile_litellm
-  reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a (Task 2)
-  reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a, stage 03)
+  reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a/broker (Task 2)
+  reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a + mock-broker, stage 03)
   reconcile_objects      # stage 04
   reconcile_environments # stage 05
   reconcile_agent        # stage 06 — agent-runtime fixture

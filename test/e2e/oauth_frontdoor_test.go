@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -56,6 +57,10 @@ func TestOAuthFrontDoor(t *testing.T) {
 	if srv, _ := prm["authorization_servers"].([]any); len(srv) != 1 || srv[0] != base {
 		t.Fatalf("PRM authorization_servers = %v, want [%s]", prm["authorization_servers"], base)
 	}
+	code, _, jwtPRM := getJSON(t, "/.well-known/oauth-protected-resource/mcp/demo-mcp-jwt", nil)
+	if code != 200 || fmt.Sprint(jwtPRM["scopes_supported"]) != "[ach demo-mcp-jwt]" {
+		t.Fatalf("brokered PRM must advertise its scope: %d %v", code, jwtPRM)
+	}
 
 	// 2. Anonymous request → 401 + the RFC 9728 pointer to the service root.
 	code, hdr, _ := getJSON(t, "/mcp/demo-mcp-echo/messages", nil)
@@ -91,6 +96,7 @@ func TestOAuthFrontDoor(t *testing.T) {
 		"state": {"s1"}, "code_challenge_method": {"S256"},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])},
 		"resource":       {base + "/mcp/demo-mcp-echo"},
+		"scope":          {"ach demo-mcp-jwt"},
 	}
 	authCode := followToLoopback(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode())
 
@@ -116,6 +122,9 @@ func TestOAuthFrontDoor(t *testing.T) {
 	if code != 200 || access == "" || refresh == "" || tok["token_type"] != "Bearer" {
 		t.Fatalf("token: %d %v", code, tok)
 	}
+	if tok["scope"] != "ach demo-mcp-jwt" {
+		t.Fatalf("token scope: %v", tok["scope"])
+	}
 
 	// 6. The JWT works on /v1 in both slots; Authorization is consumed.
 	for _, h := range []map[string]string{{"Authorization": "Bearer " + access}, {"x-ach-key": access}} {
@@ -129,6 +138,27 @@ func TestOAuthFrontDoor(t *testing.T) {
 	if code, _, body := getJSON(t, "/content/prompt/claude-code-system-prompt",
 		map[string]string{"x-ach-key": access, "x-ach-environment": "demo"}); code != 200 {
 		t.Fatalf("/content with OAuth JWT: %d %v", code, body)
+	}
+
+	// 6c. The scope gate: the mapped MCP service passes with the scope…
+	callBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"demo-mcp-jwt.echo","arguments":{"text":"via-oauth-chain"}}}`
+	if resp := postMCPViaForwarder(t, base+"/mcp/demo-mcp-jwt/", access, callBody); !strings.Contains(resp, "via-oauth-chain") {
+		t.Fatalf("mcp via oauth: %s", resp)
+	}
+	// …and a token minted WITHOUT the scope is refused with the RFC 6750 pointer.
+	plainCode := followToLoopback(t, noRedirect, base, base+"/platform/oauth/authorize?"+withoutScope(q).Encode())
+	_, plain := tokenPost(t, url.Values{"grant_type": {"authorization_code"}, "code": {plainCode}, "client_id": {reg.ClientID},
+		"redirect_uri": {"http://127.0.0.1:1/cb"}, "code_verifier": {verifier}})
+	req, _ := http.NewRequest(http.MethodPost, base+"/mcp/demo-mcp-jwt/", strings.NewReader(callBody))
+	req.Header.Set("x-ach-key", plain["access_token"].(string))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = noRedirect.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 || !strings.Contains(resp.Header.Get("WWW-Authenticate"), `error="insufficient_scope"`) {
+		t.Fatalf("no-scope token on brokered mcp: %d %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
 	}
 
 	// 7. Refresh rotates; the old refresh token dies.
@@ -185,6 +215,18 @@ func revokeOAuthPK(t *testing.T, base, access string) {
 	resp.Body.Close()
 }
 
+// withoutScope drops the "scope" param, for a second /authorize ceremony
+// that must mint a token without the brokered service's scope.
+func withoutScope(q url.Values) url.Values {
+	c := url.Values{}
+	for k, v := range q {
+		if k != "scope" {
+			c[k] = v
+		}
+	}
+	return c
+}
+
 // followToLoopback walks the authorize → Dex → as-callback redirect chain
 // (rewriting every hop's authority to the single gateway origin, like
 // ssoMintPK) until a hop points at the client's loopback redirect_uri, and
@@ -194,7 +236,7 @@ func followToLoopback(t *testing.T, client *http.Client, base, start string) str
 	baseURL, _ := url.Parse(base)
 	cookies := map[string]string{}
 	next := start
-	for hop := 0; hop < 12; hop++ {
+	for hop := 0; hop < 16; hop++ { // one broker hop adds two redirects to the chain
 		req, _ := http.NewRequest(http.MethodGet, next, nil)
 		if len(cookies) > 0 {
 			req.Header.Set("Cookie", encodeCookieMap(cookies))

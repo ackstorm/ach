@@ -1,0 +1,84 @@
+# ach-mock-broker — mcp-oauth stand-in for the OAuth broker chain e2e.
+#
+# Test-only scaffolding kept OUT of the user-facing Helm chart. /register +
+# /authorize: verifies the login_hint against the issuer's JWKS (found via its
+# RFC 8414 document, like mcp-oauth) and writes the grant projection
+# oauth:<store>:state:<sub> into the shared e2e valkey — no provider, no
+# consent screen. Built + kind-loaded as ach-mock:e2e (make build-image-mock),
+# run with args ["broker"], applied post-ach as a stage-03 test backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-mock-broker
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-broker
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-broker
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-mock-broker
+  namespace: ach-system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: mock-broker
+    test.ach.ackstorm.ai/phase: "oauth"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: mock-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ach
+        app.kubernetes.io/component: mock-broker
+    spec:
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock
+          image: ach-mock:e2e
+          imagePullPolicy: IfNotPresent
+          args: ["broker"]
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MOCK_BIND_ADDRESS
+              value: ":9090"
+            - name: BROKER_ISSUER
+              value: "http://ach.e2e.local:8080"
+            - name: BROKER_REDIS_ADDR
+              value: "valkey-primary.ach-system.svc.cluster.local:6379"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
