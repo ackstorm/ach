@@ -88,7 +88,9 @@ func (f fakeVerifier) Verify(string, string, string) (*jwt.Verified, error) { re
 
 func TestOAuthResolver_ScopesOnKeyInfo(t *testing.T) {
 	r := NewOAuthResolver(fallthroughResolver(), fakeVerifier{v: &jwt.Verified{Sub: "u@x.com", Scope: "ach mcp-a"}}, "https://ach.test", "ach",
-		func(context.Context, string) (*db.PkKeyInfo, error) { return &db.PkKeyInfo{KeyID: "pkid_1", OwnerEmail: "u@x.com"}, nil })
+		func(context.Context, string) (*db.PkKeyInfo, error) {
+			return &db.PkKeyInfo{KeyID: "pkid_1", OwnerEmail: "u@x.com"}, nil
+		})
 	info, err := r.Resolve(context.Background(), "a.b.c")
 	if err != nil || info == nil || !info.OAuth || len(info.Scopes) != 2 || info.Scopes[1] != "mcp-a" {
 		t.Fatalf("got %+v err=%v", info, err)
