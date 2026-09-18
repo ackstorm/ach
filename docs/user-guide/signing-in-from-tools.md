@@ -51,6 +51,14 @@ entries: Claude Code disables its OAuth fallback entirely when a credential
 header is configured, and opencode's configured headers silently override the
 token it obtained. `x-ach-environment` is informational and fine.
 
+Some MCP servers are **brokered**: ACH names no account of its own, so it
+delegates that one service's consent to the service's own broker. For a
+brokered service the browser makes one extra stop — at that service's broker,
+and the provider behind it — before returning to the tool; that stop is where
+the provider consent actually lives. You do not configure anything
+differently for this; the extra hop happens inside the same login command
+above.
+
 ## Model endpoint: a credential helper
 
 No tool runs OAuth against a model base URL. Each takes a **command that
@@ -103,6 +111,9 @@ minute; the next `ach-cli token` after that mints a fresh one.
   flushed: `ach-cli login` again.
 - **OAuth works, `/mcp/<name>` is 403** — precheck, same as a `pk_`: the
   Environment's `authorizedTeams` do not include one of yours.
+- **`403 insufficient_scope` on an MCP** — the token was minted before you
+  consented to that service (or the consent was revoked at the provider); the
+  tool re-runs its login for that server (`claude mcp login <name>` etc.).
 - **"this browser did not start the authorization request"** — the sign-in
   must finish in the browser that opened it: ACH sets a cookie when the
   tool sends you to `/platform/oauth/authorize` and checks it when the
