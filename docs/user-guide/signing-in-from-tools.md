@@ -103,3 +103,10 @@ minute; the next `ach-cli token` after that mints a fresh one.
   flushed: `ach-cli login` again.
 - **OAuth works, `/mcp/<name>` is 403** — precheck, same as a `pk_`: the
   Environment's `authorizedTeams` do not include one of yours.
+- **"this browser did not start the authorization request"** — the sign-in
+  must finish in the browser that opened it: ACH sets a cookie when the
+  tool sends you to `/platform/oauth/authorize` and checks it when the
+  identity provider sends you back. Copying the login URL into another
+  browser or profile, or blocking cookies for the Hub's origin, fails here
+  by design (it is what stops someone else's link from signing you into
+  their client). Start the login again from the tool.

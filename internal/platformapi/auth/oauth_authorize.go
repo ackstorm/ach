@@ -4,6 +4,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html"
@@ -24,14 +27,53 @@ const (
 )
 
 // oauthPending is an /authorize request parked while the browser is at Dex.
-// Its id travels as Dex's `state`, so no cookie is involved and two clients
-// may authorize concurrently in one browser.
+// Its id travels as Dex's `state`; the browser that started it is bound by
+// a per-pending cookie (see bindingCookieName) whose SHA-256 is Binding.
+// Per-pending names let two clients authorize concurrently in one browser.
+//
+// Without the binding, whoever completes the Dex login for a given `state`
+// is the identity the code is minted for — an attacker could start
+// /authorize for THEIR client, hand the Dex URL to a victim, and redeem the
+// resulting code with their own PKCE verifier (login CSRF / code injection).
 type oauthPending struct {
 	ClientID      string `json:"client_id"`
 	RedirectURI   string `json:"redirect_uri"`
 	State         string `json:"state"`
 	CodeChallenge string `json:"code_challenge"`
 	DexVerifier   string `json:"dex_verifier"`
+	Binding       string `json:"binding"` // hex(sha256(browser cookie value))
+}
+
+// bindingCookieName is the per-pending browser-binding cookie. __Host- on an
+// https base (Path=/, Secure, no Domain, browser-enforced); the plain name on
+// a plain-http base, like the SSO cookie (Deps.InsecureCookie). pendingID is
+// base64url, so the name needs no escaping.
+func bindingCookieName(pendingID string, insecure bool) string {
+	if insecure {
+		return "ach_oauth_" + pendingID
+	}
+	return "__Host-ach_oauth_" + pendingID
+}
+
+// bindingCookie builds the Set-Cookie for one pending authorization. Lax,
+// not Strict: /as-callback is reached by a top-level GET redirected from
+// Dex, which may live on another site; Lax still withholds the cookie from
+// cross-site sub-requests and POSTs. maxAge<0 deletes it.
+func bindingCookie(pendingID, value string, insecure bool, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     bindingCookieName(pendingID, insecure),
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   !insecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	}
+}
+
+func bindingHash(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
 }
 
 // oauthCode is a single-use authorization code, bound to everything the
@@ -98,25 +140,41 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
+	binding, err := cli.NewSessionID()
+	if err != nil {
+		htmlError(w, 500, "")
+		return
+	}
 	p := oauthPending{ClientID: client.ClientID, RedirectURI: redirectURI, State: state,
-		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier}
+		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding)}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
+	http.SetCookie(w, bindingCookie(pendingID, binding, d.Auth.InsecureCookie, int(oauthPendingTTL.Seconds())))
 	http.Redirect(w, r, d.dexLogin(pendingID, dexVerifier), http.StatusFound)
 }
 
 func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	pendingID := q.Get("state")
 	var p oauthPending
-	ok, err := d.Store.Take(r.Context(), "pending", q.Get("state"), &p)
+	// Take first: the pending is burned whether or not the binding matches,
+	// so a stolen Dex URL is spent by the first arrival either way.
+	ok, err := d.Store.Take(r.Context(), "pending", pendingID, &p)
 	if err != nil {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
 	if !ok {
 		htmlError(w, 400, "no authorization request is pending — start again from your client")
+		return
+	}
+	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
+	c, cerr := r.Cookie(bindingCookieName(pendingID, d.Auth.InsecureCookie))
+	if cerr != nil || subtle.ConstantTimeCompare([]byte(bindingHash(c.Value)), []byte(p.Binding)) != 1 {
+		d.Auth.Logger.Warn("oauth: as-callback from a browser that did not start the authorization", "client_id", p.ClientID)
+		htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
 		return
 	}
 	if e := q.Get("error"); e != "" {
