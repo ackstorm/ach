@@ -22,15 +22,26 @@ import (
 // runBroker is `ach-mock broker`: an mcp-oauth stand-in for the e2e chain.
 // /register hands out a client id; /authorize verifies login_hint against
 // the issuer's JWKS (found through its RFC 8414 document, like mcp-oauth),
-// writes the grant projection oauth:<scope>:state:<sub> = {"granted":true}
+// writes the grant projection oauth:echo:state:<sub> = {"granted":true}
 // and bounces to redirect_uri with a code. No provider, no consent screen.
 func runBroker() {
 	issuer := strings.TrimRight(envOr("BROKER_ISSUER", "http://ach.e2e.local:8080"), "/")
+	self := strings.TrimRight(envOr("BROKER_SELF", issuer+"/mock-broker"), "/")
 	redisAddr := envOr("BROKER_REDIS_ADDR", "valkey-primary.ach-system.svc.cluster.local:6379")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	keys := &jwksCache{issuer: issuer}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
+	// Served by the nginx shim at the RFC 8414 insertion-form URL. The
+	// suffix-form URL is deliberately not served by this broker.
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer":                 self,
+			"authorization_endpoint": self + "/authorize",
+			"registration_endpoint":  self + "/register",
+		})
+	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			RedirectURIs []string `json:"redirect_uris"`
@@ -46,7 +57,26 @@ func runBroker() {
 	})
 	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		store := q.Get("scope")
+		if q.Has("resource") {
+			http.Error(w, "invalid_target", http.StatusBadRequest)
+			return
+		}
+		if q.Get("code_challenge") == "" {
+			http.Error(w, "pkce required", http.StatusBadRequest)
+			return
+		}
+		var unverified jwtv5.MapClaims
+		if tok, _, err := jwtv5.NewParser().ParseUnverified(q.Get("login_hint"), jwtv5.MapClaims{}); err != nil {
+			http.Error(w, "invalid login_hint", http.StatusBadRequest)
+			return
+		} else if claims, ok := tok.Claims.(jwtv5.MapClaims); ok {
+			unverified = claims
+		}
+		store, _ := unverified["aud"].(string)
+		if store == "" {
+			http.Error(w, "login_hint audience required", http.StatusBadRequest)
+			return
+		}
 		sub, err := keys.verifyHint(r.Context(), q.Get("login_hint"), store)
 		if err != nil {
 			log.Printf("broker: login_hint rejected: %v", err)

@@ -32,6 +32,7 @@ resources:
   - bip-duplicate.yaml
   - bip-demo-mcp-jwt.yaml
   - bip-demo-mcp-nojwt.yaml
+  - bip-demo-mcp-consent.yaml
   # Phase 5 content-service exercise matrix — valid + invalid of each CR
   # kind (referenced by Environment env-valid in stage 05). The e2e suite
   # asserts against these; it no longer applies its own copies. The

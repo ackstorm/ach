@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	jwtv5 "github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 
 	echojwt "github.com/ackstorm/ach/test/e2e/mcp-echo/jwt"
 )
@@ -195,6 +197,50 @@ func TestJWTMiddleware_OptionalStillRejectsBadToken(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status: got %d want 401 (bad token must 401 even in optional mode)", w.Code)
+	}
+}
+
+func TestJWTMiddleware_GrantGate(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	jwksURL, signed, cleanup := newSignedTokenFor(t, "https://hub.example", "mcp:gated")
+	defer cleanup()
+
+	sink := newCapture()
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	gate := grantGate{rdb: rdb, aud: "mcp:gated", store: "echo"}
+	mw := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache(jwksURL), echojwt.Expectations{
+		Issuer: "https://hub.example", Audience: []string{"mcp:gated"},
+	}), sink, false, gate)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+
+	rec := httptest.NewRecorder()
+	mw(next).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("without grant: got %d want 401", rec.Code)
+	}
+
+	if err := mr.Set("oauth:echo:state:ns/alice@example.com", `{"granted":true}`); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	mw(next).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("with grant: got %d want 200", rec.Code)
+	}
+
+	otherJWKS, otherSigned, otherCleanup := newSignedTokenFor(t, "https://hub.example", "mcp:other")
+	defer otherCleanup()
+	other := jwtMiddleware(echojwt.NewVerifier(echojwt.NewKeyCache(otherJWKS), echojwt.Expectations{
+		Issuer: "https://hub.example", Audience: []string{"mcp:other"},
+	}), sink, false, gate)
+	otherReq := httptest.NewRequest(http.MethodPost, "/", nil)
+	otherReq.Header.Set("Authorization", "Bearer "+otherSigned)
+	otherRec := httptest.NewRecorder()
+	other(next).ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusOK {
+		t.Fatalf("ungated audience: got %d want 200", otherRec.Code)
 	}
 }
 

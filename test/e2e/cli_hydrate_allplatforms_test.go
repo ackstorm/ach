@@ -135,9 +135,9 @@ var allPlatformExpects = []allPlatformExpect{
 var demoPluginSkills = []string{"caveman", "cavecrew"}
 
 // demoMCPServerIDs are the runtime MCP servers the demo Environment
-// exposes. Both must appear in every adapter's runtime config with the
+// exposes. All must appear in every adapter's runtime config with the
 // bearer credential injected as the x-ach-key header.
-var demoMCPServerIDs = []string{"demo-mcp-jwt", "demo-mcp-nojwt"}
+var demoMCPServerIDs = []string{"demo-mcp-jwt", "demo-mcp-nojwt", "demo-mcp-consent"}
 
 // TestPhase7AllPlatformsProjection hydrates the demo Environment for
 // every supported agent type and asserts the full projection — runtime

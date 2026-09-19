@@ -102,19 +102,6 @@ spec:
             # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
             # single litellmConnection block — do NOT also set them in extraEnv.
             {{- include "ach.litellmConnectionEnv" . | nindent 12 }}
-            - name: ACH_OAUTH_AUDIENCE
-              value: {{ .Values.oauth.audience | default "ach" | quote }}
-            {{- if .Values.oauth.services }}
-            - name: ACH_OAUTH_SERVICES
-              value: {{ .Values.oauth.services | toJson | quote }}
-            {{- end }}
-            {{- if .Values.oauth.grantsRedis.secretRef.name }}
-            - name: ACH_OAUTH_GRANTS_REDIS_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.oauth.grantsRedis.secretRef.name | quote }}
-                  key: {{ .Values.oauth.grantsRedis.secretRef.key | default "url" | quote }}
-            {{- end }}
             {{- if .Values.platformApi.oauth.enabled }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt

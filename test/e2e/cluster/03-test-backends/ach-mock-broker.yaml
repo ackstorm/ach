@@ -62,6 +62,8 @@ spec:
               value: ":9090"
             - name: BROKER_ISSUER
               value: "http://ach.e2e.local:8080"
+            - name: BROKER_SELF
+              value: "http://ach.e2e.local:8080/mock-broker"
             - name: BROKER_REDIS_ADDR
               value: "valkey-primary.ach-system.svc.cluster.local:6379"
           readinessProbe:

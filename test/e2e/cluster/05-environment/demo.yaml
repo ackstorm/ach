@@ -3,7 +3,7 @@
 # Every name in spec.runtime.* and spec.authorizedTeams resolves
 # against the seeds added by scripts/cluster.sh hydrate_litellm:
 #   - Model:   demo-model
-#   - MCP:     demo-mcp-jwt, demo-mcp-nojwt
+#   - MCP:     demo-mcp-jwt, demo-mcp-nojwt, demo-mcp-consent
 #   - A2A:     demo-agent
 #   - Team:    default (created by LiteLLMConnection.EnsureDefaultTeam)
 #
@@ -14,9 +14,8 @@
 # from anthropics/claude-plugins-official. No Plugin CRD backs that name,
 # so the scoped reference is the only way to resolve it.
 #
-# The two MCP servers are BOTH registered against the single ach-mcp-echo
-# backend, but each carries a different BackendIdentityPolicy so the demo
-# exercises the full forwardIdentityJWT toggle end-to-end:
+# The three MCP servers are ALL registered against the single ach-mcp-echo
+# backend, but each carries a different BackendIdentityPolicy:
 #   - demo-mcp-jwt   → BIP bip-demo-mcp-jwt   (forwardIdentityJWT: true)
 #                      forwarder mints + attaches the ACH JWT; the backend
 #                      verifies it (example 11).
@@ -24,6 +23,8 @@
 #                      forwarder forwards with no Authorization header; the
 #                      backend (ACH_REQUIRE_JWT=false) records its absence
 #                      (example 16).
+#   - demo-mcp-consent → BIP bip-demo-mcp-consent (JWT + chained consent)
+#                        provider grant is required before tools are exposed.
 #
 # Expected after apply: AccessGroupSynced=True reason=Synced within
 # ~10s on a freshly-bootstrapped cluster.
@@ -43,6 +44,7 @@ spec:
     mcpServers:
       - demo-mcp-jwt
       - demo-mcp-nojwt
+      - demo-mcp-consent
     a2aAgents:
       - demo-agent
   context:

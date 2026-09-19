@@ -14,6 +14,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/redis/go-redis/v9"
 
 	echojwt "github.com/ackstorm/ach/test/e2e/mcp-echo/jwt"
 )
@@ -29,6 +30,12 @@ func main() {
 	// a tokenless request is then accepted and recorded jwt_present=false
 	// (a present-but-invalid token still 401s regardless).
 	requireJWT := envBool("ACH_REQUIRE_JWT", true)
+	grantAddr := envOr("ACH_GRANT_REDIS_ADDR", "")
+	var grantRedis *redis.Client
+	if grantAddr != "" {
+		grantRedis = redis.NewClient(&redis.Options{Addr: grantAddr})
+	}
+	grant := grantGate{rdb: grantRedis, aud: envOr("ACH_GRANT_AUD", ""), store: envOr("ACH_GRANT_STORE", "echo")}
 
 	keys := echojwt.NewKeyCache(jwksURL)
 	verifier := echojwt.NewVerifier(keys, echojwt.Expectations{
@@ -61,7 +68,7 @@ func main() {
 			return ctx
 		}),
 	)
-	guarded := jwtMiddleware(verifier, sink, requireJWT)(streamable)
+	guarded := jwtMiddleware(verifier, sink, requireJWT, grant)(streamable)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", guarded)
@@ -87,8 +94,8 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	log.Printf("ach-mcp-echo listening addr=%s jwks=%s iss=%s aud=%v requireJWT=%t",
-		addr, jwksURL, expectIss, expectAud, requireJWT)
+	log.Printf("ach-mcp-echo listening addr=%s jwks=%s iss=%s aud=%v requireJWT=%t grantAud=%s grantStore=%s",
+		addr, jwksURL, expectIss, expectAud, requireJWT, grant.aud, grant.store)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
 	}

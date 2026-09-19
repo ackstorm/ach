@@ -111,9 +111,11 @@ minute; the next `ach-cli token` after that mints a fresh one.
   flushed: `ach-cli login` again.
 - **OAuth works, `/mcp/<name>` is 403** — precheck, same as a `pk_`: the
   Environment's `authorizedTeams` do not include one of yours.
-- **`403 insufficient_scope` on an MCP** — the token was minted before you
-  consented to that service (or the consent was revoked at the provider); the
-  tool re-runs its login for that server (`claude mcp login <name>` etc.).
+- **Connected, zero tools** — the backend has no provider grant for you; run
+  the tool's MCP login again (for example, `claude mcp login <name>`).
+- **The backend did not accept the consent** — the broker stored the grant
+  under another account or rejected the hint; its owner should check
+  `AUTH_BROKER_HINT_ISSUER` and the BIP's `consentAudience`.
 - **"this browser did not start the authorization request"** — the sign-in
   must finish in the browser that opened it: ACH sets a cookie when the
   tool sends you to `/platform/oauth/authorize` and checks it when the

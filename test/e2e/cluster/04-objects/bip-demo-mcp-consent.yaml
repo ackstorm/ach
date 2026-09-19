@@ -1,0 +1,15 @@
+# BackendIdentityPolicy — demo-mcp-consent route, JWT + provider consent.
+# The shared mcp-echo backend gates this audience on the mock broker's
+# oauth:echo:state:<sub> projection.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-demo-mcp-consent
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp-consent
+  forwardIdentityJWT: true
+  consentBroker: http://ach.e2e.local:8080/mock-broker
+  consentAudience: echo

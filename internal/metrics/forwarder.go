@@ -15,11 +15,11 @@ import "github.com/prometheus/client_golang/prometheus"
 // Cardinality budget (§18.5):
 //
 //	ach_forwarder_requests_total{route, key_type, outcome}
-//	  4 routes × 3 key_types × 10 outcomes = 120
+//	  4 routes × 3 key_types × 9 outcomes = 108
 //	ach_forwarder_request_duration_seconds{route, key_type, status_class}
 //	  4 × 3 × 5 = 60 series × bucket_count
 //	ach_forwarder_jwt_signed_total{kind}                    2 series
-//	ach_forwarder_jwt_suppressed_total{kind, reason}        2 × 4 = 8 series
+//	ach_forwarder_jwt_suppressed_total{kind, reason}        2 × 5 = 10 series
 type ForwarderCollectors struct {
 	requests      *prometheus.CounterVec
 	duration      *prometheus.HistogramVec
@@ -93,8 +93,7 @@ func (c *ForwarderCollectors) PreInitZeroSeries() {
 //	key_type ∈ {pk, ek, none}
 //	outcome  ∈ {forwarded, unauthorized_resource, unauthorized_team,
 //	            expired_or_revoked, litellm_unreachable, internal_error,
-//	            invalid_key_format, invalid_key_type, https_required,
-//	            insufficient_scope}
+//	            invalid_key_format, invalid_key_type, https_required}
 //
 // Callers MUST pass only values from those enums; adding a new outcome
 // requires editing the §18.5 spec table first. T-05-01-04 (cardinality
@@ -131,7 +130,7 @@ func (c *ForwarderCollectors) IncJWTSigned(kind string) {
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}
-//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}
+//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure, agent_key}
 //
 // list_failure is emitted when the BIP cache List call returns a
 // transient error (cache desync, mid-rotation indexer, etc.) — the

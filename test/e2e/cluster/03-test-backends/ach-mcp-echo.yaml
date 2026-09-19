@@ -4,8 +4,9 @@
 # templates/test-mocks.yaml was removed). cluster.sh builds the image
 # (make build-image-mcp-echo) + kind-loads ach-mcp-echo:e2e, then applies this
 # stage post-ach (the backend polls the forwarder JWKS, so the ach Services
-# must exist first). LiteLLM registers it as demo-mcp-jwt / demo-mcp-nojwt and
-# the BIPs bip-demo-mcp-jwt / bip-demo-mcp-nojwt drive the JWT closed loop.
+# must exist first). LiteLLM registers it as demo-mcp-jwt / demo-mcp-nojwt /
+# demo-mcp-consent and the BIPs drive the JWT, no-JWT, and chained-consent
+# closed loops.
 #
 # Env values are literals captured from the prior chart render against the
 # ach-system deploy: iss = the http://ach.e2e.local:8080 gateway host, aud covers
@@ -70,9 +71,15 @@ spec:
             - name: ACH_EXPECTED_ISS
               value: "http://ach.e2e.local:8080"
             - name: ACH_EXPECTED_AUD
-              value: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt"
+              value: "mcp:demo-mcp-jwt,mcp:demo-mcp-nojwt,mcp:demo-mcp-consent"
             - name: ACH_REQUIRE_JWT
               value: "false"
+            - name: ACH_GRANT_REDIS_ADDR
+              value: "valkey-primary.ach-system.svc.cluster.local:6379"
+            - name: ACH_GRANT_AUD
+              value: "mcp:demo-mcp-consent"
+            - name: ACH_GRANT_STORE
+              value: "echo"
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 1

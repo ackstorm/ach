@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -23,10 +22,9 @@ import (
 const oauthPKMinRemaining = 2 * time.Hour
 
 type oauthRefresh struct {
-	Sub      string   `json:"sub"`
-	UserID   string   `json:"user_id"`
-	ClientID string   `json:"client_id"`
-	Scopes   []string `json:"scopes,omitempty"` // requested services; granted is recomputed per refresh
+	Sub      string `json:"sub"`
+	UserID   string `json:"user_id"`
+	ClientID string `json:"client_id"`
 }
 
 func pkceOK(challenge, verifier string) bool {
@@ -57,7 +55,7 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, 400, "invalid_grant", "")
 			return
 		}
-		d.issue(w, r, c.Sub, c.UserID, clientID, c.Scopes)
+		d.issue(w, r, c.Sub, c.UserID, clientID)
 	case "refresh_token":
 		var rf oauthRefresh
 		ok, err := d.Store.Take(r.Context(), "refresh", r.PostForm.Get("refresh_token"), &rf) // rotation: the old one is gone
@@ -69,19 +67,14 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, 400, "invalid_grant", "")
 			return
 		}
-		d.issue(w, r, rf.Sub, rf.UserID, clientID, rf.Scopes)
+		d.issue(w, r, rf.Sub, rf.UserID, clientID)
 	default:
 		oauthError(w, 400, "unsupported_grant_type", "")
 	}
 }
 
-func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, clientID string, requested []string) {
-	scope, err := d.grantedScope(r.Context(), sub, requested)
-	if err != nil {
-		d.Auth.Logger.Warn("oauth: grant projection unreachable", "err", err)
-		oauthError(w, 503, "temporarily_unavailable", "grant projection unreachable")
-		return
-	}
+func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, clientID string) {
+	var err error
 	if err := d.ensureOAuthPK(r.Context(), sub, userID); err != nil {
 		if errors.Is(err, ErrMintLiteLLM) {
 			oauthError(w, 503, "temporarily_unavailable", "litellm unreachable")
@@ -91,7 +84,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	access, err := d.Signer.Sign(r.Context(), jwt.Claims{Iss: d.Issuer, Sub: sub, Aud: d.Audience, Email: sub, Scope: scope, TTL: d.AccessTTL})
+	access, err := d.Signer.Sign(r.Context(), jwt.Claims{Iss: d.Issuer, Sub: sub, Aud: d.Audience, Email: sub, TTL: d.AccessTTL})
 	if err != nil {
 		oauthError(w, 500, "server_error", "signer not loaded")
 		return
@@ -101,7 +94,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{Sub: sub, UserID: userID, ClientID: clientID, Scopes: requested}, d.RefreshTTL); err != nil {
+	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{Sub: sub, UserID: userID, ClientID: clientID}, d.RefreshTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
 	}
@@ -113,30 +106,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 		"token_type":    "Bearer",
 		"expires_in":    int(d.AccessTTL / time.Second),
 		"refresh_token": refresh,
-		"scope":         scope,
 	})
-}
-
-// grantedScope is the token's scope: the audience, then every requested
-// service the projection says sub holds a grant for, in request order.
-// A projection error is returned as-is — never mint wider than the
-// projection allows, never silently narrower.
-func (d OAuthDeps) grantedScope(ctx context.Context, sub string, requested []string) (string, error) {
-	out := []string{d.Audience}
-	for _, s := range requested {
-		svc, ok := d.Services[s]
-		if !ok {
-			continue // map shrank since the code was issued
-		}
-		granted, err := d.Grants.Granted(ctx, sub, svc.Store)
-		if err != nil {
-			return "", err
-		}
-		if granted {
-			out = append(out, s)
-		}
-	}
-	return strings.Join(out, " "), nil
 }
 
 // ensureOAuthPK guarantees one live purpose='oauth' row for sub: reuse it,

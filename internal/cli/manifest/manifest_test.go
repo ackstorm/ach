@@ -67,7 +67,7 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 	} else if m.Runtime.Models[0].ID != "demo-model" {
 		t.Errorf("Runtime.Models[0].ID = %q, want demo-model", m.Runtime.Models[0].ID)
 	}
-	if got, want := len(m.Runtime.MCPServers), 2; got != want {
+	if got, want := len(m.Runtime.MCPServers), 3; got != want {
 		t.Errorf("len(Runtime.MCPServers) = %d, want %d", got, want)
 	} else {
 		if m.Runtime.MCPServers[0].Endpoint == "" {
@@ -79,6 +79,9 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 		}
 		if m.Runtime.MCPServers[1].Endpoint == "" {
 			t.Error("Runtime.MCPServers[1].Endpoint is empty — must round-trip")
+		}
+		if m.Runtime.MCPServers[2].Endpoint == "" {
+			t.Error("Runtime.MCPServers[2].Endpoint is empty — must round-trip")
 		}
 	}
 	if got, want := len(m.Runtime.A2AAgents), 1; got != want {

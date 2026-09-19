@@ -138,8 +138,6 @@ BOTH Pods that can host the container (operator sidecar, standalone).
     # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
     # single litellmConnection block — do NOT also set them in extraEnv.
     {{- include "ach.litellmConnectionEnv" . | nindent 4 }}
-    - name: ACH_OAUTH_AUDIENCE
-      value: {{ .Values.oauth.audience | default "ach" | quote }}
     {{- if .Values.platformApi.oauth.enabled }}
     # OAuth access tokens reach /content in x-ach-key (hydrate from an
     # OAuth profile); content-service verifies them against the same

@@ -4,15 +4,12 @@ package proxy
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/ackstorm/ach/internal/oauthsvc"
 )
 
 func TestWellKnown_ASMetadataAndPRMDocuments(t *testing.T) {
-	h := WellKnownHandler("https://ach.example.com/", "ach", nil)
+	h := WellKnownHandler("https://ach.example.com/")
 	cases := map[string]map[string]any{
 		"/.well-known/oauth-authorization-server": {
 			"issuer": "https://ach.example.com", "registration_endpoint": "https://ach.example.com/platform/oauth/register",
@@ -63,29 +60,5 @@ func TestChallengeFor_ServiceRootNeverTheDialledPath(t *testing.T) {
 		if got != `Bearer resource_metadata="`+doc+`"` {
 			t.Errorf("%s: %q", path, got)
 		}
-	}
-}
-
-func TestWellKnown_ScopesSupportedPerService(t *testing.T) {
-	svcs := map[string]oauthsvc.Service{"demo-mcp-jwt": {Store: "echo", Broker: "http://b"}}
-	h := WellKnownHandler("https://ach.example.com", "ach", svcs)
-	get := func(p string) map[string]any {
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest("GET", p, nil))
-		var doc map[string]any
-		_ = json.Unmarshal(rec.Body.Bytes(), &doc)
-		return doc
-	}
-	if got := get("/.well-known/oauth-protected-resource/mcp/demo-mcp-jwt")["scopes_supported"]; fmt.Sprint(got) != "[ach demo-mcp-jwt]" {
-		t.Fatalf("mapped service: %v", got)
-	}
-	if _, has := get("/.well-known/oauth-protected-resource/mcp/other")["scopes_supported"]; has {
-		t.Fatal("unmapped service must not advertise scopes")
-	}
-	if _, has := get("/.well-known/oauth-protected-resource")["scopes_supported"]; has {
-		t.Fatal("API root must not advertise scopes")
-	}
-	if got := get("/.well-known/oauth-authorization-server")["scopes_supported"]; fmt.Sprint(got) != "[offline_access ach demo-mcp-jwt]" {
-		t.Fatalf("AS metadata: %v", got)
 	}
 }

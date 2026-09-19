@@ -62,10 +62,6 @@ type Claims struct {
 	// window used for per-target backend tokens; the OAuth front door sets
 	// ACH_OAUTH_ACCESS_TTL (1h) so a user token outlives one request.
 	TTL time.Duration
-	// Scope is the JWT "scope" claim (RFC 8693 §4.2 shape: space-separated).
-	// Set by the OAuth AS on user access tokens: the audience plus the MCP
-	// services the user holds a broker grant for. Omitted when empty.
-	Scope string
 }
 
 // JWK is the RFC 7517 JSON Web Key wire shape for a single Ed25519
@@ -206,9 +202,6 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	// an absent claim as "no groups" rather than parsing an empty array.
 	if len(c.Groups) > 0 {
 		claims["groups"] = c.Groups
-	}
-	if c.Scope != "" {
-		claims["scope"] = c.Scope
 	}
 	token := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, claims)
 	token.Header["kid"] = slot.kid

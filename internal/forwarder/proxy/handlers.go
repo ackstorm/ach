@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -15,7 +14,6 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/keys"
-	"github.com/ackstorm/ach/internal/oauthsvc"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 	"github.com/go-chi/chi/v5"
@@ -45,10 +43,6 @@ type HandlerDeps struct {
 	PrecheckDeps precheck.Deps
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
-	// Services + Audience drive the OAuth scope gate on /mcp/<name>: an
-	// OAuth bearer must carry scope <name> for a mapped service. Empty map →
-	// no gate. pk_/ek_/raw sk- are never gated.
-	Services map[string]oauthsvc.Service
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
@@ -127,17 +121,6 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 		kc, _ := middleware.KeyContextFromCtx(r.Context())
-
-		// 0b. OAuth scope gate (RFC 6750 §3.1). Only OAuth bearers, only
-		//     mapped MCP services: the client re-runs /authorize asking for
-		//     the scope the PRM advertises.
-		if kc.OAuth && audPrefix == "mcp:" && deps.Services[name].Store != "" && !hasScope(kc.Scopes, name) {
-			metrics.IncRequests(routeLabel, keyTypeLabel, "insufficient_scope")
-			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope", resource_metadata="`+
-				strings.TrimRight(deps.BaseURL, "/")+wellKnownPRMSegment+"/mcp/"+name+`"`)
-			render.Error(w, http.StatusForbidden, "insufficient_scope", "token lacks scope "+name, reqID)
-			return
-		}
 
 		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
 		//    JWT "groups" claim (filtered at the mint below).
@@ -293,17 +276,6 @@ func statusClass(code int) string {
 		code = http.StatusOK
 	}
 	return strconv.Itoa(code/100) + "xx"
-}
-
-// hasScope reports whether want is one of scopes (the JWT "scope" claim,
-// split on spaces).
-func hasScope(scopes []string, want string) bool {
-	for _, s := range scopes {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // observeDuration wraps h, emitting

@@ -90,7 +90,6 @@ type contentServiceConfig struct {
 	Pepper           []byte
 	BaseURL          string // ACH_BASE_URL: OAuth issuer (`iss` of the access tokens)
 	JWTSecretDir     string // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → JWTs read as 401
-	OAuthAudience    string // ACH_OAUTH_AUDIENCE, default "ach"
 }
 
 // parseContentServiceConfig validates and returns the env-var surface.
@@ -139,7 +138,6 @@ func parseContentServiceConfig() (*contentServiceConfig, error) {
 
 	cfg.BaseURL = os.Getenv("ACH_BASE_URL")
 	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
-	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
 	if cfg.JWTSecretDir != "" && cfg.BaseURL == "" {
 		return nil, fmt.Errorf("ACH_BASE_URL required when ACH_JWT_SECRET_DIR is set (OAuth issuer)")
 	}
@@ -208,7 +206,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 		}
 		verifier = signer
 	}
-	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, cfg.OAuthAudience, pool)
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
 	resolver, err := keystore.NewCachedResolver(oauthResolver, redisClient, cfg.Pepper)
 	if err != nil {
 		return fmt.Errorf("keystore.NewCachedResolver: %w", err)

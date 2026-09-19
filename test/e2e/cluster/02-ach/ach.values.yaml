@@ -53,24 +53,11 @@ extraEnv:
     value: "http://ach.e2e.local:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
-  # ACH_OAUTH_GRANTS_REDIS_URL: e2e uses ACH's own valkey as the brokers'
-  # grant projection too (ach-mock-broker writes oauth:echo:state:<sub> here).
-  - name: ACH_OAUTH_GRANTS_REDIS_URL
-    value: "redis://valkey-primary.ach-system.svc.cluster.local:6379/0"
   # No ACH_SSO_INSECURE_COOKIE here: the SSO cookie hardening is derived
   # from the ACH_BASE_URL scheme. ACH_BASE_URL=http://ach.e2e.local:8080
   # (above) makes the platform-api emit the non-Secure `ach_sso` cookie
   # automatically, so the kind gateway's plain-http SSO round-trip works
   # without a flag. An https base would auto-harden to __Host-/Secure.
-
-# OAuth broker chain (docs/superpowers/specs/2026-09-18-oauth-broker-chain-design.md):
-# demo-mcp-jwt is brokered through ach-mock-broker (exposed at /mock-broker on
-# the shared e2e origin via the nginx shim, since the chain must walk every
-# hop through ach.e2e.local:8080). store=echo matches the grant projection key
-# ach-mock-broker writes (oauth:echo:state:<sub>).
-oauth:
-  services:
-    demo-mcp-jwt: { store: echo, broker: http://ach.e2e.local:8080/mock-broker }
 
 # Single-source LiteLLM config (the path real deployments use). The chart
 # renders LiteLLMConnection/default (operator reconciles it; forwarder +

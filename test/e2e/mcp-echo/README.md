@@ -29,6 +29,9 @@ Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
 | `ACH_EXPECTED_ISS` | yes | — | Required `iss` claim (= `ACH_BASE_URL` configured on the Forwarder) |
 | `ACH_EXPECTED_AUD` | yes | — | Comma-separated list of accepted `aud` claims (e.g. `mcp:demo-mcp-echo`) |
 | `ACH_JWKS_REFRESH` | no | `5m` | Min interval between background JWKS refreshes |
+| `ACH_GRANT_REDIS_ADDR` | no | empty | Valkey/Redis address for an audience-specific OAuth grant gate |
+| `ACH_GRANT_AUD` | no | empty | JWT `aud` that requires a grant projection |
+| `ACH_GRANT_STORE` | no | `echo` | Grant projection store in `oauth:<store>:state:<sub>` |
 
 ## Endpoints
 

@@ -13,7 +13,6 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
-	"github.com/ackstorm/ach/internal/oauthsvc"
 )
 
 // OAuthDeps is what the OAuth 2.1 authorization server needs beyond
@@ -24,19 +23,17 @@ type OAuthDeps struct {
 	Store      *OAuthStore
 	Signer     *jwt.Ed25519Signer
 	Issuer     string // ACH_BASE_URL — what clients dial and what `iss` says
-	Audience   string // ACH_OAUTH_AUDIENCE, default "ach"
+	Audience   string // fixed ACH OAuth audience (`ach`)
+	Namespace  string
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 	Now        func() time.Time
 
-	// Services is the MCP-service map (ACH_OAUTH_SERVICES); nil → no scopes
-	// beyond the audience, no broker chain. Grants reads the brokers' grant
-	// projection; required when Services is non-empty.
-	Services map[string]oauthsvc.Service
-	Grants   GrantReader
-	// HTTPClient is a seam for tests calling a broker's /register; nil → a
-	// 10s stdlib client.
+	// HTTPClient is a seam for tests calling broker metadata/registration;
+	// nil → a 10s stdlib client.
 	HTTPClient *http.Client
+	ConsentBIP func(ctx context.Context, key string) (*db.BIPRow, error)
+	Probe      func(ctx context.Context, email, userID, key string) probeOutcome
 
 	// Seams. nil → the real thing: the oauth2+oidc Dex leg, provisionUser,
 	// Auth.MintPK, db.ActiveOAuthPK, db.RevokePersonalKey + LiteLLM revoke.
@@ -46,6 +43,20 @@ type OAuthDeps struct {
 	Mint          func(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error)
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
 	OAuthPKRevoke func(ctx context.Context, keyID string) error
+}
+
+func (d OAuthDeps) consentBIP(ctx context.Context, key string) (*db.BIPRow, error) {
+	if d.ConsentBIP != nil {
+		return d.ConsentBIP(ctx, key)
+	}
+	return db.ConsentBIP(ctx, d.Auth.Pool, d.Namespace, key)
+}
+
+func (d OAuthDeps) probe(ctx context.Context, email, userID, key string) probeOutcome {
+	if d.Probe != nil {
+		return d.Probe(ctx, email, userID, key)
+	}
+	return d.probeGrant(ctx, email, userID, key)
 }
 
 // MountOAuth registers the AS endpoints under /platform/oauth. Mounted

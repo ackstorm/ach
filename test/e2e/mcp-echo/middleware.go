@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/redis/go-redis/v9"
+
 	echojwt "github.com/ackstorm/ach/test/e2e/mcp-echo/jwt"
 )
 
@@ -42,7 +44,25 @@ func claimsFromContext(ctx context.Context) (echojwt.Verified, bool) {
 // with require=false serves BOTH the jwt and nojwt demo routes: the jwt
 // route always carries a token (validated), the nojwt route never does
 // (recorded as absent).
-func jwtMiddleware(verifier *echojwt.Verifier, sink *capture, require bool) func(http.Handler) http.Handler {
+type grantGate struct {
+	rdb   *redis.Client
+	aud   string
+	store string
+}
+
+func (g grantGate) missing(ctx context.Context, c echojwt.Verified) bool {
+	if g.rdb == nil || c.Aud != g.aud {
+		return false
+	}
+	n, err := g.rdb.Exists(ctx, "oauth:"+g.store+":state:"+strings.ToLower(c.Sub)).Result()
+	return err != nil || n == 0
+}
+
+func jwtMiddleware(verifier *echojwt.Verifier, sink *capture, require bool, gates ...grantGate) func(http.Handler) http.Handler {
+	var gate grantGate
+	if len(gates) > 0 {
+		gate = gates[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tok, ok := extractBearer(r.Header.Get("Authorization"))
@@ -61,6 +81,10 @@ func jwtMiddleware(verifier *echojwt.Verifier, sink *capture, require bool) func
 			claims, err := verifier.Verify(r.Context(), tok)
 			if err != nil {
 				unauthorized(w, "invalid_token")
+				return
+			}
+			if gate.missing(r.Context(), claims) {
+				unauthorized(w, "no_grant")
 				return
 			}
 			body, _ := io.ReadAll(r.Body)

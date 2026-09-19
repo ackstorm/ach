@@ -94,6 +94,16 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 				snap.AuthorizationSeen)
 		}
 	})
+
+	t.Run("agent_key_gets_no_jwt", func(t *testing.T) {
+		ek := mustAcquireEkBoundToEnv(t, "demo")
+		resetMcpEchoCapture(t, mcpEchoLocal)
+		callEchoViaForwarder(t, gatewayLocal, ek, bipJWTRouteName, "hola-agent")
+		snap := readMcpEchoCapture(t, mcpEchoLocal)
+		if snap.JWTPresent || snap.AuthorizationSeen != "" {
+			t.Fatalf("ek_: jwt_present=%v authorization=%q, want none", snap.JWTPresent, snap.AuthorizationSeen)
+		}
+	})
 }
 
 // callEchoViaForwarder POSTs a tools/call for the echo tool of the given

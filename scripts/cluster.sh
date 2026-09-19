@@ -80,8 +80,10 @@ MCP_ECHO_IMAGE="${MCP_ECHO_IMAGE:-ach-mcp-echo:e2e}"
 # qualified tool names returned after LiteLLM runs tools/list against them.
 MCP_JWT_SERVER_NAME="demo-mcp-jwt"
 MCP_NOJWT_SERVER_NAME="demo-mcp-nojwt"
+MCP_CONSENT_SERVER_NAME="demo-mcp-consent"
 MCP_JWT_TOOL_NAME="${MCP_JWT_SERVER_NAME}.echo"
 MCP_NOJWT_TOOL_NAME="${MCP_NOJWT_SERVER_NAME}.echo"
+MCP_CONSENT_TOOL_NAME="${MCP_CONSENT_SERVER_NAME}.echo"
 
 # ach-mock — OpenAI chat-completion + a2a echo/capture backend that sits BEHIND
 # the real LiteLLM as the model upstream (it is NOT a LiteLLM mock). Built +
@@ -380,12 +382,13 @@ reconcile_litellm() {
       }' 2>&1)"
   echo "[cluster.sh]   model 'demo.demo-flash' → ${seed_out}"
 
-  # 2) Seed the demo Environment's two MCP servers (BIP closed-loop).
+  # 2) Seed the demo Environment's three MCP servers (BIP closed-loop).
   #
   # Both point at the SAME ach-mcp-echo backend; the only difference is the
   # BackendIdentityPolicy applied to each (examples/11 + examples/16):
   #   - demo-mcp-jwt   → BIP forwardIdentityJWT: true  (forwarder mints JWT)
   #   - demo-mcp-nojwt → BIP forwardIdentityJWT: false (no Authorization)
+  #   - demo-mcp-consent → BIP forwardIdentityJWT: true + provider grant gate
   #
   # extra_headers: ["authorization"] is REQUIRED on BOTH so LiteLLM's MCP
   # gateway propagates whatever Authorization the forwarder sends (a JWT on
@@ -404,7 +407,7 @@ reconcile_litellm() {
   # POST /v1/mcp/server is NOT idempotent (each call mints a new server_id),
   # so re-running cluster-up/sync would pile up duplicate rows with ambiguous
   # routing. Delete any existing rows for the name first.
-  for srv in "${MCP_JWT_SERVER_NAME}" "${MCP_NOJWT_SERVER_NAME}"; do
+  for srv in "${MCP_JWT_SERVER_NAME}" "${MCP_NOJWT_SERVER_NAME}" "${MCP_CONSENT_SERVER_NAME}"; do
     for sid in $(curl -s http://localhost:4001/v1/mcp/server \
         -H 'Authorization: Bearer sk-test-master-key' \
         | jq -r --arg n "${srv}" '.[] | select(.server_name==$n) | .server_id'); do
@@ -620,11 +623,13 @@ wait_bip_reconciled() {
 
 mcp_tools_ready() {
   local body="$1"
-  jq -e --arg jwt_tool "${MCP_JWT_TOOL_NAME}" --arg nojwt_tool "${MCP_NOJWT_TOOL_NAME}" '
+  jq -e --arg jwt_tool "${MCP_JWT_TOOL_NAME}" --arg nojwt_tool "${MCP_NOJWT_TOOL_NAME}" \
+    --arg consent_tool "${MCP_CONSENT_TOOL_NAME}" '
     (.tools // null) as $tools
     | ($tools | type == "array")
       and ([$tools[]? | select(.name == $jwt_tool)] | length == 1)
       and ([$tools[]? | select(.name == $nojwt_tool)] | length == 1)
+      and ([$tools[]? | select(.name == $consent_tool)] | length == 1)
   ' "${body}" >/dev/null 2>&1
 }
 
@@ -641,7 +646,7 @@ wait_mcp_tools_discovered() (
   port_forward_pid=$!
   trap 'kill "${port_forward_pid}" 2>/dev/null || true; wait "${port_forward_pid}" 2>/dev/null || true; rm -rf "${tmpdir}"' EXIT
 
-  export MCP_JWT_TOOL_NAME MCP_NOJWT_TOOL_NAME
+  export MCP_JWT_TOOL_NAME MCP_NOJWT_TOOL_NAME MCP_CONSENT_TOOL_NAME
   export -f mcp_tools_ready
   set +e
   MCP_PORT_FORWARD_PID="${port_forward_pid}" \
@@ -677,7 +682,7 @@ wait_mcp_tools_discovered() (
   set -e
 
   if ((discovery_rc == 0)); then
-    echo "[cluster.sh] LiteLLM MCP tools discovered: ${MCP_JWT_TOOL_NAME}, ${MCP_NOJWT_TOOL_NAME}"
+    echo "[cluster.sh] LiteLLM MCP tools discovered: ${MCP_JWT_TOOL_NAME}, ${MCP_NOJWT_TOOL_NAME}, ${MCP_CONSENT_TOOL_NAME}"
     return 0
   fi
 
@@ -686,7 +691,7 @@ wait_mcp_tools_discovered() (
   else
     port_forward_alive=no
   fi
-  echo "[cluster.sh] ERROR: LiteLLM MCP discovery did not find exactly one each of ${MCP_JWT_TOOL_NAME} and ${MCP_NOJWT_TOOL_NAME} within ${to} (port-forward alive: ${port_forward_alive}; rc=${discovery_rc})" >&2
+  echo "[cluster.sh] ERROR: LiteLLM MCP discovery did not find exactly one each of ${MCP_JWT_TOOL_NAME}, ${MCP_NOJWT_TOOL_NAME}, and ${MCP_CONSENT_TOOL_NAME} within ${to} (port-forward alive: ${port_forward_alive}; rc=${discovery_rc})" >&2
   if [[ -s "${last_body}" ]]; then
     echo "[cluster.sh] Last GET /v1/mcp/tools response body:" >&2
     sed -n '1,200p' "${last_body}" >&2 || true
@@ -705,7 +710,8 @@ wait_mcp_tools_discovered() (
       http://localhost:4001/v1/mcp/server; then
       jq -c --arg jwt_server "${MCP_JWT_SERVER_NAME}" \
         --arg nojwt_server "${MCP_NOJWT_SERVER_NAME}" \
-        'map(select(.server_name == $jwt_server or .server_name == $nojwt_server))
+        --arg consent_server "${MCP_CONSENT_SERVER_NAME}" \
+        'map(select(.server_name == $jwt_server or .server_name == $nojwt_server or .server_name == $consent_server))
          | .[] | {server_id, server_name, url, extra_headers, allow_all_keys}' \
         "${server_body}" >&2 || true
     else
@@ -780,7 +786,7 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skillmarketplace/anthropic-skills
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skill/pdf
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" skill/docx
-  for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt; do
+  for b in bip-context7-jwt-on bip-demo-mcp-jwt bip-demo-mcp-nojwt bip-demo-mcp-consent; do
     wait_bip_reconciled "${b}" "${to}"
   done
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/demo

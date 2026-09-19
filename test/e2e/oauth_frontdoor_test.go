@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,9 +19,9 @@ import (
 
 // TestOAuthFrontDoor drives the whole human ceremony against the kept
 // cluster with plain HTTP (no CLI): discovery → DCR → /authorize (through
-// the Dex mockCallback connector) → code → /token → a JWT that the
-// forwarder accepts on /v1 → refresh rotation → revoke of the OAuth pk_ →
-// 401 within the cache window.
+// Dex and the BIP-declared consent broker) → code → /token → a JWT that the
+// forwarder accepts on /v1 and the consent-gated MCP → refresh rotation →
+// revoke of the OAuth pk_ → 401 within the cache window.
 func TestOAuthFrontDoor(t *testing.T) {
 	base := strings.TrimRight(phase7BaseURL(), "/")
 	noRedirect := &http.Client{Timeout: 30 * time.Second,
@@ -58,8 +57,12 @@ func TestOAuthFrontDoor(t *testing.T) {
 		t.Fatalf("PRM authorization_servers = %v, want [%s]", prm["authorization_servers"], base)
 	}
 	code, _, jwtPRM := getJSON(t, "/.well-known/oauth-protected-resource/mcp/demo-mcp-jwt", nil)
-	if code != 200 || fmt.Sprint(jwtPRM["scopes_supported"]) != "[ach demo-mcp-jwt]" {
-		t.Fatalf("brokered PRM must advertise its scope: %d %v", code, jwtPRM)
+	if code != 200 || jwtPRM["scopes_supported"] != nil {
+		t.Fatalf("PRM must not advertise token scopes: %d %v", code, jwtPRM)
+	}
+	code, _, brokerMeta := getJSON(t, "/.well-known/oauth-authorization-server/mock-broker", nil)
+	if code != 200 || brokerMeta["authorization_endpoint"] != base+"/mock-broker/authorize" {
+		t.Fatalf("broker metadata: %d %v", code, brokerMeta)
 	}
 
 	// 2. Anonymous request → 401 + the RFC 9728 pointer to the service root.
@@ -86,8 +89,9 @@ func TestOAuthFrontDoor(t *testing.T) {
 	if resp.StatusCode != 201 || reg.ClientID == "" {
 		t.Fatalf("register: %d %+v", resp.StatusCode, reg)
 	}
+	deleteBrokerGrant(t)
 
-	// 4. /authorize → Dex (mockCallback, skipApprovalScreen) → as-callback →
+	// 4. /authorize → Dex → probe auth_required → mock broker → re-probe →
 	//    a redirect to our (unreachable) loopback URI carrying the code.
 	verifier := "e2e-verifier-" + strings.Repeat("x", 40)
 	sum := sha256.Sum256([]byte(verifier))
@@ -95,10 +99,12 @@ func TestOAuthFrontDoor(t *testing.T) {
 		"response_type": {"code"}, "client_id": {reg.ClientID}, "redirect_uri": {"http://127.0.0.1:1/cb"},
 		"state": {"s1"}, "code_challenge_method": {"S256"},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])},
-		"resource":       {base + "/mcp/demo-mcp-echo"},
-		"scope":          {"ach demo-mcp-jwt"},
+		"resource":       {base + "/mcp/demo-mcp-consent"},
 	}
-	authCode := followToLoopback(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode())
+	authCode, brokerHops := followToLoopbackWithCount(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode())
+	if brokerHops != 1 {
+		t.Fatalf("consent authorize broker hops: got %d want 1", brokerHops)
+	}
 
 	// 5. /token — the JWT + the one purpose='oauth' pk_ behind it.
 	tokenPost := func(t *testing.T, form url.Values) (int, map[string]any) {
@@ -122,8 +128,8 @@ func TestOAuthFrontDoor(t *testing.T) {
 	if code != 200 || access == "" || refresh == "" || tok["token_type"] != "Bearer" {
 		t.Fatalf("token: %d %v", code, tok)
 	}
-	if tok["scope"] != "ach demo-mcp-jwt" {
-		t.Fatalf("token scope: %v", tok["scope"])
+	if tok["scope"] != nil {
+		t.Fatalf("token must not carry consent scopes: %v", tok["scope"])
 	}
 
 	// 6. The JWT works on /v1 in both slots; Authorization is consumed.
@@ -140,27 +146,31 @@ func TestOAuthFrontDoor(t *testing.T) {
 		t.Fatalf("/content with OAuth JWT: %d %v", code, body)
 	}
 
-	// 6c. The scope gate: the mapped MCP service passes with the scope…
-	callBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"demo-mcp-jwt.echo","arguments":{"text":"via-oauth-chain"}}}`
-	if resp := postMCPViaForwarder(t, base+"/mcp/demo-mcp-jwt/", access, callBody); !strings.Contains(resp, "via-oauth-chain") {
-		t.Fatalf("mcp via oauth: %s", resp)
+	// 6c. The broker projection makes the consent-gated backend report ok.
+	if got := serverOutcome(t, base, access, "demo-mcp-consent"); got != "ok" {
+		t.Fatalf("consent route after broker: outcome=%q", got)
 	}
-	// …and a token minted WITHOUT the scope is refused with the RFC 6750 pointer.
-	plainCode := followToLoopback(t, noRedirect, base, base+"/platform/oauth/authorize?"+withoutScope(q).Encode())
-	_, plain := tokenPost(t, url.Values{"grant_type": {"authorization_code"}, "code": {plainCode}, "client_id": {reg.ClientID},
-		"redirect_uri": {"http://127.0.0.1:1/cb"}, "code_verifier": {verifier}})
-	req, _ := http.NewRequest(http.MethodPost, base+"/mcp/demo-mcp-jwt/", strings.NewReader(callBody))
-	req.Header.Set("x-ach-key", plain["access_token"].(string))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err = noRedirect.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	callBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"demo-mcp-consent.echo","arguments":{"text":"via-oauth-chain"}}}`
+	if resp := postMCPViaForwarder(t, base+"/mcp/demo-mcp-consent/", access, callBody); !strings.Contains(resp, "via-oauth-chain") {
+		t.Fatalf("mcp via oauth consent route: %s", resp)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != 403 || !strings.Contains(resp.Header.Get("WWW-Authenticate"), `error="insufficient_scope"`) {
-		t.Fatalf("no-scope token on brokered mcp: %d %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
+	// 6d. Removing the broker projection makes the probe report auth_required;
+	// re-authorizing walks the broker once and restores the grant.
+	deleteBrokerGrant(t)
+	if got := serverOutcome(t, base, access, "demo-mcp-consent"); got != "auth_required" {
+		t.Fatalf("consent route after grant deletion: outcome=%q", got)
 	}
-
+	authCode, brokerHops = followToLoopbackWithCount(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode())
+	if authCode == "" || brokerHops != 1 {
+		t.Fatalf("consent re-auth: code=%q broker hops=%d", authCode, brokerHops)
+	}
+	if got := serverOutcome(t, base, access, "demo-mcp-consent"); got != "ok" {
+		t.Fatalf("consent route after re-auth: outcome=%q", got)
+	}
+	q.Set("resource", base+"/mcp/demo-mcp-jwt")
+	if _, hops := followToLoopbackWithCount(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode()); hops != 0 {
+		t.Fatalf("plain JWT route unexpectedly chained: broker hops=%d", hops)
+	}
 	// 7. Refresh rotates; the old refresh token dies.
 	refreshForm := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {reg.ClientID}}
 	code, second := tokenPost(t, refreshForm)
@@ -191,6 +201,14 @@ func TestOAuthFrontDoor(t *testing.T) {
 	}
 }
 
+func deleteBrokerGrant(t *testing.T) {
+	t.Helper()
+	out, err := runCmdLonger(30*time.Second, "kubectl", "-n", "ach-system", "exec", "valkey-primary-0", "--", "redis-cli", "DEL", "oauth:echo:state:kilgore@kilgore.trout")
+	if err != nil {
+		t.Fatalf("delete broker grant: %v (%s)", err, out)
+	}
+}
+
 // revokeOAuthPK deletes the caller's active purpose='oauth' pk_ (the row
 // behind the JWT) with ?force=true, since it is also the key authenticating
 // the call. The row is found in Postgres rather than via GET /platform/keys:
@@ -215,16 +233,58 @@ func revokeOAuthPK(t *testing.T, base, access string) {
 	resp.Body.Close()
 }
 
-// withoutScope drops the "scope" param, for a second /authorize ceremony
-// that must mint a token without the brokered service's scope.
-func withoutScope(q url.Values) url.Values {
-	c := url.Values{}
-	for k, v := range q {
-		if k != "scope" {
-			c[k] = v
+func serverOutcome(t *testing.T, base, access, key string) string {
+	t.Helper()
+	post := func(session, body string) (*http.Response, []byte) {
+		req, err := http.NewRequest(http.MethodPost, base+"/mcp/"+key+"/", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+access)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if session != "" {
+			req.Header.Set("Mcp-Session-Id", session)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bodyBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp, bodyBytes
+	}
+	initResp, _ := post("", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"e2e\",\"version\":\"1\"}}}")
+	if initResp.StatusCode != http.StatusOK {
+		t.Fatalf("initialize %s: status=%d", key, initResp.StatusCode)
+	}
+	resp, body := post(initResp.Header.Get("Mcp-Session-Id"), "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tools/list %s: status=%d body=%s", key, resp.StatusCode, truncate(body, 500))
+	}
+	raw := body
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		raw = nil
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(line, "data:") {
+				raw = []byte(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			}
 		}
 	}
-	return c
+	var envelope struct {
+		Result map[string]any `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("tools/list %s: decode: %v body=%s", key, err, truncate(body, 500))
+	}
+	meta, _ := envelope.Result["_meta"].(map[string]any)
+	outcomes, _ := meta["litellm.ai/server_outcomes"].(map[string]any)
+	outcome, _ := outcomes[key].(map[string]any)
+	status, _ := outcome["status"].(string)
+	return status
 }
 
 // followToLoopback walks the authorize → Dex → as-callback redirect chain
@@ -232,10 +292,16 @@ func withoutScope(q url.Values) url.Values {
 // ssoMintPK) until a hop points at the client's loopback redirect_uri, and
 // returns the code it carries.
 func followToLoopback(t *testing.T, client *http.Client, base, start string) string {
+	code, _ := followToLoopbackWithCount(t, client, base, start)
+	return code
+}
+
+func followToLoopbackWithCount(t *testing.T, client *http.Client, base, start string) (string, int) {
 	t.Helper()
 	baseURL, _ := url.Parse(base)
 	cookies := map[string]string{}
 	next := start
+	brokerHops := 0
 	for hop := 0; hop < 16; hop++ { // one broker hop adds two redirects to the chain
 		req, _ := http.NewRequest(http.MethodGet, next, nil)
 		if len(cookies) > 0 {
@@ -254,12 +320,15 @@ func followToLoopback(t *testing.T, client *http.Client, base, start string) str
 		if resp.StatusCode/100 != 3 || loc == "" {
 			t.Fatalf("hop %d %s: %d (no redirect)\n%s", hop, next, resp.StatusCode, truncate(body, 600))
 		}
+		if strings.Contains(loc, "/mock-broker/authorize") {
+			brokerHops++
+		}
 		if strings.HasPrefix(loc, "http://127.0.0.1:1/cb") {
 			u, _ := url.Parse(loc)
 			if e := u.Query().Get("error"); e != "" || u.Query().Get("state") != "s1" {
 				t.Fatalf("client redirect: %s", loc)
 			}
-			return u.Query().Get("code")
+			return u.Query().Get("code"), brokerHops
 		}
 		cur, _ := url.Parse(next)
 		ref, err := url.Parse(loc)
@@ -271,5 +340,5 @@ func followToLoopback(t *testing.T, client *http.Client, base, start string) str
 		next = abs.String()
 	}
 	t.Fatal("authorize chain never reached the loopback redirect")
-	return ""
+	return "", brokerHops
 }

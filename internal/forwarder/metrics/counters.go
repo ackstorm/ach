@@ -48,8 +48,7 @@ var (
 //	key_type ∈ {pk, ek, none}
 //	outcome  ∈ {forwarded, unauthorized_resource, unauthorized_team,
 //	             expired_or_revoked, litellm_unreachable, internal_error,
-//	             invalid_key_format, invalid_key_type, https_required,
-//	             insufficient_scope}
+//	             invalid_key_format, invalid_key_type, https_required}
 //
 // D-19 thin-shim: Phase 4 ships a no-op stub; Phase 5 (this commit) wires
 // the nil-tolerant delegation to *metrics.ForwarderCollectors set via

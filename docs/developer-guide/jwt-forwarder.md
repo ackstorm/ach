@@ -461,33 +461,27 @@ substituted.
 
 ---
 
-## 1.6 OAuth scope gate — `insufficient_scope` on brokered `/mcp/<name>`
+## 1.6 OAuth consent is declared by the backend policy
 
-`ACH_OAUTH_SERVICES` (a JSON map, shared with platform-api's broker chain)
-names the `/mcp/<name>` services that require a scope. The gate applies
-**only to OAuth bearers** — a `pk_`, `ek_`, or raw `sk-` is never checked, and
-an unmapped service is never checked either.
+OAuth access tokens carry identity only; they do not carry service scopes and
+the forwarder has no static scope gate. A target that needs a separate consent
+ceremony declares it on its winning MCP `BackendIdentityPolicy`:
 
-On `/mcp/<name>`, before precheck: if the caller's token is OAuth AND `name`
-is in the map AND the token's `scope` claim does not contain `name`, the
-forwarder answers:
-
-```
-403 {"error":"insufficient_scope", ...}
-WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata="<base>/.well-known/oauth-protected-resource/mcp/<name>"
+```yaml
+spec:
+  target: {kind: MCPServer, name: demo-mcp-jwt}
+  forwardIdentityJWT: true
+  consentBroker: https://broker.example
+  consentAudience: backend-store
 ```
 
-The client's remedy is the normal RFC 9728 dance: fetch the PRM pointer,
-read its `scopes_supported` (the audience plus `<name>` — the forwarder
-composes this from the same map, see §1.2's `jwt.ASMetadata`/PRM handling),
-and re-run `/authorize` asking for that scope. platform-api's broker chain
-then runs one hop per requested-but-ungranted service before minting a token
-whose `scope` claim actually carries it — see
-`docs/superpowers/specs/2026-09-18-oauth-broker-chain-design.md`.
-
-`/a2a/<name>` and any `/mcp/<name>` not in the map are never gated —
-`ACH_OAUTH_SERVICES` empty/unset makes the whole gate dormant, matching
-today's behavior.
+During `/authorize`, ACH probes `/mcp/<name>` through the public forwarder as
+the user. Only the LiteLLM `auth_required` outcome starts one broker hop. ACH
+discovers the broker with RFC 8414, registers a public PKCE client, sends a
+short-lived EdDSA `login_hint` whose `aud` is `consentAudience`, and never
+redeems the broker code. The callback re-probes the same backend; only an
+`ok` outcome issues the ACH authorization code. The broker policy is resolved
+from Postgres, so there is no `ACH_OAUTH_SERVICES` or grants-Redis map.
 
 ---
 

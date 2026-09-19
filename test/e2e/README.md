@@ -37,11 +37,15 @@ make e2e-focus RUN='TestPhase4Promotion'           # full §11 sub-suite
 ```
 
 `make cluster-up` and `make cluster-sync` wait for the Ready `ach-mcp-echo`
-backend and LiteLLM's live MCP discovery of both seeded echo tools before
+backend and LiteLLM's live MCP discovery of the three seeded echo tools before
 reporting readiness. The BIP loop calls are intentionally single-shot: cluster
 readiness owns discovery convergence, so a focused test on a retained cluster
 only proves the already-warmed registry and must not hide a failed readiness
 gate with its own retry.
+
+The seeded routes are `demo-mcp-jwt` (JWT), `demo-mcp-nojwt` (no JWT), and
+`demo-mcp-consent` (JWT plus `consentBroker`; mcp-echo gates its audience on
+`oauth:echo:state:<sub>`).
 
 ## Fixtures
 

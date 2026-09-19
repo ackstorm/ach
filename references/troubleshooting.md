@@ -977,28 +977,13 @@ login. WHY: ACH does NOT lazily create the default team in the SSO path — that
 a fail-loud signal (`auth/doc.go`) — but the operator's proactive bootstrap closes
 the gap once the control plane converges. The 500 is transient, not a dead-end.
 
-### ❌ `insufficient_scope` on `/mcp/<svc>`
-An OAuth bearer hits the forwarder's scope gate: `403 insufficient_scope` +
-`WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata=…`.
-✅ Check, in order: (1) the forwarder's `ACH_OAUTH_SERVICES` actually contains
-`<svc>` — an unmapped service is never gated, so this 403 only fires for a
-service the map names; (2) the token's `scope` claim —
-`echo <jwt> | cut -d. -f2 | base64 -d` (pad with `=` as needed) and look for
-`<svc>` alongside the audience; (3) the grant projection key
-`oauth:<store>:state:<email>` in the grants Redis (`ACH_OAUTH_GRANTS_REDIS_URL`)
-— `<store>` is `ACH_OAUTH_SERVICES[<svc>].store`, not `<svc>` itself. WHY: the
-token only ever carries the scopes the projection said were granted AT MINT
-TIME (Task 3's `grantedScope`); a grant that appears later needs a fresh
-token — re-run `/authorize` (the tool's login command), which chains through
-the broker again for anything still ungranted.
-
-### ❌ Broker chain silently skips a service
-Login completes, but the resulting token never carries the scope for one
-brokered service — no error surfaced to the user. platform-api logs
-`"oauth: broker unreachable, skipping scope"`.
-✅ The named broker's `/register` call failed (network policy, DNS, the
-broker down). Fix the broker URL / reachability in `ACH_OAUTH_SERVICES`, then
-have the user log in again. WHY: `chainNext` treats a broker it cannot
-register with as "this service stays ungranted," not as a fatal login
-error — one dead broker must never block sign-in for every OTHER mapped
-service, so the failure is silent to the user and logged, not surfaced.
+### ❌ OAuth consent does not complete for an MCP backend
+The authorization flow returns `502` after the broker callback, or the broker
+is never reached. Check the winning MCP `BackendIdentityPolicy`: both
+`consentBroker` and `consentAudience` must be set, and the target must have
+`forwardIdentityJWT: true`. Then verify the broker's RFC 8414 document and
+registration endpoint are reachable from platform-api. WHY: ACH only starts
+the one-hop ceremony when its forwarder probe reports `auth_required`; after
+the callback it probes again and issues a code only when the backend reports
+`ok`. A missing policy, an already-authorized backend, a broker failure, or a
+failed post-consent probe does not create a wider OAuth token.

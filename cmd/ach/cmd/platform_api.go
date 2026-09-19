@@ -44,7 +44,6 @@ import (
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/metrics"
-	"github.com/ackstorm/ach/internal/oauthsvc"
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
@@ -91,14 +90,8 @@ type platformAPIConfig struct {
 	InsecureCookie   bool
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → AS disabled
-	OAuthAudience   string        // ACH_OAUTH_AUDIENCE, default "ach"
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
 	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
-	// OAuthServices is ACH_OAUTH_SERVICES: the broker chain + scope map.
-	// Non-empty requires OAuthGrantsRedisURL (the chain reads the brokers'
-	// grant projection to decide what a token may carry as scope).
-	OAuthServices       map[string]oauthsvc.Service
-	OAuthGrantsRedisURL string // ACH_OAUTH_GRANTS_REDIS_URL
 }
 
 func validatePlatformAPIConfig() (*platformAPIConfig, error) {
@@ -170,19 +163,11 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	// platform-api itself always listens plain http behind the ingress).
 	cfg.InsecureCookie = !strings.HasPrefix(cfg.BaseURL, "https://")
 	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
-	cfg.OAuthAudience = config.EnvOr("ACH_OAUTH_AUDIENCE", "ach")
 	if cfg.OAuthAccessTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_ACCESS_TTL", time.Hour, time.Minute); err != nil {
 		return nil, err
 	}
 	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
 		return nil, err
-	}
-	if cfg.OAuthServices, err = oauthsvc.Parse(os.Getenv("ACH_OAUTH_SERVICES")); err != nil {
-		return nil, err
-	}
-	cfg.OAuthGrantsRedisURL = os.Getenv("ACH_OAUTH_GRANTS_REDIS_URL")
-	if len(cfg.OAuthServices) > 0 && cfg.OAuthGrantsRedisURL == "" {
-		return nil, fmt.Errorf("ACH_OAUTH_GRANTS_REDIS_URL required when ACH_OAUTH_SERVICES is set (the broker chain reads the grant projection)")
 	}
 	return cfg, nil
 }
@@ -191,9 +176,6 @@ type platformAPIProcessDeps struct {
 	pool   *pgxpool.Pool
 	redis  *redis.Client
 	server platformapi.Deps
-	// grantsRedis is the brokers' grant projection (ACH_OAUTH_GRANTS_REDIS_URL);
-	// nil when ACH_OAUTH_SERVICES is unset (feature dormant).
-	grantsRedis *redis.Client
 	// signer is the OAuth access-token signer, loaded from the mounted
 	// ach-jwt-signing-keys Secret; nil when the AS is disabled.
 	signer *jwt.Ed25519Signer
@@ -217,9 +199,6 @@ func (p *platformAPIProcessDeps) close() {
 	}
 	if p.redis != nil {
 		_ = p.redis.Close()
-	}
-	if p.grantsRedis != nil {
-		_ = p.grantsRedis.Close()
 	}
 	if p.pool != nil {
 		p.pool.Close()
@@ -319,20 +298,11 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		verifier = signer
 		oauthDeps = &auth.OAuthDeps{
 			Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
-			Issuer: cfg.BaseURL, Audience: cfg.OAuthAudience,
+			Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
 			AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
-			Services: cfg.OAuthServices,
-		}
-		if cfg.OAuthGrantsRedisURL != "" {
-			gopts, err := redis.ParseURL(cfg.OAuthGrantsRedisURL)
-			if err != nil {
-				return out, fmt.Errorf("ACH_OAUTH_GRANTS_REDIS_URL: %w", err)
-			}
-			out.grantsRedis = redis.NewClient(gopts) // closed with the other clients in out.close()
-			oauthDeps.Grants = auth.NewRedisGrants(out.grantsRedis)
 		}
 	}
-	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, cfg.OAuthAudience, pool)
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
