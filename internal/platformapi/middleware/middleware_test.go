@@ -614,3 +614,59 @@ func TestAuthn_NonBearerAuthorizationIsIgnored(t *testing.T) {
 		t.Fatalf("%d", rec.Code)
 	}
 }
+
+func TestAuthn_RawKeyHeaderIsRawByDefinitionAndKept(t *testing.T) {
+	res := &slotResolver{info: pkInfo()}
+	opts := oauthOpts(true)
+	opts.RawKeyHeaders = []string{"x-genai-api-key"}
+	var raw string
+	var hasKC bool
+	var seen http.Header
+	capture := func(_ http.ResponseWriter, r *http.Request) {
+		raw, _ = RawLiteLLMKeyFromCtx(r.Context())
+		_, hasKC = KeyContextFromCtx(r.Context())
+		seen = r.Header.Clone()
+	}
+	// Any value — no sk- grammar — and the header survives for LiteLLM.
+	req := httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("x-genai-api-key", "customer-key-777")
+	if rec := serveAuthn(res, opts, req, capture); rec.Code != 200 || raw != "customer-key-777" || hasKC ||
+		res.last != "" || seen.Get("x-genai-api-key") != "customer-key-777" {
+		t.Fatalf("%d raw=%q kc=%v resolved=%q hdr=%q", rec.Code, raw, hasKC, res.last, seen.Get("x-genai-api-key"))
+	}
+	// ACH slots rank first; the raw header is then left alone.
+	req = httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("x-ach-key", "pk-x")
+	req.Header.Set("x-genai-api-key", "customer-key-777")
+	raw, hasKC = "", false
+	if rec := serveAuthn(res, opts, req, capture); rec.Code != 200 || raw != "" || !hasKC || res.last != "pk-x" ||
+		seen.Get("x-genai-api-key") != "customer-key-777" {
+		t.Fatalf("precedence: %d raw=%q kc=%v resolved=%q", rec.Code, raw, hasKC, res.last)
+	}
+	// Not honoured where raw keys are refused (platform-api).
+	req = httptest.NewRequest("GET", "/platform/keys", nil)
+	req.Header.Set("x-genai-api-key", "customer-key-777")
+	opts.AllowRawLiteLLMKey = false
+	if rec := serveAuthn(res, opts, req, nil); rec.Code != 401 {
+		t.Fatalf("raw refused: %d", rec.Code)
+	}
+}
+
+func TestAuthn_OptionalLetsAnonymousThroughButNotInvalid(t *testing.T) {
+	res := &slotResolver{} // every credential resolves to "unknown"
+	opts := oauthOpts(true)
+	opts.Optional = true
+	var hasKC, hasRaw bool
+	capture := func(_ http.ResponseWriter, r *http.Request) {
+		_, hasKC = KeyContextFromCtx(r.Context())
+		_, hasRaw = RawLiteLLMKeyFromCtx(r.Context())
+	}
+	if rec := serveAuthn(res, opts, httptest.NewRequest("GET", "/health", nil), capture); rec.Code != 200 || hasKC || hasRaw {
+		t.Fatalf("anonymous: %d kc=%v raw=%v", rec.Code, hasKC, hasRaw)
+	}
+	req := httptest.NewRequest("GET", "/health", nil)
+	req.Header.Set("x-ach-key", "pk-revoked")
+	if rec := serveAuthn(res, opts, req, nil); rec.Code != 401 {
+		t.Fatalf("invalid credential must not pass: %d", rec.Code)
+	}
+}

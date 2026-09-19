@@ -38,22 +38,38 @@ type AuthnOptions struct {
 	// AllowRawLiteLLMKey lets a raw sk-… through with no ACH identity. The
 	// forwarder sets it; platform-api does not (nothing there proxies).
 	AllowRawLiteLLMKey bool
+	// RawKeyHeaders are extra header names whose value IS a raw LiteLLM key
+	// by definition (ACH_RAW_KEY_HEADERS, e.g. x-genai-api-key) — no prefix
+	// sniffing. They rank after the ACH slots, and the header is left on the
+	// request so LiteLLM's own litellm_key_header_name keeps working. Only
+	// meaningful with AllowRawLiteLLMKey.
+	RawKeyHeaders []string
+	// Optional lets a request with NO credential through with no identity
+	// (the forwarder's catch-all: LiteLLM decides). A present-but-invalid
+	// credential is still a 401.
+	Optional bool
 }
 
-// credential picks the first slot that is set, returning the bare value and
-// the header it came from. "Bearer " is stripped from any slot.
-func credential(r *http.Request) (value, from string) {
+// credential picks the first slot that is set, returning the bare value,
+// the header it came from and whether that header is a raw-key slot (its
+// value is a LiteLLM key by definition). "Bearer " is stripped from any slot.
+func credential(r *http.Request, rawHeaders []string) (value, from string, raw bool) {
 	for _, h := range []string{xAchKeyHeader, xAPIKeyHeader, authzHeader} {
-		raw := strings.TrimSpace(r.Header.Get(h))
-		if raw == "" {
+		v := strings.TrimSpace(r.Header.Get(h))
+		if v == "" {
 			continue
 		}
-		if h == authzHeader && !strings.HasPrefix(raw, "Bearer ") {
+		if h == authzHeader && !strings.HasPrefix(v, "Bearer ") {
 			continue // Basic, Digest, … : not ours, leave it
 		}
-		return strings.TrimSpace(strings.TrimPrefix(raw, "Bearer ")), h
+		return strings.TrimSpace(strings.TrimPrefix(v, "Bearer ")), h, false
 	}
-	return "", ""
+	for _, h := range rawHeaders {
+		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {
+			return strings.TrimSpace(strings.TrimPrefix(v, "Bearer ")), h, true
+		}
+	}
+	return "", "", false
 }
 
 // requestIDPrefix is the namespace for server-generated request IDs.
@@ -271,19 +287,27 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			ctx := r.Context()
 			reqID := RequestIDFromCtx(ctx)
 
-			plaintext, from := credential(r)
+			plaintext, from, rawSlot := credential(r, opts.RawKeyHeaders)
 			if plaintext == "" {
+				if opts.Optional {
+					next.ServeHTTP(w, r) // no identity: the upstream decides
+					return
+				}
 				unauthorized(w, r, "missing_key", "present an API key or a bearer token", reqID)
 				return
 			}
 
-			// A raw LiteLLM key: no ACH identity. LiteLLM decides.
-			if strings.HasPrefix(plaintext, "sk-") {
+			// A raw LiteLLM key: no ACH identity. LiteLLM decides. A raw-key
+			// slot keeps its header (LiteLLM may read it by that name); an
+			// sk- in an ACH slot is consumed like any ACH credential.
+			if rawSlot || strings.HasPrefix(plaintext, "sk-") {
 				if !opts.AllowRawLiteLLMKey {
 					unauthorized(w, r, "missing_key", "an ACH credential is required here", reqID)
 					return
 				}
-				r.Header.Del(from)
+				if !rawSlot {
+					r.Header.Del(from)
+				}
 				next.ServeHTTP(w, r.WithContext(WithRawLiteLLMKey(ctx, plaintext)))
 				return
 			}

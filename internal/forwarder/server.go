@@ -30,6 +30,10 @@ type Deps struct {
 	Signer        jwt.Signer
 	Logger        *slog.Logger
 	BaseURL       string
+	// Issuer is the authorization server this front trusts and points
+	// clients at (ACH_OAUTH_ISSUER; default BaseURL). A front on a second
+	// host (api.*) names the one AS on ach.* and signs BIP JWTs as it.
+	Issuer string
 	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
 	// G3); the proxy Director decrypts the sealed LiteLLM key material per
 	// request before forwarding. Required (validated at process start).
@@ -70,6 +74,7 @@ func New(deps Deps) http.Handler {
 			TeamsResolver: deps.TeamsResolver,
 		},
 		BaseURL: deps.BaseURL,
+		Issuer:  issuerOr(deps.Issuer, deps.BaseURL),
 	}
 
 	// OAuth discovery, ANONYMOUS by design (a client fetches these precisely
@@ -79,7 +84,7 @@ func New(deps Deps) http.Handler {
 	// every /mcp/<name> + /a2a/<name>. ACH composes both — LiteLLM's PRM
 	// document is no longer relayed, so the client is sent to ACH's
 	// authorization server, never LiteLLM's.
-	wk := proxy.WellKnownHandler(deps.BaseURL)
+	wk := proxy.WellKnownHandler(deps.BaseURL, hdeps.Issuer)
 	r.Handle("/.well-known/oauth-authorization-server", wk)
 	r.Handle("/.well-known/oauth-protected-resource", wk)
 	r.Handle("/.well-known/oauth-protected-resource/*", wk)
@@ -102,7 +107,27 @@ func New(deps Deps) http.Handler {
 		r.Handle("/a2a/{name}/*", proxy.HandlerA2A(hdeps))
 	})
 
+	// Catch-all: everything else LiteLLM serves (/ui, /sso, /key/*, /model/*,
+	// /anthropic/*, /health, …) when ACH fronts the whole API host. The
+	// credential is optional here — an ACH credential is resolved and
+	// rewritten, a raw key passes, none is forwarded anonymously and LiteLLM
+	// decides. A present-but-invalid credential is still a 401.
+	r.Group(func(r chi.Router) {
+		opts := deps.AuthnOptions
+		opts.Optional = true
+		opts.Challenge = nil
+		r.Use(pamw.Authn(deps.Resolver, nil, nil, opts))
+		r.Handle("/*", proxy.HandlerPassthrough(hdeps))
+	})
+
 	return r
+}
+
+func issuerOr(issuer, base string) string {
+	if issuer == "" {
+		return base
+	}
+	return issuer
 }
 
 // NewHealthHandler returns the health handler with /healthz, /livez, /readyz.

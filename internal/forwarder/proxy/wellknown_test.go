@@ -9,7 +9,7 @@ import (
 )
 
 func TestWellKnown_ASMetadataAndPRMDocuments(t *testing.T) {
-	h := WellKnownHandler("https://ach.example.com/")
+	h := WellKnownHandler("https://ach.example.com/", "https://ach.example.com/")
 	cases := map[string]map[string]any{
 		"/.well-known/oauth-authorization-server": {
 			"issuer": "https://ach.example.com", "registration_endpoint": "https://ach.example.com/platform/oauth/register",
@@ -44,6 +44,26 @@ func TestWellKnown_ASMetadataAndPRMDocuments(t *testing.T) {
 		if w.Code != 404 {
 			t.Errorf("%s: %d", p, w.Code)
 		}
+	}
+}
+
+// A front on a second host names the one AS elsewhere: its PRMs point there
+// and it does not serve an AS document of its own (RFC 8414: the document
+// lives at the issuer).
+func TestWellKnown_FrontPointsAtTheIssuer(t *testing.T) {
+	h := WellKnownHandler("https://api.example.com", "https://ach.example.com")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp/svc", nil))
+	var got map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	as, _ := got["authorization_servers"].([]any)
+	if w.Code != 200 || got["resource"] != "https://api.example.com/mcp/svc" || len(as) != 1 || as[0] != "https://ach.example.com" {
+		t.Fatalf("%d %v", w.Code, got)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil))
+	if w.Code != 404 {
+		t.Fatalf("AS document on a front: %d, want 404", w.Code)
 	}
 }
 

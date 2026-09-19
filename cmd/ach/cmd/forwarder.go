@@ -102,6 +102,8 @@ when ACH_BASE_URL is not http(s)://, ACH_KEY_ENCRYPTION_KEY is unset/invalid
 // and the CR-derived values flow through local vars instead.
 type forwarderConfig struct {
 	BaseURL          string
+	Issuer           string   // ACH_OAUTH_ISSUER, default BaseURL
+	RawKeyHeaders    []string // ACH_RAW_KEY_HEADERS
 	DBURL            string
 	Pepper           []byte
 	KeyEncryptionKey []byte
@@ -125,6 +127,20 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
+	cfg.Issuer = config.EnvOr("ACH_OAUTH_ISSUER", baseURL)
+	if !strings.HasPrefix(cfg.Issuer, "http://") && !strings.HasPrefix(cfg.Issuer, "https://") {
+		return nil, errors.New("ACH_OAUTH_ISSUER must be http(s)://")
+	}
+	for _, h := range strings.Split(os.Getenv("ACH_RAW_KEY_HEADERS"), ",") {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h == "" {
+			continue
+		}
+		if h == "x-ach-key" || h == "x-api-key" || h == "authorization" {
+			return nil, fmt.Errorf("ACH_RAW_KEY_HEADERS: %s is an ACH credential slot", h)
+		}
+		cfg.RawKeyHeaders = append(cfg.RawKeyHeaders, h)
+	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
 		return nil, err
@@ -318,7 +334,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// reads "unknown kid" → (nil, nil) → 401, which is correct.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
-	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, "ach", pool)
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.Issuer, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
@@ -384,11 +400,13 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Signer:           out.signer,
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
+		Issuer:           cfg.Issuer,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
 		AuthnOptions: pamw.AuthnOptions{
 			Challenge:          proxy.ChallengeFor(cfg.BaseURL),
 			AllowRawLiteLLMKey: true,
+			RawKeyHeaders:      cfg.RawKeyHeaders,
 		},
 	}
 	return out, nil
@@ -492,6 +510,8 @@ func runForwarder(_ *cobra.Command, _ []string) error {
 		"health", cfg.HealthBindAddr,
 		"namespace", cfg.Namespace,
 		"baseURL", cfg.BaseURL,
+		"issuer", cfg.Issuer,
+		"rawKeyHeaders", cfg.RawKeyHeaders,
 		"jwtSecret", cfg.JWTSecretName,
 	)
 

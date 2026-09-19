@@ -41,6 +41,9 @@ type HandlerDeps struct {
 	BIPResolver BIPResolver
 	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.
 	PrecheckDeps precheck.Deps
+	// Issuer is the `iss` of the BIP JWT (the identity issuer the backends
+	// trust — ACH_OAUTH_ISSUER, default BaseURL).
+	Issuer string
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
 }
@@ -56,6 +59,18 @@ func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 		rp.ServeHTTP(w, r)
 	}
 	return observeDuration(routeLabel, inner)
+}
+
+// HandlerPassthrough returns the catch-all proxy handler: no tag injection,
+// no precheck, no JWT — whatever identity Authn resolved (or none) reaches
+// LiteLLM as x-litellm-api-key (or nothing) and LiteLLM decides.
+func HandlerPassthrough(deps HandlerDeps) http.HandlerFunc {
+	rp := New(deps.Deps)
+	inner := func(w http.ResponseWriter, r *http.Request) {
+		metrics.IncRequests("/*", keyTypeFor(r.Context()), "forwarded")
+		rp.ServeHTTP(w, r)
+	}
+	return observeDuration("/*", inner)
 }
 
 // HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
@@ -167,7 +182,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 
 		// 3. Sign + stash for Director.
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
-			Iss:    deps.BaseURL,
+			Iss:    deps.Issuer,
 			Sub:    kc.OwnerEmail,
 			Aud:    audPrefix + name,
 			Email:  kc.OwnerEmail,

@@ -162,6 +162,26 @@ forwarder:
   # flow from LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
   # (see internal/forwarder/litellmconn.Resolve).
   extraEnv: []
+  # rawKeyHeaders: extra request headers whose value IS a raw LiteLLM key
+  # (no ACH identity, no prefix sniffing) — e.g. ["x-genai-api-key"]. The
+  # header is kept on the upstream request and mirrored to x-litellm-api-key,
+  # so a LiteLLM litellm_key_header_name keeps working. ACH_RAW_KEY_HEADERS.
+  rawKeyHeaders: []
+  # fronts: extra forwarder Deployments (ach-forwarder-<name>) that put ACH in
+  # front of another public host — typically the LiteLLM API host itself —
+  # sharing this release's namespace, ServiceAccount, Secrets and projections.
+  # Each front is dialled as baseURL (PRM `resource`, 401 challenge) and points
+  # clients at oauthIssuer, the ONE authorization server (this release's
+  # ACH_BASE_URL): humans log in once, the token is accepted on every host,
+  # BIP JWTs are signed as the issuer. Every other path (/ui, /key/*, …) is
+  # forwarded with the credential optional; LiteLLM decides. The Ingress /
+  # HTTPRoute for the front's host is yours to add (→ Service ach-forwarder-<name>:80).
+  fronts: []
+  #  - name: api
+  #    baseURL: https://api.example.com
+  #    oauthIssuer: https://ach.example.com
+  #    rawKeyHeaders: [x-genai-api-key]
+  #    replicas: 2   # default: forwarder.replicas
 
 # litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
 # Configure endpoint + master-key Secret ref here ONCE; the chart fans it

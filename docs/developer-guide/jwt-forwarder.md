@@ -312,6 +312,42 @@ carry the upstream provider's own credential (Claude Code on an Anthropic
 subscription: Anthropic's OAuth in `Authorization`, ours in `x-ach-key`).
 On `/mcp` + `/a2a` the per-target ACH JWT overwrites it.
 
+**Raw-key headers.** `ACH_RAW_KEY_HEADERS` (chart `forwarder.rawKeyHeaders`,
+e.g. `x-genai-api-key`) names extra headers whose value *is* a raw LiteLLM key
+by definition — no `sk-` grammar. They rank after the three ACH slots, take
+the same no-identity raw path, and — unlike an `sk-` in an ACH slot — the
+header is **kept** on the upstream request (mirrored to `x-litellm-api-key`
+as well), so a LiteLLM `litellm_key_header_name` keeps working. Both families
+coexist on one request: `x-ach-key: pk_…` + `x-genai-api-key: …` resolves the
+`pk_` and leaves the other header alone. Naming an ACH slot in the list is a
+start-up error.
+
+### Fronts — ACH in front of the whole API host
+
+The forwarder also serves a catch-all `/*` (registered after the owned
+families) so ACH can be the public front of the LiteLLM host itself
+(`api.<domain>`): every path LiteLLM serves (`/ui`, `/sso`, `/key/*`,
+`/model/*`, `/anthropic/*`, `/health`, …) is proxied with the **credential
+optional** — an ACH credential is resolved and rewritten, a raw key passes,
+none is forwarded anonymously and LiteLLM decides; a present-but-invalid
+credential is still `401`. No tag injection, no precheck, no JWT there. The
+owned families keep the `401` + RFC 9728 challenge that starts the OAuth
+ceremony.
+
+A second host needs two values the single-host deployment conflates:
+`ACH_BASE_URL` is *what this front is dialled as* (PRM `resource`, the
+challenge URL); `ACH_OAUTH_ISSUER` (default = base) is *the authorization
+server it trusts and points clients at* — OAuth verify `iss`, PRM
+`authorization_servers`, and the `iss` of the BIP JWT (backends keep trusting
+one issuer; same key, same JWKS). A front whose issuer is not its base does
+**not** serve `/.well-known/oauth-authorization-server` (RFC 8414: the
+document lives at the issuer; a mismatched `issuer` field is rejected by
+compliant clients). Humans log in once on the issuer host; the token
+(`aud=ach`) is accepted on every front. Chart: `forwarder.fronts[]` renders
+`ach-forwarder-<name>` Deployments/Services in the same release (same
+namespace, ServiceAccount, Secrets, projections); the Ingress/HTTPRoute for
+the front's host is the operator's.
+
 ### Required LiteLLM configuration (direct backends only)
 
 `/mcp/*` traffic traverses LiteLLM (§3), and LiteLLM builds its own

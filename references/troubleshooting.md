@@ -987,3 +987,18 @@ the one-hop ceremony when its forwarder probe reports `auth_required`; after
 the callback it probes again and issues a code only when the backend reports
 `ok`. A missing policy, an already-authorized backend, a broker failure, or a
 failed post-consent probe does not create a wider OAuth token.
+
+### ❌ `401 missing_key` on the API front with `x-genai-api-key` set
+✅ That front's `ACH_RAW_KEY_HEADERS` does not list the header (chart
+`forwarder.fronts[].rawKeyHeaders` / `forwarder.rawKeyHeaders`; names are
+lower-cased, comma-separated). Check `kubectl -n ach-system get deploy
+ach-forwarder-<front> -o jsonpath='{.spec.template.spec.containers[0].env}'`.
+A value in a listed header is never resolved as an ACH key — `pk_` there is
+forwarded raw and LiteLLM rejects it; humans use `x-ach-key`/`Authorization`.
+
+### ❌ MCP client on `api.*` fetches `/.well-known/oauth-authorization-server` and gets 404
+✅ Expected on a front whose `ACH_OAUTH_ISSUER` ≠ `ACH_BASE_URL`: the PRM's
+`authorization_servers` names the issuer host (`ach.*`) and the client must
+fetch the AS document there (RFC 8414). A client that ignores the PRM and
+guesses the AS from the resource origin is non-compliant.
+

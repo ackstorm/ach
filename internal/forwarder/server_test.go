@@ -3,6 +3,7 @@
 package forwarder_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/forwarder"
+	"github.com/ackstorm/ach/internal/keystore"
+	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 // TestRouteAcceptsBareAndSubpathNames pins the routing contract that a bare
@@ -135,3 +138,51 @@ func TestProtectedResourceMetadataIsAnonymous(t *testing.T) {
 		t.Errorf("LiteLLM must not be consulted for discovery documents; calls=%d", litellmCalls)
 	}
 }
+
+// TestCatchAllForwardsAnonymousButNotInvalid pins the api-front contract:
+// a path ACH does not own reaches LiteLLM with no credential (LiteLLM
+// decides), while a present-but-invalid ACH credential is still refused and
+// the owned families keep their 401.
+func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
+	var seen http.Header
+	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Clone()
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer litellm.Close()
+	upstream, _ := url.Parse(litellm.URL)
+	h := forwarder.New(forwarder.Deps{
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream:  upstream,
+		Resolver:         nilResolver{},
+		KeyEncryptionKey: make([]byte, 32),
+		AuthnOptions:     pamw.AuthnOptions{AllowRawLiteLLMKey: true, RawKeyHeaders: []string{"x-genai-api-key"}},
+	})
+	do := func(path string, hdr map[string]string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := do("/health/liveliness", nil); c != http.StatusTeapot {
+		t.Fatalf("anonymous catch-all: %d, want upstream 418", c)
+	}
+	if c := do("/key/info", map[string]string{"x-genai-api-key": "cust-1"}); c != http.StatusTeapot ||
+		seen.Get("x-genai-api-key") != "cust-1" || seen.Get("X-Litellm-Api-Key") != "cust-1" {
+		t.Fatalf("raw header on catch-all: %d hdrs=%v", c, seen)
+	}
+	if c := do("/key/info", map[string]string{"x-ach-key": "pk-revoked"}); c != http.StatusUnauthorized {
+		t.Fatalf("invalid credential on catch-all: %d, want 401", c)
+	}
+	if c := do("/v1/models", nil); c != http.StatusUnauthorized {
+		t.Fatalf("anonymous /v1: %d, want 401", c)
+	}
+}
+
+// nilResolver answers "unknown credential" for everything.
+type nilResolver struct{}
+
+func (nilResolver) Resolve(context.Context, string) (*keystore.KeyInfo, error) { return nil, nil }
